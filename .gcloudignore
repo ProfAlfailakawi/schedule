@@ -1,0 +1,10 @@
+# Cloud Run source payload only. Keep the AI Studio workspace complete, but deploy only source + compact bootstrap data.
+.git/
+.github/
+node_modules/
+dist/
+*.zip
+*.log
+.DS_Store
+database/db.json
+# database/db.json.gz is intentionally deployed as the verified bootstrap snapshot.

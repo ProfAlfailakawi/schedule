@@ -1,0 +1,49 @@
+{
+  "name": "schedule-academic-workspace",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
+    "test": "npm run test:behavior && npm run test:data && npm run test:credentials && npm run test:parity",
+    "test:behavior": "tsx tests/run-tests.ts",
+    "test:data": "python3 tests/legacy-data-audit.py",
+    "test:credentials": "tsx tests/credential-audit.ts",
+    "test:parity": "python3 tests/parity_audit.py",
+    "clean": "rm -rf dist server.js",
+    "lint": "tsc --noEmit",
+    "protect:data": "node scripts/protect-private-state.mjs",
+    "extract:legacy": "python3 scripts/extract-legacy-bak.py",
+    "migrate:firestore": "tsx scripts/import-legacy-json.ts database/db.json.gz",
+    "migrate:firestore:replace": "tsx scripts/import-legacy-json.ts database/db.json.gz --replace",
+    "audit:deploy": "node scripts/deployment-audit.mjs",
+    "gcp-build": "npm run build"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^8.7.1",
+    "@vitejs/plugin-react": "^5.0.4",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "firebase": "^12.17.1",
+    "firebase-admin": "^14.2.0",
+    "google-auth-library": "^11.0.0",
+    "lucide-react": "^0.546.0",
+    "react": "^19.0.1",
+    "react-dom": "^19.0.1",
+    "vite": "^6.2.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.14.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2",
+    "vite": "^6.2.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

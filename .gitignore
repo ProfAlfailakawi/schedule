@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# The supplied parity snapshot contains real private Legacy data. Keep these out of public repositories.
+database/db.json
+database/db.json.gz
+database/legacy-password-vault.key
+database/*.firestore-verification.json

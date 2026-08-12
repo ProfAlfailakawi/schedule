@@ -1,0 +1,14 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "schedules",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "AdCollegeId", "order": "ASCENDING" },
+        { "fieldPath": "AdSectionId", "order": "ASCENDING" },
+        { "fieldPath": "AdTermId", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

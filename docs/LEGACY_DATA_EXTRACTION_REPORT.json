@@ -1,0 +1,2243 @@
+{
+  "sourceBackup": "ahf7424400_2018_2026-08-10_09-06-17.zip",
+  "sourceBackupSha256": "e363f6930a820619616829a3005dc923371f149c27ce4e22e281284e33d62120",
+  "extractedMdfBytes": 5439488,
+  "userTables": {
+    "AdCollege": {
+      "catalogRows": 13,
+      "decodedRows": 13,
+      "sha256": "9fba28442ef366bc320d3101ea77546200a226ddc81b4392ac1cf02be550187d"
+    },
+    "AdCollegeUserAssign": {
+      "catalogRows": 189,
+      "decodedRows": 189,
+      "sha256": "cc450152e0b37aab53557937b1b275b4a9e4689fab45229cfc81dfbc8cf6e8d5"
+    },
+    "AdCourse": {
+      "catalogRows": 1404,
+      "decodedRows": 1404,
+      "sha256": "9ef7d836dcaba4e57459d1e259a3cc3a27cfaf6bbbb767b9dab1c4d4f95197db"
+    },
+    "AdGender": {
+      "catalogRows": 2,
+      "decodedRows": 2,
+      "sha256": "cb59c1013dfde828bb3612845b1c67910337ed98b7ef4b12c0d0c7a56780a4b8"
+    },
+    "AdInstructor": {
+      "catalogRows": 743,
+      "decodedRows": 743,
+      "sha256": "0bbb836ff2be99f9b2c1fb4e17f97a790d56e74b4a4d82868bf8d46122423e7d"
+    },
+    "AdRoom": {
+      "catalogRows": 1,
+      "decodedRows": 1,
+      "sha256": "ba374920ea31c3c791078becf33ef3c293a39c729d093b4cafe77349a228da9f"
+    },
+    "AdSection": {
+      "catalogRows": 87,
+      "decodedRows": 87,
+      "sha256": "62d6734be15a8a7b33083d381a1d5f8fdd8ddcc53582585d98fba5dfbcd27bcc"
+    },
+    "AdTerm": {
+      "catalogRows": 31,
+      "decodedRows": 31,
+      "sha256": "e7920b6466ad415513e641bd11f559433954317121211e274e03df2b66b3d328"
+    },
+    "Counter": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "ExamMark": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "FSchedule": {
+      "catalogRows": 15430,
+      "decodedRows": 15430,
+      "sha256": "10e971295ea4662055b767c5d92dbc0064b501a756d7b6a295c1abe79430c59b"
+    },
+    "FormName": {
+      "catalogRows": 18,
+      "decodedRows": 18,
+      "sha256": "f06762f6ae0f9eb063c2bd5e48bd9876aaecc237f8aa03d19dd6a8e0665f2707"
+    },
+    "FormSecurity": {
+      "catalogRows": 219,
+      "decodedRows": 219,
+      "sha256": "34c27fa45608f08b70ca07baed6ebd2c3ad1ed3b266fe76e761d66e1a25e7b2e"
+    },
+    "Gender": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "GovEmployees": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "Governorate": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "History": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "JobPlace": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "Jobs": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "Level": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "Nationlity": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "Question": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "ReExamMark": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "Student": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "SystemUser": {
+      "catalogRows": 29,
+      "decodedRows": 29,
+      "sha256": "32af7bdadbe669b361c9b982c6ac30961d0e0afdaffe9608c4bbb02fa0ed5054"
+    },
+    "hzbexam": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "hzbquestion": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "studentwaiting": {
+      "catalogRows": 0,
+      "decodedRows": 0,
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    }
+  },
+  "activeDataIntegrityErrors": [],
+  "schema": {
+    "AdCollege": [
+      {
+        "Colid": 1,
+        "Name": "AdCollegeId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "AdCollegeName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "AdCollegeCode",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "AdGenderID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      }
+    ],
+    "AdCollegeUserAssign": [
+      {
+        "Colid": 1,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "SystemUserId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "AdCollegeId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "AdSectionId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      }
+    ],
+    "AdCourse": [
+      {
+        "Colid": 1,
+        "Name": "AdCourseId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "CourseCode",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "CourseName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "CourseCredit",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "CourseHours",
+        "Xtype": 62,
+        "Length": 8,
+        "Prec": 53,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "MaxStudent",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "AdSectionId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 24,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 8,
+        "Name": "AdRoomCode",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 9,
+        "Name": "AdRoomHall",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -4,
+        "Bitpos": 0
+      }
+    ],
+    "AdGender": [
+      {
+        "Colid": 1,
+        "Name": "AdGenderId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "AdGenderCode",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "AdGenderName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      }
+    ],
+    "AdInstructor": [
+      {
+        "Colid": 1,
+        "Name": "AdInstructorId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "AdInstructorCivil",
+        "Xtype": 167,
+        "Length": 50,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "AdInstructorName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "AdInstructorMobile",
+        "Xtype": 167,
+        "Length": 50,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      }
+    ],
+    "AdRoom": [
+      {
+        "Colid": 1,
+        "Name": "AdRoomId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "AdRoomCode",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "AdRoomHall",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "AdRoomDescrip",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      }
+    ],
+    "AdSection": [
+      {
+        "Colid": 1,
+        "Name": "AdSectionId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "AdSectionCode",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "AdSectionName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "AdCollegeId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      }
+    ],
+    "AdTerm": [
+      {
+        "Colid": 1,
+        "Name": "AdTermId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "AdTermName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      }
+    ],
+    "Counter": [
+      {
+        "Colid": 1,
+        "Name": "ID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "WaitingNo",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      }
+    ],
+    "ExamMark": [
+      {
+        "Colid": 1,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Student_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "Level_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "HQ1",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "HQ2",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 25,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "HQ3",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 34,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "HQ4",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 43,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 8,
+        "Name": "HQ5",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 52,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 9,
+        "Name": "HQ6",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 61,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 10,
+        "Name": "T1",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 70,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 11,
+        "Name": "A1",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 79,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 12,
+        "Name": "Total",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 88,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 13,
+        "Name": "SystemUser_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 97,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 14,
+        "Name": "IsPass",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 101,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 15,
+        "Name": "part",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 102,
+        "Bitpos": 0
+      }
+    ],
+    "FSchedule": [
+      {
+        "Colid": 1,
+        "Name": "ID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "AdCourseId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "AdInstructorId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "AdTermId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "fsunday",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "fmonday",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 1
+      },
+      {
+        "Colid": 7,
+        "Name": "ftuesday",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 2
+      },
+      {
+        "Colid": 8,
+        "Name": "fwednesday",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 3
+      },
+      {
+        "Colid": 9,
+        "Name": "fthursday",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 4
+      },
+      {
+        "Colid": 10,
+        "Name": "fdetail",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 11,
+        "Name": "fstarttime",
+        "Xtype": 41,
+        "Length": 5,
+        "Prec": 16,
+        "Scale": 7,
+        "SignedOffset": 21,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 12,
+        "Name": "fendtime",
+        "Xtype": 41,
+        "Length": 5,
+        "Prec": 16,
+        "Scale": 7,
+        "SignedOffset": 26,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 13,
+        "Name": "AdRoomCode",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 14,
+        "Name": "AdRoomHall",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 15,
+        "Name": "SCode",
+        "Xtype": 167,
+        "Length": 150,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -4,
+        "Bitpos": 0
+      }
+    ],
+    "FormName": [
+      {
+        "Colid": 1,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Name",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      }
+    ],
+    "FormSecurity": [
+      {
+        "Colid": 1,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "FormName_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "SystemUser_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      }
+    ],
+    "Gender": [
+      {
+        "Colid": 1,
+        "Name": "GenderID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "GenderName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      }
+    ],
+    "GovEmployees": [
+      {
+        "Colid": 1,
+        "Name": "ADNAME",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "ADCVL",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "ADSEX",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "jobname",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "Nationality",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -5,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "Department",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -6,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      }
+    ],
+    "Governorate": [
+      {
+        "Colid": 1,
+        "Name": "GovernorateID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "GovernorateName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      }
+    ],
+    "History": [
+      {
+        "Colid": 1,
+        "Name": "Name",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Gender",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "Nationality",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "Work",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "Job",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -5,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "Level",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -6,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "Joose",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 8,
+        "Name": "degree",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -7,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 9,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 10,
+        "Name": "CivilID",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -8,
+        "Bitpos": 0
+      }
+    ],
+    "JobPlace": [
+      {
+        "Colid": 1,
+        "Name": "JobPlaceID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "JobPlaceName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      }
+    ],
+    "Jobs": [
+      {
+        "Colid": 1,
+        "Name": "JobID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "JobName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      }
+    ],
+    "Level": [
+      {
+        "Colid": 1,
+        "Name": "LevelID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Name",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "Joose",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "parts",
+        "Xtype": 167,
+        "Length": 50,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      }
+    ],
+    "Nationlity": [
+      {
+        "Colid": 1,
+        "Name": "NationID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "NationName",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      }
+    ],
+    "Question": [
+      {
+        "Colid": 1,
+        "Name": "Level_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Qstlvl",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "QstNo",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "part",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "fromaya",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "toaya",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 24,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "sooraname",
+        "Xtype": 231,
+        "Length": 510,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 8,
+        "Name": "pagefrom",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 28,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 9,
+        "Name": "pageto",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 32,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 10,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 36,
+        "Bitpos": 0
+      }
+    ],
+    "ReExamMark": [
+      {
+        "Colid": 1,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Student_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "Level_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "HQ1",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "HQ2",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 25,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "HQ3",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 34,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "HQ4",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 43,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 8,
+        "Name": "HQ5",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 52,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 9,
+        "Name": "HQ6",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 61,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 10,
+        "Name": "T1",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 70,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 11,
+        "Name": "A1",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 79,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 12,
+        "Name": "Total",
+        "Xtype": 108,
+        "Length": 9,
+        "Prec": 18,
+        "Scale": 2,
+        "SignedOffset": 88,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 13,
+        "Name": "SystemUser_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 97,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 14,
+        "Name": "IsPass",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 101,
+        "Bitpos": 0
+      }
+    ],
+    "Student": [
+      {
+        "Colid": 1,
+        "Name": "Name",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "CivilID",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "JobID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "NationID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "GenderID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "GovernorateID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "Hlka",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 8,
+        "Name": "HomePhone",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 9,
+        "Name": "MobilePhone",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -5,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 10,
+        "Name": "Block",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -6,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 11,
+        "Name": "Area",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -7,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 12,
+        "Name": "Street",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 13,
+        "Name": "J1",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 14,
+        "Name": "J2",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 1
+      },
+      {
+        "Colid": 15,
+        "Name": "J3",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 2
+      },
+      {
+        "Colid": 16,
+        "Name": "J4",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 3
+      },
+      {
+        "Colid": 17,
+        "Name": "J5",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 4
+      },
+      {
+        "Colid": 18,
+        "Name": "J6",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 5
+      },
+      {
+        "Colid": 19,
+        "Name": "J7",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 6
+      },
+      {
+        "Colid": 20,
+        "Name": "J8",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 7
+      },
+      {
+        "Colid": 21,
+        "Name": "J9",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 22,
+        "Name": "J10",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 1
+      },
+      {
+        "Colid": 23,
+        "Name": "J11",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 2
+      },
+      {
+        "Colid": 24,
+        "Name": "J12",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 3
+      },
+      {
+        "Colid": 25,
+        "Name": "J13",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 4
+      },
+      {
+        "Colid": 26,
+        "Name": "J14",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 5
+      },
+      {
+        "Colid": 27,
+        "Name": "J15",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 6
+      },
+      {
+        "Colid": 28,
+        "Name": "J16",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 21,
+        "Bitpos": 7
+      },
+      {
+        "Colid": 29,
+        "Name": "J17",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 30,
+        "Name": "J18",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 1
+      },
+      {
+        "Colid": 31,
+        "Name": "J19",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 2
+      },
+      {
+        "Colid": 32,
+        "Name": "J20",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 3
+      },
+      {
+        "Colid": 33,
+        "Name": "J21",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 4
+      },
+      {
+        "Colid": 34,
+        "Name": "J22",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 5
+      },
+      {
+        "Colid": 35,
+        "Name": "J23",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 6
+      },
+      {
+        "Colid": 36,
+        "Name": "J24",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 22,
+        "Bitpos": 7
+      },
+      {
+        "Colid": 37,
+        "Name": "J25",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 23,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 38,
+        "Name": "J26",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 23,
+        "Bitpos": 1
+      },
+      {
+        "Colid": 39,
+        "Name": "J27",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 23,
+        "Bitpos": 2
+      },
+      {
+        "Colid": 40,
+        "Name": "J28",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 23,
+        "Bitpos": 3
+      },
+      {
+        "Colid": 41,
+        "Name": "J29",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 23,
+        "Bitpos": 4
+      },
+      {
+        "Colid": 42,
+        "Name": "J30",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 23,
+        "Bitpos": 5
+      },
+      {
+        "Colid": 43,
+        "Name": "JobPlaceID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 24,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 44,
+        "Name": "JooseDetail",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -9,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 45,
+        "Name": "Email",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -10,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 46,
+        "Name": "Createby",
+        "Xtype": 61,
+        "Length": 8,
+        "Prec": 23,
+        "Scale": 3,
+        "SignedOffset": 28,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 47,
+        "Name": "Updateby",
+        "Xtype": 61,
+        "Length": 8,
+        "Prec": 23,
+        "Scale": 3,
+        "SignedOffset": 36,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 48,
+        "Name": "Age",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -11,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 49,
+        "Name": "LevelID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 44,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 50,
+        "Name": "ID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 48,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 51,
+        "Name": "IsPass",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 23,
+        "Bitpos": 6
+      }
+    ],
+    "SystemUser": [
+      {
+        "Colid": 1,
+        "Name": "SystemUserId",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "SystemUserLogin",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "SystemUserPass",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -2,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "Name",
+        "Xtype": 231,
+        "Length": -1,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -3,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "IsAdminUser",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "IP",
+        "Xtype": 231,
+        "Length": 100,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 7,
+        "Name": "IsActive",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 1
+      },
+      {
+        "Colid": 8,
+        "Name": "IsLocked",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 2
+      },
+      {
+        "Colid": 9,
+        "Name": "IsDeleted",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 3
+      }
+    ],
+    "hzbexam": [
+      {
+        "Colid": 1,
+        "Name": "ID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Student_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "PartNo",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "Done",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "AssignDate",
+        "Xtype": 61,
+        "Length": 8,
+        "Prec": 23,
+        "Scale": 3,
+        "SignedOffset": 20,
+        "Bitpos": 0
+      }
+    ],
+    "hzbquestion": [
+      {
+        "Colid": 1,
+        "Name": "ID",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "SooraName",
+        "Xtype": 231,
+        "Length": 200,
+        "Prec": 0,
+        "Scale": 0,
+        "SignedOffset": -1,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "pageno",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "ayafrom",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "ayato",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "hzb",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 20,
+        "Bitpos": 0
+      }
+    ],
+    "studentwaiting": [
+      {
+        "Colid": 1,
+        "Name": "Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 4,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 2,
+        "Name": "Student_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 8,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 3,
+        "Name": "Counter_Id",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 12,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 4,
+        "Name": "WaitingNo",
+        "Xtype": 56,
+        "Length": 4,
+        "Prec": 10,
+        "Scale": 0,
+        "SignedOffset": 16,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 5,
+        "Name": "CreateDate",
+        "Xtype": 61,
+        "Length": 8,
+        "Prec": 23,
+        "Scale": 3,
+        "SignedOffset": 20,
+        "Bitpos": 0
+      },
+      {
+        "Colid": 6,
+        "Name": "IsNow",
+        "Xtype": 104,
+        "Length": 1,
+        "Prec": 1,
+        "Scale": 0,
+        "SignedOffset": 28,
+        "Bitpos": 0
+      }
+    ]
+  },
+  "notes": [
+    "All table counts were verified against SQL Server sysrowsets catalog metadata.",
+    "Legacy passwords were converted to salted scrypt hashes for authentication. A separate AES-256-GCM compatibility vault preserves the legacy administrator password-view/edit workflow without storing plaintext in JSON.",
+    "Courses derive AdCollegeId from AdSection, matching the legacy relational model.",
+    "Raw copies of every active legacy table are retained in legacyArchive for lossless parity auditing; plaintext SystemUser passwords are the only intentionally excluded raw field.",
+    "Orphaned historical permission/scope rows are preserved exactly; they are inert unless a matching user exists."
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "rules_version": "2",
+  "auth_strategy": "firebase_auth",
+  "collections": [
+    { "name": "users", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "formNames", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "formSecurity", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "adCollegeUserAssign", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "adTerms", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "adColleges", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "adSections", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "adInstructors", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "adCourses", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "fSchedules", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "adRooms", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "auditLogs", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "scheduleVersions", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "scheduleDrafts", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "scheduleComments", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "scheduleConstraints", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "scheduleDecisionMemories", "rules": { "read": "request.auth != null", "write": "request.auth != null" } },
+    { "name": "schedulePublications", "rules": { "read": "request.auth != null", "write": "request.auth != null" } }
+  ]
+}
