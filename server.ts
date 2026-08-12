@@ -2424,7 +2424,11 @@ async function startServer() {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  const isProduction = process.env.NODE_ENV === "production" || 
+                       process.env.npm_lifecycle_event === "start" || 
+                       process.argv[1]?.endsWith("server.cjs");
+
+  if (!isProduction) {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
