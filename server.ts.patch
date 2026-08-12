@@ -1,0 +1,8 @@
+*** Begin Patch
+*** Update File: server.ts
+@@
+-  const external=all.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
+-  const before=analyzeSchedule(target,all.filter(row=>row.AdTermId===termId),courses,instructors);
++  const external=universe.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
++  const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors);
+*** End Patch
