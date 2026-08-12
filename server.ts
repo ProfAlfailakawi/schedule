@@ -14,11 +14,17 @@ import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQue
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
 
+let globalDbError: Error | null = null;
+
 const app = express();
 const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
 
 app.disable("x-powered-by");
 app.use((req, res, next) => {
+  if (globalDbError && req.path.startsWith("/api/")) {
+    res.status(503).json({ error: "تعذر الاتصال بقاعدة البيانات. يرجى التأكد من إضافة مفاتيح Firestore في إعدادات النشر السحابية. " + globalDbError.message });
+    return;
+  }
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
@@ -2407,7 +2413,12 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 async function startServer() {
   // Wait for the data layer before accepting any requests. In Firestore mode this also
   // completes the one-time import of the verified legacy snapshot when the target is empty.
-  await initDatabase();
+  try {
+    await initDatabase();
+  } catch (error) {
+    console.error("Database initialization failed. Server will continue to serve UI, but APIs will return 503.", error);
+    globalDbError = error instanceof Error ? error : new Error(String(error));
+  }
 
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
@@ -2446,6 +2457,6 @@ async function startServer() {
 }
 
 startServer().catch(error => {
-  console.error("Server initialization failed:", error);
+  console.error("Server initialization failed with unrecoverable error:", error);
   process.exitCode = 1;
 });
