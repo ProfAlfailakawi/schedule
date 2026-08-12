@@ -3,7 +3,7 @@ import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,Chev
 import{Notice,PrimaryButton}from"./ui";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
-interface DashboardData{metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
+interface DashboardData{previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
 
 const num=(value:number|undefined)=>Number(value||0).toLocaleString("ar-KW-u-nu-latn");
 const DAY_START=7*60,DAY_END=21*60,DAY_SPAN=DAY_END-DAY_START;
@@ -12,6 +12,26 @@ const spot=(minutes:number)=>`${Math.min(100,Math.max(0,((minutes-DAY_START)/DAY
 /** Single-letter day marks, the way a printed Arabic timetable labels its columns. */
 const DAY_MARK:Record<string,string>={"الأحد":"ح","الاثنين":"ن","الإثنين":"ن","الثلاثاء":"ث","الأربعاء":"ر","الخميس":"خ"};
 const dayMark=(label:string)=>DAY_MARK[String(label||"").trim()]||String(label||"").replace(/^ال/,"").slice(0,2);
+
+/**
+ * A number's direction, next to the number.
+ *
+ * "٨٣٢ موعد" says how big the term is. "٨٣٢ موعد ▲ ٤١ عن الفصل الماضي" says
+ * which way the department is moving, which is the thing a coordinator is
+ * actually deciding against. No arrow is drawn when nothing changed, and none
+ * is drawn at all when there is no earlier term to compare with.
+ */
+function Delta({current,previous,invert=false}:{current:number;previous?:number|null;invert?:boolean}){
+ if(previous==null||!Number.isFinite(previous))return null;
+ const change=Number(current||0)-Number(previous||0);
+ if(!change)return <span className="delta delta-flat" title="بلا تغيير عن الفصل الماضي">=</span>;
+ // For most counts more is growth; for gaps and waste, less is the good news.
+ const good=invert?change<0:change>0;
+ return <span className={`delta ${good?"delta-up":"delta-down"}`} title={`عن الفصل الماضي: ${num(previous)}`}>
+  <i aria-hidden="true">{change>0?"▲":"▼"}</i>
+  {num(Math.abs(change))}
+ </span>;
+}
 
 /** Circular gauge. The number carries the meaning; the arc carries the feeling. */
 function Gauge({value,label,suffix,tone="accent"}:{value:number;label:string;suffix?:string;tone?:"accent"|"brass"|"warning"}){
@@ -120,11 +140,24 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
 
    <section className="deck-metrics" aria-label="أرقام النطاق">
     <article><BookOpen aria-hidden="true"/><b>{num(data.metrics.courses)}</b><span>مقرر</span></article>
-    <article><CalendarDays aria-hidden="true"/><b>{num(data.metrics.schedules)}</b><span>موعد</span></article>
-    <article><UsersRound aria-hidden="true"/><b>{num(data.metrics.instructors)}</b><span>أستاذ</span></article>
-    {ws?<article><DoorOpen aria-hidden="true"/><b>{num(ws.uniqueRooms)}</b><span>قاعة</span></article>:null}
+    <article>
+     <CalendarDays aria-hidden="true"/>
+     <b>{num(data.metrics.schedules)}<Delta current={data.metrics.schedules} previous={data.previous?.schedules}/></b>
+     <span>موعد</span>
+    </article>
+    <article>
+     <UsersRound aria-hidden="true"/>
+     <b>{num(data.metrics.instructors)}<Delta current={data.metrics.instructors} previous={data.previous?.instructors}/></b>
+     <span>أستاذ</span>
+    </article>
+    {ws?<article>
+     <DoorOpen aria-hidden="true"/>
+     <b>{num(ws.uniqueRooms)}<Delta current={ws.uniqueRooms} previous={data.previous?.rooms}/></b>
+     <span>قاعة</span>
+    </article>:null}
     {overview?.metrics?.avgInstructorGap!=null?<article className="metric-priority"><Clock3 aria-hidden="true"/><b>{num(overview.metrics.avgInstructorGap)}</b><span>د فراغ</span></article>:null}
    </section>
+   {data.previous?.termName?<p className="deck-compare-note">المقارنة مع {data.previous.termName}</p>:null}
 
    {power&&ws?<section className="deck-charts">
     <article className="deck-chart" aria-label="حركة الأسبوع">

@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   BrainCircuit,
+  Building2,
   CalendarDays,
   CheckCircle2,
   Clock3,
@@ -395,6 +396,36 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * shortest walk. Asking is explicit — nothing is computed while typing, and
    * nothing is written until a suggestion is chosen.
    */
+  /**
+   * Whose hall is this?
+   *
+   * Asked from the room alone, so the answer arrives while the room is being
+   * typed rather than after the day and the time are filled in. It is a
+   * warning, never a block: booking another department's hall is sometimes
+   * exactly what was intended — it just should never happen by accident.
+   */
+  const [roomOwner, setRoomOwner] = useState<any>(null);
+  useEffect(() => {
+    const room = String(form.AdRoomCode || "").trim();
+    const hall = String(form.AdRoomHall || "").trim();
+    if (!room || !hall || !form.AdCollegeId || !form.AdSectionId) { setRoomOwner(null); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({
+          room, hall,
+          collegeId: String(form.AdCollegeId),
+          sectionId: String(form.AdSectionId)
+        });
+        const response = await fetch(`/api/rooms/owner?${query}`, { signal: controller.signal });
+        if (!response.ok) return;
+        const data = await response.json();
+        setRoomOwner(data?.owner || null);
+      } catch { /* an aborted lookup is the normal case while typing */ }
+    }, 320);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [form.AdRoomCode, form.AdRoomHall, form.AdCollegeId, form.AdSectionId]);
+
   const [slotIdeas, setSlotIdeas] = useState<any[] | null>(null);
   const [slotBusy, setSlotBusy] = useState(false);
   const askForSlots = async () => {
@@ -1338,9 +1369,39 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
     physics.state.phase !== "idle" &&
     physics.state.phase !== "armed",
   );
+  /**
+   * The grid answers the held card.
+   *
+   * While a lecture is carried, the appointments that sit where it would land
+   * step aside — the ones above lift, the ones below settle — so the space it
+   * is about to occupy is visible before the finger lets go. Nothing is moved
+   * in the data; this is the same reasoning the decision panel is doing, said
+   * in motion instead of in numbers.
+   */
+  const displacedByDrag = useMemo(() => {
+    const target = physics.state.target;
+    const carried = physics.state.row;
+    if (!target || !carried) return new Map<number, "up" | "down">();
+    const span = Math.max(30, mins(carried.fendtime) - mins(carried.fstarttime));
+    const from = mins(target.start);
+    const to = from + span;
+    const shifts = new Map<number, "up" | "down">();
+    for (const row of weekRows) {
+      if (row.id === carried.id) continue;
+      if (!(row as any)[target.day]) continue;
+      const start = mins(row.fstarttime);
+      const end = mins(row.fendtime);
+      if (start >= to || end <= from) continue;
+      shifts.set(row.id, start < from ? "up" : "down");
+    }
+    return shifts;
+  }, [physics.state.target, physics.state.row, weekRows]);
+
   const physicsRelationClass = (r: FSchedule) => {
     if (!physicsActive || !physicsOrigin) return "";
     if (r.id === physicsOrigin.id) return "physics-origin";
+    const shift = displacedByDrag.get(r.id);
+    if (shift) return `physics-displaced physics-shift-${shift}`;
     const rel = relatedness(r, physicsOrigin),
       tags = Object.entries(rel)
         .filter(([, v]) => v)
@@ -1859,6 +1920,23 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     required
                   />
                 </Field>
+                {roomOwner ? (
+                  <div className="room-owner-note" role="status">
+                    <span className="room-owner-mark" aria-hidden="true"><Building2 /></span>
+                    <div>
+                      <strong>
+                        <bdi>{roomOwner.room}/{roomOwner.hall}</bdi> قاعة {roomOwner.section || "قسم آخر"}
+                      </strong>
+                      <span>
+                        {roomOwner.college ? `${roomOwner.college} · ` : ""}
+                        {roomOwner.share}٪ من حجوزاتها المسجلة لهذا القسم. يمكنك المتابعة إذا كان الحجز متفقاً عليه.
+                      </span>
+                    </div>
+                    <button type="button" onClick={() => setForm(p => ({ ...p, AdRoomCode: "", AdRoomHall: "" }))}>
+                      تغيير القاعة
+                    </button>
+                  </div>
+                ) : null}
                   </div>
                   <div className="slot-advisor">
                     <button

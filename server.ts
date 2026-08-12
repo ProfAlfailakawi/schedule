@@ -509,7 +509,38 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const busiestRooms = Array.from(roomLoad.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([room,count])=>({ room, count }));
   const personalToday = personalRows.filter(row => Boolean(row[dayKey])).sort((a,b)=>String(a.fstarttime).localeCompare(String(b.fstarttime)));
 
+  /**
+   * The same headline numbers, one term earlier.
+   *
+   * A count on its own says how big the term is; next to the term before it,
+   * the same count says which way the department is moving. Only the figures
+   * that are comparable are returned — appointments, halls and teaching staff
+   * within the same scope — so the dashboard can show a direction without
+   * inventing a trend for things that do not have one.
+   */
+  const previousTermId = terms
+    .map(term => Number(term.AdTermId) || 0)
+    .filter(id => id < latestTermId)
+    .reduce((max, id) => Math.max(max, id), 0);
+  let previous: any = null;
+  if (previousTermId) {
+    const previousRows = await Repository.getSchedulesByScope({ termId: previousTermId });
+    const previousScoped = req.user.IsAdminUser
+      ? previousRows
+      : (linkedInstructorId
+        ? previousRows.filter(row => row.AdInstructorId === linkedInstructorId)
+        : previousRows.filter(row => assignedSectionIds.has(Number(row.AdSectionId))));
+    previous = {
+      termId: previousTermId,
+      termName: terms.find(term => Number(term.AdTermId) === previousTermId)?.AdTermName || "",
+      schedules: previousScoped.length,
+      rooms: new Set(previousScoped.map(roomKey).filter(key => key !== " / ")).size,
+      instructors: new Set(previousScoped.map(row => row.AdInstructorId)).size
+    };
+  }
+
   res.json({
+    previous,
     metrics,
     latestTermId,
     latestTermName: latestTerm?.AdTermName || "",
@@ -973,9 +1004,18 @@ const SCHEDULE_DAY_KEYS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"
 const scheduleOverlap=(aStart:string,aEnd:string,bStart:string,bEnd:string)=>aStart<bEnd&&aEnd>bStart;
 const roomAffinityCache=new Map<string,{expiresAt:number;history:any[]}>();
 function schedulePayloadIssues(row:any){const issues:string[]=[];if(!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))issues.push("يجب اختيار يوم واحد على الأقل للمحاضرة");if(row?.fstarttime&&row?.fendtime&&timeToMinutes(String(row.fendtime))<=timeToMinutes(String(row.fstarttime)))issues.push("وقت النهاية يجب أن يكون بعد وقت البداية");return issues;}
-async function roomScopeNotice(row:any){
-  const roomCode=String(row?.AdRoomCode||"").trim(),roomHall=String(row?.AdRoomHall||"").trim();
-  const collegeId=Number(row?.AdCollegeId||0),sectionId=Number(row?.AdSectionId||0);
+/**
+ * Who does this hall belong to?
+ *
+ * Nothing in the data says "this hall is the English department's", but the
+ * history says it plainly: if four fifths of everything ever booked there
+ * belongs to one department, that is whose hall it is. Answering this needs
+ * only the room — not a day, not a time — so a coordinator learns they have
+ * reached into another department's hall the moment they type it, instead of
+ * after filling in the rest of the form.
+ */
+async function roomOwnership(roomCodeRaw:unknown,roomHallRaw:unknown,collegeId:number,sectionId:number){
+  const roomCode=String(roomCodeRaw||"").trim(),roomHall=String(roomHallRaw||"").trim();
   if(!roomCode||!roomHall||!collegeId||!sectionId)return null;
   const key=`${roomCode.toLocaleLowerCase()}|${roomHall.toLocaleLowerCase()}`;
   const cached=roomAffinityCache.get(key); let history:any[];
@@ -986,11 +1026,25 @@ async function roomScopeNotice(row:any){
   for(const item of history){const k=`${item.AdCollegeId}:${item.AdSectionId}`;const hit=counts.get(k)||{collegeId:Number(item.AdCollegeId),sectionId:Number(item.AdSectionId),count:0};hit.count++;counts.set(k,hit);}
   const ranked=[...counts.values()].sort((a,b)=>b.count-a.count),dominant=ranked[0];
   if(!dominant||dominant.sectionId===sectionId||dominant.count<3||dominant.count/history.length<0.55)return null;
+  // A department that already teaches here regularly is a co-tenant, not a guest.
   const current=ranked.find(x=>x.collegeId===collegeId&&x.sectionId===sectionId)?.count||0;
   if(current>=Math.max(2,Math.ceil(dominant.count*0.25)))return null;
   const [section,college]=await Promise.all([Repository.getSectionById(dominant.sectionId),Repository.getCollegeById(dominant.collegeId)]);
-  const owner=[section?.AdSectionName,college?.AdCollegeName].filter(Boolean).join(" — ")||"قسم آخر";
-  return{type:"roomScope",severity:"warning",rowId:0,message:`تنبيه نطاق القاعة: ${roomCode}/${roomHall} مرتبطة تاريخياً بـ ${owner}`,detail:`استُخدمت القاعة في ${dominant.count} من ${history.length} موعداً مسجلاً لهذا النطاق التاريخي. يمكن المتابعة إذا كان الاختيار مقصوداً؛ هذا تنبيه تنظيمي وليس تعارضاً زمنياً.`};
+  return{
+    room:roomCode,hall:roomHall,
+    section:section?.AdSectionName||"",
+    college:college?.AdCollegeName||"",
+    owner:[section?.AdSectionName,college?.AdCollegeName].filter(Boolean).join(" — ")||"قسم آخر",
+    samples:history.length,
+    ownerSamples:dominant.count,
+    share:Math.round(dominant.count/history.length*100)
+  };
+}
+
+async function roomScopeNotice(row:any){
+  const owner=await roomOwnership(row?.AdRoomCode,row?.AdRoomHall,Number(row?.AdCollegeId||0),Number(row?.AdSectionId||0));
+  if(!owner)return null;
+  return{type:"roomScope",severity:"warning",rowId:0,message:`تنبيه نطاق القاعة: ${owner.room}/${owner.hall} مرتبطة تاريخياً بـ ${owner.owner}`,detail:`استُخدمت القاعة في ${owner.ownerSamples} من ${owner.samples} موعداً مسجلاً لهذا النطاق التاريخي. يمكن المتابعة إذا كان الاختيار مقصوداً؛ هذا تنبيه تنظيمي وليس تعارضاً زمنياً.`};
 }
 function normalizedBuilding(value: unknown){return String(value||"").trim();}
 function travelPairKey(a:string,b:string){const x=normalizedBuilding(a).toLocaleLowerCase(),y=normalizedBuilding(b).toLocaleLowerCase();return [x,y].sort().join("|");}
@@ -1128,6 +1182,15 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
 });
 
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });
+
+/** Answers "whose hall is this?" from the room alone — no day, no time. */
+app.get("/api/rooms/owner", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const owner = await roomOwnership(
+    req.query.room, req.query.hall,
+    Number(req.query.collegeId || 0), Number(req.query.sectionId || 0)
+  );
+  res.json({ owner });
+});
 
 /**
  * Where should this lecture go?

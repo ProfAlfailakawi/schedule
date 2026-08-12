@@ -50,3 +50,19 @@ server.ts                    صفحة الرابط العام كانت تُخد�
 src/components/Schedules.tsx نموذج «إضافة موعد» لم يعد يفتح ورسالة خطأ حمراء جاهزة
 src/styles/02-primitives.css أنماط بطاقة الخطأ
 src/styles/01-foundation.css أداة .sr-only
+
+تنبيه ملكية القاعة
+------------------
+server.ts                    roomOwnership + GET /api/rooms/owner
+                             يجيب «لمن هذه القاعة؟» من القاعة وحدها بلا يوم ولا وقت
+src/components/Schedules.tsx تنبيه فوري تحت حقلي المبنى والقاعة باسم القسم المالك
+src/styles/05-schedule.css   أنماط التنبيه
+
+أفكار الفيديوهات
+----------------
+src/components/Schedules.tsx البطاقات التي ستتزحزح تُحسب أثناء السحب
+src/styles/05-schedule.css   الشبكة تستجيب للسحب: أثر المرور بالجودة،
+                             شريط الهبوط تحت المؤشر، والبطاقات تفسح المكان
+src/components/Dashboard.tsx مؤشر الاتجاه بجانب كل رقم مقارنةً بالفصل السابق
+server.ts                    /api/dashboard يعيد أرقام الفصل السابق للمقارنة
+src/styles/04-screens.css    أنماط مؤشر الاتجاه

@@ -639,6 +639,115 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    The live check is the second most important thing on this screen after the
    form itself, so it reads as a status card: one state, one colour, one line. */
 
+/* --------------------------------------------------------------------------
+   THE GRID ANSWERS THE DRAG
+   Three things happen while a lecture is held, and none of them touch the data:
+   every slot the pointer has visited keeps the verdict it was given, so the
+   week fills in as a map of where this lecture could live; the slot under the
+   pointer opens a landing band in the colour of that verdict; and the
+   appointments that sit in that band step aside — above lifts, below settles —
+   so the space being taken is visible before the finger lets go.
+   -------------------------------------------------------------------------- */
+
+/* The trail. Quiet enough to read the schedule through it. */
+.week-slot.gravity-slot{position:relative}
+.week-slot.gravity-slot::after{
+  content:"";position:absolute;inset:1px;border-radius:4px;pointer-events:none;
+  opacity:.5;transition:opacity .3s var(--ease);
+}
+.week-slot.gravity-excellent::after{background:color-mix(in srgb,var(--success) 16%,transparent)}
+.week-slot.gravity-good::after{background:color-mix(in srgb,var(--success) 10%,transparent)}
+.week-slot.gravity-neutral::after{background:color-mix(in srgb,var(--muted-2) 10%,transparent)}
+.week-slot.gravity-suboptimal::after{background:color-mix(in srgb,var(--warning) 14%,transparent)}
+.week-slot.gravity-impossible::after{background:color-mix(in srgb,var(--danger) 14%,transparent)}
+
+/* The landing band under the pointer. */
+.week-slot.physics-target{position:relative;z-index:4}
+.week-slot.physics-target::before{
+  content:"";position:absolute;inset:-1px;border-radius:6px;pointer-events:none;
+  border:1.5px solid var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent);
+  animation:landing-pulse 1.1s var(--ease) infinite;
+}
+.week-slot.physics-excellent::before,.week-slot.physics-good::before{
+  border-color:var(--success);
+  background:color-mix(in srgb,var(--success) 14%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--success) 14%,transparent);
+}
+.week-slot.physics-suboptimal::before{
+  border-color:var(--warning);
+  background:color-mix(in srgb,var(--warning) 14%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--warning) 14%,transparent);
+}
+.week-slot.physics-impossible::before{
+  border-color:var(--danger);
+  border-style:dashed;
+  background:color-mix(in srgb,var(--danger) 12%,transparent);
+  box-shadow:none;animation:none;
+}
+@keyframes landing-pulse{
+  0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent)}
+  50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--accent) 4%,transparent)}
+}
+
+/* Making room. The easing overshoots a little so it reads as weight, not as a
+   fade — the cards are being pushed, and push has momentum. */
+.week-event.physics-displaced,.week-cluster.physics-displaced{
+  z-index:2;
+  opacity:.42;
+  filter:saturate(.55);
+  transition:transform .34s cubic-bezier(.2,1.5,.35,1),opacity .22s var(--ease),filter .22s var(--ease);
+}
+.week-event.physics-shift-up{transform:translateY(-9px) scale(.955)}
+.week-event.physics-shift-down{transform:translateY(9px) scale(.955)}
+.week-event.physics-origin{opacity:.28;border-style:dashed}
+
+@media (prefers-reduced-motion:reduce){
+  .week-slot.physics-target::before{animation:none}
+  .week-event.physics-displaced{transition:opacity .2s linear}
+  .week-event.physics-shift-up,.week-event.physics-shift-down{transform:none}
+}
+
+/* --------------------------------------------------------------------------
+   WHOSE HALL IS THIS
+   Booking another department's hall is allowed, but it should never happen by
+   accident. The note names the owner beside the room fields the moment the
+   room is typed — brass, not red: this is a courtesy, not an error.
+   -------------------------------------------------------------------------- */
+.room-owner-note{
+  grid-column:1/-1;
+  display:grid;grid-template-columns:34px minmax(0,1fr) auto;
+  align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--brass) 34%,var(--line));
+  border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--brass-soft) 60%,var(--surface));
+  animation:rise .24s var(--ease-out) both;
+}
+.room-owner-mark{
+  width:34px;height:34px;display:grid;place-items:center;
+  border-radius:var(--r-sm);
+  background:color-mix(in srgb,var(--brass) 18%,transparent);color:var(--brass);
+}
+.room-owner-mark svg{width:16px;height:16px}
+.room-owner-note>div{min-width:0}
+.room-owner-note strong{
+  display:block;font-size:var(--t-h4);font-weight:600;line-height:1.4;color:var(--ink);
+}
+.room-owner-note span{
+  display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs);line-height:1.6;
+}
+.room-owner-note>button{
+  flex:none;min-height:34px;padding:0 var(--s4);
+  border:1px solid color-mix(in srgb,var(--brass) 40%,var(--line));
+  border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);
+  font-size:var(--t-xs);font-weight:600;white-space:nowrap;
+  transition:border-color .16s var(--ease),color .16s var(--ease);
+}
+.room-owner-note>button:hover{border-color:var(--brass);color:var(--brass)}
+
 .schedule-editor-grid{align-items:start}
 .conflict-panel{
   position:relative;

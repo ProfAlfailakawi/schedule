@@ -320,6 +320,19 @@
 .deck-metrics svg{width:17px;height:17px;color:var(--muted-2);margin-bottom:var(--s2)}
 .deck-metrics b{font-size:28px;line-height:1;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .deck-metrics span{color:var(--muted);font-size:var(--t-sm)}
+/* The direction rides on the number rather than taking a line of its own. */
+.deck-metrics b{display:flex;align-items:baseline;gap:var(--s2)}
+.delta{
+  display:inline-flex;align-items:center;gap:3px;
+  padding:2px var(--s2);border-radius:var(--r-full);
+  font-size:var(--t-xs);font-weight:600;line-height:1.4;
+  font-variant-numeric:tabular-nums;letter-spacing:0;
+}
+.delta i{font-style:normal;font-size:9px;line-height:1}
+.delta-up{background:var(--success-soft);color:var(--success)}
+.delta-down{background:var(--warning-soft);color:var(--warning)}
+.delta-flat{background:var(--surface-3);color:var(--muted-2);padding-inline:var(--s2)}
+.deck-compare-note{margin-top:calc(var(--s2) * -1);color:var(--muted-2);font-size:var(--t-xs)}
 
 /* --- Charts --------------------------------------------------------------- */
 
