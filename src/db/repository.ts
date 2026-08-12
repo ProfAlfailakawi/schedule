@@ -463,8 +463,7 @@ export async function initDatabase() {
               projectId: process.env.FIREBASE_PROJECT_ID || serviceAccount.project_id
             });
           } catch (e) {
-            console.error("Invalid FIREBASE_SERVICE_ACCOUNT_KEY JSON format.");
-            process.exit(1);
+            throw new Error("Invalid FIREBASE_SERVICE_ACCOUNT_KEY JSON format. Please ensure you copied the entire JSON file correctly into the Cloud Run environment variable.");
           }
         } else if (process.env.FIREBASE_PROJECT_ID) {
           initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
