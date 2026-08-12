@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "NODE_ENV=production node dist/server.cjs",
+    "start": "node dist/server.cjs",
     "test": "npm run test:behavior && npm run test:data && npm run test:credentials && npm run test:parity",
     "test:behavior": "tsx tests/run-tests.ts",
     "test:data": "python3 tests/legacy-data-audit.py",

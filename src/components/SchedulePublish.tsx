@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { CalendarPlus, Check, Copy, Link2, QrCode, Trash2, X } from "lucide-react";
+import { CalendarPlus, Check, Copy, IdCard, Link2, QrCode, Trash2, Users, X } from "lucide-react";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
 
 interface ShareLink {
@@ -10,7 +10,10 @@ interface ShareLink {
   revoked?: boolean;
   views: number;
   showInstructors: boolean;
+  kind?: "department" | "staff";
 }
+
+type Kind = "department" | "staff";
 
 interface Props {
   collegeId: number;
@@ -29,6 +32,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
   const [open, setOpen] = useState(false),
     [links, setLinks] = useState<ShareLink[]>([]),
     [busy, setBusy] = useState(false),
+    [kind, setKind] = useState<Kind>("department"),
     [days, setDays] = useState(30),
     [showInstructors, setShowInstructors] = useState(true),
     [copied, setCopied] = useState<string | null>(null),
@@ -60,7 +64,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
       const response = await fetch("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, days, showInstructors })
+        body: JSON.stringify({ collegeId, sectionId, termId, days, showInstructors, kind })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر إنشاء الرابط");
@@ -134,6 +138,21 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
 
             {error ? <p className="share-error">{error}</p> : null}
 
+            {/* Two kinds of link, one sheet: the whole department's timetable,
+                or a card each instructor opens with their own civil ID. */}
+            <div className="share-kind" role="group" aria-label="نوع الرابط">
+              <button type="button" className={kind === "department" ? "active" : ""} onClick={() => setKind("department")}>
+                <Users aria-hidden="true" />
+                <span>جدول القسم</span>
+                <small>يفتحه أي شخص لديه الرابط</small>
+              </button>
+              <button type="button" className={kind === "staff" ? "active" : ""} onClick={() => setKind("staff")}>
+                <IdCard aria-hidden="true" />
+                <span>بطاقة الأستاذ</span>
+                <small>كل أستاذ يرى جدوله برقمه المدني</small>
+              </button>
+            </div>
+
             <div className="share-compose">
               <div className="share-days" role="group" aria-label="مدة الصلاحية">
                 {DAY_CHOICES.map(choice => (
@@ -148,10 +167,14 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   </button>
                 ))}
               </div>
-              <label className="share-toggle">
-                <input type="checkbox" checked={showInstructors} onChange={event => setShowInstructors(event.target.checked)} />
-                <span>إظهار الأساتذة</span>
-              </label>
+              {kind === "department" ? (
+                <label className="share-toggle">
+                  <input type="checkbox" checked={showInstructors} onChange={event => setShowInstructors(event.target.checked)} />
+                  <span>إظهار الأساتذة</span>
+                </label>
+              ) : (
+                <p className="share-kind-note">رابط واحد يكفي القسم كله — لا حسابات ولا كلمات سر.</p>
+              )}
               <PrimaryButton type="button" onClick={create} disabled={busy}>
                 <Link2 />
                 رابط جديد
@@ -166,7 +189,10 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   return (
                     <article key={link.id} className={dead ? "dead" : ""}>
                       <div className="share-row-lead">
-                        <b dir="ltr">/s/{link.id.slice(0, 10)}…</b>
+                        <b dir="ltr">
+                          {link.kind === "staff" ? <IdCard aria-label="بطاقة أستاذ" /> : null}
+                          /s/{link.id.slice(0, 10)}…
+                        </b>
                         <span>
                           <i aria-hidden="true" />
                           {dead ? "منتهٍ" : new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "short" }).format(new Date(link.expiresAt))}
@@ -178,9 +204,11 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                         <button type="button" title="نسخ الرابط" aria-label="نسخ الرابط" onClick={() => copy(link.id)} disabled={dead}>
                           {copied === link.id ? <Check /> : <Copy />}
                         </button>
-                        <a href={`/api/public/ics/${link.id}`} title="تقويم" aria-label="تقويم" className={dead ? "muted" : ""}>
-                          <CalendarPlus />
-                        </a>
+                        {link.kind === "staff" ? null : (
+                          <a href={`/api/public/ics/${link.id}`} title="تقويم" aria-label="تقويم" className={dead ? "muted" : ""}>
+                            <CalendarPlus />
+                          </a>
+                        )}
                         <button type="button" title="إيقاف" aria-label="إيقاف" onClick={() => revoke(link.id)} disabled={dead || busy}>
                           <Trash2 />
                         </button>

@@ -14,17 +14,11 @@ import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQue
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
 
-let globalDbError: Error | null = null;
-
 const app = express();
 const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
 
 app.disable("x-powered-by");
 app.use((req, res, next) => {
-  if (globalDbError && req.path.startsWith("/api/")) {
-    res.status(503).json({ error: "تعذر الاتصال بقاعدة البيانات. يرجى التأكد من إضافة مفاتيح Firestore في إعدادات النشر السحابية. " + globalDbError.message });
-    return;
-  }
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
@@ -1177,6 +1171,130 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
 
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });
 
+/**
+ * Where should this lecture go?
+ *
+ * Choosing a time and a hall by hand means holding four things in your head at
+ * once: is the instructor free, is the hall free, does this strand the
+ * instructor with an hour of nothing, and can they physically get there from
+ * wherever they teach before it. This walks every half hour of the teaching
+ * week against every hall the department already uses, throws away anything
+ * that collides, and ranks what survives by the three costs that actually hurt:
+ * idle time created for the instructor, the walk between buildings, and how
+ * scattered the students' day becomes.
+ *
+ * It proposes; nothing is written. The coordinator still decides.
+ */
+app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body || {};
+  const collegeId = Number(body.AdCollegeId || 0), sectionId = Number(body.AdSectionId || 0), termId = Number(body.AdTermId || 0);
+  const instructorId = Number(body.AdInstructorId || 0);
+  const excludeId = Number(body.excludeId || 0);
+  const dayKeys = SCHEDULE_DAY_KEYS.filter(key => Boolean(body[key]));
+  const duration = Math.max(30, Math.min(300, Number(body.durationMinutes || 60)));
+
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!dayKeys.length) { res.status(400).json({ error: "اختر يوماً واحداً على الأقل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+
+  const [universe, mobility] = await Promise.all([
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getCampusMobilityProfile(collegeId)
+  ]);
+  const live = universe.filter(row => Number(row.id) !== excludeId);
+  const sectionRows = live.filter(row => row.AdCollegeId === collegeId && row.AdSectionId === sectionId);
+
+  // Only halls this department already teaches in are proposed: a suggestion
+  // that sends a class to an unfamiliar building is not a helpful one.
+  const halls = Array.from(new Set(
+    sectionRows.filter(row => row.AdRoomCode).map(row => `${row.AdRoomCode}|${row.AdRoomHall || ""}`)
+  )).map(key => { const [room, hall] = key.split("|"); return { room, hall }; });
+  if (!halls.length) { res.json({ slots: [], note: "لا توجد قاعات مسجلة لهذا القسم بعد" }); return; }
+
+  const DAY_START = 8 * 60, DAY_END = 20 * 60, STEP = 30;
+  const busy = (rows: any[], dayKey: string, from: number, to: number) =>
+    rows.some(row => Boolean(row[dayKey]) && timeToMinutes(row.fstarttime) < to && timeToMinutes(row.fendtime) > from);
+
+  const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  const instructorRows = instructorId ? live.filter(row => Number(row.AdInstructorId) === instructorId) : [];
+
+  const candidates: any[] = [];
+  for (let start = DAY_START; start + duration <= DAY_END; start += STEP) {
+    const end = start + duration;
+    for (const hall of halls) {
+      const hallRows = live.filter(row => row.AdRoomCode === hall.room && (row.AdRoomHall || "") === hall.hall);
+      let blocked = false;
+      let idle = 0, walk = 0, spread = 0;
+      const reasons: string[] = [];
+
+      for (const dayKey of dayKeys) {
+        if (busy(hallRows, dayKey, start, end)) { blocked = true; break; }
+        if (instructorId && busy(instructorRows, dayKey, start, end)) { blocked = true; break; }
+
+        const dayOfInstructor = instructorRows
+          .filter(row => Boolean(row[dayKey]))
+          .sort((a, b) => timeToMinutes(a.fstarttime) - timeToMinutes(b.fstarttime));
+        const before = [...dayOfInstructor].reverse().find(row => timeToMinutes(row.fendtime) <= start);
+        const after = dayOfInstructor.find(row => timeToMinutes(row.fstarttime) >= end);
+
+        // Idle minutes this placement would create on either side.
+        if (before) idle += Math.max(0, start - timeToMinutes(before.fendtime));
+        if (after) idle += Math.max(0, timeToMinutes(after.fstarttime) - end);
+        if (!before && !after && dayOfInstructor.length === 0) idle += 90; // a lone trip to campus
+
+        // Can they actually get here, and from here to the next one?
+        if (before) {
+          const need = travelMinutesFor(mobility, before.AdRoomCode, hall.room);
+          const have = start - timeToMinutes(before.fendtime);
+          if (have < need) { blocked = true; reasons.push("الانتقال بين المبنيين لا يكفي"); break; }
+          walk += need;
+        }
+        if (after) {
+          const need = travelMinutesFor(mobility, hall.room, after.AdRoomCode);
+          const have = timeToMinutes(after.fstarttime) - end;
+          if (have < need) { blocked = true; reasons.push("الانتقال بين المبنيين لا يكفي"); break; }
+          walk += need;
+        }
+
+        // A students' day that is already running keeps its shape.
+        const dayOfSection = sectionRows.filter(row => Boolean(row[dayKey]));
+        if (dayOfSection.length) {
+          const from = Math.min(...dayOfSection.map(row => timeToMinutes(row.fstarttime)));
+          const to = Math.max(...dayOfSection.map(row => timeToMinutes(row.fendtime)));
+          spread += Math.max(0, from - start) + Math.max(0, end - to);
+        }
+      }
+      if (blocked) continue;
+
+      const perDay = dayKeys.length;
+      const score = Math.round(Math.max(0, 100 - (idle / perDay) / 3 - (walk / perDay) / 2 - (spread / perDay) / 6));
+      if (idle === 0) reasons.push("لا يترك فراغاً للأستاذ");
+      else reasons.push(`فراغ ${Math.round(idle / perDay)} دقيقة`);
+      if (walk === 0) reasons.push("بلا انتقال بين المباني");
+      else reasons.push(`انتقال ${Math.round(walk / perDay)} دقيقة`);
+      if (spread === 0) reasons.push("داخل يوم القسم الحالي");
+
+      candidates.push({
+        start: clock(start), end: clock(end),
+        room: hall.room, hall: hall.hall,
+        days: dayKeys, score,
+        idleMinutes: Math.round(idle / perDay),
+        walkMinutes: Math.round(walk / perDay),
+        reasons: reasons.slice(0, 3)
+      });
+    }
+  }
+
+  // One suggestion per time: three options that differ only by hall is not a choice.
+  const seen = new Set<string>();
+  const slots = candidates
+    .sort((a, b) => b.score - a.score || a.start.localeCompare(b.start))
+    .filter(slot => { if (seen.has(slot.start)) return false; seen.add(slot.start); return true; })
+    .slice(0, 3);
+
+  res.json({ slots, considered: candidates.length });
+});
+
 app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {
     AdCollegeId,
@@ -1643,7 +1761,34 @@ app.post("/api/intelligence/versions/:id/restore", requirePermission(7), require
 });
 
 app.get("/api/intelligence/compare-terms", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),fromTermId=Number(req.query.fromTermId||0),toTermId=Number(req.query.toTermId||0); if(!collegeId||!sectionId||!fromTermId||!toTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [fromData,toData,courses,instructors,terms]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,fromTermId),scopedScheduleUniverse(collegeId,sectionId,toTermId),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms()]); const from=fromData.rows,to=toData.rows; res.json({...compareTerms(from,to),fromTermName:terms.find(t=>t.AdTermId===fromTermId)?.AdTermName||"",toTermName:terms.find(t=>t.AdTermId===toTermId)?.AdTermName||"",fromScore:analyzeSchedule(from,fromData.universe,courses,instructors).score,toScore:analyzeSchedule(to,toData.universe,courses,instructors).score});
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),fromTermId=Number(req.query.fromTermId||0),toTermId=Number(req.query.toTermId||0); if(!collegeId||!sectionId||!fromTermId||!toTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [fromData,toData,courses,instructors,terms]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,fromTermId),scopedScheduleUniverse(collegeId,sectionId,toTermId),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms()]); const from=fromData.rows,to=toData.rows; const diff=compareTerms(from,to);
+  const courseById=new Map(courses.map(row=>[row.AdCourseId,row]));
+  const instructorName=(id:number)=>instructors.find(row=>row.AdInstructorId===id)?.AdInstructorName||"";
+  // Rows are shaped for reading, not for editing: code, section, and the
+  // properties that differ. Nothing here is writable from this screen.
+  const shapeRow=(row:any)=>({
+    id:row.id,
+    code:courseById.get(row.AdCourseId)?.CourseCode||"",
+    name:row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",
+    section:row.SCode||"",
+    time:`${row.fstarttime}–${row.fendtime}`,
+    room:[row.AdRoomCode,row.AdRoomHall].filter(Boolean).join("/"),
+    instructor:instructorName(Number(row.AdInstructorId||0))
+  });
+  res.json({
+    ...diff,
+    appeared:diff.appeared.slice(0,80).map(shapeRow),
+    disappeared:diff.disappeared.slice(0,80).map(shapeRow),
+    moved:diff.moved.slice(0,80).map(entry=>{
+      // roomKey joins with a pipe for comparison; a reader wants a slash.
+      const readable=(side:any)=>({...side,room:String(side.room||"").replace("|","/"),instructor:instructorName(side.instructorId)});
+      return {...shapeRow(entry.row),fields:entry.fields,before:readable(entry.from),after:readable(entry.to)};
+    }),
+    fromTermName:terms.find(t=>t.AdTermId===fromTermId)?.AdTermName||"",
+    toTermName:terms.find(t=>t.AdTermId===toTermId)?.AdTermName||"",
+    fromScore:analyzeSchedule(from,fromData.universe,courses,instructors).score,
+    toScore:analyzeSchedule(to,toData.universe,courses,instructors).score
+  });
 });
 
 app.post("/api/intelligence/import-preview", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -2228,6 +2373,101 @@ async function buildSharePayload(link: ScheduleShareLink) {
   };
 }
 
+/**
+ * The instructor card.
+ *
+ * Instructors outnumber accounts by an order of magnitude and will never be
+ * given credentials, so the card has to work with nothing but a link. A civil
+ * ID on its own would be a public directory — colleagues know each other's
+ * numbers — so the link is the permission and the civil ID is only the
+ * selector: without the link nothing is reachable at all, and with it a person
+ * can reach exactly one card, their own, inside the college that issued it.
+ *
+ * Guesses are rate limited per link, a wrong number and a person who teaches
+ * nothing this term get the same answer, and the card never shows a civil ID,
+ * a phone number or anyone else's row.
+ */
+const staffAttempts = new Map<string, { count: number; first: number }>();
+const STAFF_WINDOW_MS = 10 * 60 * 1000;
+const STAFF_MAX_TRIES = 10;
+
+function staffLookupAllowed(token: string, ip: string): boolean {
+  const key = `${token}|${ip}`;
+  const now = Date.now();
+  const seen = staffAttempts.get(key);
+  if (!seen || now - seen.first > STAFF_WINDOW_MS) {
+    staffAttempts.set(key, { count: 1, first: now });
+    return true;
+  }
+  seen.count += 1;
+  if (staffAttempts.size > 5000) staffAttempts.clear();
+  return seen.count <= STAFF_MAX_TRIES;
+}
+
+async function buildStaffCard(link: ScheduleShareLink, civil: string) {
+  const digits = String(civil || "").replace(/\D/g, "");
+  if (digits.length < 8) return null;
+
+  const [instructors, courses, colleges, terms] = await Promise.all([
+    Repository.getInstructors(), Repository.getCourses(), Repository.getColleges(), Repository.getTerms()
+  ]);
+  const person = instructors.find(row => String(row.AdInstructorCivil || "").replace(/\D/g, "") === digits);
+  if (!person) return null;
+
+  // The card covers the college that issued the link, so an instructor teaching
+  // several of its sections sees one complete week rather than a fragment.
+  const rows = (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: link.AdTermId }))
+    .filter(row => row.AdInstructorId === person.AdInstructorId);
+  if (!rows.length) return null;
+
+  const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+  const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+  const shaped = rows
+    .map(row => ({
+      id: row.id,
+      code: courseById.get(row.AdCourseId)?.CourseCode || "",
+      name: row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "",
+      section: row.SCode || "",
+      start: row.fstarttime, end: row.fendtime,
+      days: shareDayIndexes(row),
+      room: row.AdRoomCode || "", hall: row.AdRoomHall || ""
+    }))
+    .sort((a, b) => String(a.start).localeCompare(String(b.start)));
+
+  const weeklyMinutes = shaped.reduce(
+    (total, row) => total + Math.max(0, toMinutes(row.end) - toMinutes(row.start)) * row.days.length, 0
+  );
+  const byDay = SHARE_DAY_NAMES.map((name, index) => {
+    const dayRows = shaped.filter(row => row.days.includes(index));
+    // A gap is idle time between two of the day's own lectures — the thing an
+    // instructor actually plans around.
+    const gaps: Array<{ from: string; to: string; minutes: number }> = [];
+    for (let i = 1; i < dayRows.length; i++) {
+      const idle = toMinutes(dayRows[i].start) - toMinutes(dayRows[i - 1].end);
+      if (idle >= 30) gaps.push({ from: dayRows[i - 1].end, to: dayRows[i].start, minutes: idle });
+    }
+    const first = dayRows[0], last = dayRows[dayRows.length - 1];
+    return {
+      name, rows: dayRows, gaps,
+      span: first ? { from: first.start, to: last.end } : null
+    };
+  });
+
+  return {
+    name: person.AdInstructorName || "",
+    college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",
+    term: terms.find(row => row.AdTermId === link.AdTermId)?.AdTermName || "",
+    expiresAt: link.expiresAt,
+    weeklyMinutes,
+    lectureCount: shaped.length,
+    dayCount: byDay.filter(day => day.rows.length).length,
+    rooms: Array.from(new Set(shaped.map(row => `${row.room}/${row.hall}`).filter(value => value !== "/"))),
+    longestGap: Math.max(0, ...byDay.flatMap(day => day.gaps.map(gap => gap.minutes))),
+    byDay,
+    rows: shaped
+  };
+}
+
 app.get("/api/share", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
@@ -2240,11 +2480,17 @@ app.post("/api/share", requirePermission(7), requirePowerAdmin, async (req: Auth
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const days = Math.min(SHARE_MAX_DAYS, Math.max(1, Number(req.body?.days || 30)));
+  const kind = req.body?.kind === "staff" ? "staff" : "department";
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
-  const label = `${sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم"} · ${terms.find(row => row.AdTermId === termId)?.AdTermName || ""}`.trim();
+  const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
+  const termName = terms.find(row => row.AdTermId === termId)?.AdTermName || "";
+  const label = kind === "staff"
+    ? `بطاقات الأساتذة · ${termName}`.trim()
+    : `${sectionName} · ${termName}`.trim();
   const link = await Repository.createShareLink({
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
     label,
+    kind,
     expiresAt: new Date(Date.now() + days * 86400000).toISOString(),
     SystemUserId: Number(req.user!.SystemUserId),
     userName: String(req.user!.Name || ""),
@@ -2266,6 +2512,8 @@ app.delete("/api/share/:id", requirePermission(7), requirePowerAdmin, async (req
 app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  // A staff link is a door to one card, never to the department's whole feed.
+  if (resolved.link.kind === "staff") { res.status(404).json({ error: "هذا الرابط بطاقة أستاذ" }); return; }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   res.json(await buildSharePayload(resolved.link));
@@ -2274,6 +2522,7 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
+  if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
 
@@ -2317,14 +2566,257 @@ app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   res.send(lines.join("\r\n"));
 });
 
-/** Standalone read-only page: one file, no bundle, works on any phone. */
+app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
+  const token = String(req.params.token || "");
+  const resolved = await resolveShareToken(token);
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
+  if (!staffLookupAllowed(token, req.ip || "unknown")) {
+    res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
+    return;
+  }
+  const card = await buildStaffCard(resolved.link, String(req.body?.civil || ""));
+  // One answer for a wrong number and for someone with no lectures this term:
+  // the page must not become a way to test which numbers exist.
+  if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(card);
+});
+
+app.get("/api/public/staff-ics/:token", async (req: Request, res: Response) => {
+  const token = String(req.params.token || "");
+  const resolved = await resolveShareToken(token);
+  if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
+  if (resolved.link.kind !== "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+  if (!staffLookupAllowed(token, req.ip || "unknown")) { res.status(429).type("text/plain; charset=utf-8").send("Too many requests"); return; }
+  const card = await buildStaffCard(resolved.link, String(req.query.civil || ""));
+  if (!card) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+
+  const anchor = new Date(); anchor.setHours(0, 0, 0, 0);
+  const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const escape = (value: string) => String(value || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+  const lines: string[] = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SCHEDULE//Academic Workspace//AR",
+    "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escape(card.name || "جدولي")}`,
+    "X-WR-TIMEZONE:Asia/Kuwait"
+  ];
+  for (const row of card.rows) {
+    for (const dayIndex of row.days) {
+      const first = new Date(anchor);
+      first.setDate(first.getDate() + ((dayIndex - first.getDay() + 7) % 7));
+      const [sh, sm] = String(row.start || "08:00").split(":").map(Number);
+      const [eh, em] = String(row.end || "09:00").split(":").map(Number);
+      const startAt = new Date(first); startAt.setHours(sh || 0, sm || 0, 0, 0);
+      const endAt = new Date(first); endAt.setHours(eh || 0, em || 0, 0, 0);
+      if (endAt <= startAt) endAt.setTime(startAt.getTime() + 3600000);
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:staff-${row.id}-${dayIndex}@schedule`,
+        `DTSTAMP:${stamp(new Date())}`,
+        `DTSTART:${stamp(startAt)}`,
+        `DTEND:${stamp(endAt)}`,
+        `RRULE:FREQ=WEEKLY;BYDAY=${SHARE_ICS_DAYS[dayIndex]};COUNT=16`,
+        `SUMMARY:${escape(`${row.code} · ${row.name}`)}`,
+        `LOCATION:${escape([row.room, row.hall].filter(Boolean).join(" / "))}`,
+        `DESCRIPTION:${escape(row.section ? `شعبة ${row.section}` : "")}`,
+        "END:VEVENT"
+      );
+    }
+  }
+  lines.push("END:VCALENDAR");
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", `inline; filename="my-schedule.ics"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.send(lines.join("\r\n"));
+});
+
+/**
+ * The instructor card page: one file, no bundle, no account.
+ *
+ * It opens on a single question — the civil ID — and turns into a personal
+ * week once answered. Everything is inline so it loads on a weak connection
+ * and keeps working when the campus network is slow.
+ */
+function staffCardPage(token: string, label: string): string {
+  return `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a100f">
+<meta name="robots" content="noindex,nofollow">
+<title>بطاقتي · SCHEDULE</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
+  -webkit-font-smoothing:antialiased;padding:max(20px,env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom))}
+.wrap{max-width:760px;margin:0 auto}
+.mark{font:600 12px/1 ui-monospace,monospace;letter-spacing:.26em;color:var(--brass)}
+.gate{margin-top:22vh;text-align:center;animation:rise .4s ease both}
+.gate h1{margin:18px 0 6px;font-size:26px;font-weight:600;letter-spacing:-.02em}
+.gate p{margin:0 0 26px;color:var(--dim);font-size:14px;line-height:1.8}
+.field{display:flex;gap:10px;max-width:380px;margin:0 auto}
+input{flex:1;min-width:0;height:52px;padding:0 16px;border:1px solid var(--line);border-radius:14px;
+  background:var(--card);color:var(--ink);font:600 17px/1 ui-monospace,monospace;letter-spacing:.06em;
+  text-align:center;direction:ltr;outline:none;transition:border-color .16s,box-shadow .16s}
+input:focus{border-color:var(--jade);box-shadow:0 0 0 3px rgba(105,192,168,.16)}
+button{height:52px;padding:0 22px;border:0;border-radius:14px;background:var(--jade);color:#07100d;
+  font:600 15px/1 inherit;cursor:pointer;transition:transform .12s,filter .16s}
+button:active{transform:scale(.98)}
+button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
+.note{margin-top:16px;min-height:20px;color:#e0a08c;font-size:13px}
+.hint{margin-top:26px;color:#5f6d67;font-size:12px;line-height:1.9}
+.card{display:none;animation:rise .45s ease both}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin:22px 0 20px;
+  padding-bottom:18px;border-bottom:1px solid var(--line)}
+.head h1{margin:6px 0 0;font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:-.03em;line-height:1.2}
+.head small{display:block;color:var(--dim);font-size:13px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;margin-bottom:22px}
+.stat{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
+.stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+.stat span{display:block;margin-top:2px;color:var(--dim);font-size:12px}
+.day{margin-bottom:14px;border:1px solid var(--line);border-radius:18px;background:var(--card);overflow:hidden}
+.day>h2{display:flex;align-items:center;justify-content:space-between;margin:0;padding:14px 16px;
+  font-size:15px;font-weight:600;border-bottom:1px solid var(--line)}
+.day>h2 em{font-style:normal;color:var(--dim);font:500 12px/1 ui-monospace,monospace;direction:ltr}
+.slot{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:13px 16px;border-bottom:1px solid var(--line)}
+.slot:last-child{border-bottom:0}
+.slot strong{font-size:15px;font-weight:600;line-height:1.4}
+.slot time{color:var(--jade);font:600 13px/1.6 ui-monospace,monospace;direction:ltr;white-space:nowrap}
+.slot small{grid-column:1/-1;color:var(--dim);font-size:12.5px}
+.gap{display:flex;align-items:center;gap:8px;padding:10px 16px;background:rgba(199,155,95,.07);
+  color:var(--brass);font-size:12.5px;border-bottom:1px solid var(--line)}
+.gap i{flex:none;width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.7}
+.gap time{font:600 12px/1 ui-monospace,monospace;direction:ltr}
+.tools{display:flex;gap:10px;margin:22px 0 8px}
+.tools a{flex:1;height:48px;display:grid;place-items:center;border:1px solid var(--line);border-radius:14px;
+  background:var(--card);color:var(--ink);font-size:14px;font-weight:600;text-decoration:none}
+.foot{margin-top:26px;color:#4d5a55;font-size:11.5px;text-align:center;line-height:1.9}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media print{body{background:#fff;color:#000;padding:0}.gate,.tools,.foot{display:none}
+  .day,.stat{border-color:#bbb;background:#fff}.slot time{color:#111}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="gate" id="gate">
+    <div class="mark">SCHEDULE</div>
+    <h1>بطاقتي</h1>
+    <p>${label}<br>اكتب رقمك المدني لعرض جدولك.</p>
+    <form class="field" id="form">
+      <input id="civil" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="الرقم المدني" aria-label="الرقم المدني">
+      <button type="submit" id="go">عرض</button>
+    </form>
+    <div class="note" id="note" role="status" aria-live="polite"></div>
+    <p class="hint">صفحة للقراءة فقط · لا تحتاج حساباً<br>لا تُعرض أرقام هواتف ولا بيانات زملائك.</p>
+  </div>
+
+  <div class="card" id="card">
+    <div class="head">
+      <div>
+        <div class="mark">بطاقتي</div>
+        <h1 id="name"></h1>
+        <small id="scope"></small>
+      </div>
+    </div>
+    <div class="stats" id="stats"></div>
+    <div id="days"></div>
+    <div class="tools">
+      <a id="ics" href="#">إضافة إلى التقويم</a>
+      <a href="#" id="print">طباعة</a>
+    </div>
+    <div class="foot" id="foot"></div>
+  </div>
+</div>
+<script>
+(function(){
+  var TOKEN=${JSON.stringify(token)};
+  var gate=document.getElementById("gate"),card=document.getElementById("card");
+  var note=document.getElementById("note"),go=document.getElementById("go"),civil=document.getElementById("civil");
+  var ar=function(n){try{return Number(n||0).toLocaleString("ar-KW-u-nu-latn")}catch(e){return String(n)}};
+  var hours=function(m){var h=Math.floor(m/60),r=m%60;return r?ar(h)+"٫"+ar(Math.round(r/6)):ar(h)};
+  var esc=function(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML};
+
+  document.getElementById("print").addEventListener("click",function(e){e.preventDefault();window.print()});
+
+  document.getElementById("form").addEventListener("submit",function(event){
+    event.preventDefault();
+    var value=(civil.value||"").replace(/[^0-9٠-٩۰-۹]/g,"")
+      .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})
+      .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))});
+    if(value.length<8){note.textContent="اكتب الرقم المدني كاملاً.";return}
+    note.textContent="";go.disabled=true;go.textContent="…";
+    fetch("/api/public/staff/"+encodeURIComponent(TOKEN),{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:value})
+    }).then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d}})})
+      .then(function(res){
+        go.disabled=false;go.textContent="عرض";
+        if(!res.ok){note.textContent=res.data&&res.data.error?res.data.error:"تعذر العرض";return}
+        render(res.data,value);
+      })
+      .catch(function(){go.disabled=false;go.textContent="عرض";note.textContent="تعذر الاتصال. تحقق من الإنترنت."});
+  });
+
+  function render(d,value){
+    document.getElementById("name").textContent=d.name;
+    document.getElementById("scope").textContent=[d.college,d.term].filter(Boolean).join(" · ");
+    document.getElementById("stats").innerHTML=[
+      ["ساعة أسبوعياً",hours(d.weeklyMinutes)],
+      ["محاضرة",ar(d.lectureCount)],
+      ["أيام",ar(d.dayCount)],
+      ["قاعات",ar(d.rooms.length)]
+    ].map(function(x){return '<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'}).join("");
+
+    document.getElementById("days").innerHTML=d.byDay.filter(function(day){return day.rows.length}).map(function(day){
+      // The gap sits where it happens — between the two lectures it separates.
+      var body=day.rows.map(function(row,i){
+        var lead="";
+        if(i>0){
+          var before=day.gaps.filter(function(g){return g.to===row.start});
+          if(before.length){
+            lead='<div class="gap"><i></i>فراغ <time>'+esc(before[0].from)+'–'+esc(before[0].to)+'</time> · '+ar(before[0].minutes)+' دقيقة</div>';
+          }
+        }
+        return lead+'<div class="slot"><strong>'+esc(row.name||row.code)+'</strong>'+
+               '<time>'+esc(row.start)+'–'+esc(row.end)+'</time>'+
+               '<small>'+[row.code,row.section&&("شعبة "+row.section),(row.room||row.hall)&&(esc(row.room)+"/"+esc(row.hall))].filter(Boolean).join(" · ")+'</small></div>';
+      }).join("");
+      return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.from+"–"+day.span.to:"")+'</em></h2>'+body+'</section>';
+    }).join("");
+
+    document.getElementById("ics").setAttribute("href",
+      "/api/public/staff-ics/"+encodeURIComponent(TOKEN)+"?civil="+encodeURIComponent(value));
+    try{
+      var until=new Intl.DateTimeFormat("ar-KW-u-nu-latn",{day:"numeric",month:"long",year:"numeric"}).format(new Date(d.expiresAt));
+      document.getElementById("foot").textContent="هذا الرابط صالح حتى "+until+" · للقراءة فقط";
+    }catch(e){}
+    gate.style.display="none";card.style.display="block";
+    window.scrollTo(0,0);
+  }
+})();
+</script>
+</body>
+</html>`;
+}
+
 app.get("/s/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   const esc = (value: string) => String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
   res.setHeader("Cache-Control", "no-store");
-  res.type("html; charset=utf-8");
+  // `res.type("html; charset=utf-8")` is not a shorthand Express understands —
+  // it fell through to application/octet-stream, so phones offered to download
+  // the page instead of showing it. Set the header outright.
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
   if ("error" in resolved) {
     res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>SCHEDULE</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
+    return;
+  }
+  if (resolved.link.kind === "staff") {
+    res.send(staffCardPage(resolved.link.id, esc(resolved.link.label || "بطاقة الأستاذ")));
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
@@ -2413,22 +2905,13 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 async function startServer() {
   // Wait for the data layer before accepting any requests. In Firestore mode this also
   // completes the one-time import of the verified legacy snapshot when the target is empty.
-  try {
-    await initDatabase();
-  } catch (error) {
-    console.error("Database initialization failed. Server will continue to serve UI, but APIs will return 503.", error);
-    globalDbError = error instanceof Error ? error : new Error(String(error));
-  }
+  await initDatabase();
 
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
   });
 
-  const isProduction = process.env.NODE_ENV === "production" || 
-                       process.env.npm_lifecycle_event === "start" || 
-                       process.argv[1]?.endsWith("server.cjs");
-
-  if (!isProduction) {
+  if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -2449,7 +2932,24 @@ async function startServer() {
         }
       }
     }));
+    /**
+     * A missing file must answer 404, not the application shell.
+     *
+     * The catch-all below exists so that /FSchedule/Index reaches the router.
+     * Applied to everything, it also answered requests for build assets: a tab
+     * still holding the previous release asked for a chunk that no longer
+     * exists and received index.html with status 200. The browser then tried to
+     * run HTML as JavaScript, the module never executed, and the page stayed
+     * blank with nothing in the network log looking wrong. Anything that names
+     * a file — /assets/*, or a path with an extension — now fails honestly, so
+     * the page's boot guard can clear the stale copy and reload.
+     */
+    const looksLikeFile = /\.[a-z0-9]{2,8}$/i;
     app.get("*", (req, res) => {
+      if (req.path.startsWith("/assets/") || looksLikeFile.test(req.path)) {
+        res.status(404).type("text/plain; charset=utf-8").send("Not found");
+        return;
+      }
       res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(distPath, "index.html"));
     });
@@ -2461,6 +2961,6 @@ async function startServer() {
 }
 
 startServer().catch(error => {
-  console.error("Server initialization failed with unrecoverable error:", error);
+  console.error("Server initialization failed:", error);
   process.exitCode = 1;
 });

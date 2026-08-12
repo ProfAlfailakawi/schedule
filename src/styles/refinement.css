@@ -1,7 +1,28 @@
-.editorial-dashboard-hero h1 {
-  font-size: clamp(54px, 6vw, 88px);
-}
+/* ==========================================================================
+   refinement.css — ملف محايد بقصد. INTENTIONALLY EMPTY.
+   ==========================================================================
 
-.living-command-deck {
-  grid-template-areas: "pulse health actions";
-}
+   بالعربية
+   --------
+   هذا الملف كان طبقة تصحيحات مليئة بـ !important تُحمَّل بعد كل الأنماط، وكانت
+   تتغلّب على النظام الحقيقي وتسبب خطوطاً بحجم ٧ بكسل وحدوداً على كل عنصر.
+   النظام الحالي مبني في تسعة ملفات مرتّبة داخل src/styles، ولا يحتاج هذا الملف.
+
+   لكن حذفه نهائياً يكسر البناء إذا بقي أي استيراد له في نسخة أخرى من المشروع،
+   ولهذا السبب أعاده AI Studio. الحل: يبقى الملف موجوداً وفارغاً.
+   أي استيراد له ينجح، ولا يضيف قاعدة واحدة.
+
+   ⚠️ لا تكتب أي قاعدة CSS هنا. مكان التعديلات هو الملفات المرقّمة:
+      01-foundation · 02-primitives · 03-shell · 04-screens · 05-schedule
+      06-intelligence · 09-details · 07-responsive · 08-print
+
+   In English
+   ----------
+   This used to be an !important-heavy override layer loaded after everything
+   else; it fought the design system rather than extending it. The system now
+   lives in the nine numbered files under src/styles and does not need it.
+
+   The file is kept — empty — because deleting it breaks any build that still
+   imports it, which is why the hosting workspace kept restoring it. Empty means
+   an import resolves and contributes nothing. Do not add rules here.
+   ========================================================================== */

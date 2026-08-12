@@ -387,6 +387,43 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   // waits until the days or the time have been touched, or until a save is
   // attempted; the submit button stays disabled meanwhile either way.
   const [scheduleTouched, setScheduleTouched] = useState(false);
+  /**
+   * Three proposed placements, ranked.
+   *
+   * The days and the length of the lecture are the question; the answer is a
+   * time and a hall that leave the instructor the least idle time and the
+   * shortest walk. Asking is explicit — nothing is computed while typing, and
+   * nothing is written until a suggestion is chosen.
+   */
+  const [slotIdeas, setSlotIdeas] = useState<any[] | null>(null);
+  const [slotBusy, setSlotBusy] = useState(false);
+  const askForSlots = async () => {
+    setSlotBusy(true);
+    setSlotIdeas(null);
+    try {
+      const duration = form.fstarttime && form.fendtime && mins(form.fendtime) > mins(form.fstarttime)
+        ? mins(form.fendtime) - mins(form.fstarttime)
+        : 60;
+      const response = await fetch("/api/schedules/suggest-slots", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, durationMinutes: duration, excludeId: editId || 0 })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر اقتراح الأوقات");
+      setSlotIdeas(Array.isArray(data.slots) ? data.slots : []);
+    } catch (e: any) {
+      setError(friendlyError(e));
+      setSlotIdeas([]);
+    } finally {
+      setSlotBusy(false);
+    }
+  };
+  const takeSlot = (slot: any) => {
+    setScheduleTouched(true);
+    setForm(prev => ({ ...prev, fstarttime: slot.start, fendtime: slot.end, AdRoomCode: slot.room, AdRoomHall: slot.hall }));
+    setSlotIdeas(null);
+  };
   const timeRangeInvalid = Boolean(form.fstarttime&&form.fendtime)&&mins(form.fendtime)<=mins(form.fstarttime);
   const validationIssues=[!selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":""].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
@@ -1822,6 +1859,42 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     required
                   />
                 </Field>
+                  </div>
+                  <div className="slot-advisor">
+                    <button
+                      type="button"
+                      className="slot-advisor-ask"
+                      onClick={askForSlots}
+                      disabled={slotBusy || !selectedFormDays.length}
+                      title={selectedFormDays.length ? "اقترح أفضل ثلاث خانات" : "اختر الأيام أولاً"}
+                    >
+                      <Sparkles aria-hidden="true" />
+                      {slotBusy ? "أبحث…" : "اقترح لي وقتاً وقاعة"}
+                    </button>
+                    {slotIdeas ? (
+                      slotIdeas.length ? (
+                        <div className="slot-ideas">
+                          {slotIdeas.map((slot, index) => (
+                            <button type="button" key={`${slot.start}-${slot.room}-${slot.hall}`} onClick={() => takeSlot(slot)}>
+                              <b className="slot-rank">{index + 1}</b>
+                              <span className="slot-when">
+                                <time dir="ltr">{slot.start}–{slot.end}</time>
+                                <small>{slot.room}/{slot.hall}</small>
+                              </span>
+                              <span className="slot-why">
+                                {slot.reasons.map((reason: string) => <i key={reason}>{reason}</i>)}
+                              </span>
+                              <span className="slot-score" style={{ "--score": `${slot.score}%` } as React.CSSProperties}>
+                                <i />
+                                <em>{slot.score}</em>
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="slot-empty">لا توجد خانة خالية بهذه الأيام والمدة.</p>
+                      )
+                    ) : null}
                   </div>
                 </section>
               </div>

@@ -1,5 +1,5 @@
-const SHELL_CACHE="schedule-shell-v5";
-const API_CACHE="schedule-api-v5";
+const SHELL_CACHE="schedule-shell-v6";
+const API_CACHE="schedule-api-v6";
 const SHELL=["/","/Home/Index","/manifest.webmanifest","/schedule-icon.svg","/schedule-icon-192.png","/schedule-icon-512.png","/fonts/plex-arabic-arabic-400.woff2","/fonts/plex-arabic-arabic-600.woff2","/fonts/plex-arabic-latin-400.woff2","/fonts/plex-arabic-latin-600.woff2","/fonts/plex-mono-latin-500.woff2"];
 const CACHEABLE_API_PREFIXES=[
   "/api/dashboard","/api/colleges","/api/sections","/api/terms","/api/instructors","/api/courses","/api/schedules",
@@ -31,6 +31,16 @@ self.addEventListener("fetch",event=>{
   }
   event.respondWith((async()=>{
     const cache=await caches.open(SHELL_CACHE);
-    try{const response=await fetch(request);if(response.ok)cache.put(request,response.clone()).catch(()=>undefined);return response}catch{const hit=await cache.match(request);return hit||await cache.match("/Home/Index")||await cache.match("/")}
+    try{
+      const response=await fetch(request);
+      // The document itself is never stored. A cached page names the build
+      // files of the release it came from, and those disappear on the next
+      // deployment — which is exactly how a tab ends up blank.
+      if(response.ok&&request.mode!=="navigate")cache.put(request,response.clone()).catch(()=>undefined);
+      return response;
+    }catch{
+      const hit=await cache.match(request);
+      return hit||await cache.match("/Home/Index")||await cache.match("/");
+    }
   })());
 });

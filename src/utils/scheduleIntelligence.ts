@@ -194,8 +194,55 @@ export function autoScheduleProposal(targetRows:FSchedule[], allRows:FSchedule[]
   return {rows,changed};
 }
 
+/**
+ * What changed between two terms.
+ *
+ * Counts alone ("+4 / -3") tell a coordinator that something moved but not
+ * what, so the answer they need — is this new offering right? — is still a
+ * manual row-by-row comparison. The identity of a lecture is its course and
+ * section; everything else about it (day, time, hall, instructor) is a
+ * property that can change. That gives three honest buckets: offerings that
+ * appeared, offerings that disappeared, and offerings that stayed but moved.
+ */
 export function compareTerms(a:FSchedule[],b:FSchedule[]){
   const key=(r:FSchedule)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${roomKey(r)}`;
   const aKeys=new Set(a.map(key)),bKeys=new Set(b.map(key));
-  return {fromCount:a.length,toCount:b.length,added:[...bKeys].filter(k=>!aKeys.has(k)).length,removed:[...aKeys].filter(k=>!bKeys.has(k)).length,uniqueInstructorsFrom:new Set(a.map(r=>r.AdInstructorId)).size,uniqueInstructorsTo:new Set(b.map(r=>r.AdInstructorId)).size,uniqueRoomsFrom:new Set(a.map(roomKey)).size,uniqueRoomsTo:new Set(b.map(roomKey)).size};
+
+  /** Identity survives a move; the shape is what a move changes. */
+  const identity=(r:FSchedule)=>`${r.AdCourseId}:${String(r.SCode||"").trim()}`;
+  const dayLabel=(r:FSchedule)=>SCHEDULE_DAYS.filter(day=>Boolean((r as any)[day.key])).map(day=>day.label).join("، ");
+  const shape=(r:FSchedule)=>({
+    days:dayLabel(r),
+    time:`${r.fstarttime}–${r.fendtime}`,
+    room:roomKey(r),
+    instructorId:Number(r.AdInstructorId||0)
+  });
+  const before=new Map(a.map(row=>[identity(row),row]));
+  const after=new Map(b.map(row=>[identity(row),row]));
+
+  const appeared=[...after.entries()].filter(([id])=>!before.has(id)).map(([,row])=>row);
+  const disappeared=[...before.entries()].filter(([id])=>!after.has(id)).map(([,row])=>row);
+  const moved:Array<{row:FSchedule;from:ReturnType<typeof shape>;to:ReturnType<typeof shape>;fields:string[]}>=[];
+  for(const [id,next] of after){
+    const previous=before.get(id);
+    if(!previous)continue;
+    const from=shape(previous),to=shape(next);
+    const fields:string[]=[];
+    if(from.days!==to.days)fields.push("الأيام");
+    if(from.time!==to.time)fields.push("الوقت");
+    if(from.room!==to.room)fields.push("القاعة");
+    if(from.instructorId!==to.instructorId)fields.push("الأستاذ");
+    if(fields.length)moved.push({row:next,from,to,fields});
+  }
+
+  return {
+    fromCount:a.length,toCount:b.length,
+    added:[...bKeys].filter(k=>!aKeys.has(k)).length,
+    removed:[...aKeys].filter(k=>!bKeys.has(k)).length,
+    uniqueInstructorsFrom:new Set(a.map(r=>r.AdInstructorId)).size,
+    uniqueInstructorsTo:new Set(b.map(r=>r.AdInstructorId)).size,
+    uniqueRoomsFrom:new Set(a.map(roomKey)).size,
+    uniqueRoomsTo:new Set(b.map(roomKey)).size,
+    appeared,disappeared,moved
+  };
 }

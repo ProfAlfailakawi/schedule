@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
   ArrowLeftRight,
   BarChart3,
   BrainCircuit,
@@ -1291,71 +1292,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
             </Surface>
           ) : null}
-          <Surface className="term-compare">
-            <div className="surface-head">
-              <div>
-                <span className="surface-kicker">مقارنة الفصول</span>
-                <h2>شنو تغيّر؟</h2>
-              </div>
-              <ArrowLeftRight />
-            </div>
-            <div className="compare-controls">
-              <select
-                value={compareFrom || ""}
-                onChange={(e) => setCompareFrom(Number(e.target.value) || 0)}
-              >
-                {terms.map((t) => (
-                  <option key={t.AdTermId} value={t.AdTermId}>
-                    {t.AdTermName}
-                  </option>
-                ))}
-              </select>
-              <ArrowLeftRight />
-              <select
-                value={compareTo || ""}
-                onChange={(e) => setCompareTo(Number(e.target.value) || 0)}
-              >
-                {terms.map((t) => (
-                  <option key={t.AdTermId} value={t.AdTermId}>
-                    {t.AdTermName}
-                  </option>
-                ))}
-              </select>
-              <SecondaryButton onClick={compareTerms}>قارن</SecondaryButton>
-            </div>
-            {termCompare ? (
-              <div className="compare-result">
-                <article>
-                  <strong>
-                    {termCompare.fromCount} ← {termCompare.toCount}
-                  </strong>
-                  <span>عدد المواعيد</span>
-                </article>
-                <article>
-                  <strong>
-                    {termCompare.fromScore} ← {termCompare.toScore}
-                  </strong>
-                  <span>مؤشر الجودة</span>
-                </article>
-                <article>
-                  <strong>
-                    +{termCompare.added} / -{termCompare.removed}
-                  </strong>
-                  <span>تغييرات تركيبية</span>
-                </article>
-                <article>
-                  <strong>
-                    {termCompare.uniqueRoomsFrom} ← {termCompare.uniqueRoomsTo}
-                  </strong>
-                  <span>القاعات المستخدمة</span>
-                </article>
-              </div>
-            ) : (
-              <p className="soft-copy">
-                مقارنة فصلين · بدون تغيير.
-              </p>
-            )}
-          </Surface>
         </div>
       ) : null}
 
@@ -2308,6 +2244,126 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
       {tab === "history" ? (
         <div className="history-layout">
+          <Surface className="term-compare">
+            <div className="surface-head">
+              <div>
+                <span className="surface-kicker">مقارنة الفصول</span>
+                <h2>شنو تغيّر؟</h2>
+              </div>
+              <ArrowLeftRight />
+            </div>
+            <div className="compare-controls">
+              <select
+                value={compareFrom || ""}
+                onChange={(e) => setCompareFrom(Number(e.target.value) || 0)}
+              >
+                {terms.map((t) => (
+                  <option key={t.AdTermId} value={t.AdTermId}>
+                    {t.AdTermName}
+                  </option>
+                ))}
+              </select>
+              <ArrowLeftRight />
+              <select
+                value={compareTo || ""}
+                onChange={(e) => setCompareTo(Number(e.target.value) || 0)}
+              >
+                {terms.map((t) => (
+                  <option key={t.AdTermId} value={t.AdTermId}>
+                    {t.AdTermName}
+                  </option>
+                ))}
+              </select>
+              <SecondaryButton onClick={compareTerms}>قارن</SecondaryButton>
+            </div>
+            {termCompare ? (
+              <div className="compare-result">
+                <article>
+                  <strong>
+                    {termCompare.fromCount} ← {termCompare.toCount}
+                  </strong>
+                  <span>عدد المواعيد</span>
+                </article>
+                <article>
+                  <strong>
+                    {termCompare.fromScore} ← {termCompare.toScore}
+                  </strong>
+                  <span>مؤشر الجودة</span>
+                </article>
+                <article>
+                  <strong>
+                    +{termCompare.added} / -{termCompare.removed}
+                  </strong>
+                  <span>تغييرات تركيبية</span>
+                </article>
+                <article>
+                  <strong>
+                    {termCompare.uniqueRoomsFrom} ← {termCompare.uniqueRoomsTo}
+                  </strong>
+                  <span>القاعات المستخدمة</span>
+                </article>
+              </div>
+            ) : (
+              <p className="soft-copy">
+                مقارنة فصلين · بدون تغيير.
+              </p>
+            )}
+            {termCompare && (termCompare.appeared?.length || termCompare.disappeared?.length || termCompare.moved?.length) ? (
+              <div className="compare-diff">
+                {[
+                  { key: "appeared", title: "أُضيف", tone: "add", rows: termCompare.appeared || [] },
+                  { key: "moved", title: "انتقل", tone: "move", rows: termCompare.moved || [] },
+                  { key: "disappeared", title: "اختفى", tone: "drop", rows: termCompare.disappeared || [] }
+                ].map(group => (
+                  <section key={group.key} className={`compare-column tone-${group.tone}`}>
+                    <h3>
+                      {group.title}
+                      <b>{Number(group.rows.length).toLocaleString("ar-KW-u-nu-latn")}</b>
+                    </h3>
+                    {group.rows.length ? (
+                      <div className="compare-rows">
+                        {group.rows.slice(0, 24).map((row: any) => (
+                          <article key={`${group.key}-${row.id}`}>
+                            <header>
+                              <span className="code-chip">{row.code || "—"}</span>
+                              <strong>{row.name}</strong>
+                              {row.section ? <small>{row.section}</small> : null}
+                            </header>
+                            {group.key === "moved" ? (
+                              <div className="compare-move">
+                                {row.fields.map((field: string) => {
+                                  const pick = (side: any) =>
+                                    field === "الأيام" ? side.days : field === "الوقت" ? side.time : field === "القاعة" ? side.room : side.instructor;
+                                  return (
+                                    <p key={field}>
+                                      <i>{field}</i>
+                                      <del dir="auto">{pick(row.before) || "—"}</del>
+                                      <ArrowLeft aria-hidden="true" />
+                                      <ins dir="auto">{pick(row.after) || "—"}</ins>
+                                    </p>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="compare-facts">
+                                <time dir="ltr">{row.time}</time>
+                                <span>{row.room || "—"}</span>
+                                <span>{row.instructor || "—"}</span>
+                              </p>
+                            )}
+                          </article>
+                        ))}
+                        {group.rows.length > 24 ? <p className="compare-more">و{Number(group.rows.length - 24).toLocaleString("ar-KW-u-nu-latn")} غيرها</p> : null}
+                      </div>
+                    ) : (
+                      <p className="compare-none">لا شيء</p>
+                    )}
+                  </section>
+                ))}
+              </div>
+            ) : null}
+          </Surface>
+
           <Surface className="drafts-card">
             <div className="surface-head">
               <div>

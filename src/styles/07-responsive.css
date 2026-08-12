@@ -240,6 +240,18 @@
   .academic-inspector h2,.inspector-hero h2{font-size:22px}
   .inspector-actions .btn{flex:1}
 
+  /* Slot advisor — the reason chips move under the time on a phone. */
+  .slot-advisor-ask{width:100%;justify-content:center}
+  .slot-ideas>button{
+    grid-template-columns:26px minmax(0,1fr) 54px;
+    grid-template-areas:"rank when score" "why why why";
+    row-gap:var(--s2);
+  }
+  .slot-rank{grid-area:rank}
+  .slot-when{grid-area:when}
+  .slot-score{grid-area:score}
+  .slot-why{grid-area:why}
+
   /* Schedule */
   .schedule-control{padding:var(--s4);gap:var(--s3)}
   .schedule-tools{padding-top:var(--s3)}
@@ -437,6 +449,14 @@
   .twin-score-row,.version-diff,.drawer-metrics,.why-delta,
   .spatial-metrics,.spatial-score-row{grid-template-columns:repeat(2,minmax(0,1fr))}
   .quality-factors{grid-template-columns:repeat(2,minmax(0,1fr))}
+  /* The three verdict columns stack rather than shrink to unreadable strips. */
+  .compare-diff{grid-template-columns:minmax(0,1fr)}
+  .compare-rows{max-height:min(40vh,320px)}
+  .compare-move p{grid-template-columns:auto minmax(0,1fr);grid-template-areas:"label old" "label new"}
+  .compare-move i{grid-area:label}
+  .compare-move del{grid-area:old}
+  .compare-move svg{display:none}
+  .compare-move ins{grid-area:new}
   .approval-center,.attention-center,.heatmap-card,.room-intelligence,
   .professor-intelligence,.data-health,.schedule-genome,.term-compare,
   .constraint-canvas,.war-room,.autopilot-lab,.twin-workbench,.twin-visual-board,

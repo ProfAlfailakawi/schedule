@@ -15,9 +15,141 @@
     <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/schedule-icon-192.png" />
     <title>SCHEDULE · Academic Workspace</title>
+    <style>
+      /* The first paint belongs to the page, not to the bundle: if the
+         application never arrives, something readable is already on screen. */
+      #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #080c0b; color: #e8ece7;
+              font-family: system-ui, "Segoe UI", Tahoma, sans-serif; }
+      @media (prefers-color-scheme: light) { #boot { background: #f2f3ef; color: #171c1a; } }
+      #boot-spin { width: 34px; height: 34px; border-radius: 50%; border: 2px solid currentColor;
+                   border-top-color: transparent; opacity: .35; animation: boot-turn .8s linear infinite; }
+      @keyframes boot-turn { to { transform: rotate(360deg); } }
+      #boot-card { display: none; max-width: 420px; padding: 28px; text-align: center; line-height: 1.8; }
+      #boot.failed #boot-spin { display: none; }
+      #boot.failed #boot-card { display: block; }
+      #boot-card h1 { margin: 0 0 10px; font-size: 19px; font-weight: 600; }
+      #boot-card p { margin: 0 0 20px; font-size: 14px; opacity: .72; }
+      #boot-card button { min-height: 44px; padding: 0 22px; border: 0; border-radius: 10px; cursor: pointer;
+                          background: #1f6b5c; color: #fff; font: inherit; font-weight: 600; }
+      #boot-card small { display: block; margin-top: 14px; font-size: 11px; opacity: .45; direction: ltr; }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <div id="boot" role="status" aria-live="polite">
+      <div id="boot-spin" aria-label="جارٍ التحميل"></div>
+      <div id="boot-card">
+        <h1>تعذر تحميل البرنامج</h1>
+        <p>حاولنا تنظيف النسخة المحفوظة وإعادة التحميل تلقائياً ولم ينجح. اضغط الزر، وإذا تكرر الأمر أبلغ مسؤول النظام بالسطر الأخير.</p>
+        <button type="button" id="boot-retry">إعادة المحاولة</button>
+        <small id="boot-detail"></small>
+      </div>
+    </div>
+    <noscript>
+      <div style="padding:32px;text-align:center;font-family:system-ui,sans-serif">
+        هذا البرنامج يحتاج تفعيل JavaScript في المتصفح.
+      </div>
+    </noscript>
+    <script>
+      /*
+       * Boot guard.
+       *
+       * The screens are code-split, so a tab (or a service worker) can be
+       * holding the previous release's file names. Those files are gone the
+       * moment a new version is published, the module never executes, and the
+       * page stays blank — the bundle's own recovery code cannot help, because
+       * the bundle is exactly what failed to load. This runs from the document
+       * itself: it clears the caches, drops the worker and reloads once, and if
+       * that still does not work it says so in Arabic instead of showing white.
+       */
+      (function () {
+        var KEY = "schedule-boot-recovery";
+        var booted = false;
+        var reason = "";
+        var boot = document.getElementById("boot");
+
+        function read() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
+        function write(v) { try { sessionStorage.setItem(KEY, v); } catch (e) {} }
+        function clear() { try { sessionStorage.removeItem(KEY); } catch (e) {} }
+
+        /* The only question that matters: is there a screen yet? */
+        function painted() {
+          var root = document.getElementById("root");
+          return !!(root && root.childElementCount > 0);
+        }
+        function stand_down() {
+          booted = true;
+          clear();
+          if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+        }
+
+        function fail(detail) {
+          if (booted) return;
+          if (painted()) { stand_down(); return; }
+          if (!boot) return;
+          boot.className = "failed";
+          var line = document.getElementById("boot-detail");
+          if (line) line.textContent = detail || reason || "";
+        }
+
+        function recover(detail) {
+          if (booted || painted()) return;
+          reason = detail || reason;
+          if (read() === "1") { fail(reason); return; }
+          write("1");
+          var jobs = [];
+          try {
+            if (window.caches && caches.keys) {
+              jobs.push(caches.keys().then(function (keys) {
+                return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+              }));
+            }
+            if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+              jobs.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+                return Promise.all(regs.map(function (r) { return r.unregister(); }));
+              }));
+            }
+          } catch (e) {}
+          var done = function () { location.reload(); };
+          if (jobs.length) Promise.all(jobs).then(done, done); else done();
+        }
+
+        /* The application calls this the moment it has painted. */
+        window.__scheduleBooted = stand_down;
+        window.__scheduleBootFailed = function (message) { fail(message); };
+
+        /*
+         * Only the build's own code counts. An icon, a font preload or any
+         * other decoration failing must never restart the tab — that would
+         * turn a cosmetic 404 into a reload loop.
+         */
+        function isBuildAsset(target) {
+          if (!target || !target.tagName) return false;
+          var url = String(target.src || target.href || "");
+          if (target.tagName === "SCRIPT") return target.type === "module" || /\/assets\/|\/src\/|\.m?js($|\?)/.test(url);
+          if (target.tagName === "LINK") return target.rel === "stylesheet" && /\/assets\/|\.css($|\?)/.test(url);
+          return false;
+        }
+        window.addEventListener("error", function (event) {
+          var target = event && event.target;
+          if (isBuildAsset(target)) recover("asset " + String(target.src || target.href || "").slice(-56));
+        }, true);
+        window.addEventListener("unhandledrejection", function (event) {
+          var text = String((event && event.reason && event.reason.message) || "");
+          if (/dynamically imported module|Importing a module script failed|Loading chunk/i.test(text)) recover(text.slice(0, 90));
+        });
+
+        /* Belt and braces: notice a paint even if the signal never arrives. */
+        var watch = setInterval(function () { if (!booted && painted()) stand_down(); }, 250);
+        setTimeout(function () { clearInterval(watch); }, 30000);
+
+        /* Nothing painted in ten seconds means it is not coming on its own. */
+        setTimeout(function () { if (!booted && !painted()) recover("timeout"); }, 10000);
+
+        var retry = document.getElementById("boot-retry");
+        if (retry) retry.addEventListener("click", function () { clear(); location.reload(); });
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

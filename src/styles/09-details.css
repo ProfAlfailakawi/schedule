@@ -250,6 +250,26 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   background:var(--danger-soft);color:var(--danger);font-size:var(--t-sm);
 }
 
+/* Which kind of link is being made — chosen before anything else about it. */
+.share-kind{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+.share-kind button{
+  min-width:0;
+  display:grid;justify-items:start;gap:2px;
+  padding:var(--s3) var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);color:var(--muted);text-align:start;
+  transition:border-color .16s var(--ease),background .16s var(--ease),color .16s var(--ease);
+}
+.share-kind button svg{width:17px;height:17px;margin-bottom:var(--s1)}
+.share-kind button span{color:var(--ink);font-size:var(--t-sm);font-weight:600}
+.share-kind button small{font-size:var(--t-xs);line-height:1.5}
+.share-kind button:hover{border-color:var(--line-strong)}
+.share-kind button.active{border-color:var(--accent);background:var(--accent-softer);color:var(--accent-ink)}
+.share-kind button.active span{color:var(--accent-ink)}
+.share-kind-note{color:var(--muted);font-size:var(--t-xs);line-height:1.7}
+.share-row-lead b{display:flex;align-items:center;gap:var(--s2)}
+.share-row-lead b svg{width:14px;height:14px;color:var(--brass);flex:none}
+
 .share-compose{
   display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
   margin-top:var(--s6);padding:var(--s4);
@@ -304,6 +324,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
     border-radius:var(--r-2xl) var(--r-2xl) 0 0;
     padding:var(--s6) var(--s5) calc(var(--s6) + env(safe-area-inset-bottom));
   }
+  .share-kind{grid-template-columns:minmax(0,1fr)}
   .share-compose{flex-direction:column;align-items:stretch}
   .share-days{justify-content:space-between}
   .share-days button{flex:1}

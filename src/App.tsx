@@ -31,6 +31,7 @@ import Dashboard from "./components/Dashboard";
 import type { ReportMode } from "./components/Reports";
 import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
+import { safeStorage } from "./utils/safeStorage";
 
 // The dashboard is the landing screen and stays in the first payload. Every other
 // workspace is fetched the moment it is first opened, which keeps the initial
@@ -163,7 +164,7 @@ export default function App() {
     [commandInsight, setCommandInsight] = useState<any>(null),
     [naturalAnswer, setNaturalAnswer] = useState<any>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
-    const stored = localStorage.getItem("schedule-theme");
+    const stored = safeStorage.get("schedule-theme");
     if (stored === "dark" || stored === "light") return stored;
     return "dark";
   });
@@ -175,7 +176,7 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("schedule-theme", theme);
+    safeStorage.set("schedule-theme", theme);
   }, [theme]);
   useEffect(() => {
     if (!user) return;
@@ -383,10 +384,7 @@ export default function App() {
     if (!user) return;
     setUsage((prev) => {
       const next = { ...prev, [view]: (prev[view] || 0) + 1 };
-      localStorage.setItem(
-        `schedule-usage-${user.SystemUserId}`,
-        JSON.stringify(next),
-      );
+      safeStorage.set(`schedule-usage-${user.SystemUserId}`, JSON.stringify(next));
       return next;
     });
   };
@@ -427,28 +425,9 @@ export default function App() {
   };
   useEffect(() => {
     if (!user) return;
-    try {
-      setUsage(
-        JSON.parse(
-          localStorage.getItem(`schedule-usage-${user.SystemUserId}`) || "{}",
-        ),
-      );
-    } catch {
-      setUsage({});
-    }
-    try {
-      setEntityFavorites(
-        JSON.parse(
-          localStorage.getItem(
-            `schedule-entity-favorites-${user.SystemUserId}`,
-          ) || "[]",
-        ),
-      );
-    } catch {
-      setEntityFavorites([]);
-    }
-    const key = `schedule-onboarding-v3-${user.SystemUserId}`;
-    if (!localStorage.getItem(key)) setOnboardingStep(0);
+    setUsage(safeStorage.json(`schedule-usage-${user.SystemUserId}`, {}));
+    setEntityFavorites(safeStorage.json(`schedule-entity-favorites-${user.SystemUserId}`, []));
+    if (!safeStorage.get(`schedule-onboarding-v3-${user.SystemUserId}`)) setOnboardingStep(0);
   }, [user?.SystemUserId]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -738,10 +717,7 @@ export default function App() {
       const next: FavoriteEntity[] = [...map.values()]
         .sort((a, b) => b.count - a.count)
         .slice(0, 8);
-      localStorage.setItem(
-        `schedule-entity-favorites-${user.SystemUserId}`,
-        JSON.stringify(next),
-      );
+      safeStorage.set(`schedule-entity-favorites-${user.SystemUserId}`, JSON.stringify(next));
       return next;
     });
   };
@@ -1027,11 +1003,7 @@ export default function App() {
           .includes(query.trim().toLowerCase())),
   );
   const finishOnboarding = () => {
-    if (user)
-      localStorage.setItem(
-        `schedule-onboarding-v3-${user.SystemUserId}`,
-        "done",
-      );
+    if (user) safeStorage.set(`schedule-onboarding-v3-${user.SystemUserId}`, "done");
     setOnboardingStep(-1);
   };
   const onboardingSteps = isPowerAdmin

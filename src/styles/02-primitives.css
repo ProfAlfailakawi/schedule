@@ -40,6 +40,33 @@
 
 /* --- Page heading --------------------------------------------------------- */
 
+/* The screen shown instead of a blank page when a view fails to render. */
+.crash-screen{
+  min-height:70vh;display:grid;place-items:center;padding:var(--s6);
+}
+.crash-card{
+  width:min(460px,100%);
+  padding:clamp(24px,4vw,36px);
+  border:1px solid var(--line);border-radius:var(--r-2xl);
+  background:var(--surface);box-shadow:var(--shadow-md);
+  text-align:center;
+}
+.crash-mark{
+  width:44px;height:44px;margin:0 auto var(--s4);
+  display:grid;place-items:center;border-radius:var(--r-full);
+  background:var(--danger-soft);color:var(--danger);
+  font-size:22px;font-weight:700;line-height:1;
+}
+.crash-card h1{font-size:var(--t-h2);font-weight:600}
+.crash-card p{margin-top:var(--s3);color:var(--muted);font-size:var(--t-sm);line-height:1.8}
+.crash-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--s2);margin-top:var(--s5)}
+.crash-card code{
+  display:block;margin-top:var(--s5);padding-top:var(--s3);
+  border-top:1px solid var(--line);
+  color:var(--muted-2);font:400 var(--t-xs)/1.6 var(--font-mono);
+  word-break:break-word;
+}
+
 .page-heading{
   display:flex;
   align-items:flex-end;

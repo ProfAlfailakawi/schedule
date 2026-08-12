@@ -1,6 +1,8 @@
 import {StrictMode} from "react";
 import {createRoot} from "react-dom/client";
 import App from "./App.tsx";
+import ErrorBoundary from "./components/ErrorBoundary.tsx";
+import {safeStorage} from "./utils/safeStorage";
 import "./index.css";
 
 // Global safety layer for the existing application. It never changes successful online
@@ -132,8 +134,8 @@ try {
  */
 const RECOVERY_KEY="schedule-chunk-recovery";
 const recoverFromStaleBuild=async()=>{
-  if(sessionStorage.getItem(RECOVERY_KEY))return;
-  sessionStorage.setItem(RECOVERY_KEY,"1");
+  if(safeStorage.get(RECOVERY_KEY,"session"))return;
+  safeStorage.set(RECOVERY_KEY,"1","session");
   try{
     if("caches" in window){const keys=await caches.keys();await Promise.all(keys.map(key=>caches.delete(key)))}
     const registrations=await navigator.serviceWorker?.getRegistrations?.();
@@ -147,7 +149,17 @@ window.addEventListener("error",event=>{
   if(/Loading chunk|Importing a module script failed|dynamically imported module|Failed to fetch dynamically/i.test(message))void recoverFromStaleBuild();
 });
 // A clean start clears the guard, so the next release can heal itself too.
-window.addEventListener("load",()=>{window.setTimeout(()=>sessionStorage.removeItem(RECOVERY_KEY),4000)});
+window.addEventListener("load",()=>{window.setTimeout(()=>safeStorage.remove(RECOVERY_KEY,"session"),4000)});
 
-createRoot(document.getElementById("root")!).render(<StrictMode><App/></StrictMode>);
+const container=document.getElementById("root")!;
+createRoot(container).render(<StrictMode><ErrorBoundary><App/></ErrorBoundary></StrictMode>);
+
+// Tell the document-level boot guard that the screen is alive. It waits for a
+// real paint rather than for render() to return, because React commits later.
+const announceBoot=()=>{
+  if(container.childElementCount>0){(window as any).__scheduleBooted?.();return}
+  requestAnimationFrame(announceBoot);
+};
+requestAnimationFrame(announceBoot);
+
 if ("serviceWorker" in navigator && import.meta.env.PROD) window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>undefined));

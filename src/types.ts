@@ -232,6 +232,13 @@ export interface ScheduleShareLink {
   views: number;
   lastViewedAt?: string;
   showInstructors: boolean;
+  /**
+   * "department" publishes the whole section's timetable to anyone holding the
+   * link. "staff" publishes nothing on its own: the page asks for a civil ID
+   * and returns only that one instructor's own card. Links created before this
+   * field existed are department links.
+   */
+  kind?: "department" | "staff";
 }
 
 export interface SchedulePublication {
