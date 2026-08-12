@@ -1467,8 +1467,8 @@ app.post("/api/intelligence/auto-schedule", requirePermission(7), requirePowerAd
   const {rows:target,universe}=scheduleData;
   if(!target.length){res.status(400).json({error:"لا توجد مواعيد في هذا القسم والفصل لإنشاء مقترح"});return;}
   const proposal=autoScheduleProposal(target,universe);
-  const external=all.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
-  const before=analyzeSchedule(target,all.filter(row=>row.AdTermId===termId),courses,instructors);
+  const external=universe.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
+  const before=analyzeSchedule(target,universe.filter(row=>row.AdTermId===termId),courses,instructors);
   const proposedAnalysis=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors);
   const safeImprovement=proposedAnalysis.metrics.criticalConflicts<before.metrics.criticalConflicts||(proposedAnalysis.metrics.criticalConflicts===before.metrics.criticalConflicts&&proposedAnalysis.score>=before.score);
   const chosenRows=safeImprovement?proposal.rows:target,changed=safeImprovement?proposal.changed:0,after=safeImprovement?proposedAnalysis:before;
