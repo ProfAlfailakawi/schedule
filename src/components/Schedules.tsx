@@ -183,12 +183,33 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setInstructors(sortByName(i, (row:any)=>row.AdInstructorName));
     return { colleges: c as AdCollege[], sections: s as AdSection[], terms: t as AdTerm[], courses: co as AdCourse[], instructors: i as AdInstructor[] };
   };
+  const [rowsLoading, setRowsLoading] = useState(false);
+  /**
+   * An empty scope should answer, not just be empty.
+   *
+   * "I chose a college, a department and a term and no schedule appeared" is
+   * almost never a missing schedule — it is a scope that has none, while the
+   * rows sit under a neighbouring department or an earlier term. Rather than
+   * showing a blank page and letting someone hunt, the screen reads the term
+   * once more without the department filter and says where the appointments
+   * actually are, with a way to go straight there.
+   */
+  const [emptyElsewhere, setEmptyElsewhere] = useState<Array<{ sectionId: number; name: string; count: number }>>([]);
+  /** Only the newest read may write the rows; a slower earlier one is discarded. */
+  const loadToken = useRef(0);
   const loadRows = async () => {
     const p = new URLSearchParams();
     if (filterCollege) p.set("collegeId", String(filterCollege));
     if (filterSection) p.set("sectionId", String(filterSection));
     if (filterTerm) p.set("termId", String(filterTerm));
-    setRows(await fetchJson(`/api/schedules${p.size ? `?${p}` : ""}`));
+    const token = ++loadToken.current;
+    setRowsLoading(true);
+    try {
+      const data = await fetchJson(`/api/schedules${p.size ? `?${p}` : ""}`);
+      if (token === loadToken.current) setRows(data);
+    } finally {
+      if (token === loadToken.current) setRowsLoading(false);
+    }
   };
   useEffect(() => {
     setEditor("index");
@@ -891,6 +912,34 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setError(friendlyError(e));
     }
   };
+  useEffect(() => {
+    if (mode !== "schedule" || rowsLoading || rows.length || !filterTerm) { setEmptyElsewhere([]); return; }
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const query = new URLSearchParams({ termId: String(filterTerm) });
+        if (filterCollege) query.set("collegeId", String(filterCollege));
+        const response = await fetch(`/api/schedules?${query}`, { signal: controller.signal });
+        if (!response.ok) return;
+        const wider: FSchedule[] = await response.json();
+        const counts = new Map<number, number>();
+        wider.forEach(row => counts.set(Number(row.AdSectionId), (counts.get(Number(row.AdSectionId)) || 0) + 1));
+        setEmptyElsewhere(
+          [...counts.entries()]
+            .filter(([id]) => id && id !== filterSection)
+            .map(([sectionId, count]) => ({
+              sectionId,
+              name: sections.find(item => item.AdSectionId === sectionId)?.AdSectionName || `قسم ${sectionId}`,
+              count
+            }))
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 6)
+        );
+      } catch { /* an aborted probe is the normal case while switching scope */ }
+    })();
+    return () => controller.abort();
+  }, [mode, rowsLoading, rows.length, filterTerm, filterCollege, filterSection, sections]);
+
   const search = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -900,6 +949,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setError(friendlyError(e));
     }
   };
+  /**
+   * The scope applies itself.
+   *
+   * Choosing a college, a department and a term and then having to press a
+   * button was a step with no decision in it — and when the read was slow, the
+   * press and the result drifted so far apart that the screen looked broken.
+   * The selection is the request now, debounced so dragging through a long list
+   * of departments does not fire one read per option.
+   */
+  useEffect(() => {
+    if (mode !== "schedule") return;
+    const timer = window.setTimeout(() => {
+      setError(null);
+      loadRows().catch((error: any) => setError(friendlyError(error)));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [mode, filterCollege, filterSection, filterTerm]);
   useEffect(() => {
     if (
       mode !== "copy" ||
@@ -2144,7 +2210,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
         </div>
       ) : null}
       <Surface className="schedule-control">
-        <form className="filter-strip" onSubmit={search}>
+        <div className="filter-strip">
           {filterScope.lockCollege && filterScope.lockSection && filterScopeLabel ? <div className="scope-filter-chip"><span>النطاق</span><strong>{filterScopeLabel}</strong></div> : null}
           {!filterScope.lockCollege ? <Field label="الكلية"><select value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(isPowerAdmin ? (sections.find(sec=>sec.AdCollegeId===id)?.AdSectionId||0) : (resolveScopeSelection(scopes,id,false).defaultSectionId||0))}}><option value="">الكل ...</option>{colleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field> : null}
           {!filterScope.lockSection ? <Field label="القسم العلمي"><select value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">الكل ...</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
@@ -2161,8 +2227,8 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
               ))}
             </select>
           </Field>
-          <PrimaryButton type="submit">تطبيق</PrimaryButton>
-        </form>
+          {rowsLoading ? <span className="filter-strip-busy" role="status"><i aria-hidden="true" />يقرأ الجدول…</span> : null}
+        </div>
         <div className="schedule-tools">
           <Segmented
             value={viewMode}
@@ -2448,9 +2514,29 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
           ) : (
             <EmptyState
               title="لا توجد مواعيد ضمن الاختيار الحالي"
-              detail="غيّر الفصل أو القسم، أو أضف موعداً جديداً."
+              detail={
+                emptyElsewhere.length
+                  ? "هذا الفصل يحتوي مواعيد، لكن في أقسام أخرى:"
+                  : "لا مواعيد مسجلة في هذا الفصل ضمن نطاقك."
+              }
               action={
-                <PrimaryButton onClick={openCreate}>إضافة موعد</PrimaryButton>
+                <>
+                  {emptyElsewhere.length ? (
+                    <div className="empty-elsewhere">
+                      {emptyElsewhere.map(item => (
+                        <button
+                          type="button"
+                          key={item.sectionId}
+                          onClick={() => setFilterSection(item.sectionId)}
+                        >
+                          {item.name}
+                          <b>{item.count.toLocaleString("ar-KW-u-nu-latn")}</b>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  <PrimaryButton onClick={openCreate}>إضافة موعد</PrimaryButton>
+                </>
               }
             />
           )}{" "}

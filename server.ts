@@ -101,29 +101,65 @@ interface AuthenticatedRequest extends Request {
   scopes?: { AdCollegeId: number; AdSectionId: number }[];
 }
 
+/**
+ * Who is asking, resolved once instead of three times per request.
+ *
+ * Identifying the caller meant three sequential database round trips — the
+ * session, then the user, then their scopes — and it ran for every request,
+ * including stylesheets and fonts. On a hosted database that was roughly half a
+ * second of waiting before any handler had started, on every single call, which
+ * is most of what made the application feel slow.
+ *
+ * The answer is now held for a few seconds per session. It is dropped the
+ * moment the person signs out, and whenever an account or its scopes are
+ * edited, so a revoked or locked account cannot keep working from memory.
+ */
+const AUTH_CACHE_MS = 20_000;
+const authCache = new Map<string, { at: number; userId: number; user: any; scopes: any[] }>();
+export function forgetAuthSession(sessionId?: string) {
+  if (sessionId) authCache.delete(sessionId);
+  else authCache.clear();
+}
+Repository.onIdentityChanged?.(() => authCache.clear());
+
 async function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   const cookies = getCookies(req);
   const sessionId = cookies["session_id"];
-  if (sessionId) {
-    const sess = await Repository.getSession(sessionId);
-    if (sess) {
-      req.userId = sess.userId;
-      const user = await Repository.getUserById(sess.userId);
-      if (user && user.IsActive && !user.IsLocked && !user.IsDeleted) {
-        req.user = user;
-        req.scopes = await Repository.getUserAssigns(user.SystemUserId);
-        if (sess.expiresAt - Date.now() < 10 * 60 * 1000)
-          await Repository.refreshSession(sessionId, SERVER_IDLE_SESSION_MS);
-        next();
-        return;
-      }
-      await Repository.deleteSession(sessionId);
+  if (!sessionId) { next(); return; }
+
+  const cached = authCache.get(sessionId);
+  if (cached && Date.now() - cached.at < AUTH_CACHE_MS) {
+    req.userId = cached.userId;
+    req.user = cached.user;
+    req.scopes = cached.scopes;
+    next();
+    return;
+  }
+
+  const sess = await Repository.getSession(sessionId);
+  if (sess) {
+    req.userId = sess.userId;
+    const user = await Repository.getUserById(sess.userId);
+    if (user && user.IsActive && !user.IsLocked && !user.IsDeleted) {
+      req.user = user;
+      req.scopes = await Repository.getUserAssigns(user.SystemUserId);
+      authCache.set(sessionId, { at: Date.now(), userId: sess.userId, user, scopes: req.scopes || [] });
+      if (sess.expiresAt - Date.now() < 10 * 60 * 1000)
+        await Repository.refreshSession(sessionId, SERVER_IDLE_SESSION_MS);
+      next();
+      return;
     }
+    authCache.delete(sessionId);
+    await Repository.deleteSession(sessionId);
+  } else {
+    authCache.delete(sessionId);
   }
   next();
 }
 
-app.use(authMiddleware as express.RequestHandler);
+// Only the API needs to know who is calling. Stylesheets, fonts and the shell
+// were paying for an identity lookup they never read.
+app.use("/api", authMiddleware as express.RequestHandler);
 
 // Additive audit trail for successful state-changing API calls. No request body is stored,
 // so passwords and other sensitive values never enter the operational history.
@@ -403,6 +439,9 @@ app.post("/api/auth/logout", async (req: AuthenticatedRequest, res: Response) =>
   const cookies = getCookies(req);
   const sessionId = cookies["session_id"];
   if (sessionId) {
+    // Drop the remembered identity before the record, so no request in flight
+    // can be served from memory after the person has signed out.
+    forgetAuthSession(sessionId);
     await Repository.deleteSession(sessionId);
   }
   res.setHeader("Set-Cookie", `session_id=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
@@ -2949,7 +2988,7 @@ async function startServer() {
       console.error("لن يبدأ الخادم على بيانات بديلة. تبقى النسخة السابقة العاملة كما هي.");
       process.exit(1);
     }
-    app.use((_req, res) => {
+    app.use("/api/*", (_req, res) => {
       res.status(503).type("application/json; charset=utf-8").send(JSON.stringify({
         error: "الخدمة متوقفة: تعذر الاتصال بقاعدة البيانات الحقيقية.",
         detail: databaseFailure

@@ -1,4 +1,5 @@
 import fs from "fs";
+import { setReferenceCacheEnabled } from "../src/db/referenceCache";
 import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
@@ -44,6 +45,9 @@ async function runTests() {
   originalLog("=================================\n");
   process.env.NODE_ENV = "test";
   process.env.DATA_MODE = "demo"; // demo = exact local legacy snapshot in this build
+  // Every case must observe exactly the rows it just wrote, with no reference
+  // cache standing between the write and the next read.
+  setReferenceCacheEnabled(false);
   // Tests intentionally operate on the bundled fixture, never the persistent production state.
   process.env.SCHEDULE_PRIVATE_DIR = testPrivateDir;
   

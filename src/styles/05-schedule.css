@@ -709,6 +709,36 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   .week-event.physics-shift-up,.week-event.physics-shift-down{transform:none}
 }
 
+/* Where the appointments actually are, one tap away. */
+.empty-elsewhere{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--s2);margin-bottom:var(--s4)}
+.empty-elsewhere button{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  min-height:34px;padding:0 var(--s3) 0 var(--s2);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);
+  font-size:var(--t-xs);
+  transition:border-color .16s var(--ease),color .16s var(--ease);
+}
+.empty-elsewhere button:hover{border-color:var(--accent);color:var(--accent)}
+.empty-elsewhere b{
+  min-width:22px;padding:1px var(--s2);border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted);
+  font-size:10px;font-variant-numeric:tabular-nums;
+}
+
+/* The scope reads itself; this is the only sign that a read is in flight. */
+.filter-strip-busy{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  align-self:end;min-height:44px;
+  color:var(--muted);font-size:var(--t-xs);white-space:nowrap;
+}
+.filter-strip-busy i{
+  width:12px;height:12px;border-radius:var(--r-full);
+  border:1.5px solid currentColor;border-top-color:transparent;
+  animation:boot-turn .7s linear infinite;
+}
+@keyframes boot-turn{to{transform:rotate(360deg)}}
+
 /* --------------------------------------------------------------------------
    WHOSE HALL IS THIS
    Booking another department's hall is allowed, but it should never happen by

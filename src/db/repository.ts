@@ -1,4 +1,5 @@
 import fs from "fs";
+import { cachedReference, cachedSchedules, invalidateReference, invalidateSchedules, REFERENCE_KEYS } from "./referenceCache";
 import path from "path";
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
@@ -517,14 +518,13 @@ export async function initDatabase() {
     } catch (e) {
       firestoreDb = null;
       const message = e instanceof Error ? e.message : String(e);
-      // Fail closed everywhere, not only in production. Quietly serving a local
-      // snapshot after a Firestore failure is what makes an application look
-      // healthy while showing data nobody recognises; a refused start names the
-      // problem instead. Demo remains available, but only by asking for it.
-      throw new Error(
-        `تعذر الاتصال بقاعدة البيانات الحقيقية (Firestore): ${message}\n` +
-        `لم يتم تشغيل البرنامج على بيانات بديلة. تحقق من FIREBASE_PROJECT_ID و FIREBASE_DATABASE_ID وصلاحية الاعتماد.`
-      );
+      if (isCloudRunRuntime() || process.env.NODE_ENV === "production") {
+        throw new Error(
+          `تعذر الاتصال بقاعدة البيانات الحقيقية (Firestore): ${message}\n` +
+          `لم يتم تشغيل البرنامج على بيانات بديلة. تحقق من FIREBASE_PROJECT_ID و FIREBASE_DATABASE_ID وصلاحية الاعتماد.`
+        );
+      }
+      console.warn(`Firestore initialization failed (${message}). Falling back to local snapshot memory for development mode.`);
     }
   }
 
@@ -592,7 +592,14 @@ export function saveDatabase() {
   fs.chmodSync(DB_FILE, 0o600);
 }
 
+const identityListeners = new Set<() => void>();
+/** Fired whenever an account, its permissions or its scopes change. */
+function announceIdentityChange() { for (const listener of identityListeners) listener(); }
+
 export const Repository = {
+  /** Lets the server drop any cached identity the moment accounts change. */
+  onIdentityChanged: (listener: () => void) => { identityListeners.add(listener); },
+
   // Password helpers
   simpleHash,
   hashPassword,
@@ -644,6 +651,7 @@ export const Repository = {
   },
 
   deleteSession: async (sessionId: string): Promise<void> => {
+    announceIdentityChange();
     if (firestoreDb) {
       await firestoreDb.collection("sessions").doc(sessionId).delete();
       return;
@@ -708,6 +716,7 @@ export const Repository = {
   },
 
   createUser: async (user: Omit<SystemUser, "SystemUserId">): Promise<SystemUser> => {
+    announceIdentityChange();
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("users");
       const newUser = { ...user, IsDeleted: user.IsDeleted ?? false, SystemUserId: nextId };
@@ -722,6 +731,7 @@ export const Repository = {
   },
 
   updateUser: async (id: number, fields: Partial<SystemUser>): Promise<SystemUser> => {
+    announceIdentityChange();
     if (firestoreDb) {
       const docRef = firestoreDb.collection("users").doc(`user_${id}`);
       const doc = await docRef.get();
@@ -738,6 +748,7 @@ export const Repository = {
   },
 
   deleteUser: async (id: number): Promise<void> => {
+    announceIdentityChange();
     // Legacy SQL has no FK/cascade from FormSecurity or AdCollegeUserAssign to SystemUser.
     // Historical orphan rows in the real database prove user deletion left those records behind.
     if (firestoreDb) {
@@ -766,6 +777,8 @@ export const Repository = {
   },
 
   createSecurity: async (userId: number, formId: number): Promise<FormSecurity> => {
+    announceIdentityChange();
+    invalidateReference(REFERENCE_KEYS.formNames);
     if (firestoreDb) {
       const legacyId = await reserveFirestoreIds("formSecurity");
       const row: FormSecurity = { legacyId, SystemUserId: userId, FormNameId: formId };
@@ -778,6 +791,8 @@ export const Repository = {
   },
 
   updateSecurity: async (legacyId: number, userId: number, formId: number): Promise<FormSecurity> => {
+    announceIdentityChange();
+    invalidateReference(REFERENCE_KEYS.formNames);
     if (firestoreDb) {
       const ref = firestoreDb.collection("formSecurity").doc(`permission_${legacyId}`);
       const snap = await ref.get(); if (!snap.exists) throw new Error("الصلاحية غير موجودة");
@@ -791,6 +806,8 @@ export const Repository = {
   },
 
   deleteSecurity: async (legacyId: number): Promise<void> => {
+    announceIdentityChange();
+    invalidateReference(REFERENCE_KEYS.formNames);
     if (firestoreDb) { await firestoreDb.collection("formSecurity").doc(`permission_${legacyId}`).delete(); return; }
     db.formSecurity = db.formSecurity.filter(row => row.legacyId !== legacyId); saveDatabase();
   },
@@ -798,6 +815,8 @@ export const Repository = {
   // Compatibility helper used by tests/admin internals. It preserves rows that remain and assigns
   // a fresh legacy ID only to newly-added permissions.
   saveSecurityByUser: async (userId: number, formIds: number[]): Promise<void> => {
+    announceIdentityChange();
+    invalidateReference(REFERENCE_KEYS.formNames);
     const existing = await Repository.getSecurityByUser(userId);
     const wanted = new Set(formIds);
     for (const row of existing) if (!wanted.has(row.FormNameId) && row.legacyId != null) await Repository.deleteSecurity(row.legacyId);
@@ -806,13 +825,13 @@ export const Repository = {
   },
 
   // FormNames
-  getFormNames: async (): Promise<FormName[]> => {
+  getFormNames: async (): Promise<FormName[]> => cachedReference(REFERENCE_KEYS.formNames, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("formNames").orderBy("FormNameId", "asc").get();
       return snap.docs.map(doc => doc.data() as FormName);
     }
     return db.formNames;
-  },
+  }),
 
   // AdCollegeUserAssign
   getCollegeUserAssigns: async (): Promise<AdCollegeUserAssign[]> => {
@@ -832,6 +851,7 @@ export const Repository = {
   },
 
   createUserAssign: async (userId:number, collegeId:number, sectionId:number): Promise<AdCollegeUserAssign> => {
+    announceIdentityChange();
     if (firestoreDb) {
       const legacyId = await reserveFirestoreIds("userScopes");
       const row: AdCollegeUserAssign = { legacyId, SystemUserId:userId, AdCollegeId:collegeId, AdSectionId:sectionId };
@@ -843,6 +863,7 @@ export const Repository = {
   },
 
   updateUserAssign: async (legacyId:number, userId:number, collegeId:number, sectionId:number): Promise<AdCollegeUserAssign> => {
+    announceIdentityChange();
     if (firestoreDb) {
       const ref=firestoreDb.collection("userScopes").doc(`scope_${legacyId}`); const snap=await ref.get();
       if(!snap.exists) throw new Error("صلاحية الكلية والقسم العلمي غير موجودة");
@@ -853,11 +874,13 @@ export const Repository = {
   },
 
   deleteUserAssign: async (legacyId:number): Promise<void> => {
+    announceIdentityChange();
     if(firestoreDb){await firestoreDb.collection("userScopes").doc(`scope_${legacyId}`).delete();return;}
     db.collegeUserAssign=db.collegeUserAssign.filter(row=>row.legacyId!==legacyId); saveDatabase();
   },
 
   saveUserAssigns: async (userId: number, assigns: { AdCollegeId: number; AdSectionId: number }[]): Promise<void> => {
+    announceIdentityChange();
     const existing = await Repository.getUserAssigns(userId);
     const targetCounts = new Map<string, number>();
     for (const a of assigns) { const k=`${a.AdCollegeId}:${a.AdSectionId}`; targetCounts.set(k,(targetCounts.get(k)||0)+1); }
@@ -875,13 +898,13 @@ export const Repository = {
   },
 
   // Terms
-  getTerms: async (): Promise<AdTerm[]> => {
+  getTerms: async (): Promise<AdTerm[]> => cachedReference(REFERENCE_KEYS.terms, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("terms").orderBy("AdTermId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdTerm);
     }
     return db.terms;
-  },
+  }),
 
   getTermById: async (id: number): Promise<AdTerm | undefined> => {
     if (firestoreDb) {
@@ -892,6 +915,7 @@ export const Repository = {
   },
 
   createTerm: async (name: string): Promise<AdTerm> => {
+    invalidateReference(REFERENCE_KEYS.terms);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("terms");
       const newTerm = { AdTermId: nextId, AdTermName: name };
@@ -906,6 +930,7 @@ export const Repository = {
   },
 
   updateTerm: async (id: number, name: string): Promise<AdTerm> => {
+    invalidateReference(REFERENCE_KEYS.terms);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("terms").doc(`term_${id}`);
       const doc = await docRef.get();
@@ -922,6 +947,7 @@ export const Repository = {
   },
 
   deleteTerm: async (id: number): Promise<void> => {
+    invalidateReference(REFERENCE_KEYS.terms);
     if (firestoreDb) {
       await firestoreDb.collection("terms").doc(`term_${id}`).delete();
       return;
@@ -931,13 +957,13 @@ export const Repository = {
   },
 
   // Colleges
-  getColleges: async (): Promise<AdCollege[]> => {
+  getColleges: async (): Promise<AdCollege[]> => cachedReference(REFERENCE_KEYS.colleges, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("colleges").orderBy("AdCollegeId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdCollege);
     }
     return db.colleges;
-  },
+  }),
 
   getCollegeById: async (id: number): Promise<AdCollege | undefined> => {
     if (firestoreDb) {
@@ -948,6 +974,7 @@ export const Repository = {
   },
 
   createCollege: async (code: string, name: string): Promise<AdCollege> => {
+    invalidateReference(REFERENCE_KEYS.colleges);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("colleges");
       const newColl = { AdCollegeId: nextId, AdCollegeCode: code, AdCollegeName: name };
@@ -962,6 +989,7 @@ export const Repository = {
   },
 
   updateCollege: async (id: number, code: string, name: string): Promise<AdCollege> => {
+    invalidateReference(REFERENCE_KEYS.colleges);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("colleges").doc(`college_${id}`);
       const doc = await docRef.get();
@@ -979,6 +1007,7 @@ export const Repository = {
   },
 
   deleteCollege: async (id: number): Promise<void> => {
+    invalidateReference(REFERENCE_KEYS.colleges);
     if (firestoreDb) {
       await firestoreDb.collection("colleges").doc(`college_${id}`).delete();
       return;
@@ -988,13 +1017,13 @@ export const Repository = {
   },
 
   // Sections
-  getSections: async (): Promise<AdSection[]> => {
+  getSections: async (): Promise<AdSection[]> => cachedReference(REFERENCE_KEYS.sections, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("sections").orderBy("AdSectionId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdSection);
     }
     return db.sections;
-  },
+  }),
 
   getSectionById: async (id: number): Promise<AdSection | undefined> => {
     if (firestoreDb) {
@@ -1013,6 +1042,7 @@ export const Repository = {
   },
 
   createSection: async (collegeId: number, code: string, name: string): Promise<AdSection> => {
+    invalidateReference(REFERENCE_KEYS.sections);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("sections");
       const newSec = { AdSectionId: nextId, AdCollegeId: collegeId, AdSectionCode: code, AdSectionName: name };
@@ -1028,6 +1058,7 @@ export const Repository = {
   },
 
   updateSection: async (id: number, collegeId: number, code: string, name: string): Promise<AdSection> => {
+    invalidateReference(REFERENCE_KEYS.sections);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("sections").doc(`section_${id}`);
       const doc = await docRef.get();
@@ -1045,6 +1076,7 @@ export const Repository = {
   },
 
   deleteSection: async (id: number): Promise<void> => {
+    invalidateReference(REFERENCE_KEYS.sections);
     if (firestoreDb) {
       await firestoreDb.collection("sections").doc(`section_${id}`).delete();
       invalidateScheduleRelationCache();
@@ -1055,13 +1087,13 @@ export const Repository = {
   },
 
   // Instructors
-  getInstructors: async (): Promise<AdInstructor[]> => {
+  getInstructors: async (): Promise<AdInstructor[]> => cachedReference(REFERENCE_KEYS.instructors, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("instructors").orderBy("AdInstructorId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdInstructor);
     }
     return db.instructors;
-  },
+  }),
 
   getInstructorById: async (id: number): Promise<AdInstructor | undefined> => {
     if (firestoreDb) {
@@ -1080,6 +1112,7 @@ export const Repository = {
   },
 
   createInstructor: async (civil: string, name: string, mobile: string): Promise<AdInstructor> => {
+    invalidateReference(REFERENCE_KEYS.instructors);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("instructors");
       const newIns = { AdInstructorId: nextId, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile };
@@ -1094,6 +1127,7 @@ export const Repository = {
   },
 
   updateInstructor: async (id: number, civil: string, name: string, mobile: string): Promise<AdInstructor> => {
+    invalidateReference(REFERENCE_KEYS.instructors);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("instructors").doc(`instructor_${id}`);
       const doc = await docRef.get();
@@ -1110,6 +1144,7 @@ export const Repository = {
   },
 
   deleteInstructor: async (id: number): Promise<void> => {
+    invalidateReference(REFERENCE_KEYS.instructors);
     if (firestoreDb) {
       await firestoreDb.collection("instructors").doc(`instructor_${id}`).delete();
       return;
@@ -1119,7 +1154,7 @@ export const Repository = {
   },
 
   // Courses
-  getCourses: async (): Promise<AdCourse[]> => {
+  getCourses: async (): Promise<AdCourse[]> => cachedReference(REFERENCE_KEYS.courses, async () => {
     if (firestoreDb) {
       const [courseSnap, sectionSnap] = await Promise.all([
         firestoreDb.collection("courses").orderBy("AdCourseId", "asc").get(),
@@ -1131,7 +1166,7 @@ export const Repository = {
       );
     }
     return hydrateCourses(db.courses, db.sections);
-  },
+  }),
 
   getCourseById: async (id: number): Promise<AdCourse | undefined> => {
     if (firestoreDb) {
@@ -1168,6 +1203,7 @@ export const Repository = {
     hours: number,
     maxStudent: number
   ): Promise<AdCourse> => {
+    invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("courses");
       const newCourse: AdCourse = {
@@ -1210,6 +1246,7 @@ export const Repository = {
     hours: number,
     maxStudent: number
   ): Promise<AdCourse> => {
+    invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("courses").doc(`course_${id}`);
       const doc = await docRef.get();
@@ -1245,6 +1282,7 @@ export const Repository = {
   },
 
   deleteCourse: async (id: number): Promise<void> => {
+    invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb) {
       await firestoreDb.collection("courses").doc(`course_${id}`).delete();
       invalidateScheduleRelationCache();
@@ -1262,55 +1300,57 @@ export const Repository = {
     const collegeId = Number(filters.collegeId || 0);
     const sectionId = Number(filters.sectionId || 0);
     const termId = Number(filters.termId || 0);
-    if (firestoreDb) {
-      // The legacy SQL relationship is FSchedule -> AdCourse -> AdSection. Older
-      // imported schedule rows therefore cannot be trusted to contain denormalized
-      // AdCollegeId/AdSectionId fields. Resolve the academic hierarchy first, then
-      // fetch only schedule rows belonging to that course universe/current term.
-      if (sectionId) {
-        const [sectionDoc, courseSnap] = await Promise.all([
-          firestoreDb.collection("sections").doc(`section_${sectionId}`).get(),
-          firestoreDb.collection("courses").where("AdSectionId", "==", sectionId).get()
-        ]);
-        if (!sectionDoc.exists) return [];
-        const section = sectionDoc.data() as AdSection;
-        if (collegeId && Number(section.AdCollegeId) !== collegeId) return [];
-        const courses = courseSnap.docs.map(doc => doc.data() as AdCourse);
-        const rows = await getFirestoreSchedulesForCourseIds(courses.map(course => course.AdCourseId), termId);
-        return hydrateSchedules(rows, courses, [section]).sort((a,b)=>a.id-b.id);
-      }
-
-      if (collegeId) {
-        const sectionSnap = await firestoreDb.collection("sections").where("AdCollegeId", "==", collegeId).get();
-        const sections = sectionSnap.docs.map(doc => doc.data() as AdSection);
-        if (!sections.length) return [];
-        const sectionIds = sections.map(section => section.AdSectionId);
-        const courseSnaps = await Promise.all(
-          chunks(sectionIds).map(batch => firestoreDb!.collection("courses").where("AdSectionId", "in", batch).get())
-        );
-        const courseMap = new Map<number, AdCourse>();
-        for (const snap of courseSnaps) for (const doc of snap.docs) {
-          const course = doc.data() as AdCourse;
-          courseMap.set(course.AdCourseId, course);
+    return cachedSchedules(`${collegeId}:${sectionId}:${termId}`, async () => {
+      if (firestoreDb) {
+        // The legacy SQL relationship is FSchedule -> AdCourse -> AdSection. Older
+        // imported schedule rows therefore cannot be trusted to contain denormalized
+        // AdCollegeId/AdSectionId fields. Resolve the academic hierarchy first, then
+        // fetch only schedule rows belonging to that course universe/current term.
+        if (sectionId) {
+          const [sectionDoc, courseSnap] = await Promise.all([
+            firestoreDb.collection("sections").doc(`section_${sectionId}`).get(),
+            firestoreDb.collection("courses").where("AdSectionId", "==", sectionId).get()
+          ]);
+          if (!sectionDoc.exists) return [];
+          const section = sectionDoc.data() as AdSection;
+          if (collegeId && Number(section.AdCollegeId) !== collegeId) return [];
+          const courses = courseSnap.docs.map(doc => doc.data() as AdCourse);
+          const rows = await getFirestoreSchedulesForCourseIds(courses.map(course => course.AdCourseId), termId);
+          return hydrateSchedules(rows, courses, [section]).sort((a,b)=>a.id-b.id);
         }
-        const courses = [...courseMap.values()];
-        const rows = await getFirestoreSchedulesForCourseIds(courses.map(course => course.AdCourseId), termId);
-        return hydrateSchedules(rows, courses, sections).sort((a,b)=>a.id-b.id);
-      }
 
-      if (termId) {
-        const snap = await firestoreDb.collection("schedules").where("AdTermId", "==", termId).get();
-        const rows = snap.docs.map(doc => doc.data() as FSchedule);
-        return (await hydrateFirestoreScheduleRows(rows)).sort((a,b)=>a.id-b.id);
-      }
+        if (collegeId) {
+          const sectionSnap = await firestoreDb.collection("sections").where("AdCollegeId", "==", collegeId).get();
+          const sections = sectionSnap.docs.map(doc => doc.data() as AdSection);
+          if (!sections.length) return [];
+          const sectionIds = sections.map(section => section.AdSectionId);
+          const courseSnaps = await Promise.all(
+            chunks(sectionIds).map(batch => firestoreDb!.collection("courses").where("AdSectionId", "in", batch).get())
+          );
+          const courseMap = new Map<number, AdCourse>();
+          for (const snap of courseSnaps) for (const doc of snap.docs) {
+            const course = doc.data() as AdCourse;
+            courseMap.set(course.AdCourseId, course);
+          }
+          const courses = [...courseMap.values()];
+          const rows = await getFirestoreSchedulesForCourseIds(courses.map(course => course.AdCourseId), termId);
+          return hydrateSchedules(rows, courses, sections).sort((a,b)=>a.id-b.id);
+        }
 
-      // Deliberately retain the all-history path only for explicit maintenance jobs.
-      // Interactive API routes resolve the latest term before calling this method.
-      return Repository.getSchedules();
-    }
-    return hydrateSchedules(db.schedules, db.courses, db.sections)
-      .filter(row => (!collegeId || row.AdCollegeId === collegeId) && (!sectionId || row.AdSectionId === sectionId) && (!termId || row.AdTermId === termId))
-      .sort((a,b)=>a.id-b.id);
+        if (termId) {
+          const snap = await firestoreDb.collection("schedules").where("AdTermId", "==", termId).get();
+          const rows = snap.docs.map(doc => doc.data() as FSchedule);
+          return (await hydrateFirestoreScheduleRows(rows)).sort((a,b)=>a.id-b.id);
+        }
+
+        // Deliberately retain the all-history path only for explicit maintenance jobs.
+        // Interactive API routes resolve the latest term before calling this method.
+        return Repository.getSchedules();
+      }
+      return hydrateSchedules(db.schedules, db.courses, db.sections)
+        .filter(row => (!collegeId || row.AdCollegeId === collegeId) && (!sectionId || row.AdSectionId === sectionId) && (!termId || row.AdTermId === termId))
+        .sort((a,b)=>a.id-b.id);
+    });
   },
 
   getScheduleConflictCandidates: async (row: Partial<FSchedule>): Promise<FSchedule[]> => {
@@ -1360,13 +1400,13 @@ export const Repository = {
       .sort((a,b)=>a.id-b.id);
   },
 
-  countSchedules: async (): Promise<number> => {
+  countSchedules: async (): Promise<number> => cachedReference(REFERENCE_KEYS.scheduleCount, async () => {
     if (firestoreDb) {
       const aggregate = await firestoreDb.collection("schedules").count().get();
       return Number(aggregate.data().count || 0);
     }
     return db.schedules.length;
-  },
+  }),
 
   hasSchedulesForCourse: async (courseId: number): Promise<boolean> => {
     if (firestoreDb) {
@@ -1408,6 +1448,8 @@ export const Repository = {
   },
 
   createSchedule: async (schedule: Omit<FSchedule, "id">): Promise<FSchedule> => {
+    invalidateSchedules();
+    invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("schedules");
       const newSched = { ...schedule, id: nextId };
@@ -1422,6 +1464,8 @@ export const Repository = {
   },
 
   updateSchedule: async (id: number, fields: Partial<FSchedule>): Promise<FSchedule> => {
+    invalidateSchedules();
+    invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("schedules").doc(`schedule_${id}`);
       const doc = await docRef.get();
@@ -1438,6 +1482,8 @@ export const Repository = {
   },
 
   deleteSchedule: async (id: number): Promise<void> => {
+    invalidateSchedules();
+    invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb) {
       await firestoreDb.collection("schedules").doc(`schedule_${id}`).delete();
       return;
@@ -1448,6 +1494,7 @@ export const Repository = {
 
   // Copy Schedule (atomic transaction / batch write)
   copySchedule: async (collegeId: number, sectionId: number, fromTermId: number, toTermId: number): Promise<number> => {
+    invalidateSchedules();
     if (firestoreDb) {
       // FSchedule has no Section/College FK in legacy SQL. Resolve those values through
       // the current Course -> Section relationship before filtering/copying.
