@@ -438,13 +438,31 @@ async function seedFirestoreFromLocalSnapshotIfNeeded(fsDb: Firestore) {
 }
 
 export async function initDatabase() {
-  const requestedMode = (process.env.DATA_MODE || "demo").toLowerCase();
-  if (requestedMode !== "demo" && requestedMode !== "firestore") throw new Error(`DATA_MODE غير مدعوم: ${requestedMode}`);
-  // Cloud Run instances are replaceable and their writable filesystem is ephemeral.
-  // If an uploaded .env still says demo, promote it safely to Firestore instead of
-  // crashing or pretending that /tmp is durable storage.
-  const mode: "demo" | "firestore" = isCloudRunRuntime() && requestedMode === "demo" ? "firestore" : requestedMode;
+  /**
+   * Real data is the default, and the only silent one.
+   *
+   * The previous default was the packaged demo snapshot, which meant a missing
+   * or mistyped DATA_MODE started the application on invented rows — and, if no
+   * local file existed, minted a fresh database with a default administrator.
+   * An application that looks healthy while showing the wrong schedule is worse
+   * than one that refuses to start, so demo is now something you must ask for
+   * out loud, and asking for it is announced in the log every time.
+   */
+  const requested = (process.env.DATA_MODE || "").trim().toLowerCase();
+  if (requested && requested !== "demo" && requested !== "firestore") {
+    throw new Error(`DATA_MODE غير مدعوم: ${requested} — القيم المقبولة: firestore أو demo.`);
+  }
+  const requestedMode: "demo" | "firestore" = requested === "demo" ? "demo" : "firestore";
+  // Cloud Run instances are replaceable and their writable filesystem is ephemeral,
+  // so a local JSON database there is not storage at all.
+  const mode: "demo" | "firestore" = isCloudRunRuntime() ? "firestore" : requestedMode;
   if (mode !== requestedMode) console.log("Cloud Run detected: using Firestore instead of ephemeral local JSON mode.");
+  if (mode === "demo") {
+    console.warn("=".repeat(72));
+    console.warn("DATA_MODE=demo — بيانات تجريبية، ليست بيانات الجامعة الحقيقية.");
+    console.warn("للتشغيل على البيانات الحقيقية: احذف DATA_MODE أو اضبطه على firestore.");
+    console.warn("=".repeat(72));
+  }
   configurePrivateDatabasePaths(mode);
   if (mode === "demo") restoreDatabaseBackupIfNeeded();
   console.log(`Initializing database in mode: ${mode}`);
@@ -499,12 +517,14 @@ export async function initDatabase() {
     } catch (e) {
       firestoreDb = null;
       const message = e instanceof Error ? e.message : String(e);
-      if (isCloudRunRuntime() || process.env.NODE_ENV === "production") {
-        // Fail closed in production. Serving a local/demo snapshot after a Firestore
-        // failure makes the application look healthy while showing the wrong data.
-        throw new Error(`Production Firestore initialization failed: ${message}`);
-      }
-      console.warn(`Firestore initialization failed (${message}). Falling back to local snapshot memory for non-production use only.`);
+      // Fail closed everywhere, not only in production. Quietly serving a local
+      // snapshot after a Firestore failure is what makes an application look
+      // healthy while showing data nobody recognises; a refused start names the
+      // problem instead. Demo remains available, but only by asking for it.
+      throw new Error(
+        `تعذر الاتصال بقاعدة البيانات الحقيقية (Firestore): ${message}\n` +
+        `لم يتم تشغيل البرنامج على بيانات بديلة. تحقق من FIREBASE_PROJECT_ID و FIREBASE_DATABASE_ID وصلاحية الاعتماد.`
+      );
     }
   }
 

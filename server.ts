@@ -3,6 +3,7 @@ import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
 import { initDatabase, Repository } from "./src/db/repository";
+import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
@@ -2926,10 +2927,34 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 async function startServer() {
   // Wait for the data layer before accepting any requests. In Firestore mode this also
   // completes the one-time import of the verified legacy snapshot when the target is empty.
+  /**
+   * No database, no service.
+   *
+   * This used to log the failure and carry on listening, which produced the
+   * worst possible outcome: a site that answers, renders, and shows nothing —
+   * indistinguishable to the person looking at it from a site with an empty
+   * schedule. On a real deployment the process now exits, so the platform keeps
+   * the previous working revision serving instead of replacing it with a broken
+   * one. Locally it stays up and says exactly what is wrong on every request,
+   * because a developer needs to read the reason, not guess it.
+   */
+  let databaseFailure: string | null = null;
   try {
     await initDatabase();
   } catch (error) {
-    console.error("Critical: Database initialization failed. The server will continue running but API requests may fail.", error);
+    databaseFailure = error instanceof Error ? error.message : String(error);
+    console.error("تعذر تهيئة قاعدة البيانات:\n" + databaseFailure);
+    const disposable = isCloudRunRuntime() || process.env.NODE_ENV === "production";
+    if (disposable) {
+      console.error("لن يبدأ الخادم على بيانات بديلة. تبقى النسخة السابقة العاملة كما هي.");
+      process.exit(1);
+    }
+    app.use((_req, res) => {
+      res.status(503).type("application/json; charset=utf-8").send(JSON.stringify({
+        error: "الخدمة متوقفة: تعذر الاتصال بقاعدة البيانات الحقيقية.",
+        detail: databaseFailure
+      }));
+    });
   }
 
   app.all("/api/*", (req, res) => {
