@@ -15,11 +15,25 @@ import { ConsoleRail } from "./ui";
  * bookmarks and the browser's back button behave exactly as before.
  */
 
-const Terms = lazy(() => import("./Terms"));
-const Colleges = lazy(() => import("./Colleges"));
-const Sections = lazy(() => import("./Sections"));
-const Instructors = lazy(() => import("./Instructors"));
-const Courses = lazy(() => import("./Courses"));
+function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
+  return lazy(() =>
+    factory().catch((err) => {
+      console.warn("Lazy chunk import failed in AcademicConsole:", err);
+      const key = "miras_console_chunk_reload";
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        window.location.reload();
+      }
+      throw err;
+    })
+  );
+}
+
+const Terms = safeLazy(() => import("./Terms"));
+const Colleges = safeLazy(() => import("./Colleges"));
+const Sections = safeLazy(() => import("./Sections"));
+const Instructors = safeLazy(() => import("./Instructors"));
+const Courses = safeLazy(() => import("./Courses"));
 
 export type AcademicTab = "terms" | "colleges" | "sections" | "instructors" | "courses";
 

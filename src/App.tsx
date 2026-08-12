@@ -33,15 +33,29 @@ import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 
+function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
+  return lazy(() =>
+    factory().catch((err) => {
+      console.warn("Lazy chunk import failed:", err);
+      const key = "miras_chunk_reload";
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        window.location.reload();
+      }
+      throw err;
+    })
+  );
+}
+
 // The dashboard is the landing screen and stays in the first payload. Every other
 // workspace is fetched the moment it is first opened, which keeps the initial
 // download small on the slow campus connections this runs on.
-const AcademicConsole = lazy(() => import("./components/AcademicConsole"));
-const Schedules = lazy(() => import("./components/Schedules"));
-const Reports = lazy(() => import("./components/Reports"));
-const AdminUsers = lazy(() => import("./components/AdminUsers"));
-const About = lazy(() => import("./components/About"));
-const IntelligenceWorkspace = lazy(() => import("./components/IntelligenceWorkspace"));
+const AcademicConsole = safeLazy(() => import("./components/AcademicConsole"));
+const Schedules = safeLazy(() => import("./components/Schedules"));
+const Reports = safeLazy(() => import("./components/Reports"));
+const AdminUsers = safeLazy(() => import("./components/AdminUsers"));
+const About = safeLazy(() => import("./components/About"));
+const IntelligenceWorkspace = safeLazy(() => import("./components/IntelligenceWorkspace"));
 import { PrimaryButton } from "./components/ui";
 
 type View =

@@ -2951,7 +2951,7 @@ async function startServer() {
     const looksLikeFile = /\.[a-z0-9]{2,8}$/i;
     app.get("*", (req, res) => {
       if (req.path.startsWith("/assets/") || looksLikeFile.test(req.path)) {
-        res.status(404).type("text/plain; charset=utf-8").send("Not found");
+        res.status(404).setHeader("Cache-Control", "no-store, no-cache, must-revalidate").type("text/plain; charset=utf-8").send("Not found");
         return;
       }
       res.setHeader("Cache-Control", "no-cache");

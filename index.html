@@ -10,7 +10,6 @@
     <meta name="apple-mobile-web-app-title" content="Schedule" />
     <meta name="description" content="مساحة تشغيل الجدول الأكاديمي — بناء الجدول، مراجعته، والقرار الصحيح بدون ضوضاء." />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-400.woff2" crossorigin />
-    <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-600.woff2" crossorigin />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/schedule-icon-192.png" />
@@ -110,7 +109,11 @@
               }));
             }
           } catch (e) {}
-          var done = function () { location.reload(); };
+          var done = function () {
+            var url = new URL(location.href);
+            url.searchParams.set("_r", Date.now().toString());
+            location.replace(url.href);
+          };
           if (jobs.length) Promise.all(jobs).then(done, done); else done();
         }
 
@@ -132,11 +135,22 @@
         }
         window.addEventListener("error", function (event) {
           var target = event && event.target;
-          if (isBuildAsset(target)) recover("asset " + String(target.src || target.href || "").slice(-56));
+          if (isBuildAsset(target)) {
+            recover("asset " + String(target.src || target.href || "").slice(-56));
+            return;
+          }
+          var msg = String((event && (event.message || (event.error && event.error.message))) || "");
+          if (msg && !booted && !painted()) {
+            if (/SyntaxError|Unexpected|import|module|Loading chunk/i.test(msg)) {
+              recover("js " + msg.slice(0, 60));
+            }
+          }
         }, true);
         window.addEventListener("unhandledrejection", function (event) {
-          var text = String((event && event.reason && event.reason.message) || "");
-          if (/dynamically imported module|Importing a module script failed|Loading chunk/i.test(text)) recover(text.slice(0, 90));
+          var text = String((event && event.reason && (event.reason.message || event.reason)) || "");
+          if (/dynamically imported module|Importing a module script failed|Loading chunk|SyntaxError|Unexpected/i.test(text)) {
+            recover(text.slice(0, 90));
+          }
         });
 
         /* Belt and braces: notice a paint even if the signal never arrives. */
@@ -147,7 +161,23 @@
         setTimeout(function () { if (!booted && !painted()) recover("timeout"); }, 25000);
 
         var retry = document.getElementById("boot-retry");
-        if (retry) retry.addEventListener("click", function () { clear(); location.reload(); });
+        if (retry) {
+          retry.addEventListener("click", function () {
+            clear();
+            try { localStorage.clear(); } catch(e){}
+            try { sessionStorage.clear(); } catch(e){}
+            if (navigator.serviceWorker) {
+              navigator.serviceWorker.getRegistrations().then(function(regs){
+                regs.forEach(function(r){ r.unregister(); });
+                location.href = location.pathname + "?_reset=" + Date.now();
+              }).catch(function(){
+                location.href = location.pathname + "?_reset=" + Date.now();
+              });
+            } else {
+              location.href = location.pathname + "?_reset=" + Date.now();
+            }
+          });
+        }
       })();
     </script>
     <script type="module" src="/src/main.tsx"></script>
