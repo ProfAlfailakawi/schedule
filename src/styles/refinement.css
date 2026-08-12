@@ -1,0 +1,7 @@
+.editorial-dashboard-hero h1 {
+  font-size: clamp(54px, 6vw, 88px);
+}
+
+.living-command-deck {
+  grid-template-areas: "pulse health actions";
+}
