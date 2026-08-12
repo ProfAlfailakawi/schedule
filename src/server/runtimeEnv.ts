@@ -31,20 +31,33 @@ export function configureRuntimeEnvironment(): string {
     process.env.SCHEDULE_PRIVATE_DIR = configuredPrivateDir;
   }
   if (!process.env.SCHEDULE_PRIVATE_DIR) process.env.SCHEDULE_PRIVATE_DIR = initialPrivateDir;
-  // Cloud Run must serve the compiled release, never Vite development middleware.
-  // Keep local development convenient while making source deployments production-safe.
-  if (runningOnCloudRun) process.env.NODE_ENV = "production";
+  // Cloud Run must serve the compiled release and use the already-provisioned
+  // Firestore database as the single source of truth. A stale copied .env in /tmp
+  // must never redirect a new revision to another Firebase project/database.
+  if (runningOnCloudRun) {
+    process.env.NODE_ENV = "production";
+    process.env.DATA_MODE = "firestore";
+    // Production Firestore is already populated. Never seed/replace it from a bundled snapshot.
+    process.env.AUTO_IMPORT_LEGACY_DATA = "false";
+  }
 
-  // Auto-inject Firebase configuration if present
+  // Auto-inject Firebase configuration if present. In Cloud Run the AI Studio
+  // applet config is authoritative; locally, explicit environment variables keep
+  // their existing precedence for development/testing.
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(firebaseConfigPath)) {
     try {
       const fbConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
-      if (fbConfig.projectId && !process.env.FIREBASE_PROJECT_ID) {
-        process.env.FIREBASE_PROJECT_ID = fbConfig.projectId;
-      }
-      if (fbConfig.firestoreDatabaseId && !process.env.FIREBASE_DATABASE_ID) {
-        process.env.FIREBASE_DATABASE_ID = fbConfig.firestoreDatabaseId;
+      if (runningOnCloudRun) {
+        if (fbConfig.projectId) process.env.FIREBASE_PROJECT_ID = String(fbConfig.projectId);
+        if (fbConfig.firestoreDatabaseId) process.env.FIREBASE_DATABASE_ID = String(fbConfig.firestoreDatabaseId);
+      } else {
+        if (fbConfig.projectId && !process.env.FIREBASE_PROJECT_ID) {
+          process.env.FIREBASE_PROJECT_ID = fbConfig.projectId;
+        }
+        if (fbConfig.firestoreDatabaseId && !process.env.FIREBASE_DATABASE_ID) {
+          process.env.FIREBASE_DATABASE_ID = fbConfig.firestoreDatabaseId;
+        }
       }
     } catch(e) {
       console.error("Failed to parse firebase-applet-config.json", e);

@@ -480,18 +480,31 @@ export async function initDatabase() {
       } else {
         firestoreDb = getFirestore();
       }
-      console.log("Firebase/Firestore connected successfully.");
-      // For this fresh rebuild/test phase, an empty Firestore is bootstrapped from the exact
-      // verified 2015 legacy snapshot before the server accepts logins. This avoids the race
-      // that previously allowed the app to start while Firestore was still empty. Set
-      // AUTO_IMPORT_LEGACY_DATA=false later if you intentionally want an empty database.
+      // getFirestore() only creates a client; force one real read now so a wrong
+      // project/database/credential cannot masquerade as a successful connection.
+      const projectId = String(getApps()[0]?.options?.projectId || process.env.FIREBASE_PROJECT_ID || "(default)");
+      const databaseId = String(process.env.FIREBASE_DATABASE_ID || "(default)");
+      const usersProbe = await firestoreDb.collection("users").limit(1).get();
+      if (usersProbe.empty && (isCloudRunRuntime() || process.env.NODE_ENV === "production")) {
+        throw new Error(`Firestore target ${projectId}/${databaseId} has no users data; refusing to use or seed a different database.`);
+      }
+      console.log(`Firebase/Firestore verified successfully: project=${projectId}, database=${databaseId}`);
+
+      // Local/test Firestore may still bootstrap by explicit request. Cloud Run forces
+      // AUTO_IMPORT_LEGACY_DATA=false in runtimeEnv because production is already populated.
       if (process.env.AUTO_IMPORT_LEGACY_DATA !== "false") {
         await seedFirestoreFromLocalSnapshotIfNeeded(firestoreDb);
       }
       return;
     } catch (e) {
       firestoreDb = null;
-      console.warn(`Firestore initialization failed (${e instanceof Error ? e.message : String(e)}). Falling back to local snapshot memory to ensure continuous operation.`);
+      const message = e instanceof Error ? e.message : String(e);
+      if (isCloudRunRuntime() || process.env.NODE_ENV === "production") {
+        // Fail closed in production. Serving a local/demo snapshot after a Firestore
+        // failure makes the application look healthy while showing the wrong data.
+        throw new Error(`Production Firestore initialization failed: ${message}`);
+      }
+      console.warn(`Firestore initialization failed (${message}). Falling back to local snapshot memory for non-production use only.`);
     }
   }
 
