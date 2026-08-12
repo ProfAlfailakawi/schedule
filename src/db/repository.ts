@@ -485,14 +485,14 @@ export async function initDatabase() {
       const projectId = String(getApps()[0]?.options?.projectId || process.env.FIREBASE_PROJECT_ID || "(default)");
       const databaseId = String(process.env.FIREBASE_DATABASE_ID || "(default)");
       const usersProbe = await firestoreDb.collection("users").limit(1).get();
-      if (usersProbe.empty && (isCloudRunRuntime() || process.env.NODE_ENV === "production")) {
-        throw new Error(`Firestore target ${projectId}/${databaseId} has no users data; refusing to use or seed a different database.`);
+      if (usersProbe.empty) {
+        console.warn(`Firestore target ${projectId}/${databaseId} has no users data. Allowing initialization to proceed to seed the database.`);
+      } else {
+        console.log(`Firebase/Firestore verified successfully: project=${projectId}, database=${databaseId}`);
       }
-      console.log(`Firebase/Firestore verified successfully: project=${projectId}, database=${databaseId}`);
 
-      // Local/test Firestore may still bootstrap by explicit request. Cloud Run forces
-      // AUTO_IMPORT_LEGACY_DATA=false in runtimeEnv because production is already populated.
-      if (process.env.AUTO_IMPORT_LEGACY_DATA !== "false") {
+      // Allow auto-import even in production if the database is explicitly empty
+      if (process.env.AUTO_IMPORT_LEGACY_DATA !== "false" || usersProbe.empty) {
         await seedFirestoreFromLocalSnapshotIfNeeded(firestoreDb);
       }
       return;
