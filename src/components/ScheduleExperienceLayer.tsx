@@ -519,7 +519,7 @@ export default function ScheduleExperienceLayer({
               <div className="decision-loading">
                 <i />
                 <strong>أحدد العقدة الأعلى أثرًا…</strong>
-                <span>أقارن التعارضات، الفراغ، القاعة، وقواعد القسم.</span>
+                <span>تعارض · فراغ · قاعة · قواعد</span>
               </div>
             ) : e.decisionError ? (
               <div className="decision-error">
@@ -747,7 +747,7 @@ export default function ScheduleExperienceLayer({
             </div>
             <div className="signature-deviations">
               <div>
-                <small>كيف يختلف هذا الفصل عن نفسه التاريخية؟</small>
+                <small>مقارنة تاريخية</small>
                 <strong>
                   {genome?.deviations?.[0]?.title || "لا توجد انحرافات كبيرة"}
                 </strong>

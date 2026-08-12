@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Building2, Landmark, Trash2 } from "lucide-react";
+import { sortByName } from "../utils/sorting";
 import {
   AddButton,
+  EmbeddedAction,
   EmptyState,
   Field,
   FormActions,
@@ -17,7 +19,8 @@ import {
   Surface,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
-export default function Sections() {
+/** `embedded` means the academic console already supplies the page identity. */
+export default function Sections({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
   const [items, setItems] = useState<any[]>([]),
     [colleges, setColleges] = useState<any[]>([]),
     [mode, setMode] = useState<Mode>("index"),
@@ -39,7 +42,7 @@ export default function Sections() {
       if (!a.ok || !b.ok) throw 0;
       const data = await a.json();
       setItems(data);
-      setColleges(await b.json());
+      setColleges(sortByName(await b.json(), (row:any)=>row.AdCollegeName));
       setSelectedId((v) =>
         v && data.some((x: any) => x.AdSectionId === v)
           ? v
@@ -130,7 +133,7 @@ export default function Sections() {
       <div className="content-stack editor-page">
         <PageTitle
           eyebrow="البيانات الأكاديمية"
-          subtitle="ربط القسم العلمي بالكلية مع الحفاظ على علاقات البيانات الأصلية."
+          subtitle="القسم مرتبط بكليته"
         >
           {mode === "create" ? "إنشاء قسم علمي جديد" : "تعديل القسم العلمي"}
         </PageTitle>
@@ -142,7 +145,7 @@ export default function Sections() {
             </span>
             <div>
               <strong>بيانات القسم العلمي</strong>
-              <p>اختر الكلية ثم أدخل رمز القسم واسمه.</p>
+              <p>كلية · رمز · اسم</p>
             </div>
           </div>
           <form onSubmit={submit}>
@@ -182,14 +185,20 @@ export default function Sections() {
       </div>
     );
   return (
-    <div className="content-stack library-page catalog-inspector-page">
-      <PageTitle
-        eyebrow="الهيكل الأكاديمي"
-        subtitle="القسم في المكتبة، والكلية والرمز والإجراءات داخل لوحة ثابتة."
-        action={<AddButton onClick={create}>إنشاء قسم</AddButton>}
-      >
-        الأقسام العلمية
-      </PageTitle>
+    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+      {embedded ? (
+        <EmbeddedAction slot={actionSlot}>
+          <AddButton onClick={create}>إنشاء قسم</AddButton>
+        </EmbeddedAction>
+      ) : (
+        <PageTitle
+          eyebrow="الهيكل الأكاديمي"
+          subtitle="المكتبة والتفاصيل في لوحة واحدة"
+          action={<AddButton onClick={create}>إنشاء قسم</AddButton>}
+        >
+          الأقسام العلمية
+        </PageTitle>
+      )}
       {error ? <Notice>{error}</Notice> : null}
       <div className="catalog-workspace">
         <Surface className="catalog-master">

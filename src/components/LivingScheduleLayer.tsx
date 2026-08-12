@@ -960,7 +960,7 @@ export default function LivingScheduleLayer({
                     <textarea
                       value={memoryReason}
                       onChange={(e) => setMemoryReason(e.target.value)}
-                      placeholder="مثال: رُفض الثلاثاء 12 لأن القاعة لا تناسب هذا المقرر، رغم عدم وجود تعارض."
+                      placeholder="مثال: رُفض الثلاثاء 12 — القاعة لا تناسب المقرر"
                       maxLength={700}
                     />
                     <PrimaryButton
@@ -1111,7 +1111,7 @@ export default function LivingScheduleLayer({
                     <div>
                       <small>مساعد الجدول · يفهم السياق</small>
                       <h3>لا تشرح له ما تنظر إليه</h3>
-                      <p>اختر السياق، وهو يقرأه من الجدول مباشرة.</p>
+                      <p>اختر السياق فقط</p>
                     </div>
                   </div>
                   <ContextPicker

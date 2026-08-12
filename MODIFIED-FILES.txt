@@ -1,0 +1,41 @@
+الملفات المعدّلة في هذه الجولة
+================================
+
+جديد
+----
+src/components/AcademicConsole.tsx    البيانات الأكاديمية كصفحة واحدة بتبويبات أيقونية
+
+معدّل — واجهة
+-------------
+src/App.tsx                  دمج خمس وجهات في «البيانات الأكاديمية»، بطاقة مستخدم واحدة
+                             في أسفل القائمة (الاتصال نقطة، السمة والخروج أيقونتان)
+src/components/ui.tsx        ConsoleRail، EmbeddedAction، PrintLetterhead
+src/components/AdminUsers.tsx        شريط أقسام أيقوني بدل التبويبات النصية، رأس واحد
+src/components/Terms.tsx             وضع «مدمج» داخل كونسول البيانات الأكاديمية
+src/components/Colleges.tsx          نفس الشيء
+src/components/Sections.tsx          نفس الشيء
+src/components/Instructors.tsx       نفس الشيء
+src/components/Courses.tsx           نفس الشيء
+src/components/Reports.tsx           شريط السؤال بالعربية، عدسة القاعات (إشغال + فراغات)،
+                                     أوراق طباعة جديدة
+src/components/Schedules.tsx         شبكة الأسبوع تتبع ساعات التدريس الفعلية،
+                                     ترويسة للطباعة
+src/components/IntelligenceWorkspace.tsx  خريطة الكثافة تعرض الساعات المستخدمة فقط
+src/main.tsx                 إصلاح تحويل الأرقام العربية (كان يُفقد نص الحقول)،
+                             تعافٍ ذاتي بعد النشر من الشاشة البيضاء
+
+معدّل — خادم
+------------
+server.ts                    GET /api/reports/room-load  (إشغال القاعات وفراغاتها
+                             محسوبة على مستوى الفصل كاملاً بدون كشف بيانات قسم آخر)
+
+معدّل — أنماط
+-------------
+src/styles/01-foundation.css   أداة .sr-only
+src/styles/03-shell.css        بطاقة المستخدم المدمجة، إيقاع أقصر للقائمة
+src/styles/04-screens.css      شريط الكونسول (.console-rail / .console-tab)
+src/styles/05-schedule.css     بطاقة الأسبوع تقرر محتواها حسب ارتفاعها
+src/styles/06-intelligence.css شريط السؤال، شبكة إشغال القاعات، نوافذ الفراغ
+src/styles/07-responsive.css   قواعد الهاتف الحقيقية للوحة العمل (كانت لأسماء
+                               أصناف قديمة)، شريط الكونسول، أزرار الجدول في سطر
+src/styles/08-print.css        نظام طباعة جديد كاملاً

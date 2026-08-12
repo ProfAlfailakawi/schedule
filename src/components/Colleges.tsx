@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Building2, Landmark, Route, Save, Trash2 } from "lucide-react";
 import {
   AddButton,
+  EmbeddedAction,
   EmptyState,
   Field,
   FormActions,
@@ -17,7 +18,8 @@ import {
   Surface,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
-export default function Colleges() {
+/** `embedded` means the academic console already supplies the page identity. */
+export default function Colleges({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
   const [items, setItems] = useState<any[]>([]),
     [mode, setMode] = useState<Mode>("index"),
     [editId, setEditId] = useState<number | null>(null),
@@ -177,7 +179,7 @@ export default function Colleges() {
       <div className="content-stack editor-page">
         <PageTitle
           eyebrow="البيانات الأكاديمية"
-          subtitle="تبقى جميع قواعد الحفظ والتحقق الأصلية كما هي."
+          subtitle="قواعد الحفظ كما هي"
         >
           {mode === "create" ? "إنشاء كلية جديدة" : "تعديل بيانات الكلية"}
         </PageTitle>
@@ -189,7 +191,7 @@ export default function Colleges() {
             </span>
             <div>
               <strong>بيانات الكلية</strong>
-              <p>أدخل الرمز والاسم المعتمدين للكلية.</p>
+              <p>رمز واسم معتمدان</p>
             </div>
           </div>
           <form onSubmit={submit}>
@@ -215,14 +217,20 @@ export default function Colleges() {
       </div>
     );
   return (
-    <div className="content-stack library-page catalog-inspector-page">
-      <PageTitle
-        eyebrow="الهيكل الأكاديمي"
-        subtitle="المكتبة على اليمين، والتفاصيل في لوحة ثابتة على اليسار."
-        action={<AddButton onClick={openCreate}>إنشاء كلية</AddButton>}
-      >
-        الكليات
-      </PageTitle>
+    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+      {embedded ? (
+        <EmbeddedAction slot={actionSlot}>
+          <AddButton onClick={openCreate}>إنشاء كلية</AddButton>
+        </EmbeddedAction>
+      ) : (
+        <PageTitle
+          eyebrow="الهيكل الأكاديمي"
+          subtitle="المكتبة والتفاصيل في لوحة واحدة"
+          action={<AddButton onClick={openCreate}>إنشاء كلية</AddButton>}
+        >
+          الكليات
+        </PageTitle>
+      )}
       {error ? <Notice>{error}</Notice> : null}
       <div className="catalog-workspace">
         <Surface className="catalog-master">
@@ -260,7 +268,7 @@ export default function Colleges() {
               </div>
               <span className="surface-kicker">تفاصيل الكلية</span>
               <h2>{selected.AdCollegeName}</h2>
-              <p>كيان أكاديمي مرتبط بالأقسام والمقررات والجداول.</p>
+              <p>مرتبط بالأقسام والمقررات.</p>
               <div className="inspector-facts">
                 <article>
                   <span>رمز الكلية</span>
@@ -276,7 +284,7 @@ export default function Colleges() {
                   <span><Route /></span>
                   <div>
                     <strong>رادار الانتقال بين المباني</strong>
-                    <p>البرنامج يتعلّم المباني من القاعات التاريخية، وأنت تحدد زمن المشي التقريبي بينها مرة واحدة.</p>
+                    <p>المباني تُكتشف تلقائياً · حدّد زمن المشي مرة واحدة</p>
                   </div>
                 </div>
                 {mobilityBusy && !mobility ? <div className="mobility-loading">جاري قراءة مباني الكلية…</div> : null}

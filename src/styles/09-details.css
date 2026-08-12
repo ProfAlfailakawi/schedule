@@ -1,0 +1,401 @@
+/* ==========================================================================
+   SCHEDULE — DETAILS
+   Entity colour coding, state modifiers and low-frequency surfaces.
+   ========================================================================== */
+
+/* --- Entity colour coding -------------------------------------------------
+   Search results, x-ray chips and record icons carry the entity kind as a
+   modifier class. Giving each kind its own tint makes mixed result lists
+   scannable without adding a single extra pixel of chrome. */
+
+.result-icon.schedule,.record-card-icon.schedule{background:var(--accent-soft);color:var(--accent)}
+.result-icon.course,.record-card-icon.course,.master-symbol.course{background:var(--info-soft);color:var(--info)}
+.result-icon.instructor,.record-card-icon.instructor,.master-avatar.instructor{background:var(--brass-soft);color:var(--brass)}
+.result-icon.room,.record-card-icon.room{background:var(--success-soft);color:var(--success)}
+.result-icon.section,.record-card-icon.section{background:var(--warning-soft);color:var(--warning)}
+.result-icon.time,.record-card-icon.time{background:var(--surface-3);color:var(--muted)}
+
+/* --- Scene tokens ---------------------------------------------------------
+   Living/intelligence scenes are addressed by a bare scene name. They share
+   one vertical rhythm so switching scenes never shifts the layout. */
+
+.copilot,.autopilot,.twin,.war,.command,.import,.report,.constraints{
+  display:flex;flex-direction:column;gap:var(--s4);min-width:0;
+}
+
+/* --- State modifiers ------------------------------------------------------ */
+
+.enabled{color:var(--success)}
+.guarded{color:var(--brass)}
+button.disabled,.disabled{opacity:.45;pointer-events:none}
+.loading{color:var(--muted)}
+.thinking{color:var(--accent)}
+.selected{border-color:var(--accent) !important}
+.recommended{position:relative}
+.resolved{opacity:.55}
+.open{}
+
+.risk-mark{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:28px;height:28px;flex:none;
+  border-radius:var(--r-xs);
+  background:var(--danger-soft);color:var(--danger);
+}
+.risk-mark svg{width:15px;height:15px}
+.physics-counterfactual{
+  margin-top:var(--s3);padding:var(--s3) var(--s4);
+  border-radius:var(--r-sm);background:var(--surface-2);
+  color:var(--muted);font-size:var(--t-sm);line-height:1.65;
+}
+
+/* --- Navigation variants -------------------------------------------------- */
+
+.nav-section-core{padding-top:var(--s1)}
+.admin-only-nav{}
+.context-rail-active .sidebar.context-rail{
+  border-inline-start-color:color-mix(in srgb,var(--brass) 34%,var(--nav-line));
+}
+
+/* --- Deck variants -------------------------------------------------------- */
+
+.course-deck,.term-deck{border:0}
+
+.empty-cell{
+  height:190px;
+  display:grid;place-items:center;
+  text-align:center !important;
+  color:var(--muted) !important;
+}
+.empty-cell span{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  padding:var(--s2) var(--s4);
+  border:1px dashed var(--line-strong);border-radius:var(--r-sm);
+  background:var(--surface-2);
+  font-size:var(--t-sm);
+}
+
+/* --- Low-frequency surfaces ----------------------------------------------- */
+
+.innovation-empty{
+  min-height:230px;
+  display:grid;place-items:center;
+  padding:var(--s6);text-align:center;color:var(--muted);
+  border:1px dashed var(--line-strong);border-radius:var(--r-md);
+  background:var(--surface-2);
+}
+.constraint-builder-copy{display:flex;align-items:flex-start;gap:var(--s3)}
+.constraint-builder-copy>svg{width:20px;height:20px;flex:none;color:var(--brass);margin-top:2px}
+.constraint-builder-copy>div{min-width:0}
+.constraint-builder-copy h2,.constraint-builder-copy h3,
+.constraint-builder-copy strong{display:block;font-size:var(--t-h4);font-weight:600;line-height:1.5}
+.constraint-builder-copy p,.constraint-builder-copy span{
+  display:block;margin-top:var(--s2);color:var(--muted);font-size:var(--t-sm);line-height:1.7;
+}
+.twin-delta{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s2);margin-top:var(--s3)}
+.twin-delta>article,.twin-delta>div{
+  padding:var(--s3) var(--s4);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);
+}
+.twin-constraint-score{
+  padding:var(--s2) var(--s3);border-radius:var(--r-xs);
+  background:var(--success-soft);color:var(--success);font-size:var(--t-xs);
+}
+.twin-constraint-score.warn{background:var(--warning-soft);color:var(--warning)}
+.metric-priority{border-color:color-mix(in srgb,var(--brass) 30%,var(--line)) !important}
+.print-report{background:#fff;color:#111}
+.pulse-title{display:flex;align-items:center;justify-content:space-between;gap:var(--s3)}
+.spotlight-home{min-height:0}
+.living-command-deck,.living-experience-tools{min-width:0}
+.living-context-picker{
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);
+  padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
+}
+.living-context-picker select{
+  min-height:40px;border:1px solid var(--line);border-radius:var(--r-xs);
+  background-color:var(--surface);padding:0 var(--s3);font-size:var(--t-sm);color:var(--ink);
+}
+.course-name-suggestions{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2)}
+.course-name-suggestions button{
+  padding:var(--s1) var(--s3);border:1px solid var(--line);border-radius:var(--r-xs);
+  background:var(--surface-2);color:var(--muted);font-size:var(--t-xs);
+}
+.course-name-suggestions button:hover{border-color:var(--accent);color:var(--accent)}
+
+.editor-page,.library-page,.catalog-inspector-page,.master-detail-page,
+.copy-page,.reports-page,.query-studio-page,.report-studio-page,.unified-workspace,
+.pulse-dashboard,.pulse-today,.pulse-secondary{min-width:0}
+
+.schedule-editor-grid>.form-card{min-width:0}
+.schedule-editor-grid>.conflict-panel,
+.schedule-editor-grid>.solver-box,
+.schedule-editor-grid>.save-preview{position:sticky;top:var(--s5)}
+
+/* --- Global overlap guard -------------------------------------------------
+   Long Arabic names wrap instead of colliding with adjacent metadata. */
+
+.field,.field>label,.record-card-copy,.agenda-core,.agenda-title-row,.agenda-sub,
+.week-event,.report-paper-row>*,.surface-head>div,.draft-list article>div,
+.timeline-versions article>div,.topology-hotspots article>div,.context-title>div,
+.master-list>button>div,.master-list>article>div,.pulse-decision-copy,
+.decision-option-copy,.result-copy,.living-health-strip{min-width:0}
+
+.record-card strong,.agenda-title-row strong,.week-event strong,.week-event span,
+.draft-list strong,.timeline-versions strong,.topology-hotspots strong,
+.inspector-facts strong,.inspector-facts b{overflow-wrap:anywhere;word-break:normal}
+
+.field select,.field input,.field textarea{min-width:0;max-width:100%}
+
+/* --- Bidi safety ----------------------------------------------------------
+   Latin logins, civil IDs, phone numbers, room codes and times must never be
+   re-ordered by the surrounding Arabic paragraph direction. */
+
+.code-chip,
+.agenda-time strong,
+.week-times span,
+.twin-time,
+.heat-time,
+.permission-picker-card small,
+.report-paper-row [dir="ltr"]{
+  direction:ltr;
+  unicode-bidi:isolate;
+}
+
+/* ==========================================================================
+   MOTION — arrival, sweep, and the "just changed" flash
+   Every animation below is purely decorative and disabled under
+   prefers-reduced-motion by the global guard in the responsive layer.
+   ========================================================================== */
+
+@media (prefers-reduced-motion:no-preference){
+  /* Screens assemble top-down instead of appearing all at once. */
+  .content-stack>*{animation:rise .42s var(--ease-out) both}
+  .content-stack>*:nth-child(1){animation-delay:0s}
+  .content-stack>*:nth-child(2){animation-delay:.05s}
+  .content-stack>*:nth-child(3){animation-delay:.1s}
+  .content-stack>*:nth-child(4){animation-delay:.15s}
+  .content-stack>*:nth-child(5){animation-delay:.2s}
+  .content-stack>*:nth-child(6){animation-delay:.25s}
+  .content-stack>*:nth-child(n+7){animation-delay:.3s}
+
+  /* Gauges draw their arc once, from empty. */
+  .gauge-value{animation:gauge-sweep .95s var(--ease-out) both}
+
+  /* Bars grow from the baseline. */
+  .bar-columns i{animation:bar-grow .7s var(--ease-out) both}
+  .bar-columns>div:nth-child(2) i{animation-delay:.06s}
+  .bar-columns>div:nth-child(3) i{animation-delay:.12s}
+  .bar-columns>div:nth-child(4) i{animation-delay:.18s}
+  .bar-columns>div:nth-child(5) i{animation-delay:.24s}
+  .bar-rows i>b{animation:bar-stretch .7s var(--ease-out) both}
+
+  /* Day blocks slide in along the ribbon. */
+  .daybar-block{animation:rise .5s var(--ease-out) both}
+}
+
+@keyframes gauge-sweep{from{stroke-dashoffset:214}to{stroke-dashoffset:0}}
+@keyframes bar-grow{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes bar-stretch{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+
+.bar-columns i{transform-origin:bottom center}
+.bar-rows i>b{transform-origin:right center}
+[dir="ltr"] .bar-rows i>b{transform-origin:left center}
+
+/* ==========================================================================
+   READ-ONLY PUBLICATION — share sheet
+   ========================================================================== */
+
+.tool-count{
+  display:inline-grid;place-items:center;
+  min-width:18px;height:18px;margin-inline-start:var(--s1);
+  border-radius:var(--r-full);
+  background:var(--accent);color:var(--accent-contrast);
+  font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;
+}
+
+.share-backdrop{
+  position:fixed;inset:0;z-index:130;
+  display:grid;place-items:center;padding:var(--s5);
+  background:color-mix(in srgb,var(--nav) 62%,transparent);
+  backdrop-filter:blur(6px);
+  animation:fade .18s var(--ease) both;
+}
+.share-sheet{
+  position:relative;
+  width:min(560px,100%);max-height:88vh;overflow-y:auto;
+  padding:var(--s7);
+  border:1px solid var(--line);border-radius:var(--r-2xl);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+  animation:sheet-up .28s var(--ease-out) both;
+}
+.share-close{
+  position:absolute;top:var(--s5);inset-inline-end:var(--s5);
+  width:38px;height:38px;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:var(--r-xs);
+  background:var(--surface);color:var(--muted);
+}
+.share-close:hover{background:var(--surface-2);color:var(--ink)}
+.share-sheet>header{
+  display:grid;grid-template-columns:48px minmax(0,1fr);
+  align-items:center;gap:var(--s4);
+  padding-inline-end:var(--s9);
+}
+.share-glyph{
+  width:48px;height:48px;display:grid;place-items:center;
+  border-radius:var(--r-md);background:var(--accent-soft);color:var(--accent);
+}
+.share-glyph svg{width:21px;height:21px}
+.share-sheet header small{display:block;color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.1em}
+.share-sheet header h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
+.share-error{
+  margin-top:var(--s4);padding:var(--s3) var(--s4);border-radius:var(--r-sm);
+  background:var(--danger-soft);color:var(--danger);font-size:var(--t-sm);
+}
+
+.share-compose{
+  display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
+  margin-top:var(--s6);padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
+}
+.share-days{display:flex;gap:var(--s1);padding:3px;border-radius:var(--r-sm);background:var(--surface-3)}
+.share-days button{
+  min-width:52px;min-height:44px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  border-radius:var(--r-xs);color:var(--muted);
+  font-size:var(--t-h4);font-weight:600;font-variant-numeric:tabular-nums;
+}
+.share-days button small{font-size:10px;font-weight:400}
+.share-days button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-xs)}
+.share-toggle{display:inline-flex;align-items:center;gap:var(--s2);color:var(--muted);font-size:var(--t-sm);cursor:pointer}
+.share-toggle input{width:17px;height:17px;accent-color:var(--accent)}
+.share-compose .btn{margin-inline-start:auto}
+
+.share-list{display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s5)}
+.share-list article{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
+}
+.share-list article.dead{opacity:.5}
+.share-row-lead{min-width:0}
+.share-row-lead b{
+  display:block;font:600 var(--t-sm)/1.4 var(--font-mono);
+  direction:ltr;unicode-bidi:isolate;text-align:start;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.share-row-lead span{display:flex;align-items:center;gap:var(--s2);margin-top:2px;color:var(--muted);font-size:var(--t-xs)}
+.share-row-lead i{width:6px;height:6px;border-radius:50%;background:var(--success)}
+.share-list article.dead .share-row-lead i{background:var(--muted-2)}
+.share-row-actions{display:flex;align-items:center;gap:var(--s1)}
+.share-row-actions button,.share-row-actions a{
+  width:36px;height:36px;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:var(--r-xs);
+  background:var(--surface);color:var(--muted);
+}
+.share-row-actions button svg,.share-row-actions a svg{width:15px;height:15px}
+.share-row-actions button:hover:not(:disabled),.share-row-actions a:hover{border-color:var(--accent);color:var(--accent)}
+.share-row-actions button:disabled,.share-row-actions a.muted{opacity:.4;pointer-events:none}
+.share-empty{padding:var(--s6);text-align:center;color:var(--muted);font-size:var(--t-sm)}
+.share-sheet>footer{display:flex;justify-content:flex-end;margin-top:var(--s6);padding-top:var(--s5);border-top:1px solid var(--line)}
+
+@media screen and (max-width:768px){
+  .share-backdrop{place-items:end center;padding:0}
+  .share-sheet{
+    width:100%;max-height:92dvh;
+    border-radius:var(--r-2xl) var(--r-2xl) 0 0;
+    padding:var(--s6) var(--s5) calc(var(--s6) + env(safe-area-inset-bottom));
+  }
+  .share-compose{flex-direction:column;align-items:stretch}
+  .share-days{justify-content:space-between}
+  .share-days button{flex:1}
+  .share-compose .btn{margin-inline-start:0;width:100%}
+}
+
+/* Route-level loading placeholder while a workspace chunk arrives. */
+.view-loading{
+  min-height:52vh;display:grid;place-items:center;
+}
+.view-loading span{
+  width:26px;height:26px;border-radius:var(--r-full);
+  border:2px solid color-mix(in srgb,var(--muted) 26%,transparent);
+  border-top-color:var(--accent);
+  animation:spin .7s linear infinite;
+}
+
+/* ==========================================================================
+   DIRECT ANSWER — the palette replies instead of handing over filters
+   ========================================================================== */
+
+.answer-card{
+  margin:var(--s2);
+  border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));
+  border-radius:var(--r-md);
+  background:var(--accent-softer);
+  overflow:hidden;
+  animation:rise .22s var(--ease-out) both;
+}
+.answer-card>header{
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);
+  border-bottom:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));
+}
+.answer-card>header svg{width:16px;height:16px;color:var(--accent)}
+.answer-card>header strong{flex:1;min-width:0;font-size:var(--t-sm);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.answer-card>header b{
+  min-width:26px;height:24px;display:grid;place-items:center;padding:0 var(--s2);
+  border-radius:var(--r-full);background:var(--accent);color:var(--accent-contrast);
+  font-size:var(--t-xs);font-weight:600;font-variant-numeric:tabular-nums;
+}
+.answer-rooms{display:flex;flex-wrap:wrap;gap:var(--s2);padding:var(--s4)}
+.answer-rooms>span{
+  display:inline-flex;align-items:baseline;gap:var(--s1);
+  padding:var(--s1) var(--s3);
+  border-radius:var(--r-full);background:var(--surface);
+  font-size:var(--t-sm);font-weight:600;
+}
+.answer-rooms small{color:var(--muted);font-size:var(--t-xs);font-weight:400}
+.answer-gaps,.answer-rows{display:flex;flex-direction:column;padding:var(--s2) var(--s4) var(--s4)}
+.answer-gaps>div{
+  display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:var(--s3);
+  padding:var(--s2) 0;border-bottom:1px solid color-mix(in srgb,var(--accent) 12%,var(--line));
+  font-size:var(--t-sm);
+}
+.answer-rows>div{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:var(--s3);
+  padding:var(--s2) 0;border-bottom:1px solid color-mix(in srgb,var(--accent) 12%,var(--line));
+  font-size:var(--t-sm);
+}
+.answer-gaps>div:last-child,.answer-rows>div:last-child{border-bottom:0}
+.answer-rows strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.answer-gaps time,.answer-rows time{font:600 var(--t-xs)/1 var(--font-mono);font-variant-numeric:tabular-nums}
+.answer-gaps b{font-size:var(--t-xs);font-variant-numeric:tabular-nums;color:var(--accent)}
+.answer-rows small{color:var(--muted);font-size:var(--t-xs);white-space:nowrap}
+
+/* ==========================================================================
+   JUST CHANGED
+   After a save or a move the row says so for a few seconds, so the user never
+   has to hunt the grid for what they just did.
+   ========================================================================== */
+
+.just-changed{
+  position:relative;
+  box-shadow:0 0 0 2px var(--brass), var(--shadow-sm) !important;
+  animation:just-changed-fade 6s var(--ease) forwards;
+}
+.week-event.just-changed::after,
+.week-chip.just-changed::after,
+.agenda-card.just-changed::after{
+  content:"";
+  position:absolute;top:6px;inset-inline-end:6px;
+  width:8px;height:8px;border-radius:50%;
+  background:var(--brass);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--brass) 22%,transparent);
+  animation:pulse 1.6s ease-in-out infinite;
+}
+@keyframes just-changed-fade{
+  0%,70%{box-shadow:0 0 0 2px var(--brass), var(--shadow-sm)}
+  100%{box-shadow:0 0 0 0 transparent, var(--shadow-xs)}
+}
+@media (prefers-reduced-motion:reduce){
+  .just-changed{animation:none}
+  .week-event.just-changed::after,.week-chip.just-changed::after,.agenda-card.just-changed::after{animation:none}
+}

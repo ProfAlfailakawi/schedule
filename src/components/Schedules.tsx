@@ -6,13 +6,17 @@ import {
   BrainCircuit,
   CalendarDays,
   CheckCircle2,
+  Clock3,
   Expand,
   Eye,
   Focus,
   GripVertical,
   History,
+  Hourglass,
+  Layers,
   LayoutList,
   Lightbulb,
+  MapPin,
   MessageSquareText,
   Radio,
   Search,
@@ -34,6 +38,7 @@ import {
   Notice,
   PageTitle,
   PrimaryButton,
+  PrintLetterhead,
   SecondaryButton,
   Segmented,
   StatCard,
@@ -48,6 +53,7 @@ import {
   FSchedule,
 } from "../types";
 import LivingScheduleLayer from "./LivingScheduleLayer";
+import SchedulePublish from "./SchedulePublish";
 import ScheduleExperienceLayer, {
   useScheduleExperience,
 } from "./ScheduleExperienceLayer";
@@ -76,6 +82,7 @@ import {
 } from "./scheduleWorkspace";
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
+import { sortByName } from "../utils/sorting";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -85,6 +92,11 @@ interface Props {
 type EditorMode = "index" | "create" | "edit";
 export default function Schedules({ mode, user, scopes = [] }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
+  const lastSavedRef = useRef<any>(null);
+  // The row touched by the last write, so the grid can say "this one just
+  // changed" for a few seconds instead of leaving the user to hunt for it.
+  const [justChangedId, setJustChangedId] = useState<number | null>(null);
+  const lastSavedHydrated = useRef(false);
   let savedPrefs: any = {};
   try {
     savedPrefs = JSON.parse(localStorage.getItem(prefsKey) || "{}");
@@ -163,11 +175,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       fetchJson("/api/instructors"),
     ]);
     const t = [...rawTerms].sort((a: AdTerm, b: AdTerm) => Number(b.AdTermId) - Number(a.AdTermId));
-    setColleges(c);
-    setSections(s);
+    setColleges(sortByName(c, (row:any)=>row.AdCollegeName));
+    setSections(sortByName(s, (row:any)=>row.AdSectionName));
     setTerms(t);
-    setCourses(co);
-    setInstructors(i);
+    setCourses(sortByName(co, (row:any)=>row.CourseName));
+    setInstructors(sortByName(i, (row:any)=>row.AdInstructorName));
     return { colleges: c as AdCollege[], sections: s as AdSection[], terms: t as AdTerm[], courses: co as AdCourse[], instructors: i as AdInstructor[] };
   };
   const loadRows = async () => {
@@ -198,6 +210,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         try {
           pref = JSON.parse(localStorage.getItem(prefsKey) || "{}");
         } catch {}
+        if (!lastSavedHydrated.current) {
+          lastSavedHydrated.current = true;
+          if (pref.lastSaved) lastSavedRef.current = pref.lastSaved;
+        }
         const latestTermId = Number(lookup.terms[0]?.AdTermId || 0);
         const savedCollege = Number(pref.filterCollege) || 0;
         const savedSection = Number(pref.filterSection) || 0;
@@ -244,6 +260,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         viewMode,
         lastRoomCode: form.AdRoomCode || savedPrefs.lastRoomCode || "",
         lastRoomHall: form.AdRoomHall || savedPrefs.lastRoomHall || "",
+        lastSaved: lastSavedRef.current || savedPrefs.lastSaved || null,
       }),
     );
     setVisibleLimit(120);
@@ -327,14 +344,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setConflicts([]);
       setSolutions([]);
       const next = blank();
-      next.AdRoomCode = savedPrefs.lastRoomCode || "";
-      next.AdRoomHall = savedPrefs.lastRoomHall || "";
-      const preferredCollege = Number(savedPrefs.filterCollege) || filterCollege || formScope.defaultCollegeId || 0;
-      const preferredSection = Number(savedPrefs.filterSection) || filterSection || 0;
+      const last = lastSavedRef.current || savedPrefs.lastSaved || null;
+      if (last) Object.assign(next, last);
+      next.AdRoomCode = next.AdRoomCode || savedPrefs.lastRoomCode || "";
+      next.AdRoomHall = next.AdRoomHall || savedPrefs.lastRoomHall || "";
+      const preferredCollege = Number(last?.AdCollegeId) || filterCollege || Number(savedPrefs.filterCollege) || formScope.defaultCollegeId || 0;
+      const preferredSection = Number(last?.AdSectionId) || filterSection || Number(savedPrefs.filterSection) || 0;
       const scoped = coerceScopeValues(scopes, preferredCollege, preferredSection, isPowerAdmin);
       next.AdCollegeId = scoped.collegeId;
       next.AdSectionId = scoped.sectionId || resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0;
-      next.AdTermId = latestTermId || filterTerm || 0;
+      next.AdTermId = Number(last?.AdTermId) || filterTerm || latestTermId || 0;
       setForm(next);
       setCourseName("");
       setEditId(null);
@@ -364,6 +383,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setForm((prev) => ({ ...prev, [key]: Number(raw) || 0 }));
   const englishDigits = (v: string) => /^\d*$/.test(v);
   const selectedFormDays = days.filter(d=>Boolean(form[d.key]));
+  // A brand-new form should not open already scolding. The validation strip
+  // waits until the days or the time have been touched, or until a save is
+  // attempted; the submit button stays disabled meanwhile either way.
+  const [scheduleTouched, setScheduleTouched] = useState(false);
   const timeRangeInvalid = Boolean(form.fstarttime&&form.fendtime)&&mins(form.fendtime)<=mins(form.fstarttime);
   const validationIssues=[!selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":""].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
@@ -724,6 +747,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     form.AdRoomCode,
     form.AdRoomHall,
   ]);
+  // The last successful save becomes the starting point for the next one: same
+  // term, same scope, same instructor, same room, same days. Only the identity
+  // of the appointment itself starts blank.
+  const markChanged = (id: number | null | undefined) => {
+    if (!id) return;
+    setJustChangedId(Number(id));
+    window.setTimeout(() => setJustChangedId((current) => (current === Number(id) ? null : current)), 6000);
+  };
+
+  const rememberSave = (row: any) => {
+    lastSavedRef.current = {
+      AdCollegeId: row.AdCollegeId, AdSectionId: row.AdSectionId, AdTermId: row.AdTermId,
+      AdInstructorId: row.AdInstructorId, AdRoomCode: row.AdRoomCode, AdRoomHall: row.AdRoomHall,
+      fstarttime: row.fstarttime, fendtime: row.fendtime,
+      fsunday: row.fsunday, fmonday: row.fmonday, ftuesday: row.ftuesday,
+      fwednesday: row.fwednesday, fthursday: row.fthursday
+    };
+  };
+
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
@@ -744,7 +786,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       return;
     }
     if (!englishDigits(form.SCode)) { setError("الرجاء كتابة الأرقام بالانجليزي"); return; }
-    if (validationIssues.length) { setError(validationIssues[0]); return; }
+    if (validationIssues.length) { setScheduleTouched(true); setError(validationIssues[0]); return; }
     if (blockingConflicts.length) { setError(blockingConflicts[0]?.message || "لا يمكن الحفظ قبل معالجة التعارضات."); return; }
     setSaving(true);
     try {
@@ -755,7 +797,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form }),
       });
+      rememberSave(form);
+      markChanged(editor === "edit" ? editId : null);
+      // Follow the save: the list jumps to the scope the row was filed under so
+      // the user always sees what they just did.
+      if (form.AdCollegeId && form.AdCollegeId !== filterCollege) setFilterCollege(form.AdCollegeId);
+      if (form.AdSectionId && form.AdSectionId !== filterSection) setFilterSection(form.AdSectionId);
+      if (form.AdTermId && form.AdTermId !== filterTerm) setFilterTerm(form.AdTermId);
       await loadRows();
+      setMessage(editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد");
       back();
     } catch (e: any) {
       setError(friendlyError(e));
@@ -925,6 +975,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
+      markChanged(row.id);
       if (isPowerAdmin) {
         try {
           const q = new URLSearchParams({
@@ -981,42 +1032,172 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setSaving(false);
     }
   };
-  const timeSlots = Array.from({ length: 27 }, (_, i) => {
-    const total = 7 * 60 + i * 30;
-    return timeFromMins(total);
-  });
   const weekRows = filteredRows;
-  const weekLaneStyle = (day: DayKey, row: FSchedule): React.CSSProperties => {
-    const items = weekRows
-      .filter((item) => Boolean(item[day]))
-      .slice()
-      .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(a.fendtime) - mins(b.fendtime));
-    const laneEnds: number[] = [];
-    const lanes = new Map<number, number>();
-    for (const item of items) {
-      const start = mins(item.fstarttime);
-      let lane = laneEnds.findIndex((end) => end <= start);
-      if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
-      laneEnds[lane] = mins(item.fendtime);
-      lanes.set(item.id, lane);
+  /**
+   * The grid shows the hours that are actually used.
+   *
+   * A fixed 07:00–21:00 column meant a department that teaches until noon was
+   * reading its week through eight empty rows and a scrollbar. The window now
+   * follows the data, snapped outward to the half hour with one empty slot of
+   * air at each end, and never collapses below four hours.
+   */
+  const gridWindow = useMemo(() => {
+    const starts = weekRows.map(row => mins(row.fstarttime)).filter(value => Number.isFinite(value));
+    const ends = weekRows.map(row => mins(row.fendtime)).filter(value => Number.isFinite(value));
+    if (!starts.length || !ends.length) return { start: 8 * 60, end: 15 * 60 };
+    const start = Math.max(7 * 60, Math.floor(Math.min(...starts) / 30) * 30 - 30);
+    const end = Math.min(22 * 60, Math.ceil(Math.max(...ends) / 30) * 30 + 30);
+    return { start, end: Math.max(end, start + 4 * 60) };
+  }, [weekRows]);
+  const timeSlots = useMemo(
+    () => Array.from({ length: Math.max(2, Math.round((gridWindow.end - gridWindow.start) / 30)) }, (_, i) =>
+      timeFromMins(gridWindow.start + i * 30),
+    ),
+    [gridWindow],
+  );
+  const [expandedDay, setExpandedDay] = useState<DayKey | null>(null);
+
+  /**
+   * Week layout, per collision cluster rather than per day.
+   *
+   * A quiet hour with one lecture should use the whole column; a busy hour with
+   * four should not shrink the whole day to slivers. So overlapping appointments
+   * are grouped into clusters and laid out independently:
+   *
+   *   1–2 in a cluster  → normal cards side by side, full readable width
+   *   3 or more         → one grouped block listing them as compact rows
+   *
+   * Nothing is hidden and nothing is crushed. Opening a day (its header) widens
+   * it to the full grid, where even a six-way collision sits side by side.
+   */
+  const STACK_THRESHOLD = 3;
+  const weekLayout = useMemo(() => {
+    const layout: Record<string, {
+      laneCount: number;
+      clusters: Array<{
+        top: number; height: number; items: FSchedule[]; lanes: Map<number, number>; laneCount: number;
+      }>;
+    }> = {};
+
+    for (const day of days) {
+      const items = weekRows
+        .filter((item) => Boolean(item[day.key]))
+        .slice()
+        .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(a.fendtime) - mins(b.fendtime));
+
+      const clusters: FSchedule[][] = [];
+      let current: FSchedule[] = [];
+      let currentEnd = -1;
+      for (const item of items) {
+        if (current.length && mins(item.fstarttime) >= currentEnd) {
+          clusters.push(current);
+          current = [];
+          currentEnd = -1;
+        }
+        current.push(item);
+        currentEnd = Math.max(currentEnd, mins(item.fendtime));
+      }
+      if (current.length) clusters.push(current);
+
+      let dayLaneCount = 1;
+      layout[day.key] = {
+        laneCount: 1,
+        clusters: clusters.map((group) => {
+          const laneEnds: number[] = [];
+          const lanes = new Map<number, number>();
+          for (const item of group) {
+            const startAt = mins(item.fstarttime);
+            let lane = laneEnds.findIndex((endAt) => endAt <= startAt);
+            if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
+            laneEnds[lane] = mins(item.fendtime);
+            lanes.set(item.id, lane);
+          }
+          const laneCount = Math.max(1, laneEnds.length);
+          dayLaneCount = Math.max(dayLaneCount, laneCount);
+          const top = ((mins(group[0].fstarttime) - gridWindow.start) / 30) * 36;
+          const endAt = Math.max(...group.map((item) => mins(item.fendtime)));
+          const height = Math.max(34, ((endAt - mins(group[0].fstarttime)) / 30) * 36 - 3);
+          return { top, height, items: group, lanes, laneCount };
+        })
+      };
+      layout[day.key].laneCount = dayLaneCount;
     }
-    const laneCount = Math.max(1, laneEnds.length);
-    const lane = lanes.get(row.id) || 0;
-    if (laneCount === 1) return {};
-    // Never crush appointments into unreadable 5–10% slivers. Dense collisions
-    // are layered across at most three readable lanes instead.
-    const visibleLanes = Math.min(2, laneCount);
-    const visibleLane = lane % visibleLanes;
-    const width = 100 / visibleLanes;
-    const layer = Math.floor(lane / visibleLanes);
+    return layout;
+  }, [weekRows, gridWindow]);
+
+  /** A single week card. Shared by ordinary hours and by opened days. */
+  const renderWeekCard = (r: FSchedule, d: { key: DayKey; label: string }, style: React.CSSProperties) => {
+    const c = courseById.get(r.AdCourseId);
+    const i = instructorById.get(r.AdInstructorId);
+    const code = c?.CourseCode || r.AdCourseName || "—";
+    return (
+      <article
+        {...physics.bindEvent(r, d.key)}
+        draggable={!saving && !physics.supported}
+        onDragStart={(e) => {
+          e.dataTransfer.setData("text/schedule-id", String(r.id));
+          e.dataTransfer.effectAllowed = "move";
+          beginRipple(r);
+        }}
+        onDragEnd={clearRipple}
+        onDoubleClick={() => openEdit(r)}
+        onClick={() => runVisualTransition(() => setXrayId((v) => (v === r.id ? null : r.id)))}
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
+        className={`week-event ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${physicsPreview?.row.id === r.id ? "physics-source-pending" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
+        style={{ ...style, ["--hue" as any]: courseHue(code) }}
+        data-quickview={`${code} · ${r.AdCourseName || c?.CourseName || "مقرر"}
+شعبة ${r.SCode} · ${i?.AdInstructorName || "بدون أستاذ"}
+${arabicDays(r) || "بدون أيام"} · ${r.fstarttime}-${r.fendtime}
+${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
+        key={`${d.key}-${r.id}`}
+      >
+        <GripVertical data-physics-handle="true" className="week-drag-handle" />
+        <button
+          className="week-insight"
+          type="button"
+          title="السياق الذكي"
+          onClick={(e) => { e.stopPropagation(); openContext(r); }}
+        >
+          <BrainCircuit />
+        </button>
+        <strong>{code}</strong>
+        <span>{r.AdCourseName || c?.CourseName}</span>
+        <small dir="ltr">{r.fstarttime}-{r.fendtime}</small>
+        <small>{i?.AdInstructorName} · {r.AdRoomCode}/{r.AdRoomHall}</small>
+      </article>
+    );
+  };
+
+  /**
+   * Colour as information.
+   *
+   * Every course keeps the same hue everywhere it appears, derived from its
+   * code, so the eye can trace one course across five days without reading a
+   * single word — and five concurrent lectures separate instantly. Red is never
+   * assigned; it stays reserved for conflicts.
+   */
+  const COURSE_HUES = [158, 200, 262, 320, 38, 96, 178, 226, 288, 18];
+  const courseHue = (code: string) => {
+    let hash = 0;
+    const text = String(code || "");
+    for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
+    return COURSE_HUES[hash % COURSE_HUES.length];
+  };
+
+  /** Position inside a cluster. Expanded days always lay every lane side by side. */
+  const clusterLaneStyle = (cluster: { lanes: Map<number, number>; laneCount: number }, row: FSchedule): React.CSSProperties => {
+    if (cluster.laneCount <= 1) return {};
+    const lane = cluster.lanes.get(row.id) || 0;
+    const width = 100 / cluster.laneCount;
     return {
-      insetInlineStart: `calc(${visibleLane * width}% + ${4 + Math.min(layer, 4) * 3}px)`,
+      insetInlineStart: `calc(${lane * width}% + 4px)`,
       insetInlineEnd: "auto",
-      width: `calc(${width}% - 10px)`,
+      width: `calc(${width}% - 8px)`,
       zIndex: 20 + lane,
-      transform: layer ? `translateY(${Math.min(layer, 4) * 2}px)` : undefined,
     };
   };
+
   const xraySelected = xrayId
     ? filteredRows.find((r) => r.id === xrayId) || null
     : null;
@@ -1152,6 +1333,52 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       { skipConfirm: true, decision: physicsPreview.decision },
     );
   };
+  /**
+   * Which rows collide with another row in the same scope. Two appointments
+   * collide when they share a weekday, overlap in time, and reuse either the
+   * same instructor or the same room. Computed once per result set so the
+   * presentation board can highlight only what matters.
+   */
+  const conflictIds = useMemo(() => {
+    const flagged = new Set<number>();
+    const list = filteredRows;
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j];
+        const sharesDay = days.some(day => Boolean(a[day.key]) && Boolean(b[day.key]));
+        if (!sharesDay) continue;
+        if (mins(a.fstarttime) >= mins(b.fendtime) || mins(b.fstarttime) >= mins(a.fendtime)) continue;
+        const sameInstructor = a.AdInstructorId && a.AdInstructorId === b.AdInstructorId;
+        const sameRoom = a.AdRoomCode && a.AdRoomCode === b.AdRoomCode && a.AdRoomHall === b.AdRoomHall;
+        if (sameInstructor || sameRoom) { flagged.add(a.id); flagged.add(b.id); }
+      }
+    }
+    return flagged;
+  }, [filteredRows]);
+
+  const [presentConflictsOnly, setPresentConflictsOnly] = useState(false);
+
+  // The workspace mode lives on <html> so the shell can clear its chrome for
+  // focus and presentation without every screen knowing about it.
+  useEffect(() => {
+    const root = document.documentElement;
+    const mode = presentationMode ? "presentation" : focusMode ? "focus" : "";
+    if (mode) root.dataset.scheduleWorkspace = mode;
+    else delete root.dataset.scheduleWorkspace;
+    return () => { delete root.dataset.scheduleWorkspace; };
+  }, [focusMode, presentationMode]);
+
+  // A meeting board belongs on the whole screen, not inside a browser chrome.
+  useEffect(() => {
+    if (typeof document === "undefined" || !document.documentElement.requestFullscreen) return;
+    if (presentationMode && !document.fullscreenElement) {
+      void document.documentElement.requestFullscreen().catch(() => undefined);
+    }
+    if (!presentationMode && document.fullscreenElement) {
+      void document.exitFullscreen?.().catch(() => undefined);
+    }
+  }, [presentationMode]);
+
   const CinemaView = () => (
     <Surface className="schedule-cinema">
       <div className="cinema-head">
@@ -1167,14 +1394,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             · {rows.length.toLocaleString("ar-KW-u-nu-latn")} موعد
           </p>
         </div>
-        <button type="button" onClick={() => setPresentationMode(false)}>
-          <X /> إنهاء العرض
-        </button>
+        <div className="cinema-tools">
+          <button
+            type="button"
+            className={presentConflictsOnly ? "active" : ""}
+            onClick={() => setPresentConflictsOnly(v => !v)}
+            title="التعارضات فقط"
+          >
+            <AlertTriangle />
+            <b>{conflictIds.size}</b>
+          </button>
+          <button type="button" onClick={() => setPresentationMode(false)} title="إنهاء العرض">
+            <X />
+          </button>
+        </div>
       </div>
       <div className="cinema-timeline">
         {days.map((day) => {
           const items = [...filteredRows]
             .filter((r) => Boolean(r[day.key]))
+            .filter((r) => !presentConflictsOnly || conflictIds.has(r.id))
             .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime));
           return (
             <section key={day.key} className="cinema-day">
@@ -1191,7 +1430,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     return (
                       <article
                         key={r.id}
-                        className={xrayClass(r)}
+                        className={`${xrayClass(r)} ${conflictIds.has(r.id) ? "conflict" : ""}`}
                         onClick={() =>
                           setXrayId((v) => (v === r.id ? null : r.id))
                         }
@@ -1229,7 +1468,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       <div className="content-stack copy-page">
         <PageTitle
           eyebrow="أداة إدارية ذكية"
-          subtitle="معاينة كاملة قبل تنفيذ عملية النسخ. عملية النسخ الأصلية نفسها لم تتغير."
+          subtitle="معاينة كاملة قبل التنفيذ"
         >
           نسخ جدول فصل دراسي
         </PageTitle>
@@ -1242,7 +1481,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             </span>
             <div>
               <strong>من فصل إلى فصل</strong>
-              <p>حدد النطاق والمصدر والوجهة؛ سيظهر ما سيُنقل قبل التنفيذ.</p>
+              <p>نطاق · مصدر · وجهة</p>
             </div>
           </div>
           <form onSubmit={copySchedule}>
@@ -1389,7 +1628,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       <div className="content-stack editor-page schedule-editor">
         <PageTitle
           eyebrow="الجدول الدراسي"
-          subtitle="الفحص لحظي، والحفظ يتوقف تلقائياً عند الوقت غير الصحيح أو التعارض المؤكد."
+          subtitle="فحص لحظي قبل الحفظ"
         >
           {editor === "create" ? "إضافة موعد دراسي" : "تعديل موعد دراسي"}
         </PageTitle>
@@ -1402,11 +1641,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </span>
               <div>
                 <strong>تفاصيل الموعد</strong>
-                <p>بيانات أساسية واضحة، ثم الأيام والوقت والمكان.</p>
+                <p>البيانات · الأيام · الوقت · المكان</p>
               </div>
             </div>
             {formScopeLabel?<div className="scope-inline-note"><strong>النطاق الجاهز</strong><span>{formScopeLabel}</span></div>:null}
-            {validationIssues.length?<div className="editor-validation-strip"><AlertTriangle/><div><strong>صحّح قبل الحفظ</strong>{validationIssues.map(x=><span key={x}>{x}</span>)}</div></div>:null}
+            {scheduleTouched&&validationIssues.length?<div className="editor-validation-strip"><AlertTriangle/><div><strong>صحّح قبل الحفظ</strong>{validationIssues.map(x=><span key={x}>{x}</span>)}</div></div>:null}
             <form onSubmit={save}>
               <div className="schedule-form-sections">
                 <section className="schedule-form-section">
@@ -1525,12 +1764,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         <input
                           type="checkbox"
                           checked={Boolean(form[d.key])}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            setScheduleTouched(true);
                             setForm((p) => ({
                               ...p,
                               [d.key]: e.target.checked,
-                            }))
-                          }
+                            }));
+                          }}
                         />
                         <span>{d.label}</span>
                       </label>
@@ -1546,9 +1786,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   <input
                     type="time"
                     value={form.fstarttime}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, fstarttime: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setScheduleTouched(true);
+                      setForm((p) => ({ ...p, fstarttime: e.target.value }));
+                    }}
                     required
                   />
                 </Field>
@@ -1556,9 +1797,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   <input
                     type="time"
                     value={form.fendtime}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, fendtime: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setScheduleTouched(true);
+                      setForm((p) => ({ ...p, fendtime: e.target.value }));
+                    }}
                     required
                   />
                 </Field>
@@ -1723,7 +1965,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     <div className="content-stack schedule-page">
       <PageTitle
         eyebrow="مركز الجدول"
-        subtitle="كل ما يحتاجه مسؤول الجدول في مساحة واحدة: اختر النطاق، راجع المواعيد، ثم عدّل أو انشر بثقة."
+        subtitle="نطاق · مراجعة · نشر"
         action={<AddButton onClick={openCreate}>إضافة موعد</AddButton>}
       >
         الجدول الدراسي
@@ -1815,6 +2057,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             >
               <Expand /> {presentationMode ? "إنهاء العرض" : "عرض"}
             </GhostButton>
+            {isPowerAdmin ? (
+              <SchedulePublish
+                collegeId={filterCollege}
+                sectionId={filterSection}
+                termId={filterTerm}
+                scopeLabel={sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName}
+              />
+            ) : null}
           </div>
         </div>
       </Surface>
@@ -1966,7 +2216,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   i = instructorById.get(s.AdInstructorId);
                 return (
                   <article
-                    className={`agenda-card ${xrayClass(s)}`}
+                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""}`}
                     key={s.id}
                     onClick={() => runVisualTransition(() => setXrayId((v) => (v === s.id ? null : s.id)))}
                     onDoubleClick={() => openEdit(s)}
@@ -1997,21 +2247,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         </span>
                       </div>
                     </div>
-                    <div className="agenda-time">
-                      <small>الوقت</small>
+                    <div className="agenda-time" title="الوقت">
+                      <Clock3 aria-hidden="true" />
                       <strong dir="ltr">
                         {s.fstarttime}–{s.fendtime}
                       </strong>
                     </div>
-                    <div className="agenda-place">
-                      <small>المكان</small>
+                    <div className="agenda-place" title="المكان">
+                      <MapPin aria-hidden="true" />
                       <strong>
                         {s.AdRoomCode || "—"} / {s.AdRoomHall || "—"}
                       </strong>
                     </div>
                     <div className="agenda-meta">
-                      <MetaPill label="وحدات" value={c?.CourseCredit ?? "—"} />
-                      <MetaPill label="ساعات" value={c?.CourseHours ?? "—"} />
+                      <span className="unit-pill" title="وحدات">
+                        <Layers aria-hidden="true" />
+                        {c?.CourseCredit ?? "—"}
+                      </span>
+                      <span className="unit-pill" title="ساعات">
+                        <Hourglass aria-hidden="true" />
+                        {c?.CourseHours ?? "—"}
+                      </span>
                     </div>
                     <div className="agenda-actions">
                       <button
@@ -2108,13 +2364,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 ) : (
                   <div className="ripple-pulse">
                     <i />
-                    <span>أحلل التعارضات والفراغ والضغط والجودة…</span>
+                    <span>أحلّل…</span>
                   </div>
                 )}
               </div>
             ) : null}
             <div
               className={`week-calendar ${physicsActive ? "gravity-field-active" : ""}`}
+              data-expanded={expandedDay || undefined}
             >
               <div className="week-time-head" />
               {days.map((d) => (
@@ -2122,7 +2379,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   className={`week-day-head ${physics.state.target?.day === d.key ? `physics-day-target physics-${physics.state.decision?.quality || "unknown"}` : ""} ${physics.state.target?.day === d.key && physics.state.decision?.stress ? `stress-${physics.state.decision.stress.level}` : ""}`}
                   key={d.key}
                 >
-                  <span>{d.label}</span>
+                  <button
+                    type="button"
+                    className="week-day-toggle"
+                    onClick={() => setExpandedDay((current) => (current === d.key ? null : d.key))}
+                    title={expandedDay === d.key ? "عرض كل الأيام" : "توسيع هذا اليوم"}
+                    aria-pressed={expandedDay === d.key}
+                  >
+                    <span>{d.label}</span>
+                    {weekLayout[d.key]?.laneCount > 1 ? (
+                      <b>{weekLayout[d.key].laneCount}</b>
+                    ) : null}
+                  </button>
                   {physics.state.target?.day === d.key &&
                   physics.state.decision?.stress ? (
                     <small>{physics.state.decision.stress.label}</small>
@@ -2143,8 +2411,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     : null;
                 return (
                   <div
-                    className="week-day"
+                    className={`week-day ${expandedDay && expandedDay !== d.key ? "week-day-collapsed" : ""}`}
                     data-physics-day-column="true"
+                    data-lanes={weekLayout[d.key]?.laneCount || 1}
                     key={d.key}
                   >
                     {timeSlots.map((t) => (
@@ -2185,7 +2454,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           .filter((r) => Boolean(r[d.key]))
                           .map((r) => {
                             const top =
-                                ((mins(r.fstarttime) - 7 * 60) / 30) * 36,
+                                ((mins(r.fstarttime) - gridWindow.start) / 30) * 36,
                               height = Math.max(
                                 34,
                                 ((mins(r.fendtime) - mins(r.fstarttime)) / 30) *
@@ -2218,78 +2487,74 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             );
                           })
                       : null}
-                    {weekRows
-                      .filter((r) => Boolean(r[d.key]))
-                      .map((r) => {
-                        const top = ((mins(r.fstarttime) - 7 * 60) / 30) * 36,
-                          height = Math.max(
-                            34,
-                            ((mins(r.fendtime) - mins(r.fstarttime)) / 30) *
-                              36 -
-                              3,
-                          ),
-                          c = courseById.get(r.AdCourseId),
-                          i = instructorById.get(r.AdInstructorId);
-                        return (
-                          <article
-                            {...physics.bindEvent(r, d.key)}
-                            draggable={!saving && !physics.supported}
-                            onDragStart={(e) => {
-                              e.dataTransfer.setData(
-                                "text/schedule-id",
-                                String(r.id),
-                              );
-                              e.dataTransfer.effectAllowed = "move";
-                              beginRipple(r);
-                            }}
-                            onDragEnd={clearRipple}
-                            onDoubleClick={() => openEdit(r)}
-                            onClick={() =>
-                              runVisualTransition(() => setXrayId((v) => (v === r.id ? null : r.id)))
-                            }
-                            tabIndex={0}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") void openContext(r);
-                            }}
-                            className={`week-event ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${physicsPreview?.row.id === r.id ? "physics-source-pending" : ""}`}
-                            data-quickview={`${c?.CourseCode || "—"} · ${r.AdCourseName || c?.CourseName || "مقرر"}
+                    {(weekLayout[d.key]?.clusters || []).map((cluster) => {
+                      const grouped = cluster.items.length >= STACK_THRESHOLD && expandedDay !== d.key;
+                      if (!grouped) {
+                        return cluster.items.map((r) => {
+                          const top = ((mins(r.fstarttime) - gridWindow.start) / 30) * 36;
+                          const height = Math.max(34, ((mins(r.fendtime) - mins(r.fstarttime)) / 30) * 36 - 3);
+                          return renderWeekCard(r, d, { top, height, ...clusterLaneStyle(cluster, r) });
+                        });
+                      }
+                      // Three or more at the same hour read better as one block
+                      // of colour-coded rows than as four unreadable slivers.
+                      const endAt = Math.max(...cluster.items.map((item) => mins(item.fendtime)));
+                      return (
+                        <div
+                          className="week-cluster"
+                          key={`cluster-${d.key}-${cluster.top}`}
+                          style={{ top: cluster.top, height: cluster.height }}
+                        >
+                          <header>
+                            <time dir="ltr">{cluster.items[0].fstarttime}–{timeFromMins(endAt)}</time>
+                            <button
+                              type="button"
+                              onClick={() => setExpandedDay(d.key)}
+                              title="افتح اليوم بعرض كامل"
+                            >
+                              {cluster.items.length}
+                            </button>
+                          </header>
+                          <div className="week-cluster-rows">
+                            {cluster.items.map((r) => {
+                              const c = courseById.get(r.AdCourseId);
+                              const i = instructorById.get(r.AdInstructorId);
+                              const code = c?.CourseCode || r.AdCourseName || "—";
+                              return (
+                                <article
+                                  {...physics.bindEvent(r, d.key)}
+                                  key={`chip-${d.key}-${r.id}`}
+                                  className={`week-chip ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
+                                  style={{ ["--hue" as any]: courseHue(code) }}
+                                  draggable={!saving && !physics.supported}
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData("text/schedule-id", String(r.id));
+                                    e.dataTransfer.effectAllowed = "move";
+                                    beginRipple(r);
+                                  }}
+                                  onDragEnd={clearRipple}
+                                  onDoubleClick={() => openEdit(r)}
+                                  onClick={() => runVisualTransition(() => setXrayId((v) => (v === r.id ? null : r.id)))}
+                                  tabIndex={0}
+                                  onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
+                                  data-quickview={`${code} · ${r.AdCourseName || c?.CourseName || "مقرر"}
 شعبة ${r.SCode} · ${i?.AdInstructorName || "بدون أستاذ"}
 ${arabicDays(r) || "بدون أيام"} · ${r.fstarttime}-${r.fendtime}
 ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
-                            key={`${d.key}-${r.id}`}
-                            style={{ top, height, ...weekLaneStyle(d.key, r) }}
-                          >
-                            <GripVertical
-                              data-physics-handle="true"
-                              className="week-drag-handle"
-                            />
-                            <button
-                              className="week-insight"
-                              type="button"
-                              title="السياق الذكي"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openContext(r);
-                              }}
-                            >
-                              <BrainCircuit />
-                            </button>
-                            <strong>{c?.CourseCode || r.AdCourseName}</strong>
-                            <span>{r.AdCourseName || c?.CourseName}</span>
-                            <small dir="ltr">
-                              {r.fstarttime}-{r.fendtime}
-                            </small>
-                            <small>
-                              {i?.AdInstructorName} · {r.AdRoomCode}/
-                              {r.AdRoomHall}
-                            </small>
-                          </article>
-                        );
-                      })}
+                                >
+                                  <b dir="ltr">{code}</b>
+                                  <span>{r.AdRoomCode || "—"}</span>
+                                </article>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                     {pending
                       ? (() => {
                           const top =
-                              ((mins(pending.fstarttime) - 7 * 60) / 30) * 36,
+                              ((mins(pending.fstarttime) - gridWindow.start) / 30) * 36,
                             height = Math.max(
                               34,
                               ((mins(pending.fendtime) -
@@ -2366,9 +2631,26 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
         </>
       )}
       <div className="print-only schedule-print">
-        <h1>الجدول الدراسي</h1>
-        <p>{terms.find((t) => t.AdTermId === filterTerm)?.AdTermName || ""}</p>
+        <PrintLetterhead
+          title="الجدول الدراسي"
+          scope={[
+            terms.find((t) => t.AdTermId === filterTerm)?.AdTermName,
+            colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,
+            sections.find((s) => s.AdSectionId === filterSection)?.AdSectionName,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        />
         <table>
+          <colgroup>
+            <col style={{ width: "4%" }} />
+            <col style={{ width: "26%" }} />
+            <col style={{ width: "8%" }} />
+            <col style={{ width: "18%" }} />
+            <col style={{ width: "17%" }} />
+            <col style={{ width: "13%" }} />
+            <col style={{ width: "14%" }} />
+          </colgroup>
           <thead>
             <tr>
               <th>م</th>
@@ -2663,7 +2945,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     </button>
                   ))
                 ) : (
-                  <p>لا توجد ملاحظات على هذا الموعد.</p>
+                  <p>لا ملاحظات</p>
                 )}
               </div>
             </div>

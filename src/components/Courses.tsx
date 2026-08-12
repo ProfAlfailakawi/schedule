@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BookOpen, Building2, Clock3, Trash2, Users } from "lucide-react";
+import { sortByName } from "../utils/sorting";
 import {
   AddButton,
+  EmbeddedAction,
   EmptyState,
   Field,
   FormActions,
@@ -17,7 +19,8 @@ import {
   Surface,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
-export default function Courses() {
+/** `embedded` means the academic console already supplies the page identity. */
+export default function Courses({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
   const [items, setItems] = useState<any[]>([]),
     [colleges, setColleges] = useState<any[]>([]),
     [sections, setSections] = useState<any[]>([]),
@@ -46,8 +49,8 @@ export default function Courses() {
       if (!a.ok || !b.ok || !c.ok) throw 0;
       const data = await a.json();
       setItems(data);
-      setColleges(await b.json());
-      setSections(await c.json());
+      setColleges(sortByName(await b.json(), (row:any)=>row.AdCollegeName));
+      setSections(sortByName(await c.json(), (row:any)=>row.AdSectionName));
       setSelectedId((v) =>
         v && data.some((x: any) => x.AdCourseId === v)
           ? v
@@ -217,7 +220,7 @@ export default function Courses() {
       <div className="content-stack editor-page">
         <PageTitle
           eyebrow="البيانات الأكاديمية"
-          subtitle="المقرر سيبقى مرتبطاً بنفس قواعد الكلية والقسم والتكرار الأصلية."
+          subtitle="مرتبط بالكلية والقسم"
         >
           {mode === "create" ? "تسجيل مقرر دراسي جديد" : "تعديل بيانات المقرر"}
         </PageTitle>
@@ -229,7 +232,7 @@ export default function Courses() {
             </span>
             <div>
               <strong>بطاقة المقرر</strong>
-              <p>كل ما يلزم للمقرر في مساحة واحدة هادئة وواضحة.</p>
+              <p>كل ما يلزم المقرر</p>
             </div>
           </div>
           <form onSubmit={submit}>
@@ -318,14 +321,20 @@ export default function Courses() {
       </div>
     );
   return (
-    <div className="content-stack library-page catalog-inspector-page">
-      <PageTitle
-        eyebrow="المكتبة الأكاديمية"
-        subtitle="المقرر هو العنصر الأساسي؛ التفاصيل الدقيقة تظهر فقط عند اختياره."
-        action={<AddButton onClick={create}>إنشاء مقرر</AddButton>}
-      >
-        المقررات الدراسية
-      </PageTitle>
+    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+      {embedded ? (
+        <EmbeddedAction slot={actionSlot}>
+          <AddButton onClick={create}>إنشاء مقرر</AddButton>
+        </EmbeddedAction>
+      ) : (
+        <PageTitle
+          eyebrow="المكتبة الأكاديمية"
+          subtitle="المكتبة والتفاصيل في لوحة واحدة"
+          action={<AddButton onClick={create}>إنشاء مقرر</AddButton>}
+        >
+          المقررات الدراسية
+        </PageTitle>
+      )}
       {error ? <Notice>{error}</Notice> : null}
       <div className="catalog-workspace">
         <Surface className="catalog-master">

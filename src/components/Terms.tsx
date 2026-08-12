@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Trash2 } from "lucide-react";
 import {
   AddButton,
+  EmbeddedAction,
   EmptyState,
   Field,
   FormActions,
@@ -17,7 +18,8 @@ import {
   Surface,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
-export default function Terms() {
+/** `embedded` means the academic console already supplies the page identity. */
+export default function Terms({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
   const [items, setItems] = useState<any[]>([]),
     [mode, setMode] = useState<Mode>("index"),
     [editId, setEditId] = useState<number | null>(null),
@@ -109,7 +111,7 @@ export default function Terms() {
       <div className="content-stack editor-page">
         <PageTitle
           eyebrow="البيانات الأكاديمية"
-          subtitle="اسم الفصل كما سيظهر في الجداول والتقارير."
+          subtitle="يظهر في الجداول والتقارير"
         >
           {mode === "create" ? "إنشاء فصل دراسي جديد" : "تعديل الفصل الدراسي"}
         </PageTitle>
@@ -121,7 +123,7 @@ export default function Terms() {
             </span>
             <div>
               <strong>الفصل الدراسي</strong>
-              <p>تسمية واضحة تساعد في الفرز والنسخ والتقارير.</p>
+              <p>تسمية واضحة للفرز والنسخ</p>
             </div>
           </div>
           <form onSubmit={submit}>
@@ -140,14 +142,20 @@ export default function Terms() {
       </div>
     );
   return (
-    <div className="content-stack library-page catalog-inspector-page">
-      <PageTitle
-        eyebrow="الخط الزمني الأكاديمي"
-        subtitle="اختر الفصل، وتظهر تفاصيله في اللوحة الجانبية بدل فتح شاشة إضافية."
-        action={<AddButton onClick={create}>إنشاء فصل</AddButton>}
-      >
-        الفصول الدراسية
-      </PageTitle>
+    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+      {embedded ? (
+        <EmbeddedAction slot={actionSlot}>
+          <AddButton onClick={create}>إنشاء فصل</AddButton>
+        </EmbeddedAction>
+      ) : (
+        <PageTitle
+          eyebrow="الخط الزمني الأكاديمي"
+          subtitle="المكتبة والتفاصيل في لوحة واحدة"
+          action={<AddButton onClick={create}>إنشاء فصل</AddButton>}
+        >
+          الفصول الدراسية
+        </PageTitle>
+      )}
       {error ? <Notice>{error}</Notice> : null}
       <div className="catalog-workspace">
         <Surface className="catalog-master">
@@ -168,7 +176,7 @@ export default function Terms() {
                   className={selectedId === x.AdTermId ? "selected" : ""}
                   icon={<CalendarDays />}
                   title={x.AdTermName}
-                  subtitle="فصل مرجعي للجداول والتقارير"
+                  subtitle="مرجع الجداول والتقارير"
                   meta={<MetaPill label="الترتيب" value={String(i + 1)} />}
                 />
               ))}
@@ -185,7 +193,7 @@ export default function Terms() {
               </div>
               <span className="surface-kicker">تفاصيل الفصل</span>
               <h2>{selected.AdTermName}</h2>
-              <p>مرجع زمني للجداول والتقارير وعمليات النسخ.</p>
+              <p>مرجع الجداول والنسخ.</p>
               <div className="inspector-facts">
                 <article>
                   <span>المعرّف</span>

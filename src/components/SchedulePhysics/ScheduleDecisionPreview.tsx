@@ -16,6 +16,8 @@ interface Props {
 
 const dayText = (row: FSchedule) => PHYSICS_DAYS.filter(day => Boolean((row as any)[day.key])).map(day => day.label).join("، ");
 const signed = (value: unknown, suffix = "") => { const n = Number(value || 0); return `${n > 0 ? "+" : ""}${n}${suffix}`; };
+/** A movement is good when it reduces cost or raises quality. */
+const tone = (improvement: number) => improvement > 0 ? "impact-good" : improvement < 0 ? "impact-warn" : "";
 
 export default function ScheduleDecisionPreview({ request, course, instructor, busy, isPowerAdmin = false, onConfirm, onCancel }: Props) {
   const { row, target, decision } = request;
@@ -39,10 +41,10 @@ export default function ScheduleDecisionPreview({ request, course, instructor, b
 
     <div className="decision-impact">
       {ripple?.delta ? <>
-        <span><Activity/><small>التعارض</small><b>{signed(ripple.delta.conflicts)}</b></span>
-        <span><Gauge/><small>فراغ الأستاذ</small><b>{signed(ripple.delta.professorGap, "د")}</b></span>
-        <span><ShieldCheck/><small>الجودة</small><b>{signed(ripple.delta.quality)}</b></span>
-        <span><Activity/><small>ضغط اليوم</small><b>{signed(ripple.delta.dayPressure, "%")}</b></span>
+        <span className={tone(-Number(ripple.delta.conflicts || 0))}><Activity/><small>تعارض</small><b>{signed(ripple.delta.conflicts)}</b></span>
+        <span className={tone(-Number(ripple.delta.professorGap || 0))}><Gauge/><small>فراغ</small><b>{signed(ripple.delta.professorGap, "د")}</b></span>
+        <span className={tone(Number(ripple.delta.quality || 0))}><ShieldCheck/><small>جودة</small><b>{signed(ripple.delta.quality)}</b></span>
+        <span className={tone(-Number(ripple.delta.dayPressure || 0))}><Activity/><small>ضغط</small><b>{signed(ripple.delta.dayPressure, "%")}</b></span>
       </> : <p className="decision-no-data">لا توجد بيانات كافية لقياس الأثر اللحظي. المسار الحالي للحفظ ما زال متاحًا.</p>}
     </div>
 

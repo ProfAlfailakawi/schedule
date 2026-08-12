@@ -95,11 +95,11 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <div className="apex-access-head">
             <span>دخول آمن</span>
             <strong>أهلاً بعودتك</strong>
-            <p>أكمل من المكان الذي توقفت عنده.</p>
+            <p>أكمل من حيث توقفت</p>
           </div>
           {error ? (
             <div className="login-error">
-              <Notice>{error}</Notice>
+              <Notice inline>{error}</Notice>
             </div>
           ) : null}
           <form className="apex-login-form" onSubmit={submit}>

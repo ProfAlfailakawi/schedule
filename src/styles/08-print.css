@@ -1,0 +1,191 @@
+/* ==========================================================================
+   SCHEDULE — PRINT
+   A printed report is a document, not a screenshot of a screen. It carries a
+   letterhead, a scope line, a repeating table header, a footer on every page
+   and, where it is signed, a signature block that never splits across pages.
+   Wide evidence tables use landscape; short official sheets use portrait.
+   ========================================================================== */
+
+@page{size:A4 landscape;margin:12mm 10mm 16mm}
+/* Named page so a six-column signed sheet is not stranded on a wide page. */
+@page upright{size:A4 portrait;margin:14mm 12mm 18mm}
+
+@media print{
+  :root,:root[data-theme="dark"]{color-scheme:light}
+
+  html,body,#root{
+    width:100% !important;min-width:0 !important;height:auto !important;
+    overflow:visible !important;background:#fff !important;
+  }
+  body{
+    margin:0 !important;color:#111 !important;
+    font-family:"Plex Arabic",Arial,"Noto Sans Arabic",sans-serif !important;
+    -webkit-print-color-adjust:exact;print-color-adjust:exact;
+  }
+
+  .app-shell,.app-main,.content-frame,.content-stack,
+  .reports-page,.report-studio-page,.query-studio-page,.query-page,.unified-workspace{
+    display:block !important;
+    width:100% !important;max-width:none !important;min-width:0 !important;
+    margin:0 !important;padding:0 !important;overflow:visible !important;
+  }
+
+  /* Everything that belongs to the screen stays on the screen. */
+  .no-print,.sidebar,.sidebar-launcher,.sidebar-backdrop,.mobile-topbar,
+  .page-heading,.report-studio-layout,.query-workbench,.query-results,
+  .query-bar,.lens-strip,.query-canvas,.query-canvas-head,.console-rail,
+  .console-head,.query-empty,.notice,.toast-layer,.schedule-control,
+  .schedule-mini-stats,.living-pulse-shell,.academic-xray,
+  .schedule-experience-strip,.intelligence-scenes,.unified-mode-strip,
+  .spotlight-backdrop,.onboarding-backdrop,.living-overlay,
+  .schedule-decision-preview,.schedule-drag-hud{display:none !important}
+
+  .print-only{display:block !important;width:100% !important;overflow:visible !important}
+  .report-paper{box-shadow:none !important;border:0 !important;padding:0 !important;min-height:0 !important;background:#fff !important;color:#111 !important}
+
+  /* --- sheet ------------------------------------------------------------- */
+
+  .print-report{
+    display:block !important;
+    direction:rtl !important;
+    width:100% !important;max-width:none !important;
+    margin:0 !important;padding:0 !important;
+    color:#111 !important;background:#fff !important;
+    font-size:8.6pt !important;line-height:1.45 !important;
+    /* Keeps the last line clear of the repeating footer. */
+    padding-bottom:8mm !important;
+  }
+  .print-report.print-upright{page:upright}
+
+  /* --- letterhead -------------------------------------------------------- */
+
+  .print-head{
+    display:flex !important;align-items:flex-end !important;justify-content:space-between !important;
+    gap:8mm !important;
+    margin:0 0 5mm !important;padding-bottom:2.6mm !important;
+    border-bottom:1.4pt solid #1f6b5c !important;
+  }
+  .print-head-title{min-width:0 !important;flex:1 !important}
+  .print-head-title h1{
+    margin:0 !important;
+    font-size:15pt !important;font-weight:700 !important;line-height:1.25 !important;
+    letter-spacing:-.01em !important;text-align:right !important;color:#111 !important;
+  }
+  .print-head-title p{
+    margin:1.2mm 0 0 !important;
+    font-size:9pt !important;color:#444 !important;text-align:right !important;
+  }
+  .print-head-mark{
+    flex:none !important;text-align:left !important;
+  }
+  .print-head-mark strong{
+    display:block !important;
+    font:700 10pt/1.2 "Plex Mono",ui-monospace,monospace !important;
+    letter-spacing:.16em !important;color:#1f6b5c !important;
+  }
+  .print-head-mark span{display:block !important;font-size:7.6pt !important;color:#666 !important}
+
+  /* Repeated on every printed page by the browser. */
+  .print-foot{
+    position:fixed !important;inset-inline:0 !important;bottom:0 !important;
+    display:flex !important;align-items:center !important;justify-content:space-between !important;
+    padding-top:1.6mm !important;border-top:.6pt solid #bbb !important;
+    font-size:7.4pt !important;color:#666 !important;
+  }
+  .print-foot span{white-space:nowrap !important}
+
+  /* --- tables ------------------------------------------------------------ */
+
+  .print-report table{
+    width:100% !important;max-width:100% !important;
+    border-collapse:collapse !important;table-layout:fixed !important;
+    page-break-inside:auto !important;
+  }
+  .print-report thead{display:table-header-group !important}
+  .print-report tbody{display:table-row-group !important}
+  .print-report tr{break-inside:avoid !important;page-break-inside:avoid !important}
+  .print-report th,.print-report td{
+    border:.6pt solid #9aa3a0 !important;
+    padding:2.1mm 1.6mm !important;
+    vertical-align:middle !important;text-align:right !important;
+    white-space:normal !important;overflow:visible !important;
+    overflow-wrap:anywhere !important;word-break:normal !important;
+    line-height:1.4 !important;font-size:8.4pt !important;
+  }
+  .print-report th{
+    font-weight:700 !important;font-size:8.2pt !important;
+    background:#e8efec !important;color:#0f4239 !important;
+    border-color:#7d8d88 !important;
+  }
+  .print-report tbody tr:nth-child(even) td{background:#f7f9f8 !important}
+  .print-report td[dir="ltr"]{
+    direction:ltr !important;text-align:center !important;white-space:nowrap !important;
+    font-family:"Plex Mono",ui-monospace,monospace !important;font-size:7.8pt !important;
+    font-variant-numeric:tabular-nums !important;
+  }
+  .print-report .num,
+  .print-report th:first-child,.print-report td:first-child{
+    text-align:center !important;font-variant-numeric:tabular-nums !important;
+  }
+
+  /* --- summary, signatures ------------------------------------------------ */
+
+  .print-scope{margin:0 0 4mm !important;font-size:9pt !important;color:#333 !important;text-align:right !important}
+  .print-summary{
+    display:flex !important;flex-wrap:wrap !important;gap:4mm 10mm !important;
+    margin-top:4mm !important;padding-top:2.4mm !important;
+    border-top:.6pt solid #bbb !important;
+    font-size:9pt !important;font-weight:600 !important;
+    break-inside:avoid !important;
+  }
+  .print-summary b{color:#1f6b5c !important}
+  .print-signatures{
+    display:flex !important;gap:14mm !important;margin-top:16mm !important;
+    page-break-inside:avoid !important;break-inside:avoid !important;
+  }
+  .print-signatures>div{flex:1 !important;text-align:center !important}
+  .print-signatures span{display:block !important;font-size:9pt !important;color:#333 !important;margin-bottom:14mm !important}
+  .print-signatures i{display:block !important;border-top:.8pt solid #333 !important}
+
+  /* --- occupancy sheet ---------------------------------------------------- */
+  /* The grid keeps its shape on paper: a filled square is a taken hour, an
+     empty one is a free hour, so the sheet is readable in greyscale too. */
+  .print-occupancy table{table-layout:fixed !important}
+  .print-occupancy td.cell{padding:0 !important;height:5.2mm !important}
+  .print-occupancy td.cell[data-taken="1"]{background:#1f6b5c !important}
+  .print-occupancy td.cell[data-taken="0"]{background:#fff !important}
+  .print-occupancy td.room{text-align:right !important;font-size:7.8pt !important}
+  .print-occupancy th.hour{font-size:7pt !important;padding:1.4mm .4mm !important;text-align:center !important}
+
+  /* --- week grid ---------------------------------------------------------- */
+
+  .print-week{width:100% !important;border-collapse:collapse !important;table-layout:fixed !important}
+  .print-week th{background:#e8efec !important;color:#0f4239 !important}
+  .print-week td{vertical-align:top !important;height:26mm !important}
+  .print-week .slot{
+    display:block !important;margin-bottom:1mm !important;padding:1mm 1.4mm !important;
+    border-inline-start:1.2pt solid #1f6b5c !important;background:#f2f6f4 !important;
+    font-size:7.4pt !important;line-height:1.35 !important;break-inside:avoid !important;
+  }
+  .print-week .slot b{display:block !important;font-weight:700 !important}
+  .print-week .slot time{
+    display:block !important;direction:ltr !important;
+    font-family:"Plex Mono",ui-monospace,monospace !important;font-size:6.8pt !important;color:#444 !important;
+  }
+
+  /* Legacy schedule sheet kept working while it shares the new letterhead. */
+  .schedule-print{direction:rtl !important}
+  .schedule-print table{width:100% !important;border-collapse:collapse !important;table-layout:fixed !important}
+  .schedule-print thead{display:table-header-group !important}
+  .schedule-print tr{break-inside:avoid !important}
+  .schedule-print th,.schedule-print td{
+    padding:2.1mm 1.6mm !important;border:.6pt solid #9aa3a0 !important;
+    font-size:8.4pt !important;text-align:right !important;overflow-wrap:anywhere !important;
+  }
+  .schedule-print th{background:#e8efec !important;color:#0f4239 !important;font-weight:700 !important}
+  .schedule-print tbody tr:nth-child(even) td{background:#f7f9f8 !important}
+  .schedule-print td[dir="ltr"]{
+    direction:ltr !important;text-align:center !important;white-space:nowrap !important;
+    font-family:"Plex Mono",ui-monospace,monospace !important;font-size:7.8pt !important;
+  }
+}

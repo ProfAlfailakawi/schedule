@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { sortByName } from "../utils/sorting";
 import {
   Activity,
+  Building2,
   Check,
   ChevronLeft,
   KeyRound,
   Landmark,
+  ScrollText,
   Search,
   ShieldCheck,
   Trash2,
@@ -14,13 +17,13 @@ import {
 import {
   AddButton,
   Badge,
+  ConsoleRail,
   Field,
   FormActions,
   Notice,
   PageTitle,
   PrimaryButton,
   SecondaryButton,
-  Segmented,
   Surface,
 } from "./ui";
 import {
@@ -107,12 +110,12 @@ export default function AdminUsers({
         api("/api/colleges"),
         api("/api/sections"),
       ]);
-      setUsers(base[0]);
-      setColleges(base[1]);
-      setSections(base[2]);
+      setUsers(sortByName(base[0], (row:any)=>row.Name));
+      setColleges(sortByName(base[1], (row:any)=>row.AdCollegeName));
+      setSections(sortByName(base[2], (row:any)=>row.AdSectionName));
       if (mode === "users")
         try {
-          setInstructors(await api("/api/admin-instructor-options"));
+          setInstructors(sortByName(await api("/api/admin-instructor-options"), (row:any)=>row.AdInstructorName));
         } catch {
           setInstructors([]);
         }
@@ -336,26 +339,34 @@ export default function AdminUsers({
     }
   };
 
+  // Only the open section's records are loaded, so the rail stays purely
+  // navigational rather than showing counts it would have to guess at.
   const tabs = [
     permissions.length === 0 || permissions.includes(11)
-      ? { value: "users", label: "المستخدمون" }
+      ? { value: "users", label: "المستخدمون", icon: <UsersRound /> }
       : null,
     permissions.length === 0 || permissions.includes(12)
-      ? { value: "permissions", label: "الصلاحيات" }
+      ? { value: "permissions", label: "الصلاحيات", icon: <ShieldCheck /> }
       : null,
     permissions.length === 0 || permissions.includes(15)
-      ? { value: "scopes", label: "النطاقات" }
+      ? { value: "scopes", label: "النطاقات", icon: <Building2 /> }
       : null,
-    { value: "audit", label: "السجل" },
-  ].filter(Boolean) as Array<{ value: string; label: string }>;
-  const consoleHead = (
+    { value: "audit", label: "السجل", icon: <ScrollText /> },
+  ].filter(Boolean) as Array<{ value: string; label: string; icon: React.ReactNode }>;
+  // One header line for the whole console: the section rail plus whatever the
+  // open section can create. Editor pages get the message only — switching
+  // section mid-edit would throw away what was typed.
+  const consoleHead = (action?: React.ReactNode) => (
     <>
-      <div className="admin-tabs">
-        <Segmented
+      <h1 className="sr-only">إدارة النظام</h1>
+      <div className="console-head">
+        <ConsoleRail
+          label="إدارة النظام"
           value={mode}
           onChange={(v) => onNavigate?.(v as AdminMode)}
           options={tabs}
         />
+        {action ? <div className="console-action-slot no-print">{action}</div> : null}
       </div>
       {error ? <Notice>{error}</Notice> : null}
     </>
@@ -385,7 +396,7 @@ export default function AdminUsers({
     <div className="master-empty">
       {icon}
       <strong>{title}</strong>
-      <span>اختر عنصراً من القائمة لمشاهدة تفاصيله وإجراءاته.</span>
+      <span>اختر عنصراً من القائمة</span>
     </div>
   );
 
@@ -394,11 +405,11 @@ export default function AdminUsers({
       <div className="content-stack editor-page">
         <PageTitle
           eyebrow="إدارة النظام"
-          subtitle="يمكن ربط الحساب بأستاذ مقرر لتظهر له لوحة شخصية."
+          subtitle="يمكن ربطه بأستاذ مقرر"
         >
           {page === "create" ? "إنشاء مستخدم" : "تعديل المستخدم"}
         </PageTitle>
-        {consoleHead}
+        {error ? <Notice>{error}</Notice> : null}
         <Surface className="form-card smart-form">
           <div className="form-intro">
             <span>
@@ -406,7 +417,7 @@ export default function AdminUsers({
             </span>
             <div>
               <strong>حساب مسؤول الجدول</strong>
-              <p>بيانات الدخول والحالة والربط الاختياري بأستاذ مقرر.</p>
+              <p>دخول · حالة · ربط اختياري</p>
             </div>
           </div>
           <form onSubmit={saveUser}>
@@ -489,17 +500,17 @@ export default function AdminUsers({
       <div className="content-stack editor-page permission-editor-page">
         <PageTitle
           eyebrow="إدارة النظام"
-          subtitle="اختر المستخدم أولاً، ثم فعّل الوظائف التي يحتاجها فقط."
+          subtitle="مستخدم واحد · صلاحياته فقط"
         >
           صلاحيات المستخدم
         </PageTitle>
-        {consoleHead}
+        {error ? <Notice>{error}</Notice> : null}
         <Surface className="form-card smart-form permission-picker-card">
           <div className="form-intro">
             <span><KeyRound /></span>
             <div>
               <strong>اختيار بصري مباشر</strong>
-              <p>لا قوائم متكررة: مستخدم واحد ثم جميع صلاحياته أمامك.</p>
+              <p>مستخدم واحد · كل صلاحياته</p>
             </div>
           </div>
           <form onSubmit={savePermission}>
@@ -562,11 +573,11 @@ export default function AdminUsers({
       <div className="content-stack editor-page">
         <PageTitle
           eyebrow="إدارة النظام"
-          subtitle="نطاق الكلية والقسم يحدد البيانات التي تظهر للمستخدم."
+          subtitle="الكلية والقسم يحددان ما يظهر"
         >
           إنشاء نطاق أكاديمي
         </PageTitle>
-        {consoleHead}
+        {error ? <Notice>{error}</Notice> : null}
         <Surface className="form-card smart-form">
           <div className="form-intro">
             <span>
@@ -574,7 +585,7 @@ export default function AdminUsers({
             </span>
             <div>
               <strong>نطاق المستخدم</strong>
-              <p>تحديد الكلية والقسم العلمي المسموح بهما.</p>
+              <p>كلية وقسم مسموحان</p>
             </div>
           </div>
           <form onSubmit={saveScope}>
@@ -644,23 +655,16 @@ export default function AdminUsers({
       );
     return (
       <div className="content-stack admin-page master-detail-page">
-        <PageTitle
-          eyebrow="إدارة النظام"
-          subtitle="اختر المستخدم، ثم تظهر تفاصيله في لوحة واحدة."
-          action={
-            <AddButton
-              onClick={() => {
-                resetUser();
-                setPage("create");
-              }}
-            >
-              مستخدم جديد
-            </AddButton>
-          }
-        >
-          إدارة النظام
-        </PageTitle>
-        {consoleHead}
+        {consoleHead(
+          <AddButton
+            onClick={() => {
+              resetUser();
+              setPage("create");
+            }}
+          >
+            مستخدم جديد
+          </AddButton>,
+        )}
         <div className="admin-quiet-summary">
           <span>
             <UsersRound />
@@ -796,26 +800,19 @@ export default function AdminUsers({
       null;
     return (
       <div className="content-stack admin-page master-detail-page">
-        <PageTitle
-          eyebrow="إدارة النظام"
-          subtitle="الصلاحيات الأصلية نفسها، لكن في عرض رئيسي وتفصيلي واضح."
-          action={
-            <AddButton
-              onClick={() => {
-                setOldPerm(null);
-                setPermUser(0);
-                setPermForm(0);
-                setPermSelections([]);
-                setPage("create");
-              }}
-            >
-              صلاحية جديدة
-            </AddButton>
-          }
-        >
-          إدارة النظام
-        </PageTitle>
-        {consoleHead}
+        {consoleHead(
+          <AddButton
+            onClick={() => {
+              setOldPerm(null);
+              setPermUser(0);
+              setPermForm(0);
+              setPermSelections([]);
+              setPage("create");
+            }}
+          >
+            صلاحية جديدة
+          </AddButton>,
+        )}
         <div className="master-detail-shell">
           <section className="master-pane">
             <header className="master-filter-stack">
@@ -923,25 +920,18 @@ export default function AdminUsers({
       selected = selectedIndex >= 0 ? assigns[selectedIndex] : null;
     return (
       <div className="content-stack admin-page master-detail-page">
-        <PageTitle
-          eyebrow="إدارة النظام"
-          subtitle="كل مستخدم يرى فقط الكلية والقسم المسموح بهما."
-          action={
-            <AddButton
-              onClick={() => {
-                setScopeUser(0);
-                setScopeCollege(0);
-                setScopeSection(0);
-                setPage("create");
-              }}
-            >
-              نطاق جديد
-            </AddButton>
-          }
-        >
-          إدارة النظام
-        </PageTitle>
-        {consoleHead}
+        {consoleHead(
+          <AddButton
+            onClick={() => {
+              setScopeUser(0);
+              setScopeCollege(0);
+              setScopeSection(0);
+              setPage("create");
+            }}
+          >
+            نطاق جديد
+          </AddButton>,
+        )}
         <div className="master-detail-shell">
           <section className="master-pane">
             <header className="master-filter-stack">
@@ -1056,14 +1046,11 @@ export default function AdminUsers({
       logs.find((x) => String(x.id) === String(selectedLogId)) || null;
   return (
     <div className="content-stack admin-page master-detail-page">
-      <PageTitle
-        eyebrow="إدارة النظام"
-        subtitle="سجل حي لكل إضافة وتعديل وحذف ونسخ ونشر وتراجع."
-        action={<SecondaryButton type="button" onClick={() => void load()}>تحديث السجل</SecondaryButton>}
-      >
-        إدارة النظام
-      </PageTitle>
-      {consoleHead}
+      {consoleHead(
+        <SecondaryButton type="button" onClick={() => void load()}>
+          تحديث السجل
+        </SecondaryButton>,
+      )}
       <div className="master-detail-shell audit-master-detail">
         <section className="master-pane">
           <header>

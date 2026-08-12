@@ -1,6 +1,6 @@
-const SHELL_CACHE="schedule-shell-v4";
-const API_CACHE="schedule-api-v4";
-const SHELL=["/","/Home/Index","/manifest.webmanifest","/schedule-icon.svg","/schedule-icon-192.png","/schedule-icon-512.png"];
+const SHELL_CACHE="schedule-shell-v5";
+const API_CACHE="schedule-api-v5";
+const SHELL=["/","/Home/Index","/manifest.webmanifest","/schedule-icon.svg","/schedule-icon-192.png","/schedule-icon-512.png","/fonts/plex-arabic-arabic-400.woff2","/fonts/plex-arabic-arabic-600.woff2","/fonts/plex-arabic-latin-400.woff2","/fonts/plex-arabic-latin-600.woff2","/fonts/plex-mono-latin-500.woff2"];
 const CACHEABLE_API_PREFIXES=[
   "/api/dashboard","/api/colleges","/api/sections","/api/terms","/api/instructors","/api/courses","/api/schedules",
   "/api/intelligence/overview","/api/intelligence/drafts","/api/intelligence/versions","/api/intelligence/room","/api/intelligence/professor",

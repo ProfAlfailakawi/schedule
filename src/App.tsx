@@ -1,22 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Building2,
   CalendarDays,
   ChevronLeft,
-  CircleUserRound,
   Command,
+  CopyPlus,
   FileSearch,
   FileText,
-  GraduationCap,
   House,
   Info,
-  Landmark,
+  Library,
   LogOut,
   Menu,
   Moon,
   Search,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
   Sun,
   UsersRound,
@@ -28,16 +28,19 @@ import {
 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import Colleges from "./components/Colleges";
-import Sections from "./components/Sections";
-import Terms from "./components/Terms";
-import Instructors from "./components/Instructors";
-import Courses from "./components/Courses";
-import Schedules from "./components/Schedules";
-import Reports, { ReportMode } from "./components/Reports";
-import AdminUsers, { AdminMode } from "./components/AdminUsers";
-import About from "./components/About";
-import IntelligenceWorkspace from "./components/IntelligenceWorkspace";
+import type { ReportMode } from "./components/Reports";
+import type { AdminMode } from "./components/AdminUsers";
+import type { AcademicTab } from "./components/AcademicConsole";
+
+// The dashboard is the landing screen and stays in the first payload. Every other
+// workspace is fetched the moment it is first opened, which keeps the initial
+// download small on the slow campus connections this runs on.
+const AcademicConsole = lazy(() => import("./components/AcademicConsole"));
+const Schedules = lazy(() => import("./components/Schedules"));
+const Reports = lazy(() => import("./components/Reports"));
+const AdminUsers = lazy(() => import("./components/AdminUsers"));
+const About = lazy(() => import("./components/About"));
+const IntelligenceWorkspace = lazy(() => import("./components/IntelligenceWorkspace"));
 import { PrimaryButton } from "./components/ui";
 
 type View =
@@ -91,6 +94,15 @@ const reportViews: ReportMode[] = [
   "reportRoomTime",
 ];
 const adminViews: AdminMode[] = ["users", "permissions", "scopes", "audit"];
+const academicViews: AcademicTab[] = ["terms", "colleges", "sections", "instructors", "courses"];
+/** Permission id that unlocks each academic catalogue. */
+const ACADEMIC_PERM: Record<AcademicTab, number> = {
+  terms: 5,
+  colleges: 2,
+  sections: 4,
+  instructors: 3,
+  courses: 6,
+};
 
 const pathByView: Record<View, string> = {
   dashboard: "/Home/Index",
@@ -148,7 +160,8 @@ export default function App() {
     [searching, setSearching] = useState(false),
     [searchResults, setSearchResults] = useState<SearchHit[]>([]),
     [commandThinking, setCommandThinking] = useState(false),
-    [commandInsight, setCommandInsight] = useState<any>(null);
+    [commandInsight, setCommandInsight] = useState<any>(null),
+    [naturalAnswer, setNaturalAnswer] = useState<any>(null);
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = localStorage.getItem("schedule-theme");
     if (stored === "dark" || stored === "light") return stored;
@@ -272,6 +285,7 @@ export default function App() {
       setQuery("");
       setSearchResults([]);
       setCommandInsight(null);
+      setNaturalAnswer(null);
       return;
     }
     const q = query.trim();
@@ -298,6 +312,19 @@ export default function App() {
         if (e?.name !== "AbortError") setSearchResults([]);
       } finally {
         setSearching(false);
+      }
+      // A written question ("قاعات فاضية الثلاثاء ١٠") is answered directly
+      // instead of being turned into a list of filters to set by hand.
+      if (allowed.schedule && /فاض|فارغ|متاح|شاغر|فراغ|الأحد|الاحد|الاثنين|الإثنين|الثلاثاء|الأربعاء|الاربعاء|الخميس|\d/.test(q)) {
+        try {
+          const nr = await fetch(`/api/search/natural?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+          const nd = await nr.json();
+          setNaturalAnswer(nr.ok && nd.intent !== "unknown" ? nd : null);
+        } catch (e: any) {
+          if (e?.name !== "AbortError") setNaturalAnswer(null);
+        }
+      } else {
+        setNaturalAnswer(null);
       }
     }, 220);
     return () => {
@@ -487,15 +514,19 @@ export default function App() {
           />
         );
       case "terms":
-        return isPowerAdmin && hasPerm(5) ? <Terms /> : unauthorized();
       case "colleges":
-        return isPowerAdmin && hasPerm(2) ? <Colleges /> : unauthorized();
       case "sections":
-        return isPowerAdmin && hasPerm(4) ? <Sections /> : unauthorized();
       case "instructors":
-        return isPowerAdmin && hasPerm(3) ? <Instructors /> : unauthorized();
       case "courses":
-        return isPowerAdmin && hasPerm(6) ? <Courses /> : unauthorized();
+        return isPowerAdmin && hasPerm(ACADEMIC_PERM[activeView]) ? (
+          <AcademicConsole
+            tab={activeView}
+            onTab={(next) => go(next)}
+            hasPerm={hasPerm}
+          />
+        ) : (
+          unauthorized()
+        );
       case "schedules":
         return hasPerm(7) ? (
           <Schedules mode="schedule" user={user} scopes={scopes} />
@@ -756,6 +787,9 @@ export default function App() {
     else if (hasPerm(17)) go("searchAdvanced");
   };
 
+  // The academic console opens on the first catalogue this account can reach,
+  // so a coordinator without "terms" still lands somewhere useful.
+  const academicEntry = academicViews.find((view) => hasPerm(ACADEMIC_PERM[view]));
   const viewLabels: Partial<Record<View, string>> = {
     dashboard: "لوحة العمل",
     schedules: "إدارة الجدول",
@@ -1006,19 +1040,19 @@ export default function App() {
           icon: <Command />,
           eyebrow: "أسرع وصول",
           title: "كل البرنامج تحت ⌘K",
-          copy: "ابحث عن دكتور أو مقرر أو قاعة، أو اكتب أمراً طبيعياً وسيقودك البرنامج للمشهد المناسب.",
+          copy: "دكتور · مقرر · قاعة · أمر طبيعي",
         },
         {
           icon: <WandSparkles />,
           eyebrow: "مختبر القرار",
           title: "جرّب قبل ما تغيّر",
-          copy: "النسخة التجريبية والنسخ الزمنية والتحسين الآلي متاحة للإدارة فقط، وكل تغيير يبقى مسودة حتى تعتمد أنت.",
+          copy: "كل تغيير يبقى مسودة حتى تعتمده.",
         },
         {
           icon: <ShieldCheck />,
           eyebrow: "عزل الصلاحيات",
           title: "مسؤول القسم يرى ما يحتاجه فقط",
-          copy: "البيانات الأكاديمية والإدارة والنسخ المتقدمة تبقى لك؛ حساب مسؤول الجدول يعمل داخل قسمه وشاشاته التشغيلية فقط.",
+          copy: "لك كل الشاشات؛ المنسّق يرى قسمه فقط.",
         },
         {
           icon: <WifiOff />,
@@ -1032,19 +1066,19 @@ export default function App() {
           icon: <CalendarDays />,
           eyebrow: "مساحة عمل محدودة",
           title: "كل ما تحتاجه للجدول في أربع وجهات",
-          copy: "لوحة العمل، الجدول الدراسي، الاستعلامات والتقارير فقط — بدون شاشات إدارة أو بيانات أكاديمية لا تحتاجها.",
+          copy: "لوحة · جدول · تقارير.",
         },
         {
           icon: <Command />,
           eyebrow: "أسرع وصول",
           title: "اسأل البرنامج مباشرة",
-          copy: "ابحث باسم أستاذ أو مقرر أو قاعة، أو اكتب مثل «فراغات د. أحمد الثلاثاء» وسيحلل بيانات قسمك فقط.",
+          copy: "مثال: «فراغات د. أحمد الثلاثاء»",
         },
         {
           icon: <ShieldCheck />,
           eyebrow: "خصوصية القسم",
           title: "قسمك فقط… مع كشف التعارضات بأمان",
-          copy: "لن ترى تفاصيل الأقسام الأخرى، لكن النظام يمنع تضارب الأستاذ أو القاعة حتى لو كان الحجز خارج نطاقك.",
+          copy: "التعارض الخارجي محجوب لكنه محمي.",
         },
         {
           icon: <WifiOff />,
@@ -1168,91 +1202,63 @@ export default function App() {
               />
             </div>
           ) : null}
-          {isPowerAdmin && (allowed.menu || allowed.courses) ? (
+          {isPowerAdmin && academicEntry ? (
             <div className="nav-section admin-only-nav" data-rail="catalog">
-              <span className="nav-section-title">البيانات الأكاديمية</span>
-              {hasPerm(5) ? (
+              <span className="nav-section-title">المرجع والإدارة</span>
+              <NavButton
+                view={academicEntry}
+                active={academicViews.includes(activeView as AcademicTab)}
+                icon={<Library />}
+                label="البيانات الأكاديمية"
+              />
+              {allowed.admin ? (
                 <NavButton
-                  view="terms"
-                  icon={<GraduationCap />}
-                  label="الفصول الدراسية"
+                  view="users"
+                  active={adminViews.includes(activeView as AdminMode)}
+                  icon={<SlidersHorizontal />}
+                  label="إدارة النظام"
                 />
               ) : null}
-              {hasPerm(2) ? (
+              {allowed.schedule && user.SystemUserId === 1 ? (
                 <NavButton
-                  view="colleges"
-                  icon={<Landmark />}
-                  label="الكليات"
+                  view="scheduleCopy"
+                  icon={<CopyPlus />}
+                  label="نسخ فصل"
                 />
               ) : null}
-              {hasPerm(4) ? (
-                <NavButton
-                  view="sections"
-                  icon={<Building2 />}
-                  label="الأقسام العلمية"
-                />
-              ) : null}
-              {hasPerm(3) ? (
-                <NavButton
-                  view="instructors"
-                  icon={<UsersRound />}
-                  label="أساتذة المقررات"
-                />
-              ) : null}
-              {hasPerm(6) ? (
-                <NavButton
-                  view="courses"
-                  icon={<BookOpen />}
-                  label="المقررات الدراسية"
-                />
-              ) : null}
+              <NavButton view="about" icon={<Info />} label="عن البرنامج" />
             </div>
-          ) : null}
-          {isPowerAdmin && allowed.admin ? (
+          ) : isPowerAdmin && allowed.admin ? (
             <div className="nav-section admin-only-nav" data-rail="admin">
               <span className="nav-section-title">إدارة النظام</span>
               <NavButton
                 view="users"
                 active={adminViews.includes(activeView as AdminMode)}
-                icon={<UsersRound />}
+                icon={<SlidersHorizontal />}
                 label="إدارة النظام"
               />
               {allowed.schedule && user.SystemUserId === 1 ? (
                 <NavButton
                   view="scheduleCopy"
-                  icon={<Sparkles />}
+                  icon={<CopyPlus />}
                   label="نسخ فصل"
                 />
               ) : null}
-            </div>
-          ) : null}
-          {isPowerAdmin ? (
-            <div className="nav-section" data-rail="other">
               <NavButton view="about" icon={<Info />} label="عن البرنامج" />
             </div>
           ) : null}
         </nav>
+        {/* One card carries who you are, whether saving is safe, the theme and
+            the way out — three sentences of chrome reduced to a dot and two
+            glyphs, which also keeps the rail inside a 720px-tall laptop. */}
         <div className="sidebar-footer">
-          <div
-            className={`sidebar-connection ${online ? "online" : "offline"}`}
-          >
-            {online ? <Wifi /> : <WifiOff />}
-            <span>{online ? "متصل وآمن للحفظ" : "دون اتصال · قراءة فقط"}</span>
-          </div>
-          <button
-            className="theme-toggle"
-            type="button"
-            aria-label={
-              theme === "dark" ? "تفعيل الوضع الفاتح" : "تفعيل الوضع الداكن"
-            }
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            {theme === "dark" ? <Sun /> : <Moon />}
-            <span>{theme === "dark" ? "الوضع الفاتح" : "الوضع الداكن"}</span>
-          </button>
           <div className="user-card">
-            <div className="user-avatar">
+            <div
+              className={`user-avatar ${online ? "online" : "offline"}`}
+              title={online ? "متصل وآمن للحفظ" : "دون اتصال · قراءة فقط"}
+            >
               {user.Name.trim().charAt(0) || "م"}
+              <i aria-hidden="true" />
             </div>
             <div>
               <strong>{user.Name}</strong>
@@ -1260,14 +1266,29 @@ export default function App() {
                 {isPowerAdmin ? "إدارة كاملة" : "مسؤول الجدول · قسمك فقط"}
               </small>
             </div>
-            <button
-              type="button"
-              onClick={logout}
-              title="تسجيل الخروج"
-              aria-label="تسجيل الخروج"
-            >
-              <LogOut />
-            </button>
+            <span className="sr-only" role="status">
+              {online ? "متصل وآمن للحفظ" : "دون اتصال · القراءة فقط"}
+            </span>
+            <div className="user-card-tools">
+              <button
+                type="button"
+                aria-label={
+                  theme === "dark" ? "تفعيل الوضع الفاتح" : "تفعيل الوضع الداكن"
+                }
+                title={theme === "dark" ? "الوضع الفاتح" : "الوضع الداكن"}
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              >
+                {theme === "dark" ? <Sun /> : <Moon />}
+              </button>
+              <button
+                type="button"
+                onClick={logout}
+                title="تسجيل الخروج"
+                aria-label="تسجيل الخروج"
+              >
+                <LogOut />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -1279,7 +1300,9 @@ export default function App() {
         />
       ) : null}
       <main className="app-main">
-        <div className="content-frame">{renderView()}</div>
+        <div className="content-frame">
+          <Suspense fallback={<div className="view-loading" aria-busy="true"><span /></div>}>{renderView()}</Suspense>
+        </div>
       </main>
 
       {searchOpen ? (
@@ -1301,7 +1324,7 @@ export default function App() {
                 ref={searchInput}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="اسم الدكتور، الرقم المدني، المقرر، الرمز، المبنى أو القاعة..."
+                placeholder="ابحث في كل شيء…"
               />
               <button
                 type="button"
@@ -1313,12 +1336,51 @@ export default function App() {
               </button>
             </div>
             <div className="spotlight-body">
+              {naturalAnswer ? (
+                <section className="answer-card" aria-label="إجابة مباشرة">
+                  <header>
+                    <Sparkles aria-hidden="true" />
+                    <strong>{naturalAnswer.title}</strong>
+                    <b>{Number(naturalAnswer.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b>
+                  </header>
+                  {naturalAnswer.rooms?.length ? (
+                    <div className="answer-rooms">
+                      {naturalAnswer.rooms.slice(0, 24).map((room: any) => (
+                        <span key={`${room.room}-${room.hall}`}>{room.room}<small>{room.hall}</small></span>
+                      ))}
+                    </div>
+                  ) : null}
+                  {naturalAnswer.gaps?.length ? (
+                    <div className="answer-gaps">
+                      {naturalAnswer.gaps.slice(0, 12).map((gap: any, index: number) => (
+                        <div key={index}>
+                          <span>{gap.day}</span>
+                          <time dir="ltr">{gap.from}–{gap.to}</time>
+                          <b>{gap.minutes}د</b>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {naturalAnswer.rows?.length ? (
+                    <div className="answer-rows">
+                      {naturalAnswer.rows.slice(0, 12).map((row: any) => (
+                        <div key={row.id}>
+                          <span className="code-chip">{row.code || "—"}</span>
+                          <strong>{row.name}</strong>
+                          <time dir="ltr">{row.start}–{row.end}</time>
+                          <small>{row.room}/{row.hall}</small>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
               {commandThinking ? (
                 <div className="command-intelligence-card thinking">
                   <WandSparkles />
                   <div>
                     <strong>أقرأ الجدول وأفهم سؤالك…</strong>
-                    <span>التحليل محصور ضمن صلاحيات ونطاق الحساب الحالي.</span>
+                    <span>ضمن نطاقك فقط</span>
                   </div>
                 </div>
               ) : commandInsight ? (
@@ -1444,7 +1506,7 @@ export default function App() {
                   <Search />
                   <strong>لا توجد نتائج</strong>
                   <span>
-                    جرّب الاسم، الرقم المدني، رمز المقرر أو رقم القاعة.
+                    اسم · رقم مدني · رمز · قاعة
                   </span>
                 </div>
               ) : null}

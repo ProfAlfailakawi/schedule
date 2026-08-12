@@ -2,11 +2,14 @@ import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
+import zlib from "zlib";
 import { initDatabase, Repository } from "./src/db/repository";
 import { validateCivilId } from "./src/utils/civilId";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
+import type { FSchedule, ScheduleShareLink } from "./src/types";
+import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -23,6 +26,47 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: "1mb" }));
+
+// Text responses are compressed in-process so a bare Node deployment behaves
+// like one sitting behind a compressing proxy. Binary and already-encoded
+// bodies pass through untouched.
+const COMPRESSIBLE = /^(?:text\/|application\/(?:json|javascript|xml)|image\/svg)/i;
+app.use((req, res, next) => {
+  if (!/\bgzip\b/.test(req.headers["accept-encoding"] || "")) { next(); return; }
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+  let gzip: zlib.Gzip | null = null;
+
+  const start = () => {
+    if (gzip !== null) return true;
+    if (res.getHeader("Content-Encoding")) return false;
+    const type = String(res.getHeader("Content-Type") || "");
+    if (!COMPRESSIBLE.test(type)) return false;
+    res.removeHeader("Content-Length");
+    res.setHeader("Content-Encoding", "gzip");
+    res.setHeader("Vary", "Accept-Encoding");
+    gzip = zlib.createGzip({ level: 6 });
+    gzip.on("data", chunk => originalWrite(chunk));
+    gzip.on("end", () => originalEnd());
+    return true;
+  };
+
+  res.write = ((chunk: any, ...rest: any[]) => {
+    if (!start() || !gzip) return originalWrite(chunk, ...rest);
+    return gzip.write(chunk);
+  }) as typeof res.write;
+
+  res.end = ((chunk?: any, ...rest: any[]) => {
+    if (!start() || !gzip) return originalEnd(chunk, ...rest);
+    if (chunk) gzip.write(chunk);
+    gzip.end();
+    return res;
+  }) as typeof res.end;
+
+  next();
+});
+
+
 
 // CSRF hardening without changing the legacy UI: reject cross-site state-changing API requests.
 // SameSite=Lax cookies provide a second browser-level layer.
@@ -1968,6 +2012,396 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   res.send(excelBuffer);
 });
 
+
+// ============================================================================
+// NATURAL QUERY — the command palette answers instead of filtering
+// Rules only: the same sentence always resolves to the same rows, offline.
+// ============================================================================
+
+app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = parseNaturalQuery(String(req.query.q || ""));
+  if (parsed.intent === "unknown") { res.json({ intent: "unknown", title: "", rows: [] }); return; }
+
+  const { collegeId, sectionId, termId } = await resolveSmartContext(req);
+  if (!termId) { res.json({ intent: parsed.intent, title: "", rows: [] }); return; }
+
+  const [scoped, courses, instructors] = await Promise.all([
+    scopedScheduleUniverse(collegeId, sectionId, termId),
+    Repository.getCourses(),
+    Repository.getInstructors()
+  ]);
+  const { rows, universe } = scoped;
+  const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+  const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
+  const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+  const onDay = (row: FSchedule, day: number | null) => day === null || Boolean((row as any)[DAY_FLAGS[day]]);
+  const atTime = (row: FSchedule, time: string | null) => {
+    if (!time) return true;
+    const point = toMinutes(time);
+    return toMinutes(row.fstarttime) <= point && toMinutes(row.fendtime) > point;
+  };
+  const shape = (row: FSchedule) => ({
+    id: row.id,
+    code: courseById.get(row.AdCourseId)?.CourseCode || "",
+    name: row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "",
+    section: row.SCode,
+    instructor: instructorById.get(row.AdInstructorId)?.AdInstructorName || "",
+    start: row.fstarttime, end: row.fendtime,
+    room: row.AdRoomCode || "", hall: row.AdRoomHall || "",
+    days: DAY_FLAGS.map((flag, index) => ((row as any)[flag] ? DAY_LABELS[index] : null)).filter(Boolean).join(" · ")
+  });
+  const dayLabel = parsed.day === null ? "" : DAY_LABELS[parsed.day];
+  const whenLabel = [dayLabel, parsed.time].filter(Boolean).join(" · ");
+
+  if (parsed.intent === "freeRooms") {
+    // A room is free when nothing in the whole term occupies it at that moment.
+    const known = new Map<string, { room: string; hall: string }>();
+    universe.forEach(row => {
+      if (!row.AdRoomCode) return;
+      known.set(`${row.AdRoomCode}|${row.AdRoomHall}`, { room: row.AdRoomCode, hall: row.AdRoomHall });
+    });
+    const busy = new Set(
+      universe.filter(row => onDay(row, parsed.day) && atTime(row, parsed.time))
+        .map(row => `${row.AdRoomCode}|${row.AdRoomHall}`)
+    );
+    const free = [...known.entries()].filter(([key]) => !busy.has(key)).map(([, value]) => value);
+    res.json({
+      intent: "freeRooms",
+      title: `قاعات متاحة${whenLabel ? ` · ${whenLabel}` : ""}`,
+      count: free.length,
+      rooms: free.slice(0, 60),
+      rows: []
+    });
+    return;
+  }
+
+  if (parsed.intent === "room") {
+    const matched = rows
+      .filter(row => String(row.AdRoomCode || "").includes(parsed.room || ""))
+      .filter(row => onDay(row, parsed.day) && atTime(row, parsed.time))
+      .sort((a, b) => a.fstarttime.localeCompare(b.fstarttime));
+    res.json({ intent: "room", title: `قاعة ${parsed.room}${whenLabel ? ` · ${whenLabel}` : ""}`, count: matched.length, rows: matched.slice(0, 40).map(shape) });
+    return;
+  }
+
+  const named = parsed.name
+    ? instructors.filter(row => String(row.AdInstructorName || "").includes(parsed.name as string))
+    : [];
+  const targetIds = new Set(named.map(row => row.AdInstructorId));
+
+  if (parsed.intent === "gaps" && targetIds.size) {
+    const dayIndexes = parsed.day === null ? [0, 1, 2, 3, 4] : [parsed.day];
+    const gaps: Array<{ day: string; from: string; to: string; minutes: number }> = [];
+    for (const index of dayIndexes) {
+      const busy = universe
+        .filter(row => targetIds.has(row.AdInstructorId) && (row as any)[DAY_FLAGS[index]])
+        .sort((a, b) => toMinutes(a.fstarttime) - toMinutes(b.fstarttime));
+      for (let i = 1; i < busy.length; i++) {
+        const gap = toMinutes(busy[i].fstarttime) - toMinutes(busy[i - 1].fendtime);
+        if (gap >= 30) gaps.push({ day: DAY_LABELS[index], from: busy[i - 1].fendtime, to: busy[i].fstarttime, minutes: gap });
+      }
+    }
+    res.json({
+      intent: "gaps",
+      title: `فراغات ${named[0]?.AdInstructorName || parsed.name}${dayLabel ? ` · ${dayLabel}` : ""}`,
+      count: gaps.length,
+      gaps: gaps.slice(0, 30),
+      rows: []
+    });
+    return;
+  }
+
+  const matched = rows
+    .filter(row => (targetIds.size ? targetIds.has(row.AdInstructorId) : true))
+    .filter(row => onDay(row, parsed.day) && atTime(row, parsed.time))
+    .sort((a, b) => a.fstarttime.localeCompare(b.fstarttime));
+  res.json({
+    intent: targetIds.size ? "instructor" : "time",
+    title: targetIds.size
+      ? `${named[0]?.AdInstructorName}${whenLabel ? ` · ${whenLabel}` : ""}`
+      : `مواعيد${whenLabel ? ` · ${whenLabel}` : ""}`,
+    count: matched.length,
+    rows: matched.slice(0, 40).map(shape)
+  });
+});
+
+/**
+ * Room load and free windows.
+ *
+ * "Is this room free?" cannot be answered from one department's rows — a hall
+ * booked by another college is still occupied. The occupancy grid is therefore
+ * built from the whole term, but it carries only room, day and time: no course,
+ * no instructor, nothing that belongs to another department. Rooms the caller
+ * owns are marked so the screen can separate "my load" from "campus load".
+ */
+app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  let termId = Number(req.query.termId || 0);
+  if (!termId) { const terms = await Repository.getTerms(); termId = terms.reduce((max, t) => Math.max(max, Number(t.AdTermId) || 0), 0); }
+
+  const { rows, universe } = await scopedScheduleUniverse(collegeId, sectionId, termId);
+  const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+  const mineKeys = new Set(rows.filter(row => row.AdRoomCode).map(row => `${row.AdRoomCode}|${row.AdRoomHall}`));
+
+  const rooms = new Map<string, { room: string; hall: string; mine: boolean; busy: Array<{ day: number; from: number; to: number; mine: boolean }> }>();
+  const mineIds = new Set(rows.map(row => row.id));
+  universe.forEach(row => {
+    if (!row.AdRoomCode) return;
+    const key = `${row.AdRoomCode}|${row.AdRoomHall}`;
+    const entry = rooms.get(key) || { room: String(row.AdRoomCode), hall: String(row.AdRoomHall || ""), mine: mineKeys.has(key), busy: [] };
+    const from = toMinutes(row.fstarttime), to = toMinutes(row.fendtime);
+    if (to > from) {
+      DAY_FLAGS.forEach((flag, day) => {
+        if ((row as any)[flag]) entry.busy.push({ day, from, to, mine: mineIds.has(row.id) });
+      });
+    }
+    rooms.set(key, entry);
+  });
+
+  res.json({
+    termId,
+    dayStart: 8 * 60,
+    dayEnd: 21 * 60,
+    rooms: [...rooms.values()].sort((a, b) => a.room.localeCompare(b.room, "ar") || a.hall.localeCompare(b.hall, "ar"))
+  });
+});
+
+// ============================================================================
+// READ-ONLY PUBLICATION — share links, public page, calendar subscription
+// A token is a long random string, expires on its own, and never exposes a
+// civil ID, phone number, account or any scope beyond the one it was made for.
+// ============================================================================
+
+const SHARE_DAY_KEYS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const;
+const SHARE_DAY_NAMES = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
+const SHARE_ICS_DAYS = ["SU", "MO", "TU", "WE", "TH"];
+const SHARE_MAX_DAYS = 180;
+
+function shareDayIndexes(row: FSchedule): number[] {
+  return SHARE_DAY_KEYS.map((key, index) => (row as any)[key] ? index : -1).filter(index => index >= 0);
+}
+
+/** Resolves a token to its live scope, or explains precisely why it cannot be read. */
+async function resolveShareToken(token: string) {
+  const link = await Repository.getShareLink(String(token || ""));
+  if (!link || link.revoked) return { error: "الرابط غير موجود أو تم إيقافه", status: 404 as const };
+  if (new Date(link.expiresAt).getTime() < Date.now()) return { error: "انتهت صلاحية هذا الرابط", status: 410 as const };
+  return { link };
+}
+
+async function buildSharePayload(link: ScheduleShareLink) {
+  const [rows, courses, instructors, sections, colleges, terms] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, sectionId: link.AdSectionId, termId: link.AdTermId }),
+    Repository.getCourses(), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.getTerms()
+  ]);
+  const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+  const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
+  return {
+    label: link.label,
+    college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",
+    section: sections.find(row => row.AdSectionId === link.AdSectionId)?.AdSectionName || "",
+    term: terms.find(row => row.AdTermId === link.AdTermId)?.AdTermName || "",
+    expiresAt: link.expiresAt,
+    showInstructors: link.showInstructors !== false,
+    rows: rows
+      .slice()
+      .sort((a, b) => String(a.fstarttime).localeCompare(String(b.fstarttime)))
+      .map(row => ({
+        id: row.id,
+        code: courseById.get(row.AdCourseId)?.CourseCode || "",
+        name: row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "",
+        section: row.SCode || "",
+        start: row.fstarttime,
+        end: row.fendtime,
+        days: shareDayIndexes(row),
+        room: row.AdRoomCode || "",
+        hall: row.AdRoomHall || "",
+        instructor: link.showInstructors !== false ? (instructorById.get(row.AdInstructorId)?.AdInstructorName || "") : ""
+      }))
+  };
+}
+
+app.get("/api/share", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  res.json(await Repository.getShareLinks(collegeId, sectionId, termId));
+});
+
+app.post("/api/share", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const days = Math.min(SHARE_MAX_DAYS, Math.max(1, Number(req.body?.days || 30)));
+  const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
+  const label = `${sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم"} · ${terms.find(row => row.AdTermId === termId)?.AdTermName || ""}`.trim();
+  const link = await Repository.createShareLink({
+    AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
+    label,
+    expiresAt: new Date(Date.now() + days * 86400000).toISOString(),
+    SystemUserId: Number(req.user!.SystemUserId),
+    userName: String(req.user!.Name || ""),
+    showInstructors: req.body?.showInstructors !== false
+  });
+  res.status(201).json(link);
+});
+
+app.delete("/api/share/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const link = await Repository.getShareLink(String(req.params.id));
+  if (!link) { res.status(404).json({ error: "الرابط غير موجود" }); return; }
+  if (!isScopeAllowed(req, link.AdCollegeId, link.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  await Repository.revokeShareLink(link.id);
+  res.json({ ok: true });
+});
+
+// --- Public surface (no account) --------------------------------------------
+
+app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  res.setHeader("Cache-Control", "no-store");
+  res.json(await buildSharePayload(resolved.link));
+});
+
+app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
+  const payload = await buildSharePayload(resolved.link);
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+
+  // Anchor the series on the coming week and repeat it for the rest of the term.
+  const anchor = new Date(); anchor.setHours(0, 0, 0, 0);
+  const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const escape = (value: string) => String(value || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
+  const lines: string[] = [
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SCHEDULE//Academic Workspace//AR",
+    "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    `X-WR-CALNAME:${escape(payload.label || "الجدول الدراسي")}`,
+    "X-WR-TIMEZONE:Asia/Kuwait"
+  ];
+  for (const row of payload.rows) {
+    for (const dayIndex of row.days) {
+      const first = new Date(anchor);
+      first.setDate(first.getDate() + ((dayIndex - first.getDay() + 7) % 7));
+      const [sh, sm] = String(row.start || "08:00").split(":").map(Number);
+      const [eh, em] = String(row.end || "09:00").split(":").map(Number);
+      const startAt = new Date(first); startAt.setHours(sh || 0, sm || 0, 0, 0);
+      const endAt = new Date(first); endAt.setHours(eh || 0, em || 0, 0, 0);
+      if (endAt <= startAt) endAt.setTime(startAt.getTime() + 3600000);
+      lines.push(
+        "BEGIN:VEVENT",
+        `UID:${row.id}-${dayIndex}@schedule`,
+        `DTSTAMP:${stamp(new Date())}`,
+        `DTSTART:${stamp(startAt)}`,
+        `DTEND:${stamp(endAt)}`,
+        `RRULE:FREQ=WEEKLY;BYDAY=${SHARE_ICS_DAYS[dayIndex]};COUNT=16`,
+        `SUMMARY:${escape(`${row.code} · ${row.name}`)}`,
+        `LOCATION:${escape([row.room, row.hall].filter(Boolean).join(" / "))}`,
+        `DESCRIPTION:${escape([row.section && `شعبة ${row.section}`, row.instructor].filter(Boolean).join(" · "))}`,
+        "END:VEVENT"
+      );
+    }
+  }
+  lines.push("END:VCALENDAR");
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", `inline; filename="schedule.ics"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.send(lines.join("\r\n"));
+});
+
+/** Standalone read-only page: one file, no bundle, works on any phone. */
+app.get("/s/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  const esc = (value: string) => String(value || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+  res.setHeader("Cache-Control", "no-store");
+  res.type("html; charset=utf-8");
+  if ("error" in resolved) {
+    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>SCHEDULE</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
+    return;
+  }
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  const payload = await buildSharePayload(resolved.link);
+  const byDay = SHARE_DAY_NAMES.map((name, index) => ({
+    name,
+    rows: payload.rows.filter(row => row.days.includes(index)).sort((a, b) => String(a.start).localeCompare(String(b.start)))
+  })).filter(day => day.rows.length);
+  const expires = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date(payload.expiresAt));
+  const icsUrl = `/api/public/ics/${encodeURIComponent(resolved.link.id)}`;
+
+  res.send(`<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a100f">
+<meta name="robots" content="noindex,nofollow">
+<title>${esc(payload.section)} · ${esc(payload.term)}</title>
+<link rel="icon" href="/schedule-icon.svg" type="image/svg+xml">
+<style>
+:root{--bg:#0a100f;--card:#121a18;--line:#212b28;--ink:#eef2ee;--muted:#93a09a;--accent:#69c0a8;--brass:#d0a663}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+.wrap{max-width:760px;margin:0 auto;padding:24px 18px 56px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+.mark{font:600 12px/1 system-ui;letter-spacing:.24em;color:var(--brass)}
+h1{margin:18px 0 4px;font-size:26px;font-weight:600;letter-spacing:-.02em}
+.sub{color:var(--muted);font-size:14px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 8px}
+.tools a{display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 16px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--ink);text-decoration:none;font-size:14px;font-weight:600}
+.tools a.primary{background:var(--accent);border-color:var(--accent);color:#04100d}
+section{margin-top:26px}
+h2{margin:0 0 10px;font-size:13px;font-weight:600;letter-spacing:.1em;color:var(--brass)}
+article{display:grid;grid-template-columns:76px minmax(0,1fr);gap:14px;padding:14px 0;border-bottom:1px solid var(--line)}
+article:last-child{border-bottom:0}
+time{direction:ltr;font:600 14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--accent);white-space:nowrap}
+time small{display:block;color:var(--muted);font-weight:400}
+b{display:block;font-size:15px;font-weight:600}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.meta span{padding:2px 9px;border:1px solid var(--line);border-radius:999px;background:var(--card);color:var(--muted);font-size:12px}
+.code{direction:ltr;unicode-bidi:isolate;color:var(--brass);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.empty{padding:48px 0;text-align:center;color:var(--muted)}
+@media print{body{background:#fff;color:#000}.tools{display:none}article,header,footer{border-color:#ccc}.meta span{border-color:#ccc;background:#fff}time{color:#000}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="mark">SCHEDULE</span>
+    <span class="sub">${esc(payload.college)}</span>
+  </header>
+  <h1>${esc(payload.section)}</h1>
+  <p class="sub">${esc(payload.term)}</p>
+  <div class="tools">
+    <a class="primary" href="${icsUrl}">إضافة إلى التقويم</a>
+    <a href="javascript:window.print()">طباعة</a>
+  </div>
+  ${byDay.length ? byDay.map(day => `<section>
+    <h2>${esc(day.name)}</h2>
+    ${day.rows.map(row => `<article>
+      <time>${esc(row.start)}<small>${esc(row.end)}</small></time>
+      <div>
+        <b>${esc(row.name)}</b>
+        <div class="meta">
+          ${row.code ? `<span class="code">${esc(row.code)}</span>` : ""}
+          ${row.section ? `<span>شعبة ${esc(row.section)}</span>` : ""}
+          ${row.room || row.hall ? `<span>${esc([row.room, row.hall].filter(Boolean).join(" / "))}</span>` : ""}
+          ${row.instructor ? `<span>${esc(row.instructor)}</span>` : ""}
+        </div>
+      </div>
+    </article>`).join("")}
+  </section>`).join("") : `<p class="empty">لا توجد مواعيد منشورة</p>`}
+  <footer>
+    <span>عرض للقراءة فقط</span>
+    <span>ينتهي ${esc(expires)}</span>
+  </footer>
+</div>
+</body>
+</html>`);
+});
+
 // --- VITE DEV SERVER OR STATIC SERVING ---
 
 async function startServer() {
@@ -1988,8 +2422,20 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
+    // Hashed build assets and self-hosted fonts never change under the same
+    // name, so they can be cached for a year. index.html must stay revalidated
+    // or a release would never reach an open tab.
+    app.use(express.static(distPath, {
+      setHeaders(res, filePath) {
+        if (/\.(?:js|css|woff2?|png|svg|jpg|webp)$/i.test(filePath) && !filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      }
+    }));
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

@@ -77,7 +77,7 @@ export function PulseScene({
         <div>
           <small>نبض الجدول</small>
           <h3>{living.pulse?.message}</h3>
-          <p>النظام رتب ما يستحق قرارك بدل أن يجعلك تبحث في عشر شاشات.</p>
+          <p>مرتّب حسب ما يستحق قرارك</p>
         </div>
       </div>
       <div className="pulse-decisions">
@@ -173,7 +173,7 @@ export function TopologyScene({ topology }: { topology: any }) {
         <div>
           <small>خريطة التعارضات</small>
           <h3>المشكلة ليست دائمًا “الثلاثاء”</h3>
-          <p>ابدأ بالعقد الأكبر؛ هي الأكثر تأثيراً في بقية الجدول.</p>
+          <p>ابدأ بالعقدة الأكبر أثراً</p>
         </div>
         <Badge tone={topology.conflicts ? "warning" : "success"}>
           {topology.conflicts} علاقة تعارض

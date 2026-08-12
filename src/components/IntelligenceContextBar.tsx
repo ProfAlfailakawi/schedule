@@ -40,7 +40,7 @@ export default function IntelligenceContextBar({
         <span><Target /></span>
         <div>
           <strong>نطاق القرار</strong>
-          <small>كل تحليل أو اقتراح محصور في القسم والفصل المحددين.</small>
+          <small>محصور في القسم والفصل</small>
         </div>
       </div>
       <div className="intel-context-fields">

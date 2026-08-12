@@ -3,6 +3,7 @@ import { Phone, Trash2, UserRound } from "lucide-react";
 import { validateCivilId } from "../utils/civilId";
 import {
   AddButton,
+  EmbeddedAction,
   EmptyState,
   Field,
   FormActions,
@@ -18,7 +19,8 @@ import {
   Surface,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
-export default function Instructors() {
+/** `embedded` means the academic console already supplies the page identity. */
+export default function Instructors({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
   const [items, setItems] = useState<any[]>([]),
     [mode, setMode] = useState<Mode>("index"),
     [editId, setEditId] = useState<number | null>(null),
@@ -167,7 +169,7 @@ export default function Instructors() {
       <div className="content-stack editor-page">
         <PageTitle
           eyebrow="البيانات الأكاديمية"
-          subtitle="التحقق من الرقم المدني وقواعد التكرار الأصلية مستمرة كما هي."
+          subtitle="تحقق الرقم المدني فعّال"
         >
           {mode === "create" ? "تسجيل أستاذ مقرر جديد" : "تعديل بيانات الأستاذ"}
         </PageTitle>
@@ -179,7 +181,7 @@ export default function Instructors() {
             </span>
             <div>
               <strong>هوية أستاذ المقرر</strong>
-              <p>الرقم المدني يستخدم للتحقق والبحث والتقارير.</p>
+              <p>الرقم المدني للتحقق والبحث</p>
             </div>
           </div>
           <form onSubmit={submit}>
@@ -218,14 +220,20 @@ export default function Instructors() {
       </div>
     );
   return (
-    <div className="content-stack library-page catalog-inspector-page">
-      <PageTitle
-        eyebrow="الدليل الأكاديمي"
-        subtitle="اختر الأستاذ من المكتبة، وكل التفاصيل والإجراءات تظهر في لوحة واحدة."
-        action={<AddButton onClick={create}>إضافة أستاذ</AddButton>}
-      >
-        أساتذة المقررات
-      </PageTitle>
+    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+      {embedded ? (
+        <EmbeddedAction slot={actionSlot}>
+          <AddButton onClick={create}>إضافة أستاذ</AddButton>
+        </EmbeddedAction>
+      ) : (
+        <PageTitle
+          eyebrow="الدليل الأكاديمي"
+          subtitle="المكتبة والتفاصيل في لوحة واحدة"
+          action={<AddButton onClick={create}>إضافة أستاذ</AddButton>}
+        >
+          أساتذة المقررات
+        </PageTitle>
+      )}
       {error ? <Notice>{error}</Notice> : null}
       <div className="catalog-workspace">
         <Surface className="catalog-master">
@@ -281,7 +289,7 @@ export default function Instructors() {
               </div>
               <span className="surface-kicker">تفاصيل الأستاذ</span>
               <h2>{selected.AdInstructorName}</h2>
-              <p>هوية الأستاذ المستخدمة في الجدول والاستعلامات والتقارير.</p>
+              <p>يظهر في الجدول والتقارير.</p>
               <div className="inspector-facts">
                 <article>
                   <span>الرقم المدني</span>

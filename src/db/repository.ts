@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore } from "firebase-admin/firestore";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import type { Firestore, WriteBatch } from "firebase-admin/firestore";
 import { defaultPrivateDirectory, isCloudRunRuntime, materializePackagedSnapshotOnce, packagedSnapshotPath, readJsonSnapshot } from "./snapshot";
 import {
@@ -24,7 +24,8 @@ import {
   SchedulePublication,
   ScheduleConstraint,
   ScheduleDecisionMemory,
-  CampusMobilityProfile
+  CampusMobilityProfile,
+  ScheduleShareLink
 } from "../types";
 
 // Runtime state must not live inside the replaceable application release. A number of
@@ -159,6 +160,7 @@ interface DBState {
   scheduleConstraints?: ScheduleConstraint[];
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
+  scheduleShareLinks?: ScheduleShareLink[];
 }
 
 interface LegacySnapshot extends DBState {
@@ -185,7 +187,8 @@ let db: DBState = {
   schedulePublications: [],
   scheduleConstraints: [],
   scheduleDecisionMemories: [],
-  campusMobilityProfiles: []
+  campusMobilityProfiles: [],
+  scheduleShareLinks: []
 };
 
 let firestoreDb: Firestore | null = null;
@@ -506,6 +509,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
       if (!Array.isArray(db.scheduleDecisionMemories)) db.scheduleDecisionMemories = [];
       if (!Array.isArray(db.campusMobilityProfiles)) db.campusMobilityProfiles = [];
+      if (!Array.isArray(db.scheduleShareLinks)) db.scheduleShareLinks = [];
     } catch (e) {
       throw new Error(`تعذر قراءة ملف البيانات المحلية؛ تم إيقاف التشغيل لحماية البيانات: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -1544,6 +1548,70 @@ export const Repository = {
       return doc.exists ? doc.data() as ScheduleDraft : undefined;
     }
     return (db.scheduleDrafts || []).find(row => row.id === id);
+  },
+
+  // --- Read-only share links -------------------------------------------------
+
+  createShareLink: async (entry: Omit<ScheduleShareLink, "id" | "scopeKey" | "createdAt" | "views">): Promise<ScheduleShareLink> => {
+    const row: ScheduleShareLink = {
+      ...entry,
+      id: randomBytes(24).toString("base64url"),
+      scopeKey: `${entry.AdCollegeId}:${entry.AdSectionId}:${entry.AdTermId}`,
+      createdAt: new Date().toISOString(),
+      views: 0
+    };
+    if (firestoreDb) {
+      await firestoreDb.collection("scheduleShareLinks").doc(row.id).set(row);
+      return row;
+    }
+    if (!Array.isArray(db.scheduleShareLinks)) db.scheduleShareLinks = [];
+    db.scheduleShareLinks.unshift(row);
+    if (db.scheduleShareLinks.length > 500) db.scheduleShareLinks.length = 500;
+    saveDatabase();
+    return row;
+  },
+
+  getShareLinks: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleShareLink[]> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(50).get();
+      return snap.docs.map(doc => doc.data() as ScheduleShareLink).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return (db.scheduleShareLinks || []).filter(row => row.scopeKey === scopeKey).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  getShareLink: async (id: string): Promise<ScheduleShareLink | undefined> => {
+    if (firestoreDb) {
+      const doc = await firestoreDb.collection("scheduleShareLinks").doc(id).get();
+      return doc.exists ? doc.data() as ScheduleShareLink : undefined;
+    }
+    return (db.scheduleShareLinks || []).find(row => row.id === id);
+  },
+
+  revokeShareLink: async (id: string): Promise<void> => {
+    if (firestoreDb) {
+      await firestoreDb.collection("scheduleShareLinks").doc(id).set({ revoked: true }, { merge: true });
+      return;
+    }
+    const row = (db.scheduleShareLinks || []).find(item => item.id === id);
+    if (!row) throw new Error("الرابط غير موجود");
+    row.revoked = true;
+    saveDatabase();
+  },
+
+  // Read counters are best-effort telemetry; a failed write must never block a reader.
+  touchShareLink: async (id: string): Promise<void> => {
+    const lastViewedAt = new Date().toISOString();
+    if (firestoreDb) {
+      await firestoreDb.collection("scheduleShareLinks").doc(id)
+        .set({ lastViewedAt, views: FieldValue.increment(1) }, { merge: true });
+      return;
+    }
+    const row = (db.scheduleShareLinks || []).find(item => item.id === id);
+    if (!row) return;
+    row.views = Number(row.views || 0) + 1;
+    row.lastViewedAt = lastViewedAt;
+    saveDatabase();
   },
 
   createScheduleComment: async (entry: Omit<ScheduleComment, "id" | "createdAt" | "resolved"> & { resolved?: boolean }): Promise<ScheduleComment> => {

@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import * as XLSX from "xlsx";
 import {
   AlertTriangle,
   ArrowLeftRight,
@@ -57,6 +56,7 @@ import type {
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
+import { sortByName } from "../utils/sorting";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
   intelligenceDayLabels as dayLabels,
@@ -181,11 +181,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           fetchJson("/api/terms"),
           fetchJson("/api/intelligence/lookups"),
         ]);
-        setColleges(c);
-        setSections(s);
+        setColleges(sortByName(c, (row:any)=>row.AdCollegeName));
+        setSections(sortByName(s, (row:any)=>row.AdSectionName));
         setTerms(t);
-        setCourses(lookups.courses || []);
-        setInstructors(lookups.instructors || []);
+        setCourses(sortByName(lookups.courses || [], (row:any)=>row.CourseName));
+        setInstructors(sortByName(lookups.instructors || [], (row:any)=>row.AdInstructorName));
         const latest = [...t].sort((a: any, b: any) => b.AdTermId - a.AdTermId)[0]?.AdTermId || 0;
         const scoped = resolveScopeSelection(scopes, 0, isPowerAdmin);
         const defaultCollege = isPowerAdmin
@@ -288,9 +288,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       ? overview?.universityHeatmap || []
       : overview?.heatmap || [];
   const heatMax = Math.max(1, ...heatData.map((x: any) => x.count));
-  const heatTimes = Array.from(
-    new Set(heatData.map((x: any) => x.time)),
-  ) as string[];
+  // Only the hours that carry teaching. A campus that finishes at noon should
+  // not read its density map through nine empty rows.
+  const heatTimes = useMemo(() => {
+    const all = Array.from(new Set(heatData.map((x: any) => x.time))).sort() as string[];
+    const busy = new Set(heatData.filter((x: any) => Number(x.count) > 0).map((x: any) => x.time));
+    if (!busy.size) return all;
+    const first = all.findIndex((time) => busy.has(time));
+    let last = all.length - 1;
+    while (last > first && !busy.has(all[last])) last -= 1;
+    return all.slice(Math.max(0, first - 1), Math.min(all.length, last + 2));
+  }, [heatData]);
   const selectedScenario = useMemo(
     () => scenario?.find((r) => r.id === Number(scenarioId)) || null,
     [scenario, scenarioId],
@@ -615,6 +623,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setBusy(true);
     setError(null);
     try {
+      // The spreadsheet parser is ~400KB. It loads the first time someone
+      // actually imports a file, not on every page view.
+      const XLSX = await import("xlsx");
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
@@ -802,7 +813,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     <div className={`content-stack intelligence-page scene-${scene}`}>
       <PageTitle
         eyebrow="ذكاء الجدول"
-        subtitle="ثلاث خطوات فقط: افهم ما يحدث، جرّب الحل بأمان، ثم اعتمد عندما تكون جاهزاً."
+        subtitle="افهم · جرّب · اعتمد"
       >
         مركز الذكاء
       </PageTitle>
@@ -840,10 +851,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         />
         <span className="scene-caption">
           {scene === "understand"
-            ? "اقرأ الجودة، التنبيهات، القاعات والأساتذة أو اسأل المساعد."
+            ? "جودة · تنبيهات · قاعات · أساتذة"
             : scene === "try"
-              ? "النسخة التجريبية أو Excel — كل شيء يبقى خارج الجدول الحقيقي."
-              : "المسودات، النشر، النسخ الزمنية والتراجع في مكان واحد."}
+              ? "تجريبي · خارج الجدول الحقيقي"
+              : "مسودات · نشر · نسخ · تراجع"}
         </span>
       </div>
       {scene === "understand" ? (
@@ -1079,10 +1090,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     </article>
                   ))}
                 </div>
-              ) : <div className="spatial-clear"><CheckCircle2 /><div><strong>لا توجد انتقالات مرهقة</strong><span>الفواصل الحالية تستوعب زمن الحركة بين المباني المضبوط للكلية.</span></div></div>}
+              ) : <div className="spatial-clear"><CheckCircle2 /><div><strong>لا توجد انتقالات مرهقة</strong><span>الفواصل تستوعب زمن الحركة.</span></div></div>}
               {overview.roomCastling?.length ? (
                 <div className="castling-strip">
-                  <div><strong>Room Castling</strong><span>اقتراحات تغيّر القاعة فقط ولا تمس الوقت أو الأستاذ أو أيام المحاضرة.</span></div>
+                  <div><strong>Room Castling</strong><span>القاعة فقط · بدون مساس بالوقت.</span></div>
                   {overview.roomCastling.slice(0, 3).map((proposal: any, index: number) => (
                     <button key={`${proposal.rowId}-${index}`} type="button" onClick={() => {
                       const changes = new Map((proposal.changes || []).map((c: any) => [Number(c.id), c]));
@@ -1341,7 +1352,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
             ) : (
               <p className="soft-copy">
-                قارن فصلين لنفس القسم بدون تغيير أي بيانات.
+                مقارنة فصلين · بدون تغيير.
               </p>
             )}
           </Surface>
@@ -1358,7 +1369,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div>
                 <span className="surface-kicker">مساعد الجدول</span>
                 <h2>اسأل الجدول نفسه</h2>
-                <p>تحليل مباشر لبيانات القسم — بلا تعديل للسجلات.</p>
+                <p>تحليل فقط · بلا تعديل</p>
               </div>
               <Badge tone="success">تحليل فقط</Badge>
             </div>
@@ -1409,7 +1420,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <div className="copilot-empty">
                   <BrainCircuit />
                   <strong>اسأله كما تسأل زميلك</strong>
-                  <span>مثلاً: إذا نقلت 101 إلى الساعة 11 شنو راح يتأثر؟</span>
+                  <span>مثال: انقل 101 إلى 11:00</span>
                 </div>
               )}
               <div ref={chatEnd} />
@@ -1441,7 +1452,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <Surface>
               <span className="surface-kicker">حدود المعرفة</span>
               <h3>{overview?.context?.sectionName}</h3>
-              <p>يرى قسمك فقط، ويكشف التعارض الخارجي دون إظهار بيانات غير مصرح بها.</p>
+              <p>قسمك فقط · التعارض الخارجي مكشوف.</p>
             </Surface>
             <Surface>
               <span className="surface-kicker">أوامر مفيدة</span>
@@ -1616,7 +1627,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         <span>
                           <strong>قاعدة على القسم كله</strong>
                           <small>
-                            كل موعد في اليوم المختار سيُحسب كمخالفة.
+                            كل موعد في هذا اليوم = مخالفة.
                           </small>
                         </span>
                       </div>
@@ -1931,7 +1942,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     <div>
                       <strong>تحسين آلي ببوابة بشرية</strong>
                       <p>
-                        اكتب الهدف بصياغتك. سيختبر 240 سيناريو داخل المحاكاة، ثم يعرض أفضل ثلاثة فقط.
+                        اكتب هدفك · يعرض أفضل ثلاثة.
                       </p>
                     </div>
                   </div>
@@ -1939,7 +1950,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     rows={3}
                     value={autopilotGoal}
                     onChange={(e) => setAutopilotGoal(e.target.value)}
-                    placeholder="مثال: قلل الفراغات، لا تغيّر الأيام، حافظ على القاعات..."
+                    placeholder="مثال: قلل الفراغات، لا تغيّر الأيام…"
                   />
                   <div className="autopilot-guard">
                     <ShieldCheck />
@@ -2251,7 +2262,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       })
                     ) : (
                       <div className="empty-state-compact">
-                        النسخة مطابقة للجدول الحقيقي حتى الآن.
+                        مطابقة للجدول الحقيقي.
                       </div>
                     )}
                   </div>
@@ -2265,28 +2276,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <span>1</span>
                   <div>
                     <strong>انسخ</strong>
-                    <p>يبني نسخة وهمية مطابقة للقسم والفصل.</p>
+                    <p>نسخة وهمية مطابقة</p>
                   </div>
                 </article>
                 <article>
                   <span>2</span>
                   <div>
                     <strong>جرّب</strong>
-                    <p>عدّل أو استخدم Auto‑Schedule بدون كتابة أي شيء.</p>
+                    <p>يدوي أو آلي</p>
                   </div>
                 </article>
                 <article>
                   <span>3</span>
                   <div>
                     <strong>قارن</strong>
-                    <p>شاهد الجودة والتعارضات والفراغات قبل وبعد.</p>
+                    <p>قبل / بعد</p>
                   </div>
                 </article>
                 <article>
                   <span>4</span>
                   <div>
                     <strong>اعتمد</strong>
-                    <p>احفظ كمسودة مشتركة، ثم انشر فقط عندما تكون جاهزاً.</p>
+                    <p>مسودة أولاً · النشر باختيارك</p>
                   </div>
                 </article>
               </div>
@@ -2491,7 +2502,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ))
               ) : (
                 <div className="empty-state-compact">
-                  ستظهر النسخ تلقائياً قبل كل تعديل أو نشر جديد.
+                  نسخة قبل كل تعديل.
                 </div>
               )}
             </div>
@@ -2554,7 +2565,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </div>
               ) : (
                 <Notice type="success">
-                  لم أجد أخطاء أو تكراراً ظاهراً في الصفوف المقروءة.
+                  لا أخطاء ظاهرة.
                 </Notice>
               )}
               <RecordDeck className="import-records">

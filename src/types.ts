@@ -214,6 +214,26 @@ export interface ScheduleDecisionMemory {
   reason: string;
 }
 
+// Read-only publication of one scope to a non-guessable public token. The token
+// carries no account, expires on its own, and exposes only what a printed
+// timetable already shows: course, section, time, room and instructor name.
+export interface ScheduleShareLink {
+  id: string;
+  scopeKey: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdTermId: number;
+  label: string;
+  createdAt: string;
+  expiresAt: string;
+  revoked?: boolean;
+  SystemUserId: number;
+  userName: string;
+  views: number;
+  lastViewedAt?: string;
+  showInstructors: boolean;
+}
+
 export interface SchedulePublication {
   id: string;
   scopeKey: string;
