@@ -143,8 +143,8 @@
         var watch = setInterval(function () { if (!booted && painted()) stand_down(); }, 250);
         setTimeout(function () { clearInterval(watch); }, 30000);
 
-        /* Nothing painted in ten seconds means it is not coming on its own. */
-        setTimeout(function () { if (!booted && !painted()) recover("timeout"); }, 10000);
+        /* Nothing painted in 25 seconds means it is not coming on its own. */
+        setTimeout(function () { if (!booted && !painted()) recover("timeout"); }, 25000);
 
         var retry = document.getElementById("boot-retry");
         if (retry) retry.addEventListener("click", function () { clear(); location.reload(); });

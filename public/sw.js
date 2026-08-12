@@ -1,6 +1,6 @@
-const SHELL_CACHE="schedule-shell-v6";
-const API_CACHE="schedule-api-v6";
-const SHELL=["/","/Home/Index","/manifest.webmanifest","/schedule-icon.svg","/schedule-icon-192.png","/schedule-icon-512.png","/fonts/plex-arabic-arabic-400.woff2","/fonts/plex-arabic-arabic-600.woff2","/fonts/plex-arabic-latin-400.woff2","/fonts/plex-arabic-latin-600.woff2","/fonts/plex-mono-latin-500.woff2"];
+const SHELL_CACHE="schedule-shell-v7";
+const API_CACHE="schedule-api-v7";
+const SHELL=["/manifest.webmanifest","/schedule-icon.svg","/schedule-icon-192.png","/schedule-icon-512.png","/fonts/plex-arabic-arabic-400.woff2","/fonts/plex-arabic-arabic-600.woff2","/fonts/plex-arabic-latin-400.woff2","/fonts/plex-arabic-latin-600.woff2","/fonts/plex-mono-latin-500.woff2"];
 const CACHEABLE_API_PREFIXES=[
   "/api/dashboard","/api/colleges","/api/sections","/api/terms","/api/instructors","/api/courses","/api/schedules",
   "/api/intelligence/overview","/api/intelligence/drafts","/api/intelligence/versions","/api/intelligence/room","/api/intelligence/professor",
@@ -29,18 +29,24 @@ self.addEventListener("fetch",event=>{
     })());
     return;
   }
+  // Navigation requests for HTML documents must always be served from network to avoid stale JS asset references.
+  if(request.mode==="navigate"){
+    event.respondWith(fetch(request).catch(async()=>{
+      const cache=await caches.open(SHELL_CACHE);
+      const hit=await cache.match(request);
+      return hit||new Response("<html><body><h2 style='text-align:center;margin-top:50px;font-family:sans-serif'>لا يوجد اتصال بالإنترنت حالياً</h2></body></html>",{headers:{"Content-Type":"text/html; charset=utf-8"}});
+    }));
+    return;
+  }
   event.respondWith((async()=>{
     const cache=await caches.open(SHELL_CACHE);
     try{
       const response=await fetch(request);
-      // The document itself is never stored. A cached page names the build
-      // files of the release it came from, and those disappear on the next
-      // deployment — which is exactly how a tab ends up blank.
-      if(response.ok&&request.mode!=="navigate")cache.put(request,response.clone()).catch(()=>undefined);
+      if(response.ok)cache.put(request,response.clone()).catch(()=>undefined);
       return response;
     }catch{
       const hit=await cache.match(request);
-      return hit||await cache.match("/Home/Index")||await cache.match("/");
+      return hit||new Response("Not found",{status:404});
     }
   })());
 });
