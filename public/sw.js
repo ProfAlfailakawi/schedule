@@ -1,5 +1,5 @@
-const SHELL_CACHE="schedule-shell-v7";
-const API_CACHE="schedule-api-v7";
+const SHELL_CACHE="schedule-shell-v8";
+const API_CACHE="schedule-api-v8";
 const SHELL=["/manifest.webmanifest","/schedule-icon.svg","/schedule-icon-192.png","/schedule-icon-512.png","/fonts/plex-arabic-arabic-400.woff2","/fonts/plex-arabic-arabic-600.woff2","/fonts/plex-arabic-latin-400.woff2","/fonts/plex-arabic-latin-600.woff2","/fonts/plex-mono-latin-500.woff2"];
 const CACHEABLE_API_PREFIXES=[
   "/api/dashboard","/api/colleges","/api/sections","/api/terms","/api/instructors","/api/courses","/api/schedules",
@@ -31,7 +31,7 @@ self.addEventListener("fetch",event=>{
   }
   // Navigation requests for HTML documents must always be served from network to avoid stale JS asset references.
   if(request.mode==="navigate"){
-    event.respondWith(fetch(request).catch(async()=>{
+    event.respondWith(fetch(request,{cache:"no-store"}).catch(async()=>{
       const cache=await caches.open(SHELL_CACHE);
       const hit=await cache.match(request);
       return hit||new Response("<html><body><h2 style='text-align:center;margin-top:50px;font-family:sans-serif'>لا يوجد اتصال بالإنترنت حالياً</h2></body></html>",{headers:{"Content-Type":"text/html; charset=utf-8"}});

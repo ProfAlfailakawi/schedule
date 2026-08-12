@@ -2,7 +2,6 @@ import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
-import zlib from "zlib";
 import { initDatabase, Repository } from "./src/db/repository";
 import { validateCivilId } from "./src/utils/civilId";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
@@ -26,47 +25,6 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: "1mb" }));
-
-// Text responses are compressed in-process so a bare Node deployment behaves
-// like one sitting behind a compressing proxy. Binary and already-encoded
-// bodies pass through untouched.
-const COMPRESSIBLE = /^(?:text\/|application\/(?:json|javascript|xml)|image\/svg)/i;
-app.use((req, res, next) => {
-  if (!/\bgzip\b/.test(req.headers["accept-encoding"] || "")) { next(); return; }
-  const originalWrite = res.write.bind(res);
-  const originalEnd = res.end.bind(res);
-  let gzip: zlib.Gzip | null = null;
-
-  const start = () => {
-    if (gzip !== null) return true;
-    if (res.getHeader("Content-Encoding")) return false;
-    const type = String(res.getHeader("Content-Type") || "");
-    if (!COMPRESSIBLE.test(type)) return false;
-    res.removeHeader("Content-Length");
-    res.setHeader("Content-Encoding", "gzip");
-    res.setHeader("Vary", "Accept-Encoding");
-    gzip = zlib.createGzip({ level: 6 });
-    gzip.on("data", chunk => originalWrite(chunk));
-    gzip.on("end", () => originalEnd());
-    return true;
-  };
-
-  res.write = ((chunk: any, ...rest: any[]) => {
-    if (!start() || !gzip) return originalWrite(chunk, ...rest);
-    return gzip.write(chunk);
-  }) as typeof res.write;
-
-  res.end = ((chunk?: any, ...rest: any[]) => {
-    if (!start() || !gzip) return originalEnd(chunk, ...rest);
-    if (chunk) gzip.write(chunk);
-    gzip.end();
-    return res;
-  }) as typeof res.end;
-
-  next();
-});
-
-
 
 // CSRF hardening without changing the legacy UI: reject cross-site state-changing API requests.
 // SameSite=Lax cookies provide a second browser-level layer.
@@ -2928,15 +2886,22 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    // Hashed build assets and self-hosted fonts never change under the same
-    // name, so they can be cached for a year. index.html must stay revalidated
-    // or a release would never reach an open tab.
+    // Keep executable application files revalidated. A JavaScript response that
+    // is interrupted in transit must never become a year-long immutable copy in
+    // the browser. Fonts/images are content-addressed or stable public assets and
+    // remain safely cacheable. The service worker itself is deliberately no-store
+    // because its URL is not hashed.
     app.use(express.static(distPath, {
       setHeaders(res, filePath) {
-        if (/\.(?:js|css|woff2?|png|svg|jpg|webp)$/i.test(filePath) && !filePath.endsWith("index.html")) {
+        const name = path.basename(filePath);
+        if (name === "index.html" || name === "sw.js") {
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        } else if (/\.(?:js|css)$/i.test(filePath)) {
+          res.setHeader("Cache-Control", "no-cache, must-revalidate, max-age=0");
+        } else if (/\.(?:woff2?|png|svg|jpg|webp)$/i.test(filePath)) {
           res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         } else {
-          res.setHeader("Cache-Control", "no-cache");
+          res.setHeader("Cache-Control", "no-cache, must-revalidate, max-age=0");
         }
       }
     }));
@@ -2958,7 +2923,7 @@ async function startServer() {
         res.status(404).setHeader("Cache-Control", "no-store, no-cache, must-revalidate").type("text/plain; charset=utf-8").send("Not found");
         return;
       }
-      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
