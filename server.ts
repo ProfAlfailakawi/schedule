@@ -2905,7 +2905,11 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
 async function startServer() {
   // Wait for the data layer before accepting any requests. In Firestore mode this also
   // completes the one-time import of the verified legacy snapshot when the target is empty.
-  await initDatabase();
+  try {
+    await initDatabase();
+  } catch (error) {
+    console.error("Critical: Database initialization failed. The server will continue running but API requests may fail.", error);
+  }
 
   app.all("/api/*", (req, res) => {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });

@@ -464,7 +464,9 @@ export async function initDatabase() {
             });
           } catch (e) {
             console.error("Invalid FIREBASE_SERVICE_ACCOUNT_KEY JSON format.");
-            process.exit(1);
+            // We intentionally do not exit here so the container can start
+            // and the user can see the error in logs instead of failing the deployment loop.
+            throw new Error("Invalid FIREBASE_SERVICE_ACCOUNT_KEY JSON format.");
           }
         } else if (process.env.FIREBASE_PROJECT_ID) {
           initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
