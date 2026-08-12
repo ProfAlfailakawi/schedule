@@ -6,6 +6,12 @@ import { SystemUser } from "../src/types";
 
 const ROOT = process.cwd();
 const snapshotFile = path.join(ROOT, "database", fs.existsSync(path.join(ROOT, "database", "db.json")) ? "db.json" : "db.json.gz");
+
+if (!fs.existsSync(snapshotFile)) {
+  console.log("[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
+  process.exit(0);
+}
+
 const db = readJsonSnapshot<{ users: SystemUser[] }>(snapshotFile);
 
 const rawKey = fs.readFileSync(path.join(ROOT, "database", "legacy-password-vault.key"), "ascii").trim();
