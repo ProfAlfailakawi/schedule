@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
-import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, pickLive } from "../src/utils/weekVisual";
+import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../src/utils/weekVisual";
 import { Repository, initDatabase } from "../src/db/repository";
 
 const originalLog = console.log;
@@ -132,6 +132,13 @@ async function runTests() {
     assert(firstLast("عبدالعزيز خالد العنزي") === "عبدالعزيز العنزي", "no honorific: first and last");
     assert(firstLast("الدكتورة نورة سعد فهد العجمي") === "الدكتورة نورة العجمي", "full-word honorific recognised");
     assert(firstLast("") === "", "empty name stays empty");
+
+    // Peak concurrency: nine spread out is not nine at once.
+    assert(peakConcurrency([{start:480,end:590},{start:600,end:710},{start:720,end:830}]) === 1, "sequential lectures peak at one");
+    assert(peakConcurrency([{start:480,end:710},{start:480,end:710},{start:480,end:710}]) === 3, "three simultaneous peak at three");
+    assert(peakConcurrency([{start:480,end:600},{start:600,end:720}]) === 1, "touching end and start do not overlap");
+    assert(peakConcurrency([{start:480,end:840},{start:540,end:600},{start:660,end:720}]) === 2, "a long block under two short ones peaks at two");
+    assert(peakConcurrency([]) === 0 && peakConcurrency([{start:600,end:600}]) === 0, "empty and zero-length spans peak at zero");
   }
 
   if (!originalDb) {

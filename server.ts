@@ -1298,6 +1298,54 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });
 
 /**
+ * One request, one verdict, one write.
+ *
+ * The drag used to save as "check, then N separate PUTs" — two windows for
+ * disaster: the check could pass while another user was writing, and a network
+ * failure mid-loop left the party half-moved. This endpoint re-checks every
+ * candidate ON the server, treats the travelling party as already-moved when
+ * judging (a sibling about to vacate its slot is not a clash), and commits the
+ * whole party through one atomic batch. 409 carries the human-readable reason;
+ * nothing is written when anything is refused.
+ */
+app.post("/api/schedules/move-batch", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const rawMoves = Array.isArray(req.body?.moves) ? req.body.moves : [];
+  const strict = Boolean(req.body?.strict);
+  if (!rawMoves.length || rawMoves.length > 60) { res.status(400).json({ error: "حدد من موعد واحد إلى ستين للنقل الواحد" }); return; }
+  const ALLOWED = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday", "fstarttime", "fendtime", "AdRoomCode", "AdRoomHall"] as const;
+  const originals: FSchedule[] = [];
+  for (const move of rawMoves) {
+    const row = await Repository.getScheduleById(Number(move?.id || 0));
+    if (!row) { res.status(404).json({ error: "أحد المواعيد غير موجود" }); return; }
+    if (!isScopeAllowed(req, row.AdCollegeId, row.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+    originals.push(row);
+  }
+  const movedIds = new Set(originals.map(r => r.id));
+  const candidates = rawMoves.map((move: any, index: number) => {
+    const fields: any = {};
+    for (const key of ALLOWED) if (move?.fields && key in move.fields) fields[key] = move.fields[key];
+    fields.fdetail = legacyFDetail({ ...originals[index], ...fields });
+    return { row: { ...originals[index], ...fields } as FSchedule, fields };
+  });
+  const blocked: any[] = [];
+  for (const candidate of candidates) {
+    const conflicts = await scheduleConflicts(req, candidate.row, candidate.row.id);
+    blocked.push(...conflicts.filter((c: any) =>
+      !movedIds.has(Number(c.rowId)) && (strict || c.severity === "high" || c.type === "duplicate")));
+  }
+  if (blocked.length) {
+    const first = blocked[0];
+    res.status(409).json({
+      error: `لم يُنقل: ${first?.message || "تعارض يمنع الحفظ"}${blocked.length > 1 ? ` (+${blocked.length - 1} أخرى)` : ""}`,
+      conflicts: blocked,
+    });
+    return;
+  }
+  const updated = await Repository.moveSchedulesBatch(candidates.map(c => ({ id: c.row.id, fields: c.fields })));
+  res.json({ success: true, rows: updated });
+});
+
+/**
  * Carry a whole term out, and bring one back.
  *
  * Export writes the schedule as plain JSON with the names spelled out, so the

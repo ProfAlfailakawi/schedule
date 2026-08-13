@@ -93,7 +93,7 @@ import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
-import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, pickLive } from "../utils/weekVisual";
+import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../utils/weekVisual";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -531,13 +531,43 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setUndoBusy(entry.id);
     setError(null);
     try {
-      for (const step of entry.steps) {
-        await fetchJson(step.url, {
-          method: step.method,
-          ...(step.body === undefined
-            ? {}
-            : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.body) }),
+      /* An undo of moves goes back through the same atomic door the moves came
+         in by — all restored or none, with the server judging conflicts. Steps
+         that are not schedule placements fall back to the sequential path. */
+      const scheduleStep = /^\/api\/schedules\/(\d+)$/;
+      const allPlacements = entry.steps.length > 0 &&
+        entry.steps.every(step => step.method === "PUT" && scheduleStep.test(step.url) && step.body);
+      if (allPlacements) {
+        await fetchJson("/api/schedules/move-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            strict: false,
+            moves: entry.steps.map(step => ({
+              id: Number(scheduleStep.exec(step.url)![1]),
+              fields: {
+                fsunday: Boolean(step.body.fsunday),
+                fmonday: Boolean(step.body.fmonday),
+                ftuesday: Boolean(step.body.ftuesday),
+                fwednesday: Boolean(step.body.fwednesday),
+                fthursday: Boolean(step.body.fthursday),
+                fstarttime: step.body.fstarttime,
+                fendtime: step.body.fendtime,
+                AdRoomCode: step.body.AdRoomCode,
+                AdRoomHall: step.body.AdRoomHall,
+              },
+            })),
+          }),
         });
+      } else {
+        for (const step of entry.steps) {
+          await fetchJson(step.url, {
+            method: step.method,
+            ...(step.body === undefined
+              ? {}
+              : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.body) }),
+          });
+        }
       }
       setUndoLog(current => current.map(item => (item.id === entry.id ? { ...item, usedAt: Date.now() } : item)));
       if (undoBarId === entry.id) setUndoBarId(null);
@@ -1802,45 +1832,44 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setSaving(true);
     setError(null);
     try {
-      // Ask before writing, once per moved card, so a refusal costs nothing.
-      for (const move of moves) {
-        const probe: any = { ...move.after };
-        delete probe.id;
-        delete probe.AdCourseName;
-        const check = await fetchJson("/api/schedules/check-conflicts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...probe, excludeId: move.before.id, excludeIds: moves.map(m => m.before.id) }),
-        });
-        // Members of the same travelling selection are checked against where
-        // they *are*, not where they are going — so a card landing on a sibling
-        // that is itself about to move is not a real clash.
-        const partyIds = new Set(moves.map(m => m.before.id));
-        const blocking = (Array.isArray(check.conflicts) ? check.conflicts : [])
-          /* Strict mode turns every conflict into a wall; otherwise only the
-             impossible ones — a doubled room, a doubled instructor — refuse. */
-          .filter((c: any) => strictNoConflict || c?.severity === "high" || c?.type === "duplicate")
-          .filter((c: any) => !partyIds.has(Number(c?.rowId)) && !partyIds.has(Number(c?.otherId)));
-        if (blocking.length) {
-          setPhysicsNotice("");
-          setError(`لم يُنقل: ${describeConflict(blocking)}`);
-          return;
-        }
-      }
-
+      /**
+       * One atomic request instead of "check, then N separate PUTs".
+       *
+       * The old shape had two windows for disaster: the check could pass while
+       * another user was writing, and a dropped connection mid-loop left the
+       * party half-moved. Now the server re-checks every candidate itself —
+       * treating the travelling party as already moved, so a sibling about to
+       * vacate its slot is not a clash — and commits the whole party in one
+       * batch. Either every card lands or none do; a refusal arrives as plain
+       * words and the grid snaps back to exactly what the server holds.
+       */
+      const moveFields = (after: FSchedule) => ({
+        fsunday: Boolean((after as any).fsunday),
+        fmonday: Boolean((after as any).fmonday),
+        ftuesday: Boolean((after as any).ftuesday),
+        fwednesday: Boolean((after as any).fwednesday),
+        fthursday: Boolean((after as any).fthursday),
+        fstarttime: after.fstarttime,
+        fendtime: after.fendtime,
+      });
       // The grid answers immediately; the network catches up behind it.
       const patched = new Map(moves.map(m => [m.before.id, m.after]));
       setRows(current => current.map(item => patched.get(item.id) || item));
-
-      for (const move of moves) {
-        const payload: any = { ...move.after };
-        delete payload.id;
-        delete payload.AdCourseName;
-        await fetchJson(`/api/schedules/${move.before.id}`, {
-          method: "PUT",
+      try {
+        await fetchJson("/api/schedules/move-batch", {
+          method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify({
+            strict: strictNoConflict,
+            moves: moves.map(move => ({ id: move.before.id, fields: moveFields(move.after) })),
+          }),
         });
+      } catch (refusal) {
+        // Nothing was written — put the grid back exactly as it was.
+        const restore = new Map(moves.map(m => [m.before.id, m.before]));
+        setRows(current => current.map(item => restore.get(item.id) || item));
+        setPhysicsNotice("");
+        throw refusal;
       }
 
       markChanged(row.id);
@@ -1894,29 +1923,34 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setSaving(true);
     setError(null);
     try {
-      const probe: any = { ...after };
-      delete probe.id;
-      delete probe.AdCourseName;
-      const check = await fetchJson("/api/schedules/check-conflicts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...probe, excludeId: row.id }),
-      });
-      const blocking = (Array.isArray(check.conflicts) ? check.conflicts : [])
-        .filter((c: any) => strictNoConflict || c?.severity === "high" || c?.type === "duplicate");
-      if (blocking.length) {
-        setError(`لم يُنقل: ${describeConflict(blocking)}`);
-        return;
-      }
+      /* Same atomic door the week drag uses: server-side re-check + one write. */
       setRows(current => current.map(item => (item.id === row.id ? after : item)));
-      const payload: any = { ...after };
-      delete payload.id;
-      delete payload.AdCourseName;
-      await fetchJson(`/api/schedules/${row.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      try {
+        await fetchJson("/api/schedules/move-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            strict: strictNoConflict,
+            moves: [{
+              id: row.id,
+              fields: {
+                fsunday: Boolean((after as any).fsunday),
+                fmonday: Boolean((after as any).fmonday),
+                ftuesday: Boolean((after as any).ftuesday),
+                fwednesday: Boolean((after as any).fwednesday),
+                fthursday: Boolean((after as any).fthursday),
+                fstarttime: after.fstarttime,
+                fendtime: after.fendtime,
+                AdRoomCode: building,
+                AdRoomHall: hall,
+              },
+            }],
+          }),
+        });
+      } catch (refusal) {
+        setRows(current => current.map(item => (item.id === row.id ? row : item)));
+        throw refusal;
+      }
       markChanged(row.id);
       const place = [building, hall].filter(Boolean).join("/") || "بلا قاعة";
       const undoId = offerUndo(
@@ -2250,7 +2284,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * Clusters are found by time-overlap connectivity on the already-laid-out
    * items, so the weave covers exactly the block the lanes would have covered.
    */
-  const BUNDLE_LANES = 5;
+  /* Four lanes was the old survival threshold; the readability floor says a
+     card under ~72px cannot say its name, and four lanes land there. From
+     four concurrent onward the hour weaves. */
+  const BUNDLE_LANES = 4;
   const weekBundles = useMemo(() => {
     type Bundle = { key: string; top: number; height: number; from: string; to: string; rows: FSchedule[] };
     const byDay: Record<string, Bundle[]> = {};
@@ -2369,6 +2406,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         }}
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
+        aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${r.fstarttime}–${r.fendtime}${place ? ` · قاعة ${place}` : ""}`}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""}`}
         style={{ ...style, ["--hue" as any]: hueFor(code, title, i?.AdInstructorName) }}
@@ -2390,7 +2428,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
         <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
         <small className="week-when"><time dir="ltr">{r.fstarttime}–{r.fendtime}</time>{place ? <i>{place}</i> : null}</small>
-        <em className="week-code" dir="ltr">{code}<b dir="ltr">{r.SCode}</b></em>
+        {/* «112 · ش520»: the course number and the section stop looking like
+            one ambiguous pair of numerals. */}
+        <em className="week-code" dir="ltr">{code}<b dir="rtl">ش{r.SCode}</b></em>
         {(() => {
           /* The card that just landed says so, and carries its own way back:
              one press undoes exactly this move — no hunting through a log. */
@@ -2542,6 +2582,47 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [fanned, physics.state.active]);
+  /**
+   * The grid walks with the drag.
+   *
+   * A lecture at eight in the morning could never reach seven in the evening
+   * in one gesture — the pointer hit the window's edge and stopped. While a
+   * drag is live, holding the pointer inside the last ~48px of the viewport's
+   * top or bottom scrolls the page, and near the surface's side edges scrolls
+   * the week sideways; speed grows the deeper into the edge the pointer sits.
+   */
+  useEffect(() => {
+    if (!physics.state.active) return;
+    let pointerX = -1, pointerY = -1, frame = 0;
+    const surface = document.querySelector<HTMLElement>(".week-surface");
+    const EDGE = 48, TOP_GUARD = 72, MAX_STEP = 24;
+    const follow = (event: PointerEvent) => { pointerX = event.clientX; pointerY = event.clientY; };
+    const tick = () => {
+      if (pointerY >= 0) {
+        const vh = window.innerHeight;
+        if (pointerY < TOP_GUARD + EDGE) {
+          window.scrollBy(0, -Math.ceil(MAX_STEP * Math.min(1, (TOP_GUARD + EDGE - pointerY) / EDGE)));
+        } else if (pointerY > vh - EDGE) {
+          window.scrollBy(0, Math.ceil(MAX_STEP * Math.min(1, (pointerY - (vh - EDGE)) / EDGE)));
+        }
+        if (surface) {
+          const rect = surface.getBoundingClientRect();
+          if (pointerX < rect.left + EDGE && pointerX > rect.left - 8) {
+            surface.scrollBy(-Math.ceil(MAX_STEP * Math.min(1, (rect.left + EDGE - pointerX) / EDGE)), 0);
+          } else if (pointerX > rect.right - EDGE && pointerX < rect.right + 8) {
+            surface.scrollBy(Math.ceil(MAX_STEP * Math.min(1, (pointerX - (rect.right - EDGE)) / EDGE)), 0);
+          }
+        }
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    window.addEventListener("pointermove", follow, { passive: true });
+    frame = requestAnimationFrame(tick);
+    return () => {
+      window.removeEventListener("pointermove", follow);
+      cancelAnimationFrame(frame);
+    };
+  }, [physics.state.active]);
   const physicsActive = Boolean(
     physicsOrigin &&
     physics.state.phase !== "idle" &&
@@ -3560,14 +3641,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               <Expand /> {presentationMode ? "إنهاء العرض" : "عرض"}
             </GhostButton>
             <GhostButton type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
-              <ClipboardCheck /> الاعتماد
+              <ClipboardCheck /> مراجعة الاعتماد
             </GhostButton>
             <GhostButton
               type="button"
               onClick={() => setTransferOpen(true)}
               title={isPowerAdmin ? "استيراد وتصدير واستبدال أستاذ والمنتدبون" : "المنتدبون"}
             >
-              <ArrowLeftRight /> {isPowerAdmin ? "نقل" : "المنتدبون"}
+              <ArrowLeftRight /> {isPowerAdmin ? "أدوات البيانات" : "المنتدبون"}
             </GhostButton>
             {isPowerAdmin ? (
               <SchedulePublish
@@ -4036,10 +4117,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </div>
               </Field>
               {lensActive ? (
-                <button type="button" className="week-lens-clear" onClick={() => setLens({ instructorId: 0, building: "", hall: "", from: "", to: "" })}>
+                <button type="button" className="week-lens-clear" title="مسح كل شروط العدسة" onClick={() => setLens({ instructorId: 0, building: "", hall: "", from: "", to: "" })}>
                   <X aria-hidden="true" />
-                  <b>{weekLensCount.toLocaleString("ar-KW-u-nu-latn")}</b>
+                  <b>{weekLensCount.toLocaleString("ar-KW-u-nu-latn")}</b> من {filteredRows.length.toLocaleString("ar-KW-u-nu-latn")}
                 </button>
+              ) : null}
+              {(lens.from && !lens.to) || (!lens.from && lens.to) ? (
+                <small className="week-lens-note">الفترة تحتاج طرفَيها — أكمل «من» و«إلى» لتعمل.</small>
+              ) : lens.from && lens.to && mins(lens.from) >= mins(lens.to) ? (
+                <small className="week-lens-note warn">«من» يجب أن يسبق «إلى».</small>
               ) : null}
             </div>
             <div
@@ -4067,7 +4153,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 aria-pressed={strictNoConflict}
               >
                 <ShieldCheck aria-hidden="true" />
-                منع التعارض
+                المنع الصارم
               </button>
               <button
                 type="button"
@@ -4076,7 +4162,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 title="بدّل معنى اللون: كل مقرر بلون، أو كل أستاذ بلون"
               >
                 <Palette aria-hidden="true" />
-                {hueBy === "course" ? "اللون للمقرر" : "اللون للأستاذ"}
+                {hueBy === "course" ? "التلوين حسب: المقرر" : "التلوين حسب: الأستاذ"}
               </button>
               {multiSelect.size ? (
                 <button type="button" className="week-pick-clear" onClick={() => setMultiSelect(new Set())}>
@@ -4449,7 +4535,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             title="فرد الساعة في مروحة"
                             onClick={(e) => openFan(e.currentTarget)}
                           >
-                            <b className="num">{bundle.rows.length}</b> معاً
+                            {(() => {
+                              /* "18 معاً" was a lie when the true simultaneous
+                                 peak was 9 — the count is the cluster, the
+                                 peak is the wall. Say both when they differ. */
+                              const peak = peakConcurrency(bundle.rows.map(r => ({ start: mins(r.fstarttime), end: mins(r.fendtime) })));
+                              return peak && peak < bundle.rows.length
+                                ? <><b className="num">{bundle.rows.length}</b> موعداً · ذروة <b className="num">{peak}</b> معاً</>
+                                : <><b className="num">{bundle.rows.length}</b> معاً</>;
+                            })()}
                             {lensActive && hits > 0 && hits < bundle.rows.length ? (
                               <i className="week-bundle-hits">{hits} مطابقة</i>
                             ) : null}
@@ -4473,6 +4567,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 <div
                                   {...grip}
                                   key={row.id}
+                                  role="button"
+                                  tabIndex={0}
+                                  aria-label={`${bandTitle} · ${bandCode} · شعبة ${row.SCode || "—"} — اسحبها أو افتح المروحة`}
                                   className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""}`}
                                   style={{ ["--hue" as any]: hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName) }}
                                   title={`${bandTitle} — اسحبها مباشرة أو اضغط للمروحة`}

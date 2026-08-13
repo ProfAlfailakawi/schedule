@@ -66,6 +66,25 @@ export function firstLast(name: string): string {
   return [honorific, words[0], words[words.length - 1]].filter(Boolean).join(" ");
 }
 
+/**
+ * The real peak: how many of these lectures actually run at the same moment.
+ *
+ * A cluster of nine spread across a morning and a cluster of nine all at ten
+ * o'clock both say "9" — but only one of them is a wall. Classic sweep: +1 at
+ * every start, −1 at every end, the answer is the highest the counter gets.
+ */
+export function peakConcurrency(spans: Array<{ start: number; end: number }>): number {
+  const events: Array<[number, number]> = [];
+  spans.forEach(span => {
+    if (!Number.isFinite(span.start) || !Number.isFinite(span.end) || span.end <= span.start) return;
+    events.push([span.start, 1], [span.end, -1]);
+  });
+  events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let now = 0, peak = 0;
+  for (const [, delta] of events) { now += delta; if (now > peak) peak = now; }
+  return peak;
+}
+
 export interface SqueezedCandidate {
   id: number;
   top: number;

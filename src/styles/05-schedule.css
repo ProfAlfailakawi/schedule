@@ -2550,3 +2550,60 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 @container (max-width:120px){
   .week-title{overflow-wrap:anywhere;word-break:normal}
 }
+
+/* ==========================================================================
+   THE CARD'S THREE PROMISES — course, instructor, number, always
+   And the floating drag copy never inherits a squeezed width: what travels
+   under the pointer is the full, readable card.
+   ========================================================================== */
+
+/* The lifted card widens to a readable minimum: the container queries measure
+   the new width and every hidden line comes back on their own. */
+.week-event.physics-source-lift{
+  min-width:236px;
+  z-index:420;
+  box-shadow:var(--shadow-lg);
+}
+
+/* The catalogue number never disappears. On narrow cards it leaves the bottom
+   stamp for the free top-left corner (the title reads from the right); the
+   section digit is the part that yields, never the course number. */
+@container (max-width:150px){
+  .week-code{
+    display:flex;
+    top:3px;bottom:auto;left:4px;right:auto;
+    inset-inline-start:auto;inset-inline-end:auto;
+    height:auto;padding:0;background:transparent;
+    font-size:10px;
+    color:color-mix(in srgb,var(--label) 68%,transparent);
+  }
+  .week-code b{display:none}
+  .week-title{padding-inline-end:30px}
+}
+/* Type floor: nothing under 10px on the three promises. */
+@container (max-width:64px){
+  .week-title{font-size:10px}
+  .week-who{font-size:10px;opacity:.85}
+}
+/* A half-hour card still says who teaches it: title folds to one line and the
+   instructor keeps the second. */
+@container (max-height:44px){
+  .week-who{display:block;font-size:10px}
+}
+
+/* --- The week takes the room it deserves ----------------------------------- */
+.content-frame:has(.week-surface),
+.content-frame:has(.rooms-surface){
+  width:min(100%,96vw);
+  max-width:96vw;
+}
+
+/* --- The days stay overhead while the page scrolls ------------------------- */
+.week-day-head,.week-time-head{
+  position:sticky;top:0;z-index:12;
+  background:var(--surface-2);
+}
+
+/* --- Lens feedback --------------------------------------------------------- */
+.week-lens-note{flex-basis:100%;color:var(--muted);font-size:var(--t-xs)}
+.week-lens-note.warn{color:var(--danger)}

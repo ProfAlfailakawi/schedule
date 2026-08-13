@@ -1542,6 +1542,45 @@ export const Repository = {
     return db.schedules[idx];
   },
 
+  /**
+   * All-or-none placement write.
+   *
+   * A group drag used to land as N separate PUTs — a network hiccup after the
+   * third left the timetable half-moved with no record of which half. Here the
+   * whole party is validated first, then written as ONE Firestore batch (or
+   * one snapshot save in demo mode): either every card lands or none do.
+   */
+  moveSchedulesBatch: async (moves: Array<{ id: number; fields: Partial<FSchedule> }>): Promise<FSchedule[]> => {
+    invalidateSchedules();
+    invalidateReference(REFERENCE_KEYS.scheduleCount);
+    if (firestoreDb) {
+      const refs = moves.map(m => firestoreDb!.collection("schedules").doc(`schedule_${m.id}`));
+      const docs = await firestoreDb.getAll(...refs);
+      const updated: FSchedule[] = [];
+      const batch = firestoreDb.batch();
+      docs.forEach((doc, i) => {
+        if (!doc.exists) throw new Error("الجدول غير موجود");
+        const next = { ...(doc.data() as FSchedule), ...moves[i].fields };
+        updated.push(next);
+        batch.set(refs[i], next);
+      });
+      await batch.commit();
+      return updated;
+    }
+    // Demo mode: verify everything exists before touching anything, then one save.
+    for (const move of moves) {
+      if (db.schedules.findIndex(s => s.id === move.id) === -1) throw new Error("الجدول غير موجود");
+    }
+    const updated: FSchedule[] = [];
+    for (const move of moves) {
+      const idx = db.schedules.findIndex(s => s.id === move.id);
+      db.schedules[idx] = { ...db.schedules[idx], ...move.fields };
+      updated.push(db.schedules[idx]);
+    }
+    saveDatabase();
+    return updated;
+  },
+
   deleteSchedule: async (id: number): Promise<void> => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
