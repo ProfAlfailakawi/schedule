@@ -475,9 +475,25 @@ export default function LivingScheduleLayer({
           </div>
         </div>
         <div className="living-health-strip" aria-label="مؤشرات صحة الجدول">
-          <span><small>الجودة</small><b>{living.health?.quality ?? "—"}</b></span>
-          <span><small>المرونة</small><b>{living.health?.resilience ?? "—"}</b></span>
-          <span><small>العدالة</small><b>{living.health?.fairness ?? "—"}</b></span>
+          {[
+            { label: "الجودة", value: living.health?.quality },
+            { label: "المرونة", value: living.health?.resilience },
+            { label: "العدالة", value: living.health?.fairness },
+          ].map(metric => {
+            const reading = Number(metric.value);
+            const known = Number.isFinite(reading);
+            return (
+              <span
+                key={metric.label}
+                /* The meter reads the number rather than repeating it: a score
+                   that slips is short before it is read. */
+                style={{ ["--reading" as any]: `${known ? Math.max(0, Math.min(100, reading)) : 0}%` }}
+              >
+                <small>{metric.label}</small>
+                <b>{known ? reading : "—"}</b>
+              </span>
+            );
+          })}
         </div>
         <div className="living-command-actions">
           {experience ? (

@@ -116,13 +116,43 @@
 
 .nav-section{padding:var(--s2) 0 0}
 .nav-section+.nav-section{margin-top:var(--s2);padding-top:var(--s3);border-top:1px solid var(--nav-line)}
+/* The heading is the handle. It reads as a label until it is approached, so
+   the rail keeps its quiet typographic rhythm and still admits it can fold. */
 .nav-section-title{
-  display:block;
+  display:flex;
+  align-items:center;
+  gap:var(--s2);
+  width:100%;
   padding:var(--s1) var(--s3) var(--s2);
   color:#6c7a74;
   font-size:10.5px;
   font-weight:600;
   letter-spacing:.1em;
+  text-align:start;
+  transition:color .16s var(--ease);
+}
+.nav-section-title:hover{color:var(--nav-ink)}
+.nav-section-title>span{flex:1;min-width:0}
+.nav-section-chevron{
+  width:13px;height:13px;
+  opacity:.55;
+  /* Shut, it points the way the language runs — the same arrow the active link
+     wears. Open, it turns down onto the group it has just revealed. */
+  transform:rotate(0);
+  transition:transform .2s var(--ease),opacity .16s var(--ease);
+}
+.nav-section[data-open="true"] .nav-section-chevron{transform:rotate(-90deg);opacity:.9}
+/* Folded is the resting state: the rail is four words until one is chosen. */
+.nav-section-body{
+  display:grid;
+  grid-template-rows:0fr;
+  transition:grid-template-rows .22s var(--ease);
+}
+.nav-section[data-open="true"] .nav-section-body{grid-template-rows:1fr}
+.nav-section-body>div{overflow:hidden;min-height:0}
+@media (prefers-reduced-motion:reduce){
+  .nav-section-body{transition:none}
+  .nav-section-chevron{transition:none}
 }
 
 .side-nav-link{

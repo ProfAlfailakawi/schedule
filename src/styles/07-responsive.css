@@ -287,6 +287,24 @@
   /* Phones read one day at a time: wide, legible columns that snap into place. */
   .week-surface{padding:var(--s3);scroll-snap-type:x proximity}
   .week-calendar{min-width:1148px;grid-template-columns:46px repeat(5,minmax(220px,1fr));--week-gutter:46px}
+  /* A folded week is one lane wide and must not inherit the five-lane minimum
+     above — that minimum is the entire reason a phone scrolled sideways to
+     reach Wednesday. Released here, the day fits the window exactly, and the
+     snap points have nothing left to snap between. */
+  .week-calendar[data-expanded]{
+    min-width:0;
+    grid-template-columns:var(--week-gutter,46px) minmax(0,1fr);
+  }
+  .week-surface:has(.week-calendar[data-expanded]){scroll-snap-type:none}
+  /* Five days across a phone: the label carries the day, the count rides below. */
+  .week-daystrip{gap:var(--s1)}
+  .week-daystrip-day{
+    min-width:0;flex-direction:column;gap:2px;
+    padding:var(--s2) var(--s1);
+    font-size:var(--t-xs);
+  }
+  .week-daystrip-day b{min-width:18px;height:18px;font-size:10px}
+  .week-daystrip-all{padding:var(--s2) var(--s3);font-size:var(--t-xs)}
   .week-time-head,.week-day-head{min-height:44px;font-size:var(--t-xs)}
   .week-title{font-size:var(--t-xs)}
   .week-who,.week-when{font-size:11px}

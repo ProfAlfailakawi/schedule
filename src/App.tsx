@@ -169,6 +169,8 @@ export default function App() {
   const [activeView, setActiveView] = useState<View>(
     () => viewByPath.get(window.location.pathname.toLowerCase()) || "dashboard",
   );
+  /** Which nav groups the reader has pressed open or shut, by group id. */
+  const [navGroups, setNavGroups] = useState<Record<string, boolean>>({});
   const [sidebarOpen, setSidebarOpen] = useState(false),
     [searchOpen, setSearchOpen] = useState(false),
     [query, setQuery] = useState(""),
@@ -711,6 +713,51 @@ export default function App() {
       </button>
     );
   };
+  /**
+   * A nav group that folds.
+   *
+   * Four headings stacked above eight links made the rail a wall of text to
+   * read top to bottom before choosing. Folded, it is four words — and the one
+   * group holding the screen you are on is the one left open, so the rail
+   * always shows where you are without showing everywhere you could be.
+   *
+   * `holdsActive` is the default, not the state: once a group is pressed the
+   * reader's choice is kept, and only that group's own entry is remembered, so
+   * moving to another screen still opens the group that screen lives in.
+   */
+  const NavSection = ({
+    id,
+    title,
+    rail,
+    holdsActive,
+    className,
+    children,
+  }: {
+    id: string;
+    title: string;
+    rail: string;
+    holdsActive: boolean;
+    className?: string;
+    children: React.ReactNode;
+  }) => {
+    const open = navGroups[id] ?? holdsActive;
+    return (
+      <div className={`nav-section ${className || ""}`} data-rail={rail} data-open={open ? "true" : undefined}>
+        <button
+          type="button"
+          className="nav-section-title"
+          aria-expanded={open}
+          onClick={() => setNavGroups(current => ({ ...current, [id]: !open }))}
+          title={open ? `طيّ ${title}` : `فتح ${title}`}
+        >
+          <span>{title}</span>
+          <ChevronLeft className="nav-section-chevron" aria-hidden="true" />
+        </button>
+        {/* One wrapper, because the 0fr→1fr fold measures a single grid row. */}
+        <div className="nav-section-body"><div>{children}</div></div>
+      </div>
+    );
+  };
   const hitIcon = (kind: SearchHit["kind"]) =>
     kind === "instructor" ? (
       <UsersRound />
@@ -1163,8 +1210,18 @@ export default function App() {
           </kbd>
         </button>
         <nav className="side-nav" aria-label="القائمة الرئيسية">
-          <div className="nav-section nav-section-core" data-rail="core">
-            <span className="nav-section-title">مساحة العمل</span>
+          <NavSection
+            id="core"
+            title="مساحة العمل"
+            rail="core"
+            className="nav-section-core"
+            holdsActive={
+              activeView === "dashboard" ||
+              activeView === "schedules" ||
+              searchViews.includes(activeView as ReportMode) ||
+              reportViews.includes(activeView as ReportMode)
+            }
+          >
             <NavButton view="dashboard" icon={<House />} label="لوحة العمل" />
             {allowed.schedule ? (
               <NavButton
@@ -1181,20 +1238,35 @@ export default function App() {
                 label="الاستعلامات والتقارير"
               />
             ) : null}
-          </div>
+          </NavSection>
           {isPowerAdmin && allowed.schedule ? (
-            <div className="nav-section admin-only-nav" data-rail="schedule">
-              <span className="nav-section-title">أدوات القرار</span>
+            <NavSection
+              id="schedule"
+              title="أدوات القرار"
+              rail="schedule"
+              className="admin-only-nav"
+              holdsActive={activeView === "intelligence"}
+            >
               <NavButton
                 view="intelligence"
                 icon={<WandSparkles />}
                 label="مركز القرار"
               />
-            </div>
+            </NavSection>
           ) : null}
           {isPowerAdmin && academicEntry ? (
-            <div className="nav-section admin-only-nav" data-rail="catalog">
-              <span className="nav-section-title">المرجع والإدارة</span>
+            <NavSection
+              id="catalog"
+              title="المرجع والإدارة"
+              rail="catalog"
+              className="admin-only-nav"
+              holdsActive={
+                academicViews.includes(activeView as AcademicTab) ||
+                adminViews.includes(activeView as AdminMode) ||
+                activeView === "scheduleCopy" ||
+                activeView === "about"
+              }
+            >
               <NavButton
                 view={academicEntry}
                 active={academicViews.includes(activeView as AcademicTab)}
@@ -1217,10 +1289,19 @@ export default function App() {
                 />
               ) : null}
               <NavButton view="about" icon={<Info />} label="عن البرنامج" />
-            </div>
+            </NavSection>
           ) : isPowerAdmin && allowed.admin ? (
-            <div className="nav-section admin-only-nav" data-rail="admin">
-              <span className="nav-section-title">إدارة النظام</span>
+            <NavSection
+              id="admin"
+              title="إدارة النظام"
+              rail="admin"
+              className="admin-only-nav"
+              holdsActive={
+                adminViews.includes(activeView as AdminMode) ||
+                activeView === "scheduleCopy" ||
+                activeView === "about"
+              }
+            >
               <NavButton
                 view="users"
                 active={adminViews.includes(activeView as AdminMode)}
@@ -1235,7 +1316,7 @@ export default function App() {
                 />
               ) : null}
               <NavButton view="about" icon={<Info />} label="عن البرنامج" />
-            </div>
+            </NavSection>
           ) : null}
         </nav>
         {/* One card carries who you are, whether saving is safe, the theme and

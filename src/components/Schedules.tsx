@@ -1883,6 +1883,24 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [gridWindow],
   );
   const [expandedDay, setExpandedDay] = useState<DayKey | null>(null);
+  /**
+   * A phone is given one day, not five.
+   *
+   * Five readable lanes need about 1148px, so on a narrow screen the week has
+   * always been a sideways scroll — the grid was wider than the device and the
+   * reader dragged it past the window to find Wednesday. The fold the column
+   * header already performs is the answer; this only makes it the opening
+   * position on a small screen.
+   *
+   * It settles the question on entering the week and not again, and it fills
+   * only an empty choice, so a reader who deliberately unfolds all five days is
+   * never argued with.
+   */
+  useEffect(() => {
+    if (viewMode !== "week" || typeof window === "undefined") return;
+    if (!window.matchMedia("(max-width:768px)").matches) return;
+    setExpandedDay(current => current ?? todayKey ?? (days[0]?.key as DayKey));
+  }, [viewMode, todayKey]);
   /** How many appointments each day actually carries — every day gets a count. */
   const dayCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -3570,6 +3588,44 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               {multiSelect.size ? (
                 <button type="button" className="week-pick-clear" onClick={() => setMultiSelect(new Set())}>
                   <X aria-hidden="true" />إلغاء التحديد
+                </button>
+              ) : null}
+            </div>
+            {/*
+              The day strip.
+
+              The grid can already fold down to a single full-width day — that
+              fold is what makes a phone readable at all — but reaching it meant
+              finding the right column header, and moving to the next day meant
+              unfolding the whole week and folding it again somewhere else.
+
+              The strip says the five days once, marks today, and carries the
+              count each one holds, so choosing a day is a single press from
+              anywhere and the fold is visible rather than discovered.
+            */}
+            <div className="week-daystrip">
+              {days.map((d) => (
+                <button
+                  key={d.key}
+                  type="button"
+                  className="week-daystrip-day"
+                  data-today={todayKey === d.key ? "true" : undefined}
+                  aria-pressed={expandedDay === d.key}
+                  onClick={() => setExpandedDay((current) => (current === d.key ? null : (d.key as DayKey)))}
+                  title={expandedDay === d.key ? "العودة إلى الأسبوع كاملاً" : `عرض ${d.label} وحده`}
+                >
+                  <span>{d.label}</span>
+                  <b title="عدد المواعيد في هذا اليوم">{dayCounts[d.key] || 0}</b>
+                </button>
+              ))}
+              {expandedDay ? (
+                <button
+                  type="button"
+                  className="week-daystrip-all"
+                  onClick={() => setExpandedDay(null)}
+                  title="عرض الأسبوع كاملاً"
+                >
+                  <Expand aria-hidden="true" />الأسبوع
                 </button>
               ) : null}
             </div>

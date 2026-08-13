@@ -1157,7 +1157,61 @@
    questions without re-learning the layout each time.
    ========================================================================== */
 
-/* --- The command deck on the schedule page -------------------------------- */
+/* --- The command deck on the schedule page --------------------------------
+   Three parts on one line: the reading, the numbers behind it, and the actions
+   it offers.
+
+   The responsive layer has always re-columned this deck and re-flexed the
+   numbers inside it — but the base grid and the base flex row it overrides
+   were never written. Overrides for a container that was never a container do
+   nothing, so the deck fell back to normal flow and the three health readings
+   ran together into one unbroken word. These are those missing base rules. */
+.living-command-deck{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto auto;
+  align-items:center;
+  gap:var(--s4) var(--s5);
+}
+.living-health-strip{
+  display:flex;
+  align-items:stretch;
+  gap:var(--s2);
+}
+.living-health-strip>span{
+  display:flex;flex-direction:column;gap:3px;
+  min-width:66px;
+  padding:var(--s2) var(--s3);
+  border-radius:var(--r-sm);
+  background:var(--surface-2);
+}
+.living-health-strip small{
+  color:var(--muted);
+  font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.04em;
+  white-space:nowrap;
+}
+.living-health-strip b{
+  color:var(--ink);
+  font:650 var(--t-h3)/1.1 var(--font-mono);
+  font-variant-numeric:tabular-nums lining-nums;
+}
+/* A three-pixel reading of the same number. It fills from the inline start so
+   it grows the way the language runs, and it is drawn from --reading, which
+   the component sets from the score itself. */
+.living-health-strip>span::after{
+  content:"";
+  height:3px;margin-top:1px;
+  border-radius:var(--r-full);
+  background:linear-gradient(var(--accent),var(--accent)) no-repeat,
+             color-mix(in srgb,var(--line-strong) 55%,transparent);
+  background-size:var(--reading,0%) 100%, 100% 100%;
+  background-position:100% 0, 0 0;
+}
+:root:not([dir="rtl"]) .living-health-strip>span::after{background-position:0 0, 0 0}
+
+.living-command-actions{
+  display:flex;align-items:center;gap:var(--s2);
+}
+
 .living-pulse-core{
   display:flex;align-items:flex-start;gap:var(--s3);min-width:0;flex:1 1 320px;
 }
