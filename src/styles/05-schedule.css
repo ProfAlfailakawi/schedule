@@ -857,7 +857,7 @@
    carrying their own colour so a room full of people can read them. */
 
 .schedule-cinema{
-  min-height:calc(100dvh - 120px);
+  height:calc(100dvh - 120px);min-height:620px;
   display:flex;flex-direction:column;
   border:1px solid var(--line);border-radius:var(--r-2xl);
   background:var(--surface);overflow:hidden;
@@ -878,6 +878,7 @@
   background:var(--surface-2);color:var(--muted);
 }
 .cinema-tools button svg{width:17px;height:17px}
+.cinema-tools button span{font-size:var(--t-xs);font-weight:600;white-space:nowrap}
 .cinema-tools button b{font-size:var(--t-sm);font-variant-numeric:tabular-nums}
 .cinema-tools button:hover{color:var(--ink);border-color:var(--line-strong)}
 .cinema-tools button.active{
@@ -930,7 +931,7 @@
 
 /* Full-screen meeting mode scales the board up to the room. */
 html[data-schedule-workspace="presentation"] .schedule-cinema{
-  min-height:calc(100dvh - 40px);border-radius:var(--r-lg);
+  height:calc(100dvh - 40px);min-height:0;border-radius:var(--r-lg);
 }
 html[data-schedule-workspace="presentation"] .cinema-day>header strong{font-size:clamp(18px,1.9vw,26px)}
 html[data-schedule-workspace="presentation"] .cinema-day-track strong{font-size:clamp(15px,1.35vw,21px)}
@@ -2008,7 +2009,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    ========================================================================== */
 
 .schedule-physics-float{
-  position:fixed;top:0;left:0;z-index:210;
+  position:fixed;top:0;left:0;z-index:219;
   display:grid;grid-template-columns:14px minmax(0,1fr) auto;
   align-items:center;gap:var(--s3);
   width:min(300px,70vw);
@@ -2035,7 +2036,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .physics-float-meta small{display:block;color:var(--muted);font-size:10px}
 
 .schedule-physics-hud{
-  position:fixed;z-index:209;
+  position:fixed;z-index:220;
   width:min(340px,86vw);
   max-height:min(72vh,560px);overflow-y:auto;
   padding:var(--s5);
@@ -2045,6 +2046,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   background:var(--surface);
   box-shadow:var(--shadow-lg);
   pointer-events:none;
+  overscroll-behavior:contain;scrollbar-gutter:stable;
   animation:rise .16s var(--ease-out) both;
 }
 .schedule-physics-hud.quality-suboptimal{border-inline-start-color:var(--warning)}
@@ -2234,12 +2236,16 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 
 /* --- The lens: a toolbar, not a form --------------------------------------- */
 .week-lens{
-  display:flex;flex-wrap:wrap;align-items:center;
+  display:grid;
+  grid-template-columns:minmax(220px,1.35fr) minmax(140px,.72fr) minmax(180px,.88fr) minmax(270px,1.22fr) auto;
+  align-items:center;
   gap:var(--s2);
   padding:var(--s3) var(--s5);
+  direction:rtl;
 }
 .week-lens .field{
-  flex-direction:row;align-items:center;gap:6px;
+  display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px;
+  width:100%;min-width:0;
   min-height:34px;padding:0 var(--s3);
   border:1px solid var(--line);border-radius:var(--r-full);
   background:var(--surface-2);
@@ -2248,15 +2254,15 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   font-size:10.5px;color:var(--muted);font-weight:600;white-space:nowrap;
 }
 .week-lens select,.week-lens input{
-  min-height:32px;max-width:150px;
+  width:100%;min-width:0;min-height:32px;max-width:none;
   border:0;background:transparent;
   font-size:var(--t-sm);
   padding-inline:2px;
 }
 .week-lens select:focus-visible,.week-lens input:focus-visible{outline:none}
 .week-lens .field:focus-within{border-color:var(--accent);background:var(--surface)}
-.week-lens .time-pair{display:flex;align-items:center;gap:2px}
-.week-lens .time-pair input{max-width:86px}
+.week-lens .time-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:4px;direction:ltr;min-width:0}
+.week-lens .time-pair input{max-width:none}
 .week-lens-clear{
   display:inline-flex;align-items:center;gap:6px;
   min-height:34px;padding:0 var(--s3);
@@ -2468,12 +2474,13 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    Empty track IS free room. A card dragged to another row changes room;
    along its own row, it changes hour.
    ========================================================================== */
-.rooms-surface{padding:var(--s5)}
+.rooms-surface{padding:var(--s5);direction:rtl}
 .rooms-head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-bottom:var(--s4)}
 .rooms-head small{color:var(--muted);font-size:var(--t-xs);line-height:1.5;flex:1 1 260px}
 .rooms-scale{display:grid;grid-template-columns:74px minmax(0,1fr);margin-bottom:var(--s2)}
 .rooms-scale>div{
   position:relative;height:16px;
+  direction:rtl;
   font:500 9.5px/1 var(--font-mono);color:var(--muted-2);
 }
 .rooms-scale span{position:absolute;transform:translateX(50%)}
@@ -2487,6 +2494,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-row-none>small{font-family:var(--font-ui);color:var(--warning)}
 .rooms-track{
   position:relative;
+  direction:rtl;
   height:46px;
   border:1px solid var(--line);
   border-radius:var(--r-sm);
@@ -2607,3 +2615,104 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 /* --- Lens feedback --------------------------------------------------------- */
 .week-lens-note{flex-basis:100%;color:var(--muted);font-size:var(--t-xs)}
 .week-lens-note.warn{color:var(--danger)}
+
+/* --- The reading panel stays inside the window ------------------------------
+   Its position is clamped from the measured height now; this is the second
+   guard: a verdict longer than the screen scrolls within itself rather than
+   spilling past the bottom edge. */
+.schedule-physics-hud{
+  max-height:calc(100dvh - 32px);
+  overflow-y:auto;
+  overscroll-behavior:contain;
+}
+
+/* --- Lens chips: the label is not part of the value -------------------------
+   «المبنىالكل» read as one word. The label now sits behind a hairline with
+   real breathing room, so the field says «المبنى | الكل». */
+.week-lens .field{gap:0;padding:0;overflow:visible}
+.week-lens .field>label,.week-lens .field>span{
+  padding:0 var(--s3);
+  margin-inline-end:var(--s2);
+  border-inline-end:1px solid var(--line);
+  color:var(--muted-2);
+  line-height:32px;
+}
+.week-lens select,.week-lens input{padding-inline:0 var(--s3)}
+.week-lens .time-pair{padding-inline:var(--s2) var(--s3)}
+.week-lens-note{grid-column:1/-1}
+
+/* One room or a working set of rooms, from the same lens. A native multiple
+   select hides its state behind modifier keys; this menu says the count on the
+   closed control and keeps every choice visible as a checkbox. */
+.week-room-multiselect{position:relative;z-index:18}
+.week-room-multiselect details{position:relative;min-width:142px}
+.week-room-multiselect summary{
+  min-height:32px;display:flex;align-items:center;justify-content:space-between;gap:var(--s2);
+  padding-inline-end:var(--s3);cursor:pointer;list-style:none;color:var(--ink-2);font-size:var(--t-sm);
+}
+.week-room-multiselect summary::-webkit-details-marker{display:none}
+.week-room-multiselect summary::after{content:"⌄";color:var(--muted-2);font-size:11px}
+.week-room-multiselect summary b{
+  min-width:19px;height:19px;display:grid;place-items:center;border-radius:var(--r-full);
+  background:var(--accent);color:var(--accent-contrast);font-size:9px;
+}
+.week-room-menu{
+  position:absolute;top:calc(100% + 8px);inset-inline-start:0;z-index:80;
+  width:min(300px,80vw);max-height:310px;overflow-y:auto;
+  padding:var(--s2);border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+}
+.week-room-menu header{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:var(--s2) var(--s2) var(--s3);border-bottom:1px solid var(--line);
+}
+.week-room-menu header strong{font-size:var(--t-xs);font-weight:650}
+.week-room-menu header button{color:var(--accent);font-size:var(--t-xs);font-weight:600}
+.week-room-menu>label{
+  min-height:38px;display:flex;align-items:center;gap:var(--s3);
+  padding:0 var(--s2);border-radius:var(--r-xs);cursor:pointer;
+}
+.week-room-menu>label:hover{background:var(--surface-2)}
+.week-room-menu input{width:16px;height:16px;min-height:0;accent-color:var(--accent)}
+.week-room-menu>label span{font:600 var(--t-xs)/1 var(--font-mono);color:var(--ink-2)}
+
+/* --- Choosing which rooms the matrix shows ---------------------------------- */
+.rooms-picker{
+  display:flex;flex-wrap:wrap;gap:var(--s2);
+}
+.rooms-filter-block{
+  display:grid;gap:var(--s3);
+  margin-bottom:var(--s4);padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface-2);
+}
+.rooms-filter-copy{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;
+}
+.rooms-filter-copy>div{display:flex;align-items:center;gap:var(--s2);color:var(--ink-2)}
+.rooms-filter-copy svg{width:15px;height:15px;color:var(--accent)}
+.rooms-filter-copy strong{font-size:var(--t-sm);font-weight:650}
+.rooms-filter-copy small{color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.rooms-filter-block .rooms-picker{
+  padding-top:var(--s3);border-top:1px solid var(--line);
+}
+.rooms-chip{
+  display:inline-flex;align-items:center;gap:6px;
+  min-height:32px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface-2);color:var(--ink-2);
+  font-size:var(--t-xs);font-weight:600;
+  transition:border-color .14s var(--ease),background .14s var(--ease),color .14s var(--ease);
+}
+.rooms-chip span{font-family:var(--font-mono);font-size:11px}
+.rooms-chip b{
+  min-width:18px;height:18px;display:grid;place-items:center;
+  border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted);
+  font:600 9.5px/1 var(--font-mono);
+}
+.rooms-chip:hover{border-color:var(--line-strong);background:var(--surface)}
+.rooms-chip.on{
+  border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);
+}
+.rooms-chip.on b{background:var(--accent);color:var(--accent-contrast)}

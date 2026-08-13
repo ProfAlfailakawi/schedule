@@ -41,7 +41,7 @@ export default function ScheduleDecisionPreview({ request, course, instructor, b
 
     <div className="decision-impact">
       {ripple?.delta ? <>
-        <span className={tone(-Number(ripple.delta.conflicts || 0))}><Activity/><small>تعارض</small><b>{signed(ripple.delta.conflicts)}</b></span>
+        <span className={tone(-Number(ripple.delta.conflicts || 0))}><Activity/><small>موانع</small><b>{signed(ripple.delta.conflicts)}</b></span>
         <span className={tone(-Number(ripple.delta.professorGap || 0))}><Gauge/><small>فراغ</small><b>{signed(ripple.delta.professorGap, "د")}</b></span>
         <span className={tone(Number(ripple.delta.quality || 0))}><ShieldCheck/><small>جودة</small><b>{signed(ripple.delta.quality)}</b></span>
         <span className={tone(-Number(ripple.delta.dayPressure || 0))}><Activity/><small>ضغط</small><b>{signed(ripple.delta.dayPressure, "%")}</b></span>

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Activity, AlertTriangle, CheckCircle2, Gauge, GripVertical, Orbit, Radio, ShieldCheck, Waypoints } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../../types";
@@ -18,16 +18,57 @@ const signed = (value: unknown, suffix = "") => {
 };
 
 export default function SchedulePhysicsLayer({ state, overlayRef, course, instructor, isPowerAdmin = false }: Props) {
+  /**
+   * The reading panel measures itself.
+   *
+   * Its position used to be clamped against a hard-coded 340px, but the full
+   * reading — reasons, metrics, fingerprint, stress, horizon, counterfactual —
+   * runs far taller than that, so its lower half fell off the bottom of the
+   * screen exactly when it had the most to say. Now the real height decides
+   * where it may sit, and the stylesheet caps it to the viewport so a very
+   * long verdict scrolls inside itself instead of escaping.
+   */
+  const hudRef = useRef<HTMLElement | null>(null);
+  const [hudBox, setHudBox] = useState({ width: 340, height: 320 });
+  useLayoutEffect(() => {
+    const element = hudRef.current;
+    if (!element) return;
+    const { offsetWidth: width, offsetHeight: height } = element;
+    setHudBox(current =>
+      Math.abs(current.width - width) > 8 || Math.abs(current.height - height) > 8
+        ? { width, height }
+        : current);
+  });
+
   const row = state.row as FSchedule | null;
   if (!row || state.phase === "idle" || state.phase === "armed" || typeof document === "undefined") return null;
   const decision = state.decision;
   const target = state.target;
   const ripple = decision?.ripple;
   const compact = !isPowerAdmin;
-  const hudStyle: React.CSSProperties | undefined = target?.rect ? {
-    left: Math.min(window.innerWidth - 360, Math.max(16, target.rect.left + target.rect.width + 14)),
-    top: Math.min(window.innerHeight - 340, Math.max(16, target.rect.top - 12)),
-  } : undefined;
+  const GAP = 14, EDGE = 14;
+  const hudStyle: React.CSSProperties | undefined = target?.rect ? (() => {
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft || 0;
+    const viewportTop = viewport?.offsetTop || 0;
+    const viewportWidth = viewport?.width || window.innerWidth;
+    const viewportHeight = viewport?.height || window.innerHeight;
+    const viewportRight = viewportLeft + viewportWidth;
+    const viewportBottom = viewportTop + viewportHeight;
+    const visibleHudHeight = Math.min(hudBox.height, Math.max(180, viewportHeight - EDGE * 2));
+    // Prefer the side with room; fall back to whichever keeps it fully visible.
+    const roomAfter = viewportRight - (target.rect.left + target.rect.width + GAP);
+    const left = roomAfter >= hudBox.width + EDGE
+      ? target.rect.left + target.rect.width + GAP
+      : Math.max(viewportLeft + EDGE, target.rect.left - hudBox.width - GAP);
+    return {
+      left: Math.min(Math.max(viewportLeft + EDGE, left), Math.max(viewportLeft + EDGE, viewportRight - hudBox.width - EDGE)),
+      top: Math.min(
+        Math.max(viewportTop + EDGE, viewportBottom - visibleHudHeight - EDGE),
+        Math.max(viewportTop + EDGE, target.rect.top - 12),
+      ),
+    };
+  })() : undefined;
 
   return createPortal(<>
     <div ref={overlayRef} className={`schedule-physics-float quality-${decision?.quality || "unknown"}`} aria-hidden="true">
@@ -40,19 +81,19 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
       <div className="physics-float-meta"><b dir="ltr">{row.fstarttime}–{row.fendtime}</b><small>{row.AdRoomCode}/{row.AdRoomHall}</small></div>
     </div>
 
-    {target ? <aside className={`schedule-physics-hud quality-${decision?.quality || "unknown"} ${compact ? "compact" : "detailed"}`} style={hudStyle} aria-live="polite">
+    {target ? <aside ref={hudRef} className={`schedule-physics-hud quality-${decision?.quality || "unknown"} ${compact ? "compact" : "detailed"}`} style={hudStyle} aria-live="polite">
       <header>
         <span className="physics-hud-radar"><Radio/><i/><i/></span>
         <div><small>{target.label} · <b dir="ltr">{target.start}</b></small><strong>{decision?.title || "أقرأ أثر القرار…"}</strong></div>
       </header>
 
       <p>{decision?.summary || "أحسب الأثر قبل الإفلات."}</p>
-      {decision?.loading ? <div className="physics-reading"><i/><span>لماذا؟ + البدائل + أثر التغيير + التعارضات…</span></div> : null}
+      {decision?.loading ? <div className="physics-reading"><i/><span>القراءة الفورية جاهزة · أتأكد من الأثر الكامل…</span></div> : null}
 
-      {!decision?.loading && decision?.reasons?.length ? <div className="physics-hud-reasons">{decision.reasons.slice(0, compact ? 2 : 3).map((reason, index) => <span key={index}>{decision.quality === "suboptimal" || decision.quality === "impossible" ? <AlertTriangle/> : <CheckCircle2/>}{reason}</span>)}</div> : null}
+      {decision?.reasons?.length ? <div className="physics-hud-reasons">{decision.reasons.slice(0, compact ? 2 : 3).map((reason, index) => <span key={index}>{decision.quality === "suboptimal" || decision.quality === "impossible" ? <AlertTriangle/> : <CheckCircle2/>}{reason}</span>)}</div> : null}
 
-      {!decision?.loading && ripple?.delta ? <div className="physics-hud-metrics">
-        <span><Activity/><b>{signed(ripple.delta.conflicts)}</b><small>تعارض</small></span>
+      {ripple?.delta ? <div className="physics-hud-metrics">
+        <span><Activity/><b>{signed(ripple.delta.conflicts)}</b><small>مانع</small></span>
         <span><Gauge/><b>{signed(ripple.delta.professorGap, "د")}</b><small>فراغ</small></span>
         <span><ShieldCheck/><b>{signed(ripple.delta.quality)}</b><small>جودة</small></span>
       </div> : null}

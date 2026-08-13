@@ -5,6 +5,7 @@ import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
 import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../src/utils/weekVisual";
+import { findConflicts } from "../src/utils/scheduleIntelligence";
 import { Repository, initDatabase } from "../src/db/repository";
 
 const originalLog = console.log;
@@ -132,6 +133,19 @@ async function runTests() {
     assert(firstLast("عبدالعزيز خالد العنزي") === "عبدالعزيز العنزي", "no honorific: first and last");
     assert(firstLast("الدكتورة نورة سعد فهد العجمي") === "الدكتورة نورة العجمي", "full-word honorific recognised");
     assert(firstLast("") === "", "empty name stays empty");
+
+    // A combined class is represented by one row per registered section. It
+    // consumes one lecturer and one room once, so those sibling rows must not
+    // manufacture a conflict merely because their section codes differ.
+    const shared = {
+      AdTermId: 1, AdCourseId: 10, AdInstructorId: 20,
+      fsunday: true, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false,
+      fstarttime: "09:00", fendtime: "10:00", AdRoomCode: "7", AdRoomHall: "F12",
+    };
+    const combined = [{ ...shared, id: 101, SCode: "1" }, { ...shared, id: 102, SCode: "2" }] as any;
+    assert(findConflicts(combined, combined).length === 0, "combined sections sharing one delivery are not conflicts");
+    const occupied = { ...shared, id: 103, AdCourseId: 11, SCode: "1" } as any;
+    assert(findConflicts([combined[0]], [combined[0], occupied]).length === 1, "a different course still conflicts in the occupied lecturer/room slot");
 
     // Peak concurrency: nine spread out is not nine at once.
     assert(peakConcurrency([{start:480,end:590},{start:600,end:710},{start:720,end:830}]) === 1, "sequential lectures peak at one");

@@ -9,6 +9,8 @@ type EvaluateTarget = (row: FSchedule, target: SchedulePhysicsTarget, signal: Ab
 
 interface Options {
   disabled?: boolean;
+  /** A synchronous, local reading shown before the network refines it. */
+  previewTarget?: (row: FSchedule, target: SchedulePhysicsTarget) => SchedulePhysicsDecision | null;
   evaluateTarget: EvaluateTarget;
   onStart?: (row: FSchedule, sourceDay: ScheduleDayKey) => void;
   onDecision?: (decision: SchedulePhysicsDecision | null, target: SchedulePhysicsTarget | null) => void;
@@ -143,10 +145,13 @@ export default function useSchedulePhysics(options: Options) {
       optionsRef.current.onDecision?.(cached, target);
       return;
     }
-    const loading: SchedulePhysicsDecision = {
-      key, quality: "unknown", title: "أقرأ أثر القرار…", summary: "أحسب التعارضات والفراغ والضغط والجودة دون حفظ أي شيء.",
-      reasons: [], positives: [], tradeoffs: [], conflicts: [], ripple: null, why: null, whyNot: null, loading: true, dataAvailable: false,
-    };
+    const immediate = optionsRef.current.previewTarget?.(session.row, target) || null;
+    const loading: SchedulePhysicsDecision = immediate
+      ? { ...immediate, key, loading: true }
+      : {
+          key, quality: "unknown", title: "أقرأ أثر القرار…", summary: "أحسب الموانع والفراغ والضغط والجودة دون حفظ أي شيء.",
+          reasons: [], positives: [], tradeoffs: [], conflicts: [], ripple: null, why: null, whyNot: null, loading: true, dataAvailable: false,
+        };
     session.decision = loading;
     setState(prev => ({ ...prev, target, decision: loading }));
     optionsRef.current.onDecision?.(loading, target);
@@ -175,7 +180,7 @@ export default function useSchedulePhysics(options: Options) {
         setState(prev => ({ ...prev, decision: fallback }));
         optionsRef.current.onDecision?.(fallback, current.target);
       }
-    }, 125);
+    }, immediate ? 24 : 80);
   }, [clearEvaluation]);
 
   const updateTarget = useCallback((session: Session) => {

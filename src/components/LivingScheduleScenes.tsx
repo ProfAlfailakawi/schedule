@@ -163,7 +163,7 @@ export function PulseScene({
 }
 
 /**
- * Where the collisions actually come from.
+ * Where schedule pressure actually comes from.
  *
  * The previous version drew a constellation: thirty-four labelled circles on
  * five invisible arcs, with a side list that read "instructor · مركزية 12 ·
@@ -181,7 +181,7 @@ export function TopologyScene({ topology }: { topology: any }) {
     return (
       <div className="topology-empty">
         <div className="topology-empty-mark"><GitBranch /></div>
-        <strong>لا تتوفر خريطة التعارضات لهذا الحساب</strong>
+        <strong>لا تتوفر خريطة الضغط لهذا الحساب</strong>
         <p>تحتاج هذه الشاشة إلى صلاحية إدارة كاملة لقراءة علاقات الجدول.</p>
       </div>
     );
@@ -203,16 +203,16 @@ export function TopologyScene({ topology }: { topology: any }) {
     <div className="topology-scene">
       <header className="topology-lead">
         <div>
-          <small>خريطة التعارضات</small>
-          <h3>{conflicts ? "من أين تأتي التعارضات" : "لا تعارض قائم"}</h3>
+          <small>خريطة الضغط</small>
+          <h3>{conflicts ? "أين يتركز ضغط الجدول" : "الجدول خالٍ من الموانع"}</h3>
           <p>
             {conflicts
-              ? "كل سطر سبب واحد: عالِجه من أعلى القائمة، فأعلى سطر يحل أكبر عدد من الاصطدامات."
-              : "لا يوجد أستاذ ولا قاعة ولا ساعة يحمل اصطداماً في هذا الفصل."}
+              ? "هذه ليست تعارضات مبنية داخل الجدول؛ إنها مواضع موروثة أو حجوزات متزامنة تستحق التحقق، مرتبة بالأكثر تأثيراً."
+              : "لا يوجد حجز مزدوج ظاهر لأستاذ أو قاعة في هذا الفصل."}
           </p>
         </div>
         <Badge tone={conflicts ? "warning" : "success"}>
-          {conflicts} تعارض
+          {conflicts ? `${conflicts} موضع تحقق` : "بلا موانع"}
         </Badge>
       </header>
 
@@ -233,7 +233,7 @@ export function TopologyScene({ topology }: { topology: any }) {
                 </div>
                 <div className="rank-weight">
                   <i aria-hidden="true"><b style={{ width: `${(issues / worst) * 100}%` }} /></i>
-                  <em>{issues} تعارض</em>
+                  <em>{issues} إشارة</em>
                 </div>
               </li>
             );
@@ -243,8 +243,8 @@ export function TopologyScene({ topology }: { topology: any }) {
         <div className="topology-clear">
           <CheckCircle2 aria-hidden="true" />
           <div>
-            <strong>لا يوجد مصدر تعارض</strong>
-            <p>لا أستاذ مزدوج الحجز، ولا قاعة محجوزة مرتين، ولا ساعة مكتظة بما يمنع الاعتماد.</p>
+            <strong>لا يوجد مانع في الجدول</strong>
+            <p>لا أستاذ مزدوج الحجز ولا قاعة محجوزة مرتين؛ ما يظهر في بقية اللوحة هو ضغط وتحسين، لا تعارض.</p>
           </div>
         </div>
       )}
@@ -271,7 +271,7 @@ export function WhyResult({
 }) {
   const metrics: Array<{ label: string; before: number; after: number; lowerIsBetter: boolean; unit?: string }> = [
     { label: "جودة الجدول", before: data.before.score, after: data.after.score, lowerIsBetter: false },
-    { label: "التعارضات", before: data.before.conflicts, after: data.after.conflicts, lowerIsBetter: true },
+    { label: "الموانع", before: data.before.conflicts, after: data.after.conflicts, lowerIsBetter: true },
     { label: "فراغ الأستاذ", before: data.before.gap, after: data.after.gap, lowerIsBetter: true, unit: "د" },
     { label: "مخالفات القواعد", before: data.before.rules, after: data.after.rules, lowerIsBetter: true },
   ];

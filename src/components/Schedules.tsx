@@ -201,16 +201,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [error, setError] = useState<string | null>(null),
     [message, setMessage] = useState<string | null>(null),
     [saving, setSaving] = useState(false),
-    /* Refusing a bad drop outright, instead of warning about it — the reader's
-       choice, remembered. And whether colour means "which course" or "which
-       instructor", likewise. */
-    [strictNoConflict, setStrictNoConflict] = useState<boolean>(Boolean(savedPrefs.strictNoConflict)),
+    /* A timetable is only valid when it is conflict-free. This is deliberately
+       a rule, not a preference the reader can turn off. */
+    [strictNoConflict] = useState(true),
     [hueBy, setHueBy] = useState<"course" | "instructor">(savedPrefs.hueBy === "instructor" ? "instructor" : "course"),
     /* Cards moved in the last minute, keyed to the undo entry that reverses
        them — the pill each one wears is the undo, in place. */
     [recentMoves, setRecentMoves] = useState<Record<number, string>>({}),
-    /* Which day the rooms matrix is reading. */
+    /* Which day the rooms matrix is reading, and which rooms are pinned. */
     [matrixDay, setMatrixDay] = useState<DayKey | null>(null),
+    [matrixRooms, setMatrixRooms] = useState<Set<string>>(new Set()),
     [viewMode, setViewMode] = useState(
       savedPrefs.viewMode === "week" ? "week" : savedPrefs.viewMode === "rooms" ? "rooms" : "list",
     ),
@@ -389,15 +389,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * while one question is asked of it: this instructor, this building, this
    * hall, this hour.
    */
-  const [lens, setLens] = useState<{ instructorId: number; building: string; hall: string; from: string; to: string }>(
-    { instructorId: 0, building: "", hall: "", from: "", to: "" }
+  const [lens, setLens] = useState<{ instructorId: number; building: string; rooms: string[]; from: string; to: string }>(
+    { instructorId: 0, building: "", rooms: [], from: "", to: "" }
   );
-  const lensActive = Boolean(lens.instructorId || lens.building || lens.hall || (lens.from && lens.to));
+  const lensActive = Boolean(lens.instructorId || lens.building || lens.rooms.length || (lens.from && lens.to));
   const lensMatches = (row: FSchedule) => {
     if (!lensActive) return true;
     if (lens.instructorId && Number(row.AdInstructorId) !== lens.instructorId) return false;
     if (lens.building && String(row.AdRoomCode || "") !== lens.building) return false;
-    if (lens.hall && String(row.AdRoomHall || "") !== lens.hall) return false;
+    if (lens.rooms.length && !lens.rooms.includes(`${String(row.AdRoomCode || "")}|${String(row.AdRoomHall || "")}`)) return false;
     if (lens.from && lens.to) {
       // Any overlap with the chosen window counts, not only an exact match.
       if (!(mins(row.fstarttime) < mins(lens.to) && mins(row.fendtime) > mins(lens.from))) return false;
@@ -2014,13 +2014,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * Computed from the department's full row set, not the search-filtered one:
    * a room is not free just because its lecture is filtered out of view.
    */
-  const lensRoomActive = Boolean(lens.building || lens.hall);
+  const lensRoomActive = Boolean(lens.building || lens.rooms.length);
   const lensRoomBusy = useMemo(() => {
     const busy = new Set<string>();
     if (!lensRoomActive) return busy;
     rows.forEach(row => {
       if (lens.building && String(row.AdRoomCode || "") !== lens.building) return;
-      if (lens.hall && String(row.AdRoomHall || "") !== lens.hall) return;
+      if (lens.rooms.length && !lens.rooms.includes(`${String(row.AdRoomCode || "")}|${String(row.AdRoomHall || "")}`)) return;
       const from = mins(row.fstarttime), to = mins(row.fendtime);
       if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
       days.forEach(day => {
@@ -2029,7 +2029,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       });
     });
     return busy;
-  }, [rows, lens.building, lens.hall, lensRoomActive]);
+  }, [rows, lens.building, lens.rooms, lensRoomActive]);
   /**
    * The grid shows the hours that are actually used.
    *
@@ -2110,6 +2110,45 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const end = Math.min(22 * 60, Math.ceil(Math.max(...ends) / 30) * 30 + 30);
     return { start, end: Math.max(end, start + 4 * 60) };
   }, [weekRows]);
+  /**
+   * The rooms matrix, computed once per change of data — not once per render.
+   *
+   * This screen used to build its room map, sort it through the Arabic
+   * collator, and then RE-FILTER every appointment once per room row, all
+   * inside the render body. Ten rooms against a hundred appointments meant a
+   * thousand comparisons plus a full Intl sort — and it ran again on every
+   * hover, because hovering a card sets peek state. That is the whole reason
+   * the most beautiful screen was the slowest one.
+   *
+   * Now the day's rows are indexed into a room→rows map in one pass, the sort
+   * happens once, and a hover re-renders without recomputing anything.
+   */
+  const roomsMatrix = useMemo(() => {
+    const activeDay = (matrixDay && days.some(d => d.key === matrixDay) ? matrixDay : (todayKey || days[0].key)) as DayKey;
+    const dayRows = filteredRows.filter(row =>
+      Boolean((row as any)[activeDay]) && row.fstarttime && row.fendtime && mins(row.fendtime) > mins(row.fstarttime));
+    const roomsSeen = new Map<string, { key: string; building: string; hall: string; label: string }>();
+    filteredRows.forEach(row => {
+      const building = String(row.AdRoomCode || ""), hall = String(row.AdRoomHall || "");
+      if (!building && !hall) return;
+      const key = `${building}|${hall}`;
+      if (!roomsSeen.has(key)) roomsSeen.set(key, { key, building, hall, label: [building, hall].filter(Boolean).join("/") });
+    });
+    const allRooms = [...roomsSeen.values()].sort((a, b) => byArabic(a.label, b.label));
+    // One pass builds the index the old code rebuilt per room, per render.
+    const byRoom = new Map<string, FSchedule[]>();
+    const noRoom: FSchedule[] = [];
+    dayRows.forEach(row => {
+      const building = String(row.AdRoomCode || ""), hall = String(row.AdRoomHall || "");
+      if (!building && !hall) { noRoom.push(row); return; }
+      const key = `${building}|${hall}`;
+      const bucket = byRoom.get(key);
+      if (bucket) bucket.push(row); else byRoom.set(key, [row]);
+    });
+    const hourMarks: number[] = [];
+    for (let m = Math.ceil(gridWindow.start / 60) * 60; m <= gridWindow.end; m += 60) hourMarks.push(m);
+    return { activeDay, allRooms, byRoom, noRoom, hourMarks, span: Math.max(60, gridWindow.end - gridWindow.start) };
+  }, [filteredRows, matrixDay, todayKey, gridWindow]);
   const timeSlots = useMemo(
     () => Array.from({ length: Math.max(2, Math.round((gridWindow.end - gridWindow.start) / 30)) }, (_, i) =>
       timeFromMins(gridWindow.start + i * 30),
@@ -2507,6 +2546,68 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       ? `xray-related ${rel.map((x) => `xray-${x}`).join(" ")}`
       : "xray-dim";
   };
+
+  /**
+   * The first answer during a drag is local and therefore instant.
+   *
+   * The server still refines it with the full university scope, but the card
+   * no longer waits for three round trips before saying whether the visible
+   * lecturer/room slot is free. This also protects a very quick drop: a known
+   * local blocker can reject it before the remote explanation arrives.
+   */
+  const previewPhysicsTarget = (row: FSchedule, target: SchedulePhysicsTarget): SchedulePhysicsDecision => {
+    const candidate = buildMoveCandidate(row, target);
+    const samePlacement = (a: FSchedule, b: FSchedule) =>
+      a.fstarttime === b.fstarttime && a.fendtime === b.fendtime &&
+      days.every(day => Boolean(a[day.key]) === Boolean(b[day.key]));
+    const combinedDelivery = (a: FSchedule, b: FSchedule) =>
+      a.AdCourseId === b.AdCourseId && String(a.SCode) !== String(b.SCode) &&
+      a.AdInstructorId === b.AdInstructorId &&
+      a.AdRoomCode === b.AdRoomCode && a.AdRoomHall === b.AdRoomHall &&
+      samePlacement(a, b);
+    const blockersFor = (probe: FSchedule) => rows.flatMap(other => {
+      if (other.id === row.id || other.AdTermId !== probe.AdTermId || combinedDelivery(probe, other)) return [];
+      const sharesDay = days.some(day => Boolean(probe[day.key]) && Boolean(other[day.key]));
+      const overlaps = mins(probe.fstarttime) < mins(other.fendtime) && mins(other.fstarttime) < mins(probe.fendtime);
+      if (!sharesDay || !overlaps) return [];
+      const instructorBusy = Boolean(probe.AdInstructorId) && probe.AdInstructorId === other.AdInstructorId;
+      const roomBusy = Boolean(probe.AdRoomCode && probe.AdRoomHall) && probe.AdRoomCode === other.AdRoomCode && probe.AdRoomHall === other.AdRoomHall;
+      if (!instructorBusy && !roomBusy) return [];
+      return [{
+        type: instructorBusy ? "instructor" : "room",
+        severity: "high",
+        message: instructorBusy ? "الأستاذ مرتبط بموعد آخر" : "القاعة محجوزة في هذا الوقت",
+        detail: `${other.AdCourseName || courseById.get(other.AdCourseId)?.CourseName || "موعد آخر"} · ${other.fstarttime}–${other.fendtime}`,
+      }];
+    });
+    const before = blockersFor(row).length;
+    const blockers = blockersFor(candidate);
+    const delta = blockers.length - before;
+    const targetLoad = rows.filter(item => Boolean(item[target.day]) && mins(item.fstarttime) < mins(candidate.fendtime) && mins(item.fendtime) > mins(candidate.fstarttime)).length;
+    const ripple = {
+      headline: blockers.length
+        ? "غير متاح مبدئيًا — يوجد حجز ظاهر في هذا الموضع."
+        : "متاح مبدئيًا — أتأكد الآن من أثره على النطاق الكامل.",
+      delta: {
+        conflicts: delta,
+        professorGap: 0,
+        quality: blockers.length ? -4 : delta < 0 ? 3 : 0,
+        dayPressure: Math.max(0, targetLoad - 1) * 4,
+      },
+      effects: blockers.length
+        ? blockers.slice(0, 2).map(item => ({ tone: "warn", text: `${item.message} — ${item.detail}` }))
+        : [{ tone: "good", text: "لا يظهر مانع في القاعة أو الأستاذ ضمن الجدول المعروض." }],
+    };
+    return buildDecision(
+      `${row.id}:${target.day}:${target.start}`,
+      ripple,
+      null,
+      null,
+      blockers as any,
+      blockers.length > 0,
+      blockers[0] ? `${blockers[0].message} — ${blockers[0].detail}` : "",
+    );
+  };
   const physics = useSchedulePhysics({
     disabled:
       mode !== "schedule" ||
@@ -2514,6 +2615,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       viewMode !== "week" ||
       saving ||
       presentationMode,
+    previewTarget: previewPhysicsTarget,
     evaluateTarget: evaluatePhysicsTarget,
     onStart: (row) => {
       setPhysicsNotice("");
@@ -2825,19 +2927,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           <p>
             {sections.find((s) => s.AdSectionId === filterSection)
               ?.AdSectionName || "عرض الاجتماع"}{" "}
-            · {rows.length.toLocaleString("ar-KW-u-nu-latn")} موعد
+            · {filteredRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد
           </p>
         </div>
         <div className="cinema-tools">
-          <button
-            type="button"
-            className={presentConflictsOnly ? "active" : ""}
-            onClick={() => setPresentConflictsOnly(v => !v)}
-            title="التعارضات فقط"
-          >
-            <AlertTriangle />
-            <b>{conflictIds.size}</b>
-          </button>
+          {conflictIds.size ? (
+            <button
+              type="button"
+              className={presentConflictsOnly ? "active" : ""}
+              onClick={() => setPresentConflictsOnly(v => !v)}
+              title="عرض المواعيد التي تحتاج تحقق فقط"
+            >
+              <AlertTriangle />
+              <span>تحتاج تحقق</span>
+              <b>{conflictIds.size}</b>
+            </button>
+          ) : null}
           <button type="button" onClick={() => setPresentationMode(false)} title="إنهاء العرض">
             <X />
           </button>
@@ -3943,25 +4048,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                card dragged to another row moves the lecture to that room, with
                the same conflict gate and the same undo pill every other move
                gets. */
-            const activeDay = (matrixDay && days.some(d => d.key === matrixDay) ? matrixDay : (todayKey || days[0].key)) as DayKey;
-            const dayRows = filteredRows.filter(row =>
-              Boolean((row as any)[activeDay]) && row.fstarttime && row.fendtime && mins(row.fendtime) > mins(row.fstarttime));
-            const roomsSeen = new Map<string, { building: string; hall: string; label: string }>();
-            filteredRows.forEach(row => {
-              const building = String(row.AdRoomCode || "");
-              const hall = String(row.AdRoomHall || "");
-              if (!building && !hall) return;
-              const key = `${building}|${hall}`;
-              if (!roomsSeen.has(key)) roomsSeen.set(key, { building, hall, label: [building, hall].filter(Boolean).join("/") });
-            });
-            const roomList = [...roomsSeen.values()].sort((a, b) => byArabic(a.label, b.label));
-            const noRoom = dayRows.filter(row => !String(row.AdRoomCode || "") && !String(row.AdRoomHall || ""));
-            const span = Math.max(60, gridWindow.end - gridWindow.start);
+            const { activeDay, allRooms, byRoom, noRoom, hourMarks, span } = roomsMatrix;
+            /* Pinning rooms narrows the matrix to the ones being worked on —
+               a building's four labs instead of every room in the college. */
+            const roomList = matrixRooms.size ? allRooms.filter(room => matrixRooms.has(room.key)) : allRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
-            const rowsFor = (building: string, hall: string) =>
-              dayRows.filter(row => String(row.AdRoomCode || "") === building && String(row.AdRoomHall || "") === hall);
-            const hourMarks: number[] = [];
-            for (let m = Math.ceil(gridWindow.start / 60) * 60; m <= gridWindow.end; m += 60) hourMarks.push(m);
+            const rowsFor = (building: string, hall: string) => byRoom.get(`${building}|${hall}`) || [];
             const renderTrackCard = (row: FSchedule) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
@@ -3975,7 +4067,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   className={`rooms-card ${justChangedId === row.id ? "just-changed" : ""}`}
                   style={{
                     ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName),
-                    insetInlineStart: `${pct(mins(row.fstarttime))}%`,
+                    right: `${pct(mins(row.fstarttime))}%`,
                     width: `${Math.max(3, pct(mins(row.fendtime)) - pct(mins(row.fstarttime)))}%`,
                   }}
                   draggable={!saving}
@@ -4027,11 +4119,46 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   />
                   <small>اسحب أي محاضرة إلى صف قاعة أخرى لتغيير قاعتها، أو على نفس الصف لتغيير وقتها — بنفس فحص التعارض وبنفس التراجع.</small>
                 </div>
+                {allRooms.length > 1 ? (
+                  <div className="rooms-filter-block">
+                    <div className="rooms-filter-copy">
+                      <div><MapPin /><strong>القاعات المعروضة</strong></div>
+                      <small>{matrixRooms.size ? `اخترت ${matrixRooms.size} من ${allRooms.length} قاعات — اضغط لإضافة قاعة أو إزالتها.` : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
+                    </div>
+                    <div className="rooms-picker" role="group" aria-label="اختيار قاعة واحدة أو عدة قاعات">
+                    <button
+                      type="button"
+                      className={`rooms-chip ${matrixRooms.size ? "" : "on"}`}
+                      aria-pressed={matrixRooms.size === 0}
+                      onClick={() => setMatrixRooms(new Set())}
+                    >
+                      كل القاعات <b className="num">{allRooms.length}</b>
+                    </button>
+                    {allRooms.map(room => (
+                      <button
+                        type="button"
+                        key={room.key}
+                        className={`rooms-chip ${matrixRooms.has(room.key) ? "on" : ""}`}
+                        aria-pressed={matrixRooms.has(room.key)}
+                        title={`${matrixRooms.has(room.key) ? "إخفاء" : "إظهار"} ${room.label}`}
+                        onClick={() => setMatrixRooms(current => {
+                          const next = new Set(current);
+                          if (next.has(room.key)) next.delete(room.key); else next.add(room.key);
+                          return next;
+                        })}
+                      >
+                        <span dir="ltr">{room.label}</span>
+                        <b className="num">{(byRoom.get(room.key) || []).length}</b>
+                      </button>
+                    ))}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="rooms-scale" aria-hidden="true">
                   <small />
                   <div>
                     {hourMarks.map(mark => (
-                      <span key={mark} style={{ insetInlineStart: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark).slice(0, 5)}</span>
+                      <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark).slice(0, 5)}</span>
                     ))}
                   </div>
                 </div>
@@ -4047,10 +4174,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           onDrop={trackDrop(room.building, room.hall)}
                         >
                           {hourMarks.map(mark => (
-                            <i key={mark} className="rooms-hourline" style={{ insetInlineStart: `${pct(mark)}%` }} />
+                            <i key={mark} className="rooms-hourline" style={{ right: `${pct(mark)}%` }} />
                           ))}
                           {todayKey === activeDay && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? (
-                            <i className="rooms-now" style={{ insetInlineStart: `${pct(nowMinutes)}%` }} />
+                            <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} />
                           ) : null}
                           {inRoom.map(renderTrackCard)}
                         </div>
@@ -4084,32 +4211,46 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           >
             {/* One question at a time, asked of the whole week. */}
             <div className={`week-lens ${lensActive ? "active" : ""}`}>
-              <Field label="أستاذ">
+              <Field label="أستاذ المقرر">
                 <select value={lens.instructorId || ""} onChange={(e) => setLens(v => ({ ...v, instructorId: Number(e.target.value) || 0 }))}>
-                  <option value="">الكل</option>
+                  <option value="">كل الأساتذة</option>
                   {weekInstructors.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
                 </select>
               </Field>
               <Field label="المبنى">
-                <select value={lens.building} onChange={(e) => setLens(v => ({ ...v, building: e.target.value, hall: "" }))}>
-                  <option value="">الكل</option>
+                <select value={lens.building} onChange={(e) => setLens(v => ({ ...v, building: e.target.value, rooms: [] }))}>
+                  <option value="">كل المباني</option>
                   {weekBuildings.map(x => <option key={x} value={x}>{x}</option>)}
                 </select>
               </Field>
-              <Field label="القاعة">
-                <select
-                  value={lens.hall ? `${lens.building}|${lens.hall}` : ""}
-                  onChange={(e) => {
-                    const [building, hall] = e.target.value.split("|");
-                    setLens(v => ({ ...v, building: building ?? v.building, hall: hall ?? "" }));
-                  }}
-                >
-                  <option value="">الكل</option>
-                  {weekRooms.map(room => (
-                    <option key={`${room.building}|${room.hall}`} value={`${room.building}|${room.hall}`}>{room.label}</option>
-                  ))}
-                </select>
-              </Field>
+              <div className="field week-room-multiselect">
+                <label>القاعة</label>
+                <details>
+                  <summary>
+                    <span>{lens.rooms.length ? (lens.rooms.length === 1 ? weekRooms.find(room => `${room.building}|${room.hall}` === lens.rooms[0])?.label || "قاعة واحدة" : `${lens.rooms.length} قاعات`) : "كل القاعات"}</span>
+                    {lens.rooms.length ? <b className="num">{lens.rooms.length}</b> : null}
+                  </summary>
+                  <div className="week-room-menu">
+                    <header>
+                      <strong>اختر قاعة أو مجموعة قاعات</strong>
+                      {lens.rooms.length ? <button type="button" onClick={() => setLens(v => ({ ...v, rooms: [] }))}>عرض الكل</button> : null}
+                    </header>
+                    {weekRooms.map(room => {
+                      const key = `${room.building}|${room.hall}`;
+                      return (
+                        <label key={key}>
+                          <input
+                            type="checkbox"
+                            checked={lens.rooms.includes(key)}
+                            onChange={() => setLens(v => ({ ...v, rooms: v.rooms.includes(key) ? v.rooms.filter(item => item !== key) : [...v.rooms, key] }))}
+                          />
+                          <span dir="ltr">{room.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </details>
+              </div>
               <Field label="الفترة">
                 <div className="time-pair">
                   <input type="time" value={lens.from} onChange={(e) => setLens(v => ({ ...v, from: e.target.value }))} aria-label="من" />
@@ -4117,7 +4258,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </div>
               </Field>
               {lensActive ? (
-                <button type="button" className="week-lens-clear" title="مسح كل شروط العدسة" onClick={() => setLens({ instructorId: 0, building: "", hall: "", from: "", to: "" })}>
+                <button type="button" className="week-lens-clear" title="مسح كل شروط العدسة" onClick={() => setLens({ instructorId: 0, building: "", rooms: [], from: "", to: "" })}>
                   <X aria-hidden="true" />
                   <b>{weekLensCount.toLocaleString("ar-KW-u-nu-latn")}</b> من {filteredRows.length.toLocaleString("ar-KW-u-nu-latn")}
                 </button>
@@ -4133,28 +4274,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             >
               <GripVertical />
               <span>{picking
-                ? "وضع التجميع: اضغط المواعيد لتضمّها إلى المجموعة، ثم اسحب أيّ واحد منها — تنتقل كلها معاً بنفس الإزاحة وبنفس فحص التعارض."
-                : "اسحب الموعد لتنقله · اسحب على عمود فارغ لتنشئ موعداً بطوله · تراجُع متاح دقيقة بعد كل نقل."}</span>
+                ? "النقل الجماعي: اختر المواعيد المطلوبة، ثم اسحب أي واحد منها — تنتقل المجموعة معاً بعد فحص الموانع."
+                : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · التراجع متاح بعد كل نقل."}</span>
               <button
                 type="button"
                 className={`week-pick-toggle ${picking ? "on" : ""}`}
                 onClick={() => { setPicking(v => !v); setMultiSelect(new Set()); }}
-                title="اختيار عدة مواعيد ونقلها معاً"
+                title="اختر أكثر من موعد ثم انقلها كلها بسحبة واحدة"
                 aria-pressed={picking}
               >
                 <Layers aria-hidden="true" />
-                {picking ? (multiSelect.size ? `${multiSelect.size} محدد` : "اختر المواعيد") : "تحديد متعدد"}
+                {picking
+                  ? (multiSelect.size ? `${multiSelect.size} موعدًا مختارًا · اسحب الآن` : "اختر المواعيد من الجدول")
+                  : "نقل جماعي"}
               </button>
-              <button
-                type="button"
-                className={`week-pick-toggle ${strictNoConflict ? "on" : ""}`}
-                onClick={() => setStrictNoConflict(v => !v)}
-                title="عند تفعيله، أي إفلات يخلق تعارضاً — ولو خفيفاً — يرتد ولا يُحفظ"
-                aria-pressed={strictNoConflict}
+              <span
+                className="week-pick-toggle on week-safety-lock"
+                title="أي إفلات يخلق مانعاً يرتد تلقائياً ولا يُحفظ"
               >
                 <ShieldCheck aria-hidden="true" />
-                المنع الصارم
-              </button>
+                منع التعارض مفعّل
+              </span>
               <button
                 type="button"
                 className="week-pick-toggle"

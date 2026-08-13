@@ -55,10 +55,29 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[]):Confl
     a.fstarttime===b.fstarttime && a.fendtime===b.fendtime &&
     SCHEDULE_DAYS.every(day=>Boolean(a[day.key])===Boolean(b[day.key]));
 
+  /**
+   * One lecturer can teach two registered sections as one combined class.
+   *
+   * In the legacy timetable that class is stored as one row per section, even
+   * though both rows describe the same teaching event: same course, lecturer,
+   * days, time and room. Counting the pair as both a lecturer clash and a room
+   * clash is what produced the alarming "40 critical conflicts" reading on a
+   * timetable that had already been built and approved without collisions.
+   * Different sections at different placements are still independent rows;
+   * only the exact shared delivery is exempt.
+   */
+  const isCombinedDelivery=(a:FSchedule,b:FSchedule)=>
+    a.AdCourseId===b.AdCourseId &&
+    String(a.SCode)!==String(b.SCode) &&
+    Boolean(a.AdInstructorId) && a.AdInstructorId===b.AdInstructorId &&
+    roomKey(a)!=="|" && roomKey(a)===roomKey(b) &&
+    samePlacement(a,b);
+
   const byPair=new Map<string,ConflictInsight>();
   for(const row of targetRows){
     for(const other of allRows){
       if(row.id===other.id || row.AdTermId!==other.AdTermId) continue;
+      if(isCombinedDelivery(row,other)) continue;
       const clashing=overlaps(row,other);
       const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
       if(!clashing && !twin) continue;
@@ -74,8 +93,8 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[]):Confl
 
       // The pair is named after the most serious thing true about it.
       const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room":"duplicate";
-      const message=type==="instructor"?"تعارض في أستاذ المقرر"
-        :type==="room"?"تعارض في القاعة"
+      const message=type==="instructor"?"حجز مزدوج لأستاذ المقرر"
+        :type==="room"?"حجز مزدوج للقاعة"
         :"موعدان متطابقان لنفس الشعبة";
       const detail=type==="instructor"
         ? `الموعدان ${row.fstarttime}-${row.fendtime} و ${other.fstarttime}-${other.fendtime} يتقاطعان في يوم مشترك.`
@@ -152,7 +171,7 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
 
   const alerts:Array<{severity:"critical"|"warning"|"info";title:string;detail:string}>=[];
   const critical=conflicts.filter(c=>c.severity==="high").length;
-  if(critical)alerts.push({severity:"critical",title:`${critical} تعارض حرج`,detail:"يوجد تداخل في أستاذ مقرر أو قاعة ويستحق المراجعة قبل الاعتماد."});
+  if(critical)alerts.push({severity:"critical",title:`${critical} مانع اعتماد`,detail:"اكتُشف حجز مزدوج لأستاذ مقرر أو قاعة؛ لا يمكن اعتماد الجدول قبل إزالته."});
   const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${longGap} أستاذ لديهم فراغ طويل`,detail:"يوجد فراغ لا يقل عن 3 ساعات بين محاضرتين في يوم واحد."});
   if(lateRows)alerts.push({severity:"info",title:`${lateRows} موعداً متأخراً`,detail:"تبدأ بعد الساعة 4:00 مساءً؛ راجعها إذا كان القسم يفضّل التوزيع المبكر."});
   if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`الفارق النسبي بين أكثر وأقل الأيام حملاً يقارب ${imbalance}%.`});
@@ -165,7 +184,7 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
     readiness,
     metrics:{rows:targetRows.length,criticalConflicts:critical,allConflicts:conflicts.length,avgInstructorGap:avgGap,lateRows,imbalance,invalidRows,uniqueRooms:rooms.length,uniqueInstructors:professorLoads.length},
     factors:[
-      {label:"التعارضات",penalty:conflictPenalty},{label:"فراغات الأساتذة",penalty:gapPenalty},{label:"الأوقات المتأخرة",penalty:latePenalty},{label:"توازن الأيام",penalty:balancePenalty},{label:"صحة البيانات",penalty:healthPenalty}
+      {label:"سلامة الحجز",penalty:conflictPenalty},{label:"فراغات الأساتذة",penalty:gapPenalty},{label:"الأوقات المتأخرة",penalty:latePenalty},{label:"توازن الأيام",penalty:balancePenalty},{label:"صحة البيانات",penalty:healthPenalty}
     ],
     dayLoad,heatmap,rooms,professorLoads,conflicts,alerts,
     dataHealth:{invalidRows,duplicates,unscheduledCourses,healthy:invalidRows===0&&duplicates===0},
@@ -196,7 +215,7 @@ export function conflictSolutions(row:FSchedule, allRows:FSchedule[], max=5){
   }
   const unique=new Map<string,any>();
   candidates.sort((a,b)=>a.score-b.score).forEach(item=>{const key=`${item.start}|${item.roomCode}|${item.roomHall}`;if(!unique.has(key))unique.set(key,item)});
-  return [...unique.values()].slice(0,max).map((item,index)=>({...item,rank:index+1,label:item.conflicts===0?"بدون تعارض ظاهر":`${item.conflicts} تعارض محتمل`,reason:item.roomChanged?"تغيير الوقت والقاعة لتحقيق أفضل مساحة متاحة":"الإبقاء على القاعة مع تحسين الوقت"}));
+  return [...unique.values()].slice(0,max).map((item,index)=>({...item,rank:index+1,label:item.conflicts===0?"بدون مانع ظاهر":`${item.conflicts} مانع محتمل`,reason:item.roomChanged?"تغيير الوقت والقاعة لتحقيق أفضل مساحة متاحة":"الإبقاء على القاعة مع تحسين الوقت"}));
 }
 
 export function autoScheduleProposal(targetRows:FSchedule[], allRows:FSchedule[]){

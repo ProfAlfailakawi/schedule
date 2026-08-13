@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -93,6 +93,7 @@ export default function LivingScheduleLayer({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
+  const livingRequest = useRef(0);
   const [selectedId, setSelectedId] = useState<number>(sourceRows[0]?.id || 0),
     [whyResult, setWhyResult] = useState<any>(null),
     [candidateStart, setCandidateStart] = useState(""),
@@ -170,13 +171,15 @@ export default function LivingScheduleLayer({
     return d;
   };
   const loadLiving = async () => {
+    const request = ++livingRequest.current;
     try {
       const q = contextQuery();
       const d = await json(`/api/intelligence/living${q ? `?${q}` : ""}`);
+      if (request !== livingRequest.current) return;
       setLiving(d);
       if (!selectedId && rows[0]) setSelectedId(rows[0].id);
     } catch (e: any) {
-      setError(e.message);
+      if (request === livingRequest.current) setError(e.message);
     }
   };
   useEffect(() => {
@@ -452,9 +455,9 @@ export default function LivingScheduleLayer({
     );
   const sceneItems: Array<{ id: Scene; label: string; icon: React.ReactNode }> =
     [
-      { id: "pulse", label: "الحالة", icon: <Activity /> },
-      { id: "topology", label: "خريطة التعارضات", icon: <Network /> },
-      { id: "why", label: "لماذا؟", icon: <CircleHelp /> },
+      { id: "pulse", label: "نظرة عامة", icon: <Activity /> },
+      { id: "topology", label: "خريطة الضغط", icon: <Network /> },
+      { id: "why", label: "تحليل قرار", icon: <CircleHelp /> },
       { id: "health", label: "الصحة والعدالة", icon: <Gauge /> },
       { id: "copilot", label: "مساعد القرار", icon: <BrainCircuit /> },
       { id: "brief", label: "ملخص الدقيقة", icon: <Zap /> },
@@ -517,12 +520,15 @@ export default function LivingScheduleLayer({
         >
           <aside className={`living-panel scene-${scene}`}>
             <header className="living-panel-head">
-              <div>
-                <span>الجدول الحي</span>
-                <h2>{sceneItems.find((x) => x.id === scene)?.label}</h2>
-                <p>
-                  {living.context?.sectionName} · {living.context?.termName}
-                </p>
+              <span className="living-panel-scene-icon">
+                {sceneItems.find((x) => x.id === scene)?.icon}
+              </span>
+              <div className="living-panel-heading">
+                <span>لوحة القرار</span>
+                <div>
+                  <h2>{sceneItems.find((x) => x.id === scene)?.label}</h2>
+                  <p>{living.context?.sectionName} · {living.context?.termName}</p>
+                </div>
               </div>
               <button onClick={() => setScene(null)} aria-label="إغلاق">
                 <X />
@@ -534,6 +540,7 @@ export default function LivingScheduleLayer({
                   key={item.id}
                   className={scene === item.id ? "active" : ""}
                   onClick={() => open(item.id)}
+                  aria-pressed={scene === item.id}
                 >
                   {item.icon}
                   <span>{item.label}</span>
@@ -735,7 +742,7 @@ export default function LivingScheduleLayer({
                         <strong>{genesis.draft?.name}</strong>
                         <p>
                           {genesis.coverage?.copiedRows} موعدًا نُسخت إلى مسودة
-                          · الجودة {genesis.analysis?.score}/100 · التعارضات{" "}
+                          · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
                           {genesis.analysis?.conflicts}
                         </p>
                         <small>{genesis.guardrail}</small>
@@ -894,7 +901,7 @@ export default function LivingScheduleLayer({
                         {minutes.alternatives?.map((a: any) => (
                           <p key={a.id}>
                             <strong>{a.title}</strong> — {a.reason} · جودة{" "}
-                            {a.score} · تعارضات {a.conflicts}
+                            {a.score} · موانع {a.conflicts}
                           </p>
                         ))}
                       </section>
@@ -1011,7 +1018,7 @@ export default function LivingScheduleLayer({
                               {o.delta ? (
                                 <small>
                                   الجودة {o.delta.score >= 0 ? "+" : ""}
-                                  {o.delta.score} · التعارض{" "}
+                                  {o.delta.score} · الموانع{" "}
                                   {o.delta.conflicts >= 0 ? "+" : ""}
                                   {o.delta.conflicts}
                                 </small>
