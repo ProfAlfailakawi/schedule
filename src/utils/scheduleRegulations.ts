@@ -1,4 +1,5 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
+import { departsFromNature, type CourseNature } from "./courseNature";
 
 /**
  * The timetable rules of PAAET decision 1912/2016, written as code.
@@ -167,8 +168,44 @@ const PATTERN_LIBRARY: Array<Omit<WeeklyPattern, "label"> & { hours: number }> =
   {
     hours: 4, id: "4h-tue-thu", days: ["ftuesday", "fthursday"], minutesPerDay: [120, 120], weeklyMinutes: 240,
     note: "أربع ساعات: لقاءان بساعتين — الثلاثاء والخميس (م.٨/ت)."
+  },
+  // Laboratories, workshops and field training run as one long sitting. The
+  // articles describe lectures and never spell these out, but they are how a
+  // large part of an applied-education timetable is actually taught, so they
+  // belong in the library rather than in the warnings.
+  {
+    hours: 3, id: "3h-block", days: ["fwednesday"], minutesPerDay: [180], weeklyMinutes: 180,
+    note: "ثلاث ساعات في يوم واحد — المعتاد للمختبرات والورش."
+  },
+  {
+    hours: 4, id: "4h-block", days: ["fwednesday"], minutesPerDay: [240], weeklyMinutes: 240,
+    note: "أربع ساعات في يوم واحد — المعتاد للمختبرات والتدريب."
+  },
+  {
+    hours: 5, id: "5h-block", days: ["fwednesday"], minutesPerDay: [300], weeklyMinutes: 300,
+    note: "خمس ساعات في يوم واحد — المعتاد للتدريب الميداني والعملي."
+  },
+  {
+    hours: 5, id: "5h-split", days: ["fmonday", "fwednesday"], minutesPerDay: [180, 120], weeklyMinutes: 300,
+    note: "خمس ساعات: ١٨٠+١٢٠ على يومين."
   }
 ];
+
+/**
+ * A single-day block can sit on any day, so the library's example day is not
+ * the point — the length is. Asked for the shapes of a course, single-day
+ * entries are offered on whichever day is already chosen.
+ */
+export function patternsForHoursOnDay(weeklyHours: number, preferredDay?: DayKey): WeeklyPattern[] {
+  return patternsForHours(weeklyHours).map(pattern => {
+    if (pattern.days.length !== 1 || !preferredDay) return pattern;
+    return {
+      ...pattern,
+      days: [preferredDay],
+      label: `${DAY_NAMES[DAY_KEYS.indexOf(preferredDay)]} ${pattern.minutesPerDay[0]}د`
+    };
+  });
+}
 
 const dayLabel = (day: DayKey) => DAY_NAMES[DAY_KEYS.indexOf(day)];
 
@@ -260,6 +297,8 @@ export interface RegulationContext {
   previousRows?: FSchedule[];
   /** A window the department keeps free for its meeting, e.g. "12:00"–"13:00". */
   meeting?: { day: DayKey; from: string; to: string } | null;
+  /** What each course has habitually been, learned from every term on record. */
+  nature?: Map<number, CourseNature> | null;
 }
 
 /** Consecutive means the next one starts within a quarter hour of this one ending. */
@@ -282,6 +321,25 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   for (const row of rows) {
     const days = daysOf(row);
     if (!days.length) continue;
+
+    // How this course is actually taught outranks the general rule. A four-hour
+    // Wednesday workshop that has run for years is the course, not a mistake.
+    const nature = context.nature?.get(Number(row.AdCourseId));
+    if (nature && nature.confidence !== "low") {
+      if (!departsFromNature(row, nature)) continue;
+    }
+
+    // A recognised single-day block is teaching the articles do not describe.
+    const course = courses.get(row.AdCourseId);
+    const declared = Number(course?.CourseHours || course?.CourseCredit || 0);
+    if (declared) {
+      const shapes = patternsForHours(declared);
+      const matchesShape = shapes.some(shape =>
+        shape.days.length === days.length &&
+        shape.minutesPerDay.some(length => Math.abs(length - duration(row)) <= LENGTH_TOLERANCE));
+      if (matchesShape) continue;
+    }
+
     const advice = adviseDayPattern(days, row.fstarttime, row.fendtime);
     if (!advice || advice.family === "mixed") continue;
     const gap = Math.abs(duration(row) - advice.expectedMinutes);
@@ -298,6 +356,31 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       detail: "الأحد والثلاثاء والخميس ساعة، والاثنين والأربعاء ساعة ونصف. فروق الدقائق القليلة (٥٠ و٨٠ دقيقة) مقبولة كزمن انتقال ولا تُحتسب هنا.",
       rowIds: wrongLength.map(row => row.id)
     });
+  }
+
+  // --- learned habit — this course is not behaving like itself -------------
+  if (context.nature?.size) {
+    const odd: FSchedule[] = [];
+    const reasons: string[] = [];
+    for (const row of rows) {
+      const nature = context.nature.get(Number(row.AdCourseId));
+      const reason = departsFromNature(row, nature);
+      if (!reason) continue;
+      odd.push(row);
+      const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "";
+      const line = `${code}: ${reason}`;
+      if (!reasons.includes(line)) reasons.push(line);
+    }
+    if (odd.length) {
+      findings.push({
+        rule: "out-of-character",
+        article: "سجل ١٠ سنوات",
+        severity: "medium",
+        title: `${arabicNumber(odd.length)} موعد يخالف المعتاد لهذا المقرر`,
+        detail: `مقارنةً بكيفية تدريس المقرر نفسه في الفصول السابقة. ${reasons.slice(0, 4).join(" — ")}`,
+        rowIds: odd.map(row => row.id)
+      });
+    }
   }
 
   // --- م.٨/٩ — one course, one fixed time across its days ------------------

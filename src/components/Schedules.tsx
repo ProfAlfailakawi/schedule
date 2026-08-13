@@ -88,7 +88,8 @@ import { byArabic, sortByName } from "../utils/sorting";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import ScheduleTransfer from "./ScheduleTransfer";
-import { adviseDayPattern, patternsForHours, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
+import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
+import type { CourseNature } from "../utils/courseNature";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -344,6 +345,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   };
   const offerUndo = (label: string, run: () => Promise<void>) =>
     setUndoAction({ label, run, until: Date.now() + 60_000 });
+
+  /**
+   * What each course has habitually been, read from every term on record.
+   *
+   * Loaded once per department and reused by the editor, the review and the
+   * suggestions — so the product stops treating "how this course is taught" as
+   * something the coordinator must retype every term.
+   */
+  const [nature, setNature] = useState<Map<number, CourseNature>>(new Map());
+  useEffect(() => {
+    if (!filterSection) { setNature(new Map()); return; }
+    let alive = true;
+    fetch(`/api/courses/nature?sectionId=${filterSection}`)
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => {
+        if (!alive || !data?.nature) return;
+        setNature(new Map(Object.entries(data.nature).map(([id, value]) => [Number(id), value as CourseNature])));
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [filterSection]);
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -686,10 +708,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * end time together, which is the only way a move between day families can
    * leave the course still adding up to its credit hours.
    */
+  const courseNature = nature.get(Number(form.AdCourseId) || 0) || null;
   const approvedPatterns = useMemo<WeeklyPattern[]>(() => {
     const course = courseById.get(Number(form.AdCourseId) || 0);
     const hours = Number(course?.CourseHours || course?.CourseCredit || 0);
-    return hours ? patternsForHours(hours) : [];
+    const chosen = days.filter(day => (form as any)[day.key]).map(day => day.key as RegDayKey);
+    return hours ? patternsForHoursOnDay(hours, chosen[0]) : [];
   }, [form.AdCourseId, courseById]);
   const activePattern = useMemo(() => {
     const chosen = days.filter(day => (form as any)[day.key]).map(day => day.key);
@@ -2272,6 +2296,40 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     </span>
                   ) : null}
                 </Field>
+                {courseNature && courseNature.confidence !== "low" ? (
+                  <div className="nature-card">
+                    <div>
+                      <span className="surface-kicker">كما يُدرَّس هذا المقرر عادةً</span>
+                      <strong>{courseNature.summary}</strong>
+                      <small>
+                        من {courseNature.terms.toLocaleString("ar-KW-u-nu-latn")} فصلاً
+                        · {courseNature.observations.toLocaleString("ar-KW-u-nu-latn")} شعبة
+                        {courseNature.sectionsPerTerm > 1 ? ` · عادةً ${courseNature.sectionsPerTerm.toLocaleString("ar-KW-u-nu-latn")} شعب في الفصل` : ""}
+                      </small>
+                    </div>
+                    {courseNature.suggestion ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const seed = courseNature.suggestion!;
+                          setScheduleTouched(true);
+                          setForm(previous => {
+                            const next: any = { ...previous };
+                            days.forEach(day => { next[day.key] = seed.days.includes(day.key as any); });
+                            next.fstarttime = seed.start;
+                            next.fendtime = seed.end;
+                            if (seed.building) next.AdRoomCode = seed.building;
+                            if (seed.hall) next.AdRoomHall = seed.hall;
+                            if (seed.instructorId && !next.AdInstructorId) next.AdInstructorId = seed.instructorId;
+                            return next;
+                          });
+                        }}
+                      >
+                        املأ كالمعتاد
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 {approvedPatterns.length ? (
                   <div className="pattern-shelf">
                     <span>الأنماط المعتمدة لهذا المقرر</span>
@@ -2669,11 +2727,13 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
             <GhostButton type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
               <ClipboardCheck /> الاعتماد
             </GhostButton>
-            {isPowerAdmin ? (
-              <GhostButton type="button" onClick={() => setTransferOpen(true)} title="استيراد وتصدير واستبدال أستاذ">
-                <ArrowLeftRight /> نقل
-              </GhostButton>
-            ) : null}
+            <GhostButton
+              type="button"
+              onClick={() => setTransferOpen(true)}
+              title={isPowerAdmin ? "استيراد وتصدير واستبدال أستاذ والمنتدبون" : "المنتدبون"}
+            >
+              <ArrowLeftRight /> {isPowerAdmin ? "نقل" : "المنتدبون"}
+            </GhostButton>
             {isPowerAdmin ? (
               <SchedulePublish
                 collegeId={filterCollege}
@@ -3329,6 +3389,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
           instructors={instructors as any}
           departmentIds={departmentInstructorIds}
           terms={terms as any}
+          canTransfer={isPowerAdmin}
           onChanged={() => { void loadRows(); }}
           onClose={() => setTransferOpen(false)}
         />
@@ -3339,6 +3400,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
           courses={courseById}
           instructors={instructorById}
           previousRows={previousTermRows}
+          nature={nature}
           scopeLine={[
             terms.find((t) => t.AdTermId === filterTerm)?.AdTermName,
             colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,

@@ -2162,3 +2162,29 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-slot.suggested-slot.physics-target::before{content:none}
 @keyframes suggest-in{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.week-slot.suggested-slot::before{animation:none}}
+
+/* --------------------------------------------------------------------------
+   WHAT THIS COURSE ACTUALLY IS
+   Read from every term on record, not from the articles. A workshop that has
+   run as one four-hour Wednesday block for nine years is the course — so the
+   editor offers that shape first, in one press.
+   -------------------------------------------------------------------------- */
+.nature-card{
+  grid-column:1/-1;
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;
+  padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--brass) 26%,var(--line));
+  border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--brass-soft) 45%,var(--surface));
+}
+.nature-card>div{min-width:0}
+.nature-card strong{display:block;margin-top:2px;font-size:var(--t-h4);font-weight:600;line-height:1.5}
+.nature-card small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs)}
+.nature-card button{
+  flex:none;min-height:36px;padding:0 var(--s5);
+  border:1px solid var(--brass);border-radius:var(--r-full);
+  background:var(--surface);color:var(--brass);
+  font-size:var(--t-xs);font-weight:600;white-space:nowrap;
+  transition:background .16s var(--ease),color .16s var(--ease);
+}
+.nature-card button:hover{background:var(--brass);color:#fff}

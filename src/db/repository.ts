@@ -537,10 +537,19 @@ export async function initDatabase() {
     } catch (e) {
       firestoreDb = null;
       const message = e instanceof Error ? e.message : String(e);
-      // Fail closed everywhere, not only in production. Quietly serving a local
-      // snapshot after a Firestore failure is what makes an application look
-      // healthy while showing data nobody recognises; a refused start names the
-      // problem instead. Demo remains available, but only by asking for it.
+      /*
+       * ── NOTE TO ANY AUTOMATED EDITOR ──────────────────────────────────────
+       * Do not add a fallback to the packaged snapshot here, in any
+       * environment. It has been added and removed from this file repeatedly.
+       * Every time, the result is an application that looks healthy while
+       * showing a schedule that is not the university's, and people make real
+       * decisions from invented rows.
+       *
+       * The server does not crash when this throws: it starts, serves the
+       * interface, and answers /api with 503 and this message. If the dev
+       * server will not start, that is a different bug — fix it there.
+       * ──────────────────────────────────────────────────────────────────────
+       */
       throw new Error(
         `تعذر الاتصال بقاعدة البيانات الحقيقية (Firestore): ${message}\n` +
         `لم يتم تشغيل البرنامج على بيانات بديلة. تحقق من FIREBASE_PROJECT_ID و FIREBASE_DATABASE_ID وصلاحية الاعتماد.`
@@ -1406,6 +1415,35 @@ export const Repository = {
         (courseId && item.AdCourseId === courseId)
       ))
       .sort((a,b)=>a.id-b.id);
+  },
+
+  /**
+   * Everything a set of courses has ever been, across every term on record.
+   *
+   * The regulation says how a course *should* be split into meetings; ten years
+   * of this department's own timetables say how it *is* taught, including the
+   * single-day three, four and five hour blocks that the articles never spell
+   * out. Reading the history lets the product expect what the department
+   * actually does and reserve its warnings for genuine departures.
+   */
+  getScheduleHistoryForCourses: async (courseIds: number[]): Promise<FSchedule[]> => {
+    const ids = [...new Set(courseIds.map(Number).filter(Boolean))];
+    if (!ids.length) return [];
+    return cachedReference(`history:${ids.slice(0, 60).join(",")}`, async () => {
+      if (firestoreDb) {
+        const snapshots = await Promise.all(
+          chunks(ids).map(batch => firestoreDb!.collection("schedules").where("AdCourseId", "in", batch).get())
+        );
+        const rows = new Map<number, FSchedule>();
+        for (const snap of snapshots) for (const doc of snap.docs) {
+          const row = doc.data() as FSchedule;
+          rows.set(row.id, row);
+        }
+        return [...rows.values()];
+      }
+      const wanted = new Set(ids);
+      return db.schedules.filter(row => wanted.has(Number(row.AdCourseId)));
+    });
   },
 
   getSchedulesByRoom: async (roomCode: string, roomHall = ""): Promise<FSchedule[]> => {

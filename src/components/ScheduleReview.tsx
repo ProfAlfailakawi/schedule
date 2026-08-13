@@ -6,6 +6,7 @@ import {
   DAY_KEYS, DAY_NAMES, regulationScore, reviewSchedule,
   type DayKey, type RegulationFinding
 } from "../utils/scheduleRegulations";
+import type { CourseNature } from "../utils/courseNature";
 
 /**
  * The last read before a schedule is adopted.
@@ -23,6 +24,8 @@ interface Props {
   courses: Map<number, AdCourse>;
   instructors: Map<number, AdInstructor>;
   previousRows?: FSchedule[];
+  /** What each course has habitually been, learned from every term on record. */
+  nature?: Map<number, CourseNature> | null;
   scopeLine: string;
   meeting?: { day: DayKey; from: string; to: string } | null;
   onClose: () => void;
@@ -31,10 +34,10 @@ interface Props {
 
 const SEVERITY_LABEL: Record<string, string> = { high: "يمنع الاعتماد", medium: "يستحق المراجعة", low: "ملاحظة" };
 
-export default function ScheduleReview({ rows, courses, instructors, previousRows, scopeLine, meeting, onClose, onFocusRows }: Props) {
+export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, meeting, onClose, onFocusRows }: Props) {
   const findings = useMemo(
-    () => reviewSchedule({ rows, courses, instructors, previousRows, meeting }),
-    [rows, courses, instructors, previousRows, meeting]
+    () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
+    [rows, courses, instructors, previousRows, meeting, nature]
   );
   const score = useMemo(() => regulationScore(findings, rows.length), [findings, rows.length]);
   const blocking = findings.filter(finding => finding.severity === "high");

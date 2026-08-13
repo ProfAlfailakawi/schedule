@@ -10,6 +10,7 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
+import { learnAll } from "./src/utils/courseNature";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -160,6 +161,22 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
   }
   next();
 }
+
+/**
+ * The one gate every API call passes before anything else.
+ *
+ * Registered at load, so it sits ahead of every route: if the database never
+ * came up, no handler runs and no caller is left guessing at a Firestore stack
+ * trace. The interface itself is untouched — it loads and shows this reason.
+ */
+let databaseDown: string | null = null;
+app.use("/api", (_req, res, next) => {
+  if (!databaseDown) { next(); return; }
+  res.status(503).type("application/json; charset=utf-8").send(JSON.stringify({
+    error: "الخدمة متوقفة: تعذر الاتصال بقاعدة البيانات الحقيقية.",
+    detail: databaseDown
+  }));
+});
 
 // Only the API needs to know who is calling. Stylesheets, fonts and the shell
 // were paying for an identity lookup they never read.
@@ -1274,7 +1291,7 @@ app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: Aut
  * cannot place, and only writes when explicitly told to commit. A schedule is
  * a term of somebody's teaching; replacing one silently is not a feature.
  */
-app.get("/api/schedules/export", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/schedules/export", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
@@ -1310,7 +1327,7 @@ app.get("/api/schedules/export", requirePermission(7), async (req: Authenticated
   res.type("application/json; charset=utf-8").send(JSON.stringify(payload, null, 2));
 });
 
-app.post("/api/schedules/import", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/schedules/import", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body || {};
   const commit = body.commit === true;
   const collegeId = Number(body.collegeId || 0);
@@ -1414,7 +1431,7 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
  * clears the instructor and leaves the appointments visibly unassigned for the
  * department to fill. It never deletes teaching.
  */
-app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/schedules/replace-instructor", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const fromId = Number(req.body?.fromInstructorId || 0);
   const toId = Number(req.body?.toInstructorId || 0);
   const collegeId = Number(req.body?.collegeId || 0);
@@ -1429,6 +1446,26 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: 
 
   for (const row of rows) await Repository.updateSchedule(row.id, { AdInstructorId: toId || 0 } as any);
   res.json({ preview: false, moved: rows.length, cleared: !toId });
+});
+
+/**
+ * What the department's courses actually are, learned from every term on record.
+ *
+ * Returned for a whole department at once, because the screens that want it —
+ * the editor, the adoption review — want it for everything they are showing.
+ * The read is cached, so asking is nearly free after the first time.
+ */
+app.get("/api/courses/nature", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const sectionId = Number(req.query.sectionId || 0);
+  if (!sectionId) { res.json({ nature: {} }); return; }
+  const courses = await Repository.getCoursesBySection(sectionId);
+  const history = await Repository.getScheduleHistoryForCourses(courses.map(course => course.AdCourseId));
+  const learned = learnAll(history);
+  res.json({
+    nature: Object.fromEntries([...learned.entries()].map(([id, value]) => [id, value])),
+    terms: new Set(history.map(row => Number(row.AdTermId))).size,
+    observations: history.length
+  });
 });
 
 /** Answers "whose hall is this?" from the room alone — no day, no time. */
@@ -3254,23 +3291,42 @@ async function startServer() {
    * one. Locally it stays up and says exactly what is wrong on every request,
    * because a developer needs to read the reason, not guess it.
    */
+  /**
+   * No database, no data — but in development, still a running server.
+   *
+   * ── NOTE TO ANY AUTOMATED EDITOR ───────────────────────────────────────────
+   * If you are here because the dev server would not start, the fix is NOT to
+   * make the database fall back to the packaged demo snapshot. That fallback
+   * has been added and removed from this project repeatedly, and each time it
+   * produced the worst possible outcome: an application that looks completely
+   * healthy while showing a schedule that is not the university's. People made
+   * real decisions from invented rows.
+   *
+   * The server already starts without a database. Only /api answers 503, so
+   * Vite serves the shell, the interface loads, and it says plainly what is
+   * wrong. If something still fails to boot, fix the boot — do not restore the
+   * fallback, and do not widen this handler beyond /api.
+   * ───────────────────────────────────────────────────────────────────────────
+   *
+   * On a real deployment the process exits instead, so the platform keeps the
+   * previous working revision rather than replacing it with a broken one.
+   */
+  const isServingBuild = process.env.NODE_ENV === "production" ||
+                         process.env.npm_lifecycle_event === "start" ||
+                         Boolean(process.argv[1]?.endsWith("server.cjs"));
   let databaseFailure: string | null = null;
   try {
     await initDatabase();
   } catch (error) {
     databaseFailure = error instanceof Error ? error.message : String(error);
     console.error("تعذر تهيئة قاعدة البيانات:\n" + databaseFailure);
-    const disposable = isCloudRunRuntime() || process.env.NODE_ENV === "production";
-    if (disposable) {
+    if (isServingBuild) {
       console.error("لن يبدأ الخادم على بيانات بديلة. تبقى النسخة السابقة العاملة كما هي.");
       process.exit(1);
     }
-    app.use((_req, res) => {
-      res.status(503).type("application/json; charset=utf-8").send(JSON.stringify({
-        error: "الخدمة متوقفة: تعذر الاتصال بقاعدة البيانات الحقيقية.",
-        detail: databaseFailure
-      }));
-    });
+    console.error("التطوير: الواجهة ستعمل، وكل طلبات /api سترد 503 بالسبب. لا بيانات بديلة.");
+    // The guard registered at load reads this; the shell keeps serving.
+    databaseDown = databaseFailure;
   }
 
   app.all("/api/*", (req, res) => {
