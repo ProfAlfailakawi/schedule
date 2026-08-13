@@ -994,11 +994,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     () => [...new Set(filteredRows.map(row => String(row.AdRoomCode || "")).filter(Boolean))].sort(byArabic),
     [filteredRows]
   );
-  const weekHalls = useMemo(
-    () => [...new Set(filteredRows.filter(row => !lens.building || row.AdRoomCode === lens.building)
-      .map(row => String(row.AdRoomHall || "")).filter(Boolean))].sort(byArabic),
-    [filteredRows, lens.building]
-  );
+  /**
+   * The rooms, the way the paper timetable says them.
+   *
+   * The sheet this screen replaces lists rooms as its rows — F10, F11, F12 —
+   * and a scheduler thinks "قاعة" first, building second. So the room filter
+   * offers actual room numbers, written building/hall; with a building already
+   * chosen it narrows to that building's halls, and picking a room sets both
+   * halves of the lens at once.
+   */
+  const weekRooms = useMemo(() => {
+    const seen = new Map<string, { building: string; hall: string; label: string }>();
+    filteredRows.forEach(row => {
+      const building = String(row.AdRoomCode || "");
+      const hall = String(row.AdRoomHall || "");
+      if (!hall) return;
+      if (lens.building && building !== lens.building) return;
+      const key = `${building}|${hall}`;
+      if (!seen.has(key)) seen.set(key, { building, hall, label: building ? `${building}/${hall}` : hall });
+    });
+    return [...seen.values()].sort((a, b) => byArabic(a.label, b.label));
+  }, [filteredRows, lens.building]);
   const weekLensCount = useMemo(() => filteredRows.filter(lensMatches).length, [filteredRows, lens]);
 
   const solveConflicts = async () => {
@@ -2250,7 +2266,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""}`}
-        style={{ ...style, ["--hue" as any]: courseHue(code) }}
+        style={{ ...style, ["--hue" as any]: courseHue(code, title) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
         onPointerLeave={() => setPeek(current => (current?.row.id === r.id ? null : current))}
         onFocus={(e) => openPeek(r, e.currentTarget)}
@@ -2283,11 +2299,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * assigned; it stays reserved for conflicts.
    */
   const COURSE_HUES = [158, 200, 262, 320, 38, 96, 178, 226, 288, 18];
-  const courseHue = (code: string) => {
-    let hash = 0;
-    const text = String(code || "");
-    for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
-    return COURSE_HUES[hash % COURSE_HUES.length];
+  /* FNV-1a over code AND name. The old 31-multiply over the code alone turned
+     this department's short numeric codes — 112, 113, 491 — into one violet
+     family and the whole grid went monochrome. Mixing every byte and folding
+     the course's own name in spreads neighbours across the wheel. */
+  const courseHue = (code: string, name = "") => {
+    const text = `${String(code || "")}·${String(name || "")}`;
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return COURSE_HUES[(hash >>> 0) % COURSE_HUES.length];
   };
 
   const xraySelected = xrayId
@@ -3717,9 +3740,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </select>
               </Field>
               <Field label="القاعة">
-                <select value={lens.hall} onChange={(e) => setLens(v => ({ ...v, hall: e.target.value }))}>
+                <select
+                  value={lens.hall ? `${lens.building}|${lens.hall}` : ""}
+                  onChange={(e) => {
+                    const [building, hall] = e.target.value.split("|");
+                    setLens(v => ({ ...v, building: building ?? v.building, hall: hall ?? "" }));
+                  }}
+                >
                   <option value="">الكل</option>
-                  {weekHalls.map(x => <option key={x} value={x}>{x}</option>)}
+                  {weekRooms.map(room => (
+                    <option key={`${room.building}|${room.hall}`} value={`${room.building}|${room.hall}`}>{room.label}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="الفترة">
@@ -3814,7 +3845,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         {...grip}
                         key={`unplaced-${r.id}`}
                         className="week-unplaced-card"
-                        style={{ ["--hue" as any]: courseHue(code) }}
+                        style={{ ["--hue" as any]: courseHue(code, r.AdCourseName || c?.CourseName || "") }}
                         onPointerDown={(e) => {
                           pressOrigin.current = { x: e.clientX, y: e.clientY };
                           grip.onPointerDown?.(e);
@@ -4066,7 +4097,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             top: placed.top,
                             height: placed.height,
                             insetInlineEnd: `${(placed.spine || 0) * RAIL + 4}px`,
-                            ["--hue" as any]: courseHue(code),
+                            ["--hue" as any]: courseHue(code, placed.row.AdCourseName || c?.CourseName || ""),
                           }}
                           onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; grip.onPointerDown?.(e); }}
                           onClick={(e) => {
@@ -4099,46 +4130,75 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       )}
                     {expandedDay === d.key ? null : (weekBundles.byDay[d.key] || []).map((bundle) => {
                       const hits = lensActive ? bundle.rows.filter(lensMatches).length : bundle.rows.length;
+                      const openFan = (anchor: HTMLElement) => {
+                        const host = (anchor.closest(".week-bundle") as HTMLElement) || anchor;
+                        const rect = host.getBoundingClientRect();
+                        setFanned(current => current?.key === bundle.key
+                          ? null
+                          : { key: bundle.key, x: rect.left + rect.width / 2, y: rect.top });
+                      };
                       return (
-                        <button
-                          type="button"
+                        <div
                           className={`week-bundle ${lensActive && !hits ? "lens-miss" : ""}`}
                           key={bundle.key}
                           style={{ top: bundle.top, height: bundle.height }}
-                          aria-expanded={fanned?.key === bundle.key}
-                          title={`${bundle.rows.length} محاضرات متزامنة — اضغط لفردها`}
-                          onClick={(e) => {
-                            const rect = e.currentTarget.getBoundingClientRect();
-                            setFanned(current => current?.key === bundle.key
-                              ? null
-                              : { key: bundle.key, x: rect.left + rect.width / 2, y: rect.top });
-                          }}
+                          role="group"
+                          aria-label={`${bundle.rows.length} محاضرات متزامنة`}
                         >
-                          <span className="week-bundle-count">
+                          <button
+                            type="button"
+                            className="week-bundle-head"
+                            aria-expanded={fanned?.key === bundle.key}
+                            title="فرد الساعة في مروحة"
+                            onClick={(e) => openFan(e.currentTarget)}
+                          >
                             <b className="num">{bundle.rows.length}</b> معاً
                             {lensActive && hits > 0 && hits < bundle.rows.length ? (
                               <i className="week-bundle-hits">{hits} مطابقة</i>
                             ) : null}
-                          </span>
-                          <span className="week-bundle-weave" aria-hidden="true">
+                            <time dir="ltr">{bundle.from}–{bundle.to}</time>
+                            <Expand aria-hidden="true" />
+                          </button>
+                          <div
+                            className="week-bundle-bands"
+                            data-dense={(bundle.height - 22) / bundle.rows.length < 15 ? "true" : undefined}
+                          >
                             {bundle.rows.map((row) => {
                               const course = courseById.get(row.AdCourseId);
-                              const ribbonCode = course?.CourseCode || row.AdCourseName || "—";
+                              const bandCode = course?.CourseCode || row.AdCourseName || "—";
+                              const bandTitle = row.AdCourseName || course?.CourseName || bandCode;
+                              /* The slice is the lecture's real handle: the same grip the
+                                 full card carries, so a drag starts here exactly as it
+                                 would there — lift, conflicts, verdict, drop. A press
+                                 that stays put opens the fan instead. */
+                              const grip = physics.bindEvent(row, d.key);
                               return (
-                                <i
+                                <div
+                                  {...grip}
                                   key={row.id}
-                                  className={lensActive && !lensMatches(row) ? "lens-miss" : ""}
-                                  style={{ ["--hue" as any]: courseHue(ribbonCode) }}
+                                  className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""}`}
+                                  style={{ ["--hue" as any]: courseHue(bandCode, bandTitle) }}
+                                  title={`${bandTitle} — اسحبها مباشرة أو اضغط للمروحة`}
+                                  onPointerDown={(e) => {
+                                    pressOrigin.current = { x: e.clientX, y: e.clientY };
+                                    grip.onPointerDown?.(e);
+                                  }}
+                                  onClick={(e) => {
+                                    if (physics.didDrag() || physicsActive) return;
+                                    const from = pressOrigin.current;
+                                    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
+                                    openFan(e.currentTarget);
+                                  }}
                                   onPointerEnter={(ev) => { if (!physicsActive) openPeek(row, ev.currentTarget as unknown as HTMLElement); }}
                                   onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                                 >
-                                  <em dir="ltr">{String(course?.CourseCode || "").slice(0, 7)}</em>
-                                </i>
+                                  <span className="week-band-name">{bandTitle}</span>
+                                  <em dir="ltr">{String(course?.CourseCode || row.SCode || "").slice(0, 8)}</em>
+                                </div>
                               );
                             })}
-                          </span>
-                          <time dir="ltr">{bundle.from}–{bundle.to}</time>
-                        </button>
+                          </div>
+                        </div>
                       );
                     })}
                   </div>

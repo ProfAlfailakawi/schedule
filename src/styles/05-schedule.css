@@ -2298,68 +2298,88 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 
 /* ==========================================================================
-   THE WOVEN HOUR — five to any number of concurrent lectures
-   Past four lanes a column stops pretending: the crushed cards become one
-   band of vertical ribbons, a thread per course in the course's own hue.
-   The weave is the map; pressing it fans the hour into full-width cards
-   that drag onto the grid like any other.
+   THE WOVEN HOUR — five or more concurrent lectures, read horizontally
+   The crushed lanes become one calm block: a stack of slim horizontal
+   slices, one per lecture, each in its course's hue with its name readable
+   the way this grid reads everything — across. Every slice is the lecture's
+   real drag handle; the header fans the hour into full cards.
    ========================================================================== */
 .week-bundle{
   position:absolute;inset-inline:4px;z-index:24;
   display:flex;flex-direction:column;gap:3px;
-  padding:5px 7px 4px;
+  padding:4px 5px 5px;
   border:1px solid var(--line-strong);
   border-radius:var(--r-sm);
   background:var(--surface);
   box-shadow:var(--shadow-xs);
-  cursor:pointer;overflow:hidden;text-align:start;
+  overflow:hidden;
   transition:box-shadow .16s var(--ease),border-color .16s var(--ease),opacity .16s var(--ease);
 }
-.week-bundle:hover{box-shadow:var(--shadow-sm);border-color:var(--accent)}
-.week-bundle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-/* A drag in progress must see the slots underneath, not the weave: the band
-   steps out of the pointer's way and dims to say so. */
+.week-bundle:hover{box-shadow:var(--shadow-sm)}
+/* A drag in progress must see the slots underneath, not the block: it steps
+   out of the pointer's way and dims to say so. */
 .gravity-field-active .week-bundle{pointer-events:none;opacity:.35}
 .week-bundle.lens-miss{opacity:.22;filter:saturate(.35)}
-.week-bundle-count{
-  display:flex;align-items:baseline;gap:4px;
-  font-size:10.5px;font-weight:650;color:var(--ink-2);white-space:nowrap;
+.week-bundle-head{
+  flex:none;
+  display:flex;align-items:center;gap:5px;
+  padding:1px 3px;
+  border-radius:var(--r-xs);
+  font-size:10px;font-weight:650;color:var(--ink-2);
+  white-space:nowrap;cursor:pointer;
+  transition:background .14s var(--ease),color .14s var(--ease);
 }
-.week-bundle-count b{font:700 13px/1 var(--font-mono);color:var(--ink)}
+.week-bundle-head:hover{background:var(--accent-softer);color:var(--accent-ink)}
+.week-bundle-head b{font:700 12px/1 var(--font-mono);color:var(--ink)}
+.week-bundle-head time{margin-inline-start:auto;font:600 8.5px/1 var(--font-mono);color:var(--muted)}
+.week-bundle-head svg{width:11px;height:11px;opacity:.6}
 .week-bundle-hits{
-  margin-inline-start:auto;padding:0 5px;
-  border-radius:var(--r-full);
+  padding:0 5px;border-radius:var(--r-full);
   background:var(--accent-soft);color:var(--accent-ink);
   font:600 8.5px/1.7 var(--font-ui);font-style:normal;
 }
-.week-bundle-weave{flex:1;display:flex;gap:3px;min-height:0}
-.week-bundle-weave i{
-  flex:1;min-width:7px;
-  container-type:inline-size;
-  display:grid;place-items:end center;padding-bottom:3px;
-  border-radius:4px;
-  background:linear-gradient(180deg,
-    hsl(var(--hue,158) 38% 60%) 0%,
-    hsl(var(--hue,158) 36% 45%) 100%);
-  transition:flex-grow .26s var(--ease-spring);
+.week-bundle-bands{
+  flex:1;min-height:0;
+  display:flex;flex-direction:column;gap:2px;
+  overflow:hidden;
 }
-/* The hovered thread widens to say its name; its neighbours give way. */
-.week-bundle:hover .week-bundle-weave i:hover{flex-grow:2.4}
-.week-bundle-weave i.lens-miss{filter:saturate(.25);opacity:.4}
-.week-bundle-weave em{
-  writing-mode:vertical-rl;
-  font:600 8px/1 var(--font-mono);font-style:normal;
-  color:rgb(255 255 255/.92);
-  letter-spacing:.4px;
-  text-shadow:0 0 2px rgb(0 0 0/.25);
+.week-bundle-band{
+  --tint:hsl(var(--hue,158) 34% 96%);
+  --edge:hsl(var(--hue,158) 34% 44%);
+  --label:hsl(var(--hue,158) 42% 23%);
+  flex:1 1 0;min-height:11px;
+  display:flex;align-items:center;gap:6px;
+  padding:0 6px;
+  border-radius:5px;
+  border-inline-start:3px solid var(--edge);
+  background:var(--tint);
+  cursor:grab;
+  transition:filter .14s var(--ease);
 }
-@container (max-width:15px){.week-bundle-weave em{display:none}}
-.week-bundle>time{font:600 9px/1 var(--font-mono);color:var(--muted);align-self:flex-end}
-:root[data-theme="dark"] .week-bundle-weave i{
-  background:linear-gradient(180deg,
-    hsl(var(--hue,158) 30% 46%) 0%,
-    hsl(var(--hue,158) 32% 32%) 100%);
+.week-bundle-band:hover{filter:brightness(.97)}
+.week-bundle-band:active{cursor:grabbing}
+.week-bundle-band.lens-miss{opacity:.3;filter:saturate(.3)}
+:root[data-theme="dark"] .week-bundle-band{
+  --tint:hsl(var(--hue,158) 21% 15%);
+  --edge:hsl(var(--hue,158) 36% 58%);
+  --label:hsl(var(--hue,158) 46% 88%);
 }
+:root[data-theme="dark"] .week-bundle-band:hover{filter:brightness(1.12)}
+.week-band-name{
+  flex:1;min-width:0;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:10px;font-weight:600;color:var(--label);
+  line-height:1.2;
+}
+.week-bundle-band em{
+  font:600 8.5px/1 var(--font-mono);font-style:normal;
+  color:color-mix(in srgb,var(--label) 62%,transparent);
+  font-variant-numeric:tabular-nums;
+}
+/* A slice squeezed under fourteen pixels keeps its colour and its code and
+   lets go of the name — the component measures the squeeze itself, because
+   size containment on a flex slice proved unreliable at paint time. */
+.week-bundle-bands[data-dense="true"] .week-band-name{display:none}
 
 /* --- The fan ---------------------------------------------------------------
    A fixed panel rather than a child of the column, so no overflow clips it
@@ -2403,21 +2423,15 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-fan-slot .week-event{box-shadow:var(--shadow-xs)}
 .week-fan-slot .week-event:hover{box-shadow:var(--shadow-sm)}
 
-/* --- Four lanes, the last stand before the weave ---------------------------
-   Between 34 and 64 pixels a card cannot carry a sentence, but it can still
-   carry its catalogue thread: hue, and the code climbing the card the way it
-   climbs a ribbon. Drag, peek and click all keep working. */
+/* --- Narrow cards stay horizontal --------------------------------------------
+   Tried sideways, rejected in the field: this grid reads horizontally at
+   every width. A narrow card keeps the two words that matter — the course
+   and the instructor, thin type and all — and gives up only the clock,
+   which the row it sits on already states. */
 @container (max-width:64px){
-  .week-title,.week-who,.week-when{display:none}
-  .week-code{
-    display:flex;position:static;inset:auto;
-    writing-mode:vertical-rl;
-    align-self:center;margin:auto;
-    height:auto;padding:0;
-    background:transparent;
-    color:var(--label);
-    font-size:9px;letter-spacing:.4px;
-  }
+  .week-when{display:none}
+  .week-title{font-size:9.5px;-webkit-line-clamp:2;letter-spacing:0}
+  .week-who{font-size:8.5px;opacity:.85}
 }
 
 @media (prefers-reduced-motion:reduce){

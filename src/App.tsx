@@ -406,6 +406,24 @@ export default function App() {
       return next;
     });
   };
+  /**
+   * A press anywhere that is not the rail closes the rail.
+   *
+   * The menu is a place to choose from, not a place to be — once attention
+   * moves to the work, the first touch on the work should clear the way
+   * without asking for a second, aimed click on a close button.
+   */
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest(".sidebar") || target.closest(".sidebar-launcher") || target.closest(".mobile-topbar")) return;
+      setSidebarOpen(false);
+    };
+    window.addEventListener("pointerdown", dismiss);
+    return () => window.removeEventListener("pointerdown", dismiss);
+  }, [sidebarOpen]);
   const go = (view: View) => {
     recordUse(view);
     setActiveView(view);
