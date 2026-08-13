@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
-import { initDatabase, Repository } from "./src/db/repository";
+import { activeDataMode, initDatabase, Repository } from "./src/db/repository";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
@@ -457,7 +457,8 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const userPerms = await Repository.getSecurityByUser(req.user.SystemUserId);
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = req.scopes || [];
-  res.json({ user: safeUser, permissions, scopes });
+  // The interface says out loud when it is not on the university's database.
+  res.json({ user: safeUser, permissions, scopes, data: activeDataMode() });
 });
 
 // Activity heartbeat: the server session still expires after 15 minutes of real

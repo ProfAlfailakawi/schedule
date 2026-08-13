@@ -83,7 +83,7 @@ import {
 } from "./scheduleWorkspace";
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
-import { sortByName } from "../utils/sorting";
+import { byArabic, sortByName } from "../utils/sorting";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -94,6 +94,8 @@ type EditorMode = "index" | "create" | "edit";
 export default function Schedules({ mode, user, scopes = [] }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
+  /** Where a press began, so a drag is never mistaken for a tap. */
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
   // The row touched by the last write, so the grid can say "this one just
   // changed" for a few seconds instead of leaving the user to hunt for it.
   const [justChangedId, setJustChangedId] = useState<number | null>(null);
@@ -183,6 +185,83 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setInstructors(sortByName(i, (row:any)=>row.AdInstructorName));
     return { colleges: c as AdCollege[], sections: s as AdSection[], terms: t as AdTerm[], courses: co as AdCourse[], instructors: i as AdInstructor[] };
   };
+  /**
+   * The week lens.
+   *
+   * Filtering a timetable by removing rows destroys the thing you are reading:
+   * the shape of the week. So nothing is removed — what matches keeps its
+   * colour and everything else fades into the background. The week stays whole
+   * while one question is asked of it: this instructor, this building, this
+   * hall, this hour.
+   */
+  const [lens, setLens] = useState<{ instructorId: number; building: string; hall: string; from: string; to: string }>(
+    { instructorId: 0, building: "", hall: "", from: "", to: "" }
+  );
+  const lensActive = Boolean(lens.instructorId || lens.building || lens.hall || (lens.from && lens.to));
+  const lensMatches = (row: FSchedule) => {
+    if (!lensActive) return true;
+    if (lens.instructorId && Number(row.AdInstructorId) !== lens.instructorId) return false;
+    if (lens.building && String(row.AdRoomCode || "") !== lens.building) return false;
+    if (lens.hall && String(row.AdRoomHall || "") !== lens.hall) return false;
+    if (lens.from && lens.to) {
+      // Any overlap with the chosen window counts, not only an exact match.
+      if (!(mins(row.fstarttime) < mins(lens.to) && mins(row.fendtime) > mins(lens.from))) return false;
+    }
+    return true;
+  };
+  const lensClass = (row: FSchedule) => (lensActive ? (lensMatches(row) ? "lens-hit" : "lens-miss") : "");
+
+  /**
+   * What the campus actually contains, learned from the schedule.
+   *
+   * There is no room catalogue to read, but every appointment ever written
+   * names a building and a hall, which is the same information seen from the
+   * other side. Typing a building therefore offers the halls that exist in it
+   * instead of leaving an empty box and a guess.
+   */
+  const estate = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    rows.forEach(row => {
+      const code = String(row.AdRoomCode || "").trim();
+      const hall = String(row.AdRoomHall || "").trim();
+      if (!code || !hall) return;
+      if (!map.has(code)) map.set(code, new Set());
+      map.get(code)!.add(hall);
+    });
+    return map;
+  }, [rows]);
+  const buildingOptions = useMemo(() => [...estate.keys()].sort(byArabic), [estate]);
+  const hallOptions = useMemo(() => {
+    const code = String(form.AdRoomCode || "").trim();
+    if (!code) return [] as string[];
+    return [...(estate.get(code) || [])].sort(byArabic);
+  }, [estate, form.AdRoomCode]);
+
+  /**
+   * The next section number, offered rather than imposed.
+   *
+   * Sections of one course run 101, 102, 103. Typing that sequence by hand is
+   * the kind of work a person should never be doing, but guessing wrong is
+   * worse than not guessing — so the number is filled in only while the field
+   * is still untouched for this course, and anything typed by hand wins.
+   */
+  const nextSectionCode = (courseId: number, termId: number) => {
+    const used = rows
+      .filter(row => Number(row.AdCourseId) === Number(courseId) && Number(row.AdTermId) === Number(termId))
+      .map(row => Number(String(row.SCode || "").trim()))
+      .filter(value => Number.isFinite(value) && value > 0);
+    if (!used.length) return "101";
+    return String(Math.max(...used) + 1);
+  };
+  const sectionAutofilled = useRef(false);
+  const sectionHint = useMemo(() => {
+    const courseId = Number(form.AdCourseId || 0);
+    if (!courseId) return undefined;
+    const termId = Number(form.AdTermId) || filterTerm || 0;
+    const taken = rows.filter(row => Number(row.AdCourseId) === courseId && Number(row.AdTermId) === termId).length;
+    return taken ? `شعب هذا المقرر المسجّلة: ${taken.toLocaleString("ar-KW-u-nu-latn")} — اقترحنا الرقم التالي` : "أول شعبة لهذا المقرر";
+  }, [form.AdCourseId, form.AdTermId, filterTerm, rows]);
+
   const [rowsLoading, setRowsLoading] = useState(false);
   /**
    * An empty scope should answer, not just be empty.
@@ -360,7 +439,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (next.collegeId !== copyCollege) setCopyCollege(next.collegeId);
     if (next.sectionId !== copySection) setCopySection(next.sectionId);
   }, [mode, isPowerAdmin, sections.length, scopes, copyCollege, copySection]);
-  const openCreate = () => {
+  const openCreate = (seed?: { day?: DayKey; start?: string }) => {
       setError(null);
       setMessage(null);
       setConflicts([]);
@@ -376,6 +455,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       next.AdCollegeId = scoped.collegeId;
       next.AdSectionId = scoped.sectionId || resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0;
       next.AdTermId = Number(last?.AdTermId) || filterTerm || latestTermId || 0;
+      // Started from an empty square in the week: that square is the answer to
+      // the day and the hour, so the form opens with them already filled and a
+      // sensible one-hour length.
+      if (seed?.day) {
+        days.forEach(day => { (next as any)[day.key] = day.key === seed.day; });
+      }
+      if (seed?.start) {
+        next.fstarttime = seed.start;
+        next.fendtime = timeFromMins(Math.min(23 * 60 + 30, mins(seed.start) + 60));
+      }
       setForm(next);
       setCourseName("");
       setEditId(null);
@@ -480,6 +569,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const validationIssues=[!selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":""].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
   const filteredRows=useMemo(()=>{const q=quickSearch.trim().toLowerCase();if(!q)return rows;return rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)})},[rows,quickSearch,courseById,instructorById]);
+  const weekInstructors = useMemo(() => {
+    const seen = new Map<number, string>();
+    filteredRows.forEach(row => {
+      const id = Number(row.AdInstructorId);
+      if (id && !seen.has(id)) seen.set(id, instructorById.get(id)?.AdInstructorName || `أستاذ ${id}`);
+    });
+    return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => byArabic(a.name, b.name));
+  }, [filteredRows, instructorById]);
+  const weekBuildings = useMemo(
+    () => [...new Set(filteredRows.map(row => String(row.AdRoomCode || "")).filter(Boolean))].sort(byArabic),
+    [filteredRows]
+  );
+  const weekHalls = useMemo(
+    () => [...new Set(filteredRows.filter(row => !lens.building || row.AdRoomCode === lens.building)
+      .map(row => String(row.AdRoomHall || "")).filter(Boolean))].sort(byArabic),
+    [filteredRows, lens.building]
+  );
+  const weekLensCount = useMemo(() => filteredRows.filter(lensMatches).length, [filteredRows, lens]);
+
   const solveConflicts = async () => {
     if (
       !form.AdCollegeId ||
@@ -1274,11 +1382,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           beginRipple(r);
         }}
         onDragEnd={clearRipple}
-        onDoubleClick={() => openEdit(r)}
-        onClick={() => runVisualTransition(() => setXrayId((v) => (v === r.id ? null : r.id)))}
+        onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; }}
+        onClick={(e) => {
+          // A drag ends in a click too; only a press that stayed put means "open".
+          const from = pressOrigin.current;
+          if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
+          openEdit(r);
+        }}
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
-        className={`week-event ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${physicsPreview?.row.id === r.id ? "physics-source-pending" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
+        onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
+        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${physicsPreview?.row.id === r.id ? "physics-source-pending" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
         style={{ ...style, ["--hue" as any]: courseHue(code) }}
         data-quickview={`${code} · ${r.AdCourseName || c?.CourseName || "مقرر"}
 شعبة ${r.SCode} · ${i?.AdInstructorName || "بدون أستاذ"}
@@ -1862,11 +1975,27 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     ))}
                   </select>
                 </Field>
-                <Field label="رمز المقرر الدراسي" required>
+                <Field
+                  label="رمز المقرر الدراسي"
+                  required
+                  hint={editId ? undefined : sectionHint}
+                >
                   <select
                     value={form.AdCourseId || ""}
                     disabled={!courseName}
-                    onChange={(e) => setNumber("AdCourseId", e.target.value)}
+                    onChange={(e) => {
+                      const courseId = Number(e.target.value) || 0;
+                      setForm((p) => {
+                        const next = { ...p, AdCourseId: courseId };
+                        // Offer the next free section number for this course,
+                        // unless a number was typed by hand.
+                        if (!editId && courseId && (!p.SCode || sectionAutofilled.current)) {
+                          next.SCode = nextSectionCode(courseId, Number(p.AdTermId) || filterTerm || 0);
+                          sectionAutofilled.current = true;
+                        }
+                        return next;
+                      });
+                    }}
                     required
                   >
                     <option value="">اختر ...</option>
@@ -1883,6 +2012,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     maxLength={20}
                     inputMode="numeric"
                     onChange={(e) => {
+                      sectionAutofilled.current = false;
                       if (englishDigits(e.target.value))
                         setForm((p) => ({ ...p, SCode: e.target.value }));
                     }}
@@ -1971,20 +2101,33 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                 <Field label="رقم المبنى" required>
                   <input
                     value={form.AdRoomCode}
+                    list="schedule-buildings"
                     onChange={(e) =>
-                      setForm((p) => ({ ...p, AdRoomCode: e.target.value }))
+                      // A different building means the old hall no longer exists.
+                      setForm((p) => ({ ...p, AdRoomCode: e.target.value, AdRoomHall: "" }))
                     }
                     required
                   />
+                  <datalist id="schedule-buildings">
+                    {buildingOptions.map(code => <option key={code} value={code} />)}
+                  </datalist>
                 </Field>
-                <Field label="رقم القاعة" required>
+                <Field
+                  label="رقم القاعة"
+                  required
+                  hint={hallOptions.length ? `قاعات ${form.AdRoomCode}: ${hallOptions.slice(0, 8).join(" · ")}` : undefined}
+                >
                   <input
                     value={form.AdRoomHall}
+                    list="schedule-halls"
                     onChange={(e) =>
                       setForm((p) => ({ ...p, AdRoomHall: e.target.value }))
                     }
                     required
                   />
+                  <datalist id="schedule-halls">
+                    {hallOptions.map(hall => <option key={hall} value={hall} />)}
+                  </datalist>
                 </Field>
                 {roomOwner ? (
                   <div className="room-owner-note" role="status">
@@ -2556,6 +2699,39 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
           <Surface
             className={`week-surface ${physicsActive ? "physics-lens-active" : ""} ${physicsPreview ? "physics-preview-active" : ""}`}
           >
+            {/* One question at a time, asked of the whole week. */}
+            <div className={`week-lens ${lensActive ? "active" : ""}`}>
+              <Field label="أستاذ">
+                <select value={lens.instructorId || ""} onChange={(e) => setLens(v => ({ ...v, instructorId: Number(e.target.value) || 0 }))}>
+                  <option value="">الكل</option>
+                  {weekInstructors.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </select>
+              </Field>
+              <Field label="المبنى">
+                <select value={lens.building} onChange={(e) => setLens(v => ({ ...v, building: e.target.value, hall: "" }))}>
+                  <option value="">الكل</option>
+                  {weekBuildings.map(x => <option key={x} value={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="القاعة">
+                <select value={lens.hall} onChange={(e) => setLens(v => ({ ...v, hall: e.target.value }))}>
+                  <option value="">الكل</option>
+                  {weekHalls.map(x => <option key={x} value={x}>{x}</option>)}
+                </select>
+              </Field>
+              <Field label="الفترة">
+                <div className="time-pair">
+                  <input type="time" value={lens.from} onChange={(e) => setLens(v => ({ ...v, from: e.target.value }))} aria-label="من" />
+                  <input type="time" value={lens.to} onChange={(e) => setLens(v => ({ ...v, to: e.target.value }))} aria-label="إلى" />
+                </div>
+              </Field>
+              {lensActive ? (
+                <button type="button" className="week-lens-clear" onClick={() => setLens({ instructorId: 0, building: "", hall: "", from: "", to: "" })}>
+                  <X aria-hidden="true" />
+                  <b>{weekLensCount.toLocaleString("ar-KW-u-nu-latn")}</b>
+                </button>
+              ) : null}
+            </div>
             <div
               className={`week-note ${physicsActive ? "gravity-note-active" : ""}`}
             >
@@ -2662,6 +2838,15 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                         className={`week-slot ${ripple?.targetDay === d.key && ripple?.targetStart === t ? "ripple-target" : ""} ${physicsSlotClass(d.key, t)}`}
                         key={t}
                         onDragOver={(e) => e.preventDefault()}
+                        role="button"
+                        tabIndex={-1}
+                        title={`إضافة موعد · ${d.label} ${t}`}
+                        onClick={(e) => {
+                          // Only a press on the empty square itself; a press that
+                          // landed on a lecture belongs to that lecture.
+                          if (e.target !== e.currentTarget) return;
+                          openCreate({ day: d.key, start: t });
+                        }}
                         onDragEnter={() => {
                           const row = rows.find((r) => r.id === draggingId);
                           if (row) previewRipple(row, d.key, t);
@@ -2761,7 +2946,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                                 <article
                                   {...physics.bindEvent(r, d.key)}
                                   key={`chip-${d.key}-${r.id}`}
-                                  className={`week-chip ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
+                                  className={`week-chip ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
                                   style={{ ["--hue" as any]: courseHue(code) }}
                                   draggable={!saving && !physics.supported}
                                   onDragStart={(e) => {
@@ -2770,10 +2955,14 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                                     beginRipple(r);
                                   }}
                                   onDragEnd={clearRipple}
-                                  onDoubleClick={() => openEdit(r)}
-                                  onClick={() => runVisualTransition(() => setXrayId((v) => (v === r.id ? null : r.id)))}
+                                  onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; }}
+                                  onClick={(e) => {
+                                    const from = pressOrigin.current;
+                                    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
+                                    openEdit(r);
+                                  }}
                                   tabIndex={0}
-                                  onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
+                                  onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
                                   data-quickview={`${code} · ${r.AdCourseName || c?.CourseName || "مقرر"}
 شعبة ${r.SCode} · ${i?.AdInstructorName || "بدون أستاذ"}
 ${arabicDays(r) || "بدون أيام"} · ${r.fstarttime}-${r.fendtime}

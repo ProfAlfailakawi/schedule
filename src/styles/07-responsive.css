@@ -253,6 +253,8 @@
   .slot-why{grid-area:why}
 
   /* Schedule */
+  .week-lens{grid-template-columns:repeat(2,minmax(0,1fr));padding:var(--s4)}
+  .week-lens-clear{grid-column:1/-1;justify-content:center}
   .schedule-control{padding:var(--s4);gap:var(--s3)}
   .schedule-tools{padding-top:var(--s3)}
   .schedule-tool-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}

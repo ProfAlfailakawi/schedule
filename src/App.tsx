@@ -182,6 +182,7 @@ export default function App() {
     if (stored === "dark" || stored === "light") return stored;
     return "dark";
   });
+  const [dataMode, setDataMode] = useState<{ mode: string; real: boolean } | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine),
     [onboardingStep, setOnboardingStep] = useState(-1),
     [usage, setUsage] = useState<Record<string, number>>({}),
@@ -266,6 +267,7 @@ export default function App() {
             Array.isArray(data.permissions) ? data.permissions : [],
           );
           setScopes(Array.isArray(data.scopes) ? data.scopes : []);
+          setDataMode(data.data || null);
         }
       } catch {
       } finally {
@@ -419,10 +421,12 @@ export default function App() {
     user: SessionUser;
     permissions: number[];
     scopes: any[];
+    data?: { mode: string; real: boolean };
   }) => {
     setUser(data.user);
     setPermissions(data.permissions || []);
     setScopes(data.scopes || []);
+    setDataMode(data.data || null);
     setActiveView("dashboard");
     window.history.replaceState({}, "", pathByView.dashboard);
   };
@@ -1284,6 +1288,12 @@ export default function App() {
           onClick={() => setSidebarOpen(false)}
           aria-label="إغلاق القائمة"
         />
+      ) : null}
+      {dataMode && !dataMode.real ? (
+        <div className="fake-data-banner no-print" role="alert">
+          <strong>بيانات تجريبية</strong>
+          <span>هذه ليست قاعدة بيانات الجامعة. أي تعديل هنا لن يظهر في الجدول الحقيقي.</span>
+        </div>
       ) : null}
       <main className="app-main">
         <div className="content-frame">

@@ -424,3 +424,22 @@ html[data-schedule-workspace="focus"] .schedule-control{
 }
 .onboarding-actions>button:not(.btn){color:var(--muted);font-size:var(--t-sm);font-weight:500}
 .onboarding-actions>button:not(.btn):hover{color:var(--ink)}
+
+/* --------------------------------------------------------------------------
+   NOT THE REAL DATABASE
+   Impossible to miss and impossible to dismiss. A demo snapshot looks exactly
+   like the university's schedule on screen, so the only safe design is to say
+   so permanently, above everything, until the application is on real data.
+   -------------------------------------------------------------------------- */
+.fake-data-banner{
+  position:sticky;top:0;z-index:60;
+  display:flex;align-items:center;justify-content:center;gap:var(--s3);flex-wrap:wrap;
+  padding:var(--s2) var(--s5);
+  background:repeating-linear-gradient(135deg,#8d6413,#8d6413 12px,#7a5610 12px,#7a5610 24px);
+  color:#fff;text-align:center;
+}
+.fake-data-banner strong{
+  padding:2px var(--s3);border-radius:var(--r-full);
+  background:#ffffff26;font-size:var(--t-xs);font-weight:700;letter-spacing:.04em;
+}
+.fake-data-banner span{font-size:var(--t-xs);line-height:1.6}

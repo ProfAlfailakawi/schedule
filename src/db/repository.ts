@@ -438,6 +438,21 @@ async function seedFirestoreFromLocalSnapshotIfNeeded(fsDb: Firestore) {
   console.log("Legacy Firestore import completed and row counts verified successfully.");
 }
 
+/**
+ * Which database is actually answering.
+ *
+ * The mode is decided at startup from environment and connection results, and
+ * it is the one fact nobody should have to take on trust: a workspace tool that
+ * syncs this project has more than once restored a "helpful" fallback to the
+ * packaged demo snapshot, which is indistinguishable from the real thing on
+ * screen. Reporting the live answer lets the interface say so out loud instead
+ * of quietly showing invented rows.
+ */
+let runningMode: "demo" | "firestore" | "unknown" = "unknown";
+export function activeDataMode() {
+  return { mode: runningMode, real: runningMode === "firestore" };
+}
+
 export async function initDatabase() {
   /**
    * Real data is the default, and the only silent one.
@@ -466,6 +481,7 @@ export async function initDatabase() {
   }
   configurePrivateDatabasePaths(mode);
   if (mode === "demo") restoreDatabaseBackupIfNeeded();
+  runningMode = mode;
   console.log(`Initializing database in mode: ${mode}`);
 
   if (mode === "firestore") {
@@ -528,6 +544,8 @@ export async function initDatabase() {
     }
   }
 
+  // Reaching here means no Firestore client is serving, whatever was requested.
+  runningMode = "demo";
   // Local snapshot mode: uses persistent private state outside the replaceable release.
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true });
