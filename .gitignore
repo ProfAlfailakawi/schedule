@@ -12,3 +12,11 @@ database/db.json
 database/db.json.gz
 database/legacy-password-vault.key
 database/*.firestore-verification.json
+
+# Files from the sibling "website" project have twice been uploaded into this
+# repository by accident. They import react-router and a different design
+# system, so tsc fails on this project's own HEAD while the build stays green —
+# nothing here imports them, so only the typecheck ever notices. This app has no
+# src/pages directory of its own; if one appears, it came from the wrong folder.
+src/pages/
+src/components/InterfacePolish.tsx
