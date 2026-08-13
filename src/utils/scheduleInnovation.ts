@@ -1,5 +1,6 @@
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleConstraint } from "../types";
 import { activeDays, analyzeSchedule, autoScheduleProposal, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
+import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
 const cloneRows=(rows:FSchedule[])=>rows.map(row=>({...row}));
 const roomKey=(row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${String(row.AdRoomHall||"").trim()}`;
@@ -45,7 +46,7 @@ export function evaluateScheduleConstraints(rows:FSchedule[],constraints:Schedul
 function profileTerm(rows:FSchedule[],courses:AdCourse[],instructors:AdInstructor[]){
   const occurrences=Math.max(1,rows.reduce((sum,row)=>sum+activeDays(row).length,0));
   const dayShares=Object.fromEntries(SCHEDULE_DAYS.map(day=>[day.key,Math.round(rows.filter(r=>Boolean(r[day.key])).length/occurrences*1000)/10]));
-  const buckets=[{key:"08-10",from:8*60,to:10*60},{key:"10-12",from:10*60,to:12*60},{key:"12-14",from:12*60,to:14*60},{key:"14-16",from:14*60,to:16*60},{key:"16+",from:16*60,to:24*60}];
+  const buckets=[{key:"08-10",from:8*60,to:10*60},{key:"10-12",from:10*60,to:12*60},{key:"12-14",from:12*60,to:14*60},{key:"14-16",from:14*60,to:16*60},{key:"16-20",from:16*60,to:SCHEDULE_DAY_END}];
   const timeShares=Object.fromEntries(buckets.map(b=>[b.key,Math.round(rows.filter(r=>{const m=timeToMinutes(r.fstarttime);return m>=b.from&&m<b.to}).length/Math.max(1,rows.length)*1000)/10]));
   const roomCounts=new Map<string,number>();rows.forEach(r=>{const key=roomKey(r);if(key!=="|")roomCounts.set(key,(roomCounts.get(key)||0)+1)});
   const rooms=[...roomCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([key,count])=>({key,count,share:Math.round(count/Math.max(1,rows.length)*1000)/10}));
@@ -97,11 +98,11 @@ export function forecastScheduleMove(existing:FSchedule,candidate:FSchedule,scop
   const pressureDelta=beforeDay?Math.round((afterDay-beforeDay)/beforeDay*100):afterDay>beforeDay?100:0;
   const qualityDelta=after.score-before.score,conflictDelta=afterConflicts-beforeConflicts,gapDelta=(afterProf?.gapMinutes||0)-(beforeProf?.gapMinutes||0);
   const effects:Array<{tone:"good"|"warn"|"neutral";text:string}>=[];
-  effects.push({tone:conflictDelta<0?"good":conflictDelta>0?"warn":"neutral",text:conflictDelta<0?`يحل ${Math.abs(conflictDelta)} تعارض/علاقة لهذا الموعد`:conflictDelta>0?`يضيف ${conflictDelta} تعارض/علاقة محتملة`:"لا يغيّر تعارضات هذا الموعد"});
+  effects.push({tone:conflictDelta<0?"good":conflictDelta>0?"warn":"neutral",text:conflictDelta<0?`يزيل ${Math.abs(conflictDelta)} مانع حفظ لهذا الموعد`:conflictDelta>0?`يضيف ${conflictDelta} مانع حفظ محتمل`:"لا يغيّر موانع حفظ هذا الموعد"});
   effects.push({tone:gapDelta<0?"good":gapDelta>0?"warn":"neutral",text:gapDelta<0?`يقلل فراغات الأستاذ ${Math.abs(gapDelta)} دقيقة`:gapDelta>0?`يزيد فراغات الأستاذ ${gapDelta} دقيقة`:"فراغات الأستاذ تبقى تقريباً كما هي"});
   effects.push({tone:pressureDelta<=0?"good":pressureDelta>=15?"warn":"neutral",text:`ضغط ${dayLabel} ${pressureDelta>0?"يزداد":pressureDelta<0?"ينخفض":"لا يتغير"} ${Math.abs(pressureDelta)}%`});
   effects.push({tone:qualityDelta>0?"good":qualityDelta<0?"warn":"neutral",text:`مؤشر الجودة ${qualityDelta>0?"+":""}${qualityDelta}`});
-  const headline=conflictDelta<0?"النقل يحل مشكلة ظاهرة":conflictDelta>0?"النقل يخلق تعارضاً جديداً":qualityDelta>0?"النقل يحسّن الجدول":"الأثر محدود؛ راجع الفراغ والضغط قبل الإفلات";
+  const headline=conflictDelta<0?"النقل يزيل مانعاً ظاهراً":conflictDelta>0?"النقل غير مسموح لأنه يخلق مانعاً زمنياً":qualityDelta>0?"النقل يحسّن الجدول":"الأثر محدود؛ راجع الفراغ والضغط قبل الإفلات";
   return {headline,effects,before:{score:before.score,conflicts:beforeConflicts,professorGap:beforeProf?.gapMinutes||0,dayLoad:beforeDay},after:{score:after.score,conflicts:afterConflicts,professorGap:afterProf?.gapMinutes||0,dayLoad:afterDay},delta:{quality:qualityDelta,conflicts:conflictDelta,professorGap:gapDelta,dayPressure:pressureDelta},candidate:{id:candidate.id,start:candidate.fstarttime,end:candidate.fendtime,days:activeDays(candidate),roomCode:candidate.AdRoomCode,roomHall:candidate.AdRoomHall,targetDay:dayKey,targetDayLabel:dayLabel}};
 }
 
@@ -120,7 +121,7 @@ function scenarioSignature(rows:FSchedule[]){return rows.map(r=>`${r.id}:${r.fst
 
 export function runScheduleAutopilot(baseRows:FSchedule[],termRows:FSchedule[],courses:AdCourse[],instructors:AdInstructor[],constraints:ScheduleConstraint[],goal:string,iterations=240){
   const random=seeded((baseRows.length*2654435761+String(goal||"").length*97)>>>0);
-  const starts=Array.from({length:19},(_,i)=>8*60+i*30);
+  const starts=Array.from({length:Math.floor((SCHEDULE_DAY_END-SCHEDULE_DAY_START)/SCHEDULE_SLOT_MINUTES)},(_,i)=>SCHEDULE_DAY_START+i*SCHEDULE_SLOT_MINUTES);
   const results:Array<any>=[];const seen=new Set<string>();
   const baseline=scoreScenario(baseRows,baseRows,termRows,courses,instructors,constraints,goal);
   const push=(rows:FSchedule[])=>{const sig=scenarioSignature(rows);if(seen.has(sig))return;seen.add(sig);const scored=scoreScenario(baseRows,rows,termRows,courses,instructors,constraints,goal);results.push({rows, ...scored})};
@@ -132,7 +133,7 @@ export function runScheduleAutopilot(baseRows:FSchedule[],termRows:FSchedule[],c
     for(let e=0;e<edits;e++){
       if(!candidate.length)break;const idx=Math.floor(random()*candidate.length),row=candidate[idx];
       const duration=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));
-      const original=timeToMinutes(row.fstarttime);const exploratory=random()<.28;let start=exploratory?starts[Math.floor(random()*starts.length)]:original+(Math.floor(random()*7)-3)*30;start=clamp(Math.round(start/30)*30,8*60,17*60);
+      const original=timeToMinutes(row.fstarttime);const exploratory=random()<.28;let start=exploratory?starts[Math.floor(random()*starts.length)]:original+(Math.floor(random()*7)-3)*SCHEDULE_SLOT_MINUTES;start=clamp(Math.round(start/SCHEDULE_SLOT_MINUTES)*SCHEDULE_SLOT_MINUTES,SCHEDULE_DAY_START,SCHEDULE_DAY_END-duration);
       candidate[idx]={...row,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+duration)};
     }
     push(candidate);
@@ -154,7 +155,7 @@ export function buildWarRoom(baseRows:FSchedule[],termRows:FSchedule[],courses:A
   for(const sol of solutions){if(scenarios.length>=2)break;const moved={...target,fstarttime:sol.start,fendtime:sol.end,AdRoomCode:sol.roomCode,AdRoomHall:sol.roomHall};scenarios.push({title:scenarios.length?"حل متوازن":"أقل تدخل",reason:sol.reason,rows:replaceById(baseRows,moved)})}
   // A third option uses a compact global proposal but still remains only a scenario.
   const compact=cloneRows(baseRows);const profRows=compact.filter(r=>r.AdInstructorId===target!.AdInstructorId).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));
-  if(profRows.length>1){const pivot=profRows[Math.min(1,profRows.length-1)],dur=Math.max(30,timeToMinutes(pivot.fendtime)-timeToMinutes(pivot.fstarttime));const anchor=timeToMinutes(profRows[0].fendtime);const shifted={...pivot,fstarttime:minutesToTime(clamp(anchor,8*60,17*60)),fendtime:minutesToTime(clamp(anchor,8*60,17*60)+dur)};scenarios.push({title:"ضغط الفراغات",reason:"يقرب مواعيد الأستاذ من بعضها لتقليل المسافات الزمنية.",rows:replaceById(baseRows,shifted)})}
+  if(profRows.length>1){const pivot=profRows[Math.min(1,profRows.length-1)],dur=Math.max(30,timeToMinutes(pivot.fendtime)-timeToMinutes(pivot.fstarttime));const anchor=timeToMinutes(profRows[0].fendtime);const start=clamp(anchor,SCHEDULE_DAY_START,SCHEDULE_DAY_END-dur);const shifted={...pivot,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+dur)};scenarios.push({title:"ضغط الفراغات",reason:"يقرب مواعيد الأستاذ من بعضها لتقليل المسافات الزمنية.",rows:replaceById(baseRows,shifted)})}
   while(scenarios.length<3)scenarios.push({title:`بديل ${scenarios.length+1}`,reason:"سيناريو محافظ يبقي الجدول قريباً من الوضع الحالي.",rows:cloneRows(baseRows)});
   const ids=new Set(baseRows.map(r=>r.id));const baseProfessor=baseline.professorLoads.find((p:any)=>p.id===target!.AdInstructorId);const options=scenarios.slice(0,3).map((s,index)=>{const universe=[...termRows.filter(r=>!ids.has(r.id)),...s.rows],analysis=analyzeSchedule(s.rows,universe,courses,instructors),rules=evaluateScheduleConstraints(s.rows,constraints),scenarioTarget=s.rows.find(r=>r.id===target!.id)||target!,scenarioProfessor=analysis.professorLoads.find((p:any)=>p.id===target!.AdInstructorId),profGapDelta=(scenarioProfessor?.gapMinutes||0)-(baseProfessor?.gapMinutes||0),roomChanged=roomKey(scenarioTarget)!==roomKey(target!);return{id:`war-${index+1}`,rank:index+1,title:s.title,reason:s.reason,rows:s.rows,score:analysis.score,deltaScore:analysis.score-baseline.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,imbalance:analysis.metrics.imbalance,constraintViolations:rules.total,professorImpact:{name:instructors.find(i=>i.AdInstructorId===target!.AdInstructorId)?.AdInstructorName||"أستاذ المقرر",gapDelta:profGapDelta,gapMinutes:scenarioProfessor?.gapMinutes||0},roomImpact:{changed:roomChanged,from:roomKey(target!).replace("|","/"),to:roomKey(scenarioTarget).replace("|","/")},changed:s.rows.filter(r=>{const b=baseRows.find(x=>x.id===r.id);return b&&scenarioSignature([b])!==scenarioSignature([r])}).length}});
   return {issue:{rowId:target.id,courseName:target.AdCourseName,sectionCode:target.SCode,instructorId:target.AdInstructorId,professorName:instructors.find(i=>i.AdInstructorId===target!.AdInstructorId)?.AdInstructorName||"",room:roomKey(target).replace("|","/"),conflictCount:conflicts.filter(c=>c.rowId===target!.id||c.otherId===target!.id).length},baseline:{score:baseline.score,conflicts:baseline.metrics.criticalConflicts,avgGap:baseline.metrics.avgInstructorGap,imbalance:baseline.metrics.imbalance},options};

@@ -10,6 +10,7 @@ import type {
   SchedulePhysicsStress,
   SchedulePhysicsTarget,
 } from "./types";
+import { SCHEDULE_DAY_END } from "../../utils/scheduleTime";
 
 export const PHYSICS_DAYS: Array<{ key: ScheduleDayKey; label: string }> = [
   { key: "fsunday", label: "الأحد" },
@@ -38,7 +39,7 @@ export function buildMoveCandidate(row: FSchedule, target: Pick<SchedulePhysicsT
   const candidate: any = {
     ...row,
     fstarttime: target.start,
-    fendtime: timeFromMinutes(Math.min(23 * 60 + 59, minutes(target.start) + duration)),
+    fendtime: timeFromMinutes(Math.min(SCHEDULE_DAY_END, minutes(target.start) + duration)),
   };
   const selected = PHYSICS_DAYS.filter(day => Boolean((row as any)[day.key]));
   if (selected.length === 1) PHYSICS_DAYS.forEach(day => { candidate[day.key] = day.key === target.day; });
@@ -88,7 +89,7 @@ function buildFingerprint(ripple: any, why: any, conflicts: any[], quality: Sche
   const rulesDelta = toNumber(why?.delta?.rules ?? delta.rules ?? 0);
   const spatialDelta = toNumber(delta.spatialBurnout ?? 0);
   return [
-    { label: "التعارض", value: conflicts.length ? `${conflicts.length} ظاهر · ${signed(conflictDelta)}` : signed(conflictDelta), tone: conflictDelta < 0 ? "good" : conflictDelta > 0 ? "warn" : "neutral" },
+    { label: "موانع الحفظ", value: conflicts.length ? `${conflicts.length} ظاهر · ${signed(conflictDelta)}` : signed(conflictDelta), tone: conflictDelta < 0 ? "good" : conflictDelta > 0 ? "warn" : "neutral" },
     { label: "فراغ الأستاذ", value: signed(gapDelta, "د"), tone: gapDelta < 0 ? "good" : gapDelta > 0 ? "warn" : "neutral" },
     { label: "ضغط اليوم", value: signed(pressureDelta, "%"), tone: pressureDelta > 0 ? "warn" : pressureDelta < 0 ? "good" : "neutral" },
     { label: "القواعد", value: signed(rulesDelta), tone: rulesDelta > 0 ? "warn" : rulesDelta < 0 ? "good" : "neutral" },
@@ -120,7 +121,7 @@ function buildStress(ripple: any, why: any, conflicts: any[], quality: ScheduleP
   const spatialDelta = toNumber(delta.spatialBurnout ?? 0);
   if (!ripple && !why && !conflicts.length) return { level: "unknown", label: "لا توجد قراءة توتر", summary: "الجدول لا يملك معطيات كافية لتقدير حساسية هذه المنطقة الآن." };
   if (quality === "suboptimal" || quality === "impossible" || pressureDelta >= 18 || conflictDelta > 0 || spatialDelta <= -6 || conflicts.some(c => c?.severity === "high")) {
-    return { level: "high", label: "منطقة متوترة", summary: "هذا الموضع يزيد الإجهاد على اليوم أو يقترب من تعارضات فعالة." };
+    return { level: "high", label: "منطقة متوترة", summary: "هذا الموضع يزيد الإجهاد على اليوم أو يقترب من مانع زمني فعلي." };
   }
   if (quality === "excellent" || quality === "good") {
     return { level: "low", label: "منطقة مستقرة", summary: "القرار يهبط على منطقة مرنة نسبيًا ولا يظهر ضغطًا واضحًا." };
@@ -135,7 +136,7 @@ function buildCounterfactual(ripple: any, why: any, whyNot: any, quality: Schedu
   const gapDelta = toNumber(delta.professorGap ?? delta.gap ?? 0);
   const qualityDelta = toNumber(delta.quality ?? delta.score ?? 0);
   const pressureDelta = toNumber(delta.dayPressure || 0);
-  if (conflictDelta < 0) bullets.push(`يخفض التعارضات بمقدار ${Math.abs(conflictDelta)} مقارنة بالوضع الحالي.`);
+  if (conflictDelta < 0) bullets.push(`يخفض موانع الحفظ بمقدار ${Math.abs(conflictDelta)} مقارنة بالوضع الحالي.`);
   if (gapDelta < 0) bullets.push(`يقلص فراغ الأستاذ ${Math.abs(gapDelta)} دقيقة.`);
   if (qualityDelta > 0) bullets.push(`يرفع جودة القرار ${qualityDelta > 0 ? "بنقطة" : ""}${Math.abs(qualityDelta)}.`);
   if (pressureDelta > 0) bullets.push(`مقابل ذلك يرفع ضغط اليوم ${Math.abs(pressureDelta)}٪.`);

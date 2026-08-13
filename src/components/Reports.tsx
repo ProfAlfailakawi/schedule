@@ -9,6 +9,7 @@ import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule } from 
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { byArabic, sortByName } from "../utils/sorting";
+import { SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 
 /**
  * One question, seven lenses.
@@ -79,8 +80,8 @@ const DAYS = [
 ];
 
 /** The teaching window every occupancy grid is measured against. */
-const GRID_START = 8 * 60;
-const GRID_END = 21 * 60;
+const GRID_START = SCHEDULE_DAY_START;
+const GRID_END = SCHEDULE_DAY_END;
 const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
@@ -401,10 +402,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       (!matrixBuilding || String(row.AdRoomCode || "").trim() === matrixBuilding) &&
       (!matrixHall || String(row.AdRoomHall || "").trim().toLowerCase().includes(matrixHall.trim().toLowerCase())));
 
-    const starts = scoped.map(row => minutes(row.fstarttime));
-    const ends = scoped.map(row => minutes(row.fendtime));
-    const from = starts.length ? Math.max(7 * 60, Math.floor(Math.min(...starts) / 60) * 60) : 8 * 60;
-    const to = ends.length ? Math.min(21 * 60, Math.ceil(Math.max(...ends) / 60) * 60) : 15 * 60;
+    const from = GRID_START;
+    const to = GRID_END;
     const columns: number[] = [];
     for (let point = from; point < Math.max(to, from + 60); point += 60) columns.push(point);
 
@@ -431,8 +430,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   const roomLoad = useMemo(() => {
     if (!occupancy?.rooms?.length) return null;
-    const dayStart = Number(occupancy.dayStart || GRID_START);
-    const dayEnd = Number(occupancy.dayEnd || GRID_END);
+    const dayStart = GRID_START;
+    const dayEnd = GRID_END;
     const slots: number[] = [];
     for (let point = dayStart; point < dayEnd; point += 60) slots.push(point);
     const days = roomDay === "week" ? [0, 1, 2, 3, 4] : [roomDay];
@@ -610,8 +609,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             </Field>
             <Field label="الفترة">
               <div className="time-pair">
-                <input type="time" value={filters.startTime} onChange={event => set("startTime", event.target.value)} aria-label="من" />
-                <input type="time" value={filters.endTime} onChange={event => set("endTime", event.target.value)} aria-label="إلى" />
+                <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.startTime} onChange={event => set("startTime", event.target.value)} aria-label="من" />
+                <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.endTime} onChange={event => set("endTime", event.target.value)} aria-label="إلى" />
               </div>
             </Field>
             <div className="field wide">

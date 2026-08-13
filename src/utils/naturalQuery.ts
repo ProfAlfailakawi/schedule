@@ -55,7 +55,7 @@ function readTime(text: string): string | null {
   let hour = Number(bare[1]);
   if (hour < 1 || hour > 23) return null;
   const marker = bare[2] || "";
-  // Campus days run 07:00–21:00, so a bare 1–6 means the afternoon.
+  // Campus days run 08:00–20:00, so a bare 1–6 means the afternoon.
   if (/^م|مساء|عصر/.test(marker) && hour < 12) hour += 12;
   else if (!marker && hour >= 1 && hour <= 6) hour += 12;
   return `${String(hour).padStart(2, "0")}:00`;

@@ -1,5 +1,6 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { departsFromNature, type CourseNature } from "./courseNature";
+import { SCHEDULE_DAY_END } from "./scheduleTime";
 
 /**
  * The timetable rules of PAAET decision 1912/2016, written as code.
@@ -99,7 +100,7 @@ export function adviseDayPattern(days: DayKey[], start: string, currentEnd: stri
     };
   }
   const expected = long ? 90 : 60;
-  const suggestedEnd = clock(Math.min(23 * 60 + 30, toMinutes(start) + expected));
+  const suggestedEnd = clock(Math.min(SCHEDULE_DAY_END, toMinutes(start) + expected));
   const changed = suggestedEnd !== currentEnd;
   return {
     family: long ? "hourAndHalf" : "hour",
@@ -260,7 +261,7 @@ export function planMove(options: {
     const expected = expectedMinutesForDay(targetDay);
     return {
       pattern: null,
-      meetings: [{ day: targetDay, start: targetStart, end: clock(start + expected) }],
+      meetings: [{ day: targetDay, start: targetStart, end: clock(Math.min(SCHEDULE_DAY_END, start + expected)) }],
       reshapes: false,
       headline: `${dayLabel(targetDay)} ${targetStart}`,
       detail: `مدة اللقاء ${expected} دقيقة على هذا اليوم (م.8/أ،ب).`
@@ -270,7 +271,7 @@ export function planMove(options: {
   const meetings = pattern.days.map((day, index) => ({
     day,
     start: targetStart,
-    end: clock(Math.min(23 * 60 + 30, start + pattern.minutesPerDay[index]))
+    end: clock(Math.min(SCHEDULE_DAY_END, start + pattern.minutesPerDay[index]))
   }));
   const sameDays =
     pattern.days.length === currentDays.length &&

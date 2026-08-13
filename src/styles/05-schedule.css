@@ -686,14 +686,16 @@
   keeps the hour readable as a shape even when it cannot be read as words.
 */
 @container (max-width:46px){
-  .week-title,.week-who,.week-when{display:none}
-  .week-code{
-    position:static;height:auto;padding:2px 0;
-    writing-mode:vertical-rl;background:none;
-    font-size:8.5px;color:var(--label);
+  .week-event{align-items:stretch;padding:2px;gap:1px}
+  .week-title{
+    display:-webkit-box;padding:0;font-size:7.25px;line-height:1.12;font-weight:580;
+    -webkit-line-clamp:3;overflow-wrap:anywhere;word-break:normal;letter-spacing:-.25px;
   }
-  .week-code b{display:none}
-  .week-event{align-items:center;padding:3px 1px}
+  .week-who{
+    display:block;font-size:6.75px;line-height:1.08;font-weight:300;
+    opacity:.86;letter-spacing:-.3px;
+  }
+  .week-when,.week-code{display:none}
 }
 
 /* --- The workshop rail -----------------------------------------------------
@@ -726,7 +728,13 @@
   writing-mode:vertical-rl;
   font:650 8.5px/1 var(--font-sans);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  max-height:calc(100% - 26px);
+  flex:1;max-height:none;
+}
+.week-rail span{
+  writing-mode:vertical-rl;
+  max-height:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font:300 7px/1 var(--font-sans);letter-spacing:-.2px;
+  color:color-mix(in srgb,var(--label) 72%,transparent);
 }
 .week-rail time{
   writing-mode:vertical-rl;
@@ -767,11 +775,11 @@
    When an hour really does hold four lectures, each card gets a quarter of the
    column. It stops trying to be a full card and becomes a legible label: the
    name, and the time, and nothing that would only arrive as a fragment. */
-.week-event[data-narrow="true"]{padding-inline:var(--s2);gap:0}
-.week-event[data-narrow="true"] .week-who{display:none}
+.week-event[data-narrow="true"]{padding-inline:4px;gap:1px}
+.week-event[data-narrow="true"] .week-who{display:block;font-size:7.5px;font-weight:300;line-height:1.08;opacity:.86;letter-spacing:-.3px}
 .week-event[data-narrow="true"] .week-when i{display:none}
-.week-event[data-narrow="true"] .week-title{font-size:9px;-webkit-line-clamp:4;padding-inline-end:0;letter-spacing:-.25px}
-.week-event[data-narrow="true"] .week-code{position:static;margin-bottom:2px;align-self:flex-start}
+.week-event[data-narrow="true"] .week-title{font-size:8.25px;font-weight:580;-webkit-line-clamp:3;padding-inline-end:0;letter-spacing:-.3px;overflow-wrap:anywhere;word-break:normal}
+.week-event[data-narrow="true"] .week-code{display:none}
 
 .week-drag-handle{display:none}
 .week-insight{
@@ -2136,6 +2144,14 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-times span{border-bottom:0;color:var(--muted-2);font-size:10px;padding-top:4px}
 .week-times span:nth-child(2n){visibility:hidden}
 .week-times{box-shadow:1px 0 0 color-mix(in srgb,var(--line) 80%,transparent)}
+.week-time-end{
+  position:absolute;inset-inline:0;bottom:0;z-index:2;
+  transform:translateY(50%);
+  display:flex;justify-content:center;
+  color:var(--muted-2);
+  font:500 10px/1 var(--font-mono);font-style:normal;
+  pointer-events:none;
+}
 
 /* --- Day headers carry the day's weight ----------------------------------- */
 .week-time-head,.week-day-head{min-height:42px}
@@ -2373,21 +2389,48 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   --label:hsl(var(--hue,158) 46% 88%);
 }
 :root[data-theme="dark"] .week-bundle-band:hover{filter:brightness(1.12)}
-.week-band-name{
-  flex:1;min-width:0;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:10px;font-weight:600;color:var(--label);
-  line-height:1.2;
+.week-band-identity{
+  flex:1;min-width:0;display:flex;align-items:baseline;gap:4px;overflow:hidden;
+  color:var(--label);white-space:nowrap;
+}
+.week-band-identity strong{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:9.25px;font-weight:600;line-height:1.1;
+}
+.week-band-identity small{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:7.5px;font-weight:300;line-height:1;color:color-mix(in srgb,var(--label) 72%,transparent);
+}
+.week-band-identity small::before{
+  content:"·";margin-inline-end:4px;color:color-mix(in srgb,var(--label) 40%,transparent);
 }
 .week-bundle-band em{
   font:600 8.5px/1 var(--font-mono);font-style:normal;
   color:color-mix(in srgb,var(--label) 62%,transparent);
   font-variant-numeric:tabular-nums;
 }
-/* A slice squeezed under fourteen pixels keeps its colour and its code and
-   lets go of the name — the component measures the squeeze itself, because
-   size containment on a flex slice proved unreliable at paint time. */
-.week-bundle-bands[data-dense="true"] .week-band-name{display:none}
+/* In the densest weave, a vertical list physically hid rows 6–9 inside a
+   fifty-minute block. Two calm columns turn eight items into four rows and
+   nine into five: every lecture remains visible without growing over the next
+   hour. Course and instructor keep the line; code is a tiny seal. */
+.week-bundle-bands[data-dense="true"]{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  grid-auto-flow:row;grid-auto-rows:minmax(0,1fr);gap:1px;
+}
+.week-bundle-bands[data-dense="true"] .week-bundle-band{
+  min-width:0;min-height:0;padding-inline:1.5px;gap:1px;border-inline-start-width:2px;
+}
+.week-bundle-bands[data-dense="true"] .week-band-identity{gap:1px}
+.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:6.25px;font-weight:570;line-height:1;letter-spacing:-.28px}
+.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:5.35px;line-height:1;font-weight:300;letter-spacing:-.32px}
+.week-bundle-bands[data-dense="true"] .week-band-identity small::before{margin-inline-end:1px}
+.week-bundle-bands[data-dense="true"] .week-bundle-band em{
+  display:block;flex:none;max-width:22px;overflow:hidden;text-overflow:ellipsis;
+  font-size:4.1px;font-weight:500;letter-spacing:-.35px;opacity:.62;
+}
+.week-bundle-bands[data-count="9"] .week-band-identity strong{font-size:5.8px}
+.week-bundle-bands[data-count="9"] .week-band-identity small{font-size:4.9px}
+.week-bundle-bands[data-count="9"] .week-bundle-band em{font-size:3.8px;max-width:20px}
 
 /* --- The fan ---------------------------------------------------------------
    A fixed panel rather than a child of the column, so no overflow clips it
@@ -2474,42 +2517,87 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    Empty track IS free room. A card dragged to another row changes room;
    along its own row, it changes hour.
    ========================================================================== */
-.rooms-surface{padding:var(--s5);direction:rtl}
+.rooms-surface{padding:var(--s5);direction:rtl;overflow-x:auto;overscroll-behavior-inline:contain}
 .rooms-head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-bottom:var(--s4)}
 .rooms-head small{color:var(--muted);font-size:var(--t-xs);line-height:1.5;flex:1 1 260px}
-.rooms-scale{display:grid;grid-template-columns:74px minmax(0,1fr);margin-bottom:var(--s2)}
+.rooms-scale{display:grid;grid-template-columns:74px minmax(0,1fr);min-width:1000px;margin-bottom:var(--s2)}
+.rooms-scale-week{grid-template-columns:74px 82px minmax(0,1fr);min-width:1180px}
+.rooms-scale>small{display:flex;align-items:flex-end;padding-inline:var(--s2);color:var(--muted-2);font-size:8.5px;font-weight:600}
 .rooms-scale>div{
   position:relative;height:16px;
   direction:rtl;
   font:500 9.5px/1 var(--font-mono);color:var(--muted-2);
 }
 .rooms-scale span{position:absolute;transform:translateX(50%)}
-.rooms-rows{display:flex;flex-direction:column;gap:var(--s2)}
+.rooms-rows{min-width:1000px;display:flex;flex-direction:column;gap:var(--s2)}
+.rooms-rows:has(.rooms-compare-room){min-width:1180px}
+.rooms-week-room{
+  overflow:hidden;
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface);
+  content-visibility:auto;contain-intrinsic-size:auto 284px;
+}
+.rooms-compare-room{contain-intrinsic-size:auto 132px}
+.rooms-compare-row{display:grid;grid-template-columns:74px 82px minmax(0,1fr);align-items:stretch}
+.rooms-compare-room-head{
+  display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;
+  padding:var(--s3);border-inline-end:1px solid var(--line);
+  background:var(--surface-2);
+}
+.rooms-compare-room-head strong{font:700 12px/1 var(--font-mono);color:var(--ink)}
+.rooms-compare-room-head small{color:var(--muted);font-size:8.5px;white-space:nowrap}
+.rooms-compare-room-head small b{color:var(--ink-2);font-weight:700}
+.rooms-compare-days{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding-block:4px;border-inline-end:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 64%,transparent)}
+.rooms-compare-days span{height:68px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;color:var(--ink-2);font-size:8.5px;font-weight:620}
+.rooms-compare-days span small{display:block;font:inherit;line-height:1.25;white-space:nowrap}
+.rooms-compare-days span+span{border-top:1px solid color-mix(in srgb,var(--line) 64%,transparent)}
+.rooms-week-room-head{
+  min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:var(--s2) var(--s4);border-bottom:1px solid var(--line);
+  background:var(--surface-2);
+}
+.rooms-week-room-head strong{font:700 13px/1 var(--font-mono);color:var(--ink)}
+.rooms-week-room-head small{color:var(--muted);font-size:10px}
+.rooms-week-room-head small b{color:var(--ink-2);font-weight:650}
+.rooms-week-days{display:flex;flex-direction:column}
 .rooms-row{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;gap:0}
+.rooms-week-days .rooms-row{min-height:46px}
+.rooms-week-days .rooms-row+.rooms-row{border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
 .rooms-row>small{
   padding-inline-end:var(--s2);
   font:600 11px/1.3 var(--font-mono);color:var(--ink-2);
   text-align:start;
 }
+.rooms-row>.rooms-day-label{
+  position:relative;padding-inline:var(--s4) var(--s2);
+  font-family:var(--font-ui);font-size:10.5px;font-weight:620;color:var(--ink-2);
+}
+.rooms-row>.rooms-day-label::before{
+  content:"";position:absolute;inset-inline-start:var(--s2);top:50%;width:4px;height:4px;
+  border-radius:50%;background:var(--accent);transform:translateY(-50%);opacity:.72;
+}
 .rooms-row-none>small{font-family:var(--font-ui);color:var(--warning)}
 .rooms-track{
   position:relative;
   direction:rtl;
-  height:46px;
+  height:54px;
   border:1px solid var(--line);
   border-radius:var(--r-sm);
   background:var(--surface);
   overflow:hidden;
 }
+.rooms-week-days .rooms-track{height:46px;border:0;border-radius:0;background:transparent}
+.rooms-compact-track{height:auto;border:0;border-radius:0;background:transparent}
 .rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line) 80%,transparent)}
+.rooms-hourline-terminal{border-inline-start-style:solid;border-inline-start-color:var(--line-strong)}
 .rooms-now{position:absolute;inset-block:0;width:0;border-inline-start:2px solid var(--brass);z-index:4}
 .rooms-card{
   --tint:hsl(var(--hue,158) 34% 96%);
   --edge:hsl(var(--hue,158) 34% 44%);
   --label:hsl(var(--hue,158) 42% 23%);
   position:absolute;inset-block:3px;z-index:3;
-  display:flex;flex-direction:column;justify-content:center;gap:0;
-  padding:2px 7px;
+  display:flex;flex-direction:column;justify-content:center;gap:1px;
+  padding:3px 7px;
   border-radius:var(--r-xs);
   border:1px solid color-mix(in srgb,var(--edge) 14%,var(--line));
   border-inline-start:3px solid var(--edge);
@@ -2525,23 +2613,53 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   --label:hsl(var(--hue,158) 46% 88%);
 }
 .rooms-card b{
-  font-size:10.5px;font-weight:650;color:var(--label);line-height:1.25;
+  font-size:10px;font-weight:620;color:var(--label);line-height:1.16;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .rooms-card span{
-  font-size:9px;color:var(--ink-2);opacity:.8;line-height:1.2;
+  font-size:8px;font-weight:300;color:var(--ink-2);opacity:.84;line-height:1.08;letter-spacing:-.2px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
+.rooms-card span i{display:block;font:inherit;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:clip}
 .rooms-card em{
-  position:absolute;bottom:2px;inset-inline-end:5px;
-  font:600 8px/1 var(--font-mono);font-style:normal;
+  position:absolute;top:3px;left:5px;right:auto;
+  font:500 6.5px/1 var(--font-mono);font-style:normal;
   color:color-mix(in srgb,var(--label) 55%,transparent);
 }
-/* A sliver of a lecture still names itself on hover; below 90px it keeps the
-   title alone. */
+.rooms-card.rooms-card-compact{justify-content:flex-start;gap:1px;padding:4px 4px 10px;border-radius:5px}
+.rooms-card.rooms-card-compact::after{
+  content:"";position:absolute;right:var(--actual-right,0);bottom:0;
+  width:var(--actual-width,100%);height:3px;
+  border-radius:3px 3px 0 0;background:var(--edge);opacity:.92;
+}
+.rooms-card.rooms-card-compact b{
+  flex:none;height:27px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+  white-space:normal;overflow:hidden;text-overflow:clip;overflow-wrap:anywhere;
+  font-size:8px;font-weight:630;line-height:9px;letter-spacing:-.18px;
+}
+.rooms-card.rooms-card-compact span{
+  flex:none;display:block;height:16px;
+  white-space:normal;overflow:hidden;text-overflow:clip;
+  font-size:6.8px;font-weight:350;line-height:8px;letter-spacing:-.28px;
+}
+.rooms-card.rooms-card-compact em{display:block;top:auto;bottom:2px;left:4px;z-index:1;font-size:5.2px}
+.rooms-week-days .rooms-card b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow:hidden;text-overflow:clip;overflow-wrap:anywhere;font-size:7.4px;line-height:1.12}
+.rooms-week-days .rooms-card span{flex:none;display:block;height:12px;white-space:normal;overflow:hidden;text-overflow:clip;font-size:5.4px;line-height:6px;letter-spacing:-.34px}
+/* Even a sliver keeps both identities. Time yields first because the axis
+   already says it; subject and instructor never disappear. */
 .rooms-card{container-type:inline-size}
-@container (max-width:90px){.rooms-card span,.rooms-card em{display:none}}
-@container (max-width:44px){.rooms-card b{font-size:8.5px}}
+@container (max-width:90px){
+  .rooms-card:not(.rooms-card-compact){padding-inline:4px}
+  .rooms-card:not(.rooms-card-compact) b{font-size:8.25px;font-weight:590;letter-spacing:-.25px}
+  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:7px;font-weight:280;letter-spacing:-.3px}
+  .rooms-card:not(.rooms-card-compact) em{display:block;font-size:5.5px;opacity:.68}
+}
+@container (max-width:44px){
+  .rooms-card:not(.rooms-card-compact){padding-inline:2px}
+  .rooms-card:not(.rooms-card-compact) b{font-size:7.25px;letter-spacing:-.4px}
+  .rooms-card:not(.rooms-card-compact) span{font-size:6.25px;letter-spacing:-.45px}
+  .rooms-card:not(.rooms-card-compact) em{display:none}
+}
 .rooms-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
 .rooms-card .week-moved-pill{top:2px;inset-inline-end:2px}
 
@@ -2588,15 +2706,17 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   .week-code b{display:none}
   .week-title{padding-inline-end:30px}
 }
-/* Type floor: nothing under 10px on the three promises. */
+/* In a crushed lane the two human identities remain; metadata yields first. */
 @container (max-width:64px){
-  .week-title{font-size:10px}
-  .week-who{font-size:10px;opacity:.85}
+  .week-title{font-size:7.75px;font-weight:580;overflow-wrap:anywhere;word-break:normal}
+  .week-who{display:block;font-size:7px;font-weight:300;opacity:.86}
+  .week-code,.week-when{display:none}
 }
 /* A half-hour card still says who teaches it: title folds to one line and the
    instructor keeps the second. */
 @container (max-height:44px){
-  .week-who{display:block;font-size:10px}
+  .week-who{display:block;font-size:7.5px;font-weight:300}
+  .week-title{-webkit-line-clamp:1}
 }
 
 /* --- The week takes the room it deserves ----------------------------------- */
@@ -2716,3 +2836,12 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink);
 }
 .rooms-chip.on b{background:var(--accent);color:var(--accent-contrast)}
+
+@media (max-width:768px){
+  .rooms-surface{padding:var(--s3)}
+  .rooms-scale,.rooms-row{grid-template-columns:54px minmax(0,1fr)}
+  .rooms-scale-week,.rooms-compare-row{grid-template-columns:54px 62px minmax(0,1fr)}
+  .rooms-week-room-head{padding-inline:var(--s3)}
+  .rooms-row>.rooms-day-label{padding-inline:var(--s3) var(--s1);font-size:9px}
+  .rooms-row>.rooms-day-label::before{display:none}
+}

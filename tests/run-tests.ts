@@ -6,6 +6,7 @@ import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
 import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../src/utils/weekVisual";
 import { findConflicts } from "../src/utils/scheduleIntelligence";
+import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase } from "../src/db/repository";
 
 const originalLog = console.log;
@@ -132,7 +133,17 @@ async function runTests() {
     assert(firstLast("د. منى حسن") === "د. منى حسن", "short name passes untouched");
     assert(firstLast("عبدالعزيز خالد العنزي") === "عبدالعزيز العنزي", "no honorific: first and last");
     assert(firstLast("الدكتورة نورة سعد فهد العجمي") === "الدكتورة نورة العجمي", "full-word honorific recognised");
+    assert(firstLast("د. عبد الرحمن أحمد السعيد") === "د. عبد الرحمن السعيد", "compound عبد الرحمن remains one given name");
     assert(firstLast("") === "", "empty name stays empty");
+
+    // One university clock everywhere: the boundary is inclusive, but no
+    // lecture may begin before 08:00, end after 20:00, or have zero duration.
+    assert(withinScheduleDay(SCHEDULE_DAY_START, SCHEDULE_DAY_END), "08:00–20:00 is the full valid teaching day");
+    assert(withinScheduleDay(8 * 60, 8 * 60 + 30), "a half-hour at opening is valid");
+    assert(withinScheduleDay(19 * 60 + 30, 20 * 60), "a half-hour ending at 20:00 is valid");
+    assert(!withinScheduleDay(7 * 60 + 30, 8 * 60 + 30), "07:30 start is rejected");
+    assert(!withinScheduleDay(19 * 60 + 30, 20 * 60 + 30), "20:30 end is rejected");
+    assert(!withinScheduleDay(10 * 60, 10 * 60), "zero-duration appointment is rejected");
 
     // A combined class is represented by one row per registered section. It
     // consumes one lecturer and one room once, so those sibling rows must not

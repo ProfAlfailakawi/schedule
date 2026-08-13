@@ -50,12 +50,18 @@ function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ d
 // The dashboard is the landing screen and stays in the first payload. Every other
 // workspace is fetched the moment it is first opened, which keeps the initial
 // download small on the slow campus connections this runs on.
-const AcademicConsole = safeLazy(() => import("./components/AcademicConsole"));
-const Schedules = safeLazy(() => import("./components/Schedules"));
-const Reports = safeLazy(() => import("./components/Reports"));
-const AdminUsers = safeLazy(() => import("./components/AdminUsers"));
-const About = safeLazy(() => import("./components/About"));
-const IntelligenceWorkspace = safeLazy(() => import("./components/IntelligenceWorkspace"));
+const loadAcademicConsole = () => import("./components/AcademicConsole");
+const loadSchedules = () => import("./components/Schedules");
+const loadReports = () => import("./components/Reports");
+const loadAdminUsers = () => import("./components/AdminUsers");
+const loadAbout = () => import("./components/About");
+const loadIntelligence = () => import("./components/IntelligenceWorkspace");
+const AcademicConsole = safeLazy(loadAcademicConsole);
+const Schedules = safeLazy(loadSchedules);
+const Reports = safeLazy(loadReports);
+const AdminUsers = safeLazy(loadAdminUsers);
+const About = safeLazy(loadAbout);
+const IntelligenceWorkspace = safeLazy(loadIntelligence);
 import { PrimaryButton } from "./components/ui";
 
 type View =
@@ -151,6 +157,18 @@ const viewByPath = new Map(
     view as View,
   ]),
 );
+
+/** The pointer reaches a destination before the click. Use that small lead to
+ * fetch its code chunk; dynamic imports are cached, so this never downloads a
+ * screen twice and makes every navigation icon feel immediate. */
+function prefetchView(view: View) {
+  if (view === "schedules" || view === "scheduleCopy") void loadSchedules();
+  else if (view === "intelligence") void loadIntelligence();
+  else if (academicViews.includes(view as AcademicTab)) void loadAcademicConsole();
+  else if (searchViews.includes(view as ReportMode) || reportViews.includes(view as ReportMode)) void loadReports();
+  else if (adminViews.includes(view as AdminMode)) void loadAdminUsers();
+  else if (view === "about") void loadAbout();
+}
 
 const IDLE_LOGOUT_MS = 15 * 60 * 1000;
 const IDLE_ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
@@ -433,6 +451,7 @@ export default function App() {
     return () => window.removeEventListener("pointerdown", dismiss);
   }, [sidebarOpen]);
   const go = (view: View) => {
+    prefetchView(view);
     recordUse(view);
     setActiveView(view);
     setSidebarOpen(false);
@@ -731,6 +750,8 @@ export default function App() {
       <button
         type="button"
         className={`side-nav-link ${on ? "active" : ""}`}
+        onPointerEnter={() => prefetchView(view)}
+        onFocus={() => prefetchView(view)}
         onClick={() => go(view)}
       >
         {icon}
@@ -1021,10 +1042,10 @@ export default function App() {
     ...(query.trim().includes("تعارض")
       ? [
           {
-            label: "راجع التعارضات الآن",
+            label: "راجع موانع الحفظ الآن",
             hint: isPowerAdmin
               ? "افتح مركز القرار"
-              : "افتح الجدول ومساعد التعارضات",
+              : "افتح الجدول وفحص الموانع",
             keywords: "تعارض تعارضات",
             icon: <ShieldCheck />,
             run: () => {
@@ -1140,8 +1161,8 @@ export default function App() {
         {
           icon: <ShieldCheck />,
           eyebrow: "خصوصية القسم",
-          title: "قسمك فقط… مع كشف التعارضات بأمان",
-          copy: "التعارض الخارجي محجوب لكنه محمي.",
+          title: "قسمك فقط… مع حماية الحجز بالكامل",
+          copy: "حجوزات الأقسام الأخرى محسوبة دون كشف تفاصيلها.",
         },
         {
           icon: <WifiOff />,

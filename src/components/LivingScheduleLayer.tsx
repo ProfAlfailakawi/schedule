@@ -23,7 +23,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { Badge, GhostButton, PrimaryButton, SecondaryButton } from "./ui";
+import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
   BriefScene,
   ContextPicker,
@@ -34,6 +34,7 @@ import {
 } from "./LivingScheduleScenes";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import type { ScheduleExperience } from "./ScheduleExperienceLayer";
+import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 
 type Scene =
   | "pulse"
@@ -183,8 +184,12 @@ export default function LivingScheduleLayer({
     }
   };
   useEffect(() => {
+    if (experience) {
+      if (experience.living) setLiving(experience.living);
+      return;
+    }
     void loadLiving();
-  }, [collegeId, sectionId, termId, rows.length]);
+  }, [experience?.living, collegeId, sectionId, termId, rows.length]);
   useEffect(() => {
     if (!selected) return;
     setSelectedId(selected.id);
@@ -560,18 +565,8 @@ export default function LivingScheduleLayer({
                 </button>
               </section>
             ) : null}
-            {error ? (
-              <div className="living-alert error">
-                <AlertTriangle />
-                {error}
-              </div>
-            ) : null}
-            {message ? (
-              <div className="living-alert success">
-                <CheckCircle2 />
-                {message}
-              </div>
-            ) : null}
+            {error ? <Notice>{error}</Notice> : null}
+            {message ? <Notice type="success">{message}</Notice> : null}
             <div className="living-panel-body">
               {scene === "pulse" ? (
                 <PulseScene living={living} onGo={(s) => open(s)} />
@@ -634,6 +629,9 @@ export default function LivingScheduleLayer({
                           <span>البداية</span>
                           <input
                             type="time"
+                            min={SCHEDULE_DAY_START_TIME}
+                            max={SCHEDULE_DAY_END_TIME}
+                            step={SCHEDULE_SLOT_MINUTES * 60}
                             value={candidateStart}
                             onChange={(e) => setCandidateStart(e.target.value)}
                           />
@@ -642,6 +640,9 @@ export default function LivingScheduleLayer({
                           <span>النهاية</span>
                           <input
                             type="time"
+                            min={SCHEDULE_DAY_START_TIME}
+                            max={SCHEDULE_DAY_END_TIME}
+                            step={SCHEDULE_SLOT_MINUTES * 60}
                             value={candidateEnd}
                             onChange={(e) => setCandidateEnd(e.target.value)}
                           />

@@ -34,6 +34,9 @@ interface Props {
   /** Ids already teaching in the open department this term, most-loaded first. */
   departmentIds: number[];
   onCreated?: (instructor: Instructor) => void;
+  onSelected?: (instructor: Instructor) => void;
+  collegeId?: number;
+  termId?: number;
   disabled?: boolean;
 }
 
@@ -53,7 +56,7 @@ const fold = (value: string) =>
 const withoutTitles = (value: string) =>
   fold(value).replace(/^(?:ا?د|ا|م|أ|prof|dr|mr|ms)\s+/g, "").trim();
 
-export default function InstructorPicker({ value, onChange, instructors, departmentIds, onCreated, disabled }: Props) {
+export default function InstructorPicker({ value, onChange, instructors, departmentIds, onCreated, onSelected, collegeId = 0, termId = 0, disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -76,16 +79,22 @@ export default function InstructorPicker({ value, onChange, instructors, departm
    * fetched once and kept — so the common case costs nothing and the rare case
    * costs one request.
    */
-  const [reachedWider, setReachedWider] = useState(false);
   const [wider, setWider] = useState<Instructor[]>([]);
   useEffect(() => {
-    if (!query.trim() || reachedWider) return;
-    setReachedWider(true);
-    fetch("/api/instructors")
-      .then(response => (response.ok ? response.json() : []))
-      .then(list => { if (Array.isArray(list)) setWider(list); })
-      .catch(() => undefined);
-  }, [query, reachedWider]);
+    const needle = query.trim();
+    if (needle.length < 2) { setWider([]); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams({ q: needle, limit: "40" });
+      if (collegeId) params.set("collegeId", String(collegeId));
+      if (termId) params.set("termId", String(termId));
+      fetch(`/api/instructors?${params}`, { signal: controller.signal })
+        .then(response => (response.ok ? response.json() : []))
+        .then(list => { if (Array.isArray(list)) setWider(list); })
+        .catch(() => undefined);
+    }, 120);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, collegeId, termId]);
 
   const departmentRank = useMemo(() => new Map(departmentIds.map((id, index) => [id, index])), [departmentIds]);
 
@@ -95,7 +104,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       // Nothing typed: the department, in the order it actually teaches.
       return departmentIds.map(id => byId.get(id)).filter(Boolean) as Instructor[];
     }
-    const pool = wider.length > instructors.length ? wider : instructors;
+    const pool = [...new Map([...instructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
     const scored = pool
       .map(person => {
         const name = withoutTitles(person.AdInstructorName);
@@ -208,7 +217,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
                 className={person.AdInstructorId === value ? "chosen" : ""}
                 role="option"
                 aria-selected={person.AdInstructorId === value}
-                onClick={() => { onChange(person.AdInstructorId); setOpen(false); }}
+                onClick={() => { onSelected?.(person); onChange(person.AdInstructorId); setOpen(false); }}
               >
                 {/* The name gets the width; the civil ID sits beneath it. Side
                     by side, twelve monospace digits left a department's names

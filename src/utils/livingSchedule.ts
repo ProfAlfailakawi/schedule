@@ -1,6 +1,7 @@
 import type { AdCourse, AdInstructor, FSchedule, ScheduleConstraint, ScheduleDecisionMemory } from "../types";
 import { activeDays, analyzeSchedule, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { evaluateScheduleConstraints } from "./scheduleInnovation";
+import { SCHEDULE_DAY_END, SCHEDULE_DAY_START } from "./scheduleTime";
 
 const DAY_LABEL = new Map(SCHEDULE_DAYS.map(day => [day.key, day.label]));
 const clamp = (value:number,min:number,max:number)=>Math.max(min,Math.min(max,value));
@@ -135,10 +136,10 @@ export function createEmergencyPlans(kind:"room"|"day"|"instructor",value:string
     for(const item of affected){const index=scenario.findIndex(r=>r.id===item.id);if(index<0)continue;const current=scenario[index];const candidates:FSchedule[]=[];
       if(kind==="room"){
         for(const room of allRooms){if(`${room.code}|${room.hall}`===String(value))continue;candidates.push({...current,AdRoomCode:room.code,AdRoomHall:room.hall})}
-        for(let offset of [-60,-30,30,60]){const start=timeToMinutes(current.fstarttime)+offset,end=timeToMinutes(current.fendtime)+offset;if(start>=8*60&&end<=18*60)for(const room of allRooms.slice(0,18))candidates.push({...current,fstarttime:minutesToTime(start),fendtime:minutesToTime(end),AdRoomCode:room.code,AdRoomHall:room.hall})}
+        for(let offset of [-60,-30,30,60]){const start=timeToMinutes(current.fstarttime)+offset,end=timeToMinutes(current.fendtime)+offset;if(start>=SCHEDULE_DAY_START&&end<=SCHEDULE_DAY_END)for(const room of allRooms.slice(0,18))candidates.push({...current,fstarttime:minutesToTime(start),fendtime:minutesToTime(end),AdRoomCode:room.code,AdRoomHall:room.hall})}
       } else if(kind==="day"){
         for(const day of SCHEDULE_DAYS){if(day.key===String(value))continue;const c:any={...current};for(const d of SCHEDULE_DAYS)c[d.key]=false;c[day.key]=true;candidates.push(c)}
-        for(const day of SCHEDULE_DAYS){if(day.key===String(value))continue;for(let offset of [-60,-30,30,60]){const start=timeToMinutes(current.fstarttime)+offset,end=timeToMinutes(current.fendtime)+offset;if(start<8*60||end>18*60)continue;const c:any={...current,fstarttime:minutesToTime(start),fendtime:minutesToTime(end)};for(const d of SCHEDULE_DAYS)c[d.key]=false;c[day.key]=true;candidates.push(c)}}
+        for(const day of SCHEDULE_DAYS){if(day.key===String(value))continue;for(let offset of [-60,-30,30,60]){const start=timeToMinutes(current.fstarttime)+offset,end=timeToMinutes(current.fendtime)+offset;if(start<SCHEDULE_DAY_START||end>SCHEDULE_DAY_END)continue;const c:any={...current,fstarttime:minutesToTime(start),fendtime:minutesToTime(end)};for(const d of SCHEDULE_DAYS)c[d.key]=false;c[day.key]=true;candidates.push(c)}}
       } else {
         const replacements=(courseTeachers.get(current.AdCourseId)||[]).filter(id=>id!==Number(value));for(const id of replacements)candidates.push({...current,AdInstructorId:id});
       }

@@ -63,7 +63,11 @@ export function firstLast(name: string): string {
   const lead = words[0].replace(/[.٫]/g, "");
   const honorific = HONORIFICS.has(lead) ? words.shift()! : "";
   if (words.length <= 2) return [honorific, ...words].filter(Boolean).join(" ");
-  return [honorific, words[0], words[words.length - 1]].filter(Boolean).join(" ");
+  // «عبد الرحمن» and «عبد العزيز» are one given name in Arabic; dropping the
+  // second word turns the person into somebody else. Keep the compound before
+  // adding the family name.
+  const given = words[0] === "عبد" && words.length >= 3 ? `${words[0]} ${words[1]}` : words[0];
+  return [honorific, given, words[words.length - 1]].filter(Boolean).join(" ");
 }
 
 /**

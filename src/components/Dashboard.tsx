@@ -1,14 +1,14 @@
 import React,{useEffect,useMemo,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
+import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START}from"../utils/scheduleTime";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
 interface DashboardData{history?:Array<{termId:number;termName:string;schedules:number;rooms:number;instructors:number}>;previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
 
 const num=(value:number|undefined)=>Number(value||0).toLocaleString("ar-KW-u-nu-latn");
-const DAY_START=7*60,DAY_END=21*60,DAY_SPAN=DAY_END-DAY_START;
 const minutesOf=(value:string)=>{const[h,m]=String(value||"0:0").split(":").map(Number);return(h||0)*60+(m||0)};
-const spot=(minutes:number)=>`${Math.min(100,Math.max(0,((minutes-DAY_START)/DAY_SPAN)*100))}%`;
+const spot=(minutes:number)=>`${Math.min(100,Math.max(0,((minutes-SCHEDULE_DAY_START)/SCHEDULE_DAY_SPAN)*100))}%`;
 /** Single-letter day marks, the way a printed Arabic timetable labels its columns. */
 const DAY_MARK:Record<string,string>={"الأحد":"ح","الاثنين":"ن","الإثنين":"ن","الثلاثاء":"ث","الأربعاء":"ر","الخميس":"خ"};
 const dayMark=(label:string)=>DAY_MARK[String(label||"").trim()]||String(label||"").replace(/^ال/,"").slice(0,2);
@@ -93,7 +93,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
  const decisionLevel=String(primaryDecision?.severity||primaryDecision?.level||"info");
  const today=data?.today||[];
  const nowMinutes=now.getHours()*60+now.getMinutes();
- const nowVisible=nowMinutes>=DAY_START&&nowMinutes<=DAY_END;
+ const nowVisible=nowMinutes>=SCHEDULE_DAY_START&&nowMinutes<=SCHEDULE_DAY_END;
  const nextUp=useMemo(()=>today.find(row=>minutesOf(row.startTime)>=nowMinutes)||null,[today,nowMinutes]);
 
  return <div className="content-stack dashboard-page command-deck">
@@ -119,14 +119,14 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     </div>
     <div className="daybar">
      <div className="daybar-track">
-      {[9,11,13,15,17,19].map(hour=><i key={hour} className="daybar-grid" style={{insetInlineStart:spot(hour*60)}}/>)}
+      {[8,10,12,14,16,18,20].map(hour=><i key={hour} className="daybar-grid" style={{insetInlineStart:spot(hour*60)}}/>)}
       {today.map(row=>{
        const start=minutesOf(row.startTime),end=Math.max(start+30,minutesOf(row.endTime));
        return <button
         key={row.id}
         type="button"
         className="daybar-block"
-        style={{insetInlineStart:spot(start),width:`${((end-start)/DAY_SPAN)*100}%`}}
+        style={{insetInlineStart:spot(start),width:`${((end-start)/SCHEDULE_DAY_SPAN)*100}%`}}
         title={`${row.courseCode} · ${row.courseName} · ${row.startTime}-${row.endTime} · ${row.roomCode}/${row.roomHall} · ${row.instructorName}`}
         onClick={()=>onNavigate?.("schedules")}
        ><b>{row.courseCode}</b></button>;
@@ -134,7 +134,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
       {nowVisible?<span className="daybar-now" style={{insetInlineStart:spot(nowMinutes)}} aria-hidden="true"/>:null}
      </div>
      <div className="daybar-scale" aria-hidden="true">
-      {[7,10,13,16,19].map(hour=><span key={hour} style={{insetInlineStart:spot(hour*60)}} dir="ltr">{String(hour).padStart(2,"0")}</span>)}
+      {[8,11,14,17,20].map(hour=><span key={hour} style={{insetInlineStart:spot(hour*60)}} dir="ltr">{String(hour).padStart(2,"0")}</span>)}
      </div>
     </div>
     {today.length?null:<p className="deck-clear"><CheckCircle2 aria-hidden="true"/>لا محاضرات</p>}
@@ -154,7 +154,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    <section className={`deck-decision level-${decisionLevel}`} aria-label="القرار الأهم">
     <span className="deck-decision-mark">{primaryDecision?<ShieldAlert aria-hidden="true"/>:<CheckCircle2 aria-hidden="true"/>}</span>
     <div>
-     <strong>{primaryDecision?.title||primaryDecision?.label||"لا تعارضات"}</strong>
+     <strong>{primaryDecision?.title||primaryDecision?.label||"الجدول سليم"}</strong>
      {primaryDecision?<small>{primaryDecision.detail||primaryDecision.description||primaryDecision.message}</small>:null}
     </div>
     {decisions.length>1?<span className="deck-decision-count">{num(decisions.length)}</span>:null}

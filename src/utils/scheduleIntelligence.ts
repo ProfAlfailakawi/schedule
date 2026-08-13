@@ -1,4 +1,5 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
+import { SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
 export type DayKey = "fsunday"|"fmonday"|"ftuesday"|"fwednesday"|"fthursday";
 export const SCHEDULE_DAYS: Array<{key:DayKey;label:string}> = [
@@ -151,11 +152,11 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   const score=clamp(100-conflictPenalty-gapPenalty-latePenalty-balancePenalty-healthPenalty,0,100);
 
   const heatmap:any[]=[];
-  for(const day of SCHEDULE_DAYS){for(let minute=8*60;minute<18*60;minute+=30){const count=targetRows.filter(row=>Boolean(row[day.key])&&timeToMinutes(row.fstarttime)<minute+30&&timeToMinutes(row.fendtime)>minute).length;heatmap.push({day:day.key,label:day.label,time:minutesToTime(minute),count})}}
+  for(const day of SCHEDULE_DAYS){for(let minute=SCHEDULE_DAY_START;minute<SCHEDULE_DAY_END;minute+=SCHEDULE_SLOT_MINUTES){const count=targetRows.filter(row=>Boolean(row[day.key])&&timeToMinutes(row.fstarttime)<minute+SCHEDULE_SLOT_MINUTES&&timeToMinutes(row.fendtime)>minute).length;heatmap.push({day:day.key,label:day.label,time:minutesToTime(minute),count})}}
 
   const roomGroups=new Map<string,FSchedule[]>();
   targetRows.forEach(row=>{const key=roomKey(row);if(key!=="|"){const list=roomGroups.get(key)||[];list.push(row);roomGroups.set(key,list)}});
-  const rooms=[...roomGroups.entries()].map(([key,list])=>{const [code,hall]=key.split("|");const occupied=list.reduce((sum,row)=>sum+duration(row)*activeDays(row).length,0);return{key,code,hall,sessions:list.length,occupiedMinutes:occupied,utilization:Math.round(clamp(occupied/(5*10*60)*100,0,100))}}).sort((a,b)=>b.occupiedMinutes-a.occupiedMinutes);
+  const rooms=[...roomGroups.entries()].map(([key,list])=>{const [code,hall]=key.split("|");const occupied=list.reduce((sum,row)=>sum+duration(row)*activeDays(row).length,0);return{key,code,hall,sessions:list.length,occupiedMinutes:occupied,utilization:Math.round(clamp(occupied/(5*SCHEDULE_DAY_SPAN)*100,0,100))}}).sort((a,b)=>b.occupiedMinutes-a.occupiedMinutes);
 
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const professorLoads=[...gaps.entries()].map(([id,g])=>({id,name:instructorById.get(id)?.AdInstructorName||`أستاذ ${id}`,weeklyHours:Number((g.weeklyMinutes/60).toFixed(1)),days:g.days.size,gapMinutes:g.gapMinutes,maxGap:g.maxGap,maxContinuous:g.maxContinuous})).sort((a,b)=>b.weeklyHours-a.weeklyHours);
@@ -205,7 +206,7 @@ export function conflictSolutions(row:FSchedule, allRows:FSchedule[], max=5){
   const rooms=[...new Map(allRows.filter(r=>r.AdRoomCode&&r.AdRoomHall).map(r=>[roomKey(r),{code:r.AdRoomCode,hall:r.AdRoomHall}])).values()];
   const preferredRooms=rooms.sort((a,b)=>Number(b.code===row.AdRoomCode)-Number(a.code===row.AdRoomCode)).slice(0,60);
   const dur=Math.max(30,duration(row)); const original=timeToMinutes(row.fstarttime); const candidates:Array<any>=[];
-  for(let start=8*60;start<=17*60;start+=30){
+  for(let start=SCHEDULE_DAY_START;start+dur<=SCHEDULE_DAY_END;start+=SCHEDULE_SLOT_MINUTES){
     for(const room of [{code:row.AdRoomCode,hall:row.AdRoomHall},...preferredRooms]){
       const candidate={...row,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+dur),AdRoomCode:room.code,AdRoomHall:room.hall};
       const conflicts=candidateConflictCount(candidate,allRows,row.id); const roomChanged=room.code!==row.AdRoomCode||room.hall!==row.AdRoomHall;
@@ -233,7 +234,7 @@ export function autoScheduleProposal(targetRows:FSchedule[], allRows:FSchedule[]
     const originalUniverse=[...external,...placed,...remaining];
     const originalConflicts=candidateConflictCount(row,originalUniverse,row.id);
     let best={row:{...row},score:originalConflicts*10000};
-    for(let start=8*60;start<=17*60;start+=30){
+    for(let start=SCHEDULE_DAY_START;start+dur<=SCHEDULE_DAY_END;start+=SCHEDULE_SLOT_MINUTES){
       const candidate={...row,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+dur)};
       const universe=[...external,...placed,...remaining];
       const conflicts=candidateConflictCount(candidate,universe,row.id);

@@ -63,6 +63,7 @@ import {
   intelligenceDayLabels as dayLabels,
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
+import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -186,7 +187,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [warRowId, setWarRowId] = useState<number | "">(""),
     [warBusy, setWarBusy] = useState(false),
     [autopilotGoal, setAutopilotGoal] = useState(
-      "قلل الفراغات والتعارضات بأقل تغيير ممكن، وحافظ على القاعات والأيام الحالية",
+      "قلل الفراغات ومواضع التحقق بأقل تغيير ممكن، وحافظ على القاعات والأيام الحالية",
     ),
     [autopilot, setAutopilot] = useState<any>(null),
     [autopilotBusy, setAutopilotBusy] = useState(false);
@@ -965,7 +966,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <span className="surface-kicker">مؤشر جودة الجدول</span>
               <h2>{readinessLabel}</h2>
               <p>
-                الدرجة تجمع التعارضات، فراغات الأساتذة، توازن الأيام، الأوقات
+                الدرجة تجمع موانع الاعتماد، فراغات الأساتذة، توازن الأيام، الأوقات
                 المتأخرة وصحة البيانات.
               </p>
               {/*
@@ -1011,7 +1012,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 className={overview.metrics.criticalConflicts ? "danger" : "ok"}
               >
                 <strong>{overview.metrics.criticalConflicts}</strong>
-                <span>تعارض حرج</span>
+                <span>موضع يحتاج تحقق</span>
               </article>
               <article>
                 <strong>{overview.metrics.invalidRows}</strong>
@@ -1450,7 +1451,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <Surface>
               <span className="surface-kicker">حدود المعرفة</span>
               <h3>{overview?.context?.sectionName}</h3>
-              <p>قسمك فقط · التعارض الخارجي مكشوف.</p>
+              <p>قسمك فقط · الحجوزات الخارجية محسوبة دون كشف تفاصيلها.</p>
             </Surface>
             <Surface>
               <span className="surface-kicker">أوامر مفيدة</span>
@@ -1660,6 +1661,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <Field label="آخر نهاية">
                         <input
                           type="time"
+                          min={SCHEDULE_DAY_START_TIME}
+                          max={SCHEDULE_DAY_END_TIME}
+                          step={SCHEDULE_SLOT_MINUTES * 60}
                           value={constraintDraft.time}
                           onChange={(e) =>
                             setConstraintDraft((p: any) => ({
@@ -1843,7 +1847,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span>الوضع الحالي</span>
                       <b>{warRoom.baseline.score}/100</b>
                       <small>
-                        {warRoom.baseline.conflicts} تعارض ·{" "}
+                        {warRoom.baseline.conflicts} مانع ·{" "}
                         {warRoom.baseline.avgGap}د فراغ
                       </small>
                     </div>
@@ -1869,7 +1873,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               فرق
                             </span>
                             <span>
-                              <b>{o.conflicts}</b> تعارض
+                              <b>{o.conflicts}</b> مانع
                             </span>
                             <span>
                               <b>{o.avgGap}د</b> فراغ عام
@@ -1987,7 +1991,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             <b>{o.score}/100</b>
                           </div>
                           <div className="auto-metrics">
-                            <span>{o.conflicts} تعارض</span>
+                            <span>{o.conflicts} مانع</span>
                             <span>{o.avgGap}د فراغ</span>
                             <span>{o.imbalance}% عدم توازن</span>
                             <span
@@ -2171,6 +2175,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <Field label="البداية">
                         <input
                           type="time"
+                          min={SCHEDULE_DAY_START_TIME}
+                          max={SCHEDULE_DAY_END_TIME}
+                          step={SCHEDULE_SLOT_MINUTES * 60}
                           value={selectedScenario.fstarttime}
                           onChange={(e) =>
                             patchScenario({ fstarttime: e.target.value })
@@ -2180,6 +2187,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <Field label="النهاية">
                         <input
                           type="time"
+                          min={SCHEDULE_DAY_START_TIME}
+                          max={SCHEDULE_DAY_END_TIME}
+                          step={SCHEDULE_SLOT_MINUTES * 60}
                           value={selectedScenario.fendtime}
                           onChange={(e) =>
                             patchScenario({ fendtime: e.target.value })

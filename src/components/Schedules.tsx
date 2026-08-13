@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -94,6 +94,14 @@ import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, type DayKey 
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
 import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../utils/weekVisual";
+import {
+  SCHEDULE_DAY_END,
+  SCHEDULE_DAY_END_TIME,
+  SCHEDULE_DAY_START,
+  SCHEDULE_DAY_START_TIME,
+  SCHEDULE_SLOT_MINUTES,
+  withinScheduleDay,
+} from "../utils/scheduleTime";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -101,6 +109,7 @@ interface Props {
   scopes?: any[];
 }
 type EditorMode = "index" | "create" | "edit";
+const AGENDA_PAGE_SIZE = 60;
 
 /**
  * A reversal, written down rather than held in a closure.
@@ -194,6 +203,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [courses, setCourses] = useState<AdCourse[]>([]),
     [instructors, setInstructors] = useState<AdInstructor[]>([]),
     [rows, setRows] = useState<FSchedule[]>([]);
+  const [workspaceReady, setWorkspaceReady] = useState(false);
   const [editor, setEditor] = useState<EditorMode>("index"),
     [editId, setEditId] = useState<number | null>(null),
     [form, setForm] = useState(blank()),
@@ -209,7 +219,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
        them — the pill each one wears is the undo, in place. */
     [recentMoves, setRecentMoves] = useState<Record<number, string>>({}),
     /* Which day the rooms matrix is reading, and which rooms are pinned. */
-    [matrixDay, setMatrixDay] = useState<DayKey | null>(null),
+    [matrixDay, setMatrixDay] = useState<DayKey | "week">("week"),
     [matrixRooms, setMatrixRooms] = useState<Set<string>>(new Set()),
     [viewMode, setViewMode] = useState(
       savedPrefs.viewMode === "week" ? "week" : savedPrefs.viewMode === "rooms" ? "rooms" : "list",
@@ -240,7 +250,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       Number(savedPrefs.filterSection) || 0,
     ),
     [filterTerm, setFilterTerm] = useState(Number(savedPrefs.filterTerm) || 0),
-    [visibleLimit, setVisibleLimit] = useState(120);
+    [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
   const [copyCollege, setCopyCollege] = useState(0),
     [copySection, setCopySection] = useState(0),
     [copyFromTerm, setCopyFromTerm] = useState(0),
@@ -345,40 +355,40 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     incoming.forEach(row => merged.set(id(row), row));
     return sortByName([...merged.values()], name as any);
   };
+  const scopedLookupKey = useRef("");
   useEffect(() => {
-    if (!filterSection) return;
+    if (mode !== "schedule" || !workspaceReady || !filterSection) return;
+    const key = `${filterSection}|${filterTerm || 0}`;
+    if (scopedLookupKey.current === key) return;
+    scopedLookupKey.current = key;
     let alive = true;
     // The department's own staff, not the university register.
     fetchJson(`/api/instructors?sectionId=${filterSection}&termId=${filterTerm || 0}`)
       .then((list: any[]) => {
-        if (!alive || !Array.isArray(list) || !list.length) return;
-        setInstructors(current => mergeById(current as any[], list, row => Number(row.AdInstructorId), row => row.AdInstructorName));
+        if (!alive || !Array.isArray(list)) return;
+        setInstructors(sortByName(list, row => row.AdInstructorName));
       })
-      .catch(() => undefined);
+      .catch(() => { if (alive) scopedLookupKey.current = ""; });
     fetchJson(`/api/courses?sectionId=${filterSection}`)
       .then((list: any[]) => {
-        if (!alive || !Array.isArray(list) || !list.length) return;
-        setCourses(current => mergeById(current as any[], list, row => Number(row.AdCourseId), row => row.CourseName));
+        if (!alive || !Array.isArray(list)) return;
+        setCourses(sortByName(list, row => row.CourseName));
       })
-      .catch(() => undefined);
+      .catch(() => { if (alive) scopedLookupKey.current = ""; });
     return () => { alive = false; };
-  }, [filterSection, filterTerm]);
+  }, [mode, workspaceReady, filterSection, filterTerm]);
 
   const loadLookups = async () => {
-    const [c, s, rawTerms, co, i] = await Promise.all([
+    const [c, s, rawTerms] = await Promise.all([
       fetchJson("/api/colleges"),
       fetchJson("/api/sections"),
       fetchJson("/api/terms"),
-      fetchJson("/api/courses"),
-      fetchJson("/api/instructors"),
     ]);
     const t = [...rawTerms].sort((a: AdTerm, b: AdTerm) => Number(b.AdTermId) - Number(a.AdTermId));
     setColleges(sortByName(c, (row:any)=>row.AdCollegeName));
     setSections(sortByName(s, (row:any)=>row.AdSectionName));
     setTerms(t);
-    setCourses(sortByName(co, (row:any)=>row.CourseName));
-    setInstructors(sortByName(i, (row:any)=>row.AdInstructorName));
-    return { colleges: c as AdCollege[], sections: s as AdSection[], terms: t as AdTerm[], courses: co as AdCourse[], instructors: i as AdInstructor[] };
+    return { colleges: c as AdCollege[], sections: s as AdSection[], terms: t as AdTerm[] };
   };
   /**
    * The week lens.
@@ -686,20 +696,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [emptyElsewhere, setEmptyElsewhere] = useState<Array<{ sectionId: number; name: string; count: number }>>([]);
   /** Only the newest read may write the rows; a slower earlier one is discarded. */
   const loadToken = useRef(0);
+  const loadAbort = useRef<AbortController | null>(null);
   const loadRows = async () => {
     const p = new URLSearchParams();
     if (filterCollege) p.set("collegeId", String(filterCollege));
     if (filterSection) p.set("sectionId", String(filterSection));
     if (filterTerm) p.set("termId", String(filterTerm));
     const token = ++loadToken.current;
+    loadAbort.current?.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
     setRowsLoading(true);
     try {
-      const data = await fetchJson(`/api/schedules${p.size ? `?${p}` : ""}`);
+      const data = await fetchJson(`/api/schedules${p.size ? `?${p}` : ""}`, { signal: controller.signal });
       if (token === loadToken.current) setRows(data);
+    } catch (error: any) {
+      if (error?.name !== "AbortError") throw error;
     } finally {
       if (token === loadToken.current) setRowsLoading(false);
     }
   };
+  useEffect(() => () => loadAbort.current?.abort(), []);
   useEffect(() => {
     setEditor("index");
     setEditId(null);
@@ -707,13 +724,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setCourseName("");
     setError(null);
     setMessage(null);
-    setVisibleLimit(120);
+    setVisibleLimit(AGENDA_PAGE_SIZE);
     setCopyCollege(0);
     setCopySection(0);
     setCopyFromTerm(0);
     setCopyToTerm(0);
     setCopyPreview(null);
     setCopyUndoPoint(null);
+    setWorkspaceReady(false);
+    scopedLookupKey.current = "";
     (async () => {
       try {
         const lookup = await loadLookups();
@@ -745,10 +764,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           // A stale preference must never silently reopen a decade-old term.
           setFilterTerm(latestTermId);
           setViewMode(pref.viewMode === "week" ? "week" : pref.viewMode === "rooms" ? "rooms" : "list");
-          const qp = new URLSearchParams({ termId: String(latestTermId) });
-          if (defaultCollege) qp.set("collegeId", String(defaultCollege));
-          if (defaultSection) qp.set("sectionId", String(defaultSection));
-          setRows(await fetchJson(`/api/schedules?${qp}`));
+          setWorkspaceReady(true);
         } else if (mode === "copy") {
           setCopyCollege(defaultCollege);
           setCopySection(defaultSection);
@@ -761,7 +777,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     })();
   }, [mode, user?.SystemUserId]);
   useEffect(() => {
-    if (mode !== "schedule") return;
+    if (mode !== "schedule" || !workspaceReady) return;
     localStorage.setItem(
       prefsKey,
       JSON.stringify({
@@ -776,7 +792,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         hueBy,
       }),
     );
-    setVisibleLimit(120);
+    setVisibleLimit(AGENDA_PAGE_SIZE);
   }, [
     filterCollege,
     filterSection,
@@ -816,16 +832,24 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       (s) => !copyCollege || s.AdCollegeId === copyCollege,
     );
   const latestTermId = useMemo(() => terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0), [terms]);
-  const collegeById = new Map<number, AdCollege>(
-      colleges.map((v) => [v.AdCollegeId, v] as const),
+  /* Stable lookup maps are essential here. Rebuilding them on every click made
+     every dependent memo look changed and forced the week layout to start over. */
+  const collegeById = useMemo(
+      () => new Map<number, AdCollege>(colleges.map((v) => [v.AdCollegeId, v] as const)),
+      [colleges],
     ),
-    courseById = new Map<number, AdCourse>(
-      courses.map((v) => [v.AdCourseId, v] as const),
+    courseById = useMemo(
+      () => new Map<number, AdCourse>(courses.map((v) => [v.AdCourseId, v] as const)),
+      [courses],
     ),
-    instructorById = new Map<number, AdInstructor>(
-      instructors.map((v) => [v.AdInstructorId, v] as const),
+    instructorById = useMemo(
+      () => new Map<number, AdInstructor>(instructors.map((v) => [v.AdInstructorId, v] as const)),
+      [instructors],
     ),
     selectedInstructor = instructorById.get(form.AdInstructorId);
+  const changeView = useCallback((value: string) => {
+    startTransition(() => setViewMode(value === "week" ? "week" : value === "rooms" ? "rooms" : "list"));
+  }, []);
   const filterScope = resolveScopeSelection(scopes, filterCollege, isPowerAdmin);
   const formScope = resolveScopeSelection(scopes, form.AdCollegeId, isPowerAdmin);
   const copyScope = resolveScopeSelection(scopes, copyCollege, isPowerAdmin);
@@ -880,11 +904,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         // A square gives an hour; a stroke down the column gives its own length.
         next.fendtime = seed.end && mins(seed.end) > mins(seed.start)
           ? seed.end
-          : timeFromMins(Math.min(23 * 60 + 30, mins(seed.start) + 60));
+          : timeFromMins(Math.min(SCHEDULE_DAY_END, mins(seed.start) + 60));
       }
       // A tap paints one square, which should still mean the usual hour.
       if (seed?.end && seed.start && mins(seed.end) - mins(seed.start) <= 30) {
-        next.fendtime = timeFromMins(Math.min(23 * 60 + 30, mins(seed.start) + 60));
+        next.fendtime = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(seed.start) + 60));
       }
       setForm(next);
       setCourseName("");
@@ -990,7 +1014,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setSlotIdeas(null);
   };
   const timeRangeInvalid = Boolean(form.fstarttime&&form.fendtime)&&mins(form.fendtime)<=mins(form.fstarttime);
-  const validationIssues=[!selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":""].filter(Boolean);
+  const outsideTeachingDay = Boolean(form.fstarttime && form.fendtime) && !timeRangeInvalid &&
+    !withinScheduleDay(mins(form.fstarttime), mins(form.fendtime));
+  const validationIssues=[
+    !selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",
+    timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":"",
+    outsideTeachingDay?"وقت المحاضرة يجب أن يكون بين 08:00 و20:00.":"",
+  ].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
   /* The keystroke updates the input; the two-hundred-card grid follows a beat
      behind. Deferring the query keeps typing at the keyboard's speed instead of
@@ -1023,10 +1053,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       const next: any = { ...previous };
       days.forEach(day => { next[day.key] = pattern.days.includes(day.key as any); });
       // Every meeting starts at the same hour (م.8/9); the first one sets the length.
-      const start = next.fstarttime || "08:00";
+      const start = next.fstarttime || SCHEDULE_DAY_START_TIME;
       next.fstarttime = start;
       const [h, m] = start.split(":").map(Number);
-      const total = Math.min(23 * 60 + 30, (h || 0) * 60 + (m || 0) + pattern.minutesPerDay[0]);
+      const total = Math.min(SCHEDULE_DAY_END, (h || 0) * 60 + (m || 0) + pattern.minutesPerDay[0]);
       next.fendtime = `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
       return next;
     });
@@ -1570,13 +1600,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * of departments does not fire one read per option.
    */
   useEffect(() => {
-    if (mode !== "schedule") return;
+    if (mode !== "schedule" || !workspaceReady) return;
     const timer = window.setTimeout(() => {
       setError(null);
       loadRows().catch((error: any) => setError(friendlyError(error)));
-    }, 180);
+    }, 60);
     return () => window.clearTimeout(timer);
-  }, [mode, filterCollege, filterSection, filterTerm]);
+  }, [mode, workspaceReady, filterCollege, filterSection, filterTerm]);
   useEffect(() => {
     if (
       mode !== "copy" ||
@@ -1915,7 +1945,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const commitRoomMove = async (row: FSchedule, day: DayKey, start: string, building: string, hall: string) => {
     const duration = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
-    const end = timeFromMins(Math.min(23 * 60 + 30, mins(start) + duration));
+    const end = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(start) + duration));
     const unchanged = row.fstarttime === start &&
       String(row.AdRoomCode || "") === building && String(row.AdRoomHall || "") === hall;
     if (unchanged) return;
@@ -2025,19 +2055,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
       days.forEach(day => {
         if (!(row as any)[day.key]) return;
-        for (let m = Math.floor(from / 30) * 30; m < to; m += 30) busy.add(`${day.key}|${timeFromMins(m)}`);
+        for (let m = Math.floor(from / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES; m < to; m += SCHEDULE_SLOT_MINUTES) {
+          busy.add(`${day.key}|${timeFromMins(m)}`);
+        }
       });
     });
     return busy;
   }, [rows, lens.building, lens.rooms, lensRoomActive]);
-  /**
-   * The grid shows the hours that are actually used.
-   *
-   * A fixed 07:00–21:00 column meant a department that teaches until noon was
-   * reading its week through eight empty rows and a scrollbar. The window now
-   * follows the data, snapped outward to the half hour with one empty slot of
-   * air at each end, and never collapses below four hours.
-   */
+  /** The university clock is fixed: every timetable reads 08:00–20:00. */
   /**
    * The minute the grid believes it is.
    *
@@ -2102,14 +2127,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * show the pressure before the day is opened.
    */
   const dayLoad = useMemo(() => computeDayLoad(weekRows as any), [weekRows]);
-  const gridWindow = useMemo(() => {
-    const starts = weekRows.map(row => mins(row.fstarttime)).filter(value => Number.isFinite(value));
-    const ends = weekRows.map(row => mins(row.fendtime)).filter(value => Number.isFinite(value));
-    if (!starts.length || !ends.length) return { start: 8 * 60, end: 15 * 60 };
-    const start = Math.max(7 * 60, Math.floor(Math.min(...starts) / 30) * 30 - 30);
-    const end = Math.min(22 * 60, Math.ceil(Math.max(...ends) / 30) * 30 + 30);
-    return { start, end: Math.max(end, start + 4 * 60) };
-  }, [weekRows]);
+  const gridWindow = useMemo(() => ({ start: SCHEDULE_DAY_START, end: SCHEDULE_DAY_END }), []);
   /**
    * The rooms matrix, computed once per change of data — not once per render.
    *
@@ -2124,9 +2142,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * happens once, and a hover re-renders without recomputing anything.
    */
   const roomsMatrix = useMemo(() => {
-    const activeDay = (matrixDay && days.some(d => d.key === matrixDay) ? matrixDay : (todayKey || days[0].key)) as DayKey;
-    const dayRows = filteredRows.filter(row =>
-      Boolean((row as any)[activeDay]) && row.fstarttime && row.fendtime && mins(row.fendtime) > mins(row.fstarttime));
+    const displayDays = matrixDay === "week"
+      ? days
+      : days.filter(day => day.key === matrixDay);
     const roomsSeen = new Map<string, { key: string; building: string; hall: string; label: string }>();
     filteredRows.forEach(row => {
       const building = String(row.AdRoomCode || ""), hall = String(row.AdRoomHall || "");
@@ -2135,23 +2153,83 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       if (!roomsSeen.has(key)) roomsSeen.set(key, { key, building, hall, label: [building, hall].filter(Boolean).join("/") });
     });
     const allRooms = [...roomsSeen.values()].sort((a, b) => byArabic(a.label, b.label));
-    // One pass builds the index the old code rebuilt per room, per render.
+    // One pass builds every room/day bucket. The full-week view therefore
+    // costs one O(rows × five-days) index, not five complete room renders.
+    const byDayRoom = new Map<string, FSchedule[]>();
     const byRoom = new Map<string, FSchedule[]>();
-    const noRoom: FSchedule[] = [];
-    dayRows.forEach(row => {
+    const noRoomByDay = new Map<DayKey, FSchedule[]>();
+    const roomCounts = new Map<string, number>();
+    filteredRows.forEach(row => {
+      if (!row.fstarttime || !row.fendtime || mins(row.fendtime) <= mins(row.fstarttime)) return;
       const building = String(row.AdRoomCode || ""), hall = String(row.AdRoomHall || "");
-      if (!building && !hall) { noRoom.push(row); return; }
       const key = `${building}|${hall}`;
-      const bucket = byRoom.get(key);
-      if (bucket) bucket.push(row); else byRoom.set(key, [row]);
+      if (building || hall) {
+        const roomRows = byRoom.get(key);
+        if (roomRows) roomRows.push(row); else byRoom.set(key, [row]);
+      }
+      days.forEach(day => {
+        if (!Boolean((row as any)[day.key])) return;
+        if (!building && !hall) {
+          const homeless = noRoomByDay.get(day.key as DayKey);
+          if (homeless) homeless.push(row); else noRoomByDay.set(day.key as DayKey, [row]);
+          return;
+        }
+        const dayKey = `${day.key}|${key}`;
+        const bucket = byDayRoom.get(dayKey);
+        if (bucket) bucket.push(row); else byDayRoom.set(dayKey, [row]);
+        roomCounts.set(key, (roomCounts.get(key) || 0) + 1);
+      });
     });
     const hourMarks: number[] = [];
-    for (let m = Math.ceil(gridWindow.start / 60) * 60; m <= gridWindow.end; m += 60) hourMarks.push(m);
-    return { activeDay, allRooms, byRoom, noRoom, hourMarks, span: Math.max(60, gridWindow.end - gridWindow.start) };
-  }, [filteredRows, matrixDay, todayKey, gridWindow]);
+    for (let m = SCHEDULE_DAY_START; m <= SCHEDULE_DAY_END; m += 60) hourMarks.push(m);
+    const compactByRoom = new Map<string, {
+      items: Array<{ row: FSchedule; lane: number; visualFrom: number; visualTo: number }>;
+      lanes: number;
+      laneDays: Array<{ key: string; labels: string[] }>;
+    }>();
+    byRoom.forEach((roomRows, key) => {
+      /* A compact lane has one *day pattern*, not an unrelated union of room
+         days.  Thus الأحد/الثلاثاء/الخميس beside a lane describes every card
+         on that exact lane; one-, two- and three-day lectures remain obvious. */
+      const groups = new Map<string, { labels: string[]; rows: FSchedule[]; firstDay: number }>();
+      roomRows.forEach(row => {
+        const active = days.filter(day => Boolean((row as any)[day.key]));
+        const pattern = active.map(day => day.key).join("|") || "none";
+        const existing = groups.get(pattern);
+        if (existing) existing.rows.push(row);
+        else groups.set(pattern, {
+          labels: active.map(day => day.label),
+          rows: [row],
+          firstDay: active.length ? days.findIndex(day => day.key === active[0].key) : days.length,
+        });
+      });
+      const items: Array<{ row: FSchedule; lane: number; visualFrom: number; visualTo: number }> = [];
+      const laneDays: Array<{ key: string; labels: string[] }> = [];
+      [...groups.entries()].sort((a, b) => a[1].firstDay - b[1].firstDay || a[0].localeCompare(b[0])).forEach(([pattern, group]) => {
+        const laneEnds: number[] = [];
+        group.rows.slice().sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(a.fendtime) - mins(b.fendtime)).forEach(row => {
+          const actualFrom = Math.max(SCHEDULE_DAY_START, mins(row.fstarttime));
+          const actualTo = Math.min(SCHEDULE_DAY_END, mins(row.fendtime));
+          const readableSpan = Math.max(60, actualTo - actualFrom);
+          const visualFrom = Math.min(actualFrom, SCHEDULE_DAY_END - readableSpan);
+          const visualTo = Math.min(SCHEDULE_DAY_END, visualFrom + readableSpan);
+          let localLane = laneEnds.findIndex(endAt => endAt <= visualFrom);
+          if (localLane < 0) {
+            localLane = laneEnds.length;
+            laneEnds.push(visualTo);
+            laneDays.push({ key: `${pattern}:${localLane}`, labels: group.labels });
+          } else laneEnds[localLane] = visualTo;
+          const laneBase = laneDays.length - laneEnds.length;
+          items.push({ row, lane: laneBase + localLane, visualFrom, visualTo });
+        });
+      });
+      compactByRoom.set(key, { items, lanes: Math.max(1, laneDays.length), laneDays });
+    });
+    return { displayDays, allRooms, byDayRoom, compactByRoom, noRoomByDay, roomCounts, hourMarks, span: Math.max(60, gridWindow.end - gridWindow.start) };
+  }, [filteredRows, matrixDay, gridWindow]);
   const timeSlots = useMemo(
-    () => Array.from({ length: Math.max(2, Math.round((gridWindow.end - gridWindow.start) / 30)) }, (_, i) =>
-      timeFromMins(gridWindow.start + i * 30),
+    () => Array.from({ length: Math.round((SCHEDULE_DAY_END - SCHEDULE_DAY_START) / SCHEDULE_SLOT_MINUTES) }, (_, i) =>
+      timeFromMins(SCHEDULE_DAY_START + i * SCHEDULE_SLOT_MINUTES),
     ),
     [gridWindow],
   );
@@ -2227,8 +2305,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const layout: Record<string, { items: Placed[]; spine: Placed[]; busiest: number }> = {};
 
     const geometry = (row: FSchedule) => ({
-      top: ((mins(row.fstarttime) - gridWindow.start) / 30) * SLOT_H,
-      height: Math.max(SLOT_H - 4, ((mins(row.fendtime) - mins(row.fstarttime)) / 30) * SLOT_H - 3),
+      top: ((mins(row.fstarttime) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
+      height: Math.max(SLOT_H - 4, ((mins(row.fendtime) - mins(row.fstarttime)) / SCHEDULE_SLOT_MINUTES) * SLOT_H - 3),
     });
 
     for (const day of days) {
@@ -2877,6 +2955,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const conflictIds = useMemo(() => {
     const flagged = new Set<number>();
+    if (!presentationMode) return flagged;
     const list = filteredRows;
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
@@ -2890,7 +2969,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
     }
     return flagged;
-  }, [filteredRows]);
+  }, [filteredRows, presentationMode]);
 
   const [presentConflictsOnly, setPresentConflictsOnly] = useState(false);
 
@@ -3118,6 +3197,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       </div>
                     </div>
                   ) : null}
+                  {copyPreview.sourceIssues?.length ? (
+                    <Notice>{copyPreview.sourceIssues.join(" · ")}</Notice>
+                  ) : null}
                   <div className="preview-list">
                     {copyPreview.preview.map((x: any) => (
                       <article key={x.id}>
@@ -3184,7 +3266,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </div>
             </div>
             {formScopeLabel?<div className="scope-inline-note"><strong>النطاق الجاهز</strong><span>{formScopeLabel}</span></div>:null}
-            {scheduleTouched&&validationIssues.length?<div className="editor-validation-strip"><AlertTriangle/><div><strong>صحّح قبل الحفظ</strong>{validationIssues.map(x=><span key={x}>{x}</span>)}</div></div>:null}
+            {(scheduleTouched||outsideTeachingDay)&&validationIssues.length?<div className="editor-validation-strip"><AlertTriangle/><div><strong>صحّح قبل الحفظ</strong>{validationIssues.map(x=><span key={x}>{x}</span>)}</div></div>:null}
             <form onSubmit={save}>
               <div className="schedule-form-sections">
                 <section className="schedule-form-section">
@@ -3302,6 +3384,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       setInstructors((current: any[]) =>
                         sortByName([...current, person], (row: any) => row.AdInstructorName))
                     }
+                    onSelected={(person) =>
+                      setInstructors((current: any[]) =>
+                        mergeById(current, [person], row => Number(row.AdInstructorId), row => row.AdInstructorName))
+                    }
+                    collegeId={Number(form.AdCollegeId) || filterCollege}
+                    termId={Number(form.AdTermId) || filterTerm}
                   />
                   {form.AdInstructorId ? (
                     <span className="field-hint" dir="ltr">
@@ -3399,6 +3487,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <Field label="بداية الوقت" required>
                   <input
                     type="time"
+                    min={SCHEDULE_DAY_START_TIME}
+                    max={SCHEDULE_DAY_END_TIME}
+                    step={SCHEDULE_SLOT_MINUTES * 60}
                     value={form.fstarttime}
                     onChange={(e) => {
                       setScheduleTouched(true);
@@ -3410,6 +3501,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <Field label="نهاية الوقت" required>
                   <input
                     type="time"
+                    min={SCHEDULE_DAY_START_TIME}
+                    max={SCHEDULE_DAY_END_TIME}
+                    step={SCHEDULE_SLOT_MINUTES * 60}
                     value={form.fendtime}
                     onChange={(e) => {
                       setScheduleTouched(true);
@@ -3564,7 +3658,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <AlertTriangle />
               </span>
               <div>
-                <strong>مساعد التعارضات</strong>
+                <strong>فحص موانع الحفظ</strong>
                 <small>
                   {validationIssues.length?"تحقق من الوقت والأيام":checking?"جاري الفحص...":blockingConflicts.length?"تعارض يمنع الحفظ":"لا يوجد مانع ظاهر"}
                 </small>
@@ -3591,7 +3685,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             ) : (
               <div className="conflict-clear">
                 <CheckCircle2 />
-                <strong>لا يوجد تعارض ظاهر</strong>
+                <strong>الموعد صالح للحفظ</strong>
                 <span>
                   سيستمر الفحص تلقائياً مع تغيير الوقت أو القاعة أو الأستاذ.
                 </span>
@@ -3605,7 +3699,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   disabled={solving}
                 >
                   <WandSparkles />
-                  {solving ? "أبحث عن البدائل..." : "حل التعارض"}
+                  {solving ? "أبحث عن البدائل..." : "اقترح بديلاً آمناً"}
                 </SecondaryButton>
                 {solutions.length ? (
                   <div className="solver-results">
@@ -3695,7 +3789,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <div className="schedule-tools">
           <Segmented
             value={viewMode}
-            onChange={setViewMode}
+            onChange={changeView}
+            instant
             options={[
               {
                 value: "list",
@@ -4028,9 +4123,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           )}{" "}
           {filteredRows.length > visibleLimit ? (
             <div className="agenda-more">
-              <SecondaryButton onClick={() => setVisibleLimit((v) => v + 120)}>
+              <SecondaryButton onClick={() => setVisibleLimit((v) => v + AGENDA_PAGE_SIZE)}>
                 عرض المزيد ·{" "}
-                {Math.min(120, filteredRows.length - visibleLimit).toLocaleString(
+                {Math.min(AGENDA_PAGE_SIZE, filteredRows.length - visibleLimit).toLocaleString(
                   "ar-KW-u-nu-latn",
                 )}
               </SecondaryButton>
@@ -4043,46 +4138,64 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             /* --- The paper timetable, alive -----------------------------------
                The sheet this program replaces lists rooms as rows and the day
                as columns of hours — the mind of the building itself. Same here:
-               one taught day at a time, a row per room, lectures laid on the
-               hour line. Empty track IS free room, visible at a glance; and a
-               card dragged to another row moves the lecture to that room, with
-               the same conflict gate and the same undo pill every other move
-               gets. */
-            const { activeDay, allRooms, byRoom, noRoom, hourMarks, span } = roomsMatrix;
+               room is now a five-day card: the paper's day column becomes five
+               living lanes sharing one hour line. A reader can still fold it
+               down to one day, but the default finally answers the real room
+               question: what happens here across the whole week? */
+            const { displayDays, allRooms, byDayRoom, compactByRoom, noRoomByDay, roomCounts, hourMarks, span } = roomsMatrix;
             /* Pinning rooms narrows the matrix to the ones being worked on —
                a building's four labs instead of every room in the college. */
             const roomList = matrixRooms.size ? allRooms.filter(room => matrixRooms.has(room.key)) : allRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
-            const rowsFor = (building: string, hall: string) => byRoom.get(`${building}|${hall}`) || [];
-            const renderTrackCard = (row: FSchedule) => {
+            const rowsFor = (day: DayKey, building: string, hall: string) => byDayRoom.get(`${day}|${building}|${hall}`) || [];
+            const renderTrackCard = (row: FSchedule, placement?: { lane: number; visualFrom: number; visualTo: number }) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
               const code = course?.CourseCode || "—";
               const title = row.AdCourseName || course?.CourseName || code;
+              const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
+              const whoWords = who.split(/\s+/).filter(Boolean);
+              const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
+              const whoGiven = whoWords.join(" ") || who;
+              const activeRoomDays = days.filter(day => Boolean((row as any)[day.key]));
+              const dayNames = activeRoomDays.map(day => day.label).join(" · ") || "بلا يوم";
               const undoId = recentMoves[row.id];
               const undoEntry = undoId ? undoLog.find(item => item.id === undoId && !item.usedAt) : null;
+              const actualFrom = mins(row.fstarttime), actualTo = mins(row.fendtime);
+              const visualFrom = placement?.visualFrom ?? actualFrom;
+              const visualTo = placement?.visualTo ?? actualTo;
+              const visualSpan = Math.max(1, visualTo - visualFrom);
+              const cardStyle: React.CSSProperties = {
+                ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName),
+                right: `${pct(visualFrom)}%`,
+                width: `${Math.max(3, pct(visualTo) - pct(visualFrom))}%`,
+                ...(placement ? {
+                  top: `${4 + placement.lane * 68}px`,
+                  bottom: "auto",
+                  height: "64px",
+                  ["--actual-right" as any]: `${((actualFrom - visualFrom) / visualSpan) * 100}%`,
+                  ["--actual-width" as any]: `${Math.max(3, ((actualTo - actualFrom) / visualSpan) * 100)}%`,
+                } : {}),
+              };
               return (
                 <article
                   key={row.id}
-                  className={`rooms-card ${justChangedId === row.id ? "just-changed" : ""}`}
-                  style={{
-                    ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName),
-                    right: `${pct(mins(row.fstarttime))}%`,
-                    width: `${Math.max(3, pct(mins(row.fendtime)) - pct(mins(row.fstarttime)))}%`,
-                  }}
+                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""}`}
+                  style={cardStyle}
                   draggable={!saving}
                   onDragStart={(e) => {
                     e.dataTransfer.setData("text/schedule-id", String(row.id));
                     e.dataTransfer.effectAllowed = "move";
                   }}
-                  title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${row.fstarttime}–${row.fendtime}`}
+                  title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${row.fstarttime}–${row.fendtime}`}
+                  aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${row.fstarttime}–${row.fendtime}`}
                   onClick={() => openEdit(row)}
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter") openEdit(row); }}
                 >
-                  <b>{courseLabel(title, 0.6).text}</b>
-                  <span>{instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ"}</span>
-                  <em dir="ltr">{row.fstarttime}–{row.fendtime}</em>
+                  <b>{placement ? title : courseLabel(title, 0.82).text}</b>
+                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
+                  <em dir="ltr">{[String(course?.CourseCode || "").slice(0, 8), String(row.SCode || "")].filter(Boolean).join("/") || "—"}</em>
                   {undoEntry ? (
                     <button
                       type="button"
@@ -4097,7 +4210,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </article>
               );
             };
-            const trackDrop = (building: string, hall: string) => async (e: React.DragEvent<HTMLDivElement>) => {
+            const trackDrop = (building: string, hall: string, day: DayKey) => async (e: React.DragEvent<HTMLDivElement>) => {
               e.preventDefault();
               const id = Number(e.dataTransfer.getData("text/schedule-id"));
               const row = rows.find(item => item.id === id);
@@ -4106,18 +4219,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               /* RTL: the track starts at its right edge; the drop's share of the
                  width, snapped to the half hour, is the new start. */
               const share = Math.min(1, Math.max(0, (track.right - e.clientX) / track.width));
-              const start = timeFromMins(Math.round((gridWindow.start + share * span) / 30) * 30);
-              await commitRoomMove(row, activeDay, start, building, hall);
+              const start = timeFromMins(Math.round((gridWindow.start + share * span) / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES);
+              await commitRoomMove(row, day, start, building, hall);
             };
             return (
               <>
                 <div className="rooms-head">
                   <Segmented
-                    value={activeDay}
-                    options={days.map(day => ({ value: day.key, label: day.label }))}
-                    onChange={(value) => setMatrixDay(value as DayKey)}
+                    value={matrixDay}
+                    instant
+                    options={[{ value: "week", label: "الأسبوع كامل" }, ...days.map(day => ({ value: day.key, label: day.label }))]}
+                    onChange={(value) => setMatrixDay(value as DayKey | "week")}
                   />
-                  <small>اسحب أي محاضرة إلى صف قاعة أخرى لتغيير قاعتها، أو على نفس الصف لتغيير وقتها — بنفس فحص التعارض وبنفس التراجع.</small>
+                  <small>{matrixDay === "week" ? "مقارنة سريعة: القاعة ثم أيام استخدامها ثم ساعاتها؛ كل مقرر يبقى داخل مدته الحقيقية ويظهر معه أستاذه ونمط أيامه." : "عرض يوم منفرد — ارجع إلى «الأسبوع كامل» للمقارنة المدمجة بين القاعات."}</small>
                 </div>
                 {allRooms.length > 1 ? (
                   <div className="rooms-filter-block">
@@ -4148,55 +4262,88 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         })}
                       >
                         <span dir="ltr">{room.label}</span>
-                        <b className="num">{(byRoom.get(room.key) || []).length}</b>
+                        <b className="num">{roomCounts.get(room.key) || 0}</b>
                       </button>
                     ))}
                     </div>
                   </div>
                 ) : null}
-                <div className="rooms-scale" aria-hidden="true">
-                  <small />
+                <div className={`rooms-scale ${matrixDay === "week" ? "rooms-scale-week" : ""}`} aria-hidden="true">
+                  {matrixDay === "week" ? <><small>القاعة</small><small>الأيام</small></> : <small />}
                   <div>
-                    {hourMarks.map(mark => (
-                      <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark).slice(0, 5)}</span>
+                    {hourMarks.slice(0, -1).map(mark => (
+                      <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{Math.floor(mark / 60)}</span>
                     ))}
                   </div>
                 </div>
                 <div className="rooms-rows">
                   {roomList.map(room => {
-                    const inRoom = rowsFor(room.building, room.hall);
-                    return (
-                      <div className="rooms-row" key={`${room.building}|${room.hall}`}>
-                        <small dir="ltr">{room.label}</small>
-                        <div
-                          className="rooms-track"
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={trackDrop(room.building, room.hall)}
-                        >
-                          {hourMarks.map(mark => (
-                            <i key={mark} className="rooms-hourline" style={{ right: `${pct(mark)}%` }} />
-                          ))}
-                          {todayKey === activeDay && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? (
-                            <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} />
-                          ) : null}
-                          {inRoom.map(renderTrackCard)}
+                    const compact = compactByRoom.get(room.key) || { items: [], lanes: 1, laneDays: [] };
+                    const firstDay = (days.find(day => compact.items.some(item => Boolean((item.row as any)[day.key])))?.key || days[0].key) as DayKey;
+                    return matrixDay === "week" ? (
+                      <section className="rooms-week-room rooms-compare-room" key={room.key}>
+                        <div className="rooms-compare-row">
+                          <header className="rooms-compare-room-head">
+                            <strong dir="ltr">{room.label}</strong>
+                            <small><b className="num">{compact.items.length}</b> محاضرة</small>
+                          </header>
+                          <div className="rooms-compare-days">
+                            {compact.laneDays.map(lane => (
+                              <span key={lane.key}>{lane.labels.length ? lane.labels.map(label => <small key={label}>{label}</small>) : <small>بلا يوم</small>}</span>
+                            ))}
+                          </div>
+                          <div
+                            className="rooms-track rooms-compact-track"
+                            style={{ height: `${Math.max(74, compact.lanes * 68 + 8)}px` }}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={trackDrop(room.building, room.hall, firstDay)}
+                          >
+                            {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                            {nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} /> : null}
+                            {compact.items.map(item => renderTrackCard(item.row, item))}
+                          </div>
                         </div>
-                      </div>
+                      </section>
+                    ) : (
+                      <section className="rooms-week-room" key={room.key}>
+                        <header className="rooms-week-room-head">
+                          <strong dir="ltr">{room.label}</strong>
+                          <small><b className="num">{roomCounts.get(room.key) || 0}</b> موعداً أسبوعياً</small>
+                        </header>
+                        <div className="rooms-week-days">
+                          {displayDays.map(day => {
+                            const inRoom = rowsFor(day.key as DayKey, room.building, room.hall);
+                            return (
+                              <div className="rooms-row" key={`${room.key}|${day.key}`}>
+                                <small className="rooms-day-label">{day.label}</small>
+                                <div className="rooms-track" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}>
+                                  {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                                  {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} /> : null}
+                                  {inRoom.map(row => renderTrackCard(row))}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </section>
                     );
                   })}
-                  {noRoom.length ? (
-                    <div className="rooms-row rooms-row-none">
-                      <small>بلا قاعة</small>
-                      <div
-                        className="rooms-track"
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={trackDrop("", "")}
-                      >
-                        {noRoom.map(renderTrackCard)}
+                  {displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length) ? (
+                    <section className="rooms-week-room rooms-row-none">
+                      <header className="rooms-week-room-head"><strong>بلا قاعة</strong></header>
+                      <div className="rooms-week-days">
+                        {displayDays.map(day => (
+                          <div className="rooms-row" key={`none|${day.key}`}>
+                            <small className="rooms-day-label">{day.label}</small>
+                            <div className="rooms-track" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop("", "", day.key as DayKey)}>
+                              {(noRoomByDay.get(day.key as DayKey) || []).map(renderTrackCard)}
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    </div>
+                    </section>
                   ) : null}
-                  {!roomList.length && !noRoom.length ? (
+                  {!roomList.length && !displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length) ? (
                     <p className="rooms-empty">لا قاعات مسجلة في هذا النطاق بعد — أسنِد قاعة لأي محاضرة وستظهر هنا صفاً كاملاً.</p>
                   ) : null}
                 </div>
@@ -4253,8 +4400,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </div>
               <Field label="الفترة">
                 <div className="time-pair">
-                  <input type="time" value={lens.from} onChange={(e) => setLens(v => ({ ...v, from: e.target.value }))} aria-label="من" />
-                  <input type="time" value={lens.to} onChange={(e) => setLens(v => ({ ...v, to: e.target.value }))} aria-label="إلى" />
+                  <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={lens.from} onChange={(e) => setLens(v => ({ ...v, from: e.target.value }))} aria-label="من" />
+                  <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={lens.to} onChange={(e) => setLens(v => ({ ...v, to: e.target.value }))} aria-label="إلى" />
                 </div>
               </Field>
               {lensActive ? (
@@ -4481,6 +4628,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     {t}
                   </span>
                 ))}
+                <i className="week-time-end" dir="ltr">{SCHEDULE_DAY_END_TIME}</i>
               </div>
               {days.map((d) => {
                 return (
@@ -4508,7 +4656,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           // landed on a lecture belongs to that lecture.
                           if (e.target !== e.currentTarget || e.button !== 0) return;
                           paintRef.current = { day: d.key as DayKey, anchor: mins(t) };
-                          setPaint({ day: d.key as DayKey, from: t, to: timeFromMins(mins(t) + 30) });
+                          setPaint({ day: d.key as DayKey, from: t, to: timeFromMins(mins(t) + SCHEDULE_SLOT_MINUTES) });
                         }}
                         onPointerEnter={() => {
                           const stroke = paintRef.current;
@@ -4517,7 +4665,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           setPaint({
                             day: d.key as DayKey,
                             from: timeFromMins(Math.min(stroke.anchor, here)),
-                            to: timeFromMins(Math.max(stroke.anchor, here) + 30),
+                            to: timeFromMins(Math.max(stroke.anchor, here) + SCHEDULE_SLOT_MINUTES),
                           });
                         }}
                         onDragEnter={() => {
@@ -4545,8 +4693,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       <div
                         className="week-paint"
                         style={{
-                          top: ((mins(paint.from) - gridWindow.start) / 30) * SLOT_H,
-                          height: Math.max(SLOT_H - 4, ((mins(paint.to) - mins(paint.from)) / 30) * SLOT_H - 3),
+                          top: ((mins(paint.from) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
+                          height: Math.max(SLOT_H - 4, ((mins(paint.to) - mins(paint.from)) / SCHEDULE_SLOT_MINUTES) * SLOT_H - 3),
                         }}
                         aria-hidden="true"
                       >
@@ -4563,7 +4711,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     nowMinutes <= gridWindow.end ? (
                       <div
                         className="week-now"
-                        style={{ top: ((nowMinutes - gridWindow.start) / 30) * SLOT_H }}
+                        style={{ top: ((nowMinutes - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H }}
                         aria-hidden="true"
                       >
                         <span><time>{timeFromMins(nowMinutes)}</time></span>
@@ -4574,10 +4722,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           .filter((r) => Boolean(r[d.key]))
                           .map((r) => {
                             const top =
-                                ((mins(r.fstarttime) - gridWindow.start) / 30) * SLOT_H,
+                                ((mins(r.fstarttime) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
                               height = Math.max(
                                 SLOT_H - 4,
-                                ((mins(r.fendtime) - mins(r.fstarttime)) / 30) *
+                                ((mins(r.fendtime) - mins(r.fstarttime)) / SCHEDULE_SLOT_MINUTES) *
                                   SLOT_H -
                                   3,
                               ),
@@ -4609,6 +4757,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       : null}
                     {(weekLayout[d.key]?.spine || []).map((placed) => {
                       const c = courseById.get(placed.row.AdCourseId);
+                      const railInstructor = instructorById.get(placed.row.AdInstructorId);
                       const code = c?.CourseCode || "—";
                       const grip = physics.bindEvent(placed.row, d.key);
                       return (
@@ -4636,6 +4785,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           onKeyDown={(e) => { if (e.key === "Enter") openEdit(placed.row); }}
                         >
                           <b>{courseLabel(placed.row.AdCourseName || c?.CourseName || code, 0.4).text}</b>
+                          <span>{railInstructor?.AdInstructorName ? firstLast(railInstructor.AdInstructorName) : "بدون أستاذ"}</span>
                           <time dir="ltr">{placed.row.fstarttime}</time>
                         </article>
                       );
@@ -4693,11 +4843,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           <div
                             className="week-bundle-bands"
                             data-dense={(bundle.height - 22) / bundle.rows.length < 15 ? "true" : undefined}
+                            data-count={bundle.rows.length}
                           >
                             {bundle.rows.map((row) => {
                               const course = courseById.get(row.AdCourseId);
+                              const bandInstructor = instructorById.get(row.AdInstructorId);
                               const bandCode = course?.CourseCode || row.AdCourseName || "—";
                               const bandTitle = row.AdCourseName || course?.CourseName || bandCode;
+                              const bandWho = bandInstructor?.AdInstructorName ? firstLast(bandInstructor.AdInstructorName) : "بدون أستاذ";
                               /* The slice is the lecture's real handle: the same grip the
                                  full card carries, so a drag starts here exactly as it
                                  would there — lift, conflicts, verdict, drop. A press
@@ -4709,10 +4862,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   key={row.id}
                                   role="button"
                                   tabIndex={0}
-                                  aria-label={`${bandTitle} · ${bandCode} · شعبة ${row.SCode || "—"} — اسحبها أو افتح المروحة`}
+                                  aria-label={`${bandTitle} · ${bandWho} · ${bandCode} · شعبة ${row.SCode || "—"} — اسحبها أو افتح المروحة`}
                                   className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""}`}
                                   style={{ ["--hue" as any]: hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName) }}
-                                  title={`${bandTitle} — اسحبها مباشرة أو اضغط للمروحة`}
+                                  title={`${bandTitle} · ${bandWho} — اسحبها مباشرة أو اضغط للمروحة`}
                                   onPointerDown={(e) => {
                                     pressOrigin.current = { x: e.clientX, y: e.clientY };
                                     grip.onPointerDown?.(e);
@@ -4726,11 +4879,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   onPointerEnter={(ev) => { if (!physicsActive) openPeek(row, ev.currentTarget as unknown as HTMLElement); }}
                                   onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                                 >
-                                  <span className="week-band-name">{bandTitle}</span>
+                                  <span className="week-band-identity">
+                                    <strong>{bandTitle}</strong>
+                                    <small>{bandWho}</small>
+                                  </span>
                                   {/* Section beside code: three sections of one course are
                                       three identical names — the section is what tells them
                                       apart before the fan is ever opened. */}
-                                  <em dir="ltr">{[String(course?.CourseCode || "").slice(0, 8), String(row.SCode || "")].filter(Boolean).join(" · ") || "—"}</em>
+                                  <em dir="ltr">{[String(course?.CourseCode || "").slice(0, 8), String(row.SCode || "")].filter(Boolean).join("/") || "—"}</em>
                                 </div>
                               );
                             })}
@@ -5133,7 +5289,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   <b>{context.conflicts?.length ? "مراجعة" : "مستقر"}</b>
                   <small>
                     {context.conflicts?.length
-                      ? "حل التعارض يحسن القرار"
+                      ? "البديل الآمن يحسن القرار"
                       : "لا يوجد أثر سلبي ظاهر"}
                   </small>
                 </div>

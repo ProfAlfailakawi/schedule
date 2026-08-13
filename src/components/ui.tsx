@@ -3,6 +3,21 @@ import { createPortal } from "react-dom";
 import { runVisualTransition } from "../utils/visualTransition";
 import { AlertTriangle, Check, Edit2, Plus, Search, Trash2, X, Inbox, ChevronLeft, CalendarDays, Clock3, Hash, Hourglass, Layers, ListOrdered, MapPin, Tag } from "lucide-react";
 
+let toastHost: HTMLDivElement | null = null;
+function getToastHost() {
+  if (toastHost?.isConnected) return toastHost;
+  const existing = document.getElementById("app-toast-layer");
+  if (existing instanceof HTMLDivElement) {
+    toastHost = existing;
+    return toastHost;
+  }
+  toastHost = document.createElement("div");
+  toastHost.id = "app-toast-layer";
+  toastHost.className = "toast-layer no-print";
+  document.body.appendChild(toastHost);
+  return toastHost;
+}
+
 export function PageTitle({ children, action, subtitle, eyebrow }: { children: React.ReactNode; action?: React.ReactNode; subtitle?: React.ReactNode; eyebrow?: React.ReactNode }) {
   return <div className="page-heading"><div className="page-heading-copy">{eyebrow ? <div className="page-eyebrow">{eyebrow}</div> : null}<h1>{children}</h1>{subtitle ? <p>{subtitle}</p> : null}</div>{action ? <div className="page-heading-action">{action}</div> : null}</div>;
 }
@@ -53,7 +68,7 @@ export function Notice({ type = "error", children, inline = false, onDismiss }: 
   );
 
   if (inline || typeof document === "undefined") return body;
-  return createPortal(<div className="toast-layer no-print">{body}</div>, document.body);
+  return createPortal(body, getToastHost());
 }
 export function PrimaryButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`btn btn-primary ${className}`.trim()}>{children}</button>; }
 export function SecondaryButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`btn btn-secondary ${className}`.trim()}>{children}</button>; }
@@ -65,7 +80,7 @@ export function FormActions({ onBack, loading, submitDisabled, submitLabel = "م
 export function EmptyRow({ colSpan, label = "لا توجد بيانات مطابقة" }: { colSpan: number; label?: string }) { return <tr><td className="empty-cell" colSpan={colSpan}><span>{label}</span></td></tr>; }
 export function ListToolbar({ value, onChange, placeholder = "بحث داخل البيانات", count, children }: { value: string; onChange: (value: string) => void; placeholder?: string; count?: number; children?: React.ReactNode }) { return <div className="list-toolbar"><div className="list-search"><Search aria-hidden="true"/><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/>{value?<button type="button" onClick={()=>onChange("")} aria-label="مسح"><X/></button>:null}</div><div className="list-toolbar-side">{typeof count === "number" ? <span className="count-chip">{count.toLocaleString("ar-KW-u-nu-latn")} سجل</span> : null}{children}</div></div>; }
 export function StatCard({ label, value, detail, icon }: { label: React.ReactNode; value: React.ReactNode; detail?: React.ReactNode; icon?: React.ReactNode }) { return <article className="stat-card"><div className="stat-icon">{icon}</div><div><strong>{value}</strong><span>{label}</span>{detail ? <small>{detail}</small> : null}</div></article>; }
-export function Segmented({ value, options, onChange }: { value: string; options: Array<{value:string;label:React.ReactNode}>; onChange:(value:string)=>void }) { return <div className="segmented">{options.map(option=><button key={option.value} type="button" className={value===option.value?"active":""} onClick={()=>runVisualTransition(()=>onChange(option.value))}>{option.label}</button>)}</div>; }
+export function Segmented({ value, options, onChange, instant = false }: { value: string; options: Array<{value:string;label:React.ReactNode}>; onChange:(value:string)=>void; instant?: boolean }) { return <div className="segmented">{options.map(option=><button key={option.value} type="button" className={value===option.value?"active":""} onClick={()=>instant?onChange(option.value):runVisualTransition(()=>onChange(option.value))}>{option.label}</button>)}</div>; }
 /**
  * The identity every printed sheet carries.
  *

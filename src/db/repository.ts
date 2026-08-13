@@ -1127,6 +1127,31 @@ export const Repository = {
     return db.instructors;
   }),
 
+  /**
+   * Resolve only the people referenced by the open department/term.
+   *
+   * In Firestore this deliberately reads the small set of instructor documents
+   * by id.  It must not hydrate the university-wide register merely to display
+   * the people teaching in one department.
+   */
+  getInstructorsByScheduleScope: async (filters: { collegeId?: number; sectionId?: number; termId?: number }): Promise<AdInstructor[]> => {
+    const rows = await Repository.getSchedulesByScope(filters);
+    const ids = [...new Set(rows.map(row => Number(row.AdInstructorId)).filter(Boolean))];
+    if (!ids.length) return [];
+    if (firestoreDb) {
+      const docs = await Promise.all(ids.map(id => firestoreDb!.collection("instructors").doc(`instructor_${id}`).get()));
+      return docs
+        .filter(doc => doc.exists)
+        .map(doc => doc.data() as AdInstructor)
+        .sort((a, b) => a.AdInstructorId - b.AdInstructorId);
+    }
+    const wanted = new Set(ids);
+    return db.instructors.filter(person => wanted.has(Number(person.AdInstructorId)));
+  },
+
+  getInstructorsByScope: async (sectionId: number, termId = 0): Promise<AdInstructor[]> =>
+    Repository.getInstructorsByScheduleScope({ sectionId, termId }),
+
   getInstructorById: async (id: number): Promise<AdInstructor | undefined> => {
     if (firestoreDb) {
       const doc = await firestoreDb.collection("instructors").doc(`instructor_${id}`).get();

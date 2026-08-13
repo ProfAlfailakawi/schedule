@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
+import { Notice } from "./ui";
 
 type DayKey = "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
 const dayKeys: DayKey[] = [
@@ -53,17 +54,23 @@ const placement = (row: Partial<FSchedule>) =>
  */
 async function fetchJson(url: string, options?: RequestInit, timeoutMs = 25_000) {
   const controller = new AbortController();
+  const externalSignal = options?.signal;
+  const abortFromCaller = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener("abort", abortFromCaller, { once: true });
   const timer = window.setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
     response = await fetch(url, { ...options, signal: controller.signal });
   } catch (error: any) {
     if (error?.name === "AbortError") {
+      if (externalSignal?.aborted) throw error;
       throw new Error("استغرقت القراءة وقتاً أطول من المتوقع. حاول مرة أخرى.");
     }
     throw new Error("تعذر الوصول إلى الخدمة. تحقق من الاتصال.");
   } finally {
     window.clearTimeout(timer);
+    externalSignal?.removeEventListener("abort", abortFromCaller);
   }
 
   const raw = await response.text();
@@ -208,14 +215,14 @@ export function useScheduleExperience({
     setSignatureOpen(false);
   }, [collegeId, sectionId, termId]);
   useEffect(() => {
-    if (!isPowerAdmin || !collegeId || !sectionId || !termId) {
+    if (!isPowerAdmin || !collegeId || !sectionId || !termId || !rows.length) {
       setLiving(null);
       setGenome(null);
       setConstraints([]);
       return;
     }
-    const controller = new AbortController(),
-      timer = window.setTimeout(async () => {
+    const controller = new AbortController();
+    const loadInsights = async () => {
         setInsightBusy(true);
         setInsightError("");
         try {
@@ -240,9 +247,17 @@ export function useScheduleExperience({
         } finally {
           if (!controller.signal.aborted) setInsightBusy(false);
         }
-      }, 180);
+      };
+    const idleApi = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const idleId = idleApi.requestIdleCallback
+      ? idleApi.requestIdleCallback(() => { void loadInsights(); }, { timeout: 1200 })
+      : window.setTimeout(() => { void loadInsights(); }, 360);
     return () => {
-      window.clearTimeout(timer);
+      if (idleApi.cancelIdleCallback && idleApi.requestIdleCallback) idleApi.cancelIdleCallback(idleId);
+      else window.clearTimeout(idleId);
       controller.abort();
     };
   }, [isPowerAdmin, collegeId, sectionId, termId, rows]);
@@ -351,6 +366,10 @@ export default function ScheduleExperienceLayer({
   const e = experience,
     health = e.living?.health,
     genome = e.genome;
+  /* In the schedule this layer is headless until one of its two dialogs opens.
+     Returning before the genome/constraint summaries prevents invisible work
+     on every timetable click. */
+  if (headless && !e.decisionOpen && !e.signatureOpen && !e.ghostError && !e.insightError) return null;
   const currentDominant = dayKeys
     .map((day) => ({
       day,
@@ -462,12 +481,7 @@ export default function ScheduleExperienceLayer({
             </small>
           </div>
         ) : null}
-        {e.ghostError || e.insightError ? (
-          <div className="experience-inline-error">
-            <AlertTriangle />
-            {e.ghostError || e.insightError}
-          </div>
-        ) : null}
+        {e.ghostError || e.insightError ? <Notice>{e.ghostError || e.insightError}</Notice> : null}
       </section>
 
       {e.ready ? (
@@ -511,8 +525,11 @@ export default function ScheduleExperienceLayer({
           </div>
         </section>
       ) : null}
+
         </>
       ) : null}
+
+      {headless && (e.ghostError || e.insightError) ? <Notice>{e.ghostError || e.insightError}</Notice> : null}
 
       {e.decisionOpen ? (
         <div
@@ -553,7 +570,7 @@ export default function ScheduleExperienceLayer({
               <div className="decision-loading">
                 <i />
                 <strong>أحدد العقدة الأعلى أثرًا…</strong>
-                <span>تعارض · فراغ · قاعة · قواعد</span>
+                <span>موانع محتملة · فراغ · قاعة · قواعد</span>
               </div>
             ) : e.decisionError ? (
               <div className="decision-error">
@@ -575,8 +592,8 @@ export default function ScheduleExperienceLayer({
                     </h3>
                     <p>
                       {e.decision.issue
-                        ? `${e.decision.issue.conflictCount} علاقة تعارض ظاهرة · ${e.decision.issue.professorName || ""} · ${e.decision.issue.room || ""}`
-                        : "لا توجد عقدة تعارض واضحة؛ حافظ على الوضع الحالي وراجع نقطة الهشاشة فقط."}
+                        ? `${e.decision.issue.conflictCount} موضع يحتاج تحقق · ${e.decision.issue.professorName || ""} · ${e.decision.issue.room || ""}`
+                        : "لا يوجد مانع زمني واضح؛ حافظ على الوضع الحالي وراجع نقطة الهشاشة فقط."}
                     </p>
                     {e.decision.issue ? (
                       <button
@@ -627,7 +644,7 @@ export default function ScheduleExperienceLayer({
                         <div className="decision-option-facts">
                           <span>
                             <CheckCircle2 />
-                            <b>{option.conflicts}</b> تعارض
+                            <b>{option.conflicts}</b> مانع
                           </span>
                           <span>
                             <Clock />
