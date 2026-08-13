@@ -138,9 +138,16 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .master-list>button>div,.master-list>article>div,.pulse-decision-copy,
 .decision-option-copy,.result-copy,.living-health-strip{min-width:0}
 
-.record-card strong,.agenda-title-row strong,.week-event strong,.week-event span,
+.record-card strong,.agenda-title-row strong,
 .draft-list strong,.timeline-versions strong,.topology-hotspots strong,
 .inspector-facts strong,.inspector-facts b{overflow-wrap:anywhere;word-break:normal}
+
+/* The week card is the one place where breaking anywhere is wrong: a course
+   name cut through the middle of a word reads as a spelling mistake, not as a
+   truncation. It shortens editorially instead — see utils/courseLabel. */
+.week-event strong,.week-event span,.week-title,.week-who{
+  overflow-wrap:normal;word-break:normal;hyphens:none;
+}
 
 .field select,.field input,.field textarea{min-width:0;max-width:100%}
 
@@ -211,23 +218,30 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;
 }
 
+/* The sheet sits on the page, not in it.
+   The old backdrop let a third of the page through and the close button was
+   absolutely positioned inside a scrolling panel, so as soon as the sheet was
+   longer than the window the button drifted up into the content behind it.
+   The cover is now opaque enough to be a cover, and the button is pinned. */
 .share-backdrop{
-  position:fixed;inset:0;z-index:130;
+  position:fixed;inset:0;z-index:340;
+  isolation:isolate;
   display:grid;place-items:center;padding:var(--s5);
-  background:color-mix(in srgb,var(--nav) 62%,transparent);
-  backdrop-filter:blur(6px);
+  background:color-mix(in srgb,var(--nav) 86%,transparent);
+  backdrop-filter:blur(8px);
   animation:fade .18s var(--ease) both;
 }
 .share-sheet{
   position:relative;
-  width:min(560px,100%);max-height:88vh;overflow-y:auto;
+  width:min(560px,100%);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;
   padding:var(--s7);
   border:1px solid var(--line);border-radius:var(--r-2xl);
   background:var(--surface);box-shadow:var(--shadow-lg);
   animation:sheet-up .28s var(--ease-out) both;
 }
 .share-close{
-  position:absolute;top:var(--s5);inset-inline-end:var(--s5);
+  position:sticky;top:0;z-index:3;
+  float:inline-start;margin:calc(var(--s3) * -1) calc(var(--s3) * -1) 0 0;
   width:38px;height:38px;display:grid;place-items:center;
   border:1px solid var(--line);border-radius:var(--r-xs);
   background:var(--surface);color:var(--muted);
@@ -236,7 +250,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .share-sheet>header{
   display:grid;grid-template-columns:48px minmax(0,1fr);
   align-items:center;gap:var(--s4);
-  padding-inline-end:var(--s9);
+  clear:both;
 }
 .share-glyph{
   width:48px;height:48px;display:grid;place-items:center;
@@ -472,7 +486,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   fill:var(--dial);font-size:19px;font-weight:600;letter-spacing:-.03em;
   font-variant-numeric:tabular-nums;
 }
-.review-ring .ring-unit{fill:var(--muted-2);font-size:7px}
+.review-ring .ring-unit{fill:var(--muted-2);font-size:6.5px;letter-spacing:-.02em}
 .review-title{min-width:0}
 .review-title h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
 .review-title p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm)}
@@ -491,10 +505,16 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .seg-medium{background:var(--warning)}
 .seg-low{background:var(--muted-2)}
 .seg-clean{background:var(--success)}
-.spread-keys{display:flex;flex-wrap:wrap;gap:var(--s4);margin-top:var(--s3)}
+/* The key sits directly under the bar it explains, one column per segment, so
+   the count and its colour and its word read as one thing rather than as three
+   floating pieces. */
+.spread-keys{
+  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:var(--s2) var(--s4);margin-top:var(--s3);
+}
 .spread-keys span{
   display:inline-flex;align-items:baseline;gap:var(--s2);
-  color:var(--muted);font-size:var(--t-xs);
+  color:var(--muted);font-size:var(--t-xs);min-width:0;
 }
 .spread-keys span::before{
   content:"";width:9px;height:9px;border-radius:3px;align-self:center;
@@ -521,13 +541,17 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 
 .review-body{min-height:0;flex:1;overflow-y:auto}
 .review-finding{border-bottom:1px solid var(--line)}
+/* Mark, sentence, article, verdict — four columns that line up down the page.
+   Centring them made every row a different height and nothing aligned with
+   anything above it. */
 .review-finding>button{
   width:100%;
-  display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;
-  align-items:center;gap:var(--s3);
+  display:grid;grid-template-columns:34px minmax(0,1fr) auto minmax(76px,auto);
+  align-items:start;gap:var(--s3);
   padding:var(--s4) var(--s6);
   color:var(--ink);text-align:start;
 }
+.review-finding>button>em,.review-finding>button>i{margin-top:5px}
 .review-finding>button:hover{background:var(--surface-2)}
 .review-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:var(--r-sm)}
 .review-mark svg{width:16px;height:16px}
@@ -535,13 +559,13 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .severity-medium .review-mark{background:var(--warning-soft);color:var(--warning)}
 .severity-low .review-mark{background:var(--surface-3);color:var(--muted)}
 .review-copy{min-width:0}
-.review-copy strong{display:block;font-size:var(--t-h4);font-weight:600;line-height:1.4}
+.review-copy strong{display:block;font-size:var(--t-sm);font-weight:650;line-height:1.45}
 .review-copy small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
 .review-finding em{
   font-style:normal;padding:2px var(--s2);border-radius:var(--r-full);
   background:var(--surface-3);color:var(--muted);font-size:10px;white-space:nowrap;
 }
-.review-finding i{font-style:normal;color:var(--muted-2);font-size:var(--t-xs);white-space:nowrap}
+.review-finding i{font-style:normal;color:var(--muted-2);font-size:var(--t-xs);white-space:nowrap;text-align:end}
 .review-rows{padding:0 var(--s6) var(--s4);animation:rise .2s var(--ease-out) both}
 .review-rows p{
   padding:var(--s2) 0;border-top:1px solid var(--line);
@@ -583,11 +607,24 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .instructor-trigger:hover{border-color:var(--line-strong)}
 .instructor-picker.open .instructor-trigger{border-color:var(--accent);box-shadow:var(--ring)}
 .instructor-trigger svg{width:16px;height:16px;color:var(--muted-2);flex:none}
-.instructor-trigger span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.instructor-trigger small{color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono)}
+.instructor-trigger span{flex:1;min-width:0}
+/* The name owns the line; the civil ID sits under it in a quiet monospace. */
+.instructor-identity{display:grid;gap:1px;min-width:0}
+.instructor-identity b{
+  display:block;min-width:0;font-size:var(--t-sm);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.instructor-identity small{
+  display:block;color:var(--muted-2);
+  font:500 var(--t-xs)/1.4 var(--font-mono);
+  direction:ltr;unicode-bidi:isolate;text-align:start;
+}
 
+/* The list escapes a narrow field: a form column two hundred pixels wide is not
+   a reason to show a department's names one letter at a time. */
 .instructor-pop{
-  position:absolute;z-index:60;inset-inline:0;top:calc(100% + 6px);
+  position:absolute;z-index:60;inset-inline-start:0;top:calc(100% + 6px);
+  min-width:min(340px,calc(100vw - 32px));width:max(100%,340px);
   display:flex;flex-direction:column;max-height:min(60vh,420px);
   border:1px solid var(--line);border-radius:var(--r-lg);
   background:var(--surface);box-shadow:var(--shadow-lg);
@@ -609,8 +646,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 }
 .instructor-results button:hover{background:var(--surface-2)}
 .instructor-results button.chosen{background:var(--accent-softer);color:var(--accent-ink)}
-.instructor-results span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm)}
-.instructor-results small{color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono)}
+.instructor-results span{flex:1;min-width:0}
 .instructor-results i{font-style:normal;color:var(--accent);font-size:16px;line-height:1}
 .instructor-results svg{width:14px;height:14px;color:var(--accent)}
 .instructor-empty{padding:var(--s6) var(--s4);text-align:center;color:var(--muted);font-size:var(--t-sm)}
@@ -621,7 +657,13 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 }
 .instructor-add:hover{background:var(--accent-softer)}
 .instructor-add svg{width:14px;height:14px}
-.instructor-new{display:grid;gap:var(--s2);padding:var(--s4);border-top:1px solid var(--line);background:var(--surface-2)}
+/* The new-colleague form replaces the list rather than stacking under it, so
+   the sheet never grows past the window with both open at once. */
+.instructor-new{
+  display:grid;gap:var(--s2);padding:var(--s4);
+  border-top:1px solid var(--line);background:var(--surface-2);
+  max-height:min(52vh,340px);overflow-y:auto;
+}
 .instructor-new strong{font-size:var(--t-sm);font-weight:600}
 .instructor-new input{
   min-height:38px;padding:0 var(--s3);

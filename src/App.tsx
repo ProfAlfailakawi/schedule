@@ -330,7 +330,7 @@ export default function App() {
       } finally {
         setSearching(false);
       }
-      // A written question ("قاعات فاضية الثلاثاء ١٠") is answered directly
+      // A written question ("قاعات فاضية الثلاثاء 10") is answered directly
       // instead of being turned into a list of filters to set by hand.
       if (allowed.schedule && /فاض|فارغ|متاح|شاغر|فراغ|الأحد|الاحد|الاثنين|الإثنين|الثلاثاء|الأربعاء|الاربعاء|الخميس|\d/.test(q)) {
         try {

@@ -170,18 +170,86 @@
 
 .week-surface{padding:var(--s5);overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}
 .week-note{
-  min-height:44px;display:flex;align-items:center;gap:var(--s2);
+  min-height:44px;display:flex;align-items:center;gap:var(--s3);
   margin-bottom:var(--s3);padding:0 var(--s4);
   border-radius:var(--r-sm);background:var(--surface-2);
   color:var(--muted);font-size:var(--t-sm);
 }
-.week-note svg{width:15px;height:15px}
+.week-note svg{width:15px;height:15px;flex:none}
+.week-note>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.week-pick-toggle,.week-pick-clear{
+  margin-inline-start:auto;flex:none;
+  display:inline-flex;align-items:center;gap:var(--s2);
+  min-height:30px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);
+  font-size:var(--t-xs);font-weight:600;
+  transition:border-color .16s var(--ease),background .16s var(--ease);
+}
+.week-pick-clear{margin-inline-start:0}
+.week-pick-toggle:hover,.week-pick-clear:hover{border-color:var(--accent);color:var(--accent)}
+.week-pick-toggle.on{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}
+
+/* --- What the grid cannot draw --------------------------------------------
+   A lecture with no day, or no hour, is real in the data and absent from the
+   week — invisible exactly when it most needs attention. It waits here until a
+   drag gives it a square. */
+.week-unplaced{
+  margin-bottom:var(--s3);padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--warning) 34%,var(--line));
+  border-radius:var(--r-md);
+  background:color-mix(in srgb,var(--warning) 7%,transparent);
+}
+.week-unplaced>header{
+  display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;
+  color:var(--ink-2);font-size:var(--t-sm);
+}
+.week-unplaced>header svg{width:15px;height:15px;color:var(--warning)}
+.week-unplaced>header b{
+  min-width:20px;height:20px;display:grid;place-items:center;
+  border-radius:var(--r-full);
+  background:var(--warning);color:#fff;
+  font-size:10px;font-variant-numeric:tabular-nums;direction:ltr;
+}
+.week-unplaced>header small{color:var(--muted);font-size:var(--t-xs);flex:1 1 240px;min-width:0}
+.week-unplaced-rows{
+  display:flex;gap:var(--s2);flex-wrap:wrap;
+  margin-top:var(--s3);
+}
+.week-unplaced-card{
+  --tint:hsl(var(--hue,158) 42% 96%);
+  --edge:hsl(var(--hue,158) 38% 42%);
+  --label:hsl(var(--hue,158) 45% 26%);
+  display:grid;gap:1px;
+  width:min(100%,208px);padding:var(--s2) var(--s3);
+  border:1px solid color-mix(in srgb,var(--edge) 26%,var(--line));
+  border-inline-start:3px solid var(--edge);
+  border-radius:var(--r-xs);
+  background:var(--tint);cursor:grab;
+}
+:root[data-theme="dark"] .week-unplaced-card{
+  --tint:hsl(var(--hue,158) 26% 14%);
+  --edge:hsl(var(--hue,158) 42% 55%);
+  --label:hsl(var(--hue,158) 48% 86%);
+}
+.week-unplaced-card:active{cursor:grabbing}
+.week-unplaced-card strong{font-size:var(--t-xs);font-weight:650;color:var(--label);line-height:1.3}
+.week-unplaced-card span{font-size:11px;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.week-unplaced-card em{font:600 9px/1 var(--font-mono);font-style:normal;color:var(--muted);font-variant-numeric:tabular-nums}
+.week-unplaced-card i{
+  justify-self:start;margin-top:2px;padding:0 5px;
+  border-radius:var(--r-full);background:var(--warning);color:#fff;
+  font-style:normal;font-size:9px;font-weight:600;
+}
 
 .week-calendar{
   position:relative;
   display:grid;
-  grid-template-columns:64px repeat(5,minmax(186px,1fr));
-  min-width:994px;
+  /* One number decides the geometry: the component positions cards with the
+     same value, so a card at two o'clock sits on the two o'clock line. */
+  --week-slot:46px;
+  grid-template-columns:var(--week-gutter,58px) repeat(5,minmax(var(--week-lane-min,164px),1fr));
+  min-width:calc(var(--week-gutter,58px) + 5 * var(--week-lane-min,164px));
   border:1px solid var(--line);
   border-radius:var(--r-lg);
   overflow:hidden;
@@ -191,7 +259,7 @@
   position:sticky;top:0;z-index:4;
   scroll-snap-align:start;
   min-height:52px;
-  display:flex;align-items:center;justify-content:center;gap:var(--s2);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   border-bottom:1px solid var(--line);
   background:var(--surface-2);
   color:var(--ink-2);
@@ -200,7 +268,7 @@
 /* The header doubles as the density readout and the expand control. */
 .week-day-toggle{
   display:inline-flex;align-items:center;gap:var(--s2);
-  min-height:36px;padding:0 var(--s3);
+  min-height:34px;padding:0 var(--s3);
   border-radius:var(--r-xs);color:inherit;font:inherit;
 }
 .week-day-toggle:hover{background:var(--surface-3)}
@@ -209,12 +277,13 @@
   border-radius:var(--r-full);
   background:var(--surface-3);color:var(--muted);
   font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;
+  direction:ltr;
 }
 .week-day-head[aria-expanded="true"] .week-day-toggle b,
 .week-day-toggle[aria-pressed="true"] b{background:var(--accent);color:var(--accent-contrast)}
 
 /* One day at a time: the rest of the week folds away so every lane fits. */
-.week-calendar[data-expanded]{grid-template-columns:64px minmax(0,1fr)}
+.week-calendar[data-expanded]{grid-template-columns:var(--week-gutter,58px) minmax(0,1fr)}
 .week-calendar[data-expanded] .week-day-collapsed,
 .week-calendar[data-expanded] .week-day-head:has(.week-day-toggle[aria-pressed="false"]){display:none}
 
@@ -244,17 +313,19 @@
 .week-time-head{z-index:7}
 .week-times{position:sticky;box-shadow:1px 0 0 var(--line)}
 .week-times span{
-  height:38px;
-  display:flex;align-items:flex-start;justify-content:center;padding-top:var(--s1);
+  height:var(--week-slot);
+  display:flex;align-items:flex-start;justify-content:center;padding-top:3px;
   border-bottom:1px solid var(--line);
   color:var(--muted-2);
   font:500 var(--t-xs)/1 var(--font-mono);
   font-variant-numeric:tabular-nums;
   direction:ltr;
 }
-.week-day{position:relative;min-height:836px;border-inline-start:1px solid var(--line)}
+/* Every second row carries the hour; the half-hours stay quiet. */
+.week-times span:nth-child(2n){color:color-mix(in srgb,var(--muted-2) 55%,transparent);font-size:10px}
+.week-day{position:relative;border-inline-start:1px solid var(--line)}
 .week-slot{
-  height:38px;
+  height:var(--week-slot);
   border-bottom:1px solid color-mix(in srgb,var(--line) 70%,transparent);
   background:transparent;
   transition:background .12s var(--ease);
@@ -266,15 +337,34 @@
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent);
 }
 
+/* --- The stroke that becomes a lecture ------------------------------------
+   Dragging down an empty column draws the appointment before it exists, so the
+   length is chosen by hand rather than typed twice into a form. */
+.week-paint{
+  position:absolute;inset-inline:5px;z-index:8;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  border:1px dashed var(--accent);
+  border-radius:var(--r-xs);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  color:var(--accent);
+  pointer-events:none;
+}
+.week-paint b{font:600 var(--t-sm)/1 var(--font-mono);font-variant-numeric:tabular-nums}
+.week-paint span{font-size:var(--t-xs);opacity:.85}
+
+/* --- The card -------------------------------------------------------------
+   A timetable is read for a subject and a colleague. The course name leads,
+   the instructor follows, and the catalogue number is demoted to a small mark
+   in the corner that identifies the card without competing with it. */
 .week-event{
   position:absolute;
-  inset-inline:6px;
+  inset-inline:5px;
   z-index:3;
-  min-height:36px;
+  min-height:34px;
   display:flex;
   flex-direction:column;
-  gap:2px;
-  padding:var(--s2) var(--s3);
+  gap:1px;
+  padding:4px 6px 4px 5px;
   border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));
   border-inline-start:3px solid var(--accent);
   border-radius:var(--r-xs);
@@ -283,6 +373,7 @@
   color:var(--ink);
   cursor:grab;
   overflow:hidden;
+  contain:paint;
   transition:box-shadow .16s var(--ease),transform .16s var(--ease);
 }
 /* --- Slot advisor -----------------------------------------------------------
@@ -350,21 +441,123 @@
    it can say. Half a clipped line of an instructor's name reads as damage;
    dropping the line reads as design. */
 .week-event{container-type:size}
-@container (max-height:78px){.week-event>small{display:none}}
-@container (max-height:56px){.week-event>span{display:none}}
 .week-event>svg{display:none}
-.week-event>strong{
-  font-size:var(--t-sm);line-height:1.3;font-weight:600;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  padding-inline-end:var(--s4);
-  font-variant-numeric:tabular-nums;
-  /* Latin course codes truncate at their end, never at their first letters. */
-  direction:ltr;text-align:right;unicode-bidi:isolate;
-}
-.week-event>span{
-  font-size:var(--t-xs);line-height:1.35;color:var(--ink-2);
+
+.week-title{
+  font-size:10px;line-height:1.24;font-weight:640;
+  color:var(--label);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+  padding-inline-end:16px;
+  letter-spacing:-.15px;
+  /* A word is never cut in half. A line that will not fit is dropped whole and
+     the name reads on hover instead — in Arabic a broken word is a misspelling,
+     not a truncation. */
+  overflow-wrap:normal;word-break:keep-all;hyphens:none;
 }
+/* Shortened names carry a hairline so the reader knows the full title exists. */
+.week-title[data-short="true"]::after{
+  content:"";display:inline-block;
+  width:9px;height:1px;margin-inline-start:3px;vertical-align:middle;
+  background:currentColor;opacity:.4;
+}
+.week-who{
+  font-size:9px;line-height:1.25;color:var(--ink-2);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  opacity:.82;letter-spacing:-.1px;
+}
+.week-when{
+  display:flex;align-items:center;gap:4px;margin-top:auto;
+  font-size:8.5px;color:var(--muted);
+  min-width:0;
+}
+.week-when time{font-variant-numeric:tabular-nums;font-family:var(--font-mono);font-size:8.5px;flex:none;letter-spacing:-.3px}
+.week-when i{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* The catalogue number identifies the card without competing with its name. */
+.week-code{
+  position:absolute;inset-block-start:3px;inset-inline-start:4px;
+  display:inline-flex;align-items:center;gap:2px;
+  padding:0 3px;height:11px;
+  border-radius:3px;
+  background:color-mix(in srgb,var(--edge) 15%,transparent);
+  color:color-mix(in srgb,var(--label) 66%,transparent);
+  font:600 7.5px/1 var(--font-mono);font-style:normal;
+  font-variant-numeric:tabular-nums;letter-spacing:-.2px;
+  pointer-events:none;
+}
+.week-code b{opacity:.55;font-weight:600}
+.week-code b::before{content:"·";margin-inline-end:2px;opacity:.7}
+
+/*
+  What the card drops first when the lecture is short.
+  The measurements are the real ones: four pixels of padding at each end, a
+  title line of twelve, an instructor line of eleven, a time line of eleven. The
+  previous thresholds were guesses set too high, so a fifty-minute card — which
+  has room for all three — was clamping its title to a single line and cutting
+  the course name in the middle of the very first thing anyone reads.
+  Lines vanish whole, and the name is the last thing to go.
+*/
+.week-title{-webkit-line-clamp:3}
+@container (max-height:56px){.week-when{display:none}}
+@container (max-height:44px){.week-who{display:none};.week-title{-webkit-line-clamp:2}}
+@container (max-height:30px){.week-title{-webkit-line-clamp:1}}
+@container (max-width:112px){.week-when i{display:none}}
+
+/*
+  A column split five ways gives each card a strip twenty pixels wide. No type
+  is legible there, so the card stops pretending: it shows its colour and its
+  code turned on its side, and says the rest on hover — which is honest, and
+  keeps the hour readable as a shape even when it cannot be read as words.
+*/
+@container (max-width:46px){
+  .week-title,.week-who,.week-when{display:none}
+  .week-code{
+    position:static;height:auto;padding:2px 0;
+    writing-mode:vertical-rl;background:none;
+    font-size:8.5px;color:var(--label);
+  }
+  .week-code b{display:none}
+  .week-event{align-items:center;padding:3px 1px}
+}
+
+/* --- The workshop rail -----------------------------------------------------
+   A four-hour single-day block is the background of its day, not a competitor
+   for the hour. It stands on its own slim rail at the edge of the column and
+   reads vertically, so the teaching beside it keeps the full width. */
+.week-rail{
+  position:absolute;
+  z-index:2;
+  width:22px;
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:5px 1px;
+  border:1px solid color-mix(in srgb,var(--edge) 30%,var(--line));
+  border-radius:var(--r-xs);
+  background:color-mix(in srgb,var(--tint) 82%,transparent);
+  color:var(--label);
+  cursor:grab;overflow:hidden;
+  --tint:hsl(var(--hue,158) 42% 96%);
+  --edge:hsl(var(--hue,158) 38% 42%);
+  --label:hsl(var(--hue,158) 45% 26%);
+}
+:root[data-theme="dark"] .week-rail{
+  --tint:hsl(var(--hue,158) 26% 15%);
+  --edge:hsl(var(--hue,158) 42% 55%);
+  --label:hsl(var(--hue,158) 48% 86%);
+}
+.week-rail:active{cursor:grabbing}
+.week-rail:hover{background:var(--tint);box-shadow:var(--shadow-xs)}
+.week-rail b{
+  writing-mode:vertical-rl;
+  font:650 8.5px/1 var(--font-sans);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  max-height:calc(100% - 26px);
+}
+.week-rail time{
+  writing-mode:vertical-rl;
+  font:600 8px/1 var(--font-mono);
+  color:var(--muted);font-variant-numeric:tabular-nums;
+  flex:none;
+}
+
 /* --- Colour as information -------------------------------------------------
    Each course keeps one hue everywhere. Saturation and lightness are fixed per
    theme so ten hues stay harmonious instead of turning the grid into confetti. */
@@ -376,86 +569,37 @@
 }
 :root[data-theme="dark"] .week-event,
 :root[data-theme="dark"] .week-chip{
-  --tint:hsl(var(--hue,158) 26% 13%);
-  --edge:hsl(var(--hue,158) 40% 52%);
-  --label:hsl(var(--hue,158) 45% 82%);
+  --tint:hsl(var(--hue,158) 26% 14%);
+  --edge:hsl(var(--hue,158) 42% 55%);
+  --label:hsl(var(--hue,158) 48% 86%);
 }
 .week-event{
   background:var(--tint);
   border-color:color-mix(in srgb,var(--edge) 26%,var(--line));
   border-inline-start-color:var(--edge);
 }
-.week-event>strong{color:var(--label)}
 
-/* --- Concurrency block -----------------------------------------------------
-   Four or five lectures in the same hour are one readable block of colour-coded
-   chips instead of four unreadable slivers. The count opens the day full width. */
+/* Several lectures carried at once. */
+.week-picking .week-event,.week-picking .week-chip{cursor:pointer}
+.week-event.week-picked,.week-chip.week-picked{
+  outline:2px solid var(--accent);outline-offset:-2px;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);
+}
 
-.week-cluster{
-  position:absolute;
-  inset-inline:5px;
-  z-index:6;
-  display:flex;flex-direction:column;
-  overflow:hidden;
-  border:1px solid var(--line-strong);
-  border-radius:var(--r-xs);
-  background:var(--surface);
-  box-shadow:var(--shadow-xs);
-}
-.week-cluster>header{
-  flex:none;
-  display:flex;align-items:center;justify-content:space-between;gap:var(--s2);
-  padding:3px var(--s2) 3px var(--s1);
-  border-bottom:1px solid var(--line);
-  background:var(--surface-2);
-}
-.week-cluster>header time{
-  font:600 10px/1 var(--font-mono);color:var(--muted);
-  font-variant-numeric:tabular-nums;
-}
-.week-cluster>header button{
-  min-width:20px;height:18px;display:grid;place-items:center;
-  border-radius:var(--r-full);
-  background:var(--ink);color:var(--surface);
-  font-size:10px;font-weight:600;font-variant-numeric:tabular-nums;
-}
-.week-cluster>header button:hover{background:var(--accent);color:var(--accent-contrast)}
-.week-cluster-rows{
-  flex:1;min-height:0;overflow-y:auto;
-  display:flex;flex-direction:column;gap:2px;
-  padding:3px;
-  scrollbar-width:thin;
-}
-.week-chip{
-  flex:none;
-  display:grid;grid-template-columns:minmax(0,1fr) auto;
-  align-items:center;gap:var(--s2);
-  min-height:22px;padding:0 var(--s2);
-  border-radius:4px;
-  border-inline-start:3px solid var(--edge);
-  background:var(--tint);
-  color:var(--label);
-  cursor:grab;
-}
-.week-chip:hover{filter:brightness(1.06)}
-.week-chip:active{cursor:grabbing}
-.week-chip b{
-  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font:600 10.5px/1 var(--font-mono);
-  direction:ltr;text-align:start;
-}
-.week-chip span{color:var(--muted);font-size:10px;white-space:nowrap}
-.week-chip.xray-selected{outline:2px solid var(--brass);outline-offset:-2px}
-.week-chip.ripple-source{opacity:.5}
-.week-event>small{
-  font-size:var(--t-xs);line-height:1.35;color:var(--muted);
-  font-variant-numeric:tabular-nums;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
+/* --- The narrow card -------------------------------------------------------
+   When an hour really does hold four lectures, each card gets a quarter of the
+   column. It stops trying to be a full card and becomes a legible label: the
+   name, and the time, and nothing that would only arrive as a fragment. */
+.week-event[data-narrow="true"]{padding-inline:var(--s2);gap:0}
+.week-event[data-narrow="true"] .week-who{display:none}
+.week-event[data-narrow="true"] .week-when i{display:none}
+.week-event[data-narrow="true"] .week-title{font-size:9px;-webkit-line-clamp:4;padding-inline-end:0;letter-spacing:-.25px}
+.week-event[data-narrow="true"] .week-code{position:static;margin-bottom:2px;align-self:flex-start}
+
 .week-drag-handle{display:none}
 .week-insight{
-  position:absolute;top:5px;inset-inline-end:5px;
-  width:24px;height:24px;display:grid;place-items:center;
+  position:absolute;top:3px;inset-inline-end:3px;
+  width:20px;height:20px;display:grid;place-items:center;
   border-radius:var(--r-xs);background:transparent;color:var(--muted-2);
   opacity:0;transition:opacity .16s var(--ease),background .16s var(--ease);
 }
@@ -466,37 +610,35 @@
 .week-event.ripple-source{opacity:.72;border-style:dashed}
 .week-event.ghost-semester-event{opacity:.4}
 
-/* Hover detail card */
-/* The dense case needs this most: a chip shows a code and a room number, and
-   the full identity of the lecture arrives on hover without opening anything. */
-.week-event[data-quickview]{position:absolute}
-.week-chip[data-quickview]{position:relative}
-.week-event[data-quickview]::after,
-.week-chip[data-quickview]::after{
-  content:attr(data-quickview);
-  position:absolute;
-  inset-inline-end:var(--s3);
-  bottom:calc(100% + 10px);
-  width:max-content;min-width:250px;max-width:330px;
-  padding:var(--s4) var(--s5);
+/* --- The card that says the rest -------------------------------------------
+   The old detail card was drawn inside the grid, which clips its own contents,
+   so the name it existed to reveal was the first thing cut off. This one is
+   painted on the viewport instead: it cannot be clipped by anything, and it
+   keeps itself inside the window on every edge. */
+.week-peek{
+  position:fixed;z-index:400;
+  width:max-content;min-width:200px;max-width:320px;
+  padding:var(--s3) var(--s4);
   border-radius:var(--r-md);
-  background:color-mix(in srgb,var(--nav) 96%,transparent);
-  color:#f0f4f1;
-  white-space:pre-line;
-  font-size:var(--t-sm);line-height:1.75;text-align:start;
+  border:1px solid color-mix(in srgb,#fff 12%,transparent);
+  background:color-mix(in srgb,var(--nav) 97%,transparent);
+  color:#f2f6f3;
   box-shadow:var(--shadow-lg);
-  opacity:0;transform:translateY(6px);
   pointer-events:none;
-  transition:opacity .16s var(--ease),transform .16s var(--ease);
-  z-index:120;
+  animation:peek-in .13s var(--ease-out) both;
 }
-.week-event[data-quickview]:hover::after,
-.week-event[data-quickview]:focus-within::after,
-.week-chip[data-quickview]:hover::after,
-.week-chip[data-quickview]:focus-within::after{opacity:1;transform:none}
-/* A chip sits inside a scrolling cluster, so its card must escape the box. */
-.week-chip[data-quickview]:hover{z-index:130}
-.week-cluster:has(.week-chip:hover){overflow:visible;z-index:130}
+@keyframes peek-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.week-peek strong{display:block;font-size:var(--t-sm);line-height:1.35;font-weight:650}
+.week-peek em{display:block;margin-top:2px;font-style:normal;font-size:var(--t-xs);opacity:.86}
+.week-peek dl{
+  display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px var(--s3);
+  margin-top:var(--s3);padding-top:var(--s3);
+  border-top:1px solid color-mix(in srgb,#fff 12%,transparent);
+  font-size:var(--t-xs);
+}
+.week-peek dt{opacity:.6}
+.week-peek dd{margin:0;font-variant-numeric:tabular-nums}
+.week-peek dd[dir="ltr"]{text-align:start}
 
 /* --- Ripple forecast ------------------------------------------------------ */
 
@@ -974,14 +1116,23 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .copy-warning strong{display:block;font-size:var(--t-h4);font-weight:600}
 .copy-warning span{display:block;margin-top:var(--s1);font-size:var(--t-sm);line-height:1.65;opacity:.9}
 .copy-safe-actions{display:flex;flex-wrap:wrap;gap:var(--s2)}
+/* Four things per row, so four columns: the code, who and what, when, where.
+   Three columns left the room to wrap onto its own line and the course name to
+   run straight into the instructor's. */
 .preview-list{display:flex;flex-direction:column;margin-top:var(--s4)}
 .preview-list article{
-  display:grid;grid-template-columns:auto minmax(0,1fr) auto;
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
   align-items:center;gap:var(--s3);
   padding:var(--s3) 0;border-bottom:1px solid var(--line);font-size:var(--t-sm);
 }
 .preview-list article:last-child{border-bottom:0}
-.preview-list article>span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.preview-list article>div{min-width:0}
+.preview-list article strong{display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.preview-list article small{display:block;margin-top:1px;color:var(--muted);font-size:var(--t-xs)}
+.preview-list article>span{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  color:var(--muted);font-size:var(--t-xs);font-variant-numeric:tabular-nums;
+}
 
 /* --- Context drawer ------------------------------------------------------- */
 
@@ -1088,16 +1239,69 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .replay-head strong{margin-top:2px;font-size:var(--t-sm);font-weight:600}
 .replay-head small{color:var(--muted);font-size:var(--t-xs)}
 .replay-head button{color:var(--muted)}
-.replay-line{margin-top:var(--s3)}
-.replay-line article{display:grid;grid-template-columns:104px 10px minmax(0,1fr);gap:var(--s2);padding:var(--s3) 0;border-bottom:1px solid var(--line)}
-.replay-line time{color:var(--muted);font-size:var(--t-xs)}
-.replay-line i{width:7px;height:7px;margin-top:6px;border-radius:50%;background:var(--muted-2)}
-.replay-line strong,.replay-line p,.replay-line small{display:block}
-.replay-line strong{font-size:var(--t-sm);font-weight:600}
-.replay-line p{margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.6}
-.replay-line small{margin-top:2px;color:var(--muted-2);font-size:var(--t-xs)}
-.replay-empty{color:var(--muted);font-size:var(--t-sm)}
+/* --- The story of one appointment ------------------------------------------
+   A spine with marks on it. When there is nothing to tell, the shape says so:
+   a single mark at the head of a line that has not moved is a clearer statement
+   than a paragraph about what the log does not contain. */
+.replay-spine{
+  list-style:none;margin:var(--s4) 0 0;padding:0 var(--s5) 0 0;
+  position:relative;display:grid;gap:var(--s4);
+}
+.replay-spine::before{
+  content:"";position:absolute;
+  inset-block:6px 6px;inset-inline-end:4px;
+  width:2px;border-radius:2px;
+  background:linear-gradient(var(--line-strong),color-mix(in srgb,var(--line) 40%,transparent));
+}
+.replay-spine li{position:relative;display:block}
+.replay-dot{
+  position:absolute;inset-inline-end:-20px;top:5px;
+  width:10px;height:10px;border-radius:50%;
+  background:var(--surface);border:2px solid var(--muted-2);
+}
+.replay-spine li.good .replay-dot{border-color:var(--success);background:var(--success)}
+.replay-spine li.warn .replay-dot{border-color:var(--warning);background:var(--warning)}
+.replay-spine li.danger .replay-dot{border-color:var(--danger);background:var(--danger)}
+.replay-body strong{display:block;font-size:var(--t-sm);font-weight:650;color:var(--ink)}
+.replay-body p{margin:2px 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.6}
+.replay-meta{
+  display:flex;align-items:center;gap:var(--s3);margin-top:var(--s2);
+  color:var(--muted-2);font-size:var(--t-xs);
+}
+.replay-meta time{font-variant-numeric:tabular-nums}
+.replay-meta em{font-style:normal}
+
+.replay-still{
+  display:grid;grid-template-columns:28px minmax(0,1fr);gap:var(--s4);
+  margin-top:var(--s4);padding:var(--s4);
+  border:1px dashed var(--line-strong);border-radius:var(--r-md);
+  background:var(--surface);
+}
+.replay-still-line{position:relative;display:block;height:100%;min-height:52px}
+.replay-still-line i{
+  position:absolute;inset-inline-end:12px;inset-block:4px 0;
+  width:2px;border-radius:2px;
+  background:linear-gradient(var(--line-strong),transparent);
+}
+.replay-still-line b{
+  position:absolute;inset-inline-end:7px;top:2px;
+  width:12px;height:12px;border-radius:50%;
+  background:var(--surface);border:2px solid var(--accent);
+}
+.replay-still strong{display:block;font-size:var(--t-sm);font-weight:650;color:var(--ink)}
+.replay-still p{margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+
 .context-loading{position:fixed;inset:0;z-index:130;display:grid;place-items:center;background:rgb(0 0 0 / .2)}
+
+/* A swap offered inline: two appointments trading places in one move. */
+.castling-strip{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
+.castling-strip>button{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  min-height:32px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface-2);color:var(--ink-2);font-size:var(--t-xs);
+}
+.castling-strip>button:hover{border-color:var(--accent);color:var(--accent)}
 
 /* ==========================================================================
    EXPERIENCE STRIP + ONE-DECISION MODE  (rebuilt)
@@ -1321,766 +1525,77 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .one-decision-mode>footer svg,.schedule-signature>footer svg{width:15px;height:15px}
 
-/* Signature scene */
-.signature-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3);padding:var(--s5) var(--s7) var(--s3);overflow-y:auto}
+/* --- Department fingerprint ------------------------------------------------
+   Four readings of one department. Each card is a label, a headline value, a
+   sentence and — where it helps — a small chart. The numbers are set as numbers
+   and the day chart carries its own axis, because a row of bare bars with the
+   values only in a tooltip is a picture of data rather than the data. */
+
+.signature-grid{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:var(--s3);padding:var(--s5) var(--s7) var(--s3);overflow-y:auto;
+}
 .signature-grid article{
-  min-height:160px;padding:var(--s5);
+  display:grid;align-content:start;gap:var(--s1);
+  min-height:150px;padding:var(--s5);
   border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
 }
-.signature-grid article strong{display:block;font-size:var(--t-h4);font-weight:600}
-.signature-grid article p,.signature-grid article small{margin-top:var(--s2);color:var(--muted);font-size:var(--t-sm);line-height:1.65}
-.dna-bars{display:flex;align-items:flex-end;gap:3px;height:64px;margin-top:var(--s4)}
+.signature-grid article>span{
+  width:28px;height:28px;display:grid;place-items:center;margin-bottom:var(--s2);
+  border-radius:var(--r-xs);background:var(--surface-3);color:var(--muted);
+}
+.signature-grid article>span svg{width:14px;height:14px}
+.signature-grid article>small{
+  color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.05em;
+}
+.signature-grid article>strong{
+  display:block;font-size:var(--t-h4);font-weight:650;line-height:1.3;color:var(--ink);
+  overflow-wrap:anywhere;
+}
+.signature-grid article>p{
+  margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.7;
+}
+.dna-bars{
+  display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
+  align-items:end;gap:var(--s2);
+  height:70px;margin-top:var(--s4);
+  padding-top:var(--s3);border-top:1px solid var(--line);
+}
 .dna-bars i{
-  flex:1;min-height:5px;border-radius:var(--r-full);
-  background:color-mix(in srgb,var(--accent) 55%,transparent);
+  position:relative;display:block;
+  height:var(--dna,5%);min-height:4px;border-radius:3px 3px 0 0;
+  background:color-mix(in srgb,var(--accent) 58%,transparent);
 }
-.signature-deviations{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2);padding:0 var(--s7) var(--s5)}
-.signature-deviations article{padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
-.signature-history{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);margin-top:var(--s3)}
+.dna-bars i::after{
+  content:attr(data-day);
+  position:absolute;inset-inline:0;top:calc(100% + 3px);
+  text-align:center;color:var(--muted-2);font-size:9px;
+}
+.dna-bars i:last-child{background:color-mix(in srgb,var(--accent) 30%,transparent)}
 
-/* --- Move preview ----------------------------------------------------------
-   The result of a drag, before anything is written. Reads as: what moved, from
-   where to where, and what it costs — four numbers, then the reasons, then two
-   buttons. Nothing else competes for attention. */
-
-.schedule-decision-preview{
-  position:fixed;
-  top:var(--s8);left:50%;
-  transform:translateX(-50%);
-  width:min(580px,calc(100vw - 32px));
-  max-height:min(78vh,720px);
-  overflow-y:auto;
-  z-index:130;
-  padding:0;
-  border:1px solid var(--line);
-  border-radius:var(--r-2xl);
-  background:var(--surface);
-  box-shadow:var(--shadow-lg);
-  animation:sheet-up .24s var(--ease-out) both;
-}
-
-.decision-preview-head{
-  position:sticky;top:0;z-index:2;
-  display:grid;grid-template-columns:44px minmax(0,1fr) 36px;
-  align-items:center;gap:var(--s3);
-  padding:var(--s5) var(--s5) var(--s4);
-  border-bottom:1px solid var(--line);
-  background:var(--surface);
-}
-.decision-state{
-  width:44px;height:44px;display:grid;place-items:center;
-  border-radius:var(--r-md);background:var(--success-soft);color:var(--success);
-}
-.decision-state svg{width:20px;height:20px}
-.decision-state.quality-suboptimal{background:var(--warning-soft);color:var(--warning)}
-.decision-state.quality-impossible{background:var(--danger-soft);color:var(--danger)}
-.decision-preview-head>div{min-width:0}
-.decision-preview-head small{
-  display:block;color:var(--brass);
-  font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.09em;
-}
-.decision-preview-head strong{
-  display:block;margin-top:2px;font-size:var(--t-h4);font-weight:600;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.decision-preview-head p{margin-top:2px;color:var(--muted);font-size:var(--t-sm)}
-.decision-preview-head>button{
-  width:36px;height:36px;display:grid;place-items:center;
-  border:1px solid var(--line);border-radius:var(--r-xs);
-  background:var(--surface);color:var(--muted);
-}
-.decision-preview-head>button:hover{background:var(--surface-2);color:var(--ink)}
-
-/* From → to, as one visual sentence. */
-.decision-route{
-  display:grid;grid-template-columns:minmax(0,1fr) 34px minmax(0,1fr);
-  align-items:center;gap:var(--s3);
-  padding:var(--s5);
-}
-.decision-route section{
-  min-width:0;padding:var(--s4);
-  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
-}
-.decision-route section:last-of-type{
-  border-color:color-mix(in srgb,var(--accent) 34%,var(--line));
-  background:var(--accent-softer);
-}
-.decision-route small{display:block;color:var(--muted);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.08em}
-.decision-route b{
-  display:block;margin-top:var(--s2);font-size:var(--t-sm);font-weight:600;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.decision-route strong{
-  display:block;margin-top:var(--s1);
-  font:600 var(--t-h4)/1 var(--font-mono);font-variant-numeric:tabular-nums;
-}
-.decision-route span{display:block;margin-top:var(--s1);color:var(--muted);font-size:var(--t-xs)}
-.decision-route>i{display:grid;place-items:center;color:var(--muted-2)}
-.decision-route>i svg{width:18px;height:18px}
-
-/* Four numbers, each with its own tile. */
-.decision-impact{
-  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
-  gap:var(--s2);
-  padding:0 var(--s5) var(--s5);
-}
-.decision-impact>span{
-  display:flex;flex-direction:column;align-items:center;gap:var(--s1);
-  padding:var(--s3) var(--s2);
-  border:1px solid var(--line);border-radius:var(--r-md);
-  background:var(--surface-2);
-  text-align:center;
-}
-.decision-impact svg{width:15px;height:15px;color:var(--muted-2)}
-.decision-impact small{color:var(--muted);font-size:10.5px;line-height:1.3}
-.decision-impact b{
-  font-size:var(--t-h3);font-weight:600;line-height:1;
-  font-variant-numeric:tabular-nums;direction:ltr;
-}
-.decision-impact .impact-good b{color:var(--success)}
-.decision-impact .impact-warn b{color:var(--warning)}
-.decision-no-data{
-  grid-column:1/-1;padding:var(--s4);text-align:center;
-  border:1px dashed var(--line-strong);border-radius:var(--r-md);
-  color:var(--muted);font-size:var(--t-sm);
-}
-
-.decision-fingerprint-grid{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));
-  gap:var(--s2);padding:0 var(--s5) var(--s5);
-}
-.decision-fingerprint-grid article{
-  padding:var(--s3);border-radius:var(--r-sm);
-  background:var(--surface-2);text-align:center;
-}
-.decision-fingerprint-grid small{display:block;color:var(--muted);font-size:10.5px}
-.decision-fingerprint-grid strong{display:block;margin-top:2px;font-size:var(--t-sm);font-weight:600}
-.decision-fingerprint-grid .tone-good strong{color:var(--success)}
-.decision-fingerprint-grid .tone-warn strong{color:var(--warning)}
-.decision-fingerprint-grid .tone-risk strong{color:var(--danger)}
-
-/* Reasons: a short list, one glyph per line. */
-.decision-preview-columns{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-  gap:var(--s3);padding:0 var(--s5) var(--s5);
-}
-.decision-why,.decision-counterfactual{
-  padding:var(--s4);
-  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
-}
-.decision-why b,.decision-counterfactual b{
-  display:block;margin-bottom:var(--s3);
-  color:var(--muted);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.08em;
-}
-.decision-why span,.decision-counterfactual span{
-  display:grid;grid-template-columns:16px minmax(0,1fr);
-  align-items:start;gap:var(--s2);
-  padding:var(--s1) 0;
-  font-size:var(--t-sm);line-height:1.6;color:var(--ink-2);
-}
-.decision-why svg{width:14px;height:14px;margin-top:3px;color:var(--success)}
-.decision-counterfactual span{grid-template-columns:minmax(0,1fr);color:var(--muted)}
-
-.decision-horizon-row{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
-  gap:var(--s2);padding:0 var(--s5) var(--s5);
-}
-.decision-horizon,.decision-stress{
-  display:grid;grid-template-columns:20px minmax(0,1fr);
-  align-items:start;gap:var(--s3);
-  padding:var(--s4);border-radius:var(--r-md);background:var(--surface-2);
-}
-.decision-horizon svg,.decision-stress svg{width:18px;height:18px;color:var(--muted-2);margin-top:1px}
-.decision-horizon strong,.decision-stress strong{display:block;font-size:var(--t-sm);font-weight:600}
-.decision-horizon small,.decision-stress small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
-.decision-horizon.tone-good strong{color:var(--success)}
-.decision-horizon.tone-warn strong,.decision-stress.level-high strong{color:var(--warning)}
-.decision-stress.level-critical strong{color:var(--danger)}
-
-.decision-autopsy{padding:0 var(--s5) var(--s5)}
-.decision-autopsy-head{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)}
-.decision-autopsy-head svg{width:17px;height:17px;color:var(--muted-2)}
-.decision-autopsy-head strong{display:block;font-size:var(--t-sm);font-weight:600}
-.decision-autopsy-head small{display:block;color:var(--muted);font-size:var(--t-xs)}
-.decision-autopsy>p{color:var(--muted);font-size:var(--t-sm);line-height:1.7}
-.decision-autopsy-list{display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s3)}
-.decision-autopsy-list span{
-  padding:var(--s2) var(--s3);border-radius:var(--r-sm);
-  background:var(--surface-2);color:var(--ink-2);font-size:var(--t-xs);line-height:1.6;
-}
-
-.decision-preview-actions{
-  position:sticky;bottom:0;
-  display:grid;grid-template-columns:1fr 1.4fr;gap:var(--s2);
-  padding:var(--s4) var(--s5);
-  border-top:1px solid var(--line);
-  background:var(--surface);
-}
-.decision-cancel,.decision-confirm{
-  min-height:46px;display:inline-flex;align-items:center;justify-content:center;gap:var(--s2);
-  border-radius:var(--r-sm);font-size:var(--t-sm);font-weight:600;
-}
-.decision-cancel{border:1px solid var(--line-strong);background:var(--surface);color:var(--ink-2)}
-.decision-cancel:hover:not(:disabled){background:var(--surface-2)}
-.decision-cancel svg{width:15px;height:15px}
-.decision-confirm{background:var(--accent);color:var(--accent-contrast)}
-.decision-confirm:hover:not(:disabled){background:var(--accent-strong)}
-.decision-confirm:disabled,.decision-cancel:disabled{opacity:.45;pointer-events:none}
-
-/* ==========================================================================
-   LIVING SCHEDULE LAYER
-   ========================================================================== */
-
-.living-command-deck,
-.living-pulse-shell{
-  min-height:72px;
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto auto;
-  gap:var(--s5);
-  align-items:center;
-  padding:var(--s4) var(--s5);
-  border:1px solid var(--line);
-  border-radius:var(--r-lg);
-  background:var(--surface);
-  box-shadow:var(--shadow-xs);
-}
-.living-pulse-shell{grid-template-columns:minmax(0,1fr) auto}
-.living-pulse-shell.loading{place-items:center;grid-template-columns:1fr;gap:var(--s3)}
-.living-pulse-shell.loading b{font-size:var(--t-sm);font-weight:500;color:var(--muted)}
-.living-pulse-shell.limited{border-style:dashed}
-
-.living-pulse-core{display:flex;align-items:flex-start;gap:var(--s3);min-width:0}
-.living-pulse-core>div,
-.living-pulse-shell>div{min-width:0}
-.living-pulse-core small,
-.living-pulse-shell>div>small{
-  display:block;color:var(--muted-2);
-  font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.09em;
-}
-.living-pulse-core strong,
-.living-pulse-shell>div>strong{display:block;margin-top:2px;font-size:var(--t-h4);font-weight:600;line-height:1.4}
-.living-pulse-core p,
-.living-pulse-shell>div>p{
-  margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.6;
-  overflow:hidden;text-overflow:ellipsis;
-  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
-}
-.pulse-beacon{
-  width:10px;height:10px;flex:none;margin-top:6px;border-radius:50%;background:var(--success);
-  box-shadow:0 0 0 4px var(--success-soft);
-}
-.pulse-beacon.warning{background:var(--warning);box-shadow:0 0 0 4px var(--warning-soft)}
-.pulse-beacon.danger,.pulse-beacon.critical{background:var(--danger);box-shadow:0 0 0 4px var(--danger-soft)}
-
-.living-health-strip{
-  display:flex;align-items:stretch;gap:var(--s1);
-  padding:var(--s1);
-  border-radius:var(--r-sm);
-  background:var(--surface-2);
-}
-.living-health-strip>span{
-  min-width:66px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
-  padding:var(--s2) var(--s3);
-  border-radius:var(--r-xs);
-}
-.living-health-strip>span+span{box-shadow:inset 1px 0 0 var(--line)}
-.living-health-strip small{color:var(--muted);font-size:var(--t-xs);white-space:nowrap}
-.living-health-strip b{font-size:var(--t-h3);font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
-.living-command-actions{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
-.living-experience-tools{
-  flex:none;
-  display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;
-  padding:var(--s3) var(--s6);
-  border-bottom:1px solid var(--line);
-  background:var(--surface-2);
-}
-.living-experience-tools button{
-  min-height:36px;display:inline-flex;align-items:center;gap:var(--s2);
-  padding:0 var(--s4);
-  border:1px solid var(--line);border-radius:var(--r-xs);
-  background:var(--surface);color:var(--ink-2);font-size:var(--t-sm);font-weight:500;
-}
-.living-experience-tools button svg{width:15px;height:15px;color:var(--muted)}
-.living-experience-tools button:hover:not(:disabled){border-color:var(--line-strong)}
-.living-experience-tools button.active{border-color:var(--accent);background:var(--accent-softer);color:var(--accent-ink)}
-.living-experience-tools button:disabled{opacity:.45}
-.living-command-actions button,.living-more{
-  min-height:36px;padding:0 var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-xs);
-  background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);
-  display:inline-flex;align-items:center;gap:var(--s2);
-}
-.living-command-actions button svg,.living-more svg{width:14px;height:14px}
-.living-command-actions button:hover,.living-more:hover{color:var(--ink);border-color:var(--line-strong)}
-.living-primary-decision{
-  display:flex;align-items:center;gap:var(--s2);
-  padding:var(--s2) var(--s4);border-radius:var(--r-sm);
-  background:var(--accent-soft);color:var(--accent-ink);font-size:var(--t-sm);font-weight:600;
-}
-
-.living-panel{
-  position:absolute;top:var(--s6);bottom:var(--s6);inset-inline-end:var(--s6);
-  width:min(780px,calc(100vw - 48px));
-  display:flex;flex-direction:column;overflow:hidden;
-  border:1px solid var(--line);border-radius:var(--r-2xl);
-  background:var(--surface);box-shadow:var(--shadow-lg);
-  animation:drawer-in .26s var(--ease-out) both;
-}
-.living-panel-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:var(--s4);padding:var(--s5) var(--s6);border-bottom:1px solid var(--line)}
-.living-panel-head h2{font-size:var(--t-h2);font-weight:600}
-.living-scene-nav{
-  flex:none;
-  display:flex;gap:var(--s2);overflow-x:auto;
-  padding:var(--s2) var(--s4);border-bottom:1px solid var(--line);background:var(--surface-2);
-  scrollbar-width:thin;
-}
-.living-scene-nav button{flex:none}
-.living-scene-nav button{
-  min-height:38px;padding:0 var(--s4);border-radius:var(--r-xs);
-  background:transparent;color:var(--muted);font-size:var(--t-sm);font-weight:500;white-space:nowrap;
-}
-.living-scene-nav button:hover{color:var(--ink)}
-.living-scene-nav button.active{background:var(--surface);color:var(--ink);box-shadow:var(--shadow-xs);font-weight:600}
-.living-panel-body{flex:1;min-height:0;overflow-y:auto;padding:var(--s6);display:flex;flex-direction:column;gap:var(--s4)}
-.living-panel-body>*{flex:none}
-.living-alert{padding:var(--s3) var(--s4);border-radius:var(--r-sm);font-size:var(--t-sm)}
-.living-alert.error{background:var(--danger-soft);color:var(--danger)}
-.living-alert.success{background:var(--success-soft);color:var(--success)}
-.living-empty{padding:var(--s8);text-align:center;color:var(--muted);font-size:var(--t-sm)}
-.living-context-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--s2)}
-
-/* Living inner scenes */
-.why-builder,.emergency-command,.genesis-hero,.memory-scene,.safety-intro,
-.meeting-command,.copilot-context,.health-scene,.brief-scene,.topology-copy{
-  padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
-}
-.why-scene,.emergency-scene,.genesis-scene,.safety-scene,.meeting-scene,
-.copilot-scene,.pulse-scene,.topology-scene,.memory-scene{display:flex;flex-direction:column;gap:var(--s4)}
-.why-current,.why-fields,.emergency-fields,.genesis-controls,.memory-compose{display:grid;gap:var(--s3);margin-top:var(--s4)}
-.why-fields,.emergency-fields{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
-.why-actions,.twin-actions,.war-actions,.quality-actions,.import-actions,.draft-actions{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s4)}
-.why-result{margin-top:var(--s4);padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
-.why-result.good{border-color:color-mix(in srgb,var(--success) 26%,var(--line))}
-.why-result.warn{border-color:color-mix(in srgb,var(--warning) 28%,var(--line))}
-.why-delta{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:var(--s2)}
-.why-delta>div,.rescue-metrics>span{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
-.why-columns{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--s3);margin-top:var(--s3)}
-.why-memory{margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
-.emergency-mark{width:44px;height:44px;display:grid;place-items:center;border-radius:var(--r-md);background:var(--danger-soft);color:var(--danger)}
-.rescue-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--s3);margin-top:var(--s4)}
-.rescue-rank,.rescue-unresolved,.rescue-clean,.rescue-step{padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
-.rescue-flow{display:flex;flex-direction:column;gap:var(--s2)}
-.rescue-metrics{display:flex;flex-wrap:wrap;gap:var(--s2)}
-/* Living panel · new-term genesis */
-.genesis-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s5);align-items:center}
-.genesis-hero>div{min-width:0}
-.genesis-hero small{display:block;color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.09em}
-.genesis-hero h3{margin-top:var(--s1);font-size:var(--t-h3);font-weight:600;line-height:1.4}
-.genesis-hero p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm);line-height:1.7}
-.genesis-hero>svg{width:22px;height:22px;color:var(--brass)}
-
-.genesis-controls{
-  display:grid;
-  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
-  align-items:end;gap:var(--s4);
-}
-.genesis-controls>label{display:flex;flex-direction:column;gap:var(--s2);min-width:0}
-.genesis-controls>label>span{color:var(--muted);font-size:var(--t-xs);font-weight:600}
-.genesis-controls>label>b{
-  min-height:44px;display:flex;align-items:center;padding:0 var(--s4);
-  border:1px solid var(--line);border-radius:var(--r-sm);
-  background:var(--surface-3);color:var(--ink);font-size:var(--t-body);font-weight:600;
-}
-.genesis-controls>label>select{
-  width:100%;min-height:44px;padding:0 var(--s4);padding-inline-end:var(--s8);
-  border:1px solid var(--line);border-radius:var(--r-sm);
-  background-color:var(--surface);color:var(--ink);font-size:var(--t-body);
-}
-.genesis-arrow{
-  align-self:end;height:44px;display:grid;place-items:center;color:var(--brass);
-}
-.genesis-controls>.btn{grid-column:1/-1;width:100%}
-.genesis-result{margin-top:var(--s4)}
-.memory-list,.safety-list{display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s3)}
-.memory-list article,.safety-node{padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface)}
-.meeting-scene .minutes-paper,.brief-paper,.minutes-paper{
-  margin-top:var(--s3);padding:var(--s6);border:1px solid var(--line);border-radius:var(--r-md);
-  background:var(--surface);line-height:1.9;font-size:var(--t-sm);
-}
-/* Living panel · decision copilot */
-.copilot-orbit{
-  display:grid;grid-template-columns:52px minmax(0,1fr);
-  align-items:center;gap:var(--s4);
-  padding:var(--s5);
-  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
-}
-.copilot-orbit>svg{
-  width:52px;height:52px;padding:15px;
-  border-radius:50%;background:var(--accent-soft);color:var(--accent);
-}
-.copilot-orbit>div{min-width:0}
-.copilot-orbit small{display:block;color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.09em}
-.copilot-orbit h3{margin-top:var(--s1);font-size:var(--t-h3);font-weight:600;line-height:1.4}
-.copilot-orbit p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm);line-height:1.65}
-
-.copilot-context-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--s2)}
-.copilot-context-actions button{
-  display:grid;grid-template-columns:auto minmax(0,1fr);
-  align-items:center;gap:var(--s3);
-  padding:var(--s4) var(--s5);
-  border:1px solid var(--line);border-radius:var(--r-md);
-  background:var(--surface-2);color:var(--ink);text-align:start;
-  transition:border-color .16s var(--ease),background .16s var(--ease);
-}
-.copilot-context-actions button:hover{border-color:var(--accent);background:var(--accent-softer)}
-.copilot-context-actions button>svg{width:17px;height:17px;color:var(--muted)}
-.copilot-context-actions button>span{min-width:0}
-.copilot-context-actions b{display:block;font-size:var(--t-sm);font-weight:600}
-.copilot-context-actions small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.copilot-answer{margin-top:var(--s3);padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
-.copilot-answer-head{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)}
-.copilot-options{display:grid;gap:var(--s2);margin-top:var(--s3)}
-.copilot-options button{padding:var(--s3) var(--s4);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);color:var(--ink);text-align:start;font-size:var(--t-sm)}
-.copilot-options button:hover{border-color:var(--accent);background:var(--accent-softer)}
-.copilot-guard{margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
-/* Living panel · pulse scene */
-.pulse-title{
-  display:grid;grid-template-columns:56px minmax(0,1fr);
-  align-items:center;gap:var(--s4);
-}
-.pulse-rings{
-  position:relative;width:56px;height:56px;
-  display:grid;place-items:center;
-  color:var(--accent);
-}
-.pulse-rings i{
-  position:absolute;inset:0;border-radius:50%;
-  border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);
-}
-.pulse-rings i:nth-of-type(2){inset:8px}
-.pulse-rings i:nth-of-type(3){inset:16px}
-.pulse-rings svg{width:20px;height:20px}
-.pulse-title>div{min-width:0}
-.pulse-title small{display:block;color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.09em}
-.pulse-title h3{margin-top:var(--s1);font-size:var(--t-h3);font-weight:600;line-height:1.4}
-.pulse-title p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm);line-height:1.65}
-
-.pulse-decisions{display:grid;gap:var(--s2)}
-.pulse-decisions>article{
-  display:grid;grid-template-columns:auto minmax(0,1fr) auto;
-  align-items:center;gap:var(--s3);
-  padding:var(--s4) var(--s5);
-  border:1px solid var(--line);border-radius:var(--r-md);
-  background:var(--surface-2);
-}
-.pulse-decisions>article.warning{border-color:color-mix(in srgb,var(--warning) 26%,var(--line))}
-.pulse-decisions>article.danger,
-.pulse-decisions>article.critical{border-color:color-mix(in srgb,var(--danger) 26%,var(--line))}
-.pulse-decisions>article>span{
-  font:500 var(--t-xs)/1 var(--font-mono);color:var(--muted-2);font-variant-numeric:tabular-nums;
-}
-.pulse-decisions>article>div{min-width:0}
-.pulse-decisions strong{display:block;font-size:var(--t-h4);font-weight:600;line-height:1.45}
-.pulse-decisions p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm);line-height:1.65}
-.pulse-decisions>article>button{
-  width:34px;height:34px;flex:none;display:grid;place-items:center;
-  border:1px solid var(--line);border-radius:var(--r-xs);
-  background:var(--surface);color:var(--muted);
-}
-.pulse-decisions>article>button:hover{border-color:var(--accent);color:var(--accent)}
-
-.pulse-health{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--s2)}
-.pulse-health>article{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--s1);
-  min-height:82px;padding:var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
-}
-.pulse-health small{color:var(--muted);font-size:var(--t-xs)}
-.pulse-health b{font-size:26px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
-
-.topology-copy{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s5)}
-.topology-copy h3{font-size:var(--t-h2);line-height:1.3;margin:var(--s1) 0}
-.topology-copy p{max-width:62ch;font-size:var(--t-sm);line-height:1.75;color:var(--muted)}
-.topology-stage{
-  position:relative;height:clamp(360px,52vh,600px);margin-top:var(--s4);
-  border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden;
-  background:radial-gradient(circle at 50% 46%,color-mix(in srgb,var(--accent-soft) 42%,transparent),transparent 50%),var(--surface);
-}
-.topology-stage svg{width:100%;height:100%;display:block}
-.topology-stage line{stroke:color-mix(in srgb,var(--line-strong) 78%,transparent);stroke-width:1.1}
-.topology-stage line.hot{stroke:var(--warning);stroke-width:1.8}
-.topology-node circle{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:1.5}
-.topology-node.issue circle{stroke:var(--warning);stroke-width:2}
-/* A halo keeps node labels readable where relation lines cross behind them. */
-.topology-node text{
-  fill:var(--muted);font-size:11px;
-  paint-order:stroke;
-  stroke:var(--surface);stroke-width:3.5px;stroke-linejoin:round;
-}
-.topology-node .node-count{fill:var(--ink);font-weight:600;font-size:11px;stroke-width:2.5px}
-.topology-node.issue text{fill:var(--ink-2)}
-.topology-legend{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
-.topology-hotspots{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);margin-top:var(--s3)}
-.topology-hotspots>span{grid-column:1/-1;font-size:var(--t-sm);color:var(--muted)}
-.topology-hotspots article{display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
-.topology-hotspots article>b{width:28px;height:28px;display:grid;place-items:center;border-radius:var(--r-xs);background:var(--accent-soft);color:var(--accent);font-size:var(--t-xs)}
-.topology-hotspots strong{display:block;font-size:var(--t-sm);font-weight:600}
-.topology-hotspots small{display:block;font-size:var(--t-xs);color:var(--muted)}
-.node-count{display:inline-grid;place-items:center;min-width:22px;height:22px;border-radius:var(--r-xs);background:var(--surface);font-weight:600}
-
-/* Living panel · health & fairness */
-.health-scene{display:flex;flex-direction:column;gap:var(--s4)}
-.health-orbits{
-  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3);
-  padding:var(--s5);
-  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
-}
-.health-orbits>article{display:flex;flex-direction:column;align-items:center;gap:var(--s2);text-align:center}
-.health-orbits>article>div{
-  width:74px;height:74px;display:grid;place-items:center;border-radius:50%;
-  background:conic-gradient(var(--accent) calc(var(--v,0) * 1%), color-mix(in srgb,var(--line) 90%,transparent) 0);
-  position:relative;
-}
-.health-orbits>article>div::after{content:"";position:absolute;inset:7px;border-radius:50%;background:var(--surface-2)}
-.health-orbits>article>div>b{position:relative;z-index:1;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
-.health-orbits>article>span{color:var(--muted);font-size:var(--t-xs)}
-.health-orbits>section{grid-column:1/-1;padding-top:var(--s4);border-top:1px solid var(--line)}
-.health-orbits>section small{display:block;color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.09em}
-.health-orbits>section h3{margin-top:var(--s1);font-size:var(--t-h3);font-weight:600}
-.health-orbits>section p{margin-top:var(--s2);color:var(--muted);font-size:var(--t-sm);line-height:1.7}
-
-.health-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--s3)}
-.health-grid>section{
-  padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
-}
-.health-grid>section>header{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s4)}
-.health-grid>section>header>svg{width:17px;height:17px;color:var(--muted-2)}
-.health-grid>section>header>div{min-width:0}
-.health-grid>section>header small{display:block;color:var(--muted);font-size:var(--t-xs)}
-.health-grid>section>header strong{display:block;margin-top:1px;font-size:var(--t-h4);font-weight:600}
-
-.fairness-list,.fragility-list,.room-risk-list,.spatial-risk-list{display:flex;flex-direction:column;gap:var(--s3)}
-.fairness-list article,.fragility-list article,.room-risk-list article,.spatial-risk-list article{
-  display:grid;gap:var(--s1);font-size:var(--t-xs);
-}
-.fairness-list article>span,.fragility-list article>span,
-.room-risk-list article>span,.spatial-risk-list article>span{
-  color:var(--ink-2);font-size:var(--t-sm);font-weight:500;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.fairness-list article>i,.fragility-list article>i,
-.room-risk-list article>i,.spatial-risk-list article>i{
-  display:block;height:5px;border-radius:var(--r-full);background:var(--surface-3);overflow:hidden;
-}
-.fairness-list article>i>b,.fragility-list article>i>b,
-.room-risk-list article>i>b,.spatial-risk-list article>i>b{
-  display:block;height:100%;border-radius:var(--r-full);background:var(--accent);
-}
-.fairness-list article>small,.fragility-list article>small,
-.room-risk-list article>small,.spatial-risk-list article>small{color:var(--muted)}
-.brief-clock{font:600 24px/1 var(--font-mono);color:var(--brass);font-variant-numeric:tabular-nums}
-.brief-summary{margin-top:var(--s3)}
-.risk{color:var(--danger)}
-.gap-warn{color:var(--warning)}
-.spatial-burnout-card{padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface)}
-.spatial-metrics,.spatial-score-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:var(--s2);margin-top:var(--s3)}
-.spatial-metrics>div,.spatial-score-row>div{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
-.spatial-clear{display:flex;align-items:center;gap:var(--s2);color:var(--success);font-size:var(--t-sm)}
-.castling-strip{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
-
-.campus-mobility-card{
-  margin-top:var(--s5);
-  padding:var(--s5);
-  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);
-}
-.campus-mobility-head{display:flex;align-items:flex-start;gap:var(--s3)}
-.campus-mobility-head>span{
-  width:38px;height:38px;flex:none;display:grid;place-items:center;
-  border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent);
-}
-.campus-mobility-head>span svg{width:17px;height:17px}
-.campus-mobility-head>div{min-width:0}
-.campus-mobility-head strong{display:block;font-size:var(--t-h4);font-weight:600}
-.campus-mobility-head p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm);line-height:1.7}
-
-.detected-buildings{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s4)}
-.detected-buildings>span{
-  display:inline-flex;align-items:center;gap:var(--s2);
-  padding:var(--s2) var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-xs);
-  background:var(--surface-2);
-  font-size:var(--t-sm);font-weight:600;color:var(--ink-2);
-  white-space:nowrap;
-}
-.detected-buildings>span svg{width:14px;height:14px;color:var(--muted-2)}
-.detected-buildings>span small{color:var(--muted);font-size:var(--t-xs);font-weight:400}
-
-.mobility-defaults,.travel-matrix{display:grid;gap:var(--s2);margin-top:var(--s4)}
-.mobility-defaults{grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
-.mobility-defaults>label,.travel-matrix>label{
-  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--s3);
-  padding:var(--s2) var(--s3) var(--s2) var(--s2);
+.signature-deviations{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:var(--s3);padding:0 var(--s7) var(--s5);
+}
+.signature-deviations>div{
+  padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);
+}
+.signature-deviations small{
+  display:block;margin-bottom:var(--s1);
+  color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.05em;
+}
+.signature-deviations strong{display:block;font-size:var(--t-sm);font-weight:650;color:var(--ink);line-height:1.4}
+.signature-deviations p{margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.65}
+.signature-history{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:var(--s2);margin-top:var(--s3)}
+.signature-history span{
+  display:grid;gap:2px;padding:var(--s2) var(--s3);
   border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);
 }
-.mobility-defaults>label>span,.travel-matrix>label>span{
-  min-width:0;color:var(--muted);font-size:var(--t-sm);line-height:1.5;
+.signature-history b{font-size:var(--t-xs);font-weight:650;color:var(--ink)}
+.signature-history small{
+  margin:0;color:var(--muted);font-size:10.5px;letter-spacing:0;
+  font-variant-numeric:tabular-nums;
 }
-.mobility-defaults>label>div,.travel-matrix>label>div{display:flex;align-items:center;gap:var(--s2)}
-.mobility-defaults input,.travel-matrix input{
-  width:72px;min-height:38px;text-align:center;
-  border:1px solid var(--line);border-radius:var(--r-xs);background:var(--surface);
-  color:var(--ink);font-variant-numeric:tabular-nums;
-}
-.mobility-defaults b,.travel-matrix b{color:var(--muted);font-size:var(--t-xs);font-weight:500}
-.mobility-save{
-  display:inline-flex;align-items:center;gap:var(--s2);
-  min-height:42px;margin-top:var(--s4);padding:0 var(--s5);
-  border:1px solid var(--line-strong);border-radius:var(--r-sm);
-  background:var(--surface);color:var(--ink-2);font-size:var(--t-sm);font-weight:600;
-}
-.mobility-save:hover{background:var(--surface-2)}
-.mobility-save svg{width:15px;height:15px}
-.mobility-empty,.mobility-loading{
-  margin-top:var(--s4);padding:var(--s5);text-align:center;
-  border:1px dashed var(--line-strong);border-radius:var(--r-sm);
-  color:var(--muted);font-size:var(--t-sm);line-height:1.7;
-}
-
-/* ==========================================================================
-   LIVE DRAG — the answer arrives before the drop
-   The card follows the cursor, and a compact read-out beside the target slot
-   shows what the move costs while the finger is still down.
-   ========================================================================== */
-
-.schedule-physics-float{
-  position:fixed;top:0;left:0;z-index:210;
-  display:grid;grid-template-columns:14px minmax(0,1fr) auto;
-  align-items:center;gap:var(--s3);
-  width:min(300px,70vw);
-  padding:var(--s3) var(--s4);
-  border:1px solid var(--accent);
-  border-radius:var(--r-md);
-  background:var(--surface);
-  box-shadow:var(--shadow-lg);
-  pointer-events:none;
-  will-change:transform;
-}
-.schedule-physics-float.quality-suboptimal{border-color:var(--warning)}
-.schedule-physics-float.quality-impossible{border-color:var(--danger)}
-.physics-float-handle{color:var(--muted-2)}
-.physics-float-handle svg{width:14px;height:14px}
-.physics-float-copy{min-width:0}
-.physics-float-copy strong{display:block;font-size:var(--t-sm);font-weight:600;direction:ltr;text-align:start}
-.physics-float-copy span,.physics-float-copy small{
-  display:block;color:var(--muted);font-size:var(--t-xs);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
-.physics-float-meta{text-align:end}
-.physics-float-meta b{display:block;font:600 var(--t-xs)/1.4 var(--font-mono);font-variant-numeric:tabular-nums}
-.physics-float-meta small{display:block;color:var(--muted);font-size:10px}
-
-.schedule-physics-hud{
-  position:fixed;z-index:209;
-  width:min(340px,86vw);
-  max-height:min(72vh,560px);overflow-y:auto;
-  padding:var(--s5);
-  border:1px solid var(--line);
-  border-inline-start:3px solid var(--accent);
-  border-radius:var(--r-lg);
-  background:var(--surface);
-  box-shadow:var(--shadow-lg);
-  pointer-events:none;
-  animation:rise .16s var(--ease-out) both;
-}
-.schedule-physics-hud.quality-suboptimal{border-inline-start-color:var(--warning)}
-.schedule-physics-hud.quality-impossible{border-inline-start-color:var(--danger)}
-.schedule-physics-hud>header{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s3)}
-.physics-hud-radar{
-  position:relative;width:32px;height:32px;flex:none;
-  display:grid;place-items:center;color:var(--accent);
-}
-.physics-hud-radar svg{width:15px;height:15px}
-.physics-hud-radar i{
-  position:absolute;inset:0;border-radius:50%;
-  border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);
-}
-.physics-hud-radar i:nth-of-type(2){inset:6px}
-.schedule-physics-hud header>div{min-width:0}
-.schedule-physics-hud header small{display:block;color:var(--muted);font-size:var(--t-xs)}
-.schedule-physics-hud header small b{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
-.schedule-physics-hud header strong{display:block;margin-top:2px;font-size:var(--t-h4);font-weight:600;line-height:1.4}
-.schedule-physics-hud>p{color:var(--muted);font-size:var(--t-sm);line-height:1.6}
-
-.physics-reading{display:flex;align-items:center;gap:var(--s2);margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
-.physics-reading i{
-  width:14px;height:14px;border-radius:50%;
-  border:2px solid var(--line-strong);border-top-color:var(--accent);
-  animation:spin .7s linear infinite;
-}
-.physics-hud-reasons{display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s4)}
-.physics-hud-reasons span{
-  display:grid;grid-template-columns:15px minmax(0,1fr);align-items:start;gap:var(--s2);
-  color:var(--ink-2);font-size:var(--t-sm);line-height:1.55;
-}
-.physics-hud-reasons svg{width:13px;height:13px;margin-top:3px;color:var(--success)}
-.schedule-physics-hud.quality-suboptimal .physics-hud-reasons svg,
-.schedule-physics-hud.quality-impossible .physics-hud-reasons svg{color:var(--warning)}
-
-.physics-hud-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);margin-top:var(--s4)}
-.physics-hud-metrics span{
-  display:flex;flex-direction:column;align-items:center;gap:2px;
-  padding:var(--s3) var(--s2);
-  border-radius:var(--r-sm);background:var(--surface-2);text-align:center;
-}
-.physics-hud-metrics svg{width:14px;height:14px;color:var(--muted-2)}
-.physics-hud-metrics b{font-size:var(--t-h4);font-weight:600;font-variant-numeric:tabular-nums;direction:ltr}
-.physics-hud-metrics small{color:var(--muted);font-size:10px}
-
-.physics-fingerprint-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(78px,1fr));gap:var(--s1);margin-top:var(--s3)}
-.physics-fingerprint-strip span{
-  padding:var(--s2);border-radius:var(--r-xs);background:var(--surface-2);text-align:center;
-}
-.physics-fingerprint-strip small{display:block;color:var(--muted);font-size:10px}
-.physics-fingerprint-strip b{display:block;margin-top:1px;font-size:var(--t-xs);font-weight:600}
-.physics-fingerprint-strip .tone-good b{color:var(--success)}
-.physics-fingerprint-strip .tone-warn b{color:var(--warning)}
-.physics-fingerprint-strip .tone-risk b{color:var(--danger)}
-
-.physics-stress-chip,.physics-horizon-chip{
-  display:grid;grid-template-columns:18px minmax(0,1fr);align-items:start;gap:var(--s2);
-  margin-top:var(--s2);padding:var(--s3);
-  border-radius:var(--r-sm);background:var(--surface-2);
-}
-.physics-stress-chip svg,.physics-horizon-chip svg{width:16px;height:16px;color:var(--muted-2);margin-top:1px}
-.physics-stress-chip strong,.physics-horizon-chip strong{display:block;font-size:var(--t-xs);font-weight:600}
-.physics-stress-chip small,.physics-horizon-chip small{display:block;margin-top:1px;color:var(--muted);font-size:10.5px;line-height:1.5}
-.physics-stress-chip.level-high strong{color:var(--warning)}
-.physics-stress-chip.level-critical strong{color:var(--danger)}
-.physics-horizon-chip.tone-good strong{color:var(--success)}
-
-/* ==========================================================================
-   PHYSICS LAYER (motion semantics)   ========================================================================== */
-
-.schedule-physics-status{
-  display:flex;align-items:center;gap:var(--s2);
-  color:var(--muted);font-size:var(--t-xs);
-}
-.physics-status-dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
-.physics-hud-metrics,.physics-fingerprint-strip,.decision-fingerprint-grid{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:var(--s2);
-}
-.physics-hud-metrics>div,.physics-fingerprint-strip>div,.decision-fingerprint-grid>div{
-  padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);
-}
-.physics-hud-reasons{display:flex;flex-direction:column;gap:var(--s1);margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
-.physics-hud-radar{display:grid;place-items:center}
-.physics-float-copy,.physics-float-meta{min-width:0}
-.physics-float-handle{cursor:grab}
-.physics-reading,.physics-no-data,.physics-pending-mark{color:var(--muted);font-size:var(--t-sm)}
-.physics-lens-active .week-slot:hover{background:var(--accent-soft)}
-.gravity-field-active .week-slot{transition:background .18s var(--ease)}
-.gravity-note-active{color:var(--accent);font-size:var(--t-xs)}
 
 /* --------------------------------------------------------------------------
    THE APPROVED SHAPES OF A COURSE
@@ -2155,9 +1670,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   pointer-events:none;
   animation:suggest-in .3s var(--ease-out) both;
 }
-.week-slot.suggested-1::before{content:"١";border-style:solid;background:color-mix(in srgb,var(--success) 18%,transparent)}
-.week-slot.suggested-2::before{content:"٢"}
-.week-slot.suggested-3::before{content:"٣";opacity:.8}
+.week-slot.suggested-1::before{content:"1";border-style:solid;background:color-mix(in srgb,var(--success) 18%,transparent)}
+.week-slot.suggested-2::before{content:"2"}
+.week-slot.suggested-3::before{content:"3";opacity:.8}
 /* The slot under the pointer always wins the square. */
 .week-slot.suggested-slot.physics-target::before{content:none}
 @keyframes suggest-in{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
@@ -2188,3 +1703,47 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   transition:background .16s var(--ease),color .16s var(--ease);
 }
 .nature-card button:hover{background:var(--brass);color:#fff}
+
+
+/* A failed reading offers the way out of itself. */
+.decision-error>div{display:grid;gap:var(--s3);justify-items:start}
+.decision-error button{
+  min-height:32px;padding:0 var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);
+  font-size:var(--t-xs);font-weight:600;
+}
+.decision-error button:hover{border-color:var(--accent);color:var(--accent)}
+
+
+/* A seconded colleague, marked where it matters — on the timetable. */
+.week-visiting{
+  display:inline-grid;place-items:center;
+  width:12px;height:12px;margin-inline-start:3px;vertical-align:middle;
+  border-radius:3px;
+  background:color-mix(in srgb,var(--brass) 22%,transparent);
+  color:var(--brass);
+  font-style:normal;font-size:8px;font-weight:700;line-height:1;
+}
+
+
+/* A day too busy for five columns says so, and the header is already the way
+   to give it the whole grid. */
+.week-dense{
+  display:inline-grid;place-items:center;
+  width:18px;height:18px;margin-inline-start:2px;
+  border-radius:var(--r-xs);
+  background:color-mix(in srgb,var(--brass) 20%,transparent);
+  color:var(--brass);
+}
+.week-dense svg{width:11px;height:11px}
+
+/* The drag engine's own state, shown once and quietly. */
+.schedule-physics-status{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  color:var(--muted-2);font-size:var(--t-xs);
+}
+.physics-status-dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--success);
+}

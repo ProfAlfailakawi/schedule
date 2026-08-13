@@ -28,6 +28,35 @@ const DAY_CHOICES = [7, 30, 90, 180];
  * Read-only publication of the current scope. The link is a long random token,
  * expires on its own, and carries nothing an account could unlock.
  */
+
+/**
+ * Reading a reply that may not be a reply.
+ *
+ * When the platform rate-limits a request it answers with the plain sentence
+ * "Rate exceeded." — not JSON — so parsing it threw, and the parser's own
+ * complaint went straight to the screen in English: «Unexpected token 'R'…».
+ * The user was shown the shape of our bug instead of the name of their problem.
+ *
+ * So the body is read as text first and only then parsed, and the status is
+ * translated before anything else: a person who published twice in a second
+ * should be told to wait a moment, in Arabic.
+ */
+async function readReply(response: Response, fallback: string) {
+  const raw = await response.text();
+  let data: any = null;
+  try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+  if (response.ok) return data;
+
+  if (response.status === 429 || /rate\s*exceeded|too many/i.test(raw)) {
+    throw new Error("طلبات كثيرة في وقت قصير. انتظر لحظة ثم أعد المحاولة.");
+  }
+  if (response.status === 401) throw new Error("انتهت الجلسة. سجّل الدخول مرة أخرى.");
+  if (response.status === 403) throw new Error("هذا الإجراء خارج صلاحياتك.");
+  if (response.status === 404) throw new Error("العنصر المطلوب غير موجود.");
+  if (response.status >= 500) throw new Error("الخدمة متوقفة مؤقتاً. حاول بعد قليل.");
+  throw new Error(data?.error || fallback);
+}
+
 export default function SchedulePublish({ collegeId, sectionId, termId, scopeLabel }: Props) {
   const [open, setOpen] = useState(false),
     [links, setLinks] = useState<ShareLink[]>([]),
@@ -45,8 +74,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     setError(null);
     try {
       const response = await fetch(`/api/share?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`);
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "تعذر قراءة الروابط");
+      const data = await readReply(response, "تعذر قراءة الروابط");
       setLinks(Array.isArray(data) ? data : []);
     } catch (e: any) {
       setError(e.message);
@@ -66,8 +94,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId, days, showInstructors, kind })
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "تعذر إنشاء الرابط");
+      const data = await readReply(response, "تعذر إنشاء الرابط");
       setLinks(current => [data, ...current]);
     } catch (e: any) {
       setError(e.message);
@@ -80,7 +107,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     setBusy(true);
     try {
       const response = await fetch(`/api/share/${encodeURIComponent(id)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error((await response.json()).error || "تعذر إيقاف الرابط");
+      await readReply(response, "تعذر إيقاف الرابط");
       setLinks(current => current.map(item => (item.id === id ? { ...item, revoked: true } : item)));
     } catch (e: any) {
       setError(e.message);

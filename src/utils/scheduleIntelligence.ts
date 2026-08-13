@@ -22,27 +22,74 @@ const roomKey=(row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${
 const duration=(row:Partial<FSchedule>)=>Math.max(0,timeToMinutes(String(row.fendtime||""))-timeToMinutes(String(row.fstarttime||"")));
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 
-export interface ConflictInsight {type:"room"|"instructor"|"duplicate";severity:"high"|"medium";rowId:number;otherId:number;message:string;detail:string}
+export interface ConflictInsight {
+  type:"room"|"instructor"|"duplicate";
+  severity:"high"|"medium";
+  rowId:number;otherId:number;message:string;detail:string;
+  /** Every reason this one pair collides, so a clash is never counted twice. */
+  reasons?:Array<"room"|"instructor"|"duplicate">;
+}
+
+/**
+ * One clash between two appointments is one conflict.
+ *
+ * The previous version emitted a separate record for each *reason* a pair
+ * collided, so a single lecture booked over another with the same instructor in
+ * the same hall was reported three times — once for the instructor, once for the
+ * room, once for the repeated section — and a department with forty-six real
+ * collisions was told it had a hundred and thirty-eight. Saving already refuses
+ * a genuine clash, so the number on the screen was not describing anything a
+ * coordinator could act on; it was describing the loop that produced it.
+ *
+ * Now a pair yields at most one conflict, carrying every reason it has, and the
+ * count is a count of collisions.
+ *
+ * A repeated course and section is also no longer a conflict by itself. Half of
+ * a department's catalogue is taught as a lecture on one day and a laboratory on
+ * another under the same section number, and that is the timetable working, not
+ * failing. It is only reported when the two rows occupy the very same placement,
+ * which is the actual duplicate the check was written to catch.
+ */
 export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[]):ConflictInsight[] {
-  const targetIds=new Set(targetRows.map(r=>r.id));
-  const out:ConflictInsight[]=[]; const seen=new Set<string>();
+  const samePlacement=(a:FSchedule,b:FSchedule)=>
+    a.fstarttime===b.fstarttime && a.fendtime===b.fendtime &&
+    SCHEDULE_DAYS.every(day=>Boolean(a[day.key])===Boolean(b[day.key]));
+
+  const byPair=new Map<string,ConflictInsight>();
   for(const row of targetRows){
     for(const other of allRows){
       if(row.id===other.id || row.AdTermId!==other.AdTermId) continue;
-      if(!targetIds.has(other.id) && !overlaps(row,other) && !(row.AdCourseId===other.AdCourseId&&row.SCode===other.SCode)) continue;
+      const clashing=overlaps(row,other);
+      const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
+      if(!clashing && !twin) continue;
+
       const pair=[row.id,other.id].sort((a,b)=>a-b).join(":");
-      if(overlaps(row,other) && row.AdInstructorId && row.AdInstructorId===other.AdInstructorId){
-        const key=`i:${pair}`; if(!seen.has(key)){seen.add(key);out.push({type:"instructor",severity:"high",rowId:row.id,otherId:other.id,message:"تعارض في أستاذ المقرر",detail:`الموعدان ${row.fstarttime}-${row.fendtime} و ${other.fstarttime}-${other.fendtime} يتقاطعان في يوم مشترك.`})}
-      }
-      if(overlaps(row,other) && roomKey(row)!=="|" && roomKey(row)===roomKey(other)){
-        const key=`r:${pair}`; if(!seen.has(key)){seen.add(key);out.push({type:"room",severity:"high",rowId:row.id,otherId:other.id,message:"تعارض في القاعة",detail:`القاعة ${row.AdRoomCode}/${row.AdRoomHall} مستخدمة في موعد متداخل.`})}
-      }
-      if(row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode)){
-        const key=`d:${pair}`; if(!seen.has(key)){seen.add(key);out.push({type:"duplicate",severity:"medium",rowId:row.id,otherId:other.id,message:"تكرار محتمل للشعبة",detail:`المقرر والشعبة متكرران في الفصل نفسه.`})}
-      }
+      if(byPair.has(pair)) continue;
+
+      const reasons:Array<"room"|"instructor"|"duplicate">=[];
+      if(clashing && row.AdInstructorId && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
+      if(clashing && roomKey(row)!=="|" && roomKey(row)===roomKey(other)) reasons.push("room");
+      if(twin) reasons.push("duplicate");
+      if(!reasons.length) continue;
+
+      // The pair is named after the most serious thing true about it.
+      const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room":"duplicate";
+      const message=type==="instructor"?"تعارض في أستاذ المقرر"
+        :type==="room"?"تعارض في القاعة"
+        :"موعدان متطابقان لنفس الشعبة";
+      const detail=type==="instructor"
+        ? `الموعدان ${row.fstarttime}-${row.fendtime} و ${other.fstarttime}-${other.fendtime} يتقاطعان في يوم مشترك.`
+        : type==="room"
+          ? `القاعة ${row.AdRoomCode}/${row.AdRoomHall} مستخدمة في موعد متداخل.`
+          : "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت.";
+      byPair.set(pair,{
+        type,
+        severity:type==="duplicate"?"medium":"high",
+        rowId:row.id,otherId:other.id,message,detail,reasons,
+      });
     }
   }
-  return out;
+  return [...byPair.values()];
 }
 
 function instructorGapStats(rows:FSchedule[]){

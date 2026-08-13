@@ -176,8 +176,10 @@ export default function InstructorPicker({ value, onChange, instructors, departm
         aria-expanded={open}
       >
         <UserRound aria-hidden="true" />
-        <span>{selected ? selected.AdInstructorName : "اختر أستاذ المقرر"}</span>
-        {selected?.AdInstructorCivil ? <small dir="ltr">{selected.AdInstructorCivil}</small> : null}
+        <span className="instructor-identity">
+          <b>{selected ? selected.AdInstructorName : "اختر أستاذ المقرر"}</b>
+          {selected?.AdInstructorCivil ? <small dir="ltr">{selected.AdInstructorCivil}</small> : null}
+        </span>
       </button>
 
       {open ? (
@@ -198,7 +200,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
 
           {!query ? <p className="instructor-scope">أساتذة هذا القسم — اكتب للبحث في الكلية كلها</p> : null}
 
-          <div className="instructor-results">
+          <div className="instructor-results" hidden={adding}>
             {results.length ? results.map(person => (
               <button
                 type="button"
@@ -208,8 +210,13 @@ export default function InstructorPicker({ value, onChange, instructors, departm
                 aria-selected={person.AdInstructorId === value}
                 onClick={() => { onChange(person.AdInstructorId); setOpen(false); }}
               >
-                <span>{person.AdInstructorName}</span>
-                <small dir="ltr">{person.AdInstructorCivil || "—"}</small>
+                {/* The name gets the width; the civil ID sits beneath it. Side
+                    by side, twelve monospace digits left a department's names
+                    truncated to a single letter. */}
+                <span className="instructor-identity">
+                  <b>{person.AdInstructorName}</b>
+                  <small dir="ltr">{person.AdInstructorCivil || "—"}</small>
+                </span>
                 {departmentRank.has(person.AdInstructorId) ? <i title="يدرّس في هذا القسم">•</i> : null}
                 {person.AdInstructorId === value ? <Check aria-hidden="true" /> : null}
               </button>

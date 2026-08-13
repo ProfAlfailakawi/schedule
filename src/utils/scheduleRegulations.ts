@@ -11,15 +11,15 @@ import { departsFromNature, type CourseNature } from "./courseNature";
  * of these — a warning says "look at this", not "you may not".
  *
  * Articles used:
- *   م.٦/٢  no more than two consecutive sections in a day for lectures over an hour
- *   م.٦/٣  no more than three consecutive sections in a day for one-hour lectures
- *   م.٦/٤  single-section courses rotate between staff each term
- *   م.٧/٢  morning 50–70% and evening 30–50% of a department's load
- *   م.٧/٥  sections of one course spread across different hours and days
- *   م.٨/أ  Sunday, Tuesday, Thursday lectures run one hour
- *   م.٨/ب  Monday and Wednesday lectures run an hour and a half
- *   م.٨/٩  a course is offered at the same fixed time on all of its days
- *   م.٨    theory 20–60 students, applied 15–40, practical 15–25
+ *   م.6/2  no more than two consecutive sections in a day for lectures over an hour
+ *   م.6/3  no more than three consecutive sections in a day for one-hour lectures
+ *   م.6/4  single-section courses rotate between staff each term
+ *   م.7/2  morning 50–70% and evening 30–50% of a department's load
+ *   م.7/5  sections of one course spread across different hours and days
+ *   م.8/أ  Sunday, Tuesday, Thursday lectures run one hour
+ *   م.8/ب  Monday and Wednesday lectures run an hour and a half
+ *   م.8/9  a course is offered at the same fixed time on all of its days
+ *   م.8    theory 20–60 students, applied 15–40, practical 15–25
  */
 
 export type RegulationSeverity = "high" | "medium" | "low";
@@ -95,7 +95,7 @@ export function adviseDayPattern(days: DayKey[], start: string, currentEnd: stri
       expectedMinutes: 0,
       suggestedEnd: currentEnd,
       changed: false,
-      note: "أيام مختلطة: الأحد/الثلاثاء/الخميس مدتها ساعة، والاثنين/الأربعاء ساعة ونصف (م.٨/أ،ب). راجع التوزيع."
+      note: "أيام مختلطة: الأحد/الثلاثاء/الخميس مدتها ساعة، والاثنين/الأربعاء ساعة ونصف (م.8/أ،ب). راجع التوزيع."
     };
   }
   const expected = long ? 90 : 60;
@@ -107,8 +107,8 @@ export function adviseDayPattern(days: DayKey[], start: string, currentEnd: stri
     suggestedEnd,
     changed,
     note: long
-      ? "الاثنين والأربعاء: مدة المحاضرة ساعة ونصف (م.٨/ب)."
-      : "الأحد والثلاثاء والخميس: مدة المحاضرة ساعة واحدة (م.٨/أ)."
+      ? "الاثنين والأربعاء: مدة المحاضرة ساعة ونصف (م.8/ب)."
+      : "الأحد والثلاثاء والخميس: مدة المحاضرة ساعة واحدة (م.8/أ)."
   };
 }
 
@@ -147,7 +147,7 @@ const PATTERN_LIBRARY: Array<Omit<WeeklyPattern, "label"> & { hours: number }> =
   },
   {
     hours: 2, id: "2h-two-days", days: ["fsunday", "ftuesday"], minutesPerDay: [60, 60], weeklyMinutes: 120,
-    note: "ساعتان: لقاءان بساعة في الأحد والثلاثاء (م.٨/أ)."
+    note: "ساعتان: لقاءان بساعة في الأحد والثلاثاء (م.8/أ)."
   },
   {
     hours: 2, id: "2h-one-block", days: ["ftuesday"], minutesPerDay: [120], weeklyMinutes: 120,
@@ -155,19 +155,19 @@ const PATTERN_LIBRARY: Array<Omit<WeeklyPattern, "label"> & { hours: number }> =
   },
   {
     hours: 3, id: "3h-three-days", days: ["fsunday", "ftuesday", "fthursday"], minutesPerDay: [60, 60, 60], weeklyMinutes: 180,
-    note: "ثلاث ساعات: ثلاثة لقاءات بساعة — الأحد والثلاثاء والخميس (م.٨/أ)."
+    note: "ثلاث ساعات: ثلاثة لقاءات بساعة — الأحد والثلاثاء والخميس (م.8/أ)."
   },
   {
     hours: 3, id: "3h-two-days", days: ["fmonday", "fwednesday"], minutesPerDay: [90, 90], weeklyMinutes: 180,
-    note: "ثلاث ساعات: لقاءان بساعة ونصف — الاثنين والأربعاء (م.٨/ب)."
+    note: "ثلاث ساعات: لقاءان بساعة ونصف — الاثنين والأربعاء (م.8/ب)."
   },
   {
     hours: 4, id: "4h-mon-wed-thu", days: ["fmonday", "fwednesday", "fthursday"], minutesPerDay: [90, 90, 60], weeklyMinutes: 240,
-    note: "أربع ساعات: ٩٠+٩٠+٦٠ — الاثنين والأربعاء والخميس (م.٨/ت)."
+    note: "أربع ساعات: 90+90+60 — الاثنين والأربعاء والخميس (م.8/ت)."
   },
   {
     hours: 4, id: "4h-tue-thu", days: ["ftuesday", "fthursday"], minutesPerDay: [120, 120], weeklyMinutes: 240,
-    note: "أربع ساعات: لقاءان بساعتين — الثلاثاء والخميس (م.٨/ت)."
+    note: "أربع ساعات: لقاءان بساعتين — الثلاثاء والخميس (م.8/ت)."
   },
   // Laboratories, workshops and field training run as one long sitting. The
   // articles describe lectures and never spell these out, but they are how a
@@ -187,7 +187,7 @@ const PATTERN_LIBRARY: Array<Omit<WeeklyPattern, "label"> & { hours: number }> =
   },
   {
     hours: 5, id: "5h-split", days: ["fmonday", "fwednesday"], minutesPerDay: [180, 120], weeklyMinutes: 300,
-    note: "خمس ساعات: ١٨٠+١٢٠ على يومين."
+    note: "خمس ساعات: 180+120 على يومين."
   }
 ];
 
@@ -263,7 +263,7 @@ export function planMove(options: {
       meetings: [{ day: targetDay, start: targetStart, end: clock(start + expected) }],
       reshapes: false,
       headline: `${dayLabel(targetDay)} ${targetStart}`,
-      detail: `مدة اللقاء ${expected} دقيقة على هذا اليوم (م.٨/أ،ب).`
+      detail: `مدة اللقاء ${expected} دقيقة على هذا اليوم (م.8/أ،ب).`
     };
   }
 
@@ -311,7 +311,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || `موعد ${row.id}`;
   const who = (id: number) => instructors.get(id)?.AdInstructorName || "بدون أستاذ";
 
-  // --- م.٨/أ،ب — lecture length must match the day it sits on -------------
+  // --- م.8/أ،ب — lecture length must match the day it sits on -------------
   // Departments run 50-minute and 80-minute slots to leave room for movement
   // between buildings, which is a deliberate reading of the same rule rather
   // than a mistake. Flagging every row for a ten-minute difference buries the
@@ -350,10 +350,10 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   if (wrongLength.length) {
     findings.push({
       rule: "lecture-length",
-      article: "م.٨/أ،ب",
+      article: "م.8/أ،ب",
       severity: "low",
       title: `مدة المحاضرة بعيدة عن نمط اليوم في ${arabicNumber(wrongLength.length)} موعد`,
-      detail: "الأحد والثلاثاء والخميس ساعة، والاثنين والأربعاء ساعة ونصف. فروق الدقائق القليلة (٥٠ و٨٠ دقيقة) مقبولة كزمن انتقال ولا تُحتسب هنا.",
+      detail: "الأحد والثلاثاء والخميس ساعة، والاثنين والأربعاء ساعة ونصف. فروق الدقائق القليلة (50 و80 دقيقة) مقبولة كزمن انتقال ولا تُحتسب هنا.",
       rowIds: wrongLength.map(row => row.id)
     });
   }
@@ -374,7 +374,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     if (odd.length) {
       findings.push({
         rule: "out-of-character",
-        article: "سجل ١٠ سنوات",
+        article: "سجل 10 سنوات",
         severity: "medium",
         title: `${arabicNumber(odd.length)} موعد يخالف المعتاد لهذا المقرر`,
         detail: `مقارنةً بكيفية تدريس المقرر نفسه في الفصول السابقة. ${reasons.slice(0, 4).join(" — ")}`,
@@ -383,14 +383,14 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     }
   }
 
-  // --- م.٨/٩ — one course, one fixed time across its days ------------------
+  // --- م.8/9 — one course, one fixed time across its days ------------------
   const byCourse = new Map<number, FSchedule[]>();
   rows.forEach(row => {
     if (!row.AdCourseId) return;
     byCourse.set(row.AdCourseId, [...(byCourse.get(row.AdCourseId) || []), row]);
   });
 
-  // --- م.٧/٥ — sections of one course spread over hours and days -----------
+  // --- م.7/5 — sections of one course spread over hours and days -----------
   const clashing: FSchedule[] = [];
   const courseNames: string[] = [];
   for (const [courseId, list] of byCourse) {
@@ -412,7 +412,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   if (clashing.length) {
     findings.push({
       rule: "sections-same-hour",
-      article: "م.٧/٥",
+      article: "م.7/5",
       severity: "high",
       title: `شعب مقرر واحد في نفس الساعة واليوم: ${courseNames.slice(0, 6).join("، ")}`,
       detail: "توزَّع شعب المقرر الواحد على ساعات مختلفة وفي أيام متعددة حتى يجد الطالب شعبة تناسبه.",
@@ -420,7 +420,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     });
   }
 
-  // --- م.٦/٢،٣ — how many sections an instructor may teach back to back ----
+  // --- م.6/2،3 — how many sections an instructor may teach back to back ----
   const runsOver: string[] = [];
   const runRows: number[] = [];
   const byInstructor = new Map<number, FSchedule[]>();
@@ -461,7 +461,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   if (runsOver.length) {
     findings.push({
       rule: "consecutive-sections",
-      article: "م.٦/٢،٣",
+      article: "م.6/2،3",
       severity: "medium",
       title: `تجاوز الشعب المتتالية في اليوم (${arabicNumber(runsOver.length)})`,
       detail: `الحد شعبتان متتاليتان للمحاضرات التي تزيد عن ساعة، وثلاث للمحاضرات ذات الساعة الواحدة. ${runsOver.slice(0, 4).join(" — ")}`,
@@ -469,7 +469,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     });
   }
 
-  // --- م.٧/٢ — the morning/evening balance of the department ---------------
+  // --- م.7/2 — the morning/evening balance of the department ---------------
   const timed = rows.filter(row => row.fstarttime);
   if (timed.length >= 8) {
     const morning = timed.filter(row => {
@@ -487,17 +487,17 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       if (morningShare < 50 || morningShare > 70) {
         findings.push({
           rule: "period-balance",
-          article: "م.٧/٢",
+          article: "م.7/2",
           severity: "low",
           title: `توزيع الفترتين خارج النطاق: صباحي ${arabicNumber(morningShare)}٪ · مسائي ${arabicNumber(eveningShare)}٪`,
-          detail: "المطلوب صباحاً بين ٥٠٪ و٧٠٪، ومساءً بين ٣٠٪ و٥٠٪ من إجمالي مقررات القسم.",
+          detail: "المطلوب صباحاً بين 50٪ و70٪، ومساءً بين 30٪ و50٪ من إجمالي مقررات القسم.",
           rowIds: []
         });
       }
     }
   }
 
-  // --- م.٨ — class size limits -------------------------------------------
+  // --- م.8 — class size limits -------------------------------------------
   const oversized: string[] = [];
   const oversizedRows: number[] = [];
   for (const row of rows) {
@@ -512,15 +512,15 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   if (oversized.length) {
     findings.push({
       rule: "class-size",
-      article: "م.٨",
+      article: "م.8",
       severity: "low",
       title: `سعة أعلى من الحد الأقصى للمقررات النظرية (${arabicNumber(oversized.length)})`,
-      detail: `الحد الأقصى ٦٠ طالباً للمقرر النظري، ٤٠ للتطبيقي، ٢٥ للعملي. ${[...new Set(oversized)].slice(0, 5).join("، ")}`,
+      detail: `الحد الأقصى 60 طالباً للمقرر النظري، 40 للتطبيقي، 25 للعملي. ${[...new Set(oversized)].slice(0, 5).join("، ")}`,
       rowIds: [...new Set(oversizedRows)]
     });
   }
 
-  // --- م.٦/٤ — rotation of single-section courses -------------------------
+  // --- م.6/4 — rotation of single-section courses -------------------------
   if (context.previousRows?.length) {
     const previousOwner = new Map<number, number>();
     const previousCount = new Map<number, number>();
@@ -541,7 +541,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     if (repeated.length) {
       findings.push({
         rule: "rotation",
-        article: "م.٦/٤",
+        article: "م.6/4",
         severity: "medium",
         title: `مقررات أحادية الطرح لم تُدوَّر (${arabicNumber(repeated.length)})`,
         detail: `المقرر ذو الشعبة الواحدة يُسند لعضو آخر في الفصل التالي عملاً بمبدأ التدوير. ${repeated.slice(0, 5).join(" — ")}`,
@@ -574,7 +574,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   if (unfinished.length) {
     findings.push({
       rule: "incomplete",
-      article: "م.٦/٥",
+      article: "م.6/5",
       severity: "high",
       title: `${arabicNumber(unfinished.length)} موعد ناقص البيانات`,
       detail: "كل موعد يحتاج أياماً ووقتاً وأستاذاً محدداً قبل اعتماد الجدول.",

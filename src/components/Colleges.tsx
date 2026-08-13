@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, Landmark, Route, Save, Trash2 } from "lucide-react";
+import { Building2, Landmark, Route, Save, Search, Trash2 } from "lucide-react";
 import {
   AddButton,
   EmbeddedAction,
@@ -31,7 +31,13 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     [loading, setLoading] = useState(false),
     [mobility, setMobility] = useState<any | null>(null),
     [mobilityBusy, setMobilityBusy] = useState(false),
-    [mobilitySaved, setMobilitySaved] = useState(false);
+    [mobilitySaved, setMobilitySaved] = useState(false),
+    /**
+     * A campus of twenty buildings makes a hundred and ninety pairs.
+     * Scrolling for the two you came to change is not a task a person should be
+     * given, so the matrix is filtered by name — either side matches.
+     */
+    [mobilityFind, setMobilityFind] = useState("");
   const load = async () => {
     setLoading(true);
     try {
@@ -296,9 +302,36 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                     <label><span>افتراضي بين مبنيين غير مضبوطين</span><div><input type="number" min="1" max="120" value={mobility.profile?.defaultTravelMinutes || 15} onChange={e=>setMobility((m:any)=>({...m,profile:{...m.profile,defaultTravelMinutes:Number(e.target.value)}}))}/><b>دقيقة</b></div></label>
                     <label><span>داخل المبنى نفسه</span><div><input type="number" min="0" max="30" value={mobility.profile?.sameBuildingMinutes || 3} onChange={e=>setMobility((m:any)=>({...m,profile:{...m.profile,sameBuildingMinutes:Number(e.target.value)}}))}/><b>دقيقة</b></div></label>
                   </div>
-                  {mobilityPairs.length ? <div className="travel-matrix">
-                    {mobilityPairs.map(pair => <label key={`${pair.fromBuilding}-${pair.toBuilding}`}><span>{pair.fromBuilding} ↔ {pair.toBuilding}</span><div><input aria-label={`زمن الانتقال بين ${pair.fromBuilding} و${pair.toBuilding}`} type="number" min="1" max="120" value={pair.minutes} onChange={e=>updateTravelPair(pair.fromBuilding,pair.toBuilding,Number(e.target.value))}/><b>دقيقة</b></div></label>)}
-                  </div> : <p className="mobility-empty">يظهر ضبط المسافات تلقائياً بعد أن يكتشف النظام مبنيين أو أكثر من جداول هذه الكلية.</p>}
+                  {mobilityPairs.length ? (() => {
+                    const needle = mobilityFind.trim().toLowerCase();
+                    const shown = needle
+                      ? mobilityPairs.filter(pair =>
+                          pair.fromBuilding.toLowerCase().includes(needle) ||
+                          pair.toBuilding.toLowerCase().includes(needle))
+                      : mobilityPairs;
+                    return (
+                      <>
+                        <label className="travel-search">
+                          <Search aria-hidden="true" />
+                          <input
+                            value={mobilityFind}
+                            onChange={e => setMobilityFind(e.target.value)}
+                            placeholder="ابحث عن مبنى"
+                            aria-label="ابحث عن مبنى"
+                          />
+                          <b>{shown.length}/{mobilityPairs.length}</b>
+                          {mobilityFind ? (
+                            <button type="button" onClick={() => setMobilityFind("")} aria-label="مسح البحث">✕</button>
+                          ) : null}
+                        </label>
+                        {shown.length ? (
+                          <div className="travel-matrix">
+                            {shown.map(pair => <label key={`${pair.fromBuilding}-${pair.toBuilding}`}><span>{pair.fromBuilding} ↔ {pair.toBuilding}</span><div><input aria-label={`زمن الانتقال بين ${pair.fromBuilding} و${pair.toBuilding}`} type="number" min="1" max="120" value={pair.minutes} onChange={e=>updateTravelPair(pair.fromBuilding,pair.toBuilding,Number(e.target.value))}/><b>دقيقة</b></div></label>)}
+                          </div>
+                        ) : <p className="mobility-empty">لا مبنى يطابق «{mobilityFind}».</p>}
+                      </>
+                    );
+                  })() : <p className="mobility-empty">يظهر ضبط المسافات تلقائياً بعد أن يكتشف النظام مبنيين أو أكثر من جداول هذه الكلية.</p>}
                   <button type="button" className="mobility-save" onClick={saveMobility} disabled={mobilityBusy}><Save /> {mobilityBusy ? "جاري الحفظ…" : mobilitySaved ? "تم حفظ خريطة الحركة" : "حفظ أزمنة الانتقال"}</button>
                 </> : null}
               </section>

@@ -60,7 +60,6 @@ import ScheduleExperienceLayer, {
   useScheduleExperience,
 } from "./ScheduleExperienceLayer";
 import SchedulePhysicsLayer from "./SchedulePhysics/SchedulePhysicsLayer";
-import ScheduleDecisionPreview from "./SchedulePhysics/ScheduleDecisionPreview";
 import useSchedulePhysics from "./SchedulePhysics/useSchedulePhysics";
 import {
   buildDecision,
@@ -90,6 +89,7 @@ import InstructorPicker from "./InstructorPicker";
 import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
+import { courseLabel, instructorLabel } from "../utils/courseLabel";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -97,6 +97,65 @@ interface Props {
   scopes?: any[];
 }
 type EditorMode = "index" | "create" | "edit";
+
+/**
+ * One half-hour, in pixels.
+ *
+ * The grid used to position cards at 36px per half-hour while the CSS drew the
+ * rows at 38px, so every appointment drifted two pixels lower than its own hour
+ * and by the end of the afternoon sat a full row away from the time it claimed.
+ * There is now one number, exported to the stylesheet as `--week-slot`, and the
+ * row is tall enough for a card to say the course and the instructor in full
+ * rather than truncating both to fit a line and a half.
+ */
+const SLOT_H = 46;
+
+/**
+ * The detail card, painted on the window rather than inside the grid.
+ *
+ * It opens above the lecture it describes and then measures itself: if it would
+ * cross the top of the window it flips below, and if it would cross either side
+ * it slides back in. Nothing it says can be clipped by a column, which was the
+ * entire failure of the version it replaces.
+ */
+function WeekPeek({ anchor, title, who, code, section, days: dayText, from, to, room }: {
+  anchor: { x: number; y: number };
+  title: string; who: string; code: string; section: string;
+  days: string; from: string; to: string; room: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [box, setBox] = useState<{ left: number; top: number } | null>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    const margin = 10;
+    let left = anchor.x - rect.width / 2;
+    let top = anchor.y - rect.height - 10;
+    if (top < margin) top = anchor.y + 46;
+    left = Math.max(margin, Math.min(window.innerWidth - rect.width - margin, left));
+    top = Math.min(window.innerHeight - rect.height - margin, top);
+    setBox({ left, top });
+  }, [anchor.x, anchor.y]);
+  return (
+    <div
+      className="week-peek"
+      ref={ref}
+      role="tooltip"
+      style={box ? { left: box.left, top: box.top } : { left: -9999, top: -9999 }}
+    >
+      <strong>{title}</strong>
+      <em>{who}</em>
+      <dl>
+        <dt>الشعبة</dt><dd dir="ltr">{section} · {code}</dd>
+        <dt>الأيام</dt><dd>{dayText || "بدون أيام"}</dd>
+        <dt>الوقت</dt><dd dir="ltr">{from} – {to}</dd>
+        <dt>القاعة</dt><dd dir="ltr">{room || "—"}</dd>
+      </dl>
+    </div>
+  );
+}
+
 export default function Schedules({ mode, user, scopes = [] }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
@@ -160,11 +219,70 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [copyPreview, setCopyPreview] = useState<any | null>(null),
     [copyUndoPoint, setCopyUndoPoint] = useState<any | null>(null),
     [previewing, setPreviewing] = useState(false);
-  const [physicsPreview, setPhysicsPreview] =
-      useState<SchedulePhysicsDropRequest | null>(null),
-    [physicsNotice, setPhysicsNotice] = useState(""),
+  const [physicsNotice, setPhysicsNotice] = useState(""),
     [undoPoint, setUndoPoint] = useState<any>(null),
     [physicsField, setPhysicsField] = useState<Record<string, string>>({});
+  /**
+   * Several lectures carried at once.
+   *
+   * Moving a whole morning an hour later is one intention, and asking someone to
+   * express it as six identical drags is asking them to do the computer's work.
+   * A long press on empty space, or the toolbar button, arms selection; from
+   * then on a tap picks and unpicks, and dragging any picked card carries the
+   * set with the same offset.
+   */
+  const [picking, setPicking] = useState(false);
+  const [multiSelect, setMultiSelect] = useState<Set<number>>(new Set());
+  const toggleSelect = (id: number) =>
+    setMultiSelect(current => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  /**
+   * The card that says the rest.
+   *
+   * The old one was drawn inside the grid, and the grid clips its own contents,
+   * so the name it existed to reveal was the first thing cut off at the edge of
+   * a column. This one is measured against the window: it opens beside the card
+   * it describes and steps back inside whichever edge it would have crossed.
+   */
+  const [peek, setPeek] = useState<{ row: FSchedule; x: number; y: number } | null>(null);
+  const openPeek = (row: FSchedule, element: HTMLElement | null) => {
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    setPeek({ row, x: rect.left + rect.width / 2, y: rect.top });
+  };
+
+  /**
+   * Painting a new appointment straight onto an empty column.
+   *
+   * Asking for a lecture from ten to half past eleven by opening a form and
+   * typing two times is the long way round when the column is right there. A
+   * stroke down the empty squares says the day, the hour and the length in one
+   * gesture, and the form opens already knowing all three. A single tap is the
+   * same stroke of one square, so nothing was taken away.
+   */
+  const [paint, setPaint] = useState<{ day: DayKey; from: string; to: string } | null>(null);
+  const paintRef = useRef<{ day: DayKey; anchor: number } | null>(null);
+  const paintOpen = useRef<((seed: { day: DayKey; start: string; end: string }) => void) | null>(null);
+  useEffect(() => {
+    const finish = () => {
+      const stroke = paintRef.current;
+      paintRef.current = null;
+      if (!stroke) return;
+      setPaint(current => {
+        if (current) paintOpen.current?.({ day: current.day, start: current.from, end: current.to });
+        return null;
+      });
+    };
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+    return () => {
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+    };
+  }, []);
   const fetchJson = async (url: string, options?: RequestInit) => {
     if (options?.method && options.method !== "GET" && !navigator.onLine)
       throw new Error(
@@ -366,6 +484,33 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       .catch(() => undefined);
     return () => { alive = false; };
   }, [filterSection]);
+
+  /**
+   * Who is seconded to this department this term.
+   *
+   * The roster exists and is edited, but the schedule never read it, so the
+   * distinction it records was invisible exactly where it matters — on the
+   * timetable, beside the name. A seconded colleague is scheduled differently
+   * from a permanent one, and a coordinator should not have to remember which
+   * is which.
+   */
+  const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (!filterCollege || !filterSection || !filterTerm) { setVisitingIds(new Set()); return; }
+    let alive = true;
+    const query = new URLSearchParams({
+      collegeId: String(filterCollege), sectionId: String(filterSection), termId: String(filterTerm),
+    });
+    fetch(`/api/visiting-roster?${query}`)
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => {
+        if (!alive) return;
+        const ids = Array.isArray(data?.instructorIds) ? data.instructorIds : Array.isArray(data) ? data : [];
+        setVisitingIds(new Set(ids.map(Number).filter(Boolean)));
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [filterCollege, filterSection, filterTerm]);
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -570,7 +715,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (next.collegeId !== copyCollege) setCopyCollege(next.collegeId);
     if (next.sectionId !== copySection) setCopySection(next.sectionId);
   }, [mode, isPowerAdmin, sections.length, scopes, copyCollege, copySection]);
-  const openCreate = (seed?: { day?: DayKey; start?: string }) => {
+  const openCreate = (seed?: { day?: DayKey; start?: string; end?: string }) => {
       setError(null);
       setMessage(null);
       setConflicts([]);
@@ -594,6 +739,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       if (seed?.start) {
         next.fstarttime = seed.start;
+        // A square gives an hour; a stroke down the column gives its own length.
+        next.fendtime = seed.end && mins(seed.end) > mins(seed.start)
+          ? seed.end
+          : timeFromMins(Math.min(23 * 60 + 30, mins(seed.start) + 60));
+      }
+      // A tap paints one square, which should still mean the usual hour.
+      if (seed?.end && seed.start && mins(seed.end) - mins(seed.start) <= 30) {
         next.fendtime = timeFromMins(Math.min(23 * 60 + 30, mins(seed.start) + 60));
       }
       setForm(next);
@@ -624,6 +776,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const setNumber = (key: keyof typeof form, raw: string) =>
     setForm((prev) => ({ ...prev, [key]: Number(raw) || 0 }));
   const englishDigits = (v: string) => /^\d*$/.test(v);
+  // The paint gesture ends on a window listener registered once, so it reaches
+  // the form opener through a ref rather than by re-binding on every render.
+  paintOpen.current = openCreate;
   const selectedFormDays = days.filter(d=>Boolean(form[d.key]));
   // A brand-new form should not open already scolding. The validation strip
   // waits until the days or the time have been touched, or until a save is
@@ -725,7 +880,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setForm(previous => {
       const next: any = { ...previous };
       days.forEach(day => { next[day.key] = pattern.days.includes(day.key as any); });
-      // Every meeting starts at the same hour (م.٨/٩); the first one sets the length.
+      // Every meeting starts at the same hour (م.8/9); the first one sets the length.
       const start = next.fstarttime || "08:00";
       next.fstarttime = start;
       const [h, m] = start.split(":").map(Number);
@@ -1386,7 +1541,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     try {
       const check=await fetchJson("/api/schedules/check-conflicts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...payload,excludeId:row.id})});
       const blocking=Array.isArray(check.conflicts)?check.conflicts.filter((c:any)=>c?.severity==="high"||c?.type==="duplicate"):[];
-      if(blocking.length){const reasons=blocking.slice(0,3).map((c:any)=>[c?.message,c?.detail].filter(Boolean).join(" — ")).filter(Boolean);const reason=reasons.join(" | ")||"هذا النقل يسبب تعارضاً ولا يمكن حفظه.";setError(`تعذر نقل الموعد: ${reason}`);setPhysicsPreview(null);setPhysicsNotice(`رفض النقل: ${reason}`);return;}
+      if(blocking.length){const reasons=blocking.slice(0,3).map((c:any)=>[c?.message,c?.detail].filter(Boolean).join(" — ")).filter(Boolean);const reason=reasons.join(" | ")||"هذا النقل يسبب تعارضاً ولا يمكن حفظه.";setError(`تعذر نقل الموعد: ${reason}`);setPhysicsNotice(`رفض النقل: ${reason}`);return;}
     } catch(e:any){setError(friendlyError(e));return;}
     const decisionRipple =
       options?.decision?.ripple ||
@@ -1431,8 +1586,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           setUndoPoint(null);
         }
       }
-      setPhysicsPreview(null);
-      setPhysicsNotice("استقر القرار بعد الحفظ عبر مسار التعديل الحالي.");
+      setPhysicsNotice("");
       setMessage(
         selected.length > 1
           ? "تم تغيير وقت المقرر مع الحفاظ على جميع أيامه."
@@ -1445,6 +1599,129 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setSaving(false);
     }
   };
+  /**
+   * A drop is a move.
+   *
+   * The previous build answered a drag with a modal that asked the coordinator
+   * to approve the thing they had just done with their hand, and building a
+   * timetable became a hundred confirmations. So the gesture now means what it
+   * looks like: the card lands, the change is written, and a minute of undo sits
+   * at the bottom of the screen in case the hand was wrong. Nothing is lost by
+   * being decisive when the decision is reversible.
+   *
+   * Refusal is reserved for what genuinely cannot be saved. A real clash — the
+   * same instructor or the same hall in the same hour — sends the card home and
+   * says which lecture it collided with, by name, in Arabic.
+   */
+  const restoreRow = (snapshot: FSchedule) => async () => {
+    const payload: any = { ...snapshot };
+    delete payload.id;
+    delete payload.AdCourseName;
+    await fetchJson(`/api/schedules/${snapshot.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  };
+
+  const describeConflict = (list: any[]) => {
+    const lines = list
+      .slice(0, 3)
+      .map((item: any) => [item?.message, item?.detail].filter(Boolean).join(" — "))
+      .filter(Boolean);
+    return lines.join(" · ") || "هذا الموضع يسبب تعارضاً فلا يمكن حفظه.";
+  };
+
+  const commitMove = async (request: SchedulePhysicsDropRequest) => {
+    const { row, target } = request;
+    const day = target.day as DayKey;
+    // A whole selection travels together, keeping the shape it already had.
+    const party = multiSelect.has(row.id)
+      ? rows.filter(item => multiSelect.has(item.id))
+      : [row];
+    const shift = mins(target.start) - mins(row.fstarttime);
+    const sourceDay = (days.find(d => Boolean(row[d.key]))?.key || day) as DayKey;
+    const dayChanged = sourceDay !== day;
+
+    const moves = party.map(item => {
+      const singleDay = days.filter(d => Boolean(item[d.key])).length === 1;
+      const start = item.id === row.id ? target.start : timeFromMins(mins(item.fstarttime) + shift);
+      const candidate = buildMoveCandidate(item, { day, start });
+      // Only the carried card changes day; the rest keep theirs and shift in time.
+      if (item.id !== row.id && singleDay && dayChanged) {
+        days.forEach(d => { (candidate as any)[d.key] = Boolean(item[d.key]); });
+      }
+      return { before: item, after: candidate };
+    });
+
+    // Anything that would land outside the day is not a move, it is a mistake.
+    const outside = moves.find(m => mins(m.after.fstarttime) < gridWindow.start || mins(m.after.fendtime) > gridWindow.end);
+    if (outside) {
+      setPhysicsNotice("");
+      setError("هذا الموضع يخرج عن ساعات اليوم؛ لم يتغير شيء.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      // Ask before writing, once per moved card, so a refusal costs nothing.
+      for (const move of moves) {
+        const probe: any = { ...move.after };
+        delete probe.id;
+        delete probe.AdCourseName;
+        const check = await fetchJson("/api/schedules/check-conflicts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...probe, excludeId: move.before.id, excludeIds: moves.map(m => m.before.id) }),
+        });
+        // Members of the same travelling selection are checked against where
+        // they *are*, not where they are going — so a card landing on a sibling
+        // that is itself about to move is not a real clash.
+        const partyIds = new Set(moves.map(m => m.before.id));
+        const blocking = (Array.isArray(check.conflicts) ? check.conflicts : [])
+          .filter((c: any) => c?.severity === "high" || c?.type === "duplicate")
+          .filter((c: any) => !partyIds.has(Number(c?.rowId)) && !partyIds.has(Number(c?.otherId)));
+        if (blocking.length) {
+          setPhysicsNotice("");
+          setError(`لم يُنقل: ${describeConflict(blocking)}`);
+          return;
+        }
+      }
+
+      // The grid answers immediately; the network catches up behind it.
+      const patched = new Map(moves.map(m => [m.before.id, m.after]));
+      setRows(current => current.map(item => patched.get(item.id) || item));
+
+      for (const move of moves) {
+        const payload: any = { ...move.after };
+        delete payload.id;
+        delete payload.AdCourseName;
+        await fetchJson(`/api/schedules/${move.before.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      markChanged(row.id);
+      setPhysicsNotice("");
+      const label = days.find(d => d.key === day)?.label || "";
+      offerUndo(
+        moves.length > 1
+          ? `نُقل ${moves.length} مواعيد إلى ${label} ${target.start}`
+          : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${target.start}`,
+        async () => { for (const move of moves) await restoreRow(move.before)(); },
+      );
+      void loadRows();
+    } catch (e: any) {
+      setError(friendlyError(e));
+      void loadRows();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const undoPhysicsDecision = async () => {
     if (!isPowerAdmin || !undoPoint) return;
     if (
@@ -1493,83 +1770,178 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [gridWindow],
   );
   const [expandedDay, setExpandedDay] = useState<DayKey | null>(null);
+  /** How many appointments each day actually carries — every day gets a count. */
+  const dayCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    days.forEach(day => { counts[day.key] = 0; });
+    weekRows.forEach(row => days.forEach(day => { if ((row as any)[day.key]) counts[day.key] += 1; }));
+    return counts;
+  }, [weekRows]);
+  /**
+   * The lectures the week cannot draw.
+   *
+   * A row with no day, or with no hour, exists in the data and nowhere on the
+   * grid — so it is invisible exactly when it most needs attention. They are
+   * gathered into a column of their own beside the week; dragging one onto a
+   * square is how it joins the timetable.
+   */
+  const unplaced = useMemo(
+    () => weekRows.filter(row =>
+      !days.some(day => Boolean((row as any)[day.key])) ||
+      !row.fstarttime || !row.fendtime || mins(row.fendtime) <= mins(row.fstarttime)),
+    [weekRows],
+  );
 
   /**
-   * Week layout, per collision cluster rather than per day.
+   * Week layout: one lane assignment per day, then every card widens.
    *
-   * A quiet hour with one lecture should use the whole column; a busy hour with
-   * four should not shrink the whole day to slivers. So overlapping appointments
-   * are grouped into clusters and laid out independently:
+   * The old version grouped a day into chains of overlap and judged the chain
+   * as a whole, so an ordinary Wednesday — eighteen lectures, never more than
+   * two at once — became a single scrolling list of catalogue numbers, because
+   * one lecture touched the next which touched the next. The chain is not the
+   * measure of density; the moment is.
    *
-   *   1–2 in a cluster  → normal cards side by side, full readable width
-   *   3 or more         → one grouped block listing them as compact rows
-   *
-   * Nothing is hidden and nothing is crushed. Opening a day (its header) widens
-   * it to the full grid, where even a six-way collision sits side by side.
+   * So this is the calendar algorithm proper. Overlapping appointments get
+   * columns, and then each one expands to the right over every column that
+   * happens to be free for its own hour. A lecture with nobody beside it takes
+   * the whole width even when the day around it is busy, and only the genuinely
+   * concurrent hour is split — which is what a person means when they say a
+   * timetable is readable.
    */
-  const STACK_THRESHOLD = 3;
+  /** A single-day block this long is a workshop or a laboratory, not a lecture. */
+  const LONG_BLOCK = 150;
   const weekLayout = useMemo(() => {
-    const layout: Record<string, {
-      laneCount: number;
-      clusters: Array<{
-        top: number; height: number; items: FSchedule[]; lanes: Map<number, number>; laneCount: number;
-      }>;
-    }> = {};
+    type Placed = { row: FSchedule; top: number; height: number; lane: number; span: number; lanes: number; spine?: number };
+    const layout: Record<string, { items: Placed[]; spine: Placed[]; busiest: number }> = {};
+
+    const geometry = (row: FSchedule) => ({
+      top: ((mins(row.fstarttime) - gridWindow.start) / 30) * SLOT_H,
+      height: Math.max(SLOT_H - 4, ((mins(row.fendtime) - mins(row.fstarttime)) / 30) * SLOT_H - 3),
+    });
 
     for (const day of days) {
-      const items = weekRows
-        .filter((item) => Boolean(item[day.key]))
+      const all = weekRows
+        .filter((item) => Boolean(item[day.key]) && item.fstarttime && item.fendtime)
         .slice()
-        .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(a.fendtime) - mins(b.fendtime));
+        .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(b.fendtime) - mins(a.fendtime));
 
-      const clusters: FSchedule[][] = [];
+      /**
+       * The four-hour workshop steps out of the way.
+       *
+       * A block that runs from eight to one is not competing with the ten
+       * o'clock lecture for attention — it is the background of the day. Left
+       * in the ordinary column flow it takes a quarter of the width for five
+       * hours and squeezes every lecture beside it into an unreadable sliver.
+       * So long single-day blocks get slim rails of their own at the edge of
+       * the column, and the day's teaching keeps its full width.
+       */
+      const spineRows = all.filter(item =>
+        days.filter(d => Boolean((item as any)[d.key])).length === 1 &&
+        mins(item.fendtime) - mins(item.fstarttime) >= LONG_BLOCK);
+      const items = all.filter(item => !spineRows.includes(item));
+
+      const spineEnds: number[] = [];
+      const spine: Placed[] = spineRows.map(item => {
+        const from = mins(item.fstarttime);
+        let rail = spineEnds.findIndex(endAt => endAt <= from);
+        if (rail < 0) { rail = spineEnds.length; spineEnds.push(0); }
+        spineEnds[rail] = mins(item.fendtime);
+        return { row: item, ...geometry(item), lane: 0, span: 1, lanes: 1, spine: rail };
+      });
+
+      // Chains of overlap define who competes for columns…
+      const groups: FSchedule[][] = [];
       let current: FSchedule[] = [];
       let currentEnd = -1;
       for (const item of items) {
         if (current.length && mins(item.fstarttime) >= currentEnd) {
-          clusters.push(current);
-          current = [];
-          currentEnd = -1;
+          groups.push(current); current = []; currentEnd = -1;
         }
         current.push(item);
         currentEnd = Math.max(currentEnd, mins(item.fendtime));
       }
-      if (current.length) clusters.push(current);
+      if (current.length) groups.push(current);
 
-      let dayLaneCount = 1;
-      layout[day.key] = {
-        laneCount: 1,
-        clusters: clusters.map((group) => {
-          const laneEnds: number[] = [];
-          const lanes = new Map<number, number>();
-          for (const item of group) {
-            const startAt = mins(item.fstarttime);
-            let lane = laneEnds.findIndex((endAt) => endAt <= startAt);
-            if (lane < 0) { lane = laneEnds.length; laneEnds.push(0); }
-            laneEnds[lane] = mins(item.fendtime);
-            lanes.set(item.id, lane);
+      const placed: Placed[] = [];
+      let busiest = 1;
+      for (const group of groups) {
+        // …greedy column assignment inside the chain…
+        const columns: FSchedule[][] = [];
+        for (const item of group) {
+          const from = mins(item.fstarttime), to = mins(item.fendtime);
+          let index = columns.findIndex(column =>
+            column.every(other => mins(other.fendtime) <= from || mins(other.fstarttime) >= to));
+          if (index < 0) { index = columns.length; columns.push([]); }
+          columns[index].push(item);
+        }
+        const lanes = Math.max(1, columns.length);
+
+        for (let lane = 0; lane < columns.length; lane++) {
+          for (const item of columns[lane]) {
+            const from = mins(item.fstarttime), to = mins(item.fendtime);
+            // …and then the card takes every neighbouring column that is free
+            // for exactly its own hour.
+            let span = 1;
+            for (let probe = lane + 1; probe < columns.length; probe++) {
+              const clash = columns[probe].some(other => mins(other.fstarttime) < to && mins(other.fendtime) > from);
+              if (clash) break;
+              span += 1;
+            }
+            busiest = Math.max(busiest, lanes - span + 1);
+            placed.push({ row: item, ...geometry(item), lane, span, lanes });
           }
-          const laneCount = Math.max(1, laneEnds.length);
-          dayLaneCount = Math.max(dayLaneCount, laneCount);
-          const top = ((mins(group[0].fstarttime) - gridWindow.start) / 30) * 36;
-          const endAt = Math.max(...group.map((item) => mins(item.fendtime)));
-          const height = Math.max(34, ((endAt - mins(group[0].fstarttime)) / 30) * 36 - 3);
-          return { top, height, items: group, lanes, laneCount };
-        })
-      };
-      layout[day.key].laneCount = dayLaneCount;
+        }
+      }
+      layout[day.key] = { items: placed, spine, busiest: Math.max(busiest, spineEnds.length ? busiest + 1 : busiest) };
     }
     return layout;
   }, [weekRows, gridWindow]);
 
-  /** A single week card. Shared by ordinary hours and by opened days. */
-  const renderWeekCard = (r: FSchedule, d: { key: DayKey; label: string }, style: React.CSSProperties) => {
+  /**
+   * Where a card sits across the width of its day.
+   *
+   * An expanded day gives every lane the full grid, so nothing there needs to
+   * share. Everywhere else the card occupies the columns it earned.
+   */
+  const RAIL = 26;
+  const laneStyle = (placed: { lane: number; span: number; lanes: number }, rails: number): React.CSSProperties => {
+    const reserved = rails * RAIL;
+    if (placed.lanes <= 1) return reserved ? { insetInlineEnd: `${reserved + 5}px` } : {};
+    const unit = `((100% - ${reserved}px) / ${placed.lanes})`;
+    return {
+      insetInlineStart: `calc(${placed.lane} * ${unit} + 4px)`,
+      insetInlineEnd: "auto",
+      width: `calc(${placed.span} * ${unit} - 8px)`,
+      zIndex: 20 + placed.lane,
+    };
+  };
+
+  /**
+   * A single week card. Shared by ordinary hours and by opened days.
+   *
+   * What it says, and in what order, is the whole argument of this screen. A
+   * coordinator reads a timetable looking for a subject and a colleague, never
+   * for a catalogue number — so the course name leads, the instructor follows,
+   * and the code is demoted to a small mark that identifies the card without
+   * competing with it. Nothing is clipped: the card is as tall as its lecture,
+   * and the lines it cannot fit are dropped whole rather than cut in half.
+   */
+  const renderWeekCard = (r: FSchedule, d: { key: DayKey; label: string }, style: React.CSSProperties, widthShare = 1) => {
     const c = courseById.get(r.AdCourseId);
     const i = instructorById.get(r.AdInstructorId);
     const code = c?.CourseCode || r.AdCourseName || "—";
+    const title = r.AdCourseName || c?.CourseName || code;
+    const label = courseLabel(title, widthShare);
+    const who = i?.AdInstructorName || "بدون أستاذ";
+    const shortWho = i?.AdInstructorName ? instructorLabel(i.AdInstructorName, widthShare) : who;
+    const place = [r.AdRoomCode, r.AdRoomHall].filter(Boolean).join("/");
+    // The drag lives on pointerdown. Recording where the press began has to be
+    // merged with it rather than declared after it — a second onPointerDown prop
+    // silently replaces the first, which is exactly how dragging was lost.
+    const grip = physics.bindEvent(r, d.key);
     return (
       <article
-        {...physics.bindEvent(r, d.key)}
+        {...grip}
         draggable={!saving && !physics.supported}
         onDragStart={(e) => {
           e.dataTransfer.setData("text/schedule-id", String(r.id));
@@ -1577,21 +1949,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           beginRipple(r);
         }}
         onDragEnd={clearRipple}
-        onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; }}
+        onPointerDown={(e) => {
+          pressOrigin.current = { x: e.clientX, y: e.clientY };
+          grip.onPointerDown?.(e);
+        }}
         onClick={(e) => {
           // A drag ends in a click too; only a press that stayed put means "open".
           const from = pressOrigin.current;
           if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
+          if (picking) { toggleSelect(r.id); return; }
           openEdit(r);
         }}
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
-        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${physicsPreview?.row.id === r.id ? "physics-source-pending" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""}`}
+        data-narrow={widthShare <= 0.34 ? "true" : undefined}
+        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""}`}
         style={{ ...style, ["--hue" as any]: courseHue(code) }}
-        data-quickview={`${code} · ${r.AdCourseName || c?.CourseName || "مقرر"}
-شعبة ${r.SCode} · ${i?.AdInstructorName || "بدون أستاذ"}
-${arabicDays(r) || "بدون أيام"} · ${r.fstarttime}-${r.fendtime}
-${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
+        onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
+        onPointerLeave={() => setPeek(current => (current?.row.id === r.id ? null : current))}
+        onFocus={(e) => openPeek(r, e.currentTarget)}
+        onBlur={() => setPeek(current => (current?.row.id === r.id ? null : current))}
         key={`${d.key}-${r.id}`}
       >
         <GripVertical data-physics-handle="true" className="week-drag-handle" />
@@ -1603,10 +1980,10 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
         >
           <BrainCircuit />
         </button>
-        <strong>{code}</strong>
-        <span>{r.AdCourseName || c?.CourseName}</span>
-        <small dir="ltr">{r.fstarttime}-{r.fendtime}</small>
-        <small>{i?.AdInstructorName} · {r.AdRoomCode}/{r.AdRoomHall}</small>
+        <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
+        <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
+        <small className="week-when"><time dir="ltr">{r.fstarttime}–{r.fendtime}</time>{place ? <i>{place}</i> : null}</small>
+        <em className="week-code" dir="ltr">{code}<b dir="ltr">{r.SCode}</b></em>
       </article>
     );
   };
@@ -1625,19 +2002,6 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
     const text = String(code || "");
     for (let i = 0; i < text.length; i++) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
     return COURSE_HUES[hash % COURSE_HUES.length];
-  };
-
-  /** Position inside a cluster. Expanded days always lay every lane side by side. */
-  const clusterLaneStyle = (cluster: { lanes: Map<number, number>; laneCount: number }, row: FSchedule): React.CSSProperties => {
-    if (cluster.laneCount <= 1) return {};
-    const lane = cluster.lanes.get(row.id) || 0;
-    const width = 100 / cluster.laneCount;
-    return {
-      insetInlineStart: `calc(${lane * width}% + 4px)`,
-      insetInlineEnd: "auto",
-      width: `calc(${width}% - 8px)`,
-      zIndex: 20 + lane,
-    };
   };
 
   const xraySelected = xrayId
@@ -1680,9 +2044,9 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
       presentationMode,
     evaluateTarget: evaluatePhysicsTarget,
     onStart: (row) => {
-      setPhysicsPreview(null);
       setPhysicsNotice("");
       setPhysicsField({});
+      setError(null);
       beginRipple(row);
     },
     onDecision: (decision, target) => {
@@ -1715,13 +2079,12 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
     },
     onDropRequest: (request) => {
       clearRipple();
+      setPhysicsField({});
       if (isSamePlacement(request.row, request.sourceDay, request.target)) {
-        setPhysicsNotice("لم يتغير الموضع؛ عاد الموعد إلى مكانه دون حفظ.");
-        setPhysicsField({});
+        setPhysicsNotice("");
         return;
       }
-      setPhysicsPreview(request);
-      setPhysicsNotice("الموضع الجديد Preview فقط — لم يتم حفظ أي تغيير.");
+      void commitMove(request);
     },
     onCancel: () => {
       clearRipple();
@@ -1846,18 +2209,6 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
       ? physics.state.decision?.quality || sampled || "unknown"
       : sampled || "";
     return `${active ? `physics-target physics-${quality}` : ""} ${sampled ? `gravity-slot gravity-${sampled}` : ""} ${rank ? `suggested-slot suggested-${rank}` : ""}`.trim();
-  };
-  const pendingCandidate = physicsPreview
-    ? buildMoveCandidate(physicsPreview.row, physicsPreview.target)
-    : null;
-  const confirmPhysicsPreview = async () => {
-    if (!physicsPreview) return;
-    await moveSchedule(
-      physicsPreview.row,
-      physicsPreview.target.day as DayKey,
-      physicsPreview.target.start,
-      { skipConfirm: true, decision: physicsPreview.decision },
-    );
   };
   /**
    * Which rows collide with another row in the same scope. Two appointments
@@ -2100,7 +2451,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                       <div>
                         <strong>الفصل الوجهة يحتوي جدولاً</strong>
                         <span>
-                          وفق السلوك الأصلي لن يتم النسخ فوق جدول موجود.
+                          سيُضاف الجديد بجانب الموجود دون حذف أي شيء.
                         </span>
                       </div>
                     </div>
@@ -2363,7 +2714,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                               // Three weekly hours are two 90-minute meetings on
                               // Monday/Wednesday, or three 60-minute meetings on
                               // Sunday/Tuesday/Thursday. Changing the days changes
-                              // the lecture, so the end time follows (م.٨/أ،ب).
+                              // the lecture, so the end time follows (م.8/أ،ب).
                               const chosen = days.filter(day => next[day.key]).map(day => day.key as RegDayKey);
                               const advice = adviseDayPattern(chosen, next.fstarttime, next.fendtime);
                               if (advice && advice.family !== "mixed" && advice.changed && next.fstarttime) {
@@ -3014,7 +3365,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
       ) : (
         <>
           <Surface
-            className={`week-surface ${physicsActive ? "physics-lens-active" : ""} ${physicsPreview ? "physics-preview-active" : ""}`}
+            className={`week-surface ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""}`}
           >
             {/* One question at a time, asked of the whole week. */}
             <div className={`week-lens ${lensActive ? "active" : ""}`}>
@@ -3053,10 +3404,65 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
               className={`week-note ${physicsActive ? "gravity-note-active" : ""}`}
             >
               <GripVertical />
-              {isPowerAdmin
-                ? "اسحب الموعد؛ الجاذبية الهادئة، التوتر، والأثر اللاحق تظهر فوق الجدول قبل أي حفظ."
-                : "اسحب الموعد؛ سيظهر لك مباشرة إن كان الموضع ممتازًا أو يحتاج مراجعة، دون تغيير أي شيء حتى تؤكد."}
+              <span>اسحب الموعد لتنقله · اسحب على عمود فارغ لتنشئ موعداً بطوله · تراجُع متاح دقيقة بعد كل نقل.</span>
+              <button
+                type="button"
+                className={`week-pick-toggle ${picking ? "on" : ""}`}
+                onClick={() => { setPicking(v => !v); setMultiSelect(new Set()); }}
+                title="اختيار عدة مواعيد ونقلها معاً"
+                aria-pressed={picking}
+              >
+                <Layers aria-hidden="true" />
+                {picking ? (multiSelect.size ? `${multiSelect.size} محدد` : "اختر المواعيد") : "تحديد متعدد"}
+              </button>
+              {multiSelect.size ? (
+                <button type="button" className="week-pick-clear" onClick={() => setMultiSelect(new Set())}>
+                  <X aria-hidden="true" />إلغاء التحديد
+                </button>
+              ) : null}
             </div>
+            {unplaced.length ? (
+              <div className="week-unplaced">
+                <header>
+                  <AlertTriangle aria-hidden="true" />
+                  <strong>غير موزّعة</strong>
+                  <b>{unplaced.length}</b>
+                  <small>مواعيد بلا يوم أو بلا وقت — لا تظهر على الشبكة. اسحب أياً منها إلى خانة لتثبيتها.</small>
+                </header>
+                <div className="week-unplaced-rows">
+                  {unplaced.map(r => {
+                    const c = courseById.get(r.AdCourseId);
+                    const i = instructorById.get(r.AdInstructorId);
+                    const code = c?.CourseCode || "—";
+                    const grip = physics.bindEvent(r, "fsunday" as any);
+                    return (
+                      <article
+                        {...grip}
+                        key={`unplaced-${r.id}`}
+                        className="week-unplaced-card"
+                        style={{ ["--hue" as any]: courseHue(code) }}
+                        onPointerDown={(e) => {
+                          pressOrigin.current = { x: e.clientX, y: e.clientY };
+                          grip.onPointerDown?.(e);
+                        }}
+                        onClick={(e) => {
+                          const from = pressOrigin.current;
+                          if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
+                          openEdit(r);
+                        }}
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
+                      >
+                        <strong>{r.AdCourseName || c?.CourseName || code}</strong>
+                        <span>{i?.AdInstructorName || "بدون أستاذ"}</span>
+                        <em dir="ltr">{code} · {r.SCode}</em>
+                        <i>{!days.some(day => Boolean((r as any)[day.key])) ? "بلا يوم" : "بلا وقت"}</i>
+                      </article>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
             {draggingId && ripple && physics.state.phase === "idle" ? (
               <div
                 className={`ripple-forecast ${ripple.loading ? "loading" : ""}`}
@@ -3099,9 +3505,18 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                 )}
               </div>
             ) : null}
+            {/*
+              A dense week is given more paper, not smaller type.
+              Five columns share whatever the window offers, so a day with four
+              concurrent lectures squeezed each of them to a strip too narrow
+              for a word. When any day is that busy the grid widens instead and
+              the surface scrolls — the same trick a printed timetable uses when
+              it changes to a larger sheet.
+            */}
             <div
               className={`week-calendar ${physicsActive ? "gravity-field-active" : ""}`}
               data-expanded={expandedDay || undefined}
+              style={{ ["--week-lane-min" as any]: `${Math.min(212, 118 + Math.max(...days.map(d => weekLayout[d.key]?.busiest || 1)) * 32)}px` }}
             >
               <div className="week-time-head" />
               {days.map((d) => (
@@ -3117,8 +3532,11 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     aria-pressed={expandedDay === d.key}
                   >
                     <span>{d.label}</span>
-                    {weekLayout[d.key]?.laneCount > 1 ? (
-                      <b>{weekLayout[d.key].laneCount}</b>
+                    <b title="عدد المواعيد في هذا اليوم">{dayCounts[d.key] || 0}</b>
+                    {(weekLayout[d.key]?.busiest || 1) >= 4 && expandedDay !== d.key ? (
+                      <i className="week-dense" title={`${weekLayout[d.key].busiest} محاضرات في نفس الساعة — اضغط لتوسيع اليوم`}>
+                        <Expand aria-hidden="true" />
+                      </i>
                     ) : null}
                   </button>
                   {physics.state.target?.day === d.key &&
@@ -3135,15 +3553,11 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                 ))}
               </div>
               {days.map((d) => {
-                const pending =
-                  pendingCandidate && Boolean(pendingCandidate[d.key])
-                    ? pendingCandidate
-                    : null;
                 return (
                   <div
                     className={`week-day ${expandedDay && expandedDay !== d.key ? "week-day-collapsed" : ""}`}
                     data-physics-day-column="true"
-                    data-lanes={weekLayout[d.key]?.laneCount || 1}
+                    data-busiest={weekLayout[d.key]?.busiest || 1}
                     key={d.key}
                   >
                     {timeSlots.map((t) => (
@@ -3158,11 +3572,22 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                         role="button"
                         tabIndex={-1}
                         title={`إضافة موعد · ${d.label} ${t}`}
-                        onClick={(e) => {
+                        onPointerDown={(e) => {
                           // Only a press on the empty square itself; a press that
                           // landed on a lecture belongs to that lecture.
-                          if (e.target !== e.currentTarget) return;
-                          openCreate({ day: d.key, start: t });
+                          if (e.target !== e.currentTarget || e.button !== 0) return;
+                          paintRef.current = { day: d.key as DayKey, anchor: mins(t) };
+                          setPaint({ day: d.key as DayKey, from: t, to: timeFromMins(mins(t) + 30) });
+                        }}
+                        onPointerEnter={() => {
+                          const stroke = paintRef.current;
+                          if (!stroke || stroke.day !== d.key) return;
+                          const here = mins(t);
+                          setPaint({
+                            day: d.key as DayKey,
+                            from: timeFromMins(Math.min(stroke.anchor, here)),
+                            to: timeFromMins(Math.max(stroke.anchor, here) + 30),
+                          });
                         }}
                         onDragEnter={() => {
                           const row = rows.find((r) => r.id === draggingId);
@@ -3177,27 +3602,37 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                           const row = rows.find((r) => r.id === id);
                           if (row) {
                             const sourceDay = (days.find(day => Boolean(row[day.key]))?.key || d.key) as DayKey;
-                            if (sourceDay === d.key && row.fstarttime === t) {
-                              setPhysicsNotice("لم يتغير الموضع؛ عاد الموعد إلى مكانه دون حفظ.");
-                            } else {
-                              setPhysicsPreview({ row, sourceDay, target: { day: d.key, start: t, label: d.label }, decision: null });
-                              setPhysicsNotice("الموضع الجديد بلون مختلف — معاينة فقط، ولن يُحفظ حتى تضغط اعتماد النقل.");
+                            if (!(sourceDay === d.key && row.fstarttime === t)) {
+                              void commitMove({ row, sourceDay: sourceDay as any, target: { day: d.key as any, start: t, label: d.label }, decision: null });
                             }
                           }
                           window.setTimeout(clearRipple, 0);
                         }}
                       />
                     ))}
+                    {paint && paint.day === d.key ? (
+                      <div
+                        className="week-paint"
+                        style={{
+                          top: ((mins(paint.from) - gridWindow.start) / 30) * SLOT_H,
+                          height: Math.max(SLOT_H - 4, ((mins(paint.to) - mins(paint.from)) / 30) * SLOT_H - 3),
+                        }}
+                        aria-hidden="true"
+                      >
+                        <b dir="ltr">{paint.from}–{paint.to}</b>
+                        <span>موعد جديد</span>
+                      </div>
+                    ) : null}
                     {experience.ghostEnabled
                       ? experience.ghostRows
                           .filter((r) => Boolean(r[d.key]))
                           .map((r) => {
                             const top =
-                                ((mins(r.fstarttime) - gridWindow.start) / 30) * 36,
+                                ((mins(r.fstarttime) - gridWindow.start) / 30) * SLOT_H,
                               height = Math.max(
-                                34,
+                                SLOT_H - 4,
                                 ((mins(r.fendtime) - mins(r.fstarttime)) / 30) *
-                                  36 -
+                                  SLOT_H -
                                   3,
                               ),
                               c = courseById.get(r.AdCourseId),
@@ -3226,119 +3661,65 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                             );
                           })
                       : null}
-                    {(weekLayout[d.key]?.clusters || []).map((cluster) => {
-                      const grouped = cluster.items.length >= STACK_THRESHOLD && expandedDay !== d.key;
-                      if (!grouped) {
-                        return cluster.items.map((r) => {
-                          const top = ((mins(r.fstarttime) - gridWindow.start) / 30) * 36;
-                          const height = Math.max(34, ((mins(r.fendtime) - mins(r.fstarttime)) / 30) * 36 - 3);
-                          return renderWeekCard(r, d, { top, height, ...clusterLaneStyle(cluster, r) });
-                        });
-                      }
-                      // Three or more at the same hour read better as one block
-                      // of colour-coded rows than as four unreadable slivers.
-                      const endAt = Math.max(...cluster.items.map((item) => mins(item.fendtime)));
+                    {(weekLayout[d.key]?.spine || []).map((placed) => {
+                      const c = courseById.get(placed.row.AdCourseId);
+                      const code = c?.CourseCode || "—";
+                      const grip = physics.bindEvent(placed.row, d.key);
                       return (
-                        <div
-                          className="week-cluster"
-                          key={`cluster-${d.key}-${cluster.top}`}
-                          style={{ top: cluster.top, height: cluster.height }}
+                        <article
+                          {...grip}
+                          key={`rail-${d.key}-${placed.row.id}`}
+                          className={`week-rail ${lensClass(placed.row)} ${xrayClass(placed.row)} ${justChangedId === placed.row.id ? "just-changed" : ""}`}
+                          style={{
+                            top: placed.top,
+                            height: placed.height,
+                            insetInlineEnd: `${(placed.spine || 0) * RAIL + 4}px`,
+                            ["--hue" as any]: courseHue(code),
+                          }}
+                          onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; grip.onPointerDown?.(e); }}
+                          onClick={(e) => {
+                            const from = pressOrigin.current;
+                            if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
+                            if (picking) { toggleSelect(placed.row.id); return; }
+                            openEdit(placed.row);
+                          }}
+                          onPointerEnter={(e) => { if (!physicsActive) openPeek(placed.row, e.currentTarget); }}
+                          onPointerLeave={() => setPeek(current => (current?.row.id === placed.row.id ? null : current))}
+                          tabIndex={0}
+                          onKeyDown={(e) => { if (e.key === "Enter") openEdit(placed.row); }}
                         >
-                          <header>
-                            <time dir="ltr">{cluster.items[0].fstarttime}–{timeFromMins(endAt)}</time>
-                            <button
-                              type="button"
-                              onClick={() => setExpandedDay(d.key)}
-                              title="افتح اليوم بعرض كامل"
-                            >
-                              {cluster.items.length}
-                            </button>
-                          </header>
-                          <div className="week-cluster-rows">
-                            {cluster.items.map((r) => {
-                              const c = courseById.get(r.AdCourseId);
-                              const i = instructorById.get(r.AdInstructorId);
-                              const code = c?.CourseCode || r.AdCourseName || "—";
-                              return (
-                                <article
-                                  {...physics.bindEvent(r, d.key)}
-                                  key={`chip-${d.key}-${r.id}`}
-                                  className={`week-chip ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""}`}
-                                  style={{ ["--hue" as any]: courseHue(code) }}
-                                  draggable={!saving && !physics.supported}
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.setData("text/schedule-id", String(r.id));
-                                    e.dataTransfer.effectAllowed = "move";
-                                    beginRipple(r);
-                                  }}
-                                  onDragEnd={clearRipple}
-                                  onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; }}
-                                  onClick={(e) => {
-                                    const from = pressOrigin.current;
-                                    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
-                                    openEdit(r);
-                                  }}
-                                  tabIndex={0}
-                                  onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
-                                  data-quickview={`${code} · ${r.AdCourseName || c?.CourseName || "مقرر"}
-شعبة ${r.SCode} · ${i?.AdInstructorName || "بدون أستاذ"}
-${arabicDays(r) || "بدون أيام"} · ${r.fstarttime}-${r.fendtime}
-${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
-                                >
-                                  <b dir="ltr">{code}</b>
-                                  <span>{r.AdRoomCode || "—"}</span>
-                                </article>
-                              );
-                            })}
-                          </div>
-                        </div>
+                          <b>{courseLabel(placed.row.AdCourseName || c?.CourseName || code, 0.4).text}</b>
+                          <time dir="ltr">{placed.row.fstarttime}</time>
+                        </article>
                       );
                     })}
-                    {pending
-                      ? (() => {
-                          const top =
-                              ((mins(pending.fstarttime) - gridWindow.start) / 30) * 36,
-                            height = Math.max(
-                              34,
-                              ((mins(pending.fendtime) -
-                                mins(pending.fstarttime)) /
-                                30) *
-                                36 -
-                                3,
-                            ),
-                            c = courseById.get(pending.AdCourseId),
-                            i = instructorById.get(pending.AdInstructorId);
-                          return (
-                            <article
-                              className={`week-event physics-pending-card quality-${physicsPreview?.decision?.quality || "unknown"}`}
-                              style={{ top, height }}
-                              aria-label="معاينة الموضع الجديد"
-                            >
-                              <span className="physics-pending-mark">
-                                غير معتمد
-                              </span>
-                              <strong>
-                                {c?.CourseCode || pending.AdCourseName}
-                              </strong>
-                              <span>
-                                {pending.AdCourseName || c?.CourseName}
-                              </span>
-                              <small dir="ltr">
-                                {pending.fstarttime}-{pending.fendtime}
-                              </small>
-                              <small>
-                                {i?.AdInstructorName} · {pending.AdRoomCode}/
-                                {pending.AdRoomHall}
-                              </small>
-                            </article>
-                          );
-                        })()
-                      : null}
+                    {(weekLayout[d.key]?.items || []).map((placed) =>
+                      renderWeekCard(placed.row, d, {
+                        top: placed.top,
+                        height: placed.height,
+                        ...(expandedDay === d.key
+                          ? {}
+                          : laneStyle(placed, (weekLayout[d.key]?.spine || []).reduce((max, x) => Math.max(max, (x.spine || 0) + 1), 0))),
+                      }, placed.span / placed.lanes),
+                    )}
                   </div>
                 );
               })}
             </div>
           </Surface>
+          {peek ? (
+            <WeekPeek
+              anchor={{ x: peek.x, y: peek.y }}
+              title={peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "مقرر"}
+              who={`${instructorById.get(peek.row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(peek.row.AdInstructorId) ? " · منتدب" : ""}`}
+              code={courseById.get(peek.row.AdCourseId)?.CourseCode || "—"}
+              section={String(peek.row.SCode || "—")}
+              days={arabicDays(peek.row)}
+              from={peek.row.fstarttime}
+              to={peek.row.fendtime}
+              room={[peek.row.AdRoomCode, peek.row.AdRoomHall].filter(Boolean).join("/")}
+            />
+          ) : null}
           <SchedulePhysicsLayer
             state={physics.state}
             overlayRef={physics.overlayRef}
@@ -3354,23 +3735,6 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
             }
             isPowerAdmin={isPowerAdmin}
           />
-          {physicsPreview ? (
-            <ScheduleDecisionPreview
-              request={physicsPreview}
-              course={courseById.get(physicsPreview.row.AdCourseId)}
-              instructor={instructorById.get(physicsPreview.row.AdInstructorId)}
-              busy={saving}
-              isPowerAdmin={isPowerAdmin}
-              onConfirm={() => void confirmPhysicsPreview()}
-              onCancel={() => {
-                setPhysicsPreview(null);
-                setPhysicsField({});
-                setPhysicsNotice(
-                  "تم إلغاء المعاينة؛ بقي الموعد في مكانه الأصلي دون حفظ.",
-                );
-              }}
-            />
-          ) : null}
         </>
       )}
       {undoAction ? (
@@ -3528,7 +3892,6 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                   <div>
                     <span>تشريح القرار</span>
                     <strong>لماذا استقر هنا ومتى تغيّر</strong>
-                    <small>{replay.coverage?.note}</small>
                   </div>
                   <button
                     type="button"
@@ -3539,30 +3902,45 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                     <X />
                   </button>
                 </div>
-                <div className="replay-line">
-                  {replay.events?.length ? (
-                    replay.events.map((event: any, i: number) => (
-                      <article
-                        className={event.tone || "neutral"}
-                        key={`${event.timestamp}-${i}`}
-                      >
-                        <time>
-                          {new Date(event.timestamp).toLocaleString("ar-KW-u-nu-latn")}
-                        </time>
-                        <i />
-                        <div>
+                {/*
+                  The story of one appointment, drawn as a spine.
+                  Even when there is nothing to tell, the shape says so honestly:
+                  a single mark at the beginning of a line that has not moved is a
+                  clearer statement than a paragraph explaining what the log does
+                  not contain.
+                */}
+                {replay.events?.length ? (
+                  <ol className="replay-spine">
+                    {replay.events.map((event: any, i: number) => (
+                      <li className={event.tone || "neutral"} key={`${event.timestamp}-${i}`}>
+                        <span className="replay-dot" aria-hidden="true" />
+                        <div className="replay-body">
                           <strong>{event.title}</strong>
                           <p>{event.detail}</p>
-                          <small>{event.actor}</small>
+                          <div className="replay-meta">
+                            <time dateTime={event.timestamp}>
+                              {new Date(event.timestamp).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" })}
+                            </time>
+                            {event.actor ? <em>{event.actor}</em> : null}
+                          </div>
                         </div>
-                      </article>
-                    ))
-                  ) : (
-                    <p className="replay-empty">
-                      لا توجد آثار زمنية كافية لهذا الموعد بعد.
-                    </p>
-                  )}
-                </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <div className="replay-still">
+                    <span className="replay-still-line" aria-hidden="true">
+                      <i /><b />
+                    </span>
+                    <div>
+                      <strong>لم يتحرك هذا الموعد منذ تسجيله</strong>
+                      <p>
+                        السجل التشغيلي يبدأ من تفعيل هذه الطبقة، ولا يخترع أحداثاً أقدم منها.
+                        أي تعديل من الآن سيظهر هنا خطوةً خطوة.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             ) : null}
             {context.conflicts?.length ? (

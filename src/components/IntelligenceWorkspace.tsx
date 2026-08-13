@@ -917,14 +917,25 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 الدرجة تجمع التعارضات، فراغات الأساتذة، توازن الأيام، الأوقات
                 المتأخرة وصحة البيانات.
               </p>
-              <div className="quality-factors">
-                {overview.factors.map((f: any) => (
-                  <span key={f.label}>
-                    <i />
-                    {f.label}
-                    <b>-{f.penalty}</b>
-                  </span>
-                ))}
+              {/*
+                Where the hundred went.
+                The old row printed "-0" beside every factor that cost nothing,
+                which reads as an error and says nothing: a minus sign in front
+                of zero is not a deduction. Each factor is now a bar showing how
+                much of the score it took, the ones that took nothing say so in
+                words, and the whole row adds up to the number in the ring.
+              */}
+              <div className="quality-factors" role="img" aria-label="توزيع نقاط الجودة">
+                {overview.factors.map((f: any) => {
+                  const cost = Math.max(0, Number(f.penalty) || 0);
+                  return (
+                    <span key={f.label} className={cost ? "costly" : "clean"}>
+                      <em>{f.label}</em>
+                      <i aria-hidden="true"><b style={{ width: `${Math.min(100, cost * 2)}%` }} /></i>
+                      <u>{cost ? `−${cost}` : "سليم"}</u>
+                    </span>
+                  );
+                })}
               </div>
             </div>
             <div className="quality-actions">

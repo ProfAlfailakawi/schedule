@@ -16,7 +16,7 @@ const dayMark=(label:string)=>DAY_MARK[String(label||"").trim()]||String(label||
 /**
  * A number's direction, next to the number.
  *
- * "٨٣٢ موعد" says how big the term is. "٨٣٢ موعد ▲ ٤١ عن الفصل الماضي" says
+ * "832 موعد" says how big the term is. "832 موعد ▲ 41 عن الفصل الماضي" says
  * which way the department is moving, which is the thing a coordinator is
  * actually deciding against. No arrow is drawn when nothing changed, and none
  * is drawn at all when there is no earlier term to compare with.
@@ -183,7 +183,19 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     </article>:null}
     {overview?.metrics?.avgInstructorGap!=null?<article className="metric-priority"><Clock3 aria-hidden="true"/><b>{num(overview.metrics.avgInstructorGap)}</b><span>د فراغ</span></article>:null}
    </section>
-   {data.history&&data.history.length>1?<p className="deck-compare-note">الخط يغطي {data.history.map(x=>x.termName).filter(Boolean).join(" ← ")}</p>:data.previous?.termName?<p className="deck-compare-note">المقارنة مع {data.previous.termName}</p>:null}
+   {/*
+     The sparklines' own caption.
+     Naming all four terms in one sentence produced a line longer than the row
+     of cards it described and wrapped it onto a second line; the two ends of
+     the range say the same thing and fit.
+   */}
+   {data.history&&data.history.length>1?<p className="deck-compare-note">
+     <span>الخط يغطي</span>
+     <b>{data.history[0]?.termName}</b>
+     <i aria-hidden="true">←</i>
+     <b>{data.history[data.history.length-1]?.termName}</b>
+     <em>{num(data.history.length)} فصول</em>
+   </p>:data.previous?.termName?<p className="deck-compare-note"><span>المقارنة مع</span><b>{data.previous.termName}</b></p>:null}
 
    {power&&ws?<section className="deck-charts">
     <article className="deck-chart" aria-label="حركة الأسبوع">

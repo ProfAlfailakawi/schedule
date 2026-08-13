@@ -244,6 +244,17 @@
 [dir="ltr"] .report-filter-form select{
   background-position:right var(--s4) center;
 }
+/* A select cannot wrap, so it must be allowed to shorten itself. Without this
+   an over-long option is simply cut at the edge of the field, which is how
+   "الفصل الأول 2018/2019" came to read "الفصل الأول 8/2019" — the start of the
+   year sliced off rather than marked as omitted. */
+.field select,.master-filter-stack select,.intel-context-fields select,
+.smart-filter-grid select,.report-filter-form select,.matrix-controls select{
+  text-overflow:ellipsis;
+}
+/* Mixed Arabic and Latin in one label stays in its own order. */
+.field select option,.field option{unicode-bidi:plaintext}
+
 .field select:hover,.field input:hover,.field textarea:hover{border-color:var(--line-strong)}
 .field input:focus,.field select:focus,.field textarea:focus,
 .master-search input:focus,.master-filter-stack select:focus,

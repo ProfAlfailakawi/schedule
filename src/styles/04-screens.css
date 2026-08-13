@@ -313,15 +313,21 @@
   display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:var(--s3);
 }
 .deck-metrics article{
+  position:relative;
   display:flex;flex-direction:column;align-items:flex-start;gap:var(--s1);
   padding:var(--s5);
   border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface);
 }
 .deck-metrics svg{width:17px;height:17px;color:var(--muted-2);margin-bottom:var(--s2)}
-.deck-metrics b{font-size:28px;line-height:1;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .deck-metrics span{color:var(--muted);font-size:var(--t-sm)}
-/* The direction rides on the number rather than taking a line of its own. */
-.deck-metrics b{display:flex;align-items:baseline;gap:var(--s2)}
+/* The trend sits in the corner of the card rather than beside the number.
+   Standing next to a five-figure total it pushed the total off its own line. */
+.deck-metrics b{
+  display:block;
+  font-size:clamp(22px,2.4vw,28px);line-height:1;font-weight:600;
+  letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+}
+.deck-metrics .delta{position:absolute;top:var(--s4);inset-inline-end:var(--s4)}
 .delta{
   display:inline-flex;align-items:center;gap:3px;
   padding:2px var(--s2);border-radius:var(--r-full);
@@ -332,7 +338,18 @@
 .delta-up{background:var(--success-soft);color:var(--success)}
 .delta-down{background:var(--warning-soft);color:var(--warning)}
 .delta-flat{background:var(--surface-3);color:var(--muted-2);padding-inline:var(--s2)}
-.deck-compare-note{margin-top:calc(var(--s2) * -1);color:var(--muted-2);font-size:var(--t-xs)}
+.deck-compare-note{
+  display:flex;align-items:center;flex-wrap:wrap;gap:var(--s1) var(--s2);
+  margin-top:calc(var(--s2) * -1);
+  color:var(--muted-2);font-size:var(--t-xs);
+}
+.deck-compare-note b{color:var(--muted);font-weight:600}
+.deck-compare-note i{font-style:normal;opacity:.6}
+.deck-compare-note em{
+  font-style:normal;padding:1px var(--s2);
+  border-radius:var(--r-full);background:var(--surface-3);
+  font-variant-numeric:tabular-nums;
+}
 
 /* --- Charts --------------------------------------------------------------- */
 
@@ -655,44 +672,83 @@
    ========================================================================== */
 
 .admin-page{display:flex;flex-direction:column;gap:var(--s5)}
-.admin-quiet-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--s3)}
+/* The count leads and the word follows it on its own line. Set inline, a
+   four-figure total and its label ran together as one string of text. */
+.admin-quiet-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:var(--s3)}
 .admin-quiet-summary>article,
 .admin-quiet-summary>span{
-  display:flex;align-items:center;gap:var(--s3);
+  display:grid;grid-template-columns:34px minmax(0,1fr);
+  align-items:center;gap:var(--s1) var(--s3);
   min-height:66px;padding:var(--s3) var(--s5);
   border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);
-  color:var(--muted);font-size:var(--t-sm);
+  color:var(--muted);font-size:var(--t-xs);line-height:1.35;
 }
-.admin-quiet-summary svg{width:18px;height:18px;color:var(--muted-2);flex:none}
+.admin-quiet-summary svg{
+  grid-row:1 / span 2;
+  width:34px;height:34px;padding:8px;
+  border-radius:var(--r-xs);background:var(--surface-2);
+  color:var(--muted-2);flex:none;
+}
 .admin-quiet-summary b,
-.admin-quiet-summary strong{color:var(--ink);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.admin-quiet-summary strong{
+  display:block;
+  color:var(--ink);font-size:20px;font-weight:650;line-height:1.1;
+  font-variant-numeric:tabular-nums;direction:ltr;text-align:start;
+}
 .permission-master .master-symbol{color:var(--brass)}
 .audit-master-detail{grid-template-columns:minmax(360px,38%) minmax(0,1fr)}
 .audit-master .record-card{min-height:80px}
 
-.permission-choice-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--s2)}
-.permission-picker-card{
-  min-height:62px;display:flex;align-items:center;gap:var(--s3);
-  padding:var(--s3) var(--s4);
+/* --- Choosing what a person may open ---------------------------------------
+   The rules that styled these tiles were written against the card that
+   contains them, so the tiles themselves had none: the icon, the name and the
+   internal number ran together as one line of text and the ticks overlapped.
+   Each tile is now a row — mark, name, number — with the number demoted to a
+   quiet monospace tag at the end where it belongs. */
+
+.permission-choice-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:var(--s2);
+}
+.permission-choice-grid>button{
+  display:grid;grid-template-columns:28px minmax(0,1fr) auto;
+  align-items:center;gap:var(--s3);
+  min-height:52px;padding:var(--s2) var(--s4);
   border:1px solid var(--line);border-radius:var(--r-md);
   background:var(--surface-2);color:var(--ink);text-align:start;
   transition:border-color .16s var(--ease),background .16s var(--ease);
 }
-.permission-picker-card:hover{border-color:var(--line-strong);background:var(--surface-3)}
-.permission-picker-card.active,.permission-picker-card.selected{
+.permission-choice-grid>button:hover{border-color:var(--line-strong);background:var(--surface-3)}
+.permission-choice-grid>button.active{
   border-color:var(--accent);background:var(--accent-softer);
 }
-.permission-picker-card span{flex:1;min-width:0;font-size:var(--t-sm);font-weight:600}
-.permission-picker-card small{
-  font:500 var(--t-xs)/1 var(--font-mono);color:var(--muted-2);
+.permission-choice-grid>button strong{
+  min-width:0;font-size:var(--t-sm);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.permission-choice-grid>button small{
+  padding:1px var(--s2);border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted-2);
+  font:600 10px/1.5 var(--font-mono);
   direction:ltr;unicode-bidi:isolate;
 }
+.permission-choice-grid>button.active small{background:color-mix(in srgb,var(--accent) 16%,transparent);color:var(--accent)}
+.permission-check{
+  width:28px;height:28px;display:grid;place-items:center;
+  border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted-2);
+}
+.permission-check svg{width:14px;height:14px}
+.permission-choice-grid>button.active .permission-check{background:var(--accent);color:var(--accent-contrast)}
+
+.permission-picker-card .form-intro{margin-bottom:var(--s4)}
 .permission-selection-summary{
-  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);
+  display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--s2);
   padding:var(--s3) var(--s4);margin-top:var(--s4);
   border-radius:var(--r-md);background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);
 }
-.permission-check{display:inline-flex;align-items:center;gap:var(--s2)}
+.permission-selection-summary button{
+  color:var(--accent);font-size:var(--t-xs);font-weight:600;
+}
 .permission-editor-page,.master-detail-page,.catalog-inspector-page,
 .library-page,.editor-page,.query-studio-page,.report-studio-page,.copy-page{
   display:flex;flex-direction:column;gap:var(--s5);
@@ -726,33 +782,57 @@
 }
 .about-editorial-hero p{max-width:60ch;margin-top:var(--s4);color:var(--muted);font-size:15px;line-height:1.8}
 .about-editorial-divider{height:1px;background:var(--line)}
-.about-editorial-people{display:grid;grid-template-columns:1fr 1fr}
-.editorial-person{display:grid;grid-template-columns:160px minmax(0,1fr);gap:var(--s6);padding:clamp(24px,3vw,36px)}
+.about-editorial-people{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.editorial-person{
+  display:grid;grid-template-columns:132px minmax(0,1fr);
+  align-items:start;gap:var(--s5);
+  padding:clamp(24px,3vw,36px);
+}
 .editorial-person+.editorial-person{border-inline-start:1px solid var(--line)}
-.editorial-photo{height:200px;overflow:hidden;border-radius:var(--r-lg);background:var(--surface-3)}
+.editorial-photo{
+  aspect-ratio:3/4;height:auto;overflow:hidden;
+  border-radius:var(--r-lg);background:var(--surface-3);
+}
 .editorial-photo img{width:100%;height:100%;object-fit:cover;object-position:center top}
-.editorial-person-copy{min-width:0}
-.editorial-role{color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.1em}
-.editorial-person-copy h2{margin-top:var(--s2);font-size:22px;font-weight:600}
-.editorial-contact{margin-top:var(--s3);color:var(--muted);font-size:var(--t-sm);line-height:1.9}
-.editorial-contact>span,.editorial-contact>div{display:flex;align-items:center;gap:var(--s2)}
-.editorial-contact svg{width:14px;height:14px;color:var(--muted-2)}
-.editorial-social{display:flex;gap:var(--s2);margin-top:var(--s4)}
-.editorial-social a{
-  min-height:38px;
+.editorial-person-copy{min-width:0;display:grid;gap:var(--s1)}
+/* Each line of an identity is its own line. Inline elements ran the role, the
+   name and the department together into one paragraph. */
+.editorial-role{
   display:inline-flex;align-items:center;gap:var(--s2);
-  padding:0 var(--s4);
+  color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.08em;
+}
+.editorial-role svg{width:14px;height:14px}
+.editorial-person-copy h2{
+  margin:var(--s2) 0 0;font-size:clamp(18px,2vw,21px);font-weight:650;line-height:1.3;
+  letter-spacing:-.02em;
+}
+.editorial-person-copy>p{margin:2px 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.6}
+.editorial-contact{display:grid;gap:var(--s1);margin-top:var(--s4)}
+.editorial-contact a{
+  display:flex;align-items:center;gap:var(--s2);min-width:0;
+  color:var(--ink-2);font-size:var(--t-sm);
+}
+.editorial-contact a:hover{color:var(--accent)}
+.editorial-contact a span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.editorial-contact svg{width:14px;height:14px;flex:none;color:var(--muted-2)}
+.editorial-social{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s4)}
+.editorial-social a{
+  min-height:34px;
+  display:inline-flex;align-items:center;gap:var(--s2);
+  padding:0 var(--s3);
   border:1px solid var(--line);border-radius:var(--r-full);
   background:var(--surface-2);color:var(--muted);
-  font-size:var(--t-sm);font-weight:500;white-space:nowrap;
-  transition:all .16s var(--ease);
+  font-size:var(--t-xs);font-weight:500;white-space:nowrap;
+  transition:border-color .16s var(--ease),color .16s var(--ease),background .16s var(--ease);
 }
-.editorial-social a svg{width:15px;height:15px}
+.editorial-social a svg{width:14px;height:14px}
 .editorial-social a:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-softer)}
 .about-editorial-footer{
+  display:flex;align-items:baseline;gap:var(--s3);
   padding:var(--s5) clamp(24px,3vw,36px);border-top:1px solid var(--line);
   color:var(--muted);font-size:var(--t-sm);
 }
+.about-editorial-footer span{font-weight:650;letter-spacing:.1em;color:var(--ink-2)}
 
 /* Four terms of one number, small enough not to compete with it. */
 .deck-metrics article{position:relative;overflow:hidden}
@@ -766,3 +846,119 @@
 .spark-up circle{fill:var(--success)}
 .spark-down polyline{stroke:var(--warning)}
 .spark-down circle{fill:var(--warning)}
+
+
+/* --- The occupancy grid answers back ---------------------------------------
+   A heat square is a question. Clicking one — or a room's name — opens exactly
+   the appointments behind it, so the picture stops being only a picture.
+   -------------------------------------------------------------------------- */
+.occupancy-row .occupancy-name{
+  text-align:start;color:inherit;font:inherit;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  border-radius:var(--r-xs);
+}
+.occupancy-row .occupancy-name:hover{color:var(--accent)}
+.occupancy-row.picked .occupancy-name{color:var(--accent);font-weight:650}
+.occupancy-row button[data-level]{
+  padding:0;border:0;cursor:pointer;
+  transition:outline-color .12s var(--ease),transform .12s var(--ease);
+  outline:1px solid transparent;outline-offset:-1px;
+}
+.occupancy-row button[data-level]:hover{outline-color:var(--ink);z-index:2}
+.occupancy-row button[data-level].picked{
+  outline:2px solid var(--accent);outline-offset:-1px;z-index:3;
+}
+
+.occupancy-pick{
+  margin-top:var(--s4);
+  border:1px solid var(--accent);border-radius:var(--r-md);
+  background:var(--surface);overflow:hidden;
+  animation:rise .2s var(--ease-out) both;
+}
+.occupancy-pick>header{
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);
+  border-bottom:1px solid var(--line);background:var(--accent-softer);
+}
+.occupancy-pick>header>div{flex:1;min-width:0}
+.occupancy-pick>header small{
+  display:block;color:var(--accent-ink);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.05em;
+}
+.occupancy-pick>header strong{font-size:var(--t-sm);font-weight:650}
+.occupancy-pick-count{
+  padding:2px var(--s3);border-radius:var(--r-full);
+  background:var(--surface);color:var(--muted);
+  font-size:var(--t-xs);font-variant-numeric:tabular-nums;
+}
+.occupancy-pick>header button{color:var(--muted);font-size:var(--t-sm);line-height:1}
+.occupancy-pick-rows{max-height:280px;overflow-y:auto}
+.occupancy-pick-rows article{
+  display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) auto auto;
+  align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);
+  font-size:var(--t-sm);
+}
+.occupancy-pick-rows article:last-child{border-bottom:0}
+.occupancy-pick-rows strong{min-width:0;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.occupancy-pick-rows span{min-width:0;color:var(--muted);font-size:var(--t-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.occupancy-pick-rows em{font-style:normal;color:var(--muted-2);font-size:var(--t-xs);white-space:nowrap}
+.occupancy-pick-rows time{
+  color:var(--ink-2);font-size:var(--t-xs);font-variant-numeric:tabular-nums;
+  font-family:var(--font-mono);white-space:nowrap;
+}
+.occupancy-pick-empty{margin:0;padding:var(--s5);color:var(--muted);font-size:var(--t-sm);text-align:center}
+
+
+/* A campus of twenty buildings makes a hundred and ninety pairs; the search is
+   how anyone reaches the two they came to change. */
+.travel-search{
+  display:flex;align-items:center;gap:var(--s2);
+  min-height:40px;padding:0 var(--s3);margin-bottom:var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);
+}
+.travel-search svg{width:15px;height:15px;color:var(--muted-2);flex:none}
+.travel-search input{
+  flex:1;min-width:0;border:0;background:none;color:var(--ink);
+  font-size:var(--t-sm);outline:none;
+}
+.travel-search b{
+  flex:none;padding:1px var(--s2);border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted-2);
+  font-size:var(--t-xs);font-variant-numeric:tabular-nums;direction:ltr;
+}
+.travel-search button{color:var(--muted);font-size:var(--t-sm);line-height:1;flex:none}
+
+/* --- Travel map on a college ----------------------------------------------
+   The buildings a college actually teaches in, and how long it takes to walk
+   between them — the number the schedule uses when it says a move is unkind. */
+.campus-mobility-card{
+  margin-top:var(--s5);padding:var(--s5);
+  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
+}
+.campus-mobility-head{
+  display:flex;align-items:flex-start;gap:var(--s3);margin-bottom:var(--s4);
+}
+.campus-mobility-head svg{width:18px;height:18px;color:var(--brass);flex:none;margin-top:2px}
+.campus-mobility-head>div{min-width:0}
+.campus-mobility-head strong{display:block;font-size:var(--t-sm);font-weight:650}
+.campus-mobility-head p{margin:2px 0 0;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.detected-buildings{display:flex;flex-wrap:wrap;gap:var(--s2);margin-bottom:var(--s4)}
+.detected-buildings span{
+  padding:2px var(--s3);border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted);
+  font-size:var(--t-xs);font-variant-numeric:tabular-nums;
+}
+.mobility-empty{margin:0;color:var(--muted-2);font-size:var(--t-sm);line-height:1.7}
+.mobility-loading{color:var(--muted);font-size:var(--t-sm)}
+.mobility-save{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  min-height:36px;padding:0 var(--s4);margin-top:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);font-size:var(--t-xs);font-weight:600;
+}
+.mobility-save:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+.mobility-save svg{width:14px;height:14px}
+
+/* Two times side by side in one field. */
+.time-pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2);min-width:0}
+.time-pair input{min-width:0}

@@ -39,11 +39,45 @@ const rowIdentity = (row: Partial<FSchedule>) =>
 const placement = (row: Partial<FSchedule>) =>
   `${activeDays(row).join(",")}:${row.fstarttime || ""}:${row.fendtime || ""}:${row.AdInstructorId || 0}:${roomKey(row)}`;
 
-async function fetchJson(url: string, options?: RequestInit) {
-  const response = await fetch(url, options),
-    data = await response.json();
-  if (!response.ok) throw new Error(data?.error || "تعذر تحميل القراءة الذكية");
-  return data;
+/**
+ * A reading that always ends.
+ *
+ * The one-decision panel could spin for ever, and for two reasons that both
+ * amount to the same mistake: nothing bounded the request, so a reply that
+ * never came left the spinner running until the tab was closed; and the body
+ * was parsed as JSON before its status was checked, so a plain-text rejection
+ * ("Rate exceeded.") threw a parser error whose English text went to the screen.
+ *
+ * Every call now carries a ceiling and every failure carries an Arabic reason.
+ * A tool that cannot answer must at least be able to say so.
+ */
+async function fetchJson(url: string, options?: RequestInit, timeoutMs = 25_000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(url, { ...options, signal: controller.signal });
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw new Error("استغرقت القراءة وقتاً أطول من المتوقع. حاول مرة أخرى.");
+    }
+    throw new Error("تعذر الوصول إلى الخدمة. تحقق من الاتصال.");
+  } finally {
+    window.clearTimeout(timer);
+  }
+
+  const raw = await response.text();
+  let data: any = null;
+  try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+  if (response.ok) return data;
+
+  if (response.status === 429 || /rate\s*exceeded|too many/i.test(raw)) {
+    throw new Error("طلبات كثيرة في وقت قصير. انتظر لحظة ثم أعد المحاولة.");
+  }
+  if (response.status === 401) throw new Error("انتهت الجلسة. سجّل الدخول مرة أخرى.");
+  if (response.status === 403) throw new Error("هذه القراءة خارج صلاحياتك.");
+  if (response.status >= 500) throw new Error("الخدمة متوقفة مؤقتاً. حاول بعد قليل.");
+  throw new Error(data?.error || "تعذر تحميل القراءة الذكية");
 }
 function query(collegeId: number, sectionId: number, termId: number) {
   return new URLSearchParams({
@@ -524,7 +558,10 @@ export default function ScheduleExperienceLayer({
             ) : e.decisionError ? (
               <div className="decision-error">
                 <AlertTriangle />
-                <strong>{e.decisionError}</strong>
+                <div>
+                  <strong>{e.decisionError}</strong>
+                  <button type="button" onClick={() => void e.openDecision()}>أعد المحاولة</button>
+                </div>
               </div>
             ) : e.decision ? (
               <>
@@ -688,11 +725,13 @@ export default function ScheduleExperienceLayer({
                     ? `${currentDominant.value}% من حضور الفصل الحالي يتركز هنا. البصمة التاريخية يميل إلى ${dnaDominant?.value ? dayLabels[dnaDominant.day] : "نمط غير مكتمل"}.`
                     : "لا توجد بيانات أيام كافية."}
                 </p>
-                <div className="dna-bars">
+                {/* A row of bare bars is a picture of data; the axis makes it data. */}
+                <div className="dna-bars" role="img" aria-label="نصيب كل يوم من مواعيد الفصل">
                   {dayKeys.map((day) => (
                     <i
                       key={day}
-                      title={`${dayLabels[day]} ${Number(genome?.current?.dayShares?.[day] || 0)}%`}
+                      data-day={dayLabels[day]}
+                      title={`${dayLabels[day]} · ${Number(genome?.current?.dayShares?.[day] || 0)}%`}
                       style={
                         {
                           "--dna": `${Math.max(4, Number(genome?.current?.dayShares?.[day] || 0))}%`,

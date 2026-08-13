@@ -256,8 +256,21 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                 aria-label="ابحث عن أستاذ"
               />
               <div className="roster-list">
+                {/* Arabic names differ in ways that must never hide a match: the
+                    definite article, hamza seats, taa marbuta, and the titles
+                    that may or may not be written. */}
                 {(rosterQuery.trim()
-                  ? instructors.filter(person => person.AdInstructorName.includes(rosterQuery.trim())).slice(0, 20)
+                  ? instructors
+                      .filter(person => {
+                        const fold = (value: string) => String(value || "")
+                          .replace(/[\u064B-\u0652\u0640]/g, "")
+                          .replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
+                          .replace(/\s+/g, " ").trim().toLowerCase();
+                        const needle = fold(rosterQuery);
+                        return fold(person.AdInstructorName).includes(needle) ||
+                          String(person.AdInstructorCivil || "").includes(rosterQuery.trim());
+                      })
+                      .slice(0, 25)
                   : instructors.filter(person => roster.includes(person.AdInstructorId))
                 ).map(person => {
                   const on = roster.includes(person.AdInstructorId);
@@ -271,13 +284,20 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         : [...roster, person.AdInstructorId])}
                     >
                       {on ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
-                      <span>{person.AdInstructorName}</span>
-                      <small dir="ltr">{person.AdInstructorCivil || "—"}</small>
+                      <span className="instructor-identity">
+                        <b>{person.AdInstructorName}</b>
+                        <small dir="ltr">{person.AdInstructorCivil || "—"}</small>
+                      </span>
                     </button>
                   );
                 })}
                 {rosterLoaded && !rosterQuery.trim() && !roster.length ? (
                   <p className="roster-empty">لا منتدبين في هذا الفصل بعد — ابحث عن اسم أو انسخ قائمة فصل سابق.</p>
+                ) : null}
+                {rosterQuery.trim() && !instructors.some(person =>
+                  person.AdInstructorName.includes(rosterQuery.trim()) ||
+                  String(person.AdInstructorCivil || "").includes(rosterQuery.trim())) ? (
+                  <p className="roster-empty">لا اسم يطابق «{rosterQuery.trim()}». أضِف الأستاذ من سجل الأساتذة أولاً ثم اختره هنا.</p>
                 ) : null}
               </div>
             </>

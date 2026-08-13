@@ -1230,8 +1230,11 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     const other=all.find(item=>item.id===conflict.otherId);
     const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
     if(conflict.type==="instructor"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`الأستاذ ${instructor?.AdInstructorName||""} لديه محاضرة متداخلة`,detail:visible?`${other.AdCourseName||"مقرر"} — ${other.fstarttime}-${other.fendtime}`:`يوجد له موعد متداخل خارج نطاق القسم — ${other.fstarttime}-${other.fendtime}`};
-    if(conflict.type==="room"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`القاعة ${other.AdRoomCode}/${other.AdRoomHall} مشغولة في نفس الوقت`,detail:visible?`${other.AdCourseName||"مقرر"} — ${other.fstarttime}-${other.fendtime}`:`يوجد حجز متداخل خارج نطاق القسم — ${other.fstarttime}-${other.fendtime}`};
-    return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"نفس المقرر والشعبة موجودان في الفصل",detail:visible&&other?`${other.fstarttime}-${other.fendtime}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
+    if(conflict.type==="room"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`القاعة ${other.AdRoomCode}/${other.AdRoomHall} مشغولة في نفس الوقت`,detail:visible?`${other.AdCourseName||"مقرر"} — ${other.fstarttime}-${other.fendtime}`:`يوجد حجز متداخل خارج نطاق العرض الحالي`};
+    // A repeated course and section is only a duplicate when it is the very same
+    // placement; a lecture on Sunday and its laboratory on Tuesday share a
+    // section number by design and must not be refused.
+    return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",detail:visible&&other?`نفس الأيام ونفس الوقت ${other.fstarttime}-${other.fendtime}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
   });
   return roomNotice?[...conflicts,roomNotice]:conflicts;
 }
@@ -1303,14 +1306,63 @@ app.get("/api/schedules/export", requirePermission(7), requirePowerAdmin, async 
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
 
+  /**
+   * Everything the scope contains, not only its timetable.
+   *
+   * The file used to hold appointments alone, which meant an import into a
+   * fresh installation could match nothing: the courses it referred to did not
+   * exist there, nor the staff, nor the halls. A department handed this file
+   * was handed a list of times with no way to read them.
+   *
+   * So the export now carries the catalogue it depends on — the courses of this
+   * department, the staff who teach in it, the halls it uses, and the visiting
+   * roster of the term — each keyed by its own code rather than by an internal
+   * identifier, because identifiers of one installation mean nothing in
+   * another. The rows are unchanged, so files written by the old version still
+   * import.
+   */
+  const scopedCourses = courses.filter(course =>
+    (!sectionId || Number(course.AdSectionId) === sectionId) &&
+    (!collegeId || Number(course.AdCollegeId) === collegeId));
+  const teachingIds = new Set(rows.map(row => Number(row.AdInstructorId)).filter(Boolean));
+  const scopedInstructors = instructors.filter(person => teachingIds.has(Number(person.AdInstructorId)));
+  const halls = [...new Map(rows
+    .filter(row => row.AdRoomCode || row.AdRoomHall)
+    .map(row => [`${row.AdRoomCode}|${row.AdRoomHall}`, { building: row.AdRoomCode, hall: row.AdRoomHall }]))
+    .values()];
+  // The roster is stored as instructor ids; the file carries civil ids so it
+  // can be read by an installation that never saw ours.
+  let visiting: Array<{ civil: string; name: string }> = [];
+  try {
+    const roster = await Repository.getVisitingRoster(collegeId, sectionId, termId);
+    const ids = Array.isArray(roster) ? roster : [];
+    visiting = ids
+      .map(id => instructors.find(person => Number(person.AdInstructorId) === Number(id)))
+      .filter(Boolean)
+      .map(person => ({ civil: person!.AdInstructorCivil, name: person!.AdInstructorName }));
+  } catch { visiting = []; }
+
   const payload = {
-    format: "schedule-export/1",
+    format: "schedule-export/2",
     exportedAt: new Date().toISOString(),
     scope: {
       term: terms.find(row => Number(row.AdTermId) === termId)?.AdTermName || "",
       college: colleges.find(row => Number(row.AdCollegeId) === collegeId)?.AdCollegeName || "",
       section: sections.find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || ""
     },
+    counts: {
+      rows: rows.length, courses: scopedCourses.length,
+      instructors: scopedInstructors.length, halls: halls.length, visiting: visiting.length
+    },
+    courses: scopedCourses.map(course => ({
+      code: course.CourseCode, name: course.CourseName,
+      credit: course.CourseCredit, hours: course.CourseHours, maxStudents: course.MaxStudent
+    })),
+    instructors: scopedInstructors.map(person => ({
+      civil: person.AdInstructorCivil, name: person.AdInstructorName, mobile: person.AdInstructorMobile || ""
+    })),
+    halls,
+    visiting,
     rows: rows.map(row => ({
       courseCode: courseById.get(row.AdCourseId)?.CourseCode || "",
       courseName: row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "",
@@ -1346,6 +1398,43 @@ app.post("/api/schedules/import", requirePermission(7), requirePowerAdmin, async
   const instructorByCivil = new Map(instructors.map(row => [String(row.AdInstructorCivil || "").trim(), row]));
   const seen = new Set(existing.map(row => `${row.AdCourseId}|${String(row.SCode).trim()}`));
 
+  /**
+   * A file that brought its own catalogue may plant it.
+   *
+   * Version 2 of the export carries the courses and the staff its rows depend
+   * on. Without this step every row of such a file is rejected for referring to
+   * a course that does not exist here yet — which is a true statement and a
+   * useless one, because the definition was in the file all along. Anything
+   * already present is left exactly as it is; this only fills gaps, and only
+   * when the operator has asked to commit.
+   */
+  const planted = { courses: 0, instructors: 0 };
+  if (commit) {
+    for (const entry of (Array.isArray(body.courses) ? body.courses : [])) {
+      const code = String(entry?.code || "").trim();
+      if (!code || courseByCode.has(code.toLowerCase())) continue;
+      try {
+        const created = await Repository.createCourse(
+          collegeId, sectionId, code, String(entry?.name || code).trim(),
+          Number(entry?.credit || 0), Number(entry?.hours || 0), Number(entry?.maxStudents || 0),
+        );
+        courseByCode.set(code.toLowerCase(), created as any);
+        planted.courses += 1;
+      } catch { /* a course we cannot add is reported by its rows below */ }
+    }
+    for (const entry of (Array.isArray(body.instructors) ? body.instructors : [])) {
+      const civil = String(entry?.civil || "").trim();
+      if (!civil || instructorByCivil.has(civil)) continue;
+      try {
+        const created = await Repository.createInstructor(
+          civil, String(entry?.name || civil).trim(), String(entry?.mobile || "").trim(),
+        );
+        instructorByCivil.set(civil, created as any);
+        planted.instructors += 1;
+      } catch { /* likewise */ }
+    }
+  }
+
   const ready: any[] = [];
   const rejected: Array<{ line: number; reason: string; label: string }> = [];
   incoming.forEach((entry, index) => {
@@ -1371,14 +1460,22 @@ app.post("/api/schedules/import", requirePermission(7), requirePowerAdmin, async
     });
   });
 
-  if (!commit) { res.json({ preview: true, ready: ready.length, rejected, sample: ready.slice(0, 5) }); return; }
+  if (!commit) {
+    // A dry run tells the operator what the file would plant as well as place.
+    const newCourses = (Array.isArray(body.courses) ? body.courses : [])
+      .filter((entry: any) => !courseByCode.has(String(entry?.code || "").trim().toLowerCase())).length;
+    const newInstructors = (Array.isArray(body.instructors) ? body.instructors : [])
+      .filter((entry: any) => !instructorByCivil.has(String(entry?.civil || "").trim())).length;
+    res.json({ preview: true, ready: ready.length, rejected, sample: ready.slice(0, 5), willAdd: { courses: newCourses, instructors: newInstructors } });
+    return;
+  }
 
   let added = 0;
   for (const row of ready) {
     try { await Repository.createSchedule(row); added += 1; }
     catch (error) { rejected.push({ line: 0, reason: error instanceof Error ? error.message : "تعذر الحفظ", label: row.SCode }); }
   }
-  res.json({ preview: false, added, rejected });
+  res.json({ preview: false, added, rejected, planted });
 });
 
 /**

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Building2, CalendarDays, ChevronDown, Clock3, Download, LayoutList,
-  Printer, Scale, Search, SlidersHorizontal, UserRound, X
+  Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrimaryButton, PrintLetterhead, SecondaryButton } from "./ui";
@@ -11,7 +11,7 @@ import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext"
 import { byArabic, sortByName } from "../utils/sorting";
 
 /**
- * One question, six lenses.
+ * One question, seven lenses.
  *
  * The legacy screen carried ten modes, each with its own filter set, its own
  * layout and its own print path. They all answered the same question — "which
@@ -24,11 +24,11 @@ export type ReportMode =
   | "searchInstructor" | "searchRoom" | "searchTime" | "searchRoomTime" | "searchAdvanced"
   | "reportDepartment" | "reportInstructor" | "reportRoom" | "reportTime" | "reportRoomTime";
 
-type Lens = "list" | "week" | "instructor" | "room" | "time" | "fairness";
+type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "fairness";
 type PrintKind =
   | "DepartmentSchedule" | "ListofTeacherCourse" | "InstructorWithRoom" | "TeacherWithCourse"
   | "InstructorReport2" | "WeekWithInstructor" | "RoomReport2" | "WeekWithInstructorByDept"
-  | "TimeReport2" | "RoomTimeReport2" | "RoomLoad" | "Fairness" | null;
+  | "TimeReport2" | "RoomTimeReport2" | "RoomLoad" | "RoomMatrix" | "Fairness" | null;
 
 interface Props {
   mode: ReportMode;
@@ -65,6 +65,7 @@ const LENSES: Array<{ id: Lens; label: string; icon: React.ReactNode }> = [
   { id: "week", label: "الأسبوع", icon: <CalendarDays /> },
   { id: "instructor", label: "الأساتذة", icon: <UserRound /> },
   { id: "room", label: "القاعات", icon: <Building2 /> },
+  { id: "matrix", label: "القاعات × الأوقات", icon: <Table2 /> },
   { id: "time", label: "الأوقات", icon: <Clock3 /> },
   { id: "fairness", label: "العدالة", icon: <Scale /> }
 ];
@@ -85,7 +86,22 @@ const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const duration = (row: FSchedule) => Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
-const dayText = (row: FSchedule) => row.fdetail || DAYS.filter(day => (row as any)[day.flag]).map(day => day.label).join(" - ");
+/**
+ * The days of an appointment, as days.
+ *
+ * `fdetail` is a free-text field the legacy screen used for anything, and in
+ * imported terms it often holds the day numbers — "1,3,5" — which is the one
+ * thing this column must never show: a person reading a timetable does not
+ * know that Sunday is 1. The flags are the truth, so they are read first, and
+ * the free text is only used when it is genuinely a sentence.
+ */
+const dayFlags = (row: FSchedule) => DAYS.filter(day => (row as any)[day.flag]);
+const dayText = (row: FSchedule) => {
+  const named = dayFlags(row).map(day => day.label);
+  if (named.length) return named.join(" · ");
+  const detail = String(row.fdetail || "").trim();
+  return /[\u0600-\u06FF]/.test(detail) ? detail : "";
+};
 const share = (value: number, max: number) => `${Math.min(100, Math.round((value / Math.max(1, max)) * 100))}%`;
 
 export default function Reports({ mode, user, scopes = [] }: Props) {
@@ -110,6 +126,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [occupancy, setOccupancy] = useState<any>(null);
   const [roomDay, setRoomDay] = useState<number | "week">("week");
+  /** Which square of the occupancy grid the reader asked about. */
+  const [roomPick, setRoomPick] = useState<{ room: string; point: number | null } | null>(null);
   const [ask, setAsk] = useState("");
   const [askNote, setAskNote] = useState<string | null>(null);
 
@@ -227,14 +245,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   /**
    * Ask in plain Arabic.
    *
-   * "قاعات فاضية الثلاثاء ١٠", "جدول د. أحمد", "فراغات نورة الأحد", "ب-101" —
+   * "قاعات فاضية الثلاثاء 10", "جدول د. أحمد", "فراغات نورة الأحد", "ب-101" —
    * the sentence is parsed on the spot and turned into the filters and the lens
    * that answer it. Nothing is sent anywhere, so the answer appears as fast as
    * it can be typed, and every question stays reproducible.
    */
   const runAsk = (text: string) => {
     const question = parseNaturalQuery(text);
-    if (question.intent === "unknown" && !question.name) { setAskNote("لم أفهم السؤال — جرّب: قاعات فاضية الثلاثاء ١٠"); return; }
+    if (question.intent === "unknown" && !question.name) { setAskNote("لم أفهم السؤال — جرّب: قاعات فاضية الثلاثاء 10"); return; }
 
     const next: Filters = { ...fresh(), collegeId: filters.collegeId, sectionId: filters.sectionId, termId: filters.termId };
     const said: string[] = [];
@@ -354,6 +372,63 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     return () => controller.abort();
   }, [lens, filters.termId, filters.collegeId, filters.sectionId]);
 
+  /**
+   * The paper sheet, rebuilt.
+   *
+   * Departments have kept this table on paper for years and it is the right
+   * shape for the question it answers: a hall down the side, the teaching hours
+   * across the top, and every cell naming what occupies it. Reading a week from
+   * a room's point of view — is F12 free at eleven, and if not, who is in it —
+   * is not something a day column can answer, and it is the question a
+   * timetable coordinator is asked most often.
+   *
+   * Each hall repeats once per group of days, exactly as the paper does, so the
+   * Sunday/Tuesday/Thursday pattern and the Monday/Wednesday pattern each get
+   * their own line rather than being folded together into an unreadable cell.
+   */
+  const [matrixBuilding, setMatrixBuilding] = useState("");
+  const [matrixHall, setMatrixHall] = useState("");
+  const matrix = useMemo(() => {
+    const DAY_GROUPS: Array<{ id: string; label: string; days: number[] }> = [
+      { id: "ste", label: "الأحد · الثلاثاء · الخميس", days: [0, 2, 4] },
+      { id: "mw", label: "الاثنين · الأربعاء", days: [1, 3] },
+    ];
+    const placed = results.filter(row => row.fstarttime && row.fendtime && (row.AdRoomCode || row.AdRoomHall));
+    if (!placed.length) return null;
+
+    const buildings = [...new Set(placed.map(row => String(row.AdRoomCode || "").trim()).filter(Boolean))].sort(byArabic);
+    const scoped = placed.filter(row =>
+      (!matrixBuilding || String(row.AdRoomCode || "").trim() === matrixBuilding) &&
+      (!matrixHall || String(row.AdRoomHall || "").trim().toLowerCase().includes(matrixHall.trim().toLowerCase())));
+
+    const starts = scoped.map(row => minutes(row.fstarttime));
+    const ends = scoped.map(row => minutes(row.fendtime));
+    const from = starts.length ? Math.max(7 * 60, Math.floor(Math.min(...starts) / 60) * 60) : 8 * 60;
+    const to = ends.length ? Math.min(21 * 60, Math.ceil(Math.max(...ends) / 60) * 60) : 15 * 60;
+    const columns: number[] = [];
+    for (let point = from; point < Math.max(to, from + 60); point += 60) columns.push(point);
+
+    type Hall = { key: string; building: string; hall: string };
+    const halls: Hall[] = [...new Map<string, Hall>(scoped.map(row => {
+      const key = `${String(row.AdRoomCode || "").trim()}|${String(row.AdRoomHall || "").trim()}`;
+      return [key, { key, building: String(row.AdRoomCode || "").trim(), hall: String(row.AdRoomHall || "").trim() }] as const;
+    })).values()].sort((a, b) => byArabic(a.building, b.building) || byArabic(a.hall, b.hall));
+
+    const lines = halls.flatMap(room => DAY_GROUPS.map(group => {
+      const inRoom = scoped.filter(row =>
+        String(row.AdRoomCode || "").trim() === room.building &&
+        String(row.AdRoomHall || "").trim() === room.hall &&
+        group.days.some(index => Boolean((row as any)[DAYS[index].flag])));
+      const cells = columns.map(point => ({
+        point,
+        rows: inRoom.filter(row => minutes(row.fstarttime) < point + 60 && minutes(row.fendtime) > point),
+      }));
+      return { id: `${room.key}|${group.id}`, room, group, cells, used: inRoom.length };
+    })).filter(line => line.used > 0);
+
+    return { columns, lines, buildings, total: scoped.length };
+  }, [results, matrixBuilding, matrixHall]);
+
   const roomLoad = useMemo(() => {
     if (!occupancy?.rooms?.length) return null;
     const dayStart = Number(occupancy.dayStart || GRID_START);
@@ -422,6 +497,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     { kind: "InstructorWithRoom", label: "الأساتذة مفصل" },
     { kind: "RoomReport2", label: "المباني والقاعات" },
     { kind: "RoomLoad", label: "إشغال القاعات والفراغات" },
+    { kind: "RoomMatrix", label: "جدول القاعات × الأوقات" },
     { kind: "TimeReport2", label: "الأوقات" },
     { kind: "Fairness", label: "عدالة العبء" }
   ];
@@ -453,7 +529,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               event.preventDefault();
               runAsk(event.currentTarget.value);
             }}
-            placeholder="اسأل: قاعات فاضية الثلاثاء ١٠"
+            placeholder="اسأل: قاعات فاضية الثلاثاء 10"
             aria-label="اسأل بالعربية"
             enterKeyHint="search"
           />
@@ -619,7 +695,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                   </div>
                   <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
                   <span className="lens-room"><Building2 aria-hidden="true" />{row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</span>
-                  <span className="lens-days">{dayText(row) || "—"}</span>
+                  <span className="lens-days">
+                    {dayFlags(row).length
+                      ? dayFlags(row).map(day => <i key={day.key} title={day.label}>{day.label}</i>)
+                      : <b>بلا أيام</b>}
+                  </span>
                 </article>
               );
             })}
@@ -629,20 +709,89 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           </div>
         ) : lens === "week" ? (
           <div className="lens-week">
+            {/*
+              The week, said in full.
+              The column used to print an hour, a catalogue number and a room —
+              which is the timetable with everything a person reads it for
+              removed. Every row now names the course, who teaches it, and when
+              it ends as well as when it begins.
+            */}
             {weekGrid.map(day => (
               <section key={day.key}>
                 <h3>{day.label}<b>{num(day.rows.length)}</b></h3>
                 <div>
                   {day.rows.length ? day.rows.map(row => (
                     <article key={`${day.key}-${row.id}`}>
-                      <time dir="ltr">{row.fstarttime}</time>
-                      <strong>{courseById.get(row.AdCourseId)?.CourseCode || row.AdCourseName}</strong>
-                      <small>{row.AdRoomCode}/{row.AdRoomHall}</small>
+                      <time dir="ltr">{row.fstarttime}<i>{row.fendtime}</i></time>
+                      <div>
+                        <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
+                        <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
+                      </div>
+                      <small>
+                        <b>{courseById.get(row.AdCourseId)?.CourseCode || "—"}</b>
+                        {[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "—"}
+                      </small>
                     </article>
-                  )) : <p>—</p>}
+                  )) : <p>لا مواعيد في هذا اليوم</p>}
                 </div>
               </section>
             ))}
+          </div>
+        ) : lens === "matrix" ? (
+          <div className="lens-matrix">
+            <div className="matrix-controls no-print">
+              <label>
+                <span>المبنى</span>
+                <select value={matrixBuilding} onChange={e => setMatrixBuilding(e.target.value)}>
+                  <option value="">كل المباني</option>
+                  {(matrix?.buildings || []).map(code => <option key={code} value={code}>{code}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>القاعة</span>
+                <input value={matrixHall} onChange={e => setMatrixHall(e.target.value)} placeholder="F10 مثلاً" />
+              </label>
+              {matrix ? <span className="matrix-count">{num(matrix.lines.length)} صف · {num(matrix.total)} موعد</span> : null}
+            </div>
+            {matrix && matrix.lines.length ? (
+              <div className="matrix-scroll">
+                <table className="matrix-table">
+                  <thead>
+                    <tr>
+                      <th className="matrix-corner">القاعة</th>
+                      <th className="matrix-days">الأيام</th>
+                      {matrix.columns.map(point => (
+                        <th key={point} dir="ltr">{clock(point)}<i>{clock(point + 60)}</i></th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matrix.lines.map(line => (
+                      <tr key={line.id}>
+                        <th className="matrix-room">
+                          <b>{line.room.hall || "—"}</b>
+                          <small>{line.room.building}</small>
+                        </th>
+                        <td className="matrix-daygroup">{line.group.label}</td>
+                        {line.cells.map(cell => (
+                          <td key={cell.point} className={cell.rows.length ? "taken" : ""}>
+                            {cell.rows.map(row => (
+                              <span key={row.id} className="matrix-slot">
+                                <b>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</b>
+                                <em>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "—"}</em>
+                                <i dir="ltr">{courseById.get(row.AdCourseId)?.CourseCode || "—"} · {row.SCode}</i>
+                              </span>
+                            ))}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="query-empty"><EmptyState title="لا قاعات في هذا النطاق" /></div>
+            )}
           </div>
         ) : lens === "room" ? (
           <div className="lens-rooms">
@@ -668,14 +817,29 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                   <span />
                 </div>
                 {roomLoad.rooms.map((room: any) => (
-                  <div key={room.key} className={`occupancy-row ${room.mine ? "mine" : ""}`}>
-                    <span className="occupancy-name" title={room.name}>{room.name}</span>
+                  <div key={room.key} className={`occupancy-row ${room.mine ? "mine" : ""} ${roomPick?.room === room.name ? "picked" : ""}`}>
+                    <button
+                      type="button"
+                      className="occupancy-name"
+                      title={`كل مواعيد ${room.name}`}
+                      onClick={() => setRoomPick(current =>
+                        current?.room === room.name && current?.point == null ? null : { room: room.name, point: null })}
+                    >
+                      {room.name}
+                    </button>
                     {room.cells.map((cell: any) => (
-                      <i
+                      <button
+                        type="button"
                         key={cell.point}
                         data-level={Math.min(5, cell.taken)}
                         data-mine={cell.mine ? "1" : undefined}
+                        className={roomPick?.room === room.name && roomPick?.point === cell.point ? "picked" : ""}
                         title={`${room.name} · ${clock(cell.point)} · ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
+                        aria-label={`${room.name} الساعة ${clock(cell.point)}`}
+                        onClick={() => setRoomPick(current =>
+                          current?.room === room.name && current?.point === cell.point
+                            ? null
+                            : { room: room.name, point: cell.point })}
                       />
                     ))}
                     <b className="occupancy-rate">{num(room.rate)}٪</b>
@@ -685,6 +849,47 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             ) : (
               <div className="query-empty"><EmptyState title="لا بيانات إشغال" /></div>
             )}
+            {/*
+              A heat square is a question, so it should have an answer.
+              The grid used to be a picture: it could show that an hour was busy
+              and had no way to say who was in it. Clicking a square — or a room
+              name — now opens exactly the appointments behind it.
+            */}
+            {roomPick ? (() => {
+              const picked = results.filter(row => {
+                if (`${row.AdRoomCode}/${row.AdRoomHall}` !== roomPick.room) return false;
+                if (roomPick.point == null) return true;
+                const from = minutes(row.fstarttime), to = minutes(row.fendtime);
+                const dayOk = roomDay === "week" || Boolean((row as any)[DAYS[roomDay as number].flag]);
+                return dayOk && from < roomPick.point + 60 && to > roomPick.point;
+              }).sort((a, b) => a.fstarttime.localeCompare(b.fstarttime));
+              return (
+                <div className="occupancy-pick">
+                  <header>
+                    <div>
+                      <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${clock(roomPick.point)}`}</small>
+                      <strong>{roomPick.room}</strong>
+                    </div>
+                    <span className="occupancy-pick-count">{num(picked.length)} موعد</span>
+                    <button type="button" onClick={() => setRoomPick(null)} aria-label="إغلاق">✕</button>
+                  </header>
+                  {picked.length ? (
+                    <div className="occupancy-pick-rows">
+                      {picked.map(row => (
+                        <article key={row.id}>
+                          <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
+                          <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
+                          <em>{dayText(row)}</em>
+                          <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                        </article>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="occupancy-pick-empty">فاضية في هذا الوقت — لا يوجد أي حجز.</p>
+                  )}
+                </div>
+              );
+            })() : null}
             {roomLoad && roomDay !== "week" ? (
               <div className="occupancy-windows">
                 {roomLoad.rooms
@@ -801,6 +1006,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           kind={printKind}
           rows={results}
           fairness={fairness}
+          matrix={matrix}
           roomLoad={roomLoad}
           roomDay={roomDay}
           scopeLine={scopeLine}
@@ -813,8 +1019,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 }
 
 /** Print output. Every legacy sheet is still reachable, now from one menu. */
-function PrintSheet({ kind, rows, fairness, roomLoad, roomDay, scopeLine, courseById, instructorById }: {
-  kind: PrintKind; rows: FSchedule[]; fairness: any; roomLoad: any; roomDay: number | "week"; scopeLine: string;
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine, courseById, instructorById }: {
+  kind: PrintKind; rows: FSchedule[]; fairness: any; matrix: any; roomLoad: any; roomDay: number | "week"; scopeLine: string;
   courseById: Map<number, AdCourse>; instructorById: Map<number, AdInstructor>;
 }) {
   if (!kind) return null;
@@ -830,6 +1036,7 @@ function PrintSheet({ kind, rows, fairness, roomLoad, roomDay, scopeLine, course
     TimeReport2: "تقرير الوقت",
     RoomTimeReport2: "تقرير الوقت والقاعات",
     RoomLoad: "إشغال القاعات والفراغات",
+    RoomMatrix: "جدول القاعات والأوقات",
     Fairness: "تقرير عدالة توزيع العبء"
   };
   const totalHours = rows.reduce((total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0);
@@ -860,6 +1067,57 @@ function PrintSheet({ kind, rows, fairness, roomLoad, roomDay, scopeLine, course
           <div><span>منسق الجدول</span><i /></div>
           <div><span>رئيس القسم العلمي</span><i /></div>
           <div><span>التاريخ</span><i /></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (kind === "RoomMatrix") {
+    // The paper sheet as paper: a hall per line, the hours across, landscape.
+    if (!matrix?.lines?.length) {
+      return (
+        <div className="print-report">
+          <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+          <p>لا توجد قاعات في هذا النطاق.</p>
+        </div>
+      );
+    }
+    return (
+      <div className="print-report print-matrix">
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+        <table>
+          <thead>
+            <tr>
+              <th>القاعة</th>
+              <th>الأيام</th>
+              {matrix.columns.map((point: number) => (
+                <th key={point} dir="ltr">{clock(point)}–{clock(point + 60)}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.lines.map((line: any) => (
+              <tr key={line.id}>
+                <th>{line.room.hall || "—"}<small>{line.room.building}</small></th>
+                <td>{line.group.label}</td>
+                {line.cells.map((cell: any) => (
+                  <td key={cell.point}>
+                    {cell.rows.map((row: FSchedule) => (
+                      <span key={row.id}>
+                        <b>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</b>
+                        <i>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "—"}</i>
+                        <u dir="ltr">{courseById.get(row.AdCourseId)?.CourseCode || "—"} · {row.SCode}</u>
+                      </span>
+                    ))}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="print-summary">
+          <span>عدد القاعات: <b>{new Set(matrix.lines.map((line: any) => line.room.key)).size}</b></span>
+          <span>عدد المواعيد: <b>{matrix.total}</b></span>
         </div>
       </div>
     );

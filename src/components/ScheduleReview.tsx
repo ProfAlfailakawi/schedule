@@ -80,8 +80,11 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   };
 
   return (
-    <div className="review-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="review-sheet" role="dialog" aria-modal="true" aria-label="مراجعة الاعتماد">
+    // The printable sheet lives inside this dialog, so the wrapper itself can
+    // never be `no-print` — doing so hid the very report the print button was
+    // meant to produce. Only the on-screen dialog is suppressed on paper.
+    <div className="review-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="review-sheet no-print" role="dialog" aria-modal="true" aria-label="مراجعة الاعتماد">
         <header className={`review-head tone-${tone}`}>
           <svg className="review-ring" viewBox="0 0 64 64" role="img" aria-label={`مؤشر المطابقة ${score} من 100`}>
             <circle className="ring-track" cx="32" cy="32" r="26" />
@@ -91,10 +94,10 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
               strokeDasharray={`${(score / 100) * ringLength} ${ringLength}`}
             />
             <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
-            <text x="32" y="45" className="ring-unit">/ ١٠٠</text>
+            <text x="32" y="45" className="ring-unit">/ 100</text>
           </svg>
           <div className="review-title">
-            <span className="surface-kicker">مراجعة الاعتماد · قرار ١٩١٢/٢٠١٦</span>
+            <span className="surface-kicker">مراجعة الاعتماد · قرار 1912/2016</span>
             <h2>{blocking.length ? "يوجد ما يمنع الاعتماد" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</h2>
             <p>{scopeLine}</p>
           </div>
@@ -168,7 +171,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       </section>
 
       {/* The signed sheet. */}
-      <div className="print-only">
+      <div className="print-only print-sheet-modal">
         <div className="print-report print-upright">
           <PrintLetterhead title="تقرير مراجعة الجدول قبل الاعتماد" scope={scopeLine} />
           <div className="print-summary">

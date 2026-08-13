@@ -13,7 +13,6 @@ import {
   FileClock,
   Gauge,
   History,
-  LifeBuoy,
   Network,
   RotateCcw,
   Save,
@@ -40,7 +39,6 @@ type Scene =
   | "pulse"
   | "topology"
   | "why"
-  | "emergency"
   | "health"
   | "brief"
   | "genesis"
@@ -60,33 +58,6 @@ const dayLabel = (row: FSchedule) =>
   DAYS.filter((day) => row[day.key])
     .map((day) => day.label)
     .join("، ");
-const rescueFlow = (plan: any) => {
-  const unresolved = Array.isArray(plan?.unresolved)
-    ? plan.unresolved.length
-    : 0;
-  const changed = Number(plan?.changed || 0);
-  const resolved = Math.max(0, changed - unresolved);
-  return [
-    {
-      label: "الرصد",
-      value: `${changed} موعد`,
-      detail: "العناصر التي دخلت خطة الإنقاذ.",
-    },
-    {
-      label: "إعادة التوزيع",
-      value: `${resolved} محسوم`,
-      detail: "تم إيجاد بديل واضح لها.",
-    },
-    {
-      label: "المراجعة البشرية",
-      value: `${unresolved} عالق`,
-      detail: unresolved
-        ? "ما زال يحتاج قرارًا بشريًا."
-        : "لا توجد عناصر عالقة.",
-    },
-  ];
-};
-
 interface Props {
   user: any;
   rows: FSchedule[];
@@ -129,11 +100,6 @@ export default function LivingScheduleLayer({
     [candidateRoomCode, setCandidateRoomCode] = useState(""),
     [candidateRoomHall, setCandidateRoomHall] = useState(""),
     [candidateDay, setCandidateDay] = useState<"same" | DayKey>("same");
-  const [emergencyKind, setEmergencyKind] = useState<
-      "room" | "day" | "instructor"
-    >("room"),
-    [emergencyValue, setEmergencyValue] = useState(""),
-    [emergency, setEmergency] = useState<any>(null);
   const [sourceTerm, setSourceTerm] = useState(0),
     [genesis, setGenesis] = useState<any>(null),
     [memoryReason, setMemoryReason] = useState(""),
@@ -234,20 +200,6 @@ export default function LivingScheduleLayer({
       if (previous) setSourceTerm(previous.AdTermId);
     }
   }, [terms, termId, sourceTerm]);
-  useEffect(() => {
-    if (emergencyKind === "room" && !emergencyValue && rooms[0])
-      setEmergencyValue(rooms[0].key);
-    if (emergencyKind === "day" && !DAYS.some((d) => d.key === emergencyValue))
-      setEmergencyValue("fsunday");
-    if (
-      emergencyKind === "instructor" &&
-      !usedInstructors.some(
-        (i) => String(i.AdInstructorId) === emergencyValue,
-      ) &&
-      usedInstructors[0]
-    )
-      setEmergencyValue(String(usedInstructors[0].AdInstructorId));
-  }, [emergencyKind, rooms, usedInstructors, emergencyValue]);
   const open = (next: Scene) => {
     setScene(next);
     setError("");
@@ -283,33 +235,6 @@ export default function LivingScheduleLayer({
         }),
       });
       setWhyResult({ ...d, kind });
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const runEmergency = async () => {
-    setBusy(true);
-    setError("");
-    setEmergency(null);
-    try {
-      setEmergency(
-        await json("/api/intelligence/emergency", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            collegeId,
-            sectionId,
-            termId,
-            kind: emergencyKind,
-            value:
-              emergencyKind === "instructor"
-                ? Number(emergencyValue)
-                : emergencyValue,
-          }),
-        }),
-      );
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -530,7 +455,6 @@ export default function LivingScheduleLayer({
       { id: "pulse", label: "الحالة", icon: <Activity /> },
       { id: "topology", label: "خريطة التعارضات", icon: <Network /> },
       { id: "why", label: "لماذا؟", icon: <CircleHelp /> },
-      { id: "emergency", label: "الطوارئ", icon: <LifeBuoy /> },
       { id: "health", label: "الصحة والعدالة", icon: <Gauge /> },
       { id: "copilot", label: "مساعد القرار", icon: <BrainCircuit /> },
       { id: "brief", label: "ملخص الدقيقة", icon: <Zap /> },
@@ -634,10 +558,23 @@ export default function LivingScheduleLayer({
               ) : null}
               {scene === "why" ? (
                 <div className="why-scene">
+                  {/*
+                    The answer sits where the eye already is.
+                    Reading it used to mean scrolling past the whole form that
+                    produced it, which is the panel making the reader do the
+                    work of finding its own reply.
+                  */}
+                  {whyResult ? (
+                    <WhyResult
+                      data={whyResult}
+                      onRemember={() => open("memory")}
+                    />
+                  ) : null}
                   <ContextPicker
                     selectedId={selected?.id || 0}
                     rows={rows}
                     courseById={courseById}
+                    instructorById={instructorById}
                     onChange={setSelectedId}
                   />
                   {selected ? (
@@ -723,152 +660,6 @@ export default function LivingScheduleLayer({
                       </div>
                     </div>
                   ) : null}
-                  {whyResult ? (
-                    <WhyResult
-                      data={whyResult}
-                      onRemember={() => open("memory")}
-                    />
-                  ) : null}
-                </div>
-              ) : null}
-              {scene === "emergency" ? (
-                <div className="emergency-scene">
-                  <div className="emergency-command">
-                    <span className="emergency-mark">
-                      <LifeBuoy />
-                    </span>
-                    <div>
-                      <small>وضع إعادة الجدولة الطارئة</small>
-                      <h3>قل للنظام ما الذي خرج من الخدمة</h3>
-                      <p>
-                        لن ألمس الجدول الحقيقي. سأبني ثلاث خطط إنقاذ ثم تختار ما
-                        يستحق أن يصبح مسودة.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="emergency-fields">
-                    <label>
-                      <span>نوع الحالة</span>
-                      <select
-                        value={emergencyKind}
-                        onChange={(e) => {
-                          setEmergencyKind(e.target.value as any);
-                          setEmergencyValue("");
-                          setEmergency(null);
-                        }}
-                      >
-                        <option value="room">قاعة خرجت من الخدمة</option>
-                        <option value="day">يوم دراسي ألغي</option>
-                        <option value="instructor">أستاذ تعذر</option>
-                      </select>
-                    </label>
-                    <label>
-                      <span>العنصر المتأثر</span>
-                      {emergencyKind === "room" ? (
-                        <select
-                          value={emergencyValue}
-                          onChange={(e) => setEmergencyValue(e.target.value)}
-                        >
-                          {rooms.map((r) => (
-                            <option key={r.key} value={r.key}>
-                              {r.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : emergencyKind === "day" ? (
-                        <select
-                          value={emergencyValue}
-                          onChange={(e) => setEmergencyValue(e.target.value)}
-                        >
-                          {DAYS.map((d) => (
-                            <option key={d.key} value={d.key}>
-                              {d.label}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <select
-                          value={emergencyValue}
-                          onChange={(e) => setEmergencyValue(e.target.value)}
-                        >
-                          {usedInstructors.map((i) => (
-                            <option
-                              key={i.AdInstructorId}
-                              value={i.AdInstructorId}
-                            >
-                              {i.AdInstructorName}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                    </label>
-                    <PrimaryButton
-                      disabled={busy || !emergencyValue}
-                      onClick={runEmergency}
-                    >
-                      <WandSparkles />
-                      ابنِ خطط الإنقاذ
-                    </PrimaryButton>
-                  </div>
-                  {emergency ? (
-                    <div className="rescue-grid">
-                      {emergency.plans.map((plan: any) => (
-                        <article key={plan.id}>
-                          <div className="rescue-rank">
-                            <span>{plan.title}</span>
-                            <b>{plan.score}/100</b>
-                          </div>
-                          <p>{plan.summary}</p>
-                          <div className="rescue-metrics">
-                            <span>
-                              <b>{plan.changed}</b> تغيير
-                            </span>
-                            <span>
-                              <b>{plan.conflicts}</b> تعارض
-                            </span>
-                            <span>
-                              <b>{plan.fairness}</b> عدالة
-                            </span>
-                            <span>
-                              <b>{plan.constraintViolations}</b> مخالفة قاعدة
-                            </span>
-                          </div>
-                          <div className="rescue-flow">
-                            {rescueFlow(plan).map(
-                              (step: any, index: number) => (
-                                <div key={step.label} className="rescue-step">
-                                  <b>{String(index + 1).padStart(2, "0")}</b>
-                                  <div>
-                                    <strong>{step.label}</strong>
-                                    <span>{step.value}</span>
-                                    <small>{step.detail}</small>
-                                  </div>
-                                </div>
-                              ),
-                            )}
-                          </div>
-                          {plan.unresolved?.length ? (
-                            <div className="rescue-unresolved">
-                              <AlertTriangle />
-                              {plan.unresolved.slice(0, 3).join(" · ")}
-                            </div>
-                          ) : (
-                            <div className="rescue-clean">
-                              <CheckCircle2 />
-                              كل المواعيد المتأثرة لها بديل مقترح.
-                            </div>
-                          )}
-                          <PrimaryButton
-                            onClick={() => savePlan(plan)}
-                            disabled={busy}
-                          >
-                            <Save />
-                            احفظ كمسودة
-                          </PrimaryButton>
-                        </article>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
               {scene === "health" ? <HealthScene living={living} /> : null}
@@ -943,6 +734,7 @@ export default function LivingScheduleLayer({
                     selectedId={selected?.id || 0}
                     rows={rows}
                     courseById={courseById}
+                    instructorById={instructorById}
                     onChange={(id) => {
                       setSelectedId(id);
                       setTimeout(() => void loadMemory(), 0);
@@ -1050,6 +842,7 @@ export default function LivingScheduleLayer({
                     selectedId={selected?.id || 0}
                     rows={rows}
                     courseById={courseById}
+                    instructorById={instructorById}
                     onChange={setSelectedId}
                   />
                   <div className="meeting-command">
@@ -1118,6 +911,7 @@ export default function LivingScheduleLayer({
                     selectedId={selected?.id || 0}
                     rows={rows}
                     courseById={courseById}
+                    instructorById={instructorById}
                     onChange={setSelectedId}
                   />
                   {selected ? (

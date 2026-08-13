@@ -550,15 +550,15 @@ export default function AdminUsers({
                       )
                     }
                   >
-                    <span className="permission-check">{active ? <Check /> : <KeyRound />}</span>
+                    <span className="permission-check" aria-hidden="true">{active ? <Check /> : <KeyRound />}</span>
                     <strong>{f.FormName}</strong>
-                    <small>#{f.FormNameId}</small>
+                    <small title="رقم الشاشة في النظام">{f.FormNameId}</small>
                   </button>
                 );
               })}
             </div>
             <div className="permission-selection-summary">
-              <span>{permSelections.length} صلاحية محددة</span>
+              <span><b>{permSelections.length}</b> صلاحية محددة من <b>{forms.length}</b></span>
               {permSelections.length ? (
                 <button type="button" onClick={() => setPermSelections([])}>مسح الاختيار</button>
               ) : null}
