@@ -2111,3 +2111,317 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .physics-stress-chip.level-critical strong{color:var(--danger)}
 .physics-horizon-chip.tone-good strong{color:var(--success)}
 
+
+/* ==========================================================================
+   THE WEEK, RE-DRESSED
+   Same bones, new skin. Every rule below overrides an earlier one by cascade
+   order alone — the geometry contract (SLOT_H = --week-slot), the physics
+   bindings, the paint stroke and the fold are untouched. What changes is what
+   the eye meets: one ornament per card instead of five, one label per hour
+   instead of two, one row of days instead of two.
+   ========================================================================== */
+
+/* --- The ground: quieter lines, no zebra ---------------------------------- */
+.week-slot{border-bottom:1px dashed color-mix(in srgb,var(--line) 55%,transparent)}
+.week-slot:nth-child(2n){background:transparent;border-bottom:1px solid color-mix(in srgb,var(--line) 90%,transparent)}
+.week-slot:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.week-day{border-inline-start:1px solid color-mix(in srgb,var(--line) 80%,transparent)}
+
+/* The gutter says each hour once. Half-hours keep their row height but hold
+   their tongue — the dashes in the grid already say "half" without a number. */
+.week-times span{border-bottom:0;color:var(--muted-2);font-size:10px;padding-top:4px}
+.week-times span:nth-child(2n){visibility:hidden}
+.week-times{box-shadow:1px 0 0 color-mix(in srgb,var(--line) 80%,transparent)}
+
+/* --- Day headers carry the day's weight ----------------------------------- */
+.week-time-head,.week-day-head{min-height:42px}
+.week-day-toggle{position:relative;padding-block:var(--s2)}
+.week-day-toggle>span{font-size:12.5px;font-weight:650;letter-spacing:-.1px}
+.week-day-toggle b{
+  min-width:20px;height:20px;padding:0 5px;
+  background:var(--surface-3);color:var(--muted);
+  font:600 10.5px/1 var(--font-mono);
+}
+/* The same three-pixel share-of-a-whole the day strip and the health tiles
+   speak — here it is taught minutes against the heaviest day, so a column
+   announces its pressure before it is opened. */
+.week-day-head::after{
+  content:"";
+  position:absolute;inset-inline:14%;bottom:3px;height:3px;
+  border-radius:var(--r-full);
+  background:linear-gradient(var(--accent),var(--accent)) no-repeat,
+             color-mix(in srgb,var(--line-strong) 40%,transparent);
+  background-size:var(--reading,0%) 100%,100% 100%;
+  background-position:100% 0,0 0;
+  opacity:.7;
+}
+.week-day-head{position:relative}
+.week-day-head[data-today="true"]::after{
+  background:linear-gradient(var(--brass),var(--brass)) no-repeat,
+             color-mix(in srgb,var(--line-strong) 40%,transparent);
+  background-size:var(--reading,0%) 100%,100% 100%;
+  background-position:100% 0,0 0;
+}
+
+/* One row of days is enough: on a wide screen the headers above the columns
+   carry the counts and the load, so the strip retires to the phone, where it
+   is the day-switcher for the folded grid. */
+@media screen and (min-width:769px){.week-daystrip{display:none}}
+
+/* --- The card: one voice, one ornament ------------------------------------ */
+.week-event,.week-chip{
+  --tint:hsl(var(--hue,158) 34% 96.5%);
+  --edge:hsl(var(--hue,158) 34% 44%);
+  --label:hsl(var(--hue,158) 42% 23%);
+}
+:root[data-theme="dark"] .week-event,
+:root[data-theme="dark"] .week-chip{
+  --tint:hsl(var(--hue,158) 21% 14.5%);
+  --edge:hsl(var(--hue,158) 36% 58%);
+  --label:hsl(var(--hue,158) 46% 88%);
+}
+.week-event{
+  border:1px solid color-mix(in srgb,var(--edge) 13%,var(--line));
+  border-inline-start:3px solid var(--edge);
+  box-shadow:none;
+  padding:5px 7px 4px 6px;
+  gap:2px;
+}
+.week-calendar:not(.gravity-field-active) .week-event:hover{
+  box-shadow:var(--shadow-sm);
+  border-color:color-mix(in srgb,var(--edge) 34%,var(--line));
+  border-inline-start-color:var(--edge);
+  z-index:5;
+}
+.week-title{
+  font-size:11.5px;line-height:1.3;font-weight:650;
+  letter-spacing:-.1px;
+  padding-inline-end:0;
+}
+.week-who{font-size:10px;opacity:.78}
+.week-when{font-size:9.5px;gap:5px}
+.week-when time{font-weight:600}
+/* The room reads as a small held chip — it is the third dimension of this
+   screen now, not an afterthought behind the clock. */
+.week-when i{
+  font-style:normal;
+  padding:0 4px;border-radius:4px;
+  background:color-mix(in srgb,var(--edge) 12%,transparent);
+  color:color-mix(in srgb,var(--label) 78%,transparent);
+  font:600 8.5px/1.5 var(--font-mono);
+  letter-spacing:0;
+}
+/* The catalogue stamp leaves the title's corner for the opposite one, where
+   nothing begins. It was printing itself over the first word of every Arabic
+   title — a collision, read a hundred times a day. */
+.week-code{
+  /* Physical corners, deliberately: the stamp is dir="ltr" for its digits, so
+     logical insets resolve against ITS direction and land it under the clock —
+     the same trap the now-pill fell into. The page is Arabic-only; in this
+     grid "the corner where nothing begins" is simply bottom-left. */
+  inset-inline-start:auto;inset-inline-end:auto;
+  top:auto;bottom:3px;
+  left:4px;right:auto;
+  height:12px;padding:0 4px;
+  background:transparent;
+  color:color-mix(in srgb,var(--label) 52%,transparent);
+  font-size:8px;letter-spacing:0;
+}
+/* ...and the clock line leaves room for it, only when it exists. */
+.week-event:has(.week-code) .week-when{padding-inline-end:52px}
+
+/* --- The lens: a toolbar, not a form --------------------------------------- */
+.week-lens{
+  display:flex;flex-wrap:wrap;align-items:center;
+  gap:var(--s2);
+  padding:var(--s3) var(--s5);
+}
+.week-lens .field{
+  flex-direction:row;align-items:center;gap:6px;
+  min-height:34px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface-2);
+}
+.week-lens .field>label,.week-lens .field>span{
+  font-size:10.5px;color:var(--muted);font-weight:600;white-space:nowrap;
+}
+.week-lens select,.week-lens input{
+  min-height:32px;max-width:150px;
+  border:0;background:transparent;
+  font-size:var(--t-sm);
+  padding-inline:2px;
+}
+.week-lens select:focus-visible,.week-lens input:focus-visible{outline:none}
+.week-lens .field:focus-within{border-color:var(--accent);background:var(--surface)}
+.week-lens .time-pair{display:flex;align-items:center;gap:2px}
+.week-lens .time-pair input{max-width:86px}
+.week-lens-clear{
+  display:inline-flex;align-items:center;gap:6px;
+  min-height:34px;padding:0 var(--s3);
+  border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);
+  border-radius:var(--r-full);
+  background:var(--accent-softer);color:var(--accent-ink);
+  font-size:var(--t-sm);font-weight:600;
+}
+.week-lens-clear:hover{background:var(--accent-soft)}
+
+/* While a room is in the lens, its free half-hours glow faintly: the grid
+   flips from "what happens in G24" to "when can I still use G24" — which is
+   the question a scheduler actually brought to the building. */
+.week-slot.room-free{
+  background:color-mix(in srgb,var(--accent) 6%,transparent);
+  border-bottom-color:color-mix(in srgb,var(--accent) 18%,transparent);
+}
+.week-slot.room-free:hover{background:color-mix(in srgb,var(--accent) 14%,transparent)}
+
+/* --- The parked lectures step back ----------------------------------------- */
+.week-unplaced{padding:var(--s3) var(--s5)}
+.week-unplaced>header b{font-size:var(--t-xs)}
+.week-unplaced>header small{font-size:10.5px}
+.week-unplaced-card{
+  width:auto;max-width:190px;
+  padding:var(--s2) var(--s3);
+  border-color:color-mix(in srgb,var(--edge) 18%,var(--line));
+  background:color-mix(in srgb,var(--tint) 55%,var(--surface));
+}
+
+/* Dimming under any lens stays legible, not ghostly. */
+.week-event.lens-miss{opacity:.22;filter:saturate(.35)}
+.week-event.lens-hit{box-shadow:0 0 0 1px color-mix(in srgb,var(--edge) 30%,transparent)}
+
+/* A lane split in two or three has no floor for a stamp. The card measures
+   itself: below 150px of width the catalogue mark stands down and the clock
+   line takes its corner back — the hover peek still says the full name. */
+@container (max-width:150px){
+  .week-code{display:none}
+  .week-when{padding-inline-end:0 !important}
+}
+
+/* ==========================================================================
+   THE WOVEN HOUR — five to any number of concurrent lectures
+   Past four lanes a column stops pretending: the crushed cards become one
+   band of vertical ribbons, a thread per course in the course's own hue.
+   The weave is the map; pressing it fans the hour into full-width cards
+   that drag onto the grid like any other.
+   ========================================================================== */
+.week-bundle{
+  position:absolute;inset-inline:4px;z-index:24;
+  display:flex;flex-direction:column;gap:3px;
+  padding:5px 7px 4px;
+  border:1px solid var(--line-strong);
+  border-radius:var(--r-sm);
+  background:var(--surface);
+  box-shadow:var(--shadow-xs);
+  cursor:pointer;overflow:hidden;text-align:start;
+  transition:box-shadow .16s var(--ease),border-color .16s var(--ease),opacity .16s var(--ease);
+}
+.week-bundle:hover{box-shadow:var(--shadow-sm);border-color:var(--accent)}
+.week-bundle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* A drag in progress must see the slots underneath, not the weave: the band
+   steps out of the pointer's way and dims to say so. */
+.gravity-field-active .week-bundle{pointer-events:none;opacity:.35}
+.week-bundle.lens-miss{opacity:.22;filter:saturate(.35)}
+.week-bundle-count{
+  display:flex;align-items:baseline;gap:4px;
+  font-size:10.5px;font-weight:650;color:var(--ink-2);white-space:nowrap;
+}
+.week-bundle-count b{font:700 13px/1 var(--font-mono);color:var(--ink)}
+.week-bundle-hits{
+  margin-inline-start:auto;padding:0 5px;
+  border-radius:var(--r-full);
+  background:var(--accent-soft);color:var(--accent-ink);
+  font:600 8.5px/1.7 var(--font-ui);font-style:normal;
+}
+.week-bundle-weave{flex:1;display:flex;gap:3px;min-height:0}
+.week-bundle-weave i{
+  flex:1;min-width:7px;
+  container-type:inline-size;
+  display:grid;place-items:end center;padding-bottom:3px;
+  border-radius:4px;
+  background:linear-gradient(180deg,
+    hsl(var(--hue,158) 38% 60%) 0%,
+    hsl(var(--hue,158) 36% 45%) 100%);
+  transition:flex-grow .26s var(--ease-spring);
+}
+/* The hovered thread widens to say its name; its neighbours give way. */
+.week-bundle:hover .week-bundle-weave i:hover{flex-grow:2.4}
+.week-bundle-weave i.lens-miss{filter:saturate(.25);opacity:.4}
+.week-bundle-weave em{
+  writing-mode:vertical-rl;
+  font:600 8px/1 var(--font-mono);font-style:normal;
+  color:rgb(255 255 255/.92);
+  letter-spacing:.4px;
+  text-shadow:0 0 2px rgb(0 0 0/.25);
+}
+@container (max-width:15px){.week-bundle-weave em{display:none}}
+.week-bundle>time{font:600 9px/1 var(--font-mono);color:var(--muted);align-self:flex-end}
+:root[data-theme="dark"] .week-bundle-weave i{
+  background:linear-gradient(180deg,
+    hsl(var(--hue,158) 30% 46%) 0%,
+    hsl(var(--hue,158) 32% 32%) 100%);
+}
+
+/* --- The fan ---------------------------------------------------------------
+   A fixed panel rather than a child of the column, so no overflow clips it
+   and a lecture can be dragged out of it across the whole grid. Sits under
+   the peek (z400) and over everything else on the page. */
+.week-fan-backdrop{
+  position:fixed;inset:0;z-index:340;
+  background:color-mix(in srgb,var(--ink) 12%,transparent);
+}
+.week-fan{
+  position:fixed;z-index:350;
+  width:min(324px,calc(100vw - 24px));
+  max-height:min(470px,80vh);
+  display:flex;flex-direction:column;gap:8px;
+  padding:14px;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--r-lg);
+  box-shadow:var(--shadow-lg);
+  animation:sheet-up .3s var(--ease-spring) both;
+}
+.week-fan>header{display:flex;align-items:center;gap:8px}
+.week-fan>header b{flex:1;font-size:var(--t-sm);font-weight:650}
+.week-fan>header time{font:600 10.5px var(--font-mono);color:var(--muted)}
+.week-fan>header button{
+  width:26px;height:26px;display:grid;place-items:center;
+  border-radius:var(--r-full);color:var(--muted);
+  transition:background .14s var(--ease),color .14s var(--ease);
+}
+.week-fan>header button:hover{background:var(--surface-3);color:var(--ink)}
+.week-fan>header button svg{width:14px;height:14px}
+.week-fan>p{font-size:var(--t-xs);color:var(--muted);line-height:1.55}
+.week-fan-cards{
+  overflow-y:auto;overscroll-behavior:contain;
+  display:flex;flex-direction:column;gap:6px;
+  padding:2px;
+}
+/* Each card arrives a beat after the one before it — the hand being dealt. */
+.week-fan-slot{animation:fan-in .34s var(--ease-spring) both;animation-delay:calc(var(--i,0)*28ms)}
+@keyframes fan-in{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+.week-fan-slot .week-event{box-shadow:var(--shadow-xs)}
+.week-fan-slot .week-event:hover{box-shadow:var(--shadow-sm)}
+
+/* --- Four lanes, the last stand before the weave ---------------------------
+   Between 34 and 64 pixels a card cannot carry a sentence, but it can still
+   carry its catalogue thread: hue, and the code climbing the card the way it
+   climbs a ribbon. Drag, peek and click all keep working. */
+@container (max-width:64px){
+  .week-title,.week-who,.week-when{display:none}
+  .week-code{
+    display:flex;position:static;inset:auto;
+    writing-mode:vertical-rl;
+    align-self:center;margin:auto;
+    height:auto;padding:0;
+    background:transparent;
+    color:var(--label);
+    font-size:9px;letter-spacing:.4px;
+  }
+}
+
+@media (prefers-reduced-motion:reduce){
+  .week-fan{animation:none}
+  .week-fan-slot{animation:none}
+  .week-bundle-weave i{transition:none}
+}

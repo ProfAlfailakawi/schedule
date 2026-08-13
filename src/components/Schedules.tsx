@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -942,7 +942,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const timeRangeInvalid = Boolean(form.fstarttime&&form.fendtime)&&mins(form.fendtime)<=mins(form.fstarttime);
   const validationIssues=[!selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":""].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
-  const filteredRows=useMemo(()=>{const q=quickSearch.trim().toLowerCase();if(!q)return rows;return rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)})},[rows,quickSearch,courseById,instructorById]);
+  /* The keystroke updates the input; the two-hundred-card grid follows a beat
+     behind. Deferring the query keeps typing at the keyboard's speed instead of
+     the layout's — React drops the stale in-between renders entirely. */
+  const deferredSearch = useDeferredValue(quickSearch);
+  const filteredRows=useMemo(()=>{const q=deferredSearch.trim().toLowerCase();if(!q)return rows;return rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)})},[rows,deferredSearch,courseById,instructorById]);
   /**
    * The shapes this course is allowed to take.
    *
@@ -1820,6 +1824,34 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   };
   const weekRows = filteredRows;
   /**
+   * Where the chosen room is actually free.
+   *
+   * Filtering by a room answers "what happens in G24" — the dimmed cards say
+   * that already. The question a scheduler actually brings to a room is the
+   * opposite one: "when can I still use it?" So while a building or hall is in
+   * the lens, every half-hour that room is NOT teaching gets a quiet wash, and
+   * the grid becomes a map of availability instead of occupation.
+   *
+   * Computed from the department's full row set, not the search-filtered one:
+   * a room is not free just because its lecture is filtered out of view.
+   */
+  const lensRoomActive = Boolean(lens.building || lens.hall);
+  const lensRoomBusy = useMemo(() => {
+    const busy = new Set<string>();
+    if (!lensRoomActive) return busy;
+    rows.forEach(row => {
+      if (lens.building && String(row.AdRoomCode || "") !== lens.building) return;
+      if (lens.hall && String(row.AdRoomHall || "") !== lens.hall) return;
+      const from = mins(row.fstarttime), to = mins(row.fendtime);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
+      days.forEach(day => {
+        if (!(row as any)[day.key]) return;
+        for (let m = Math.floor(from / 30) * 30; m < to; m += 30) busy.add(`${day.key}|${timeFromMins(m)}`);
+      });
+    });
+    return busy;
+  }, [rows, lens.building, lens.hall, lensRoomActive]);
+  /**
    * The grid shows the hours that are actually used.
    *
    * A fixed 07:00–21:00 column meant a department that teaches until noon was
@@ -2073,6 +2105,81 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   }, [weekRows, gridWindow]);
 
   /**
+   * When an hour holds five lectures or more, lanes stop being an answer.
+   *
+   * Eight concurrent courses in a 212px column are eight slivers of 26 pixels —
+   * a bar chart of nothing. Past this threshold the cluster stops pretending to
+   * be eight readable cards and becomes one honest object: a woven band, one
+   * ribbon per course in the course's own hue, that says "this hour is dense"
+   * at a glance and names each thread on hover. Opening it fans the lectures
+   * into full-width cards that drag onto the grid like any other — the fan is
+   * the reading view, the weave is the map.
+   *
+   * Clusters are found by time-overlap connectivity on the already-laid-out
+   * items, so the weave covers exactly the block the lanes would have covered.
+   */
+  const BUNDLE_LANES = 5;
+  const weekBundles = useMemo(() => {
+    type Bundle = { key: string; top: number; height: number; from: string; to: string; rows: FSchedule[] };
+    const byDay: Record<string, Bundle[]> = {};
+    const bundled: Record<string, Set<number>> = {};
+    for (const day of days) {
+      /* Membership is per-card, not per-chain: a chain can run from eight to
+         two o'clock with its crush at ten only. A card joins the weave when it
+         is genuinely squeezed — five-plus lanes AND holding two lanes or fewer
+         itself. The solitary lecture at the chain's tail spans its lanes in
+         full, fails the test, and stays an ordinary readable card. */
+      const items = (weekLayout[day.key]?.items || [])
+        .filter(x => x.lanes >= BUNDLE_LANES && x.span <= 2)
+        .slice()
+        .sort((a, b) => a.top - b.top);
+      const clusters: Array<typeof items> = [];
+      let cluster: typeof items = [];
+      let clusterBottom = -1;
+      for (const item of items) {
+        if (cluster.length && item.top < clusterBottom) {
+          cluster.push(item);
+          clusterBottom = Math.max(clusterBottom, item.top + item.height);
+        } else {
+          if (cluster.length) clusters.push(cluster);
+          cluster = [item];
+          clusterBottom = item.top + item.height;
+        }
+      }
+      if (cluster.length) clusters.push(cluster);
+      const dayBundles: Bundle[] = [];
+      const ids = new Set<number>();
+      clusters.forEach(group => {
+        if (group.length < BUNDLE_LANES) return;
+        const top = Math.min(...group.map(x => x.top));
+        const bottom = Math.max(...group.map(x => x.top + x.height));
+        const rows = group.map(x => x.row).sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime));
+        const from = rows.reduce((m, r) => Math.min(m, mins(r.fstarttime)), Number.POSITIVE_INFINITY);
+        const to = rows.reduce((m, r) => Math.max(m, mins(r.fendtime)), 0);
+        group.forEach(x => ids.add(x.row.id));
+        dayBundles.push({
+          key: `${day.key}:${rows.map(r => r.id).join("-")}`,
+          top,
+          height: bottom - top,
+          from: timeFromMins(from),
+          to: timeFromMins(to),
+          rows,
+        });
+      });
+      byDay[day.key] = dayBundles;
+      bundled[day.key] = ids;
+    }
+    return { byDay, bundled };
+  }, [weekLayout]);
+  /** The one weave currently fanned open, with where to hang the panel. */
+  const [fanned, setFanned] = useState<{ key: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!fanned) return;
+    const stillThere = days.some(day => (weekBundles.byDay[day.key] || []).some(b => b.key === fanned.key));
+    if (!stillThere) setFanned(null);
+  }, [weekBundles, fanned]);
+
+  /**
    * Where a card sits across the width of its day.
    *
    * An expanded day gives every lane the full grid, so nothing there needs to
@@ -2280,6 +2387,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     },
   });
   const physicsOrigin = physics.state.row;
+  useEffect(() => {
+    if (!fanned) return;
+    const onKey = (event: KeyboardEvent) => {
+      // Escape mid-drag belongs to the drag; the fan only closes when idle.
+      if (event.key === "Escape" && !physics.state.active) setFanned(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fanned, physics.state.active]);
   const physicsActive = Boolean(
     physicsOrigin &&
     physics.state.phase !== "idle" &&
@@ -3781,6 +3897,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <div
                   className={`week-day-head ${physics.state.target?.day === d.key ? `physics-day-target physics-${physics.state.decision?.quality || "unknown"}` : ""} ${physics.state.target?.day === d.key && physics.state.decision?.stress ? `stress-${physics.state.decision.stress.level}` : ""}`}
                   data-today={todayKey === d.key ? "true" : undefined}
+                  style={{ ["--reading" as any]: `${dayLoad.share[d.key] || 0}%` }}
                   key={d.key}
                 >
                   <button
@@ -3826,7 +3943,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         data-physics-day={d.key}
                         data-physics-start={t}
                         data-physics-label={d.label}
-                        className={`week-slot ${ripple?.targetDay === d.key && ripple?.targetStart === t ? "ripple-target" : ""} ${physicsSlotClass(d.key, t)}`}
+                        className={`week-slot ${ripple?.targetDay === d.key && ripple?.targetStart === t ? "ripple-target" : ""} ${physicsSlotClass(d.key, t)} ${lensRoomActive && !lensRoomBusy.has(`${d.key}|${t}`) ? "room-free" : ""}`}
                         key={t}
                         onDragOver={(e) => e.preventDefault()}
                         role="button"
@@ -3969,20 +4086,106 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         </article>
                       );
                     })}
-                    {(weekLayout[d.key]?.items || []).map((placed) =>
-                      renderWeekCard(placed.row, d, {
-                        top: placed.top,
-                        height: placed.height,
-                        ...(expandedDay === d.key
-                          ? {}
-                          : laneStyle(placed, (weekLayout[d.key]?.spine || []).reduce((max, x) => Math.max(max, (x.spine || 0) + 1), 0))),
-                      }, placed.span / placed.lanes),
-                    )}
+                    {(weekLayout[d.key]?.items || [])
+                      .filter((placed) => expandedDay === d.key || !weekBundles.bundled[d.key]?.has(placed.row.id))
+                      .map((placed) =>
+                        renderWeekCard(placed.row, d, {
+                          top: placed.top,
+                          height: placed.height,
+                          ...(expandedDay === d.key
+                            ? {}
+                            : laneStyle(placed, (weekLayout[d.key]?.spine || []).reduce((max, x) => Math.max(max, (x.spine || 0) + 1), 0))),
+                        }, placed.span / placed.lanes),
+                      )}
+                    {expandedDay === d.key ? null : (weekBundles.byDay[d.key] || []).map((bundle) => {
+                      const hits = lensActive ? bundle.rows.filter(lensMatches).length : bundle.rows.length;
+                      return (
+                        <button
+                          type="button"
+                          className={`week-bundle ${lensActive && !hits ? "lens-miss" : ""}`}
+                          key={bundle.key}
+                          style={{ top: bundle.top, height: bundle.height }}
+                          aria-expanded={fanned?.key === bundle.key}
+                          title={`${bundle.rows.length} محاضرات متزامنة — اضغط لفردها`}
+                          onClick={(e) => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            setFanned(current => current?.key === bundle.key
+                              ? null
+                              : { key: bundle.key, x: rect.left + rect.width / 2, y: rect.top });
+                          }}
+                        >
+                          <span className="week-bundle-count">
+                            <b className="num">{bundle.rows.length}</b> معاً
+                            {lensActive && hits > 0 && hits < bundle.rows.length ? (
+                              <i className="week-bundle-hits">{hits} مطابقة</i>
+                            ) : null}
+                          </span>
+                          <span className="week-bundle-weave" aria-hidden="true">
+                            {bundle.rows.map((row) => {
+                              const course = courseById.get(row.AdCourseId);
+                              const ribbonCode = course?.CourseCode || row.AdCourseName || "—";
+                              return (
+                                <i
+                                  key={row.id}
+                                  className={lensActive && !lensMatches(row) ? "lens-miss" : ""}
+                                  style={{ ["--hue" as any]: courseHue(ribbonCode) }}
+                                  onPointerEnter={(ev) => { if (!physicsActive) openPeek(row, ev.currentTarget as unknown as HTMLElement); }}
+                                  onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
+                                >
+                                  <em dir="ltr">{String(course?.CourseCode || "").slice(0, 7)}</em>
+                                </i>
+                              );
+                            })}
+                          </span>
+                          <time dir="ltr">{bundle.from}–{bundle.to}</time>
+                        </button>
+                      );
+                    })}
                   </div>
                 );
               })}
             </div>
           </Surface>
+          {fanned ? (() => {
+            const bundle = days.flatMap(day => weekBundles.byDay[day.key] || []).find(b => b.key === fanned.key);
+            if (!bundle) return null;
+            const dayKey = fanned.key.split(":")[0] as DayKey;
+            const day = days.find(x => x.key === dayKey);
+            if (!day) return null;
+            const panelLeft = Math.max(12, Math.min(fanned.x - 160, window.innerWidth - 336));
+            const panelTop = Math.max(66, Math.min(fanned.y - 8, window.innerHeight - 440));
+            return (
+              <>
+                <div className="week-fan-backdrop" onClick={() => setFanned(null)} />
+                <div
+                  className="week-fan"
+                  role="dialog"
+                  aria-label={`المحاضرات المتزامنة يوم ${day.label}`}
+                  style={{ left: panelLeft, top: panelTop }}
+                >
+                  <header>
+                    <b>{bundle.rows.length} محاضرات معاً · {day.label}</b>
+                    <time dir="ltr">{bundle.from}–{bundle.to}</time>
+                    <button type="button" onClick={() => setFanned(null)} aria-label="إغلاق المروحة"><X aria-hidden="true" /></button>
+                  </header>
+                  <p>اسحب أي بطاقة من هنا إلى الشبكة مباشرة — المروحة تبقى مفتوحة حتى يهبط النقل.</p>
+                  <div className="week-fan-cards">
+                    {bundle.rows.map((row, index) => (
+                      <div className="week-fan-slot" style={{ ["--i" as any]: index }} key={row.id}>
+                        {renderWeekCard(row, day, {
+                          position: "relative",
+                          top: "auto",
+                          insetInline: "auto",
+                          width: "100%",
+                          height: 58,
+                        }, 1)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            );
+          })() : null}
           {peek ? (
             <WeekPeek
               anchor={{ x: peek.x, y: peek.y }}
