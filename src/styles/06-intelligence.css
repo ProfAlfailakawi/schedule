@@ -559,6 +559,24 @@
 .insight-canvas{min-width:0}
 .insight-scene-panel{margin:0}
 
+/* "كيف وصلنا لهذه النتيجة؟" — the method behind a reading, folded away until
+   asked, so each scene shows its one number first and the working on request. */
+.insight-disclosure{margin-top:var(--s5);border-top:1px solid var(--line);padding-top:var(--s4)}
+.insight-disclosure>summary{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  cursor:pointer;list-style:none;
+  color:var(--accent);font-size:var(--t-sm);font-weight:600;
+}
+.insight-disclosure>summary::-webkit-details-marker{display:none}
+.insight-disclosure>summary::before{
+  content:"";width:7px;height:7px;flex:none;
+  border-inline-end:1.6px solid currentColor;border-block-end:1.6px solid currentColor;
+  transform:rotate(-45deg);transition:transform .18s var(--ease);
+}
+.insight-disclosure[open]>summary::before{transform:rotate(45deg)}
+.insight-disclosure>summary:hover{color:var(--accent-strong)}
+.insight-method{margin-top:var(--s3);color:var(--muted);font-size:var(--t-sm);line-height:1.75;max-width:64ch}
+
 @media screen and (max-width:900px){
   .intel-insight-workspace{grid-template-columns:minmax(0,1fr)}
   .insight-preview-rail{position:static}

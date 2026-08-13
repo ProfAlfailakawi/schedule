@@ -117,6 +117,15 @@ function professorWeekShape(rows: any[]) {
 }
 
 type Tab = "command" | "copilot" | "twin" | "history" | "import";
+type InsightScene =
+  | "quality"
+  | "attention"
+  | "density"
+  | "spatial"
+  | "rooms"
+  | "professors"
+  | "health"
+  | "genome";
 type ChatItem = { prompt: string; answer: any };
 interface Props {
   user: any;
@@ -160,10 +169,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [error, setError] = useState<string | null>(null),
     [message, setMessage] = useState<string | null>(null);
   const [heatMode, setHeatMode] = useState("department"),
-    [detail, setDetail] = useState<any>(null);
+    [detail, setDetail] = useState<any>(null),
+    [insightScene, setInsightScene] = useState<InsightScene>("quality");
   const [prompt, setPrompt] = useState(""),
     [chat, setChat] = useState<ChatItem[]>([]),
     chatEnd = useRef<HTMLDivElement | null>(null);
+  const drawerClose = useRef<HTMLButtonElement | null>(null),
+    drawerReturnFocus = useRef<HTMLElement | null>(null),
+    reduceMotion = useRef(false);
   const [scenario, setScenario] = useState<FSchedule[] | null>(null),
     [scenarioEval, setScenarioEval] = useState<any>(null),
     [scenarioId, setScenarioId] = useState<number | "">(""),
@@ -223,6 +236,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       window.removeEventListener("online", up);
       window.removeEventListener("offline", down);
     };
+  }, []);
+  useEffect(() => {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => {
+      reduceMotion.current = query.matches;
+    };
+    sync();
+    query.addEventListener?.("change", sync);
+    return () => query.removeEventListener?.("change", sync);
   }, []);
   useEffect(() => {
     (async () => {
@@ -312,8 +334,29 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     if (collegeId && sectionId && termId) void reload();
   }, [collegeId, sectionId, termId]);
   useEffect(() => {
-    chatEnd.current?.scrollIntoView({ behavior: "smooth" });
+    chatEnd.current?.scrollIntoView({
+      behavior: reduceMotion.current ? "auto" : "smooth",
+    });
   }, [chat]);
+  const detailOpen = Boolean(detail);
+  useEffect(() => {
+    if (!detailOpen) return;
+    drawerReturnFocus.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const frame = window.requestAnimationFrame(() => drawerClose.current?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDetail(null);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onKeyDown);
+      drawerReturnFocus.current?.focus();
+      drawerReturnFocus.current = null;
+    };
+  }, [detailOpen]);
   useEffect(()=>{if(versions.length>=2){setVersionFrom(v=>v||String(versions[1].id));setVersionTo(v=>v||String(versions[0].id));}},[versions]);
   useEffect(() => {
     if (!scenario) return;
@@ -861,6 +904,114 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setTab(
       value === "understand" ? "command" : value === "try" ? "twin" : "history",
     );
+  const insightScenes: Array<{
+    value: InsightScene;
+    label: string;
+    detail: string;
+    metric: string;
+    icon: React.ReactNode;
+  }> = overview
+    ? [
+        {
+          value: "quality",
+          label: "الجودة والجاهزية",
+          detail: readinessLabel,
+          metric: `${overview.score}/100`,
+          icon: <Gauge />,
+        },
+        {
+          value: "attention",
+          label: "الانتباه",
+          detail: "المواضع التي تستحق قرارك أولاً",
+          metric: String(overview.alerts?.length || 0),
+          icon: <AlertTriangle />,
+        },
+        {
+          value: "density",
+          label: "الكثافة",
+          detail: "شكل الضغط عبر الأيام والأوقات",
+          metric: String(
+            Math.max(
+              0,
+              ...heatData.map((item: any) => Number(item.count) || 0),
+            ),
+          ),
+          icon: <BarChart3 />,
+        },
+        ...(overview.spatialBurnout
+          ? [
+              {
+                value: "spatial" as const,
+                label: "الحركة المكانية",
+                detail: "راحة الانتقال بين المباني والقاعات",
+                metric: `${overview.spatialBurnout.score}/100`,
+                icon: <Building2 />,
+              },
+            ]
+          : []),
+        {
+          value: "rooms",
+          label: "القاعات",
+          detail: "الاستخدام والنوافذ المتاحة",
+          metric: String(overview.rooms?.length || 0),
+          icon: <Building2 />,
+        },
+        {
+          value: "professors",
+          label: "الأساتذة",
+          detail: "الحمل الأسبوعي والفراغات الطويلة",
+          metric: String(overview.professorLoads?.length || 0),
+          icon: <UsersRound />,
+        },
+        {
+          value: "health",
+          label: "صحة البيانات",
+          detail: "النواقص والتكرار قبل أن تصبح مشكلة",
+          metric: overview.dataHealth?.healthy
+            ? "سليمة"
+            : String(overview.dataHealth?.invalidRows || 0),
+          icon: <CheckCircle2 />,
+        },
+        ...(genome
+          ? [
+              {
+                value: "genome" as const,
+                label: "بصمة القسم",
+                detail: "النمط المتكرر عبر الفصول",
+                metric:
+                  genome.compatibility == null
+                    ? "—"
+                    : `${genome.compatibility}%`,
+                icon: <Dna />,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const activeInsight =
+    insightScenes.find((item) => item.value === insightScene) ||
+    insightScenes[0];
+  const activeInsightKey = activeInsight?.value || "quality";
+  const moveInsightFocus = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ) => {
+    let next = index;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight")
+      next = (index + 1) % insightScenes.length;
+    else if (event.key === "ArrowUp" || event.key === "ArrowLeft")
+      next = (index - 1 + insightScenes.length) % insightScenes.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = insightScenes.length - 1;
+    else return;
+    event.preventDefault();
+    const value = insightScenes[next]?.value;
+    if (!value) return;
+    setInsightScene(value);
+    window.requestAnimationFrame(() =>
+      document.getElementById(`insight-tab-${value}`)?.focus(),
+    );
+  };
 
   return (
     <div className={`content-stack intelligence-page scene-${scene}`}>
@@ -871,7 +1022,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         مركز الذكاء
       </PageTitle>
       <ContextBar />
-      <div className="intelligence-scenes no-print">
+      <nav className="intelligence-scenes no-print" aria-label="مراحل مركز الذكاء">
         <Segmented
           value={scene}
           onChange={changeScene}
@@ -909,49 +1060,114 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               ? "تجريبي · خارج الجدول الحقيقي"
               : "مسودات · نشر · نسخ · تراجع"}
         </span>
-      </div>
+      </nav>
       {scene === "understand" ? (
-        <div className="scene-subnav no-print">
+        <nav className="scene-subnav no-print" aria-label="أدوات الفهم">
           <button
+            type="button"
             className={tab === "command" ? "active" : ""}
+            aria-pressed={tab === "command"}
             onClick={() => setTab("command")}
           >
             <Gauge /> قراءة القرار
           </button>
           <button
+            type="button"
             className={tab === "copilot" ? "active" : ""}
+            aria-pressed={tab === "copilot"}
             onClick={() => setTab("copilot")}
           >
             <BrainCircuit /> اسأل الجدول
           </button>
-        </div>
+        </nav>
       ) : scene === "try" ? (
-        <div className="scene-subnav no-print">
+        <nav className="scene-subnav no-print" aria-label="أدوات التجربة">
           <button
+            type="button"
             className={tab === "twin" ? "active" : ""}
+            aria-pressed={tab === "twin"}
             onClick={() => setTab("twin")}
           >
             <Network /> النسخة التجريبية
           </button>
           <button
+            type="button"
             className={tab === "import" ? "active" : ""}
+            aria-pressed={tab === "import"}
             onClick={() => setTab("import")}
           >
             <FileSpreadsheet /> استيراد آمن
           </button>
-        </div>
+        </nav>
       ) : null}
       {error ? <Notice>{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
       {loading && !overview ? (
-        <div className="intel-loading">
+        <div className="intel-loading" role="status" aria-live="polite">
           <span />
           <strong>أقرأ الجدول وأبني صورة القرار...</strong>
         </div>
       ) : null}
 
       {tab === "command" && overview ? (
-        <div className="intel-command-grid">
+        <div className="intel-command-grid intel-insight-workspace">
+          <nav
+            className="insight-preview-rail no-print"
+            aria-label="مشاهد قراءة القرار"
+          >
+            <div className="insight-preview-head">
+              <span className="surface-kicker">مشاهد الذكاء</span>
+              <strong>اختر قراءة واحدة</strong>
+              <small>رقم واحد، ثم التفاصيل عند اختيارك.</small>
+            </div>
+            <div
+              className="insight-preview-list"
+              role="tablist"
+              aria-orientation="vertical"
+            >
+              {insightScenes.map((item, index) => {
+                const selected = activeInsightKey === item.value;
+                return (
+                  <button
+                    type="button"
+                    key={item.value}
+                    id={`insight-tab-${item.value}`}
+                    className={`insight-preview ${selected ? "active" : ""}`}
+                    role="tab"
+                    aria-selected={selected}
+                    aria-controls={`insight-panel-${item.value}`}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() => setInsightScene(item.value)}
+                    onKeyDown={(event) => moveInsightFocus(event, index)}
+                  >
+                    <span className="insight-preview-icon" aria-hidden="true">
+                      {item.icon}
+                    </span>
+                    <span className="insight-preview-copy">
+                      <strong>{item.label}</strong>
+                      <small>{item.detail}</small>
+                    </span>
+                    <b>{item.metric}</b>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+          <section
+            className="insight-canvas"
+            aria-label={activeInsight?.label || "قراءة القرار"}
+          >
+            <p className="sr-only" role="status" aria-live="polite">
+              المشهد الحالي: {activeInsight?.label}. {activeInsight?.detail}
+            </p>
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-quality"
+              role="tabpanel"
+              aria-labelledby="insight-tab-quality"
+              hidden={activeInsightKey !== "quality"}
+              tabIndex={activeInsightKey === "quality" ? 0 : -1}
+            >
           <Surface className="quality-hero">
             <div
               className="quality-orbit"
@@ -977,18 +1193,29 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 much of the score it took, the ones that took nothing say so in
                 words, and the whole row adds up to the number in the ring.
               */}
-              <div className="quality-factors" role="img" aria-label="توزيع نقاط الجودة">
-                {overview.factors.map((f: any) => {
-                  const cost = Math.max(0, Number(f.penalty) || 0);
-                  return (
-                    <span key={f.label} className={cost ? "costly" : "clean"}>
-                      <em>{f.label}</em>
-                      <i aria-hidden="true"><b style={{ width: `${Math.min(100, cost * 2)}%` }} /></i>
-                      <u>{cost ? `−${cost}` : "سليم"}</u>
-                    </span>
-                  );
-                })}
-              </div>
+              <details className="insight-disclosure quality-breakdown">
+                <summary>كيف تكوّنت الدرجة؟</summary>
+                <div
+                  className="quality-factors"
+                  role="img"
+                  aria-label="توزيع نقاط الجودة"
+                >
+                  {overview.factors.map((f: any) => {
+                    const cost = Math.max(0, Number(f.penalty) || 0);
+                    return (
+                      <span key={f.label} className={cost ? "costly" : "clean"}>
+                        <em>{f.label}</em>
+                        <i aria-hidden="true">
+                          <b
+                            style={{ width: `${Math.min(100, cost * 2)}%` }}
+                          />
+                        </i>
+                        <u>{cost ? `−${cost}` : "سليم"}</u>
+                      </span>
+                    );
+                  })}
+                </div>
+              </details>
             </div>
             <div className="quality-actions">
               <PrimaryButton onClick={autoSchedule} disabled={busy}>
@@ -1046,6 +1273,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </span>
             </div>
           </Surface>
+            </div>
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-attention"
+              role="tabpanel"
+              aria-labelledby="insight-tab-attention"
+              hidden={activeInsightKey !== "attention"}
+              tabIndex={activeInsightKey === "attention" ? 0 : -1}
+            >
           <Surface className="attention-center">
             <div className="surface-head">
               <div>
@@ -1055,7 +1291,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <AlertTriangle />
             </div>
             <div className="smart-alerts">
-              {overview.alerts.map((a: any, i: number) => (
+              {overview.alerts.slice(0, 3).map((a: any, i: number) => (
                 <article key={i} className={a.severity}>
                   <span />
                   <div>
@@ -1065,7 +1301,34 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </article>
               ))}
             </div>
+            {overview.alerts.length > 3 ? (
+              <details className="insight-disclosure alert-disclosure">
+                <summary>
+                  عرض {overview.alerts.length - 3} تنبيهات إضافية
+                </summary>
+                <div className="smart-alerts">
+                  {overview.alerts.slice(3).map((a: any, i: number) => (
+                    <article key={i + 3} className={a.severity}>
+                      <span />
+                      <div>
+                        <strong>{a.title}</strong>
+                        <p>{a.detail}</p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </details>
+            ) : null}
           </Surface>
+            </div>
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-density"
+              role="tabpanel"
+              aria-labelledby="insight-tab-density"
+              hidden={activeInsightKey !== "density"}
+              tabIndex={activeInsightKey === "density" ? 0 : -1}
+            >
           <Surface className="heatmap-card">
             <div className="surface-head">
               <div>
@@ -1099,16 +1362,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     );
                     const ratio = (cell?.count || 0) / heatMax;
                     return (
-                      <button
-                        type="button"
+                      <span
                         key={`${day}-${time}`}
                         className="heat-cell"
                         style={{ "--heat": ratio } as React.CSSProperties}
+                        role="img"
+                        aria-label={`${dayLabels[day]}، الساعة ${time}، ${cell?.count || 0} مواعيد`}
                         title={`${dayLabels[day]} ${time}: ${cell?.count || 0}`}
                       >
-                        <i />
+                        <i aria-hidden="true" />
                         {ratio > 0.62 ? <b>{cell?.count}</b> : null}
-                      </button>
+                      </span>
                     );
                   })}
                 </React.Fragment>
@@ -1122,8 +1386,21 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <i />
               <span>ذروة</span>
             </div>
+            <details className="insight-disclosure">
+              <summary>كيف وصلنا لهذه النتيجة؟</summary>
+              <p className="insight-method">تُحسب الكثافة بعدّ المواعيد المتزامنة في كل خانة (يوم × ساعة) داخل النطاق المختار، ثم تُقارن كل خانة بالخانة الأعلى ازدحامًا لتحديد شدّة التلوين.</p>
+            </details>
           </Surface>
+            </div>
           {overview.spatialBurnout ? (
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-spatial"
+              role="tabpanel"
+              aria-labelledby="insight-tab-spatial"
+              hidden={activeInsightKey !== "spatial"}
+              tabIndex={activeInsightKey === "spatial" ? 0 : -1}
+            >
             <Surface className="spatial-burnout-card">
               <div className="surface-head">
                 <div>
@@ -1172,8 +1449,21 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   ))}
                 </div>
               ) : null}
+              <details className="insight-disclosure">
+                <summary>كيف وصلنا لهذه النتيجة؟</summary>
+                <p className="insight-method">تنظر الدرجة إلى كل انتقال بين مبنيين لأستاذٍ في اليوم نفسه، وتقارن الفراغ المتاح بالزمن اللازم للتنقّل؛ كل انتقال أضيق من اللازم يخفض «راحة الحركة».</p>
+              </details>
             </Surface>
+            </div>
           ) : null}
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-rooms"
+              role="tabpanel"
+              aria-labelledby="insight-tab-rooms"
+              hidden={activeInsightKey !== "rooms"}
+              tabIndex={activeInsightKey === "rooms" ? 0 : -1}
+            >
           <Surface className="room-intelligence">
             <div className="surface-head">
               <div>
@@ -1203,7 +1493,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </button>
               ))}
             </div>
+            <details className="insight-disclosure">
+              <summary>كيف وصلنا لهذه النتيجة؟</summary>
+              <p className="insight-method">الاستخدام التقديري لكل قاعة = ساعات إشغالها ÷ ساعات اليوم الرسمية (08:00–20:00) على مدى أيام النطاق، والترتيب حسب عدد المواعيد.</p>
+            </details>
           </Surface>
+            </div>
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-professors"
+              role="tabpanel"
+              aria-labelledby="insight-tab-professors"
+              hidden={activeInsightKey !== "professors"}
+              tabIndex={activeInsightKey === "professors" ? 0 : -1}
+            >
           <Surface className="professor-intelligence">
             <div className="surface-head">
               <div>
@@ -1231,7 +1534,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </button>
               ))}
             </div>
+            <details className="insight-disclosure">
+              <summary>كيف وصلنا لهذه النتيجة؟</summary>
+              <p className="insight-method">يجمع الحمل الساعات الأسبوعية وعدد أيام الحضور لكل عضو، مع أطول فراغٍ متصل بين محاضرتين في اليوم نفسه.</p>
+            </details>
           </Surface>
+            </div>
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-health"
+              role="tabpanel"
+              aria-labelledby="insight-tab-health"
+              hidden={activeInsightKey !== "health"}
+              tabIndex={activeInsightKey === "health" ? 0 : -1}
+            >
           <Surface className="data-health">
             <div className="surface-head">
               <div>
@@ -1254,8 +1570,21 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               هذه القراءة لا تحذف ولا تصحح شيئاً تلقائياً؛ هدفها فقط كشف ما قد
               يفوت أثناء العمل السريع.
             </p>
+            <details className="insight-disclosure">
+              <summary>كيف وصلنا لهذه النتيجة؟</summary>
+              <p className="insight-method">الفحص يعدّ الصفوف الناقصة، والتكرارات (نفس المقرر والشعبة والوقت)، والمقررات بلا موعد داخل النطاق المختار — دون أي تعديل تلقائي.</p>
+            </details>
           </Surface>
+            </div>
           {genome ? (
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-genome"
+              role="tabpanel"
+              aria-labelledby="insight-tab-genome"
+              hidden={activeInsightKey !== "genome"}
+              tabIndex={activeInsightKey === "genome" ? 0 : -1}
+            >
             <Surface className="schedule-genome">
               <div className="surface-head">
                 <div>
@@ -1302,6 +1631,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   ))}
                 </div>
               </div>
+              <details className="insight-disclosure genome-details">
+                <summary>كيف وصلنا إلى هذه القراءة؟</summary>
               <div className="genome-patterns">
                 <section>
                   <span>نمط ساعات البداية</span>
@@ -1345,6 +1676,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     </article>
                   ))}
               </div>
+              </details>
               <div className="genome-foot">
                 <History />
                 <span>
@@ -1354,7 +1686,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </span>
               </div>
             </Surface>
+            </div>
           ) : null}
+          </section>
         </div>
       ) : null}
 

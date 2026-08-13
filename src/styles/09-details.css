@@ -228,7 +228,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   isolation:isolate;
   display:grid;place-items:center;padding:var(--s5);
   background:color-mix(in srgb,var(--nav) 86%,transparent);
-  backdrop-filter:blur(8px);
   animation:fade .18s var(--ease) both;
 }
 .share-sheet{
@@ -334,6 +333,22 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   background:var(--surface);color:var(--muted);
 }
 .share-row-actions button svg,.share-row-actions a svg{width:15px;height:15px}
+.share-row-actions button.active{border-color:var(--accent);color:var(--accent);background:var(--accent-softer)}
+/* The QR drops onto its own row under the link; the encoder draws a scalable
+   SVG, kept on a white card so it stays high-contrast and scannable in any theme. */
+.share-qr{
+  grid-column:1/-1;
+  display:flex;flex-direction:column;align-items:center;gap:var(--s2);
+  margin-top:var(--s2);padding-top:var(--s4);
+  border-top:1px solid var(--line);
+}
+.share-qr-code{
+  width:154px;height:154px;padding:var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:#fff;
+}
+.share-qr-code svg{display:block;width:100%;height:100%}
+.share-qr small{color:var(--muted);font-size:var(--t-xs)}
 .share-row-actions button:hover:not(:disabled),.share-row-actions a:hover{border-color:var(--accent);color:var(--accent)}
 .share-row-actions button:disabled,.share-row-actions a.muted{opacity:.4;pointer-events:none}
 .share-empty{padding:var(--s6);text-align:center;color:var(--muted);font-size:var(--t-sm)}
@@ -455,7 +470,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   display:grid;place-items:center;
   padding:var(--s5);
   background:color-mix(in srgb,var(--nav) 62%,transparent);
-  backdrop-filter:blur(6px);
   animation:fade .18s var(--ease) both;
 }
 .review-sheet{
@@ -692,7 +706,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   position:fixed;inset:0;z-index:140;
   display:grid;place-items:center;padding:var(--s5);
   background:color-mix(in srgb,var(--nav) 62%,transparent);
-  backdrop-filter:blur(6px);
   animation:fade .18s var(--ease) both;
 }
 .transfer-sheet{

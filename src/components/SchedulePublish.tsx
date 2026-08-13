@@ -73,7 +73,8 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     [copied, setCopied] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null),
     [step, setStep] = useState<PublishStep>("kind"),
-    [createdId, setCreatedId] = useState<string | null>(null);
+    [createdId, setCreatedId] = useState<string | null>(null),
+    [qr, setQr] = useState<{ id: string; svg: string } | null>(null);
 
   const scoped = Boolean(collegeId && sectionId && termId);
 
@@ -127,6 +128,19 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
   };
 
   const publicUrl = (id: string) => `${window.location.origin}/s/${id}`;
+  // The QR encodes the same public link. The ~50KB encoder is lazy-loaded, so it
+  // only ships to the browser when someone actually asks for a code.
+  const showQr = async (id: string) => {
+    if (qr?.id === id) { setQr(null); return; }
+    try {
+      type QrFactory = (t: number, e: "L" | "M" | "Q" | "H") => { addData(s: string): void; make(): void; createSvgTag(o?: { cellSize?: number; margin?: number; scalable?: boolean }): string };
+      const factory = (await import("../utils/qrcodeGenerator")).default as unknown as QrFactory;
+      const code = factory(0, "M");
+      code.addData(publicUrl(id));
+      code.make();
+      setQr({ id, svg: code.createSvgTag({ scalable: true, margin: 1 }) });
+    } catch { setError("تعذّر توليد رمز QR."); }
+  };
 
   const copy = async (id: string) => {
     const url = publicUrl(id);
@@ -350,6 +364,17 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                         <div className="share-row-actions" aria-label={`إجراءات الرابط ${link.label || link.id.slice(0, 6)}`}>
                           <button
                             type="button"
+                            className={qr?.id === link.id ? "active" : ""}
+                            title="رمز QR"
+                            aria-label="عرض رمز QR للرابط"
+                            aria-pressed={qr?.id === link.id}
+                            onClick={() => showQr(link.id)}
+                            disabled={dead}
+                          >
+                            <QrCode />
+                          </button>
+                          <button
+                            type="button"
                             title={copied === link.id ? "تم النسخ" : "نسخ الرابط"}
                             aria-label={copied === link.id ? "تم نسخ الرابط" : "نسخ الرابط"}
                             onClick={() => copy(link.id)}
@@ -373,6 +398,12 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                             <Trash2 />
                           </button>
                         </div>
+                        {qr?.id === link.id ? (
+                          <div className="share-qr">
+                            <div className="share-qr-code" role="img" aria-label={`رمز QR للرابط ${link.label || link.id.slice(0, 6)}`} dangerouslySetInnerHTML={{ __html: qr.svg }} />
+                            <small>وجّه كاميرا الهاتف على الرمز لفتح الجدول المنشور.</small>
+                          </div>
+                        ) : null}
                       </article>
                     );
                   })

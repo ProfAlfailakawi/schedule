@@ -367,7 +367,6 @@ html[data-schedule-workspace="focus"] .schedule-control{
 .signature-backdrop{
   position:fixed;inset:0;z-index:120;
   background:color-mix(in srgb,var(--nav) 62%,transparent);
-  backdrop-filter:blur(6px);
   animation:fade .18s var(--ease) both;
 }
 
