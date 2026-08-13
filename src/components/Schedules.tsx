@@ -16,6 +16,9 @@ import {
   History,
   Hourglass,
   Layers,
+  Palette,
+  ShieldCheck,
+  Undo2,
   LayoutList,
   Lightbulb,
   MapPin,
@@ -90,6 +93,7 @@ import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
+import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, pickLive } from "../utils/weekVisual";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -197,8 +201,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [error, setError] = useState<string | null>(null),
     [message, setMessage] = useState<string | null>(null),
     [saving, setSaving] = useState(false),
+    /* Refusing a bad drop outright, instead of warning about it — the reader's
+       choice, remembered. And whether colour means "which course" or "which
+       instructor", likewise. */
+    [strictNoConflict, setStrictNoConflict] = useState<boolean>(Boolean(savedPrefs.strictNoConflict)),
+    [hueBy, setHueBy] = useState<"course" | "instructor">(savedPrefs.hueBy === "instructor" ? "instructor" : "course"),
+    /* Cards moved in the last minute, keyed to the undo entry that reverses
+       them — the pill each one wears is the undo, in place. */
+    [recentMoves, setRecentMoves] = useState<Record<number, string>>({}),
+    /* Which day the rooms matrix is reading. */
+    [matrixDay, setMatrixDay] = useState<DayKey | null>(null),
     [viewMode, setViewMode] = useState(
-      savedPrefs.viewMode === "week" ? "week" : "list",
+      savedPrefs.viewMode === "week" ? "week" : savedPrefs.viewMode === "rooms" ? "rooms" : "list",
     ),
     [conflicts, setConflicts] = useState<any[]>([]),
     [checking, setChecking] = useState(false),
@@ -536,13 +550,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     }
   };
   const offerUndo = (label: string, steps: UndoStep[]) => {
-    if (!steps.length) return;
+    if (!steps.length) return "";
     const entry: UndoEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       label, at: Date.now(), steps,
     };
     setUndoLog(current => [entry, ...current].slice(0, UNDO_LOG_LIMIT));
     setUndoBarId(entry.id);
+    // The id goes back to the caller so the moved card itself can wear it.
+    return entry.id;
   };
   // A saved row, reduced to the one request that would put it back as it was.
   const restoreStep = (snapshot: FSchedule): UndoStep => {
@@ -698,7 +714,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           setFilterSection(defaultSection);
           // A stale preference must never silently reopen a decade-old term.
           setFilterTerm(latestTermId);
-          setViewMode(pref.viewMode === "week" ? "week" : "list");
+          setViewMode(pref.viewMode === "week" ? "week" : pref.viewMode === "rooms" ? "rooms" : "list");
           const qp = new URLSearchParams({ termId: String(latestTermId) });
           if (defaultCollege) qp.set("collegeId", String(defaultCollege));
           if (defaultSection) qp.set("sectionId", String(defaultSection));
@@ -726,6 +742,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         lastRoomCode: form.AdRoomCode || savedPrefs.lastRoomCode || "",
         lastRoomHall: form.AdRoomHall || savedPrefs.lastRoomHall || "",
         lastSaved: lastSavedRef.current || savedPrefs.lastSaved || null,
+        strictNoConflict,
+        hueBy,
       }),
     );
     setVisibleLimit(120);
@@ -734,6 +752,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     filterSection,
     filterTerm,
     viewMode,
+    strictNoConflict,
+    hueBy,
     form.AdRoomCode,
     form.AdRoomHall,
     mode,
@@ -1772,7 +1792,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         // that is itself about to move is not a real clash.
         const partyIds = new Set(moves.map(m => m.before.id));
         const blocking = (Array.isArray(check.conflicts) ? check.conflicts : [])
-          .filter((c: any) => c?.severity === "high" || c?.type === "duplicate")
+          /* Strict mode turns every conflict into a wall; otherwise only the
+             impossible ones — a doubled room, a doubled instructor — refuse. */
+          .filter((c: any) => strictNoConflict || c?.severity === "high" || c?.type === "duplicate")
           .filter((c: any) => !partyIds.has(Number(c?.rowId)) && !partyIds.has(Number(c?.otherId)));
         if (blocking.length) {
           setPhysicsNotice("");
@@ -1799,12 +1821,94 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       markChanged(row.id);
       setPhysicsNotice("");
       const label = days.find(d => d.key === day)?.label || "";
-      offerUndo(
+      const undoId = offerUndo(
         moves.length > 1
           ? `نُقل ${moves.length} مواعيد إلى ${label} ${target.start}`
           : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${target.start}`,
         moves.map(move => restoreStep(move.before)),
       );
+      /* The moved cards wear their own undo for a minute. */
+      if (undoId) {
+        const movedIds = moves.map(m => m.before.id);
+        setRecentMoves(current => {
+          const next = { ...current };
+          movedIds.forEach(id => { next[id] = undoId; });
+          return next;
+        });
+        window.setTimeout(() => {
+          setRecentMoves(current => {
+            const next = { ...current };
+            movedIds.forEach(id => { if (next[id] === undoId) delete next[id]; });
+            return next;
+          });
+        }, 60_000);
+      }
+      void loadRows();
+    } catch (e: any) {
+      setError(friendlyError(e));
+      void loadRows();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /**
+   * The matrix's move: same day, new hour and-or new room.
+   *
+   * Deliberately the same shape as commitMove — conflict gate first (strict
+   * mode makes every conflict a wall), optimistic grid, one PUT per row, an
+   * undo entry, and the moved card wearing its own way back for a minute.
+   */
+  const commitRoomMove = async (row: FSchedule, day: DayKey, start: string, building: string, hall: string) => {
+    const duration = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
+    const end = timeFromMins(Math.min(23 * 60 + 30, mins(start) + duration));
+    const unchanged = row.fstarttime === start &&
+      String(row.AdRoomCode || "") === building && String(row.AdRoomHall || "") === hall;
+    if (unchanged) return;
+    const after: FSchedule = { ...row, fstarttime: start, fendtime: end, AdRoomCode: building, AdRoomHall: hall } as FSchedule;
+    setSaving(true);
+    setError(null);
+    try {
+      const probe: any = { ...after };
+      delete probe.id;
+      delete probe.AdCourseName;
+      const check = await fetchJson("/api/schedules/check-conflicts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...probe, excludeId: row.id }),
+      });
+      const blocking = (Array.isArray(check.conflicts) ? check.conflicts : [])
+        .filter((c: any) => strictNoConflict || c?.severity === "high" || c?.type === "duplicate");
+      if (blocking.length) {
+        setError(`لم يُنقل: ${describeConflict(blocking)}`);
+        return;
+      }
+      setRows(current => current.map(item => (item.id === row.id ? after : item)));
+      const payload: any = { ...after };
+      delete payload.id;
+      delete payload.AdCourseName;
+      await fetchJson(`/api/schedules/${row.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      markChanged(row.id);
+      const place = [building, hall].filter(Boolean).join("/") || "بلا قاعة";
+      const undoId = offerUndo(
+        `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${place} ${start}`,
+        [restoreStep(row)],
+      );
+      if (undoId) {
+        setRecentMoves(current => ({ ...current, [row.id]: undoId }));
+        window.setTimeout(() => {
+          setRecentMoves(current => {
+            if (current[row.id] !== undoId) return current;
+            const next = { ...current };
+            delete next[row.id];
+            return next;
+          });
+        }, 60_000);
+      }
       void loadRows();
     } catch (e: any) {
       setError(friendlyError(e));
@@ -1926,19 +2030,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * and that is answerable without disturbing the order at all: at most two
    * cards out of several hundred carry a mark, and on a weekend, none do.
    */
-  const liveNow = useMemo(() => {
-    const running = new Set<number>();
-    if (!todayKey) return { running, next: null as number | null };
-    let next: { id: number; start: number } | null = null;
-    filteredRows.forEach(row => {
-      if (!(row as any)[todayKey]) return;
-      const start = mins(row.fstarttime), end = mins(row.fendtime);
-      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
-      if (nowMinutes >= start && nowMinutes < end) { running.add(row.id); return; }
-      if (start > nowMinutes && (!next || start < next.start)) next = { id: row.id, start };
-    });
-    return { running, next: next ? (next as { id: number }).id : null };
-  }, [filteredRows, todayKey, nowMinutes]);
+  const liveNow = useMemo(
+    () => pickLive(filteredRows as any, todayKey, nowMinutes),
+    [filteredRows, todayKey, nowMinutes],
+  );
   /**
    * How heavily each day is actually taught, as a share of the heaviest day.
    *
@@ -1947,19 +2042,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * remotely the same day. Taught minutes say which is which, so the strip can
    * show the pressure before the day is opened.
    */
-  const dayLoad = useMemo(() => {
-    const minutesByDay: Record<string, number> = {};
-    days.forEach(day => { minutesByDay[day.key] = 0; });
-    weekRows.forEach(row => {
-      const span = mins(row.fendtime) - mins(row.fstarttime);
-      if (!Number.isFinite(span) || span <= 0) return;
-      days.forEach(day => { if ((row as any)[day.key]) minutesByDay[day.key] += span; });
-    });
-    const heaviest = Math.max(1, ...days.map(day => minutesByDay[day.key]));
-    const share: Record<string, number> = {};
-    days.forEach(day => { share[day.key] = Math.round((minutesByDay[day.key] / heaviest) * 100); });
-    return { minutesByDay, share };
-  }, [weekRows]);
+  const dayLoad = useMemo(() => computeDayLoad(weekRows as any), [weekRows]);
   const gridWindow = useMemo(() => {
     const starts = weekRows.map(row => mins(row.fstarttime)).filter(value => Number.isFinite(value));
     const ends = weekRows.map(row => mins(row.fendtime)).filter(value => Number.isFinite(value));
@@ -2031,8 +2114,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * concurrent hour is split — which is what a person means when they say a
    * timetable is readable.
    */
-  /** A single-day block this long is a workshop or a laboratory, not a lecture. */
-  const LONG_BLOCK = 150;
+  /**
+   * The slim vertical rails are retired.
+   *
+   * Long workshops used to step out of the lanes into rotated slivers at the
+   * column's edge — and the field said no: this grid reads horizontally,
+   * always. With the threshold at infinity every workshop stays in the lane
+   * flow, and when a crowd of them collides the woven hour takes over and
+   * lays them as horizontal, named, draggable slices.
+   */
+  const LONG_BLOCK = Number.POSITIVE_INFINITY;
   const weekLayout = useMemo(() => {
     type Placed = { row: FSchedule; top: number; height: number; lane: number; span: number; lanes: number; spine?: number };
     const layout: Record<string, { items: Placed[]; spine: Placed[]; busiest: number }> = {};
@@ -2140,43 +2231,30 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const byDay: Record<string, Bundle[]> = {};
     const bundled: Record<string, Set<number>> = {};
     for (const day of days) {
-      /* Membership is per-card, not per-chain: a chain can run from eight to
-         two o'clock with its crush at ten only. A card joins the weave when it
-         is genuinely squeezed — five-plus lanes AND holding two lanes or fewer
-         itself. The solitary lecture at the chain's tail spans its lanes in
-         full, fails the test, and stays an ordinary readable card. */
-      const items = (weekLayout[day.key]?.items || [])
-        .filter(x => x.lanes >= BUNDLE_LANES && x.span <= 2)
-        .slice()
-        .sort((a, b) => a.top - b.top);
-      const clusters: Array<typeof items> = [];
-      let cluster: typeof items = [];
-      let clusterBottom = -1;
-      for (const item of items) {
-        if (cluster.length && item.top < clusterBottom) {
-          cluster.push(item);
-          clusterBottom = Math.max(clusterBottom, item.top + item.height);
-        } else {
-          if (cluster.length) clusters.push(cluster);
-          cluster = [item];
-          clusterBottom = item.top + item.height;
-        }
-      }
-      if (cluster.length) clusters.push(cluster);
+      /* Membership and clustering live in utils/weekVisual (clusterSqueezed),
+         where the per-card rule — five-plus lanes, two spans or fewer — and
+         the chain-tail exemption are documented and under test. */
+      const items = weekLayout[day.key]?.items || [];
+      const rowById = new Map(items.map(item => [item.row.id, item.row]));
+      const clusters = clusterSqueezed(
+        items.map(item => ({ id: item.row.id, top: item.top, height: item.height, lanes: item.lanes, span: item.span })),
+        BUNDLE_LANES,
+      );
       const dayBundles: Bundle[] = [];
       const ids = new Set<number>();
-      clusters.forEach(group => {
-        if (group.length < BUNDLE_LANES) return;
-        const top = Math.min(...group.map(x => x.top));
-        const bottom = Math.max(...group.map(x => x.top + x.height));
-        const rows = group.map(x => x.row).sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime));
+      clusters.forEach(cluster => {
+        const rows = cluster.ids
+          .map(id => rowById.get(id))
+          .filter((row): row is FSchedule => Boolean(row))
+          .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime));
+        if (!rows.length) return;
         const from = rows.reduce((m, r) => Math.min(m, mins(r.fstarttime)), Number.POSITIVE_INFINITY);
         const to = rows.reduce((m, r) => Math.max(m, mins(r.fendtime)), 0);
-        group.forEach(x => ids.add(x.row.id));
+        rows.forEach(row => ids.add(row.id));
         dayBundles.push({
           key: `${day.key}:${rows.map(r => r.id).join("-")}`,
-          top,
-          height: bottom - top,
+          top: cluster.top,
+          height: cluster.bottom - cluster.top,
           from: timeFromMins(from),
           to: timeFromMins(to),
           rows,
@@ -2266,7 +2344,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""}`}
-        style={{ ...style, ["--hue" as any]: courseHue(code, title) }}
+        style={{ ...style, ["--hue" as any]: hueFor(code, title, i?.AdInstructorName) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
         onPointerLeave={() => setPeek(current => (current?.row.id === r.id ? null : current))}
         onFocus={(e) => openPeek(r, e.currentTarget)}
@@ -2286,9 +2364,38 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
         <small className="week-when"><time dir="ltr">{r.fstarttime}–{r.fendtime}</time>{place ? <i>{place}</i> : null}</small>
         <em className="week-code" dir="ltr">{code}<b dir="ltr">{r.SCode}</b></em>
+        {(() => {
+          /* The card that just landed says so, and carries its own way back:
+             one press undoes exactly this move — no hunting through a log. */
+          const undoId = recentMoves[r.id];
+          const entry = undoId ? undoLog.find(item => item.id === undoId && !item.usedAt) : null;
+          if (!entry) return null;
+          return (
+            <button
+              type="button"
+              className="week-moved-pill"
+              title={`${entry.label} — اضغط للتراجع`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                void runUndoEntry(entry);
+                setRecentMoves(current => {
+                  const next = { ...current };
+                  delete next[r.id];
+                  return next;
+                });
+              }}
+            >
+              <Undo2 aria-hidden="true" />تراجع
+            </button>
+          );
+        })()}
       </article>
     );
   };
+  /** One switch decides what colour answers: "which course?" or "whose?" */
+  const hueFor = (code: string, title: string, instructorName?: string) =>
+    hueBy === "instructor" ? courseHue(instructorName || "بدون أستاذ", "") : courseHue(code, title);
 
   /**
    * Colour as information.
@@ -2298,20 +2405,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * single word — and five concurrent lectures separate instantly. Red is never
    * assigned; it stays reserved for conflicts.
    */
-  const COURSE_HUES = [158, 200, 262, 320, 38, 96, 178, 226, 288, 18];
-  /* FNV-1a over code AND name. The old 31-multiply over the code alone turned
-     this department's short numeric codes — 112, 113, 491 — into one violet
-     family and the whole grid went monochrome. Mixing every byte and folding
-     the course's own name in spreads neighbours across the wheel. */
-  const courseHue = (code: string, name = "") => {
-    const text = `${String(code || "")}·${String(name || "")}`;
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < text.length; i++) {
-      hash ^= text.charCodeAt(i);
-      hash = Math.imul(hash, 0x01000193);
-    }
-    return COURSE_HUES[(hash >>> 0) % COURSE_HUES.length];
-  };
+  /* Colour assignment lives in utils/weekVisual — pure, shared, and under
+     test. The comment on it there explains the FNV mixing and why the name
+     joins the code. */
 
   const xraySelected = xrayId
     ? filteredRows.find((r) => r.id === xrayId) || null
@@ -3404,6 +3500,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   </>
                 ),
               },
+              {
+                value: "rooms",
+                label: (
+                  <>
+                    <MapPin /> القاعات
+                  </>
+                ),
+              },
             ]}
           />
           <label className="schedule-quick-search"><Search/><input value={quickSearch} onChange={e=>setQuickSearch(e.target.value)} placeholder="بحث سريع: مقرر، أستاذ، شعبة، قاعة..."/>{quickSearch?<button type="button" onClick={()=>setQuickSearch("")}>×</button>:null}</label>
@@ -3720,6 +3824,151 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             </div>
           ) : null}
         </Surface>
+      ) : viewMode === "rooms" ? (
+        <Surface className="rooms-surface">
+          {(() => {
+            /* --- The paper timetable, alive -----------------------------------
+               The sheet this program replaces lists rooms as rows and the day
+               as columns of hours — the mind of the building itself. Same here:
+               one taught day at a time, a row per room, lectures laid on the
+               hour line. Empty track IS free room, visible at a glance; and a
+               card dragged to another row moves the lecture to that room, with
+               the same conflict gate and the same undo pill every other move
+               gets. */
+            const activeDay = (matrixDay && days.some(d => d.key === matrixDay) ? matrixDay : (todayKey || days[0].key)) as DayKey;
+            const dayRows = filteredRows.filter(row =>
+              Boolean((row as any)[activeDay]) && row.fstarttime && row.fendtime && mins(row.fendtime) > mins(row.fstarttime));
+            const roomsSeen = new Map<string, { building: string; hall: string; label: string }>();
+            filteredRows.forEach(row => {
+              const building = String(row.AdRoomCode || "");
+              const hall = String(row.AdRoomHall || "");
+              if (!building && !hall) return;
+              const key = `${building}|${hall}`;
+              if (!roomsSeen.has(key)) roomsSeen.set(key, { building, hall, label: [building, hall].filter(Boolean).join("/") });
+            });
+            const roomList = [...roomsSeen.values()].sort((a, b) => byArabic(a.label, b.label));
+            const noRoom = dayRows.filter(row => !String(row.AdRoomCode || "") && !String(row.AdRoomHall || ""));
+            const span = Math.max(60, gridWindow.end - gridWindow.start);
+            const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
+            const rowsFor = (building: string, hall: string) =>
+              dayRows.filter(row => String(row.AdRoomCode || "") === building && String(row.AdRoomHall || "") === hall);
+            const hourMarks: number[] = [];
+            for (let m = Math.ceil(gridWindow.start / 60) * 60; m <= gridWindow.end; m += 60) hourMarks.push(m);
+            const renderTrackCard = (row: FSchedule) => {
+              const course = courseById.get(row.AdCourseId);
+              const instructor = instructorById.get(row.AdInstructorId);
+              const code = course?.CourseCode || "—";
+              const title = row.AdCourseName || course?.CourseName || code;
+              const undoId = recentMoves[row.id];
+              const undoEntry = undoId ? undoLog.find(item => item.id === undoId && !item.usedAt) : null;
+              return (
+                <article
+                  key={row.id}
+                  className={`rooms-card ${justChangedId === row.id ? "just-changed" : ""}`}
+                  style={{
+                    ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName),
+                    insetInlineStart: `${pct(mins(row.fstarttime))}%`,
+                    width: `${Math.max(3, pct(mins(row.fendtime)) - pct(mins(row.fstarttime)))}%`,
+                  }}
+                  draggable={!saving}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData("text/schedule-id", String(row.id));
+                    e.dataTransfer.effectAllowed = "move";
+                  }}
+                  title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${row.fstarttime}–${row.fendtime}`}
+                  onClick={() => openEdit(row)}
+                  tabIndex={0}
+                  onKeyDown={(e) => { if (e.key === "Enter") openEdit(row); }}
+                >
+                  <b>{title}</b>
+                  <span>{instructor?.AdInstructorName || "بدون أستاذ"}</span>
+                  <em dir="ltr">{row.fstarttime}–{row.fendtime}</em>
+                  {undoEntry ? (
+                    <button
+                      type="button"
+                      className="week-moved-pill"
+                      title={`${undoEntry.label} — اضغط للتراجع`}
+                      onClick={(e) => { e.stopPropagation(); void runUndoEntry(undoEntry); setRecentMoves(current => { const next = { ...current }; delete next[row.id]; return next; }); }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                    >
+                      <Undo2 aria-hidden="true" />تراجع
+                    </button>
+                  ) : null}
+                </article>
+              );
+            };
+            const trackDrop = (building: string, hall: string) => async (e: React.DragEvent<HTMLDivElement>) => {
+              e.preventDefault();
+              const id = Number(e.dataTransfer.getData("text/schedule-id"));
+              const row = rows.find(item => item.id === id);
+              if (!row || saving) return;
+              const track = e.currentTarget.getBoundingClientRect();
+              /* RTL: the track starts at its right edge; the drop's share of the
+                 width, snapped to the half hour, is the new start. */
+              const share = Math.min(1, Math.max(0, (track.right - e.clientX) / track.width));
+              const start = timeFromMins(Math.round((gridWindow.start + share * span) / 30) * 30);
+              await commitRoomMove(row, activeDay, start, building, hall);
+            };
+            return (
+              <>
+                <div className="rooms-head">
+                  <Segmented
+                    value={activeDay}
+                    options={days.map(day => ({ value: day.key, label: day.label }))}
+                    onChange={(value) => setMatrixDay(value as DayKey)}
+                  />
+                  <small>اسحب أي محاضرة إلى صف قاعة أخرى لتغيير قاعتها، أو على نفس الصف لتغيير وقتها — بنفس فحص التعارض وبنفس التراجع.</small>
+                </div>
+                <div className="rooms-scale" aria-hidden="true">
+                  <small />
+                  <div>
+                    {hourMarks.map(mark => (
+                      <span key={mark} style={{ insetInlineStart: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark).slice(0, 5)}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="rooms-rows">
+                  {roomList.map(room => {
+                    const inRoom = rowsFor(room.building, room.hall);
+                    return (
+                      <div className="rooms-row" key={`${room.building}|${room.hall}`}>
+                        <small dir="ltr">{room.label}</small>
+                        <div
+                          className="rooms-track"
+                          onDragOver={(e) => e.preventDefault()}
+                          onDrop={trackDrop(room.building, room.hall)}
+                        >
+                          {hourMarks.map(mark => (
+                            <i key={mark} className="rooms-hourline" style={{ insetInlineStart: `${pct(mark)}%` }} />
+                          ))}
+                          {todayKey === activeDay && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? (
+                            <i className="rooms-now" style={{ insetInlineStart: `${pct(nowMinutes)}%` }} />
+                          ) : null}
+                          {inRoom.map(renderTrackCard)}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {noRoom.length ? (
+                    <div className="rooms-row rooms-row-none">
+                      <small>بلا قاعة</small>
+                      <div
+                        className="rooms-track"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={trackDrop("", "")}
+                      >
+                        {noRoom.map(renderTrackCard)}
+                      </div>
+                    </div>
+                  ) : null}
+                  {!roomList.length && !noRoom.length ? (
+                    <p className="rooms-empty">لا قاعات مسجلة في هذا النطاق بعد — أسنِد قاعة لأي محاضرة وستظهر هنا صفاً كاملاً.</p>
+                  ) : null}
+                </div>
+              </>
+            );
+          })()}
+        </Surface>
       ) : (
         <>
           <Surface
@@ -3780,6 +4029,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               >
                 <Layers aria-hidden="true" />
                 {picking ? (multiSelect.size ? `${multiSelect.size} محدد` : "اختر المواعيد") : "تحديد متعدد"}
+              </button>
+              <button
+                type="button"
+                className={`week-pick-toggle ${strictNoConflict ? "on" : ""}`}
+                onClick={() => setStrictNoConflict(v => !v)}
+                title="عند تفعيله، أي إفلات يخلق تعارضاً — ولو خفيفاً — يرتد ولا يُحفظ"
+                aria-pressed={strictNoConflict}
+              >
+                <ShieldCheck aria-hidden="true" />
+                منع التعارض
+              </button>
+              <button
+                type="button"
+                className="week-pick-toggle"
+                onClick={() => setHueBy(v => (v === "course" ? "instructor" : "course"))}
+                title="بدّل معنى اللون: كل مقرر بلون، أو كل أستاذ بلون"
+              >
+                <Palette aria-hidden="true" />
+                {hueBy === "course" ? "اللون للمقرر" : "اللون للأستاذ"}
               </button>
               {multiSelect.size ? (
                 <button type="button" className="week-pick-clear" onClick={() => setMultiSelect(new Set())}>
@@ -3845,7 +4113,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         {...grip}
                         key={`unplaced-${r.id}`}
                         className="week-unplaced-card"
-                        style={{ ["--hue" as any]: courseHue(code, r.AdCourseName || c?.CourseName || "") }}
+                        style={{ ["--hue" as any]: hueFor(code, r.AdCourseName || c?.CourseName || "", i?.AdInstructorName) }}
                         onPointerDown={(e) => {
                           pressOrigin.current = { x: e.clientX, y: e.clientY };
                           grip.onPointerDown?.(e);
@@ -4177,7 +4445,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   {...grip}
                                   key={row.id}
                                   className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""}`}
-                                  style={{ ["--hue" as any]: courseHue(bandCode, bandTitle) }}
+                                  style={{ ["--hue" as any]: hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName) }}
                                   title={`${bandTitle} — اسحبها مباشرة أو اضغط للمروحة`}
                                   onPointerDown={(e) => {
                                     pressOrigin.current = { x: e.clientX, y: e.clientY };
@@ -4193,7 +4461,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                                 >
                                   <span className="week-band-name">{bandTitle}</span>
-                                  <em dir="ltr">{String(course?.CourseCode || row.SCode || "").slice(0, 8)}</em>
+                                  {/* Section beside code: three sections of one course are
+                                      three identical names — the section is what tells them
+                                      apart before the fan is ever opened. */}
+                                  <em dir="ltr">{[String(course?.CourseCode || "").slice(0, 8), String(row.SCode || "")].filter(Boolean).join(" · ") || "—"}</em>
                                 </div>
                               );
                             })}

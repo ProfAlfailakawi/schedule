@@ -4,6 +4,7 @@ import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
+import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, pickLive } from "../src/utils/weekVisual";
 import { Repository, initDatabase } from "../src/db/repository";
 
 const originalLog = console.log;
@@ -63,6 +64,62 @@ async function runTests() {
   assert(!validateCivilId("1234567890123").isValid, "13-digit Civil ID rejected");
   assert(!validateCivilId("١٢٣٤٥٦٧٨٩٠١٢").isValid, "Arabic-Indic digits rejected");
   assert(!validateCivilId("12345a789012").isValid, "letters rejected");
+
+  originalLog("\n--- 1b. Week visual arithmetic (pure) ---");
+  {
+    // Colour: deterministic, in-palette, and spread for this department's
+    // real numeric codes — the exact monochrome regression that shipped once.
+    assert(courseHue("112", "ورشة إنتاج مواد تعليمية") === courseHue("112", "ورشة إنتاج مواد تعليمية"), "hue is deterministic");
+    assert(COURSE_HUES.includes(courseHue("491", "الوسائط")), "hue stays inside the palette");
+    const spread = new Set([
+      courseHue("112", "ورشة إنتاج مواد تعليمية"),
+      courseHue("112", "الحاسوب التعليمي"),
+      courseHue("113", "مشروع التخرج"),
+      courseHue("491", "تصميم وإنتاج الأفلام"),
+      courseHue("491", "الوسائط المتعددة"),
+    ]);
+    assert(spread.size >= 3, "numeric codes 112/113/491 no longer collapse to one hue family");
+    assert(courseHue("112", "الحاسوب التعليمي") !== courseHue("112", "ورشة إنتاج مواد تعليمية"), "same code, different course name → different hue");
+
+    // Clustering: the chain-tail exemption and the five-member floor.
+    const squeeze = (id: number, top: number, height: number, lanes: number, span: number) => ({ id, top, height, lanes, span });
+    const peak = [1, 2, 3, 4, 5].map(n => squeeze(n, 100, 90, 5, 1));
+    const tail = squeeze(9, 260, 90, 5, 5); // full-span solitary tail of the same chain
+    const bundled = clusterSqueezed([...peak, tail]);
+    assert(bundled.length === 1, "five squeezed cards form exactly one bundle");
+    assert(bundled[0].ids.length === 5 && !bundled[0].ids.includes(9), "full-span chain tail stays out of the weave");
+    assert(bundled[0].top === 100 && bundled[0].bottom === 190, "bundle bounds hug its members");
+    assert(clusterSqueezed(peak.slice(0, 4)).length === 0, "four squeezed cards stay ordinary cards");
+    const twoGroups = clusterSqueezed([
+      ...[1, 2, 3, 4, 5].map(n => squeeze(n, 0, 60, 5, 1)),
+      ...[6, 7, 8, 9, 10].map(n => squeeze(n, 300, 60, 5, 1)),
+    ]);
+    assert(twoGroups.length === 2, "separated crushes become separate bundles");
+    assert(clusterSqueezed([...Array(12)].map((_, i) => squeeze(i + 1, 50, 80, 12, 1)))[0]?.ids.length === 12, "twelve concurrent lectures weave as one");
+
+    // Day load: minutes, not counts.
+    const lecture = (day: string, from: string, to: string) => ({ [day]: true, fstarttime: from, fendtime: to });
+    const load = dayLoad([
+      lecture("fsunday", "08:00", "09:00"),
+      lecture("fmonday", "08:00", "12:00"),
+      lecture("fmonday", "12:00", "14:00"),
+    ]);
+    assert(load.share.fmonday === 100, "heaviest day reads 100");
+    assert(load.share.fsunday === 17, "one hour against six reads 17");
+    assert(load.minutesByDay.ftuesday === 0 && load.share.ftuesday === 0, "an empty day reads zero");
+    assert(dayLoad([lecture("fsunday", "10:00", "09:00")]).minutesByDay.fsunday === 0, "a lecture ending before it starts counts nothing");
+
+    // Running/next: inclusive start, exclusive end, weekend silence.
+    const rows = [
+      { id: 1, fsunday: true, fstarttime: "08:00", fendtime: "09:30" },
+      { id: 2, fsunday: true, fstarttime: "11:00", fendtime: "12:00" },
+      { id: 3, fsunday: true, fstarttime: "10:00", fendtime: "10:30" },
+    ] as any;
+    assert(pickLive(rows, "fsunday", 8 * 60).running.has(1), "a lecture is running at its first minute");
+    assert(!pickLive(rows, "fsunday", 9 * 60 + 30).running.has(1), "a lecture is over at its last minute");
+    assert(pickLive(rows, "fsunday", 9 * 60 + 45).next === 3, "the nearest coming lecture is the next, not the first listed");
+    assert(pickLive(rows, null, 9 * 60).running.size === 0 && pickLive(rows, null, 9 * 60).next === null, "a weekend has no running and no next");
+  }
 
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");

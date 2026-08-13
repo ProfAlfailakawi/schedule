@@ -171,7 +171,11 @@ export default function App() {
   );
   /** Which nav groups the reader has pressed open or shut, by group id. */
   const [navGroups, setNavGroups] = useState<Record<string, boolean>>({});
-  const [sidebarOpen, setSidebarOpen] = useState(false),
+  /* The rail starts present on a desk and folded on a phone; after that its
+     state is the reader's, on every width alike. */
+  const [sidebarOpen, setSidebarOpen] = useState(
+      () => typeof window !== "undefined" && window.matchMedia("(min-width:1120px)").matches,
+    ),
     [searchOpen, setSearchOpen] = useState(false),
     [query, setQuery] = useState(""),
     [searching, setSearching] = useState(false),
@@ -413,6 +417,10 @@ export default function App() {
    * moves to the work, the first touch on the work should clear the way
    * without asking for a second, aimed click on a close button.
    */
+  /* The stylesheet folds the rail off `data-rail`; the state writes it. */
+  useEffect(() => {
+    document.documentElement.dataset.rail = sidebarOpen ? "open" : "closed";
+  }, [sidebarOpen]);
   useEffect(() => {
     if (!sidebarOpen) return;
     const dismiss = (event: PointerEvent) => {

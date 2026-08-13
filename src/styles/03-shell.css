@@ -260,6 +260,31 @@
 .sidebar-backdrop{display:none}
 .mobile-topbar{display:none}
 
+/* --- The rail folds everywhere -----------------------------------------------
+   The drawer behaviour was the phone's alone; the desk kept a permanent rail.
+   Fieldwork said otherwise: the menu is a place to choose from, not to be —
+   so on every width a press outside it folds the whole rail away and the
+   work takes the room, and one quiet button at the top brings it back. */
+@media screen and (min-width:1120px){
+  .sidebar{transition:transform .28s var(--ease-out)}
+  html[data-rail="closed"] .sidebar{transform:translateX(calc(100% + 40px))}
+  .app-main{transition:margin-inline-start .28s var(--ease-out)}
+  html[data-rail="closed"] .app-main{margin-inline-start:0}
+  html[data-rail="closed"] .sidebar-launcher{
+    display:grid;place-items:center;
+    position:fixed;top:14px;inset-inline-start:14px;z-index:59;
+    width:42px;height:42px;
+    border-radius:var(--r-full);
+    background:var(--nav);color:var(--nav-ink);
+    box-shadow:var(--shadow-md);
+  }
+  html[data-rail="closed"] .sidebar-launcher:hover{background:var(--nav-3)}
+  html[data-rail="closed"] .sidebar-launcher svg{width:19px;height:19px}
+}
+@media (prefers-reduced-motion:reduce){
+  .sidebar,.app-main{transition:none}
+}
+
 /* --- Main --------------------------------------------------------------- */
 
 .app-main{

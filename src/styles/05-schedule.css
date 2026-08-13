@@ -2439,3 +2439,102 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   .week-fan-slot{animation:none}
   .week-bundle-weave i{transition:none}
 }
+
+/* --- The card that just moved says so ---------------------------------------
+   Brass, like every temporal mark here, and carrying its own way back: the
+   pill IS the undo for exactly this move, worn for a minute where the eye
+   already is — no hunting through a log to take one step back. */
+.week-moved-pill{
+  position:absolute;top:3px;inset-inline-end:3px;z-index:7;
+  display:inline-flex;align-items:center;gap:3px;
+  padding:1px 7px;
+  border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--brass) 86%,var(--ink));
+  color:var(--surface);
+  font-size:9px;font-weight:650;
+  box-shadow:var(--shadow-sm);
+  animation:suggest-in .34s var(--ease-spring) both;
+}
+.week-moved-pill svg{width:10px;height:10px}
+.week-moved-pill:hover{background:var(--brass)}
+@media (prefers-reduced-motion:reduce){.week-moved-pill{animation:none}}
+
+/* ==========================================================================
+   THE ROOMS MATRIX — the paper timetable, alive
+   Rooms as rows, the day as one long line of hours: the way the building
+   thinks, and the way the sheet this program replaces was always drawn.
+   Empty track IS free room. A card dragged to another row changes room;
+   along its own row, it changes hour.
+   ========================================================================== */
+.rooms-surface{padding:var(--s5)}
+.rooms-head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-bottom:var(--s4)}
+.rooms-head small{color:var(--muted);font-size:var(--t-xs);line-height:1.5;flex:1 1 260px}
+.rooms-scale{display:grid;grid-template-columns:74px minmax(0,1fr);margin-bottom:var(--s2)}
+.rooms-scale>div{
+  position:relative;height:16px;
+  font:500 9.5px/1 var(--font-mono);color:var(--muted-2);
+}
+.rooms-scale span{position:absolute;transform:translateX(50%)}
+.rooms-rows{display:flex;flex-direction:column;gap:var(--s2)}
+.rooms-row{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;gap:0}
+.rooms-row>small{
+  padding-inline-end:var(--s2);
+  font:600 11px/1.3 var(--font-mono);color:var(--ink-2);
+  text-align:start;
+}
+.rooms-row-none>small{font-family:var(--font-ui);color:var(--warning)}
+.rooms-track{
+  position:relative;
+  height:46px;
+  border:1px solid var(--line);
+  border-radius:var(--r-sm);
+  background:var(--surface);
+  overflow:hidden;
+}
+.rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line) 80%,transparent)}
+.rooms-now{position:absolute;inset-block:0;width:0;border-inline-start:2px solid var(--brass);z-index:4}
+.rooms-card{
+  --tint:hsl(var(--hue,158) 34% 96%);
+  --edge:hsl(var(--hue,158) 34% 44%);
+  --label:hsl(var(--hue,158) 42% 23%);
+  position:absolute;inset-block:3px;z-index:3;
+  display:flex;flex-direction:column;justify-content:center;gap:0;
+  padding:2px 7px;
+  border-radius:var(--r-xs);
+  border:1px solid color-mix(in srgb,var(--edge) 14%,var(--line));
+  border-inline-start:3px solid var(--edge);
+  background:var(--tint);
+  overflow:hidden;cursor:grab;
+  transition:box-shadow .14s var(--ease);
+}
+.rooms-card:hover{box-shadow:var(--shadow-sm);z-index:5}
+.rooms-card:active{cursor:grabbing}
+:root[data-theme="dark"] .rooms-card{
+  --tint:hsl(var(--hue,158) 21% 15%);
+  --edge:hsl(var(--hue,158) 36% 58%);
+  --label:hsl(var(--hue,158) 46% 88%);
+}
+.rooms-card b{
+  font-size:10.5px;font-weight:650;color:var(--label);line-height:1.25;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.rooms-card span{
+  font-size:9px;color:var(--ink-2);opacity:.8;line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.rooms-card em{
+  position:absolute;bottom:2px;inset-inline-end:5px;
+  font:600 8px/1 var(--font-mono);font-style:normal;
+  color:color-mix(in srgb,var(--label) 55%,transparent);
+}
+/* A sliver of a lecture still names itself on hover; below 90px it keeps the
+   title alone. */
+.rooms-card{container-type:inline-size}
+@container (max-width:90px){.rooms-card span,.rooms-card em{display:none}}
+@container (max-width:44px){.rooms-card b{font-size:8.5px}}
+.rooms-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
+.rooms-card .week-moved-pill{top:2px;inset-inline-end:2px}
+
+.transfer-import-actions{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.transfer-done{display:flex;align-items:center;gap:var(--s2);color:var(--success);font-size:var(--t-sm);line-height:1.6}
+.transfer-done svg{width:15px;height:15px;flex:none}

@@ -46,6 +46,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<any>(null);
   const [payload, setPayload] = useState<any>(null);
+  const [xlsxPreview, setXlsxPreview] = useState<any>(null);
+  const [xlsxDraft, setXlsxDraft] = useState("");
   const [fromId, setFromId] = useState(0);
   const [toId, setToId] = useState(0);
   const [retirePreview, setRetirePreview] = useState<number | null>(null);
@@ -110,7 +112,88 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     window.location.href = `/api/schedules/export?${query}`;
   };
 
+  /**
+   * The empty form, ready to hand to whoever fills timetables.
+   *
+   * One sheet with the exact columns the importer matches on, two example
+   * rows written the way a person would write them, and a second sheet that
+   * says the rules out loud. Generated on the user's machine — no download
+   * from anywhere, no stale copy on a server.
+   */
+  const downloadTemplate = async () => {
+    const XLSX = await import("xlsx");
+    const headers = ["رمز المقرر", "المقرر الدراسي", "الشعبة", "أستاذ المقرر", "الرقم المدني", "الأيام", "الوقت", "المبنى", "القاعة"];
+    const sample = [
+      ["112", "ورشة إنتاج مواد تعليمية", "501", "د. منى حسن", "285010112345", "الأحد - الثلاثاء", "08:00-09:20", "B9", "F10"],
+      ["491", "الوسائط المتعددة", "503", "د. خالد المطيري", "", "الاثنين - الأربعاء", "11:00-12:20", "B9", "F12"],
+    ];
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+    (sheet as any)["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 8 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 13 }, { wch: 9 }, { wch: 9 }];
+    const guide = XLSX.utils.aoa_to_sheet([
+      ["كيف يفهم الاستيراد ملفك"],
+      [""],
+      ["المطابقة", "كل صف يُطابَق برمز المقرر داخل قسمك، والأستاذ بالرقم المدني أو بالاسم كما هو مسجل."],
+      ["الأيام", "اكتب أسماء الأيام كما تنطقها: الأحد - الثلاثاء - الخميس. أي فاصل يصلح."],
+      ["الوقت", "من-إلى بصيغة 24 ساعة: 08:00-09:20."],
+      ["الصفوف الناقصة", "صف برمز غير معروف أو أستاذ غير معروف يظهر لك كملاحظة قبل أي حفظ — لا يُكتب شيء خفية."],
+      ["ماذا يحدث بعد الرفع", "يُعرض الملف أولاً كحصيلة: كم صفاً فُهم وما المشاكل. الموافقة تنشئ مسودة في مركز القرار، ومن هناك تُنشر فتحل محل جدول القسم لهذا الفصل، مع نقطة أمان تلقائية قبل النشر تسمح بالرجوع."],
+    ]);
+    (guide as any)["!cols"] = [{ wch: 16 }, { wch: 90 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "الجدول");
+    XLSX.utils.book_append_sheet(wb, guide, "طريقة الاستخدام");
+    XLSX.writeFile(wb, "نموذج-استيراد-الجدول.xlsx");
+  };
+
+  /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
+  const readExcel = async (file: File) => {
+    setError(null); setXlsxPreview(null); setXlsxDraft("");
+    setBusy(true);
+    try {
+      const XLSX = await import("xlsx");
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: "" });
+      if (!rows.length) throw new Error("الورقة الأولى فارغة.");
+      const response = await fetch("/api/intelligence/import-preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId, rows }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذرت قراءة الملف");
+      setXlsxPreview({ ...data, fileName: file.name });
+    } catch (e: any) {
+      setError(e.message || "تعذرت قراءة الملف");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const saveExcelDraft = async () => {
+    if (!xlsxPreview?.valid) return;
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch("/api/intelligence/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          collegeId, sectionId, termId,
+          source: "import",
+          name: `استيراد Excel — ${xlsxPreview.fileName || ""}`.trim(),
+          rows: xlsxPreview.rows,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر حفظ المسودة");
+      setXlsxDraft(String(data.id || "تم"));
+    } catch (e: any) {
+      setError(e.message || "تعذر حفظ المسودة");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const readFile = async (file: File) => {
+    if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
     setError(null); setPreview(null); setPayload(null);
     try {
       const text = await file.text();
@@ -204,13 +287,44 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
               <input
                 ref={fileRef}
                 type="file"
-                accept="application/json,.json"
+                accept="application/json,.json,.xlsx,.xls"
                 className="transfer-file"
-                onChange={event => { const file = event.target.files?.[0]; if (file) void readFile(file); }}
+                onChange={event => { const file = event.target.files?.[0]; if (file) void readFile(file); event.target.value = ""; }}
               />
-              <SecondaryButton type="button" onClick={() => fileRef.current?.click()} disabled={!scopeReady || busy}>
-                <Upload />اختر ملفاً
-              </SecondaryButton>
+              <div className="transfer-import-actions">
+                <SecondaryButton type="button" onClick={() => void downloadTemplate()} disabled={busy} title="ملف Excel فارغ بالأعمدة الصحيحة وورقة شرح">
+                  <Download />نموذج Excel فارغ
+                </SecondaryButton>
+                <SecondaryButton type="button" onClick={() => fileRef.current?.click()} disabled={!scopeReady || busy}>
+                  <Upload />اختر ملفاً (Excel أو JSON)
+                </SecondaryButton>
+              </div>
+
+              {xlsxPreview ? (
+                <div className="transfer-preview">
+                  <div className="transfer-counts">
+                    <span><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b>صفاً فُهم</span>
+                    <span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>
+                  </div>
+                  {xlsxPreview.issues?.length ? (
+                    <ul className="transfer-rejected">
+                      {xlsxPreview.issues.slice(0, 8).map((issue: string, index: number) => (
+                        <li key={index}><span>{issue}</span></li>
+                      ))}
+                      {xlsxPreview.issues.length > 8 ? <li className="muted">و{xlsxPreview.issues.length - 8} غيرها…</li> : null}
+                    </ul>
+                  ) : null}
+                  {xlsxDraft ? (
+                    <p className="transfer-done"><Check /> حُفظت مسودة الاستيراد. راجعها وانشرها من <b>مركز القرار → الاستيراد</b> — النشر يحل محل جدول القسم لهذا الفصل بعد نقطة أمان تلقائية.</p>
+                  ) : xlsxPreview.valid ? (
+                    <PrimaryButton type="button" onClick={() => void saveExcelDraft()} disabled={busy}>
+                      {busy ? "يحفظ…" : `احفظ ${Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")} موعداً كمسودة للنشر`}
+                    </PrimaryButton>
+                  ) : (
+                    <p className="muted">صحّح الملاحظات في الملف ثم ارفعه مجدداً — لا يُحفظ استيراد فيه أخطاء.</p>
+                  )}
+                </div>
+              ) : null}
 
               {preview ? (
                 <div className="transfer-preview">
