@@ -86,6 +86,11 @@ export default function useSchedulePhysics(options: Options) {
   const [state, setState] = useState<SchedulePhysicsDragState>(IDLE);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const sessionRef = useRef<Session | null>(null);
+  // When a real drag last ended. A drag ends in a click too, and the card's
+  // click opens the full course page — so the card needs to know that the press
+  // it just saw was a move, not an "open this". Geometry alone was deciding it,
+  // and a drag that travelled five pixels and came back still read as a click.
+  const dragEndedAtRef = useRef(0);
   const frameRef = useRef<number | null>(null);
   const evalTimerRef = useRef<number | null>(null);
   const evalAbortRef = useRef<AbortController | null>(null);
@@ -105,6 +110,7 @@ export default function useSchedulePhysics(options: Options) {
     frameRef.current = null;
     const session = sessionRef.current;
     if (session?.longPressTimer) window.clearTimeout(session.longPressTimer);
+    if (session?.active) dragEndedAtRef.current = performance.now();
     settlingRef.current = null;
     sessionRef.current = null;
     document.documentElement.classList.remove("schedule-physics-active");
@@ -373,15 +379,48 @@ export default function useSchedulePhysics(options: Options) {
     return () => window.removeEventListener("keydown", keydown);
   }, [finishReturn]);
 
+  /**
+   * A drag cannot outlive the window's attention.
+   *
+   * The settle runs on animation frames, and a hidden tab stops giving them —
+   * so a card released just before switching away would hang in the air and,
+   * worse, leave a live session behind that refuses every later drag. Losing
+   * focus or visibility now sends the card home and clears the session.
+   */
+  useEffect(() => {
+    const stand = () => {
+      const session = sessionRef.current;
+      if (!session) return;
+      if (session.active && !session.ending) finishReturn("outside");
+      else if (!session.active) reset();
+    };
+    const onVisibility = () => { if (document.hidden) stand(); };
+    window.addEventListener("blur", stand);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("blur", stand);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [finishReturn, reset]);
+
   useEffect(() => { if (disabled && sessionRef.current) reset(); }, [disabled, reset]);
   useEffect(() => () => reset(), [reset]);
 
   const bindEvent = useCallback((row: FSchedule, sourceDay: ScheduleDayKey) => ({
     onPointerDown: (event: React.PointerEvent<HTMLElement>) => {
-      if (disabled || sessionRef.current || event.button !== 0) return;
+      if (disabled || event.button !== 0) return;
+      // A session left behind — a pointerup swallowed by the window, a tab
+      // switched mid-drag — used to lock dragging out permanently: every later
+      // press saw a live session, refused, and fell through to the card's click,
+      // which opens the full course page. That is the "I can no longer drag
+      // anything, it just opens the lecture" failure. A stale session is now
+      // cleared and the new press proceeds; only a genuinely live drag refuses.
+      if (sessionRef.current) {
+        if (sessionRef.current.active) return;
+        reset();
+      }
       const target = event.target as HTMLElement;
       if (target.closest("button,input,select,textarea,a,[data-no-physics='true']")) return;
-      if (event.pointerType === "touch" && !target.closest("[data-physics-handle='true']")) return;
       const element = event.currentTarget as HTMLElement;
       const rect = element.getBoundingClientRect();
       const session: Session = {
@@ -394,17 +433,32 @@ export default function useSchedulePhysics(options: Options) {
       sessionRef.current = session;
       setState({ phase: "armed", row, sourceDay, sourceStart: row.fstarttime, target: null, decision: null, pointerType: session.pointerType, velocityX: 0, velocityY: 0 });
       if (event.pointerType === "touch") {
-        event.preventDefault();
+        // A finger may drag the card from anywhere on it, not only from the grip
+        // — the grip is a two-millimetre target on a phone. Only the grip claims
+        // the gesture outright; elsewhere the press merely arms a long press, so
+        // a finger that moves on to scroll the week still scrolls it.
+        if (target.closest("[data-physics-handle='true']")) event.preventDefault();
         session.longPressTimer = window.setTimeout(() => activate(session), 260);
       }
     },
-  }), [activate, disabled]);
+  }), [activate, disabled, reset]);
 
   const cancel = useCallback(() => {
     const session = sessionRef.current;
     if (session?.active) finishReturn("escape");
   }, [finishReturn]);
 
+  /**
+   * Did the press that just finished move a card?
+   *
+   * The card's own click opens the lecture for editing. A drag ends in a click
+   * as well, so without this the move and the "open it" are the same event and
+   * the full course page appears on top of a card the person only wanted to
+   * relocate. The window is short — long enough for the click that follows the
+   * release, too short to swallow a real second click.
+   */
+  const didDrag = useCallback(() => performance.now() - dragEndedAtRef.current < 400, []);
+
   const supported = useMemo(() => typeof window !== "undefined" && "PointerEvent" in window, []);
-  return { state, overlayRef, bindEvent, cancel, reducedMotion, supported };
+  return { state, overlayRef, bindEvent, cancel, didDrag, reducedMotion, supported };
 }

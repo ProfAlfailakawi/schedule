@@ -99,6 +99,21 @@ interface Props {
 type EditorMode = "index" | "create" | "edit";
 
 /**
+ * A reversal, written down rather than held in a closure.
+ *
+ * Storing the undo as the requests that would restore the previous state — and
+ * not as a function — is what lets the day's log outlive a page reload.
+ */
+export type UndoStep = { method: "POST" | "PUT" | "DELETE"; url: string; body?: any };
+export type UndoEntry = { id: string; label: string; at: number; steps: UndoStep[]; usedAt?: number };
+/** How long the floating bar stays; the log itself lasts until midnight. */
+const UNDO_BAR_MS = 15_000;
+const UNDO_LOG_LIMIT = 60;
+const isToday = (at: number) => new Date(at).toDateString() === new Date().toDateString();
+const undoClock = (at: number) =>
+  new Date(at).toLocaleTimeString("ar-KW", { hour: "2-digit", minute: "2-digit", numberingSystem: "latn" });
+
+/**
  * One half-hour, in pixels.
  *
  * The grid used to position cards at 36px per half-hour while the CSS drew the
@@ -221,6 +236,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [previewing, setPreviewing] = useState(false);
   const [physicsNotice, setPhysicsNotice] = useState(""),
     [undoPoint, setUndoPoint] = useState<any>(null),
+    // What the server has said about squares the pointer has actually visited
+    // during this drag. It refines the local reading; it does not replace it.
     [physicsField, setPhysicsField] = useState<Record<string, string>>({});
   /**
    * Several lectures carried at once.
@@ -294,13 +311,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     return data;
   };
   /**
-   * The department's own courses, not the university's.
+   * The department's own courses, not the university's — added, not swapped in.
    *
    * Resolving a course id to a name needed the catalogue, and the catalogue was
    * fetched whole — fourteen hundred records to name the forty that belong to
    * the open department. Once a department is chosen its slice is fetched
    * instead, which is the same information at a fortieth of the weight.
+   *
+   * But the slice used to *replace* the catalogue, and that quietly emptied the
+   * editor: open a lecture whose course or instructor belongs anywhere else and
+   * the select had no option to match its value, so the course, its code and
+   * the instructor all showed blank — the record looked erased, and touching
+   * the course list then really did erase it. The slice is now merged over what
+   * is already known, so a narrower view never removes a name the form still
+   * has to display.
    */
+  const mergeById = <T,>(current: T[], incoming: T[], id: (row: T) => number, name: (row: T) => string) => {
+    const merged = new Map<number, T>(current.map(row => [id(row), row] as const));
+    incoming.forEach(row => merged.set(id(row), row));
+    return sortByName([...merged.values()], name as any);
+  };
   useEffect(() => {
     if (!filterSection) return;
     let alive = true;
@@ -308,13 +338,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     fetchJson(`/api/instructors?sectionId=${filterSection}&termId=${filterTerm || 0}`)
       .then((list: any[]) => {
         if (!alive || !Array.isArray(list) || !list.length) return;
-        setInstructors(sortByName(list, (row: any) => row.AdInstructorName));
+        setInstructors(current => mergeById(current as any[], list, row => Number(row.AdInstructorId), row => row.AdInstructorName));
       })
       .catch(() => undefined);
     fetchJson(`/api/courses?sectionId=${filterSection}`)
       .then((list: any[]) => {
         if (!alive || !Array.isArray(list) || !list.length) return;
-        setCourses(sortByName(list, (row: any) => row.CourseName));
+        setCourses(current => mergeById(current as any[], list, row => Number(row.AdCourseId), row => row.CourseName));
       })
       .catch(() => undefined);
     return () => { alive = false; };
@@ -431,38 +461,96 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   }, [rows]);
 
   /**
-   * One minute to change your mind.
+   * A whole working day to change your mind.
    *
    * Every save here was final, which makes people hesitate before doing the
-   * ordinary thing — and hesitation is what makes a tool feel heavy. The
-   * inverse of the last change is kept for a minute: deleting what was created,
-   * restoring what was edited, re-creating what was deleted. It is offered, not
-   * imposed, and it expires on its own so it can never undo something the
-   * person has long stopped thinking about.
+   * ordinary thing — and hesitation is what makes a tool feel heavy. So the
+   * inverse of each change is kept: deleting what was created, restoring what
+   * was edited, re-creating what was deleted, sending a moved card home.
+   *
+   * A minute was too short to be trusted — the coordinator notices the mistake
+   * after the next three saves, not during. The reversal is therefore written
+   * as plain request steps rather than a closure, which means it survives a
+   * reload and can wait until the end of the day. The floating bar still leaves
+   * after a few seconds so it never sits in the way; the day's log stays behind
+   * it. Nothing carries over to tomorrow: a schedule someone has slept on is
+   * not something to silently rewind.
    */
-  const [undoAction, setUndoAction] = useState<{ label: string; run: () => Promise<void>; until: number } | null>(null);
-  const [undoBusy, setUndoBusy] = useState(false);
-  useEffect(() => {
-    if (!undoAction) return;
-    const timer = window.setTimeout(() => setUndoAction(null), Math.max(0, undoAction.until - Date.now()));
-    return () => window.clearTimeout(timer);
-  }, [undoAction]);
-  const runUndo = async () => {
-    if (!undoAction) return;
-    setUndoBusy(true);
+  const undoKey = `schedule-undo-log-${user?.SystemUserId || 0}`;
+  const [undoLog, setUndoLog] = useState<UndoEntry[]>(() => {
     try {
-      await undoAction.run();
+      const stored = JSON.parse(localStorage.getItem(undoKey) || "[]");
+      return Array.isArray(stored) ? stored.filter((item: UndoEntry) => item?.at && isToday(item.at)) : [];
+    } catch { return []; }
+  });
+  const [undoBusy, setUndoBusy] = useState<string | null>(null);
+  const [undoBarId, setUndoBarId] = useState<string | null>(null);
+  const [undoLogOpen, setUndoLogOpen] = useState(false);
+  useEffect(() => {
+    try { localStorage.setItem(undoKey, JSON.stringify(undoLog.slice(0, UNDO_LOG_LIMIT))); } catch {}
+  }, [undoLog, undoKey]);
+  // Yesterday's log is dropped as soon as the tab notices the date has changed.
+  useEffect(() => {
+    const prune = () => setUndoLog(current =>
+      current.some(item => !isToday(item.at)) ? current.filter(item => isToday(item.at)) : current);
+    const timer = window.setInterval(prune, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    if (!undoBarId) return;
+    const timer = window.setTimeout(() => setUndoBarId(null), UNDO_BAR_MS);
+    return () => window.clearTimeout(timer);
+  }, [undoBarId]);
+  const pendingUndo = useMemo(() => undoLog.filter(item => !item.usedAt), [undoLog]);
+  const undoAction = useMemo(
+    () => (undoBarId ? undoLog.find(item => item.id === undoBarId && !item.usedAt) || null : null),
+    [undoBarId, undoLog],
+  );
+  const runUndoEntry = async (entry: UndoEntry) => {
+    if (entry.usedAt || undoBusy) return;
+    // Anything but the newest change may sit under later edits to the same row,
+    // so what the reversal will actually do is stated plainly before it runs.
+    const newest = pendingUndo[0];
+    if (newest && newest.id !== entry.id && !window.confirm(
+      `«${entry.label}» ليس آخر تغيير.\nالتراجع عنه يعيد الصفوف المعنية إلى حالتها قبله ويلغي ما جرى عليها بعده.\nمتابعة؟`,
+    )) return;
+    setUndoBusy(entry.id);
+    setError(null);
+    try {
+      for (const step of entry.steps) {
+        await fetchJson(step.url, {
+          method: step.method,
+          ...(step.body === undefined
+            ? {}
+            : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.body) }),
+        });
+      }
+      setUndoLog(current => current.map(item => (item.id === entry.id ? { ...item, usedAt: Date.now() } : item)));
+      if (undoBarId === entry.id) setUndoBarId(null);
       await loadRows();
-      setMessage("تم التراجع عن آخر تغيير");
-      setUndoAction(null);
+      setMessage(`تم التراجع: ${entry.label}`);
     } catch (e: any) {
       setError(friendlyError(e));
     } finally {
-      setUndoBusy(false);
+      setUndoBusy(null);
     }
   };
-  const offerUndo = (label: string, run: () => Promise<void>) =>
-    setUndoAction({ label, run, until: Date.now() + 60_000 });
+  const offerUndo = (label: string, steps: UndoStep[]) => {
+    if (!steps.length) return;
+    const entry: UndoEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label, at: Date.now(), steps,
+    };
+    setUndoLog(current => [entry, ...current].slice(0, UNDO_LOG_LIMIT));
+    setUndoBarId(entry.id);
+  };
+  // A saved row, reduced to the one request that would put it back as it was.
+  const restoreStep = (snapshot: FSchedule): UndoStep => {
+    const body: any = { ...snapshot };
+    delete body.id;
+    delete body.AdCourseName;
+    return { method: "PUT", url: `/api/schedules/${snapshot.id}`, body };
+  };
 
   /**
    * What each course has habitually been, read from every term on record.
@@ -1318,19 +1406,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       });
       if (editor === "edit" && before) {
         const { id: _id, AdCourseName: _name, ...previousValues } = before as any;
-        offerUndo("تراجع عن التعديل", async () => {
-          await fetchJson(`/api/schedules/${editId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(previousValues),
-          });
-        });
+        offerUndo(
+          `تعديل ${before.AdCourseName || courseById.get(before.AdCourseId)?.CourseName || "موعد"}`,
+          [{ method: "PUT", url: `/api/schedules/${editId}`, body: previousValues }],
+        );
       } else if (editor !== "edit") {
         const createdId = Number(saved?.id || 0);
         if (createdId) {
-          offerUndo("تراجع عن الإضافة", async () => {
-            await fetchJson(`/api/schedules/${createdId}`, { method: "DELETE" });
-          });
+          offerUndo(
+            `إضافة ${courseById.get(form.AdCourseId)?.CourseName || "موعد"}`,
+            [{ method: "DELETE", url: `/api/schedules/${createdId}` }],
+          );
         }
       }
       rememberSave(form);
@@ -1357,13 +1443,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       await fetchJson(`/api/schedules/${id}`, { method: "DELETE" });
       if (before) {
         const { id: _id, AdCourseName: _name, ...values } = before as any;
-        offerUndo("تراجع عن الحذف", async () => {
-          await fetchJson("/api/schedules", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(values),
-          });
-        });
+        offerUndo(
+          `حذف ${before.AdCourseName || courseById.get(before.AdCourseId)?.CourseName || "موعد"}`,
+          [{ method: "POST", url: "/api/schedules", body: values }],
+        );
       }
       await loadRows();
     } catch (e: any) {
@@ -1605,25 +1688,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * The previous build answered a drag with a modal that asked the coordinator
    * to approve the thing they had just done with their hand, and building a
    * timetable became a hundred confirmations. So the gesture now means what it
-   * looks like: the card lands, the change is written, and a minute of undo sits
-   * at the bottom of the screen in case the hand was wrong. Nothing is lost by
-   * being decisive when the decision is reversible.
+   * looks like: the card lands, the change is written, and the move joins the
+   * day's undo log in case the hand was wrong. Nothing is lost by being
+   * decisive when the decision is reversible.
    *
    * Refusal is reserved for what genuinely cannot be saved. A real clash — the
    * same instructor or the same hall in the same hour — sends the card home and
    * says which lecture it collided with, by name, in Arabic.
    */
-  const restoreRow = (snapshot: FSchedule) => async () => {
-    const payload: any = { ...snapshot };
-    delete payload.id;
-    delete payload.AdCourseName;
-    await fetchJson(`/api/schedules/${snapshot.id}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  };
-
   const describeConflict = (list: any[]) => {
     const lines = list
       .slice(0, 3)
@@ -1711,7 +1783,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         moves.length > 1
           ? `نُقل ${moves.length} مواعيد إلى ${label} ${target.start}`
           : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${target.start}`,
-        async () => { for (const move of moves) await restoreRow(move.before)(); },
+        moves.map(move => restoreStep(move.before)),
       );
       void loadRows();
     } catch (e: any) {
@@ -1755,6 +1827,47 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * follows the data, snapped outward to the half hour with one empty slot of
    * air at each end, and never collapses below four hours.
    */
+  /**
+   * The minute the grid believes it is.
+   *
+   * A wall clock rather than a timer: the first tick is aligned to the next
+   * minute boundary, so the marker moves when the minute actually changes
+   * instead of at some random fraction of a minute after the page opened.
+   */
+  const [nowMinutes, setNowMinutes] = useState(() => {
+    const at = new Date();
+    return at.getHours() * 60 + at.getMinutes();
+  });
+  useEffect(() => {
+    let interval: number | undefined;
+    const read = () => {
+      const at = new Date();
+      setNowMinutes(at.getHours() * 60 + at.getMinutes());
+    };
+    const at = new Date();
+    const toNextMinute = (60 - at.getSeconds()) * 1000 - at.getMilliseconds();
+    const timeout = window.setTimeout(() => {
+      read();
+      interval = window.setInterval(read, 60_000);
+    }, toNextMinute);
+    return () => {
+      window.clearTimeout(timeout);
+      if (interval !== undefined) window.clearInterval(interval);
+    };
+  }, []);
+  /**
+   * Which column, if any, is today.
+   *
+   * Friday and Saturday are not taught, so they return null — which is how the
+   * marker takes the weekend off rather than parking itself on Thursday.
+   * Recomputed each minute so the column hands over at midnight.
+   */
+  const todayKey = useMemo<DayKey | null>(() => {
+    const byWeekday: Record<number, DayKey> = {
+      0: "fsunday", 1: "fmonday", 2: "ftuesday", 3: "fwednesday", 4: "fthursday",
+    };
+    return byWeekday[new Date().getDay()] ?? null;
+  }, [nowMinutes]);
   const gridWindow = useMemo(() => {
     const starts = weekRows.map(row => mins(row.fstarttime)).filter(value => Number.isFinite(value));
     const ends = weekRows.map(row => mins(row.fendtime)).filter(value => Number.isFinite(value));
@@ -1955,8 +2068,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         }}
         onClick={(e) => {
           // A drag ends in a click too; only a press that stayed put means "open".
+          // Geometry alone was not enough — a card nudged five pixels and settled
+          // back still read as a click and opened the whole lecture on top of a
+          // move. The drag itself is now asked whether it just happened.
+          if (physics.didDrag() || physicsActive) return;
           const from = pressOrigin.current;
-          if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
+          if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
           if (picking) { toggleSelect(r.id); return; }
           openEdit(r);
         }}
@@ -2155,21 +2272,48 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * same instructor or the same hall, the gap it leaves in the instructor's
    * day, and whether the length matches what the day expects.
    */
-  const dragSuggestions = useMemo(() => {
+  /**
+   * The whole week judged at the moment the card leaves the grid.
+   *
+   * Waiting for the pointer to arrive before saying "not here" makes the search
+   * a guessing game: the coordinator drags across four squares, is refused four
+   * times, and learns the rule one refusal at a time. So every square is judged
+   * at once, the instant the card is lifted — the ones that cannot take it are
+   * shaded and say why, and the three best are ranked.
+   *
+   * This is a local reading and it stays modest about it: it refuses only what
+   * is certainly true from data already on screen — the same instructor or the
+   * same hall already busy in that hour, or a lecture too long to finish before
+   * the grid ends. Everything subtler stays the server's judgement when the
+   * pointer actually arrives, and the server remains the only thing that can
+   * block a save.
+   */
+  const dragField = useMemo(() => {
+    const blocked = new Map<string, string>();
+    const suggestions: Array<{ day: DayKey; start: string; score: number }> = [];
     const carried = physics.state.row;
-    if (!carried || physics.state.phase === "idle") return [] as Array<{ day: DayKey; start: string; score: number }>;
+    if (!carried || physics.state.phase === "idle") return { blocked, suggestions };
     const span = Math.max(30, mins(carried.fendtime) - mins(carried.fstarttime));
-    const instructorRows = weekRows.filter(row => row.id !== carried.id && row.AdInstructorId === carried.AdInstructorId);
-    const hallRows = weekRows.filter(row => row.id !== carried.id && row.AdRoomCode === carried.AdRoomCode && row.AdRoomHall === carried.AdRoomHall);
-    const out: Array<{ day: DayKey; start: string; score: number }> = [];
+    const instructorRows = weekRows.filter(row => row.id !== carried.id && carried.AdInstructorId && row.AdInstructorId === carried.AdInstructorId);
+    const hallRows = weekRows.filter(row => row.id !== carried.id && carried.AdRoomCode && row.AdRoomCode === carried.AdRoomCode && row.AdRoomHall === carried.AdRoomHall);
     for (const day of days) {
       for (const slot of timeSlots) {
+        const key = `${day.key}:${slot}`;
         const from = mins(slot);
         const to = from + span;
-        if (to > gridWindow.end) continue;
-        const busy = (list: FSchedule[]) => list.some(row =>
+        if (to > gridWindow.end) { blocked.set(key, "المحاضرة أطول من الوقت المتبقي في هذا اليوم"); continue; }
+        const clash = (list: FSchedule[]) => list.find(row =>
           (row as any)[day.key] && mins(row.fstarttime) < to && mins(row.fendtime) > from);
-        if (busy(instructorRows) || busy(hallRows)) continue;
+        const instructorClash = clash(instructorRows);
+        if (instructorClash) {
+          blocked.set(key, `الأستاذ مرتبط بـ${instructorClash.AdCourseName || courseById.get(instructorClash.AdCourseId)?.CourseName || "موعد آخر"} ${instructorClash.fstarttime}`);
+          continue;
+        }
+        const hallClash = clash(hallRows);
+        if (hallClash) {
+          blocked.set(key, `القاعة محجوزة لـ${hallClash.AdCourseName || courseById.get(hallClash.AdCourseId)?.CourseName || "موعد آخر"} ${hallClash.fstarttime}`);
+          continue;
+        }
         let score = 100;
         // A lecture that sits against another of the same instructor's is kinder
         // than one that leaves an hour of waiting in the middle of their day.
@@ -2187,21 +2331,29 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         const expected = day.key === "fmonday" || day.key === "fwednesday" ? 90 : 60;
         if (span !== expected) score -= 18;
         if (from < 8 * 60 || from >= 14 * 60) score -= 8;
-        out.push({ day: day.key as DayKey, start: slot, score });
+        suggestions.push({ day: day.key as DayKey, start: slot, score });
       }
     }
-    return out.sort((a, b) => b.score - a.score).slice(0, 3);
-  }, [physics.state.row, physics.state.phase, weekRows, timeSlots, gridWindow]);
+    suggestions.sort((a, b) => b.score - a.score);
+    return { blocked, suggestions: suggestions.slice(0, 3) };
+  }, [physics.state.row, physics.state.phase, weekRows, timeSlots, gridWindow, courseById]);
+  const dragSuggestions = dragField.suggestions;
   const suggestionRank = useMemo(() => {
     const map = new Map<string, number>();
     dragSuggestions.forEach((item, index) => map.set(`${item.day}:${item.start}`, index + 1));
     return map;
   }, [dragSuggestions]);
+  /** Why this square cannot take the carried card, for its tooltip. */
+  const slotBlockReason = (day: DayKey, start: string) => dragField.blocked.get(`${day}:${start}`) || "";
 
   const physicsSlotClass = (day: DayKey, start: string) => {
     const key = `${day}:${start}`;
     const rank = suggestionRank.get(key);
-    const sampled = physicsField[key];
+    // Lifting the card shades every square the local reading has ruled out, so
+    // the shape of what is free is visible before the pointer goes anywhere.
+    // Where the server has since given a verdict for a square the pointer
+    // actually visited, that verdict wins — it knows rules this reading cannot.
+    const sampled = physicsField[key] || (dragField.blocked.has(key) ? "impossible" : "");
     const active =
       physics.state.target?.day === day &&
       physics.state.target?.start === start;
@@ -3522,6 +3674,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               {days.map((d) => (
                 <div
                   className={`week-day-head ${physics.state.target?.day === d.key ? `physics-day-target physics-${physics.state.decision?.quality || "unknown"}` : ""} ${physics.state.target?.day === d.key && physics.state.decision?.stress ? `stress-${physics.state.decision.stress.level}` : ""}`}
+                  data-today={todayKey === d.key ? "true" : undefined}
                   key={d.key}
                 >
                   <button
@@ -3558,6 +3711,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     className={`week-day ${expandedDay && expandedDay !== d.key ? "week-day-collapsed" : ""}`}
                     data-physics-day-column="true"
                     data-busiest={weekLayout[d.key]?.busiest || 1}
+                    data-today={todayKey === d.key ? "true" : undefined}
                     key={d.key}
                   >
                     {timeSlots.map((t) => (
@@ -3571,7 +3725,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         onDragOver={(e) => e.preventDefault()}
                         role="button"
                         tabIndex={-1}
-                        title={`إضافة موعد · ${d.label} ${t}`}
+                        title={slotBlockReason(d.key as DayKey, t) || `إضافة موعد · ${d.label} ${t}`}
                         onPointerDown={(e) => {
                           // Only a press on the empty square itself; a press that
                           // landed on a lecture belongs to that lecture.
@@ -3621,6 +3775,21 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       >
                         <b dir="ltr">{paint.from}–{paint.to}</b>
                         <span>موعد جديد</span>
+                      </div>
+                    ) : null}
+                    {/* Today's column carries the hour it actually is. Positioned by the
+                        same arithmetic as every card above it, and deliberately free of
+                        pointer handlers — a stray one here would land on the cards and
+                        take the drag with it. */}
+                    {todayKey === d.key &&
+                    nowMinutes >= gridWindow.start &&
+                    nowMinutes <= gridWindow.end ? (
+                      <div
+                        className="week-now"
+                        style={{ top: ((nowMinutes - gridWindow.start) / 30) * SLOT_H }}
+                        aria-hidden="true"
+                      >
+                        <span><time>{timeFromMins(nowMinutes)}</time></span>
                       </div>
                     ) : null}
                     {experience.ghostEnabled
@@ -3678,8 +3847,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           }}
                           onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; grip.onPointerDown?.(e); }}
                           onClick={(e) => {
+                            if (physics.didDrag() || physicsActive) return;
                             const from = pressOrigin.current;
-                            if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
+                            if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
                             if (picking) { toggleSelect(placed.row.id); return; }
                             openEdit(placed.row);
                           }}
@@ -3741,8 +3911,62 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <div className="undo-bar no-print" role="status">
           <History aria-hidden="true" />
           <span>{undoAction.label}</span>
-          <button type="button" onClick={runUndo} disabled={undoBusy}>{undoBusy ? "يتراجع…" : "تراجع"}</button>
-          <button type="button" className="undo-dismiss" onClick={() => setUndoAction(null)} aria-label="إخفاء"><X /></button>
+          <button type="button" onClick={() => void runUndoEntry(undoAction)} disabled={Boolean(undoBusy)}>
+            {undoBusy === undoAction.id ? "يتراجع…" : "تراجع"}
+          </button>
+          <button type="button" className="undo-dismiss" onClick={() => setUndoBarId(null)} aria-label="إخفاء"><X /></button>
+        </div>
+      ) : null}
+      {/*
+        The bar leaves after a few seconds; the day does not. Everything undoable
+        since this morning sits behind one quiet button, newest first, each line
+        saying what it was and at what time — so a mistake found three saves
+        later is still a mistake that can be taken back.
+      */}
+      {!undoAction && pendingUndo.length ? (
+        <button
+          type="button"
+          className="undo-log-open no-print"
+          onClick={() => setUndoLogOpen(true)}
+          title="سجل تغييرات اليوم"
+        >
+          <History aria-hidden="true" />
+          <span>سجل اليوم</span>
+          <b>{pendingUndo.length}</b>
+        </button>
+      ) : null}
+      {undoLogOpen ? (
+        <div className="undo-log-sheet no-print" role="dialog" aria-modal="true" aria-label="سجل تغييرات اليوم">
+          <div className="undo-log-backdrop" onClick={() => setUndoLogOpen(false)} />
+          <div className="undo-log-panel">
+            <header>
+              <History aria-hidden="true" />
+              <strong>سجل تغييرات اليوم</strong>
+              <button type="button" className="undo-dismiss" onClick={() => setUndoLogOpen(false)} aria-label="إغلاق"><X /></button>
+            </header>
+            {undoLog.length ? (
+              <ul>
+                {undoLog.map(entry => (
+                  <li key={entry.id} className={entry.usedAt ? "used" : ""}>
+                    <div className="undo-log-line">
+                      <span className="undo-log-label">{entry.label}</span>
+                      <time dateTime={new Date(entry.at).toISOString()}>{undoClock(entry.at)}</time>
+                    </div>
+                    {entry.usedAt ? (
+                      <span className="undo-log-done">تُراجع عنه {undoClock(entry.usedAt)}</span>
+                    ) : (
+                      <button type="button" onClick={() => void runUndoEntry(entry)} disabled={Boolean(undoBusy)}>
+                        {undoBusy === entry.id ? "يتراجع…" : "تراجع"}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="undo-log-empty">لم يُسجَّل أي تغيير اليوم.</p>
+            )}
+            <footer>يُمسح السجل تلقائياً مع بداية يوم جديد.</footer>
+          </div>
         </div>
       ) : null}
       {transferOpen ? (

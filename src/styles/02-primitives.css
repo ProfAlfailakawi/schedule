@@ -433,7 +433,10 @@
   pointer-events:auto;
   width:min(760px,100%);
   box-shadow:var(--shadow-lg);
-  animation:toast-in .26s var(--ease-out) both;
+  /* Spring, not decelerate: a toast is the interface answering back, and the
+     small overshoot is what separates an answer from a fade-in. The extra
+     80ms is the overshoot itself — the same .26s would clip the return. */
+  animation:toast-in .34s var(--ease-spring) both;
 }
 @keyframes toast-in{from{opacity:0;transform:translateY(-14px) scale(.98)}to{opacity:1;transform:none}}
 

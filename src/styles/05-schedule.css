@@ -352,6 +352,62 @@
 .week-paint b{font:600 var(--t-sm)/1 var(--font-mono);font-variant-numeric:tabular-nums}
 .week-paint span{font-size:var(--t-xs);opacity:.85}
 
+/* --- The line that says "now" ----------------------------------------------
+   The week is a template of recurring weekdays, not a row of dates, so the
+   marker belongs to today's column alone. Drawn across all five it would claim
+   a Sunday lecture is under way on a Wednesday afternoon.
+
+   Brass, not red. Red in this interface means conflict, and a permanent red
+   line through the column a user is scanning for conflicts reads as an alarm
+   that never clears. Brass is already the colour of temporal attention here —
+   it is what marks a row as just changed.
+
+   The offset comes from the same arithmetic the cards use,
+   (minutes − window start) / 30 × SLOT_H, so the line rests on the hour the
+   cards rest on. Any other formula and it drifts a little further down the day
+   with every half hour. */
+.week-now{
+  position:absolute;
+  inset-inline:0;
+  z-index:9;
+  height:0;
+  border-top:2px solid var(--brass);
+  pointer-events:none;
+}
+.week-now::before{
+  content:"";
+  position:absolute;
+  inset-inline-start:0;
+  top:-4px;
+  width:7px;height:7px;
+  border-radius:var(--r-full);
+  background:var(--brass);
+}
+/* The pill carries no `direction` of its own on purpose: `inset-inline-start`
+   resolves against the element's own direction, so an ltr pill would anchor
+   itself to the physical left and drift to the far side of the column in this
+   right-to-left grid. The <time> inside is what turns the digits around — the
+   same primitive the rest of the interface uses for clock values. */
+.week-now span{
+  position:absolute;
+  inset-inline-start:11px;
+  top:-9px;
+  padding:1px 6px;
+  border-radius:var(--r-full);
+  /* Brass alone puts white text at 4.5:1 — right on the line. Pulling it a
+     seventh of the way toward ink darkens it on paper and lightens it in the
+     dark theme, because ink is whichever pole the surface is not, so the pill
+     gains contrast in both without leaving the brass family. */
+  background:color-mix(in srgb,var(--brass) 86%,var(--ink));
+  color:var(--surface);
+  font:600 10px/1.6 var(--font-mono);
+  white-space:nowrap;
+}
+/* Today carries the faintest wash, so the column is findable when the hour in
+   view is nowhere near the line. */
+.week-day[data-today="true"]{background:color-mix(in srgb,var(--brass) 4%,transparent)}
+.week-day-head[data-today="true"] .week-day-toggle>span{color:var(--brass);font-weight:650}
+
 /* --- The card -------------------------------------------------------------
    A timetable is read for a subject and a colleague. The course name leads,
    the instructor follows, and the catalogue number is demoted to a small mark
@@ -1653,6 +1709,82 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .undo-bar .undo-dismiss:hover{color:var(--nav-ink)}
 
 /* --------------------------------------------------------------------------
+   THE DAY'S UNDO LOG
+   The bar leaves after a few seconds so it is never in the way. What it was
+   offering does not leave with it: one small button holds the day, and opens
+   a list of every change still reversible, newest first.
+   -------------------------------------------------------------------------- */
+.undo-log-open{
+  position:fixed;z-index:150;
+  inset-inline-start:var(--s5);
+  bottom:calc(var(--s5) + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:var(--s2);
+  min-height:32px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--nav);color:var(--nav-muted);
+  box-shadow:var(--shadow-md);
+  font-size:var(--t-xs);
+  animation:rise .22s var(--ease-out) both;
+}
+.undo-log-open:hover{color:var(--nav-ink)}
+.undo-log-open>svg{width:14px;height:14px;color:var(--brass)}
+.undo-log-open>b{
+  min-width:18px;padding:0 5px;border-radius:var(--r-full);
+  background:var(--accent);color:var(--accent-contrast);
+  font-size:10px;font-weight:700;line-height:18px;text-align:center;
+}
+.undo-log-sheet{position:fixed;inset:0;z-index:200;display:grid;place-items:end start}
+.undo-log-backdrop{position:absolute;inset:0;background:color-mix(in srgb,var(--ink) 28%,transparent)}
+.undo-log-panel{
+  position:relative;
+  margin:var(--s5);margin-bottom:calc(var(--s5) + env(safe-area-inset-bottom));
+  width:min(360px,calc(100vw - var(--s5) * 2));
+  max-height:min(60vh,520px);
+  display:flex;flex-direction:column;
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+  animation:rise .2s var(--ease-out) both;
+}
+.undo-log-panel>header{
+  display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);
+}
+.undo-log-panel>header>svg{width:15px;height:15px;color:var(--brass)}
+.undo-log-panel>header>strong{flex:1;font-size:var(--t-sm)}
+.undo-log-panel>header .undo-dismiss{
+  width:26px;height:26px;padding:0;display:grid;place-items:center;
+  background:transparent;color:var(--muted);
+}
+.undo-log-panel>header .undo-dismiss svg{width:13px;height:13px}
+.undo-log-panel>header .undo-dismiss:hover{color:var(--ink)}
+.undo-log-panel>ul{overflow-y:auto;padding:var(--s2) 0;margin:0;list-style:none}
+.undo-log-panel>ul>li{
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s2) var(--s4);
+}
+.undo-log-panel>ul>li+li{border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
+.undo-log-panel>ul>li.used{opacity:.55}
+.undo-log-line{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.undo-log-label{
+  font-size:var(--t-sm);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.undo-log-line>time{font-size:var(--t-xs);color:var(--muted);font-variant-numeric:tabular-nums}
+.undo-log-panel>ul>li>button{
+  flex:none;min-height:28px;padding:0 var(--s3);
+  border-radius:var(--r-full);
+  background:var(--accent);color:var(--accent-contrast);
+  font-size:var(--t-xs);font-weight:600;
+}
+.undo-log-panel>ul>li>button:disabled{opacity:.6}
+.undo-log-done{flex:none;font-size:var(--t-xs);color:var(--muted)}
+.undo-log-empty{padding:var(--s5) var(--s4);margin:0;text-align:center;color:var(--muted);font-size:var(--t-sm)}
+.undo-log-panel>footer{
+  padding:var(--s2) var(--s4);border-top:1px solid var(--line);
+  color:var(--muted);font-size:var(--t-xs);
+}
+
+/* --------------------------------------------------------------------------
    THE THREE BEST PLACES
    Shown the moment a lecture leaves its slot, before the pointer has gone
    anywhere. Ranked, numbered, and calm enough to sit under a moving card.
@@ -1668,7 +1800,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   color:var(--success);
   font:700 11px/1 var(--font-mono);
   pointer-events:none;
-  animation:suggest-in .3s var(--ease-out) both;
+  animation:suggest-in .34s var(--ease-spring) both;
 }
 .week-slot.suggested-1::before{content:"1";border-style:solid;background:color-mix(in srgb,var(--success) 18%,transparent)}
 .week-slot.suggested-2::before{content:"2"}
