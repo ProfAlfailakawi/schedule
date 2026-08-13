@@ -6,6 +6,7 @@ import {
   BrainCircuit,
   Building2,
   CalendarDays,
+  ClipboardCheck,
   CheckCircle2,
   Clock3,
   Expand,
@@ -84,6 +85,10 @@ import {
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, sortByName } from "../utils/sorting";
+import ScheduleReview from "./ScheduleReview";
+import InstructorPicker from "./InstructorPicker";
+import ScheduleTransfer from "./ScheduleTransfer";
+import { adviseDayPattern, patternsForHours, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -169,6 +174,33 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!res.ok) throw new Error(data.error || "تعذر تحميل البيانات");
     return data;
   };
+  /**
+   * The department's own courses, not the university's.
+   *
+   * Resolving a course id to a name needed the catalogue, and the catalogue was
+   * fetched whole — fourteen hundred records to name the forty that belong to
+   * the open department. Once a department is chosen its slice is fetched
+   * instead, which is the same information at a fortieth of the weight.
+   */
+  useEffect(() => {
+    if (!filterSection) return;
+    let alive = true;
+    // The department's own staff, not the university register.
+    fetchJson(`/api/instructors?sectionId=${filterSection}&termId=${filterTerm || 0}`)
+      .then((list: any[]) => {
+        if (!alive || !Array.isArray(list) || !list.length) return;
+        setInstructors(sortByName(list, (row: any) => row.AdInstructorName));
+      })
+      .catch(() => undefined);
+    fetchJson(`/api/courses?sectionId=${filterSection}`)
+      .then((list: any[]) => {
+        if (!alive || !Array.isArray(list) || !list.length) return;
+        setCourses(sortByName(list, (row: any) => row.CourseName));
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [filterSection, filterTerm]);
+
   const loadLookups = async () => {
     const [c, s, rawTerms, co, i] = await Promise.all([
       fetchJson("/api/colleges"),
@@ -261,6 +293,83 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const taken = rows.filter(row => Number(row.AdCourseId) === courseId && Number(row.AdTermId) === termId).length;
     return taken ? `شعب هذا المقرر المسجّلة: ${taken.toLocaleString("ar-KW-u-nu-latn")} — اقترحنا الرقم التالي` : "أول شعبة لهذا المقرر";
   }, [form.AdCourseId, form.AdTermId, filterTerm, rows]);
+
+  /** What the chosen days mean for the length of this lecture. */
+  const dayPatternNote = useMemo(() => {
+    const chosen = days.filter(day => (form as any)[day.key]).map(day => day.key as RegDayKey);
+    const advice = adviseDayPattern(chosen, form.fstarttime, form.fendtime);
+    return advice?.note;
+  }, [form.fsunday, form.fmonday, form.ftuesday, form.fwednesday, form.fthursday, form.fstarttime, form.fendtime]);
+
+  /** The department's own staff, ordered by how much of it they carry. */
+  const departmentInstructorIds = useMemo(() => {
+    const load = new Map<number, number>();
+    rows.forEach(row => {
+      const id = Number(row.AdInstructorId);
+      if (id) load.set(id, (load.get(id) || 0) + 1);
+    });
+    return [...load.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+  }, [rows]);
+
+  /**
+   * One minute to change your mind.
+   *
+   * Every save here was final, which makes people hesitate before doing the
+   * ordinary thing — and hesitation is what makes a tool feel heavy. The
+   * inverse of the last change is kept for a minute: deleting what was created,
+   * restoring what was edited, re-creating what was deleted. It is offered, not
+   * imposed, and it expires on its own so it can never undo something the
+   * person has long stopped thinking about.
+   */
+  const [undoAction, setUndoAction] = useState<{ label: string; run: () => Promise<void>; until: number } | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
+  useEffect(() => {
+    if (!undoAction) return;
+    const timer = window.setTimeout(() => setUndoAction(null), Math.max(0, undoAction.until - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [undoAction]);
+  const runUndo = async () => {
+    if (!undoAction) return;
+    setUndoBusy(true);
+    try {
+      await undoAction.run();
+      await loadRows();
+      setMessage("تم التراجع عن آخر تغيير");
+      setUndoAction(null);
+    } catch (e: any) {
+      setError(friendlyError(e));
+    } finally {
+      setUndoBusy(false);
+    }
+  };
+  const offerUndo = (label: string, run: () => Promise<void>) =>
+    setUndoAction({ label, run, until: Date.now() + 60_000 });
+
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
+  /** Appointments the review asked to see; they glow until something else happens. */
+  const [reviewFocus, setReviewFocus] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (!reviewFocus.size) return;
+    const timer = window.setTimeout(() => setReviewFocus(new Set()), 20000);
+    return () => window.clearTimeout(timer);
+  }, [reviewFocus]);
+  const [previousTermRows, setPreviousTermRows] = useState<FSchedule[]>([]);
+  useEffect(() => {
+    if (!reviewOpen || !filterTerm) return;
+    const earlier = terms
+      .map(term => Number(term.AdTermId) || 0)
+      .filter(id => id < Number(filterTerm))
+      .reduce((max, id) => Math.max(max, id), 0);
+    if (!earlier) { setPreviousTermRows([]); return; }
+    const query = new URLSearchParams({ termId: String(earlier) });
+    if (filterCollege) query.set("collegeId", String(filterCollege));
+    if (filterSection) query.set("sectionId", String(filterSection));
+    fetch(`/api/schedules?${query}`)
+      .then(response => (response.ok ? response.json() : []))
+      .then(data => setPreviousTermRows(Array.isArray(data) ? data : []))
+      .catch(() => setPreviousTermRows([]));
+  }, [reviewOpen, filterTerm, filterCollege, filterSection, terms]);
 
   const [rowsLoading, setRowsLoading] = useState(false);
   /**
@@ -569,6 +678,39 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const validationIssues=[!selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":""].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
   const filteredRows=useMemo(()=>{const q=quickSearch.trim().toLowerCase();if(!q)return rows;return rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)})},[rows,quickSearch,courseById,instructorById]);
+  /**
+   * The shapes this course is allowed to take.
+   *
+   * Read from the course's own weekly hours, so the answer is about this course
+   * and not about lectures in general. Applying one rewrites the days and the
+   * end time together, which is the only way a move between day families can
+   * leave the course still adding up to its credit hours.
+   */
+  const approvedPatterns = useMemo<WeeklyPattern[]>(() => {
+    const course = courseById.get(Number(form.AdCourseId) || 0);
+    const hours = Number(course?.CourseHours || course?.CourseCredit || 0);
+    return hours ? patternsForHours(hours) : [];
+  }, [form.AdCourseId, courseById]);
+  const activePattern = useMemo(() => {
+    const chosen = days.filter(day => (form as any)[day.key]).map(day => day.key);
+    return approvedPatterns.find(pattern =>
+      pattern.days.length === chosen.length && pattern.days.every(day => chosen.includes(day as any))) || null;
+  }, [approvedPatterns, form.fsunday, form.fmonday, form.ftuesday, form.fwednesday, form.fthursday]);
+  const applyPattern = (pattern: WeeklyPattern) => {
+    setScheduleTouched(true);
+    setForm(previous => {
+      const next: any = { ...previous };
+      days.forEach(day => { next[day.key] = pattern.days.includes(day.key as any); });
+      // Every meeting starts at the same hour (م.٨/٩); the first one sets the length.
+      const start = next.fstarttime || "08:00";
+      next.fstarttime = start;
+      const [h, m] = start.split(":").map(Number);
+      const total = Math.min(23 * 60 + 30, (h || 0) * 60 + (m || 0) + pattern.minutesPerDay[0]);
+      next.fendtime = `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+      return next;
+    });
+  };
+
   const weekInstructors = useMemo(() => {
     const seen = new Map<number, string>();
     filteredRows.forEach(row => {
@@ -989,11 +1131,29 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     try {
       const url =
         editor === "edit" ? `/api/schedules/${editId}` : "/api/schedules";
-      await fetchJson(url, {
+      const before = editor === "edit" ? rows.find((row) => row.id === editId) : null;
+      const saved = await fetchJson(url, {
         method: editor === "edit" ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form }),
       });
+      if (editor === "edit" && before) {
+        const { id: _id, AdCourseName: _name, ...previousValues } = before as any;
+        offerUndo("تراجع عن التعديل", async () => {
+          await fetchJson(`/api/schedules/${editId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(previousValues),
+          });
+        });
+      } else if (editor !== "edit") {
+        const createdId = Number(saved?.id || 0);
+        if (createdId) {
+          offerUndo("تراجع عن الإضافة", async () => {
+            await fetchJson(`/api/schedules/${createdId}`, { method: "DELETE" });
+          });
+        }
+      }
       rememberSave(form);
       markChanged(editor === "edit" ? editId : null);
       // Follow the save: the list jumps to the scope the row was filed under so
@@ -1014,7 +1174,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!window.confirm("هل أنت متأكد من حذف بيانات المقرر الدراسي؟")) return;
     setError(null);
     try {
+      const before = rows.find((row) => row.id === id);
       await fetchJson(`/api/schedules/${id}`, { method: "DELETE" });
+      if (before) {
+        const { id: _id, AdCourseName: _name, ...values } = before as any;
+        offerUndo("تراجع عن الحذف", async () => {
+          await fetchJson("/api/schedules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(values),
+          });
+        });
+      }
       await loadRows();
     } catch (e: any) {
       setError(friendlyError(e));
@@ -1391,7 +1562,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         }}
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
-        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${physicsPreview?.row.id === r.id ? "physics-source-pending" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
+        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${physicsPreview?.row.id === r.id ? "physics-source-pending" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""}`}
         style={{ ...style, ["--hue" as any]: courseHue(code) }}
         data-quickview={`${code} · ${r.AdCourseName || c?.CourseName || "مقرر"}
 شعبة ${r.SCode} · ${i?.AdInstructorName || "بدون أستاذ"}
@@ -1587,8 +1758,62 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
         .map(([k]) => `physics-rel-${k}`);
     return tags.length ? `physics-related ${tags.join(" ")}` : "physics-dim";
   };
+  /**
+   * Where this lecture would sit best, shown while it is still in the air.
+   *
+   * The grid already says "here is bad" once the pointer arrives. Saying "here
+   * are the three best" before the pointer goes anywhere turns a search into a
+   * choice. The scoring is deliberately local and instant — no request, no
+   * waiting — and only counts things that are certainly true: a clash with the
+   * same instructor or the same hall, the gap it leaves in the instructor's
+   * day, and whether the length matches what the day expects.
+   */
+  const dragSuggestions = useMemo(() => {
+    const carried = physics.state.row;
+    if (!carried || physics.state.phase === "idle") return [] as Array<{ day: DayKey; start: string; score: number }>;
+    const span = Math.max(30, mins(carried.fendtime) - mins(carried.fstarttime));
+    const instructorRows = weekRows.filter(row => row.id !== carried.id && row.AdInstructorId === carried.AdInstructorId);
+    const hallRows = weekRows.filter(row => row.id !== carried.id && row.AdRoomCode === carried.AdRoomCode && row.AdRoomHall === carried.AdRoomHall);
+    const out: Array<{ day: DayKey; start: string; score: number }> = [];
+    for (const day of days) {
+      for (const slot of timeSlots) {
+        const from = mins(slot);
+        const to = from + span;
+        if (to > gridWindow.end) continue;
+        const busy = (list: FSchedule[]) => list.some(row =>
+          (row as any)[day.key] && mins(row.fstarttime) < to && mins(row.fendtime) > from);
+        if (busy(instructorRows) || busy(hallRows)) continue;
+        let score = 100;
+        // A lecture that sits against another of the same instructor's is kinder
+        // than one that leaves an hour of waiting in the middle of their day.
+        const sameDay = instructorRows
+          .filter(row => (row as any)[day.key])
+          .map(row => ({ from: mins(row.fstarttime), to: mins(row.fendtime) }));
+        if (sameDay.length) {
+          const nearest = Math.min(...sameDay.map(other =>
+            other.to <= from ? from - other.to : other.from >= to ? other.from - to : 0));
+          score -= Math.min(40, Math.round(nearest / 15) * 4);
+        } else {
+          // A brand-new day for this instructor costs a commute.
+          score -= 12;
+        }
+        const expected = day.key === "fmonday" || day.key === "fwednesday" ? 90 : 60;
+        if (span !== expected) score -= 18;
+        if (from < 8 * 60 || from >= 14 * 60) score -= 8;
+        out.push({ day: day.key as DayKey, start: slot, score });
+      }
+    }
+    return out.sort((a, b) => b.score - a.score).slice(0, 3);
+  }, [physics.state.row, physics.state.phase, weekRows, timeSlots, gridWindow]);
+  const suggestionRank = useMemo(() => {
+    const map = new Map<string, number>();
+    dragSuggestions.forEach((item, index) => map.set(`${item.day}:${item.start}`, index + 1));
+    return map;
+  }, [dragSuggestions]);
+
   const physicsSlotClass = (day: DayKey, start: string) => {
     const key = `${day}:${start}`;
+    const rank = suggestionRank.get(key);
     const sampled = physicsField[key];
     const active =
       physics.state.target?.day === day &&
@@ -1596,7 +1821,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
     const quality = active
       ? physics.state.decision?.quality || sampled || "unknown"
       : sampled || "";
-    return `${active ? `physics-target physics-${quality}` : ""} ${sampled ? `gravity-slot gravity-${sampled}` : ""}`.trim();
+    return `${active ? `physics-target physics-${quality}` : ""} ${sampled ? `gravity-slot gravity-${sampled}` : ""} ${rank ? `suggested-slot suggested-${rank}` : ""}`.trim();
   };
   const pendingCandidate = physicsPreview
     ? buildMoveCandidate(physicsPreview.row, physicsPreview.target)
@@ -2031,27 +2256,42 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                   <header><span>3</span><div><strong>التدريس</strong><small>الأستاذ وأيام المحاضرة</small></div></header>
                   <div className="form-grid">
                 <Field label="أستاذ المقرر" required>
-                  <select
-                    value={form.AdInstructorId || ""}
-                    onChange={(e) =>
-                      setNumber("AdInstructorId", e.target.value)
+                  <InstructorPicker
+                    value={Number(form.AdInstructorId) || 0}
+                    onChange={(id) => setForm((p) => ({ ...p, AdInstructorId: id }))}
+                    instructors={instructors as any}
+                    departmentIds={departmentInstructorIds}
+                    onCreated={(person) =>
+                      setInstructors((current: any[]) =>
+                        sortByName([...current, person], (row: any) => row.AdInstructorName))
                     }
-                    required
-                  >
-                    <option value="">اختر ...</option>
-                    {instructors.map((i) => (
-                      <option key={i.AdInstructorId} value={i.AdInstructorId}>
-                        {i.AdInstructorName}
-                      </option>
-                    ))}
-                  </select>
+                  />
                   {form.AdInstructorId ? (
                     <span className="field-hint" dir="ltr">
                       {selectedInstructor?.AdInstructorCivil || "0"}
                     </span>
                   ) : null}
                 </Field>
-                <Field label="الأيام">
+                {approvedPatterns.length ? (
+                  <div className="pattern-shelf">
+                    <span>الأنماط المعتمدة لهذا المقرر</span>
+                    <div>
+                      {approvedPatterns.map(pattern => (
+                        <button
+                          type="button"
+                          key={pattern.id}
+                          className={activePattern?.id === pattern.id ? "active" : ""}
+                          onClick={() => applyPattern(pattern)}
+                          title={pattern.note}
+                        >
+                          {pattern.label}
+                        </button>
+                      ))}
+                    </div>
+                    {activePattern ? <small>{activePattern.note}</small> : <small>اختر نمطاً ليضبط الأيام والمدة معاً.</small>}
+                  </div>
+                ) : null}
+                <Field label="الأيام" hint={dayPatternNote}>
                   <div className="checkbox-row day-pills">
                     {days.map((d) => (
                       <label key={d.key}>
@@ -2060,10 +2300,19 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                           checked={Boolean(form[d.key])}
                           onChange={(e) => {
                             setScheduleTouched(true);
-                            setForm((p) => ({
-                              ...p,
-                              [d.key]: e.target.checked,
-                            }));
+                            setForm((p) => {
+                              const next: any = { ...p, [d.key]: e.target.checked };
+                              // Three weekly hours are two 90-minute meetings on
+                              // Monday/Wednesday, or three 60-minute meetings on
+                              // Sunday/Tuesday/Thursday. Changing the days changes
+                              // the lecture, so the end time follows (م.٨/أ،ب).
+                              const chosen = days.filter(day => next[day.key]).map(day => day.key as RegDayKey);
+                              const advice = adviseDayPattern(chosen, next.fstarttime, next.fendtime);
+                              if (advice && advice.family !== "mixed" && advice.changed && next.fstarttime) {
+                                next.fendtime = advice.suggestedEnd;
+                              }
+                              return next;
+                            });
                           }}
                         />
                         <span>{d.label}</span>
@@ -2417,6 +2666,14 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
             >
               <Expand /> {presentationMode ? "إنهاء العرض" : "عرض"}
             </GhostButton>
+            <GhostButton type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
+              <ClipboardCheck /> الاعتماد
+            </GhostButton>
+            {isPowerAdmin ? (
+              <GhostButton type="button" onClick={() => setTransferOpen(true)} title="استيراد وتصدير واستبدال أستاذ">
+                <ArrowLeftRight /> نقل
+              </GhostButton>
+            ) : null}
             {isPowerAdmin ? (
               <SchedulePublish
                 collegeId={filterCollege}
@@ -2946,7 +3203,7 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
                                 <article
                                   {...physics.bindEvent(r, d.key)}
                                   key={`chip-${d.key}-${r.id}`}
-                                  className={`week-chip ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${justChangedId === r.id ? "just-changed" : ""}`}
+                                  className={`week-chip ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""}`}
                                   style={{ ["--hue" as any]: courseHue(code) }}
                                   draggable={!saving && !physics.supported}
                                   onDragStart={(e) => {
@@ -3056,6 +3313,47 @@ ${r.AdRoomCode || "—"}/${r.AdRoomHall || "—"}`}
           ) : null}
         </>
       )}
+      {undoAction ? (
+        <div className="undo-bar no-print" role="status">
+          <History aria-hidden="true" />
+          <span>{undoAction.label}</span>
+          <button type="button" onClick={runUndo} disabled={undoBusy}>{undoBusy ? "يتراجع…" : "تراجع"}</button>
+          <button type="button" className="undo-dismiss" onClick={() => setUndoAction(null)} aria-label="إخفاء"><X /></button>
+        </div>
+      ) : null}
+      {transferOpen ? (
+        <ScheduleTransfer
+          collegeId={filterCollege}
+          sectionId={filterSection}
+          termId={filterTerm}
+          instructors={instructors as any}
+          departmentIds={departmentInstructorIds}
+          terms={terms as any}
+          onChanged={() => { void loadRows(); }}
+          onClose={() => setTransferOpen(false)}
+        />
+      ) : null}
+      {reviewOpen ? (
+        <ScheduleReview
+          rows={filteredRows}
+          courses={courseById}
+          instructors={instructorById}
+          previousRows={previousTermRows}
+          scopeLine={[
+            terms.find((t) => t.AdTermId === filterTerm)?.AdTermName,
+            colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,
+            sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName,
+          ].filter(Boolean).join(" · ")}
+          onClose={() => setReviewOpen(false)}
+          onFocusRows={(ids) => {
+            // Bring the flagged appointments to the surface using the lens the
+            // week grid already has, rather than inventing a second highlight.
+            setViewMode("week");
+            setQuickSearch("");
+            setReviewFocus(new Set(ids));
+          }}
+        />
+      ) : null}
       <div className="print-only schedule-print">
         <PrintLetterhead
           title="الجدول الدراسي"

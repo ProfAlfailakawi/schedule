@@ -420,3 +420,310 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   .just-changed{animation:none}
   .week-event.just-changed::after,.week-chip.just-changed::after,.agenda-card.just-changed::after{animation:none}
 }
+
+/* ==========================================================================
+   ADOPTION REVIEW
+   Everything the product can check, run at once and reported as one page a
+   department head can sign. Findings quote their article, because a warning
+   nobody can trace back to a rule is a warning people learn to ignore.
+   ========================================================================== */
+
+.review-backdrop{
+  position:fixed;inset:0;z-index:140;
+  display:grid;place-items:center;
+  padding:var(--s5);
+  background:color-mix(in srgb,var(--nav) 62%,transparent);
+  backdrop-filter:blur(6px);
+  animation:fade .18s var(--ease) both;
+}
+.review-sheet{
+  width:min(860px,100%);max-height:92dvh;
+  display:flex;flex-direction:column;
+  border:1px solid var(--line);border-radius:var(--r-2xl);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+  overflow:hidden;
+  animation:rise .24s var(--ease-out) both;
+}
+.review-head{
+  position:relative;
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;gap:var(--s5);
+  padding:var(--s6);
+  border-bottom:1px solid var(--line);
+  overflow:hidden;
+}
+/* A wash of the verdict's colour behind the header, so the mood is read before
+   the number is. */
+.review-head::before{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(ellipse 55% 130% at 88% 40%, var(--wash), transparent 68%);
+}
+.review-head.tone-good{--wash:color-mix(in srgb,var(--success) 14%,transparent);--dial:var(--success)}
+.review-head.tone-warn{--wash:color-mix(in srgb,var(--warning) 14%,transparent);--dial:var(--warning)}
+.review-head.tone-danger{--wash:color-mix(in srgb,var(--danger) 14%,transparent);--dial:var(--danger)}
+.review-head>*{position:relative}
+
+.review-ring{width:88px;height:88px;flex:none;transform:rotate(-90deg)}
+.review-ring circle{fill:none;stroke-width:5;stroke-linecap:round}
+.review-ring .ring-track{stroke:color-mix(in srgb,var(--line) 90%,transparent)}
+.review-ring .ring-value{stroke:var(--dial);transition:stroke-dasharray .8s var(--ease-out)}
+.review-ring text{transform:rotate(90deg);transform-origin:32px 32px;text-anchor:middle}
+.review-ring .ring-number{
+  fill:var(--dial);font-size:19px;font-weight:600;letter-spacing:-.03em;
+  font-variant-numeric:tabular-nums;
+}
+.review-ring .ring-unit{fill:var(--muted-2);font-size:7px}
+.review-title{min-width:0}
+.review-title h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
+.review-title p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm)}
+
+/* The term as one bar. Its clean stretch is the answer at a glance. */
+.review-spread{
+  padding:var(--s4) var(--s6);
+  border-bottom:1px solid var(--line);background:var(--surface-2);
+}
+.spread-bar{
+  display:flex;height:12px;border-radius:var(--r-full);overflow:hidden;
+  background:var(--surface-3);
+}
+.spread-bar i{display:block;height:100%;transition:width .7s var(--ease-out)}
+.seg-high{background:var(--danger)}
+.seg-medium{background:var(--warning)}
+.seg-low{background:var(--muted-2)}
+.seg-clean{background:var(--success)}
+.spread-keys{display:flex;flex-wrap:wrap;gap:var(--s4);margin-top:var(--s3)}
+.spread-keys span{
+  display:inline-flex;align-items:baseline;gap:var(--s2);
+  color:var(--muted);font-size:var(--t-xs);
+}
+.spread-keys span::before{
+  content:"";width:9px;height:9px;border-radius:3px;align-self:center;
+}
+.spread-keys .seg-high{background:transparent}
+.spread-keys .seg-high::before{background:var(--danger)}
+.spread-keys .seg-medium{background:transparent}
+.spread-keys .seg-medium::before{background:var(--warning)}
+.spread-keys .seg-low{background:transparent}
+.spread-keys .seg-low::before{background:var(--muted-2)}
+.spread-keys .seg-clean{background:transparent}
+.spread-keys .seg-clean::before{background:var(--success)}
+.spread-keys b{font-size:var(--t-h4);font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+
+/* How much of the term one finding touches. */
+.finding-share{
+  display:block;height:4px;margin-top:var(--s2);
+  border-radius:var(--r-full);background:var(--surface-3);overflow:hidden;
+}
+.finding-share i{display:block;height:100%;border-radius:var(--r-full);transition:width .6s var(--ease-out)}
+.severity-high .finding-share i{background:var(--danger)}
+.severity-medium .finding-share i{background:var(--warning)}
+.severity-low .finding-share i{background:var(--muted-2)}
+
+.review-body{min-height:0;flex:1;overflow-y:auto}
+.review-finding{border-bottom:1px solid var(--line)}
+.review-finding>button{
+  width:100%;
+  display:grid;grid-template-columns:34px minmax(0,1fr) auto auto;
+  align-items:center;gap:var(--s3);
+  padding:var(--s4) var(--s6);
+  color:var(--ink);text-align:start;
+}
+.review-finding>button:hover{background:var(--surface-2)}
+.review-mark{width:34px;height:34px;display:grid;place-items:center;border-radius:var(--r-sm)}
+.review-mark svg{width:16px;height:16px}
+.severity-high .review-mark{background:var(--danger-soft);color:var(--danger)}
+.severity-medium .review-mark{background:var(--warning-soft);color:var(--warning)}
+.severity-low .review-mark{background:var(--surface-3);color:var(--muted)}
+.review-copy{min-width:0}
+.review-copy strong{display:block;font-size:var(--t-h4);font-weight:600;line-height:1.4}
+.review-copy small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.review-finding em{
+  font-style:normal;padding:2px var(--s2);border-radius:var(--r-full);
+  background:var(--surface-3);color:var(--muted);font-size:10px;white-space:nowrap;
+}
+.review-finding i{font-style:normal;color:var(--muted-2);font-size:var(--t-xs);white-space:nowrap}
+.review-rows{padding:0 var(--s6) var(--s4);animation:rise .2s var(--ease-out) both}
+.review-rows p{
+  padding:var(--s2) 0;border-top:1px solid var(--line);
+  color:var(--ink-2);font-size:var(--t-xs);line-height:1.7;
+}
+.review-more{color:var(--muted-2)}
+.review-clear{padding:var(--s9) var(--s6);text-align:center}
+.review-clear svg{width:34px;height:34px;color:var(--success)}
+.review-clear strong{display:block;margin-top:var(--s3);font-size:var(--t-h3);font-weight:600}
+.review-clear span{display:block;margin-top:var(--s2);color:var(--muted);font-size:var(--t-sm)}
+.review-foot{
+  display:flex;gap:var(--s3);justify-content:flex-end;
+  padding:var(--s4) var(--s6);border-top:1px solid var(--line);background:var(--surface-2);
+}
+
+/* An appointment the review asked to look at. */
+.week-event.review-flagged,.week-chip.review-flagged{
+  outline:2px solid var(--danger);outline-offset:-2px;
+  animation:review-glow 1.6s var(--ease) infinite;
+}
+@keyframes review-glow{
+  0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--danger) 30%,transparent)}
+  50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--danger) 0%,transparent)}
+}
+
+/* ==========================================================================
+   INSTRUCTOR PICKER
+   The department first, the university on demand.
+   ========================================================================== */
+
+.instructor-picker{position:relative}
+.instructor-trigger{
+  width:100%;min-height:44px;
+  display:flex;align-items:center;gap:var(--s3);
+  padding:0 var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--ink);text-align:start;
+}
+.instructor-trigger:hover{border-color:var(--line-strong)}
+.instructor-picker.open .instructor-trigger{border-color:var(--accent);box-shadow:var(--ring)}
+.instructor-trigger svg{width:16px;height:16px;color:var(--muted-2);flex:none}
+.instructor-trigger span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.instructor-trigger small{color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono)}
+
+.instructor-pop{
+  position:absolute;z-index:60;inset-inline:0;top:calc(100% + 6px);
+  display:flex;flex-direction:column;max-height:min(60vh,420px);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+  overflow:hidden;animation:rise .16s var(--ease-out) both;
+}
+.instructor-search{
+  display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);
+}
+.instructor-search svg{width:15px;height:15px;color:var(--muted-2)}
+.instructor-search input{flex:1;min-width:0;min-height:0;border:0;outline:0;background:transparent;padding:0;color:var(--ink);font-size:var(--t-body)}
+.instructor-search>button{width:22px;height:22px;display:grid;place-items:center;border-radius:var(--r-full);background:var(--surface-3);color:var(--muted)}
+.instructor-scope{padding:var(--s2) var(--s4);color:var(--muted-2);font-size:var(--t-xs);background:var(--surface-2)}
+.instructor-results{min-height:0;flex:1;overflow-y:auto}
+.instructor-results button{
+  width:100%;display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);color:var(--ink);text-align:start;
+  border-bottom:1px solid var(--line);
+}
+.instructor-results button:hover{background:var(--surface-2)}
+.instructor-results button.chosen{background:var(--accent-softer);color:var(--accent-ink)}
+.instructor-results span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm)}
+.instructor-results small{color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono)}
+.instructor-results i{font-style:normal;color:var(--accent);font-size:16px;line-height:1}
+.instructor-results svg{width:14px;height:14px;color:var(--accent)}
+.instructor-empty{padding:var(--s6) var(--s4);text-align:center;color:var(--muted);font-size:var(--t-sm)}
+.instructor-add{
+  display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s3) var(--s4);border-top:1px solid var(--line);
+  background:var(--surface-2);color:var(--accent);font-size:var(--t-sm);text-align:start;
+}
+.instructor-add:hover{background:var(--accent-softer)}
+.instructor-add svg{width:14px;height:14px}
+.instructor-new{display:grid;gap:var(--s2);padding:var(--s4);border-top:1px solid var(--line);background:var(--surface-2)}
+.instructor-new strong{font-size:var(--t-sm);font-weight:600}
+.instructor-new input{
+  min-height:38px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-xs);
+  background:var(--surface);color:var(--ink);font-size:var(--t-sm);
+}
+.instructor-new em{font-style:normal;color:var(--danger);font-size:var(--t-xs)}
+.instructor-new>div{display:flex;gap:var(--s2)}
+.instructor-new .btn{flex:1;min-height:38px}
+
+/* ==========================================================================
+   MOVING A TERM — IMPORT · EXPORT · REPLACE
+   Three jobs that all mean "change many appointments at once", so they share
+   one discipline: the consequence is shown, then accepted, then applied.
+   ========================================================================== */
+
+.transfer-backdrop{
+  position:fixed;inset:0;z-index:140;
+  display:grid;place-items:center;padding:var(--s5);
+  background:color-mix(in srgb,var(--nav) 62%,transparent);
+  backdrop-filter:blur(6px);
+  animation:fade .18s var(--ease) both;
+}
+.transfer-sheet{
+  width:min(620px,100%);max-height:92dvh;overflow-y:auto;
+  border:1px solid var(--line);border-radius:var(--r-2xl);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+  animation:rise .24s var(--ease-out) both;
+}
+.transfer-sheet>header{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s4);
+  padding:var(--s6) var(--s6) var(--s4);
+}
+.transfer-sheet h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
+.transfer-tabs{display:flex;gap:var(--s1);padding:0 var(--s6);border-bottom:1px solid var(--line)}
+.transfer-tabs button{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  padding:var(--s3) var(--s4);
+  border-bottom:2px solid transparent;
+  color:var(--muted);font-size:var(--t-sm);
+}
+.transfer-tabs button svg{width:15px;height:15px}
+.transfer-tabs button:hover{color:var(--ink)}
+.transfer-tabs button.active{border-bottom-color:var(--accent);color:var(--accent);font-weight:600}
+.transfer-body{padding:var(--s5) var(--s6) var(--s6);display:grid;gap:var(--s4);justify-items:start}
+.transfer-body p{color:var(--muted);font-size:var(--t-sm);line-height:1.8}
+.transfer-body b{color:var(--ink)}
+.transfer-file{display:none}
+.transfer-note,.transfer-error{
+  display:flex;align-items:center;gap:var(--s2);
+  margin:0 var(--s6);padding:var(--s3) var(--s4);
+  border-radius:var(--r-sm);font-size:var(--t-xs);
+}
+.transfer-note{background:var(--surface-2);color:var(--muted)}
+.transfer-error{background:var(--danger-soft);color:var(--danger)}
+.transfer-note svg,.transfer-error svg{width:15px;height:15px;flex:none}
+.transfer-preview{width:100%;display:grid;gap:var(--s3);justify-items:start}
+.transfer-counts{display:flex;gap:var(--s5)}
+.transfer-counts span{display:inline-flex;align-items:baseline;gap:var(--s2);color:var(--muted);font-size:var(--t-xs)}
+.transfer-counts b{font-size:22px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.transfer-counts .warn b{color:var(--warning)}
+.transfer-rejected{width:100%;display:grid;gap:var(--s1);max-height:180px;overflow-y:auto}
+.transfer-rejected li{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:var(--s2) var(--s3);border-radius:var(--r-xs);
+  background:var(--surface-2);font-size:var(--t-xs);
+}
+.transfer-rejected b{font-weight:600}
+.transfer-rejected span{color:var(--warning)}
+.transfer-rejected .muted{color:var(--muted-2);justify-content:center}
+.transfer-swap{display:flex;align-items:end;gap:var(--s3);width:100%;flex-wrap:wrap}
+.transfer-swap label{flex:1;min-width:180px;display:grid;gap:var(--s1)}
+.transfer-swap span{color:var(--muted);font-size:var(--t-xs)}
+.transfer-swap select{
+  min-height:42px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--ink);font-size:var(--t-sm);
+}
+.transfer-swap>svg{width:18px;height:18px;color:var(--muted-2);margin-bottom:var(--s3)}
+
+/* The seconded staff of one term. */
+.roster-copy{display:flex;gap:var(--s2);width:100%;flex-wrap:wrap}
+.roster-copy select{
+  flex:1;min-width:180px;min-height:40px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--ink);font-size:var(--t-sm);
+}
+.roster-search{
+  width:100%;min-height:42px;padding:0 var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--ink);font-size:var(--t-sm);
+}
+.roster-list{width:100%;display:grid;gap:var(--s1);max-height:240px;overflow-y:auto}
+.roster-list button{
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s2) var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink);text-align:start;
+}
+.roster-list button:hover{border-color:var(--accent)}
+.roster-list button.on{background:var(--accent-softer);border-color:var(--accent-soft);color:var(--accent-ink)}
+.roster-list svg{width:14px;height:14px;flex:none;color:var(--accent)}
+.roster-list span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm)}
+.roster-list small{color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono)}
+.roster-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}

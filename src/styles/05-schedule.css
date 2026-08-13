@@ -2081,3 +2081,84 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .physics-lens-active .week-slot:hover{background:var(--accent-soft)}
 .gravity-field-active .week-slot{transition:background .18s var(--ease)}
 .gravity-note-active{color:var(--accent);font-size:var(--t-xs)}
+
+/* --------------------------------------------------------------------------
+   THE APPROVED SHAPES OF A COURSE
+   Article 8 describes a course, not a lecture: three weekly hours are three
+   one-hour meetings on Sun/Tue/Thu, or two ninety-minute meetings on Mon/Wed.
+   Offering the shapes means a move between day families rewrites days and
+   duration together, instead of leaving a course that no longer adds up.
+   -------------------------------------------------------------------------- */
+.pattern-shelf{
+  grid-column:1/-1;
+  padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));
+  border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--accent) 4%,var(--surface));
+}
+.pattern-shelf>span{display:block;color:var(--muted);font-size:var(--t-xs)}
+.pattern-shelf>div{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2)}
+.pattern-shelf button{
+  min-height:34px;padding:0 var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);
+  font-size:var(--t-xs);white-space:nowrap;
+  transition:border-color .16s var(--ease),background .16s var(--ease),color .16s var(--ease);
+}
+.pattern-shelf button:hover{border-color:var(--accent);color:var(--accent)}
+.pattern-shelf button.active{background:var(--accent);border-color:var(--accent);color:var(--accent-contrast);font-weight:600}
+.pattern-shelf small{display:block;margin-top:var(--s2);color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+
+/* One minute to change your mind. Low, quiet, and out of the way of the work. */
+.undo-bar{
+  position:fixed;z-index:150;
+  inset-inline:auto;inset-inline-start:var(--s5);
+  bottom:calc(var(--s5) + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s2) var(--s3) var(--s2) var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--nav);color:var(--nav-ink);
+  box-shadow:var(--shadow-lg);
+  animation:rise .22s var(--ease-out) both;
+}
+.undo-bar>svg{width:16px;height:16px;color:var(--brass)}
+.undo-bar>span{font-size:var(--t-sm)}
+.undo-bar>button{
+  min-height:30px;padding:0 var(--s4);
+  border-radius:var(--r-full);
+  background:var(--accent);color:var(--accent-contrast);
+  font-size:var(--t-xs);font-weight:600;
+}
+.undo-bar>button:disabled{opacity:.6}
+.undo-bar .undo-dismiss{
+  width:26px;height:26px;padding:0;display:grid;place-items:center;
+  background:transparent;color:var(--nav-muted);
+}
+.undo-bar .undo-dismiss svg{width:13px;height:13px}
+.undo-bar .undo-dismiss:hover{color:var(--nav-ink)}
+
+/* --------------------------------------------------------------------------
+   THE THREE BEST PLACES
+   Shown the moment a lecture leaves its slot, before the pointer has gone
+   anywhere. Ranked, numbered, and calm enough to sit under a moving card.
+   -------------------------------------------------------------------------- */
+.week-slot.suggested-slot{position:relative}
+.week-slot.suggested-slot::before{
+  content:attr(data-rank);
+  position:absolute;inset:2px;
+  display:grid;place-items:center;
+  border:1.5px dashed var(--success);
+  border-radius:5px;
+  background:color-mix(in srgb,var(--success) 10%,transparent);
+  color:var(--success);
+  font:700 11px/1 var(--font-mono);
+  pointer-events:none;
+  animation:suggest-in .3s var(--ease-out) both;
+}
+.week-slot.suggested-1::before{content:"١";border-style:solid;background:color-mix(in srgb,var(--success) 18%,transparent)}
+.week-slot.suggested-2::before{content:"٢"}
+.week-slot.suggested-3::before{content:"٣";opacity:.8}
+/* The slot under the pointer always wins the square. */
+.week-slot.suggested-slot.physics-target::before{content:none}
+@keyframes suggest-in{from{opacity:0;transform:scale(.9)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.week-slot.suggested-slot::before{animation:none}}

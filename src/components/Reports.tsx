@@ -150,6 +150,20 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     })();
   }, []);
 
+  /** Once a department is chosen, its own courses replace the whole catalogue. */
+  useEffect(() => {
+    if (!filters.sectionId) return;
+    let alive = true;
+    fetch(`/api/courses?sectionId=${filters.sectionId}`)
+      .then(response => (response.ok ? response.json() : null))
+      .then(list => {
+        if (!alive || !Array.isArray(list) || !list.length) return;
+        setCourses(sortByName(list, (row: AdCourse) => row.CourseName));
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [filters.sectionId]);
+
   useEffect(() => {
     if (!filters.termId) return;
     const controller = new AbortController();

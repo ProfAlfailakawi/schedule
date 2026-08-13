@@ -34,7 +34,14 @@ export function setReferenceCacheEnabled(value: boolean) {
 
 export function invalidateReference(...keys: string[]) {
   if (!keys.length) { store.clear(); return; }
-  for (const key of keys) store.delete(key);
+  for (const key of keys) {
+    store.delete(key);
+    // A catalogue and its per-section slices are one thing; clearing the
+    // catalogue must clear the slices, or one screen keeps the stale answer.
+    for (const existing of [...store.keys()]) {
+      if (existing.startsWith(`${key}:`)) store.delete(existing);
+    }
+  }
 }
 
 /**

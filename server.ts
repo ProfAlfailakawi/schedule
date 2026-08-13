@@ -114,7 +114,11 @@ interface AuthenticatedRequest extends Request {
  * moment the person signs out, and whenever an account or its scopes are
  * edited, so a revoked or locked account cannot keep working from memory.
  */
-const AUTH_CACHE_MS = 20_000;
+// Twenty seconds was too tight: past it, the first request of every burst paid
+// for three database round trips again, which is exactly the half second the
+// cache existed to remove. Two minutes still bounds how long a revoked account
+// could linger, and sign-out and account edits drop the entry immediately.
+const AUTH_CACHE_MS = 120_000;
 const authCache = new Map<string, { at: number; userId: number; user: any; scopes: any[] }>();
 export function forgetAuthSession(sessionId?: string) {
   if (sessionId) authCache.delete(sessionId);
@@ -559,29 +563,39 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
    * within the same scope — so the dashboard can show a direction without
    * inventing a trend for things that do not have one.
    */
-  const previousTermId = terms
+  const scopeRows = (list: any[]) => req.user.IsAdminUser
+    ? list
+    : (linkedInstructorId
+      ? list.filter(row => row.AdInstructorId === linkedInstructorId)
+      : list.filter(row => assignedSectionIds.has(Number(row.AdSectionId))));
+
+  // The last four terms, oldest first. A single comparison shows a jump; four
+  // points show a direction, which is the thing a coordinator is deciding
+  // against. The reads are cached, so this costs nothing after the first visit.
+  const recentTermIds = terms
     .map(term => Number(term.AdTermId) || 0)
-    .filter(id => id < latestTermId)
-    .reduce((max, id) => Math.max(max, id), 0);
-  let previous: any = null;
-  if (previousTermId) {
-    const previousRows = await Repository.getSchedulesByScope({ termId: previousTermId });
-    const previousScoped = req.user.IsAdminUser
-      ? previousRows
-      : (linkedInstructorId
-        ? previousRows.filter(row => row.AdInstructorId === linkedInstructorId)
-        : previousRows.filter(row => assignedSectionIds.has(Number(row.AdSectionId))));
-    previous = {
-      termId: previousTermId,
-      termName: terms.find(term => Number(term.AdTermId) === previousTermId)?.AdTermName || "",
-      schedules: previousScoped.length,
-      rooms: new Set(previousScoped.map(roomKey).filter(key => key !== " / ")).size,
-      instructors: new Set(previousScoped.map(row => row.AdInstructorId)).size
+    .filter(id => id && id <= latestTermId)
+    .sort((a, b) => b - a)
+    .slice(0, 4)
+    .reverse();
+  const history = await Promise.all(recentTermIds.map(async termId => {
+    const termRows = termId === latestTermId
+      ? latestTermSchedules
+      : await Repository.getSchedulesByScope({ termId });
+    const scoped = scopeRows(termRows);
+    return {
+      termId,
+      termName: terms.find(term => Number(term.AdTermId) === termId)?.AdTermName || "",
+      schedules: scoped.length,
+      rooms: new Set(scoped.map(roomKey).filter(key => key !== " / ")).size,
+      instructors: new Set(scoped.map(row => row.AdInstructorId)).size
     };
-  }
+  }));
+  const previous = history.length > 1 ? history[history.length - 2] : null;
 
   res.json({
     previous,
+    history,
     metrics,
     latestTermId,
     latestTermName: latestTerm?.AdTermName || "",
@@ -858,9 +872,23 @@ app.delete("/api/terms/:id", requirePermission(5), async (req: Request, res: Res
 
 // --- INSTRUCTORS API ---
 
-app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: Request, res: Response) => {
+/**
+ * The teaching register.
+ *
+ * The whole register is a hundred kilobytes and every screen was loading it to
+ * name the dozen people who teach in one department. Passing `sectionId`
+ * answers with the staff who actually appear in that department's term, which
+ * is what a picker opens on; the full register is still one request away for
+ * the moment someone searches beyond their own department.
+ */
+app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
   const instructors = await Repository.getInstructors();
-  res.json(instructors);
+  if (!sectionId) { res.json(instructors); return; }
+  const rows = filterByScope(req, await Repository.getSchedulesByScope({ sectionId, termId }));
+  const present = new Set(rows.map(row => Number(row.AdInstructorId)).filter(Boolean));
+  res.json(instructors.filter(person => present.has(Number(person.AdInstructorId))));
 });
 
 app.post("/api/instructors", requirePermission(3), async (req: Request, res: Response) => {
@@ -924,6 +952,15 @@ app.delete("/api/instructors/:id", requirePermission(3), async (req: Request, re
 
 // --- COURSES API ---
 
+/**
+ * The course catalogue.
+ *
+ * The record is already lean — code, name, credit, hours, capacity — so there
+ * is nothing to trim per field. What was expensive was the *number* of records:
+ * screens asked for all 1,400 courses in the university to resolve the handful
+ * belonging to one department. Passing `sectionId` answers with that department
+ * alone, which is the same information at a fortieth of the size.
+ */
 app.get("/api/courses", requireAnyPermission([6, 7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = req.query.sectionId ? parseInt(req.query.sectionId as string) : undefined;
   let courses = sectionId ? await Repository.getCoursesBySection(sectionId) : await Repository.getCourses();
@@ -1223,6 +1260,176 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
 });
 
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });
+
+/**
+ * Carry a whole term out, and bring one back.
+ *
+ * Export writes the schedule as plain JSON with the names spelled out, so the
+ * file is readable by a person and not only by this program — a department that
+ * wants to check a term in a spreadsheet, or hand it to an auditor, should not
+ * need us. Import matches by code rather than by internal identifier, because
+ * the identifiers of one installation mean nothing in another.
+ *
+ * Import never overwrites: it reports exactly what it would add and what it
+ * cannot place, and only writes when explicitly told to commit. A schedule is
+ * a term of somebody's teaching; replacing one silently is not a feature.
+ */
+app.get("/api/schedules/export", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  const rows = filterByScope(req, await Repository.getSchedulesByScope({ collegeId, sectionId, termId }));
+  const [courses, instructors, terms, colleges, sections] = await Promise.all([
+    Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(),
+    Repository.getColleges(), Repository.getSections()
+  ]);
+  const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+  const instructorById = new Map(instructors.map(row => [row.AdInstructorId, row]));
+
+  const payload = {
+    format: "schedule-export/1",
+    exportedAt: new Date().toISOString(),
+    scope: {
+      term: terms.find(row => Number(row.AdTermId) === termId)?.AdTermName || "",
+      college: colleges.find(row => Number(row.AdCollegeId) === collegeId)?.AdCollegeName || "",
+      section: sections.find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || ""
+    },
+    rows: rows.map(row => ({
+      courseCode: courseById.get(row.AdCourseId)?.CourseCode || "",
+      courseName: row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "",
+      section: row.SCode,
+      instructorCivil: instructorById.get(row.AdInstructorId)?.AdInstructorCivil || "",
+      instructorName: instructorById.get(row.AdInstructorId)?.AdInstructorName || "",
+      building: row.AdRoomCode, hall: row.AdRoomHall,
+      start: row.fstarttime, end: row.fendtime,
+      days: DAY_FLAGS.map((flag, index) => ((row as any)[flag] ? DAY_LABELS[index] : null)).filter(Boolean)
+    }))
+  };
+  const name = `schedule-${payload.scope.section || "term"}-${termId || "all"}.json`.replace(/[^\w.\-]+/g, "-");
+  res.setHeader("Content-Disposition", `attachment; filename="${name}"`);
+  res.type("application/json; charset=utf-8").send(JSON.stringify(payload, null, 2));
+});
+
+app.post("/api/schedules/import", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body || {};
+  const commit = body.commit === true;
+  const collegeId = Number(body.collegeId || 0);
+  const sectionId = Number(body.sectionId || 0);
+  const termId = Number(body.termId || 0);
+  const incoming: any[] = Array.isArray(body.rows) ? body.rows : [];
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل قبل الاستيراد." }); return; }
+  if (!incoming.length) { res.status(400).json({ error: "الملف لا يحتوي مواعيد." }); return; }
+
+  const [courses, instructors, existing] = await Promise.all([
+    Repository.getCourses(), Repository.getInstructors(),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId })
+  ]);
+  const courseByCode = new Map(courses.filter(row => Number(row.AdSectionId) === sectionId)
+    .map(row => [String(row.CourseCode || "").trim().toLowerCase(), row]));
+  const instructorByCivil = new Map(instructors.map(row => [String(row.AdInstructorCivil || "").trim(), row]));
+  const seen = new Set(existing.map(row => `${row.AdCourseId}|${String(row.SCode).trim()}`));
+
+  const ready: any[] = [];
+  const rejected: Array<{ line: number; reason: string; label: string }> = [];
+  incoming.forEach((entry, index) => {
+    const label = `${entry?.courseCode || "?"} · شعبة ${entry?.section || "?"}`;
+    const course = courseByCode.get(String(entry?.courseCode || "").trim().toLowerCase());
+    if (!course) { rejected.push({ line: index + 1, reason: "رمز المقرر غير موجود في هذا القسم", label }); return; }
+    const instructor = instructorByCivil.get(String(entry?.instructorCivil || "").trim());
+    if (!instructor) { rejected.push({ line: index + 1, reason: "الرقم المدني للأستاذ غير مسجّل", label }); return; }
+    const key = `${course.AdCourseId}|${String(entry?.section || "").trim()}`;
+    if (seen.has(key)) { rejected.push({ line: index + 1, reason: "الشعبة موجودة بالفعل", label }); return; }
+    seen.add(key);
+    const dayNames: string[] = Array.isArray(entry?.days) ? entry.days : [];
+    ready.push({
+      AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
+      AdCourseId: course.AdCourseId, AdCourseName: course.CourseName,
+      SCode: String(entry?.section || "").trim(),
+      AdInstructorId: instructor.AdInstructorId,
+      AdRoomCode: String(entry?.building || "").trim(),
+      AdRoomHall: String(entry?.hall || "").trim(),
+      fstarttime: String(entry?.start || "").trim(),
+      fendtime: String(entry?.end || "").trim(),
+      ...Object.fromEntries(DAY_FLAGS.map((flag, index) => [flag, dayNames.includes(DAY_LABELS[index])]))
+    });
+  });
+
+  if (!commit) { res.json({ preview: true, ready: ready.length, rejected, sample: ready.slice(0, 5) }); return; }
+
+  let added = 0;
+  for (const row of ready) {
+    try { await Repository.createSchedule(row); added += 1; }
+    catch (error) { rejected.push({ line: 0, reason: error instanceof Error ? error.message : "تعذر الحفظ", label: row.SCode }); }
+  }
+  res.json({ preview: false, added, rejected });
+});
+
+/**
+ * The department's seconded staff for this term.
+ *
+ * Visiting instructors are a different thing from the permanent register: they
+ * change every term, they belong to the department that invited them, and next
+ * term usually starts from the same list. Keeping the roster per scope and per
+ * term makes "copy last term's visitors" a single press instead of retyping
+ * twenty names, and lets the schedule mark who is seconded without inventing a
+ * second kind of person in the data.
+ */
+app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
+  res.json({ instructorIds: await Repository.getVisitingRoster(collegeId, sectionId, termId) });
+});
+
+app.put("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0);
+  const sectionId = Number(req.body?.sectionId || 0);
+  const termId = Number(req.body?.termId || 0);
+  const ids: number[] = Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : [];
+  if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل." }); return; }
+  res.json({ instructorIds: await Repository.saveVisitingRoster(collegeId, sectionId, termId, ids) });
+});
+
+/** Start this term's roster from another term's, instead of retyping it. */
+app.post("/api/visiting-roster/copy", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.body?.collegeId || 0);
+  const sectionId = Number(req.body?.sectionId || 0);
+  const fromTermId = Number(req.body?.fromTermId || 0);
+  const toTermId = Number(req.body?.toTermId || 0);
+  if (!collegeId || !sectionId || !fromTermId || !toTermId) { res.status(400).json({ error: "حدد الفصلين." }); return; }
+  const source = await Repository.getVisitingRoster(collegeId, sectionId, fromTermId);
+  const target = await Repository.getVisitingRoster(collegeId, sectionId, toTermId);
+  const merged = [...new Set([...target, ...source])];
+  res.json({ instructorIds: await Repository.saveVisitingRoster(collegeId, sectionId, toTermId, merged), copied: source.length });
+});
+
+/**
+ * Retire a member of staff out of a whole term in one move.
+ *
+ * Copying a term brings last year's staff with it, and some of them have
+ * retired, resigned or been released. Chasing their name through forty
+ * appointments by hand is the kind of work that produces mistakes, so this
+ * either hands every one of their appointments to a named replacement, or
+ * clears the instructor and leaves the appointments visibly unassigned for the
+ * department to fill. It never deletes teaching.
+ */
+app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const fromId = Number(req.body?.fromInstructorId || 0);
+  const toId = Number(req.body?.toInstructorId || 0);
+  const collegeId = Number(req.body?.collegeId || 0);
+  const sectionId = Number(req.body?.sectionId || 0);
+  const termId = Number(req.body?.termId || 0);
+  const commit = req.body?.commit === true;
+  if (!fromId || !termId) { res.status(400).json({ error: "حدد الأستاذ والفصل." }); return; }
+
+  const rows = filterByScope(req, await Repository.getSchedulesByScope({ collegeId, sectionId, termId }))
+    .filter(row => Number(row.AdInstructorId) === fromId);
+  if (!commit) { res.json({ preview: true, affected: rows.length }); return; }
+
+  for (const row of rows) await Repository.updateSchedule(row.id, { AdInstructorId: toId || 0 } as any);
+  res.json({ preview: false, moved: rows.length, cleared: !toId });
+});
 
 /** Answers "whose hall is this?" from the room alone — no day, no time. */
 app.get("/api/rooms/owner", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -2887,6 +3094,45 @@ app.get("/s/:token", async (req: Request, res: Response) => {
     name,
     rows: payload.rows.filter(row => row.days.includes(index)).sort((a, b) => String(a.start).localeCompare(String(b.start)))
   })).filter(day => day.rows.length);
+
+  /**
+   * The published page shows the same week the department built.
+   *
+   * A list of appointments grouped by day is correct and unreadable: nobody
+   * reads a timetable to learn what happens on Tuesday, they read it to see the
+   * shape of their week. The grid below is the same geometry the application
+   * draws — hours down the side, days across — rendered as plain HTML with no
+   * script, so it opens instantly on a phone and prints as a timetable. The
+   * list stays underneath for narrow screens and for screen readers.
+   */
+  const minute = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
+  const starts = payload.rows.map(row => minute(row.start)).filter(Number.isFinite);
+  const ends = payload.rows.map(row => minute(row.end)).filter(Number.isFinite);
+  const gridStart = starts.length ? Math.max(7 * 60, Math.floor(Math.min(...starts) / 30) * 30) : 8 * 60;
+  const gridEnd = ends.length ? Math.min(22 * 60, Math.ceil(Math.max(...ends) / 30) * 30) : 14 * 60;
+  const slotCount = Math.max(2, Math.round((gridEnd - gridStart) / 30));
+  const clockOf = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  // One hue per course, so the same subject is the same colour all week.
+  const hueOf = (seed: string) => {
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
+    return hash;
+  };
+  const gridCells = SHARE_DAY_NAMES.map((_, dayIndex) =>
+    payload.rows
+      .filter(row => row.days.includes(dayIndex))
+      .map(row => {
+        const from = minute(row.start), to = Math.max(from + 30, minute(row.end));
+        const top = ((from - gridStart) / 30) * 34;
+        const height = Math.max(30, ((to - from) / 30) * 34 - 3);
+        const hue = hueOf(String(row.code || row.name || ""));
+        return `<div class="cell" style="top:${top}px;height:${height}px;--h:${hue}">
+          <b>${esc(row.code || row.name)}</b>
+          <span>${esc(row.name)}</span>
+          <i>${esc(row.room || "")}${row.hall ? "/" + esc(row.hall) : ""}</i>
+        </div>`;
+      }).join("")
+  );
   const expires = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date(payload.expiresAt));
   const icsUrl = `/api/public/ics/${encodeURIComponent(resolved.link.id)}`;
 
@@ -2923,6 +3169,23 @@ b{display:block;font-size:15px;font-weight:600}
 .code{direction:ltr;unicode-bidi:isolate;color:var(--brass);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .empty{padding:48px 0;text-align:center;color:var(--muted)}
+.grid{margin-top:26px;display:grid;grid-template-columns:52px repeat(5,minmax(0,1fr));border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card)}
+.grid .head{padding:10px 6px;text-align:center;font-size:12px;font-weight:600;color:var(--brass);border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
+.grid .head:first-child{background:transparent}
+.grid .hours{position:relative;border-inline-end:1px solid var(--line)}
+.grid .hours span{position:absolute;inset-inline:0;text-align:center;font:500 10px/1 ui-monospace,Menlo,monospace;color:var(--muted);transform:translateY(-4px)}
+.grid .col{position:relative;border-inline-end:1px solid var(--line)}
+.grid .col:last-child{border-inline-end:0}
+.grid .row-line{position:absolute;inset-inline:0;height:1px;background:var(--line);opacity:.5}
+.cell{position:absolute;inset-inline:3px;padding:4px 6px;border-radius:6px;overflow:hidden;
+  background:hsl(var(--h) 38% 18%);border-inline-start:3px solid hsl(var(--h) 55% 55%);color:#eef2ee}
+.cell b{display:block;font:600 11px/1.3 ui-monospace,Menlo,monospace;direction:ltr;text-align:start}
+.cell span{display:block;font-size:10px;line-height:1.3;color:#cfd8d3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cell i{display:block;font-style:normal;font-size:9px;color:#9fada7}
+.listing{margin-top:30px}
+@media (max-width:640px){.grid{display:none}}
+@media (min-width:641px){.listing{display:none}}
+@media print{.grid{display:grid;background:#fff}.grid .head{color:#000}.cell{background:#eef3f1;color:#000;border-color:#888}.cell span,.cell i{color:#333}.listing{display:none}}
 @media print{body{background:#fff;color:#000}.tools{display:none}article,header,footer{border-color:#ccc}.meta span{border-color:#ccc;background:#fff}time{color:#000}}
 </style>
 </head>
@@ -2938,6 +3201,18 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
     <a class="primary" href="${icsUrl}">إضافة إلى التقويم</a>
     <a href="javascript:window.print()">طباعة</a>
   </div>
+  ${payload.rows.length ? `<div class="grid">
+    <div class="head"></div>
+    ${SHARE_DAY_NAMES.map(name => `<div class="head">${esc(name)}</div>`).join("")}
+    <div class="hours" style="height:${slotCount * 34}px">
+      ${Array.from({ length: slotCount + 1 }, (_, i) => `<span style="top:${i * 34}px">${clockOf(gridStart + i * 30)}</span>`).join("")}
+    </div>
+    ${gridCells.map(cells => `<div class="col" style="height:${slotCount * 34}px">
+      ${Array.from({ length: slotCount }, (_, i) => `<div class="row-line" style="top:${(i + 1) * 34}px"></div>`).join("")}
+      ${cells}
+    </div>`).join("")}
+  </div>` : ""}
+  <div class="listing">
   ${byDay.length ? byDay.map(day => `<section>
     <h2>${esc(day.name)}</h2>
     ${day.rows.map(row => `<article>
@@ -2953,6 +3228,7 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
       </div>
     </article>`).join("")}
   </section>`).join("") : `<p class="empty">لا توجد مواعيد منشورة</p>`}
+  </div>
   <footer>
     <span>عرض للقراءة فقط</span>
     <span>ينتهي ${esc(expires)}</span>
@@ -2989,7 +3265,7 @@ async function startServer() {
       console.error("لن يبدأ الخادم على بيانات بديلة. تبقى النسخة السابقة العاملة كما هي.");
       process.exit(1);
     }
-    app.use("/api/*", (_req, res) => {
+    app.use((_req, res) => {
       res.status(503).type("application/json; charset=utf-8").send(JSON.stringify({
         error: "الخدمة متوقفة: تعذر الاتصال بقاعدة البيانات الحقيقية.",
         detail: databaseFailure

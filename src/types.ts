@@ -252,3 +252,21 @@ export interface SchedulePublication {
   userName: string;
   draftId?: string;
 }
+
+/**
+ * The department's seconded teaching staff for one term.
+ *
+ * Visiting instructors change every term and belong to the department that
+ * invited them, not to the university's permanent register — so they are kept
+ * per scope and per term, and a new term starts by copying the previous list
+ * rather than typing it again.
+ */
+export interface VisitingRoster {
+  id: string;
+  scopeKey: string;
+  collegeId: number;
+  sectionId: number;
+  termId: number;
+  instructorIds: number[];
+  updatedAt: string;
+}

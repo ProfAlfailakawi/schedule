@@ -26,7 +26,8 @@ import {
   ScheduleConstraint,
   ScheduleDecisionMemory,
   CampusMobilityProfile,
-  ScheduleShareLink
+  ScheduleShareLink,
+  VisitingRoster,
 } from "../types";
 
 // Runtime state must not live inside the replaceable application release. A number of
@@ -159,6 +160,7 @@ interface DBState {
   scheduleComments?: ScheduleComment[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
+  visitingRosters?: VisitingRoster[];
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
   scheduleShareLinks?: ScheduleShareLink[];
@@ -187,6 +189,7 @@ let db: DBState = {
   scheduleComments: [],
   schedulePublications: [],
   scheduleConstraints: [],
+  visitingRosters: [],
   scheduleDecisionMemories: [],
   campusMobilityProfiles: [],
   scheduleShareLinks: []
@@ -534,13 +537,14 @@ export async function initDatabase() {
     } catch (e) {
       firestoreDb = null;
       const message = e instanceof Error ? e.message : String(e);
-      if (isCloudRunRuntime() || process.env.NODE_ENV === "production") {
-        throw new Error(
-          `تعذر الاتصال بقاعدة البيانات الحقيقية (Firestore): ${message}\n` +
-          `لم يتم تشغيل البرنامج على بيانات بديلة. تحقق من FIREBASE_PROJECT_ID و FIREBASE_DATABASE_ID وصلاحية الاعتماد.`
-        );
-      }
-      console.warn(`Firestore initialization failed (${message}). Falling back to local snapshot memory for development mode.`);
+      // Fail closed everywhere, not only in production. Quietly serving a local
+      // snapshot after a Firestore failure is what makes an application look
+      // healthy while showing data nobody recognises; a refused start names the
+      // problem instead. Demo remains available, but only by asking for it.
+      throw new Error(
+        `تعذر الاتصال بقاعدة البيانات الحقيقية (Firestore): ${message}\n` +
+        `لم يتم تشغيل البرنامج على بيانات بديلة. تحقق من FIREBASE_PROJECT_ID و FIREBASE_DATABASE_ID وصلاحية الاعتماد.`
+      );
     }
   }
 
@@ -560,6 +564,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
       if (!Array.isArray(db.schedulePublications)) db.schedulePublications = [];
       if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
+      if (!Array.isArray(db.visitingRosters)) db.visitingRosters = [];
       if (!Array.isArray(db.scheduleDecisionMemories)) db.scheduleDecisionMemories = [];
       if (!Array.isArray(db.campusMobilityProfiles)) db.campusMobilityProfiles = [];
       if (!Array.isArray(db.scheduleShareLinks)) db.scheduleShareLinks = [];
@@ -1198,7 +1203,7 @@ export const Repository = {
     return course ? hydrateCourses([course], db.sections)[0] : undefined;
   },
 
-  getCoursesBySection: async (sectionId: number): Promise<AdCourse[]> => {
+  getCoursesBySection: async (sectionId: number): Promise<AdCourse[]> => cachedReference(`courses:${sectionId}`, async () => {
     if (firestoreDb) {
       const [snap, sectionDoc] = await Promise.all([
         firestoreDb.collection("courses").where("AdSectionId", "==", sectionId).get(),
@@ -1210,7 +1215,7 @@ export const Repository = {
       );
     }
     return hydrateCourses(db.courses.filter(c => c.AdSectionId === sectionId), db.sections);
-  },
+  }),
 
   createCourse: async (
     collegeId: number,
@@ -1745,6 +1750,32 @@ export const Repository = {
     if (!Array.isArray(db.scheduleComments)) db.scheduleComments=[];
     const row=db.scheduleComments.find(item=>item.id===id); if(!row) throw new Error("التعليق غير موجود");
     row.resolved=resolved; saveDatabase();
+  },
+
+  /** The seconded staff a department is using this term. */
+  getVisitingRoster: async (collegeId: number, sectionId: number, termId: number): Promise<number[]> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("visitingRosters").where("scopeKey", "==", scopeKey).limit(1).get();
+      return snap.empty ? [] : ((snap.docs[0].data() as VisitingRoster).instructorIds || []);
+    }
+    return (db.visitingRosters || []).find(row => row.scopeKey === scopeKey)?.instructorIds || [];
+  },
+
+  saveVisitingRoster: async (collegeId: number, sectionId: number, termId: number, instructorIds: number[]): Promise<number[]> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    const unique = [...new Set(instructorIds.map(Number).filter(Boolean))];
+    const row: VisitingRoster = {
+      id: scopeKey, scopeKey, collegeId, sectionId, termId,
+      instructorIds: unique, updatedAt: new Date().toISOString()
+    };
+    if (firestoreDb) {
+      await firestoreDb.collection("visitingRosters").doc(scopeKey.replace(/:/g, "_")).set(row, { merge: false });
+      return unique;
+    }
+    db.visitingRosters = [...(db.visitingRosters || []).filter(item => item.scopeKey !== scopeKey), row];
+    saveDatabase();
+    return unique;
   },
 
   getScheduleConstraints: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleConstraint[]> => {

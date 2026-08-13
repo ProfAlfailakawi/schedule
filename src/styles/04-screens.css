@@ -753,3 +753,16 @@
   padding:var(--s5) clamp(24px,3vw,36px);border-top:1px solid var(--line);
   color:var(--muted);font-size:var(--t-sm);
 }
+
+/* Four terms of one number, small enough not to compete with it. */
+.deck-metrics article{position:relative;overflow:hidden}
+.spark{
+  width:100%;height:22px;margin-top:var(--s2);
+  opacity:.75;
+}
+.spark polyline{stroke:var(--muted-2)}
+.spark circle{fill:var(--muted-2)}
+.spark-up polyline{stroke:var(--success)}
+.spark-up circle{fill:var(--success)}
+.spark-down polyline{stroke:var(--warning)}
+.spark-down circle{fill:var(--warning)}

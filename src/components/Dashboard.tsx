@@ -3,7 +3,7 @@ import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,Chev
 import{Notice,PrimaryButton}from"./ui";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
-interface DashboardData{previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
+interface DashboardData{history?:Array<{termId:number;termName:string;schedules:number;rooms:number;instructors:number}>;previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
 
 const num=(value:number|undefined)=>Number(value||0).toLocaleString("ar-KW-u-nu-latn");
 const DAY_START=7*60,DAY_END=21*60,DAY_SPAN=DAY_END-DAY_START;
@@ -31,6 +31,29 @@ function Delta({current,previous,invert=false}:{current:number;previous?:number|
   <i aria-hidden="true">{change>0?"▲":"▼"}</i>
   {num(Math.abs(change))}
  </span>;
+}
+
+/**
+ * Four terms of one number, drawn small.
+ *
+ * A delta says what changed since last term; a line says whether the department
+ * has been drifting that way for a year. Four points is the smallest number
+ * that can show a direction rather than a jump, and small enough to sit inside
+ * a tile without competing with the figure it belongs to.
+ */
+function Spark({series,label}:{series:number[];label:string}){
+ if(series.length<2)return null;
+ const max=Math.max(...series),min=Math.min(...series),span=Math.max(1,max-min);
+ const points=series.map((value,index)=>{
+  const x=(index/(series.length-1))*100;
+  const y=28-((value-min)/span)*24-2;
+  return `${x},${y}`;
+ }).join(" ");
+ const rising=series[series.length-1]>=series[0];
+ return <svg className={`spark ${rising?"spark-up":"spark-down"}`} viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label={label}>
+  <polyline points={points} fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round"/>
+  <circle cx="100" cy={28-((series[series.length-1]-min)/span)*24-2} r="2.4" vectorEffect="non-scaling-stroke"/>
+ </svg>;
 }
 
 /** Circular gauge. The number carries the meaning; the arc carries the feeling. */
@@ -144,20 +167,23 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
      <CalendarDays aria-hidden="true"/>
      <b>{num(data.metrics.schedules)}<Delta current={data.metrics.schedules} previous={data.previous?.schedules}/></b>
      <span>موعد</span>
+     <Spark series={(data.history||[]).map(x=>x.schedules)} label="مواعيد آخر أربعة فصول"/>
     </article>
     <article>
      <UsersRound aria-hidden="true"/>
      <b>{num(data.metrics.instructors)}<Delta current={data.metrics.instructors} previous={data.previous?.instructors}/></b>
      <span>أستاذ</span>
+     <Spark series={(data.history||[]).map(x=>x.instructors)} label="أساتذة آخر أربعة فصول"/>
     </article>
     {ws?<article>
      <DoorOpen aria-hidden="true"/>
      <b>{num(ws.uniqueRooms)}<Delta current={ws.uniqueRooms} previous={data.previous?.rooms}/></b>
      <span>قاعة</span>
+     <Spark series={(data.history||[]).map(x=>x.rooms)} label="قاعات آخر أربعة فصول"/>
     </article>:null}
     {overview?.metrics?.avgInstructorGap!=null?<article className="metric-priority"><Clock3 aria-hidden="true"/><b>{num(overview.metrics.avgInstructorGap)}</b><span>د فراغ</span></article>:null}
    </section>
-   {data.previous?.termName?<p className="deck-compare-note">المقارنة مع {data.previous.termName}</p>:null}
+   {data.history&&data.history.length>1?<p className="deck-compare-note">الخط يغطي {data.history.map(x=>x.termName).filter(Boolean).join(" ← ")}</p>:data.previous?.termName?<p className="deck-compare-note">المقارنة مع {data.previous.termName}</p>:null}
 
    {power&&ws?<section className="deck-charts">
     <article className="deck-chart" aria-label="حركة الأسبوع">
