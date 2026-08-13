@@ -64,6 +64,57 @@ import {
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
 
+/**
+ * A professor's week, laid out where it actually falls.
+ *
+ * Every other reading of a gap in this application is a quantity — an average
+ * on the dashboard, a maximum beside a name, a count in a report. A quantity
+ * cannot separate the two shapes that matter most: three hours of dead air
+ * before the first class, which is an early start and nothing worse, and three
+ * hours wedged between two classes, which is an afternoon spent waiting on
+ * campus. Both read "3س فراغ".
+ *
+ * So this returns position, not size: for each taught day, the blocks in the
+ * order they occur and the empty stretches between them, as percentages of the
+ * professor's own teaching window. Long waits are marked; short turnarounds are
+ * left alone, because a thirty-minute gap is a walk between buildings.
+ */
+const WAIT_THRESHOLD = 60;
+function professorWeekShape(rows: any[]) {
+  const dayKeys = Object.keys(dayLabels);
+  const spans: Array<{ day: string; start: number; end: number }> = [];
+  rows.forEach(row => {
+    const start = twinMinutes(row.fstarttime), end = twinMinutes(row.fendtime);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+    dayKeys.forEach(day => { if (row[day]) spans.push({ day, start, end }); });
+  });
+  if (!spans.length) return null;
+  const from = Math.floor(Math.min(...spans.map(s => s.start)) / 60) * 60;
+  const to = Math.ceil(Math.max(...spans.map(s => s.end)) / 60) * 60;
+  const width = Math.max(60, to - from);
+  const pct = (value: number) => ((value - from) / width) * 100;
+  const days = dayKeys.map(day => {
+    const blocks = spans.filter(s => s.day === day).sort((a, b) => a.start - b.start);
+    const waits: Array<{ left: number; width: number; minutes: number }> = [];
+    for (let i = 1; i < blocks.length; i += 1) {
+      const minutes = blocks[i].start - blocks[i - 1].end;
+      if (minutes >= WAIT_THRESHOLD) {
+        waits.push({ left: pct(blocks[i - 1].end), width: pct(blocks[i].start) - pct(blocks[i - 1].end), minutes });
+      }
+    }
+    return {
+      day,
+      label: (dayLabels as any)[day],
+      blocks: blocks.map(b => ({ left: pct(b.start), width: pct(b.end) - pct(b.start) })),
+      waits,
+      longest: waits.reduce((most, w) => Math.max(most, w.minutes), 0),
+    };
+  }).filter(d => d.blocks.length);
+  const hours: number[] = [];
+  for (let m = from; m <= to; m += 60) hours.push(m);
+  return { from, to, days, hours };
+}
+
 type Tab = "command" | "copilot" | "twin" | "history" | "import";
 type ChatItem = { prompt: string; answer: any };
 interface Props {
@@ -2771,6 +2822,48 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     <span>التزام خارج نطاقك</span>
                   </article>
                 </div>
+                {(() => {
+                  const shape = professorWeekShape(detail.data.visibleRows || []);
+                  if (!shape) return null;
+                  return (
+                    <>
+                      <h3>شكل الأسبوع</h3>
+                      <div className="week-shape" aria-label="توزيع المواعيد والانتظار عبر الأسبوع">
+                        <div className="week-shape-scale" aria-hidden="true">
+                          {shape.hours.map(m => (
+                            <span key={m} dir="ltr">{String(Math.floor(m / 60)).padStart(2, "0")}</span>
+                          ))}
+                        </div>
+                        {shape.days.map(day => (
+                          <div className="week-shape-row" key={day.day}>
+                            <small>{day.label}</small>
+                            <div className="week-shape-track">
+                              {day.waits.map((wait, i) => (
+                                <i
+                                  key={`w${i}`}
+                                  className="week-shape-wait"
+                                  style={{ insetInlineStart: `${wait.left}%`, width: `${wait.width}%` }}
+                                  title={`انتظار ${Math.floor(wait.minutes / 60)}س ${wait.minutes % 60}د`}
+                                >
+                                  {wait.width > 12 ? `${Math.round(wait.minutes / 60 * 10) / 10}س` : ""}
+                                </i>
+                              ))}
+                              {day.blocks.map((block, i) => (
+                                <b
+                                  key={`b${i}`}
+                                  style={{ insetInlineStart: `${block.left}%`, width: `${block.width}%` }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                        <p className="week-shape-legend">
+                          الكتلة الممتلئة تدريس، والمظللة انتظار على الحرم ساعة فأكثر بين محاضرتين.
+                        </p>
+                      </div>
+                    </>
+                  );
+                })()}
                 <h3>المواعيد الظاهرة ضمن صلاحياتك</h3>
                 <div className="drawer-schedule-list">
                   {detail.data.visibleRows.map((r: any) => (

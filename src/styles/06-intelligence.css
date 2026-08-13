@@ -1212,6 +1212,60 @@
   display:flex;align-items:center;gap:var(--s2);
 }
 
+/* --- A professor's week, in the shape it actually has ----------------------
+   Numbers already say how much waiting there is; this says where it falls.
+   Teaching is solid jade, waiting is a hatched brass stretch, and anything
+   under an hour is drawn as nothing at all — a short turnaround is a walk
+   between buildings, and marking it would bury the waits that matter.
+
+   It lives inside a drawer opened for one professor, which is the only reason
+   it earns this much ink: nobody meets it who did not ask for it. */
+.week-shape{margin:var(--s3) 0 var(--s5)}
+/* The scale must not carry `direction:ltr`. The track fills from the inline
+   start, so in this right-to-left layout the earliest hour sits at the right
+   edge — an ltr scale would print 08 on the left and label every block with
+   the wrong hour. The digits inside each span are turned individually.
+   The 56px indent is the label column: 44px of name plus the 12px gap. */
+.week-shape-scale{
+  display:flex;justify-content:space-between;
+  margin-inline-start:56px;margin-bottom:var(--s2);
+  color:var(--muted-2);
+  font:500 9.5px/1 var(--font-mono);font-variant-numeric:tabular-nums;
+}
+.week-shape-row{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s2)}
+.week-shape-row>small{
+  flex:none;width:44px;
+  color:var(--muted);font-size:var(--t-xs);font-weight:600;
+  text-align:start;
+}
+.week-shape-track{
+  position:relative;
+  flex:1;height:16px;
+  border-radius:var(--r-xs);
+  background:color-mix(in srgb,var(--line) 45%,transparent);
+  overflow:hidden;
+}
+.week-shape-track>b{
+  position:absolute;inset-block:0;
+  border-radius:2px;
+  background:var(--accent);
+}
+.week-shape-track>i{
+  position:absolute;inset-block:0;
+  display:grid;place-items:center;
+  font:600 9px/1 var(--font-mono);font-style:normal;
+  color:var(--brass);
+  background:repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb,var(--brass) 22%,transparent) 0 3px,
+    transparent 3px 7px
+  );
+}
+.week-shape-legend{
+  margin-top:var(--s3);margin-inline-start:56px;
+  color:var(--muted);font-size:var(--t-xs);line-height:1.5;
+}
+
 .living-pulse-core{
   display:flex;align-items:flex-start;gap:var(--s3);min-width:0;flex:1 1 320px;
 }

@@ -126,6 +126,45 @@
 }
 .agenda-core{min-width:0}
 .agenda-title-row{display:flex;align-items:center;gap:var(--s2);min-width:0;flex-wrap:wrap}
+
+/* --- What is running, and what is next ------------------------------------
+   The list is a week in one column, so at most two of its cards can be about
+   the current hour, and on a weekend none are. That rarity is the whole design:
+   the mark is allowed to be legible precisely because it is almost never there.
+
+   Brass again — the colour this interface already gives to time, in the week's
+   now-line and in a row that has just changed. A running lecture also takes a
+   two-pixel edge, which is the only structural change; nothing moves, nothing
+   reorders, and every other card in the list is left exactly as it was. */
+.agenda-live-tag{
+  flex:none;
+  padding:1px var(--s2);
+  border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--brass) 86%,var(--ink));
+  color:var(--surface);
+  font-size:var(--t-xs);
+  font-weight:650;
+  letter-spacing:.01em;
+  white-space:nowrap;
+}
+.agenda-live-tag.next{
+  background:transparent;
+  border:1px solid color-mix(in srgb,var(--brass) 45%,transparent);
+  color:var(--brass);
+  font-weight:600;
+}
+.agenda-card.agenda-running{background:color-mix(in srgb,var(--brass) 4%,var(--surface))}
+/* A rule on the reading edge, drawn rather than bordered so the row does not
+   shift two pixels when the hour turns over. ::after already belongs to the
+   just-changed flash. */
+.agenda-card.agenda-running::before{
+  content:"";
+  position:absolute;
+  inset-block:0;
+  inset-inline-start:0;
+  width:2px;
+  background:var(--brass);
+}
 .agenda-title-row>strong{
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font-size:var(--t-h4);font-weight:600;
@@ -296,10 +335,12 @@
 }
 .week-daystrip::-webkit-scrollbar{display:none}
 .week-daystrip-day{
+  position:relative;
   flex:1 1 0;
   min-width:92px;
   display:flex;align-items:center;justify-content:center;gap:var(--s2);
-  padding:var(--s3);
+  /* The extra six pixels at the foot are the load meter's room. */
+  padding:var(--s3) var(--s3) calc(var(--s3) + 6px);
   border:1px solid var(--line);
   border-radius:var(--r-md);
   background:var(--surface);
@@ -309,6 +350,24 @@
   transition:border-color .16s var(--ease),background .16s var(--ease),color .16s var(--ease);
 }
 .week-daystrip-day:hover{border-color:var(--line-strong);background:var(--surface-2)}
+/* The same three-pixel reading the health tiles carry, so one visual sentence
+   means one thing everywhere: this is a share of a whole. Here it is taught
+   minutes against the heaviest day — six lectures spread over a morning and six
+   stacked into ninety minutes stop looking identical. */
+.week-daystrip-day::after{
+  content:"";
+  position:absolute;
+  inset-inline:var(--s3);
+  bottom:5px;
+  height:3px;
+  border-radius:var(--r-full);
+  background:linear-gradient(var(--accent),var(--accent)) no-repeat,
+             color-mix(in srgb,var(--line-strong) 45%,transparent);
+  background-size:var(--reading,0%) 100%, 100% 100%;
+  background-position:100% 0, 0 0;
+  opacity:.65;
+}
+.week-daystrip-day[aria-pressed="true"]::after{opacity:1}
 .week-daystrip-day b{
   min-width:20px;height:20px;
   display:grid;place-items:center;

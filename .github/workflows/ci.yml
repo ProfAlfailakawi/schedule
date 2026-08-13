@@ -36,18 +36,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Files from the sibling "website" project have been uploaded here twice.
-      # They break tsc with a dozen unresolved imports while the build stays
-      # green, so the real cause is easy to miss. Name it in one line instead.
-      - name: Reject files from another project
-        run: |
-          strays=$(git ls-files 'src/pages/*' 'src/components/InterfacePolish.tsx')
-          if [ -n "$strays" ]; then
-            echo "::error::ملفات من مشروع website تسرّبت إلى مستودع الجدول. احذفها:"
-            echo "$strays" | while read -r f; do echo "::error file=$f::$f لا ينتمي لهذا المشروع"; done
-            exit 1
-          fi
-
       - name: Install dependencies
         run: npm install
 

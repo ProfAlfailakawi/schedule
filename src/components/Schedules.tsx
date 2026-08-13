@@ -1868,6 +1868,50 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     };
     return byWeekday[new Date().getDay()] ?? null;
   }, [nowMinutes]);
+  /**
+   * The two appointments the hour cares about: the one under way and the one
+   * after it.
+   *
+   * The list is the section's whole week in one column, not a day in order, so
+   * a "now" rule drawn across it would divide nothing. What a reader actually
+   * asks on opening the page is narrower — what is running, and what is next —
+   * and that is answerable without disturbing the order at all: at most two
+   * cards out of several hundred carry a mark, and on a weekend, none do.
+   */
+  const liveNow = useMemo(() => {
+    const running = new Set<number>();
+    if (!todayKey) return { running, next: null as number | null };
+    let next: { id: number; start: number } | null = null;
+    filteredRows.forEach(row => {
+      if (!(row as any)[todayKey]) return;
+      const start = mins(row.fstarttime), end = mins(row.fendtime);
+      if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return;
+      if (nowMinutes >= start && nowMinutes < end) { running.add(row.id); return; }
+      if (start > nowMinutes && (!next || start < next.start)) next = { id: row.id, start };
+    });
+    return { running, next: next ? (next as { id: number }).id : null };
+  }, [filteredRows, todayKey, nowMinutes]);
+  /**
+   * How heavily each day is actually taught, as a share of the heaviest day.
+   *
+   * A count answers "how many" and stops there — six lectures spread across a
+   * morning and six stacked into ninety minutes are the same number and not
+   * remotely the same day. Taught minutes say which is which, so the strip can
+   * show the pressure before the day is opened.
+   */
+  const dayLoad = useMemo(() => {
+    const minutesByDay: Record<string, number> = {};
+    days.forEach(day => { minutesByDay[day.key] = 0; });
+    weekRows.forEach(row => {
+      const span = mins(row.fendtime) - mins(row.fstarttime);
+      if (!Number.isFinite(span) || span <= 0) return;
+      days.forEach(day => { if ((row as any)[day.key]) minutesByDay[day.key] += span; });
+    });
+    const heaviest = Math.max(1, ...days.map(day => minutesByDay[day.key]));
+    const share: Record<string, number> = {};
+    days.forEach(day => { share[day.key] = Math.round((minutesByDay[day.key] / heaviest) * 100); });
+    return { minutesByDay, share };
+  }, [weekRows]);
   const gridWindow = useMemo(() => {
     const starts = weekRows.map(row => mins(row.fstarttime)).filter(value => Number.isFinite(value));
     const ends = weekRows.map(row => mins(row.fendtime)).filter(value => Number.isFinite(value));
@@ -3414,7 +3458,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   i = instructorById.get(s.AdInstructorId);
                 return (
                   <article
-                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""}`}
+                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""}`}
                     key={s.id}
                     onClick={() => runVisualTransition(() => setXrayId((v) => (v === s.id ? null : s.id)))}
                     onDoubleClick={() => openEdit(s)}
@@ -3433,6 +3477,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         </span>
                         <strong>{s.AdCourseName || c?.CourseName || ""}</strong>
                         <Badge tone="neutral">شعبة {s.SCode}</Badge>
+                        {liveNow.running.has(s.id) ? (
+                          <span className="agenda-live-tag">جارية الآن</span>
+                        ) : liveNow.next === s.id ? (
+                          <span className="agenda-live-tag next">التالية</span>
+                        ) : null}
                       </div>
                       <div className="agenda-sub">
                         <span>
@@ -3612,7 +3661,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   data-today={todayKey === d.key ? "true" : undefined}
                   aria-pressed={expandedDay === d.key}
                   onClick={() => setExpandedDay((current) => (current === d.key ? null : (d.key as DayKey)))}
-                  title={expandedDay === d.key ? "العودة إلى الأسبوع كاملاً" : `عرض ${d.label} وحده`}
+                  style={{ ["--reading" as any]: `${dayLoad.share[d.key] || 0}%` }}
+                  title={`${expandedDay === d.key ? "العودة إلى الأسبوع كاملاً" : `عرض ${d.label} وحده`} · ${Math.round((dayLoad.minutesByDay[d.key] || 0) / 60)} ساعة تدريس`}
                 >
                   <span>{d.label}</span>
                   <b title="عدد المواعيد في هذا اليوم">{dayCounts[d.key] || 0}</b>
