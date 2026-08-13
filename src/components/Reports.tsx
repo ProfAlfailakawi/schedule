@@ -125,6 +125,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [loading, setLoading] = useState(true);
   const [visibleLimit, setVisibleLimit] = useState(150);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
+  const [selectedResultId, setSelectedResultId] = useState<number | null>(null);
   const [occupancy, setOccupancy] = useState<any>(null);
   const [roomDay, setRoomDay] = useState<number | "week">("week");
   /** Which square of the occupancy grid the reader asked about. */
@@ -136,11 +137,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   useEffect(() => { setLens(LENS_FOR_MODE[mode] || "list"); }, [mode]);
   useEffect(() => {
-    localStorage.setItem(prefKey, JSON.stringify({
-      lens,
-      filters: { collegeId: filters.collegeId, sectionId: filters.sectionId, termId: filters.termId, building: filters.building, hall: filters.hall }
-    }));
-  }, [lens, filters.collegeId, filters.sectionId, filters.termId, filters.building, filters.hall]);
+    // Persist the whole filter set, not just scope — every active chip
+    // (instructor, course, civil id, time window, days) survives a reload and a
+    // closed detail, matching the restore which already spreads all of them.
+    localStorage.setItem(prefKey, JSON.stringify({ lens, filters }));
+  }, [lens, filters]);
 
   useEffect(() => {
     (async () => {
@@ -291,15 +292,30 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     setAskNote(said.length ? said.join(" · ") : null);
   };
 
-  const chips = [
-    filters.instructorId && instructorById.get(filters.instructorId)?.AdInstructorName,
-    filters.building && `مبنى ${filters.building}`,
-    filters.hall && `قاعة ${filters.hall}`,
-    filters.startTime && filters.endTime && `${filters.startTime}–${filters.endTime}`,
-    filters.courseId && courseById.get(filters.courseId)?.CourseName,
-    filters.civil && filters.civil,
-    ...DAYS.filter(day => filters[day.key]).map(day => day.label)
-  ].filter(Boolean) as string[];
+  /**
+   * Active, removable filters. Scope stays visible in the primary row; these
+   * chips mirror only the optional filters hidden behind “more”, so a reader
+   * can always see (and remove) what is narrowing the result set.
+   */
+  const chips: Array<{ key: string; label: string; clear: () => void }> = [];
+  const selectedInstructor = filters.instructorId ? instructorById.get(filters.instructorId) : null;
+  const selectedCourse = filters.courseId ? courseById.get(filters.courseId) : null;
+  if (selectedInstructor) chips.push({ key: "instructor", label: `الأستاذ: ${selectedInstructor.AdInstructorName}`, clear: () => set("instructorId", 0) });
+  if (filters.civil) chips.push({ key: "civil", label: `الرقم المدني: ${filters.civil}`, clear: () => set("civil", "") });
+  if (filters.building) chips.push({ key: "building", label: `المبنى: ${filters.building}`, clear: () => setFilters(prev => ({ ...prev, building: "", hall: "" })) });
+  if (filters.hall) chips.push({ key: "hall", label: `القاعة: ${filters.hall}`, clear: () => set("hall", "") });
+  if (selectedCourse) chips.push({ key: "course", label: `المقرر: ${selectedCourse.CourseName}`, clear: () => set("courseId", 0) });
+  if (filters.courseCode) chips.push({ key: "course-code", label: `رمز المقرر: ${filters.courseCode}`, clear: () => set("courseCode", "") });
+  if (filters.startTime && filters.endTime) chips.push({
+    key: "time",
+    label: `الفترة: ${filters.startTime}–${filters.endTime}`,
+    clear: () => setFilters(prev => ({ ...prev, startTime: "", endTime: "" }))
+  });
+  DAYS.filter(day => filters[day.key]).forEach(day => chips.push({
+    key: `day-${day.key}`,
+    label: `اليوم: ${day.label}`,
+    clear: () => set(day.key, false)
+  }));
 
   const scopeLine = [
     termById.get(filters.termId)?.AdTermName,
@@ -504,10 +520,31 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const groups = lens === "instructor" ? byInstructor : lens === "room" ? byRoom : [];
   const maxLoad = Math.max(1, ...groups.map(group => group.load));
   const maxSlot = Math.max(1, ...byTime.map(slot => slot.count));
+  const selectedResult = selectedResultId === null ? null : results.find(row => row.id === selectedResultId) || null;
+
+  const selectLens = (next: Lens) => runVisualTransition(() => {
+    setLens(next);
+    setOpenGroup(null);
+    setRoomPick(null);
+  });
+
+  const moveLensFocus = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = LENSES.length - 1;
+    let target = index;
+    if (event.key === "Home") target = 0;
+    else if (event.key === "End") target = last;
+    else if (event.key === "ArrowLeft") target = index === last ? 0 : index + 1;
+    else if (event.key === "ArrowRight") target = index === 0 ? last : index - 1;
+    else return;
+    event.preventDefault();
+    const next = LENSES[target];
+    selectLens(next.id);
+    requestAnimationFrame(() => document.getElementById(`query-lens-tab-${next.id}`)?.focus());
+  };
 
   return (
     <div className="content-stack query-page">
-      <PageTitle eyebrow="الاستعلامات والتقارير" subtitle="سؤال واحد · ست عدسات">مركز الاستعلام</PageTitle>
+      <PageTitle eyebrow="الاستعلامات والتقارير" subtitle="سؤال واحد · سبع عدسات">مركز الاستعلام</PageTitle>
 
       {error ? <Notice>{error}</Notice> : null}
 
@@ -530,6 +567,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             }}
             placeholder="اسأل: قاعات فاضية الثلاثاء 10"
             aria-label="اسأل بالعربية"
+            aria-describedby={askNote ? "query-ask-note" : undefined}
             enterKeyHint="search"
           />
           {ask ? (
@@ -538,9 +576,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             </button>
           ) : null}
         </form>
-        {askNote ? <p className="query-ask-note">{askNote}</p> : null}
+        {askNote ? <p className="query-ask-note" id="query-ask-note" role="status">{askNote}</p> : null}
 
-        <div className="query-scope">
+        <div className="query-scope query-primary-filters" aria-label="المرشحات الأساسية">
           {!scopeState.lockCollege ? (
             <Field label="الكلية">
               <select
@@ -571,15 +609,22 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               {terms.map(row => <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>)}
             </select>
           </Field>
-          <GhostButton type="button" onClick={() => setMoreOpen(v => !v)} aria-expanded={moreOpen} title="تصفية">
-            <SlidersHorizontal />
-            تصفية
+          <GhostButton
+            type="button"
+            onClick={() => setMoreOpen(v => !v)}
+            aria-expanded={moreOpen}
+            aria-controls="query-more-filters"
+            aria-label={`مرشحات إضافية${chips.length ? `، ${chips.length} نشطة` : ""}`}
+            title="مرشحات إضافية"
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            المزيد
             {chips.length ? <b className="tool-count">{chips.length}</b> : null}
           </GhostButton>
         </div>
 
         {moreOpen ? (
-          <div className="query-more">
+          <div className="query-more query-advanced-filters" id="query-more-filters" role="group" aria-label="مرشحات إضافية">
             <Field label="أستاذ">
               <select value={filters.instructorId || ""} onChange={event => set("instructorId", Number(event.target.value) || 0)}>
                 <option value="">الكل</option>
@@ -628,47 +673,72 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         ) : null}
 
         {chips.length ? (
-          <div className="query-chips">
-            {chips.map(chip => <span key={chip}>{chip}</span>)}
-            <button type="button" onClick={resetFilters} aria-label="مسح المرشحات" title="مسح المرشحات"><X /></button>
+          <div className="query-chips query-active-filters" aria-label="المرشحات النشطة" aria-live="polite">
+            {chips.map(chip => (
+              <span className="query-filter-chip" key={chip.key}>
+                <span>{chip.label}</span>
+                <button type="button" onClick={chip.clear} aria-label={`إزالة مرشح ${chip.label}`} title={`إزالة ${chip.label}`}>
+                  <X size={12} aria-hidden="true" />
+                </button>
+              </span>
+            ))}
+            <button type="button" onClick={resetFilters} aria-label="مسح كل المرشحات الإضافية" title="مسح كل المرشحات"><X aria-hidden="true" /></button>
           </div>
         ) : null}
       </section>
 
-      <nav className="lens-strip no-print" aria-label="طريقة العرض">
-        {LENSES.map(item => (
+      <nav className="lens-strip no-print" role="tablist" aria-label="طريقة عرض النتائج" aria-orientation="horizontal">
+        {LENSES.map((item, index) => (
           <button
             key={item.id}
             type="button"
+            id={`query-lens-tab-${item.id}`}
+            role="tab"
             className={lens === item.id ? "active" : ""}
-            onClick={() => runVisualTransition(() => { setLens(item.id); setOpenGroup(null); })}
+            aria-selected={lens === item.id}
+            aria-controls="query-lens-panel"
+            tabIndex={lens === item.id ? 0 : -1}
+            onClick={() => selectLens(item.id)}
+            onKeyDown={event => moveLensFocus(event, index)}
             title={item.label}
           >
-            {item.icon}
+            {React.cloneElement(item.icon as React.ReactElement, { "aria-hidden": true })}
             <span>{item.label}</span>
           </button>
         ))}
       </nav>
 
-      <section className="query-canvas">
+      <section
+        className="query-canvas"
+        id="query-lens-panel"
+        role="tabpanel"
+        aria-labelledby={`query-lens-tab-${lens}`}
+        tabIndex={0}
+      >
         <header className="query-canvas-head no-print">
-          <div className="query-count">
+          <div className="query-count" aria-live="polite" aria-atomic="true">
             <b>{num(results.length)}</b>
             <span>موعد</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           <div className="query-canvas-actions">
             <div className="print-menu">
-              <SecondaryButton type="button" onClick={() => setPrintOpen(v => !v)} aria-expanded={printOpen}>
-                <Printer />طباعة<ChevronDown />
+              <SecondaryButton
+                type="button"
+                onClick={() => setPrintOpen(v => !v)}
+                aria-expanded={printOpen}
+                aria-controls="query-print-menu"
+                aria-haspopup="menu"
+              >
+                <Printer aria-hidden="true" />طباعة<ChevronDown aria-hidden="true" />
               </SecondaryButton>
               {printOpen ? (
-                <div className="print-menu-pop" role="menu">
+                <div className="print-menu-pop" id="query-print-menu" role="menu" aria-label="نماذج الطباعة">
                   {PRINTS.map(item => <button key={item.kind} type="button" role="menuitem" onClick={() => print(item.kind)}>{item.label}</button>)}
                 </div>
               ) : null}
             </div>
-            <SecondaryButton type="button" onClick={excel}><Download />Excel</SecondaryButton>
+            <SecondaryButton type="button" onClick={excel}><Download aria-hidden="true" />Excel</SecondaryButton>
           </div>
         </header>
 
@@ -681,25 +751,72 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             {results.slice(0, visibleLimit).map((row, index) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
+              const isSelected = selectedResultId === row.id;
               return (
-                <article key={row.id}>
-                  <span className="lens-index">{String(index + 1).padStart(2, "0")}</span>
-                  <div className="lens-main">
-                    <strong>{course?.CourseName || row.AdCourseName}</strong>
-                    <div className="lens-tags">
-                      <span className="code-chip">{course?.CourseCode || "—"}</span>
-                      <span>{row.SCode}</span>
-                      <span><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}</span>
+                <React.Fragment key={row.id}>
+                  <article
+                    className={isSelected ? "is-selected" : undefined}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isSelected}
+                    aria-controls={isSelected ? `query-result-detail-${row.id}` : undefined}
+                    onClick={() => setSelectedResultId(current => current === row.id ? null : row.id)}
+                    onKeyDown={event => {
+                      if (event.key !== "Enter" && event.key !== " ") return;
+                      event.preventDefault();
+                      setSelectedResultId(current => current === row.id ? null : row.id);
+                    }}
+                  >
+                    <span className="lens-index">{String(index + 1).padStart(2, "0")}</span>
+                    <div className="lens-main">
+                      <strong>{course?.CourseName || row.AdCourseName}</strong>
+                      <div className="lens-tags">
+                        <span className="code-chip">{course?.CourseCode || "—"}</span>
+                        <span>{row.SCode}</span>
+                        <span><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}</span>
+                      </div>
                     </div>
-                  </div>
-                  <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
-                  <span className="lens-room"><Building2 aria-hidden="true" />{row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</span>
-                  <span className="lens-days">
-                    {dayFlags(row).length
-                      ? dayFlags(row).map(day => <i key={day.key} title={day.label}>{day.label}</i>)
-                      : <b>بلا أيام</b>}
-                  </span>
-                </article>
+                    <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                    <span className="lens-room"><Building2 aria-hidden="true" />{row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</span>
+                    <span className="lens-days">
+                      {dayFlags(row).length
+                        ? dayFlags(row).map(day => <i key={day.key} title={day.label}>{day.label}</i>)
+                        : <b>بلا أيام</b>}
+                    </span>
+                  </article>
+                  {isSelected && selectedResult ? (
+                    <aside
+                      className="occupancy-pick query-result-detail"
+                      id={`query-result-detail-${row.id}`}
+                      aria-label={`تفاصيل ${course?.CourseName || row.AdCourseName || "الموعد"}`}
+                    >
+                      <header>
+                        <div>
+                          <small>تفاصيل الموعد</small>
+                          <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
+                        </div>
+                        <span className="occupancy-pick-count">الشعبة {row.SCode || "—"}</span>
+                        <button type="button" onClick={() => setSelectedResultId(null)} aria-label="إغلاق تفاصيل الموعد" title="إغلاق">
+                          <X aria-hidden="true" />
+                        </button>
+                      </header>
+                      <div className="occupancy-pick-rows">
+                        <article>
+                          <strong>{instructor?.AdInstructorName || "بدون أستاذ"}</strong>
+                          <span>{sectionById.get(row.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
+                          <em>{dayText(row) || "بلا أيام"}</em>
+                          <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                        </article>
+                        <article>
+                          <strong>{course?.CourseCode || "بدون رمز"}</strong>
+                          <span>{collegeById.get(row.AdCollegeId)?.AdCollegeName || "بدون كلية"}</span>
+                          <em>{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
+                          <span>{row.fdetail || "لا توجد ملاحظات"}</span>
+                        </article>
+                      </div>
+                    </aside>
+                  ) : null}
+                </React.Fragment>
               );
             })}
             {results.length > visibleLimit ? (
@@ -796,9 +913,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           <div className="lens-rooms">
             <div className="occupancy-head no-print">
               <div className="occupancy-days">
-                <button type="button" className={roomDay === "week" ? "active" : ""} onClick={() => setRoomDay("week")}>الأسبوع</button>
+                <button type="button" className={roomDay === "week" ? "active" : ""} aria-pressed={roomDay === "week"} onClick={() => setRoomDay("week")}>الأسبوع</button>
                 {DAYS.map((day, index) => (
-                  <button key={day.key} type="button" className={roomDay === index ? "active" : ""} onClick={() => setRoomDay(index)}>{day.label}</button>
+                  <button key={day.key} type="button" className={roomDay === index ? "active" : ""} aria-pressed={roomDay === index} onClick={() => setRoomDay(index)}>{day.label}</button>
                 ))}
               </div>
               {roomLoad ? (
@@ -821,6 +938,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       type="button"
                       className="occupancy-name"
                       title={`كل مواعيد ${room.name}`}
+                      aria-expanded={roomPick?.room === room.name && roomPick?.point == null}
+                      aria-controls={roomPick?.room === room.name ? "query-room-detail" : undefined}
                       onClick={() => setRoomPick(current =>
                         current?.room === room.name && current?.point == null ? null : { room: room.name, point: null })}
                     >
@@ -835,6 +954,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                         className={roomPick?.room === room.name && roomPick?.point === cell.point ? "picked" : ""}
                         title={`${room.name} · ${clock(cell.point)} · ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
                         aria-label={`${room.name} الساعة ${clock(cell.point)}`}
+                        aria-pressed={roomPick?.room === room.name && roomPick?.point === cell.point}
                         onClick={() => setRoomPick(current =>
                           current?.room === room.name && current?.point === cell.point
                             ? null
@@ -863,7 +983,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 return dayOk && from < roomPick.point + 60 && to > roomPick.point;
               }).sort((a, b) => a.fstarttime.localeCompare(b.fstarttime));
               return (
-                <div className="occupancy-pick">
+                <div className="occupancy-pick" id="query-room-detail" role="region" aria-label={`تفاصيل إشغال ${roomPick.room}`}>
                   <header>
                     <div>
                       <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${clock(roomPick.point)}`}</small>
@@ -909,7 +1029,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <div className="lens-groups">
               {groups.map(group => (
                 <article key={group.id} className={openGroup === group.id ? "open" : ""}>
-                  <button type="button" onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}>
+                  <button
+                    type="button"
+                    aria-expanded={openGroup === group.id}
+                    aria-controls={`query-room-group-${encodeURIComponent(group.id)}`}
+                    onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}
+                  >
                     <span className="group-avatar"><Building2 /></span>
                     <strong>{group.name}</strong>
                     <span className="group-bar"><i style={{ width: share(group.load, maxLoad) }} /></span>
@@ -918,7 +1043,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                     <ChevronDown aria-hidden="true" />
                   </button>
                   {openGroup === group.id ? (
-                    <div className="group-rows">
+                    <div className="group-rows" id={`query-room-group-${encodeURIComponent(group.id)}`}>
                       {group.rows.map(row => (
                         <div key={row.id}>
                           <span className="code-chip">{courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
@@ -937,7 +1062,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           <div className="lens-groups">
             {groups.map(group => (
               <article key={group.id} className={openGroup === group.id ? "open" : ""}>
-                <button type="button" onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}>
+                <button
+                  type="button"
+                  aria-expanded={openGroup === group.id}
+                  aria-controls={`query-instructor-group-${group.id}`}
+                  onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}
+                >
                   <span className="group-avatar"><UserRound /></span>
                   <strong>{group.name}</strong>
                   <span className="group-bar"><i style={{ width: share(group.load, maxLoad) }} /></span>
@@ -946,7 +1076,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                   <ChevronDown aria-hidden="true" />
                 </button>
                 {openGroup === group.id ? (
-                  <div className="group-rows">
+                  <div className="group-rows" id={`query-instructor-group-${group.id}`}>
                     {group.rows.map(row => (
                       <div key={row.id}>
                         <span className="code-chip">{courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>

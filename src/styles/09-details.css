@@ -319,6 +319,14 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .share-row-lead span{display:flex;align-items:center;gap:var(--s2);margin-top:2px;color:var(--muted);font-size:var(--t-xs)}
 .share-row-lead i{width:6px;height:6px;border-radius:50%;background:var(--success)}
 .share-list article.dead .share-row-lead i{background:var(--muted-2)}
+/* Expiry is the fact that decides whether a link is worth sharing — carried in
+   brass, not left as grey small print. */
+.share-expiry{
+  padding:1px var(--s2);border-radius:var(--r-xs);
+  background:var(--brass-soft);color:var(--brass);font-weight:600;
+  font-variant-numeric:tabular-nums;
+}
+.share-list article.dead .share-expiry{background:var(--surface-3);color:var(--muted-2)}
 .share-row-actions{display:flex;align-items:center;gap:var(--s1)}
 .share-row-actions button,.share-row-actions a{
   width:36px;height:36px;display:grid;place-items:center;

@@ -472,8 +472,8 @@
   padding:var(--s2);
   overflow-x:auto;
   border:1px solid var(--line);border-radius:var(--r-lg);
-  background:color-mix(in srgb,var(--surface) 88%,transparent);
-  backdrop-filter:blur(16px);
+  /* A solid surface, not frosted glass: no Liquid-Glass behind the labels. */
+  background:var(--surface);
   box-shadow:var(--shadow-sm);
 }
 .intelligence-scenes button{
@@ -508,6 +508,62 @@
 .intel-loading{min-height:280px;display:grid;place-items:center;color:var(--muted)}
 
 .intel-command-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:var(--s4)}
+
+/* --- Decision reading: preview rail + one canvas ----------------------------
+   A quiet column of scenes — each a label, a sentence and a single number —
+   beside one large canvas showing only the scene chosen. The rail states what
+   can be read; the canvas is where the reading happens. Nothing else competes. */
+.intel-insight-workspace{
+  grid-template-columns:minmax(238px,300px) minmax(0,1fr);
+  align-items:start;
+}
+.insight-preview-rail{
+  position:sticky;top:var(--s3);
+  display:flex;flex-direction:column;gap:var(--s3);
+  padding:var(--s5);
+  border:1px solid var(--line);border-radius:var(--r-xl);
+  background:var(--surface);
+}
+.insight-preview-head strong{display:block;margin-top:var(--s1);font-size:var(--t-h4);font-weight:600}
+.insight-preview-head small{display:block;margin-top:var(--s1);color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.insight-preview-list{display:flex;flex-direction:column;gap:2px}
+.insight-preview{
+  display:grid;grid-template-columns:34px minmax(0,1fr) auto;
+  align-items:center;gap:var(--s3);
+  padding:var(--s3);
+  border:1px solid transparent;border-radius:var(--r-sm);
+  text-align:start;color:var(--ink);
+  transition:background .16s var(--ease),border-color .16s var(--ease);
+}
+.insight-preview:hover{background:var(--surface-2)}
+.insight-preview-icon{
+  width:34px;height:34px;display:grid;place-items:center;
+  border-radius:var(--r-xs);background:var(--surface-3);color:var(--muted);
+}
+.insight-preview-icon svg{width:16px;height:16px}
+.insight-preview-copy{min-width:0}
+.insight-preview-copy strong{display:block;font-size:var(--t-sm);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.insight-preview-copy small{display:block;margin-top:1px;color:var(--muted);font-size:var(--t-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.insight-preview>b{
+  font-size:var(--t-h4);font-weight:600;letter-spacing:-.01em;
+  font-variant-numeric:tabular-nums lining-nums;color:var(--ink-2);
+}
+/* The chosen scene: a quiet accent ground, icon and number lit — the one that
+   owns the canvas, marked without a loud block. */
+.insight-preview.active{
+  background:var(--accent-softer);
+  border-color:color-mix(in srgb,var(--accent) 24%,var(--line));
+}
+.insight-preview.active .insight-preview-icon{background:var(--accent-soft);color:var(--accent)}
+.insight-preview.active>b{color:var(--accent)}
+.insight-canvas{min-width:0}
+.insight-scene-panel{margin:0}
+
+@media screen and (max-width:900px){
+  .intel-insight-workspace{grid-template-columns:minmax(0,1fr)}
+  .insight-preview-rail{position:static}
+  .insight-preview-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+}
 
 .quality-hero{
   position:relative;min-height:260px;

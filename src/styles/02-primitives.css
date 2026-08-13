@@ -452,28 +452,53 @@
   line-height:1.65;
 }
 .notice>svg{width:20px;height:20px;margin-top:1px}
-.notice>span{
-  min-width:0;
+.notice-copy{min-width:0;display:flex;flex-direction:column;gap:var(--s2)}
+.notice-copy>span{
   overflow:hidden;
   display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;
   overflow-wrap:anywhere;
 }
+/* One thing to do about the message. The button borrows the message's own
+   colour so a single accent still governs the toast. */
+.notice-action{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s1)}
+.notice-action .btn{min-height:34px;padding:0 var(--s4);font-size:var(--t-xs)}
 .notice-close{
   width:30px;height:30px;display:grid;place-items:center;
   border-radius:var(--r-xs);color:inherit;opacity:.6;
 }
 .notice-close svg{width:15px;height:15px}
 .notice-close:hover{opacity:1;background:color-mix(in srgb,currentColor 12%,transparent)}
-.notice-error{
-  border-color:color-mix(in srgb,var(--danger) 32%,var(--line));
-  background:color-mix(in srgb,var(--danger-soft) 92%,var(--surface));
-  color:var(--danger);
-}
+/* Four kinds, one grammar: a light tinted ground and a single coloured edge on
+   the inline-start. No strong gradient, no full colour flood — the message
+   reads first, the colour only classifies it. `error` is kept as an alias of
+   `block` so older call sites keep their meaning. */
 .notice-success{
-  border-color:color-mix(in srgb,var(--success) 32%,var(--line));
+  border-color:color-mix(in srgb,var(--success) 30%,var(--line));
+  border-inline-start:3px solid var(--success);
   background:color-mix(in srgb,var(--success-soft) 92%,var(--surface));
   color:var(--success);
 }
+.notice-info{
+  border-color:color-mix(in srgb,var(--info) 30%,var(--line));
+  border-inline-start:3px solid var(--info);
+  background:color-mix(in srgb,var(--info-soft) 92%,var(--surface));
+  color:var(--info);
+}
+.notice-warning{
+  border-color:color-mix(in srgb,var(--warning) 30%,var(--line));
+  border-inline-start:3px solid var(--warning);
+  background:color-mix(in srgb,var(--warning-soft) 92%,var(--surface));
+  color:var(--warning);
+}
+.notice-block,
+.notice-error{
+  border-color:color-mix(in srgb,var(--danger) 30%,var(--line));
+  border-inline-start:3px solid var(--danger);
+  background:color-mix(in srgb,var(--danger-soft) 92%,var(--surface));
+  color:var(--danger);
+}
+/* Never a wall of messages in the same place: keep the newest few legible. */
+.toast-layer>.notice:nth-child(n+4){display:none}
 
 @media screen and (max-width:768px){
   .toast-layer{top:max(var(--s2), env(safe-area-inset-top));padding-inline:var(--s3)}

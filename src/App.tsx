@@ -750,6 +750,9 @@ export default function App() {
       <button
         type="button"
         className={`side-nav-link ${on ? "active" : ""}`}
+        aria-current={on ? "page" : undefined}
+        aria-label={label}
+        title={label}
         onPointerEnter={() => prefetchView(view)}
         onFocus={() => prefetchView(view)}
         onClick={() => go(view)}
@@ -757,6 +760,35 @@ export default function App() {
         {icon}
         <span>{label}</span>
         {on ? <ChevronLeft className="nav-arrow" /> : null}
+      </button>
+    );
+  };
+  const MobileDockLink = ({
+    view,
+    icon,
+    label,
+    active,
+  }: {
+    view: View;
+    icon: React.ReactNode;
+    label: string;
+    active?: boolean;
+  }) => {
+    const on = active ?? activeView === view;
+    return (
+      <button
+        type="button"
+        className={`mobile-dock-link ${on ? "active" : ""}`}
+        aria-current={on ? "page" : undefined}
+        aria-label={label}
+        onPointerEnter={() => prefetchView(view)}
+        onFocus={() => prefetchView(view)}
+        onClick={() => go(view)}
+      >
+        <span className="mobile-dock-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="mobile-dock-label">{label}</span>
       </button>
     );
   };
@@ -788,12 +820,23 @@ export default function App() {
     children: React.ReactNode;
   }) => {
     const open = navGroups[id] ?? holdsActive;
+    const bodyId = `nav-section-${id}`;
     return (
-      <div className={`nav-section ${className || ""}`} data-rail={rail} data-open={open ? "true" : undefined}>
+      <div
+        className={`nav-section ${
+          holdsActive ? "contains-active-route" : ""
+        } ${className || ""}`}
+        data-rail={rail}
+        data-open={open ? "true" : undefined}
+        data-active={holdsActive ? "true" : undefined}
+      >
         <button
           type="button"
-          className="nav-section-title"
+          className={`nav-section-title ${
+            holdsActive ? "has-active-route" : ""
+          }`}
           aria-expanded={open}
+          aria-controls={bodyId}
           onClick={() => setNavGroups(current => ({ ...current, [id]: !open }))}
           title={open ? `طيّ ${title}` : `فتح ${title}`}
         >
@@ -801,7 +844,14 @@ export default function App() {
           <ChevronLeft className="nav-section-chevron" aria-hidden="true" />
         </button>
         {/* One wrapper, because the 0fr→1fr fold measures a single grid row. */}
-        <div className="nav-section-body"><div>{children}</div></div>
+        <div
+          className="nav-section-body"
+          id={bodyId}
+          aria-hidden={!open}
+          inert={!open ? true : undefined}
+        >
+          <div>{children}</div>
+        </div>
       </div>
     );
   };
@@ -1196,6 +1246,12 @@ export default function App() {
                 ? "catalog"
                 : "other";
   const contextRail = taskFamily !== "home" && taskFamily !== "other";
+  const mobileMoreHoldsActive =
+    activeView !== "dashboard" &&
+    activeView !== "schedules" &&
+    !searchViews.includes(activeView as ReportMode) &&
+    !reportViews.includes(activeView as ReportMode) &&
+    !(isPowerAdmin && allowed.schedule && activeView === "intelligence");
 
   return (
     <div
@@ -1204,23 +1260,51 @@ export default function App() {
       data-role={isPowerAdmin ? "admin" : "scheduler"}
     >
       <header className={`mobile-topbar no-print ${online ? "" : "offline"}`}>
-        <button onClick={() => setSidebarOpen(true)} aria-label="القائمة">
+        <button
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="فتح القائمة"
+          aria-controls="app-sidebar"
+          aria-expanded={sidebarOpen}
+        >
           <Menu />
         </button>
-        <button className="mobile-brand" onClick={() => go("dashboard")}>
+        <button
+          type="button"
+          className="mobile-brand"
+          onClick={() => go("dashboard")}
+          aria-label="العودة إلى لوحة العمل"
+          aria-current={activeView === "dashboard" ? "page" : undefined}
+        >
           SCHEDULE
         </button>
-        <button onClick={() => setSearchOpen(true)} aria-label="البحث">
+        <button
+          type="button"
+          onClick={() => setSearchOpen(true)}
+          aria-label="فتح البحث الشامل"
+          aria-haspopup="dialog"
+          aria-expanded={searchOpen}
+        >
           <Search />
         </button>
       </header>
       {!sidebarOpen ? (
-        <button className="sidebar-launcher no-print" type="button" onClick={() => setSidebarOpen(true)} aria-label="فتح القائمة" title="فتح القائمة">
+        <button
+          className="sidebar-launcher no-print"
+          type="button"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="فتح القائمة"
+          aria-controls="app-sidebar"
+          aria-expanded={false}
+          title="فتح القائمة"
+        >
           <Menu />
         </button>
       ) : null}
       <aside
+        id="app-sidebar"
         className={`sidebar no-print ${sidebarOpen ? "open" : ""} ${contextRail ? "context-rail" : ""}`}
+        aria-label="التنقل والحساب"
       >
         <div className="sidebar-brand">
           <button
@@ -1239,6 +1323,8 @@ export default function App() {
             className="sidebar-close"
             type="button"
             aria-label="إغلاق القائمة"
+            aria-controls="app-sidebar"
+            aria-expanded={sidebarOpen}
             title="إغلاق القائمة"
             onClick={() => setSidebarOpen(false)}
           >
@@ -1249,6 +1335,10 @@ export default function App() {
           className="command-search"
           type="button"
           onClick={() => setSearchOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={searchOpen}
+          aria-label="بحث شامل"
+          title="بحث شامل"
         >
           <Search />
           <span>بحث شامل...</span>
@@ -1412,6 +1502,7 @@ export default function App() {
       </aside>
       {sidebarOpen ? (
         <button
+          type="button"
           className="sidebar-backdrop no-print"
           onClick={() => setSidebarOpen(false)}
           aria-label="إغلاق القائمة"
@@ -1428,6 +1519,54 @@ export default function App() {
           <Suspense fallback={<div className="view-loading" aria-busy="true"><span /></div>}>{renderView()}</Suspense>
         </div>
       </main>
+
+      <nav className="mobile-bottom-dock no-print" aria-label="التنقل السريع">
+        <MobileDockLink view="dashboard" icon={<House />} label="الرئيسية" />
+        {allowed.schedule ? (
+          <MobileDockLink
+            view="schedules"
+            icon={<CalendarDays />}
+            label="الجدول"
+          />
+        ) : null}
+        {smartSearchView || smartReportView ? (
+          <MobileDockLink
+            view={(smartSearchView || smartReportView) as View}
+            icon={<FileSearch />}
+            label="الاستعلامات"
+            active={
+              searchViews.includes(activeView as ReportMode) ||
+              reportViews.includes(activeView as ReportMode)
+            }
+          />
+        ) : null}
+        {isPowerAdmin && allowed.schedule ? (
+          <MobileDockLink
+            view="intelligence"
+            icon={<WandSparkles />}
+            label="القرار"
+          />
+        ) : null}
+        <button
+          type="button"
+          className={`mobile-dock-link mobile-dock-more ${
+            mobileMoreHoldsActive ? "context-active" : ""
+          } ${sidebarOpen ? "active" : ""}`}
+          aria-label={
+            mobileMoreHoldsActive
+              ? "المزيد، الوجهة الحالية داخل القائمة"
+              : "فتح المزيد"
+          }
+          aria-controls="app-sidebar"
+          aria-expanded={sidebarOpen}
+          onClick={() => setSidebarOpen(true)}
+        >
+          <span className="mobile-dock-icon" aria-hidden="true">
+            <Menu />
+          </span>
+          <span className="mobile-dock-label">المزيد</span>
+        </button>
+      </nav>
 
       {searchOpen ? (
         <div

@@ -1,7 +1,7 @@
 import React from "react";
 import { createPortal } from "react-dom";
 import { runVisualTransition } from "../utils/visualTransition";
-import { AlertTriangle, Check, Edit2, Plus, Search, Trash2, X, Inbox, ChevronLeft, CalendarDays, Clock3, Hash, Hourglass, Layers, ListOrdered, MapPin, Tag } from "lucide-react";
+import { AlertTriangle, Check, Edit2, Plus, Search, Trash2, X, Inbox, ChevronLeft, CalendarDays, Clock3, Hash, Hourglass, Layers, ListOrdered, MapPin, Tag, Info, ShieldAlert } from "lucide-react";
 
 let toastHost: HTMLDivElement | null = null;
 function getToastHost() {
@@ -34,27 +34,42 @@ export function Surface({ children, className = "" }: { children?: React.ReactNo
  * `inline` is kept for the two places where the message belongs inside the
  * surface it describes — the login card and any printed sheet.
  */
-export function Notice({ type = "error", children, inline = false, onDismiss }: {
-  type?: "error" | "success";
+/**
+ * Four kinds only — success, info, warning, block — the whole vocabulary of the
+ * product's messages. `error` is kept as an alias of `block` so existing call
+ * sites keep working. A message that carries a decision (warning/block/error)
+ * stays until it is dealt with; a receipt (success/info) clears itself. An
+ * optional single `action` is the one thing the reader can do about it.
+ */
+const NOTICE_ICON = { success: Check, info: Info, warning: AlertTriangle, block: ShieldAlert, error: ShieldAlert } as const;
+export function Notice({ type = "error", children, inline = false, onDismiss, action }: {
+  type?: "success" | "info" | "warning" | "block" | "error";
   children: React.ReactNode;
   inline?: boolean;
   onDismiss?: () => void;
+  action?: React.ReactNode;
 }) {
   const [visible, setVisible] = React.useState(true);
+  const transient = type === "success" || type === "info";
+  const assertive = type === "block" || type === "error";
 
   React.useEffect(() => { setVisible(true); }, [children, type]);
   React.useEffect(() => {
-    if (inline || type !== "success" || !visible) return;
+    if (inline || !transient || !visible) return;
     const timer = window.setTimeout(() => { setVisible(false); onDismiss?.(); }, 4200);
     return () => window.clearTimeout(timer);
-  }, [inline, type, visible, children, onDismiss]);
+  }, [inline, transient, visible, children, onDismiss]);
 
   if (!visible) return null;
+  const Icon = NOTICE_ICON[type] || ShieldAlert;
 
   const body = (
-    <div className={`notice notice-${type}`} role={type === "error" ? "alert" : "status"} aria-live={type === "error" ? "assertive" : "polite"}>
-      {type === "error" ? <AlertTriangle aria-hidden="true" /> : <Check aria-hidden="true" />}
-      <span title={typeof children === "string" ? children : undefined}>{children}</span>
+    <div className={`notice notice-${type}`} role={assertive ? "alert" : "status"} aria-live={assertive ? "assertive" : "polite"}>
+      <Icon aria-hidden="true" />
+      <div className="notice-copy">
+        <span title={typeof children === "string" ? children : undefined}>{children}</span>
+        {action ? <div className="notice-action">{action}</div> : null}
+      </div>
       <button
         type="button"
         className="notice-close"

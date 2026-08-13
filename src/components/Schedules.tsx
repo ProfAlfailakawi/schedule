@@ -8,7 +8,10 @@ import {
   CalendarDays,
   ClipboardCheck,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
+  Edit2,
   Expand,
   Eye,
   Focus,
@@ -240,6 +243,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [replay, setReplay] = useState<any>(null),
     [replayLoading, setReplayLoading] = useState(false),
     [quickSearch, setQuickSearch] = useState("");
+  /* The timetable stays the main object. Secondary controls disclose only
+     when they are being used, while an active lens keeps its result visible in
+     the toolbar even after its fields are folded away. */
+  const [lensOpen, setLensOpen] = useState(false);
+  const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
+  const [contextRelatedOpen, setContextRelatedOpen] = useState(false);
+  const [contextCommentsOpen, setContextCommentsOpen] = useState(false);
   const rippleTimer = useRef<number | undefined>(undefined),
     rippleKey = useRef("");
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
@@ -1028,6 +1038,29 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const deferredSearch = useDeferredValue(quickSearch);
   const filteredRows=useMemo(()=>{const q=deferredSearch.trim().toLowerCase();if(!q)return rows;return rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)})},[rows,deferredSearch,courseById,instructorById]);
   /**
+   * The inspector's reading order.
+   *
+   * Previous/next follows what a coordinator means by "next" in a timetable:
+   * first teaching day, then start time, then course identity. It deliberately
+   * uses the currently visible result set, so a search remains a coherent
+   * sequence instead of unexpectedly jumping to a hidden appointment.
+   */
+  const contextSequence = useMemo(() => {
+    const firstDay = (row: FSchedule) => {
+      const index = days.findIndex(day => Boolean((row as any)[day.key]));
+      return index < 0 ? days.length : index;
+    };
+    return filteredRows.slice().sort((a, b) =>
+      firstDay(a) - firstDay(b) ||
+      mins(a.fstarttime) - mins(b.fstarttime) ||
+      byArabic(
+        a.AdCourseName || courseById.get(a.AdCourseId)?.CourseName || "",
+        b.AdCourseName || courseById.get(b.AdCourseId)?.CourseName || "",
+      ) ||
+      Number(a.id) - Number(b.id),
+    );
+  }, [filteredRows, courseById]);
+  /**
    * The shapes this course is allowed to take.
    *
    * Read from the course's own weekly hours, so the answer is about this course
@@ -1136,6 +1169,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setCommentText("");
     setContextSolutions([]);
     setReplay(null);
+    setContextRelatedOpen(false);
+    setContextCommentsOpen(false);
     try {
       const d = await fetchJson(`/api/intelligence/context/${row.id}`);
       setContext(d);
@@ -1157,6 +1192,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setContextLoading(false);
     }
   };
+  const contextSequenceIndex = context?.selected?.id
+    ? contextSequence.findIndex(row => row.id === context.selected.id)
+    : -1;
+  const previousContextRow = contextSequenceIndex > 0
+    ? contextSequence[contextSequenceIndex - 1]
+    : null;
+  const nextContextRow = contextSequenceIndex >= 0 && contextSequenceIndex < contextSequence.length - 1
+    ? contextSequence[contextSequenceIndex + 1]
+    : null;
   const loadReplay = async (row: FSchedule) => {
     if (!isPowerAdmin) return;
     setReplayLoading(true);
@@ -1362,6 +1406,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     else delete document.documentElement.dataset.scheduleWorkspace;
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        setContext(null);
         if (focusMode || presentationMode) {
           setFocusMode(false);
           setPresentationMode(false);
@@ -2519,10 +2564,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           const from = pressOrigin.current;
           if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
           if (picking) { toggleSelect(r.id); return; }
-          openEdit(r);
+          // Clicking a lecture opens its reading panel — understand before edit,
+          // and never leave the board. Editing is one press away inside the panel.
+          void openContext(r);
         }}
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
+        onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
         aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${r.fstarttime}–${r.fendtime}${place ? ` · قاعة ${place}` : ""}`}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""}`}
@@ -2808,6 +2855,39 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     physics.state.phase !== "idle" &&
     physics.state.phase !== "armed",
   );
+  /**
+   * One compact before/after sentence, built from the same live target the
+   * physics layer is judging. It replaces the generic drag hint in-place, so
+   * the grid never jumps and no second floating panel competes with the
+   * existing verdict HUD.
+   */
+  const dragComparison = useMemo(() => {
+    const row = physics.state.row;
+    const target = physics.state.target;
+    if (!row || !target) return null;
+    const candidate: any = buildMoveCandidate(row, target);
+    const carriedDays = days.filter(day => Boolean((row as any)[day.key])).map(day => day.key as DayKey);
+    const rhythmSwitch = carriedDays.length > 1 && !carriedDays.includes(target.day as DayKey)
+      ? patternForDay(target.day as DayKey)
+      : null;
+    if (rhythmSwitch) {
+      days.forEach(day => { candidate[day.key] = rhythmSwitch.includes(day.key as DayKey); });
+    }
+    const place = [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بلا قاعة";
+    const partyCount = multiSelect.has(row.id) ? multiSelect.size : 1;
+    return {
+      before: `${arabicDays(row) || "بلا يوم"} · ${row.fstarttime}–${row.fendtime}`,
+      after: `${arabicDays(candidate) || target.label} · ${candidate.fstarttime}–${candidate.fendtime}`,
+      place,
+      partyCount,
+    };
+  }, [
+    physics.state.row,
+    physics.state.target?.day,
+    physics.state.target?.start,
+    physics.state.target?.label,
+    multiSelect,
+  ]);
   /**
    * The grid answers the held card.
    *
@@ -3786,71 +3866,84 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           </Field>
           {rowsLoading ? <span className="filter-strip-busy" role="status"><i aria-hidden="true" />يقرأ الجدول…</span> : null}
         </div>
-        <div className="schedule-tools">
-          <Segmented
-            value={viewMode}
-            onChange={changeView}
-            instant
-            options={[
-              {
-                value: "list",
-                label: (
-                  <>
-                    <LayoutList /> قائمة
-                  </>
-                ),
-              },
-              {
-                value: "week",
-                label: (
-                  <>
-                    <CalendarDays /> أسبوع
-                  </>
-                ),
-              },
-              {
-                value: "rooms",
-                label: (
-                  <>
-                    <MapPin /> القاعات
-                  </>
-                ),
-              },
-            ]}
-          />
-          <label className="schedule-quick-search"><Search/><input value={quickSearch} onChange={e=>setQuickSearch(e.target.value)} placeholder="بحث سريع: مقرر، أستاذ، شعبة، قاعة..."/>{quickSearch?<button type="button" onClick={()=>setQuickSearch("")}>×</button>:null}</label>
-          <div className="schedule-tool-actions">
+        <div className="schedule-tools" role="toolbar" aria-label="أدوات عرض الجدول">
+          <div className="segmented" role="group" aria-label="طريقة عرض الجدول">
+            <button type="button" className={viewMode === "list" ? "active" : ""} aria-pressed={viewMode === "list"} onClick={() => changeView("list")}>
+              <LayoutList aria-hidden="true" /> قائمة
+            </button>
+            <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => changeView("week")}>
+              <CalendarDays aria-hidden="true" /> أسبوع
+            </button>
+            <button type="button" className={viewMode === "rooms" ? "active" : ""} aria-pressed={viewMode === "rooms"} onClick={() => changeView("rooms")}>
+              <MapPin aria-hidden="true" /> القاعات
+            </button>
+          </div>
+          <label className="schedule-quick-search" role="search">
+            <Search aria-hidden="true" />
+            <input
+              type="search"
+              value={quickSearch}
+              onChange={e => setQuickSearch(e.target.value)}
+              placeholder="بحث سريع: مقرر، أستاذ، شعبة، قاعة..."
+              aria-label="بحث سريع داخل مواعيد الجدول"
+            />
+            {quickSearch ? <button type="button" onClick={() => setQuickSearch("")} aria-label="مسح البحث السريع">×</button> : null}
+          </label>
+          <div className="schedule-tool-actions" role="group" aria-label="أدوات الجدول الإضافية">
+            {viewMode === "week" ? (
+              <GhostButton
+                type="button"
+                className={lensOpen || lensActive ? "active" : ""}
+                onClick={() => setLensOpen(open => !open)}
+                aria-expanded={lensOpen}
+                aria-controls="schedule-week-lens"
+                title={lensActive ? `${weekLensCount} موعداً يطابق عدسة الجدول` : "اختيار أستاذ أو قاعة أو فترة دون إخفاء شكل الأسبوع"}
+              >
+                <Eye aria-hidden="true" />
+                {lensActive ? `العدسة · ${weekLensCount.toLocaleString("ar-KW-u-nu-latn")}` : "عدسة الجدول"}
+              </GhostButton>
+            ) : null}
             <GhostButton
+              type="button"
+              onClick={() => setWorkspaceToolsOpen(open => !open)}
+              aria-expanded={workspaceToolsOpen}
+              title="إظهار أدوات التركيز والمراجعة والنشر"
+            >
+              <Layers aria-hidden="true" /> {workspaceToolsOpen ? "أدوات أقل" : "المزيد"}
+            </GhostButton>
+            {(workspaceToolsOpen || focusMode) ? <GhostButton
               type="button"
               onClick={() => {
                 setFocusMode(!focusMode);
                 setPresentationMode(false);
                 if (!focusMode) setViewMode("week");
               }}
+              aria-pressed={focusMode}
             >
               <Focus /> {focusMode ? "إنهاء التركيز" : "تركيز"}
-            </GhostButton>
-            <GhostButton
+            </GhostButton> : null}
+            {(workspaceToolsOpen || presentationMode) ? <GhostButton
               type="button"
               onClick={() => {
                 setPresentationMode(!presentationMode);
                 setFocusMode(false);
                 if (!presentationMode) setViewMode("week");
               }}
+              aria-pressed={presentationMode}
             >
               <Expand /> {presentationMode ? "إنهاء العرض" : "عرض"}
-            </GhostButton>
-            <GhostButton type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
+            </GhostButton> : null}
+            {workspaceToolsOpen ? <GhostButton type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
               <ClipboardCheck /> مراجعة الاعتماد
-            </GhostButton>
-            <GhostButton
+            </GhostButton> : null}
+            {workspaceToolsOpen ? <GhostButton
               type="button"
               onClick={() => setTransferOpen(true)}
               title={isPowerAdmin ? "استيراد وتصدير واستبدال أستاذ والمنتدبون" : "المنتدبون"}
             >
               <ArrowLeftRight /> {isPowerAdmin ? "أدوات البيانات" : "المنتدبون"}
-            </GhostButton>
-            {isPowerAdmin ? (
+            </GhostButton> : null}
+            {workspaceToolsOpen && isPowerAdmin ? (
               <SchedulePublish
                 collegeId={filterCollege}
                 sectionId={filterSection}
@@ -4189,9 +4282,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   }}
                   title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${row.fstarttime}–${row.fendtime}`}
                   aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${row.fstarttime}–${row.fendtime}`}
-                  onClick={() => openEdit(row)}
+                  onClick={() => void openContext(row)}
                   tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === "Enter") openEdit(row); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") void openContext(row); }}
                 >
                   <b>{placement ? title : courseLabel(title, 0.82).text}</b>
                   <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
@@ -4356,8 +4449,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           <Surface
             className={`week-surface ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""}`}
           >
-            {/* One question at a time, asked of the whole week. */}
-            <div className={`week-lens ${lensActive ? "active" : ""}`}>
+            {/* One question at a time, asked of the whole week. The controls
+                fold away; their answer remains visible on the toolbar button. */}
+            {lensOpen ? <div
+              id="schedule-week-lens"
+              className={`week-lens ${lensActive ? "active" : ""}`}
+              role="search"
+              aria-label="عدسة الجدول: إبراز المواعيد بحسب الأستاذ أو القاعة أو الفترة"
+            >
               <Field label="أستاذ المقرر">
                 <select value={lens.instructorId || ""} onChange={(e) => setLens(v => ({ ...v, instructorId: Number(e.target.value) || 0 }))}>
                   <option value="">كل الأساتذة</option>
@@ -4415,15 +4514,24 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               ) : lens.from && lens.to && mins(lens.from) >= mins(lens.to) ? (
                 <small className="week-lens-note warn">«من» يجب أن يسبق «إلى».</small>
               ) : null}
-            </div>
+            </div> : null}
             <div
               className={`week-note ${physicsActive ? "gravity-note-active" : ""}`}
             >
-              <GripVertical />
-              <span>{picking
-                ? "النقل الجماعي: اختر المواعيد المطلوبة، ثم اسحب أي واحد منها — تنتقل المجموعة معاً بعد فحص الموانع."
-                : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · التراجع متاح بعد كل نقل."}</span>
-              <button
+              <GripVertical aria-hidden="true" />
+              <span
+                aria-live="polite"
+                title={physicsActive && dragComparison
+                  ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}`
+                  : undefined}
+              >
+                {physicsActive && dragComparison
+                  ? `قبل: ${dragComparison.before} ← بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
+                  : picking
+                    ? "النقل الجماعي: اختر المواعيد المطلوبة، ثم اسحب أي واحد منها — تنتقل المجموعة معاً بعد فحص الموانع."
+                    : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · التراجع متاح بعد كل نقل."}
+              </span>
+              {(workspaceToolsOpen || picking || multiSelect.size > 0) ? <button
                 type="button"
                 className={`week-pick-toggle ${picking ? "on" : ""}`}
                 onClick={() => { setPicking(v => !v); setMultiSelect(new Set()); }}
@@ -4434,7 +4542,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 {picking
                   ? (multiSelect.size ? `${multiSelect.size} موعدًا مختارًا · اسحب الآن` : "اختر المواعيد من الجدول")
                   : "نقل جماعي"}
-              </button>
+              </button> : null}
               <span
                 className="week-pick-toggle on week-safety-lock"
                 title="أي إفلات يخلق مانعاً يرتد تلقائياً ولا يُحفظ"
@@ -4442,7 +4550,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <ShieldCheck aria-hidden="true" />
                 منع التعارض مفعّل
               </span>
-              <button
+              {workspaceToolsOpen ? <button
                 type="button"
                 className="week-pick-toggle"
                 onClick={() => setHueBy(v => (v === "course" ? "instructor" : "course"))}
@@ -4450,7 +4558,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               >
                 <Palette aria-hidden="true" />
                 {hueBy === "course" ? "التلوين حسب: المقرر" : "التلوين حسب: الأستاذ"}
-              </button>
+              </button> : null}
               {multiSelect.size ? (
                 <button type="button" className="week-pick-clear" onClick={() => setMultiSelect(new Set())}>
                   <X aria-hidden="true" />إلغاء التحديد
@@ -5134,15 +5242,46 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           }}
         >
           <aside className="schedule-context">
-            <button
-              className="drawer-close"
-              type="button"
-              aria-label="إغلاق سياق الموعد"
-              title="إغلاق سياق الموعد"
-              onClick={() => setContext(null)}
-            >
-              <X />
-            </button>
+            <div className="context-actions">
+              <div className="context-nav" role="group" aria-label="التنقل بين مواعيد اليوم">
+                <button
+                  type="button"
+                  aria-label="الموعد السابق في اليوم"
+                  title="السابق"
+                  disabled={!previousContextRow}
+                  onClick={() => { if (previousContextRow) void openContext(previousContextRow); }}
+                >
+                  <ChevronRight />
+                </button>
+                <button
+                  type="button"
+                  aria-label="الموعد التالي في اليوم"
+                  title="التالي"
+                  disabled={!nextContextRow}
+                  onClick={() => { if (nextContextRow) void openContext(nextContextRow); }}
+                >
+                  <ChevronLeft />
+                </button>
+              </div>
+              <div className="context-actions-main">
+                <button
+                  type="button"
+                  className="btn btn-secondary context-edit"
+                  onClick={() => { const row = context.selected; setContext(null); openEdit(row); }}
+                >
+                  <Edit2 /> تعديل
+                </button>
+                <button
+                  className="drawer-close"
+                  type="button"
+                  aria-label="إغلاق سياق الموعد"
+                  title="إغلاق"
+                  onClick={() => setContext(null)}
+                >
+                  <X />
+                </button>
+              </div>
+            </div>
             <div className="context-title">
               <span>
                 <BrainCircuit />

@@ -115,7 +115,8 @@
 .side-nav::-webkit-scrollbar-thumb{background:#ffffff1c;border:0}
 
 .nav-section{padding:var(--s2) 0 0}
-.nav-section+.nav-section{margin-top:var(--s2);padding-top:var(--s3);border-top:1px solid var(--nav-line)}
+/* Spacing separates the groups; a drawn line is one border too many. */
+.nav-section+.nav-section{margin-top:var(--s3);padding-top:var(--s1)}
 /* The heading is the handle. It reads as a label until it is approached, so
    the rail keeps its quiet typographic rhythm and still admits it can fold. */
 .nav-section-title{
@@ -175,9 +176,12 @@
 .side-nav-link span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .side-nav-link:hover{background:#ffffff0a;color:var(--nav-ink)}
 .side-nav-link:hover>svg:first-child{color:#b6c1bb}
+/* You are here, said quietly: a whisper of accent behind the row, the brass
+   rule on the edge, and the icon lit. Not a filled block competing with the
+   work. */
 .side-nav-link.active{
   color:#fff;
-  background:color-mix(in srgb,var(--accent) 20%,transparent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
 }
 .side-nav-link.active>svg:first-child{color:var(--accent)}
 .side-nav-link.active::before{
@@ -193,8 +197,6 @@
 
 .sidebar-footer{
   padding:var(--s3) var(--s4) var(--s4);
-  border-top:1px solid var(--nav-line);
-  background:#00000024;
 }
 .sidebar-connection,.theme-toggle{
   width:100%;
@@ -259,27 +261,57 @@
 .sidebar-launcher{display:none}
 .sidebar-backdrop{display:none}
 .mobile-topbar{display:none}
+/* The phone dock is a phone surface only; on the desk it must not render at all. */
+.mobile-bottom-dock{display:none}
 
 /* --- The rail folds everywhere -----------------------------------------------
    The drawer behaviour was the phone's alone; the desk kept a permanent rail.
    Fieldwork said otherwise: the menu is a place to choose from, not to be —
    so on every width a press outside it folds the whole rail away and the
    work takes the room, and one quiet button at the top brings it back. */
+/* --- Desktop rail folds to an icon spine -------------------------------------
+   Folded, the rail is a thumb-wide column of glyphs and the work takes the room.
+   Approaching it — hover, or a keyboard focus landing inside — floats the full
+   labelled rail over the page without pushing the work aside; every icon still
+   navigates on its own, so nothing is ever locked behind the hover. The labels
+   already sit in their own spans, so this is the rail hiding its words, not a
+   second menu bolted on. */
 @media screen and (min-width:1120px){
-  .sidebar{transition:transform .28s var(--ease-out)}
-  html[data-rail="closed"] .sidebar{transform:translateX(calc(100% + 40px))}
-  .app-main{transition:margin-inline-start .28s var(--ease-out)}
-  html[data-rail="closed"] .app-main{margin-inline-start:0}
-  html[data-rail="closed"] .sidebar-launcher{
-    display:grid;place-items:center;
-    position:fixed;top:14px;inset-inline-start:14px;z-index:59;
-    width:42px;height:42px;
-    border-radius:var(--r-full);
-    background:var(--nav);color:var(--nav-ink);
-    box-shadow:var(--shadow-md);
+  .sidebar{transition:width .24s var(--ease-out)}
+  .app-main{transition:margin-inline-start .24s var(--ease-out)}
+
+  html[data-rail="closed"] .sidebar{width:72px;z-index:61}
+  html[data-rail="closed"] .app-main{margin-inline-start:72px}
+
+  /* Rest state: every label collapses to its glyph, groups all stand open so
+     no destination hides, and the icons centre in the spine. */
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .sidebar-brand>button:first-child>span:last-child,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .command-search span,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .command-search kbd,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .side-nav-link span,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .side-nav-link .nav-arrow,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .nav-section-title,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .user-card>div:not(.user-avatar){
+    display:none;
   }
-  html[data-rail="closed"] .sidebar-launcher:hover{background:var(--nav-3)}
-  html[data-rail="closed"] .sidebar-launcher svg{width:19px;height:19px}
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .side-nav-link,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .command-search,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .sidebar-brand>button:first-child{
+    justify-content:center;padding-inline:0;gap:0;
+  }
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .user-card{grid-template-columns:1fr;justify-items:center;gap:0}
+  html[data-rail="closed"] .nav-section-body{grid-template-rows:1fr}
+  html[data-rail="closed"] .nav-section+.nav-section{margin-top:var(--s1)}
+
+  /* Approaching floats the full rail over the work, not through it. */
+  html[data-rail="closed"] .sidebar:hover,
+  html[data-rail="closed"] .sidebar:focus-within{
+    width:var(--sidebar-w);
+    box-shadow:var(--shadow-nav);
+  }
+
+  /* The lone floating launcher is retired: the spine itself is the way back. */
+  html[data-rail="closed"] .sidebar-launcher{display:none}
 }
 @media (prefers-reduced-motion:reduce){
   .sidebar,.app-main{transition:none}
@@ -337,6 +369,13 @@ html[data-schedule-workspace="focus"] .schedule-control{
   background:color-mix(in srgb,var(--nav) 62%,transparent);
   backdrop-filter:blur(6px);
   animation:fade .18s var(--ease) both;
+}
+/* The lecture reading calms the board, it does not hide it: no heavy blur, only
+   a light veil, so the week stays legible behind the panel and the eye moves
+   naturally from "I see the schedule" to "I understand this lecture". */
+.schedule-context-backdrop{
+  background:color-mix(in srgb,var(--canvas) 34%,transparent);
+  backdrop-filter:none;
 }
 
 .spotlight-backdrop{display:grid;place-items:start center;padding:10vh var(--s5) var(--s5)}
