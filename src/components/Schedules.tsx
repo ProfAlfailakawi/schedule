@@ -93,7 +93,7 @@ import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
-import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, pickLive } from "../utils/weekVisual";
+import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, pickLive } from "../utils/weekVisual";
 export type ScheduleMode = "schedule" | "copy";
 interface Props {
   mode: ScheduleMode;
@@ -1755,6 +1755,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const sourceDay = (days.find(d => Boolean(row[d.key]))?.key || day) as DayKey;
     const dayChanged = sourceDay !== day;
 
+    /**
+     * Crossing rhythms is a real move, asked out loud.
+     *
+     * A Sunday-Tuesday-Thursday lecture dropped on Monday is not asking to
+     * teach four days — it is asking to live on the other rhythm. When the
+     * carried card has several days and the target day is outside them, the
+     * whole day-set switches to the target's pattern (1-3-5 ⇄ 2-4), same
+     * time, same length — after one plain-words confirmation.
+     */
+    const carriedDays = days.filter(d => Boolean(row[d.key])).map(d => d.key as DayKey);
+    const rhythmSwitch = carriedDays.length > 1 && !carriedDays.includes(day) ? patternForDay(day) : null;
+    if (rhythmSwitch) {
+      const fromLabels = carriedDays.map(k => days.find(d => d.key === k)?.label).join(" - ");
+      const toLabels = rhythmSwitch.map(k => days.find(d => d.key === k)?.label).join(" - ");
+      const title = row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "المحاضرة";
+      if (!window.confirm(`«${title}» تُدرَّس ${fromLabels}.\nنقلها إلى ${days.find(d => d.key === day)?.label} يحوّل أيامها كلها إلى نمط ${toLabels} بنفس الوقت والمدة.\nمتابعة؟`)) {
+        setPhysicsNotice("");
+        return;
+      }
+    }
+
     const moves = party.map(item => {
       const singleDay = days.filter(d => Boolean(item[d.key])).length === 1;
       const start = item.id === row.id ? target.start : timeFromMins(mins(item.fstarttime) + shift);
@@ -1762,6 +1783,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       // Only the carried card changes day; the rest keep theirs and shift in time.
       if (item.id !== row.id && singleDay && dayChanged) {
         days.forEach(d => { (candidate as any)[d.key] = Boolean(item[d.key]); });
+      }
+      // The carried multi-day card takes the whole target rhythm.
+      if (item.id === row.id && rhythmSwitch) {
+        days.forEach(d => { (candidate as any)[d.key] = rhythmSwitch.includes(d.key as DayKey); });
       }
       return { before: item, after: candidate };
     });
@@ -2309,7 +2334,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const title = r.AdCourseName || c?.CourseName || code;
     const label = courseLabel(title, widthShare);
     const who = i?.AdInstructorName || "بدون أستاذ";
-    const shortWho = i?.AdInstructorName ? instructorLabel(i.AdInstructorName, widthShare) : who;
+    /* First and last name only — «د. عبدالرحمن الشراد» — then the width-aware
+       shortener may trim further on a squeezed lane. */
+    const shortWho = i?.AdInstructorName ? instructorLabel(firstLast(i.AdInstructorName), widthShare) : who;
     const place = [r.AdRoomCode, r.AdRoomHall].filter(Boolean).join("/");
     // The drag lives on pointerdown. Recording where the press began has to be
     // merged with it rather than declared after it — a second onPointerDown prop
@@ -3880,8 +3907,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter") openEdit(row); }}
                 >
-                  <b>{title}</b>
-                  <span>{instructor?.AdInstructorName || "بدون أستاذ"}</span>
+                  <b>{courseLabel(title, 0.6).text}</b>
+                  <span>{instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ"}</span>
                   <em dir="ltr">{row.fstarttime}–{row.fendtime}</em>
                   {undoEntry ? (
                     <button
@@ -4019,7 +4046,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               className={`week-note ${physicsActive ? "gravity-note-active" : ""}`}
             >
               <GripVertical />
-              <span>اسحب الموعد لتنقله · اسحب على عمود فارغ لتنشئ موعداً بطوله · تراجُع متاح دقيقة بعد كل نقل.</span>
+              <span>{picking
+                ? "وضع التجميع: اضغط المواعيد لتضمّها إلى المجموعة، ثم اسحب أيّ واحد منها — تنتقل كلها معاً بنفس الإزاحة وبنفس فحص التعارض."
+                : "اسحب الموعد لتنقله · اسحب على عمود فارغ لتنشئ موعداً بطوله · تراجُع متاح دقيقة بعد كل نقل."}</span>
               <button
                 type="button"
                 className={`week-pick-toggle ${picking ? "on" : ""}`}

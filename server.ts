@@ -1,4 +1,5 @@
 import express, { Request, Response, NextFunction } from "express";
+import compression from "compression";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
@@ -11,6 +12,7 @@ import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine,
 import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { learnAll } from "./src/utils/courseNature";
+import { firstLast } from "./src/utils/weekVisual";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -26,6 +28,20 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
   next();
 });
+// Every text response leaves the building gzipped. The largest payloads here —
+// a term's schedule rows, the intelligence readings, the app bundle itself —
+// are JSON and JavaScript, which compress to a quarter of their size or less;
+// on Cloud Run the wire is the slow part, not the CPU. Event streams are left
+// alone (compression buffers them into silence), and anything under 1KB is not
+// worth the header.
+app.use(compression({
+  threshold: 1024,
+  filter: (req: Request, res: Response) => {
+    const type = String(res.getHeader("Content-Type") || "");
+    if (type.includes("text/event-stream")) return false;
+    return compression.filter(req, res);
+  },
+}));
 app.use(express.json({ limit: "1mb" }));
 
 // CSRF hardening without changing the legacy UI: reject cross-site state-changing API requests.
@@ -3099,9 +3115,24 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
 .tools a{flex:1;height:48px;display:grid;place-items:center;border:1px solid var(--line);border-radius:14px;
   background:var(--card);color:var(--ink);font-size:14px;font-weight:600;text-decoration:none}
 .foot{margin-top:26px;color:#4d5a55;font-size:11.5px;text-align:center;line-height:1.9}
+/* The approved report table — the same five-column week the reports print,
+   so the professor's shared card and the official sheet read as one family. */
+.pub-week{width:100%;margin:0 0 18px;border-collapse:collapse;table-layout:fixed;background:var(--card);border-radius:16px;overflow:hidden}
+.pub-week th{padding:9px 4px;text-align:center;font-size:12px;font-weight:650;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
+.pub-week th.t{width:52px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);vertical-align:top;padding-top:9px}
+.pub-week .wslot{display:block;padding:8px 9px;border-bottom:1px dashed var(--line)}
+.pub-week .wslot:last-child{border-bottom:0}
+.pub-week .wslot b{display:block;font-size:12px;font-weight:650;line-height:1.35}
+.pub-week .wslot time{display:block;margin-top:2px;font:600 10.5px/1.4 ui-monospace,monospace;color:var(--jade);direction:ltr}
+.pub-week .wslot small{display:block;margin-top:1px;color:var(--dim);font-size:10.5px}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @media print{body{background:#fff;color:#000;padding:0}.gate,.tools,.foot{display:none}
-  .day,.stat{border-color:#bbb;background:#fff}.slot time{color:#111}}
+  .day,.stat{border-color:#bbb;background:#fff}.slot time{color:#111}
+  .pub-week{background:#fff;border-radius:0}
+  .pub-week th{color:#111;background:#f0f0ec;border-color:#9aa3a0}
+  .pub-week td{border-color:#9aa3a0}
+  .pub-week .wslot b,.pub-week .wslot time{color:#111}.pub-week .wslot small{color:#444}}
 </style>
 </head>
 <body>
@@ -3174,7 +3205,22 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
       ["قاعات",ar(d.rooms.length)]
     ].map(function(x){return '<div class="stat"><b>'+x[1]+'</b><span>'+x[0]+'</span></div>'}).join("");
 
-    document.getElementById("days").innerHTML=d.byDay.filter(function(day){return day.rows.length}).map(function(day){
+    // The approved five-column week first — the report everyone recognises —
+    // then the per-day detail with its waiting-gap annotations underneath.
+    // Days across the top, starting hours down the right edge — the paper shape.
+    var starts=[];d.byDay.forEach(function(day){day.rows.forEach(function(r){if(starts.indexOf(r.start)<0)starts.push(r.start)})});starts.sort();
+    var weekTable='<table class="pub-week"><colgroup><col style="width:52px">'+d.byDay.map(function(){return '<col>'}).join("")+
+      '</colgroup><thead><tr><th class="t">الوقت</th>'+d.byDay.map(function(day){return '<th>'+esc(day.name)+'</th>'}).join("")+
+      '</tr></thead><tbody>'+starts.map(function(start){
+        return '<tr><th class="t" dir="ltr">'+esc(start)+'</th>'+d.byDay.map(function(day){
+          return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
+            return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
+              '<time>–'+esc(row.end)+'</time>'+
+              '<small>'+[row.code,(row.room||row.hall)&&(esc(row.room||"")+"/"+esc(row.hall||""))].filter(Boolean).join(" · ")+'</small></span>';
+          }).join("")+'</td>';
+        }).join("")+'</tr>';
+      }).join("")+'</tbody></table>';
+    document.getElementById("days").innerHTML=weekTable+d.byDay.filter(function(day){return day.rows.length}).map(function(day){
       // The gap sits where it happens — between the two lectures it separates.
       var body=day.rows.map(function(row,i){
         var lead="";
@@ -3230,43 +3276,35 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   })).filter(day => day.rows.length);
 
   /**
-   * The published page shows the same week the department built.
+   * The published page IS the approved report.
    *
-   * A list of appointments grouped by day is correct and unreadable: nobody
-   * reads a timetable to learn what happens on Tuesday, they read it to see the
-   * shape of their week. The grid below is the same geometry the application
-   * draws — hours down the side, days across — rendered as plain HTML with no
-   * script, so it opens instantly on a phone and prints as a timetable. The
-   * list stays underneath for narrow screens and for screen readers.
+   * The application already has one week format everyone signs off on — the
+   * reports' five-column table, a day per column and the day's lectures
+   * stacked inside it in time order. The share page used to draw its own
+   * absolutely-positioned grid instead, with no lane logic, so two lectures
+   * at the same hour painted on top of each other and one of them simply
+   * vanished. A table cannot overlap by construction: every lecture is a row
+   * in its day's stack, however crowded the hour. Same markup shape, same
+   * borders, same order as the printed report.
    */
-  const minute = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
-  const starts = payload.rows.map(row => minute(row.start)).filter(Number.isFinite);
-  const ends = payload.rows.map(row => minute(row.end)).filter(Number.isFinite);
-  const gridStart = starts.length ? Math.max(7 * 60, Math.floor(Math.min(...starts) / 30) * 30) : 8 * 60;
-  const gridEnd = ends.length ? Math.min(22 * 60, Math.ceil(Math.max(...ends) / 30) * 30) : 14 * 60;
-  const slotCount = Math.max(2, Math.round((gridEnd - gridStart) / 30));
-  const clockOf = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
-  // One hue per course, so the same subject is the same colour all week.
-  const hueOf = (seed: string) => {
-    let hash = 0;
-    for (let i = 0; i < seed.length; i++) hash = (hash * 31 + seed.charCodeAt(i)) % 360;
-    return hash;
-  };
-  const gridCells = SHARE_DAY_NAMES.map((_, dayIndex) =>
-    payload.rows
-      .filter(row => row.days.includes(dayIndex))
-      .map(row => {
-        const from = minute(row.start), to = Math.max(from + 30, minute(row.end));
-        const top = ((from - gridStart) / 30) * 34;
-        const height = Math.max(30, ((to - from) / 30) * 34 - 3);
-        const hue = hueOf(String(row.code || row.name || ""));
-        return `<div class="cell" style="top:${top}px;height:${height}px;--h:${hue}">
-          <b>${esc(row.code || row.name)}</b>
-          <span>${esc(row.name)}</span>
-          <i>${esc(row.room || "")}${row.hall ? "/" + esc(row.hall) : ""}</i>
-        </div>`;
-      }).join("")
-  );
+  /* Rows are the starting hours, read down the right edge; days run across
+     the top — the exact shape of the paper sheet this page replaces. A cell
+     holds whatever begins at that hour on that day. */
+  const startTimes = [...new Set(payload.rows.map(row => String(row.start)))].sort();
+  const slotHtml = (row: typeof payload.rows[number]) => `<span class="slot">
+      <b>${esc(row.name)}</b>
+      ${row.code || row.section ? `<small dir="ltr">${esc(row.code || "")}${row.section ? ` · ${esc(row.section)}` : ""}</small>` : ""}
+      <time dir="ltr">–${esc(row.end)}</time>
+      ${row.room || row.hall ? `<time dir="ltr">${esc([row.room, row.hall].filter(Boolean).join("/"))}</time>` : ""}
+      ${row.instructor ? `<i>${esc(firstLast(row.instructor))}</i>` : ""}
+    </span>`;
+  const tableBody = startTimes.map(start => `<tr>
+    <th class="t" dir="ltr">${esc(start)}</th>
+    ${SHARE_DAY_NAMES.map((_, dayIndex) =>
+      `<td>${payload.rows
+        .filter(row => row.days.includes(dayIndex) && String(row.start) === start)
+        .map(slotHtml).join("")}</td>`).join("")}
+  </tr>`).join("");
   const expires = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date(payload.expiresAt));
   const icsUrl = `/api/public/ics/${encodeURIComponent(resolved.link.id)}`;
 
@@ -3303,23 +3341,35 @@ b{display:block;font-size:15px;font-weight:600}
 .code{direction:ltr;unicode-bidi:isolate;color:var(--brass);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .empty{padding:48px 0;text-align:center;color:var(--muted)}
-.grid{margin-top:26px;display:grid;grid-template-columns:52px repeat(5,minmax(0,1fr));border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--card)}
-.grid .head{padding:10px 6px;text-align:center;font-size:12px;font-weight:600;color:var(--brass);border-bottom:1px solid var(--line);background:rgba(255,255,255,.02)}
-.grid .head:first-child{background:transparent}
-.grid .hours{position:relative;border-inline-end:1px solid var(--line)}
-.grid .hours span{position:absolute;inset-inline:0;text-align:center;font:500 10px/1 ui-monospace,Menlo,monospace;color:var(--muted);transform:translateY(-4px)}
-.grid .col{position:relative;border-inline-end:1px solid var(--line)}
-.grid .col:last-child{border-inline-end:0}
-.grid .row-line{position:absolute;inset-inline:0;height:1px;background:var(--line);opacity:.5}
-.cell{position:absolute;inset-inline:3px;padding:4px 6px;border-radius:6px;overflow:hidden;
-  background:hsl(var(--h) 38% 18%);border-inline-start:3px solid hsl(var(--h) 55% 55%);color:#eef2ee}
-.cell b{display:block;font:600 11px/1.3 ui-monospace,Menlo,monospace;direction:ltr;text-align:start}
-.cell span{display:block;font-size:10px;line-height:1.3;color:#cfd8d3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cell i{display:block;font-style:normal;font-size:9px;color:#9fada7}
+/* The approved report table, on screen: five equal day columns, the day's
+   lectures stacked inside in time order. Nothing is positioned, so nothing
+   can overlap. */
+.pub-week{width:100%;margin-top:26px;border-collapse:collapse;table-layout:fixed;background:var(--card);border-radius:14px;overflow:hidden}
+.pub-week th{padding:10px 6px;text-align:center;font-size:12.5px;font-weight:650;color:var(--brass);border:1px solid var(--line);background:rgba(255,255,255,.03)}
+.pub-week td{border:1px solid var(--line);padding:0;vertical-align:top}
+.pub-week th.t{width:58px;font:600 11px/1.4 ui-monospace,Menlo,monospace;color:var(--accent);vertical-align:top;padding-top:10px}
+.pub-week tbody th.t{background:rgba(255,255,255,.02)}
+.pub-week .slot{display:block;padding:9px 10px;border-bottom:1px dashed var(--line)}
+.pub-week .slot:last-child{border-bottom:0}
+.pub-week .slot b{display:block;font-size:12.5px;font-weight:650;line-height:1.35}
+.pub-week .slot small{display:block;margin-top:1px;font:600 10px/1.4 ui-monospace,Menlo,monospace;color:var(--brass)}
+.pub-week .slot time{display:block;margin-top:2px;font:600 11px/1.4 ui-monospace,Menlo,monospace;color:var(--accent);white-space:nowrap}
+.pub-week .slot time+time{color:var(--muted);margin-top:0}
+.pub-week .slot i{display:block;margin-top:2px;font-style:normal;font-size:11px;color:var(--muted)}
 .listing{margin-top:30px}
-@media (max-width:640px){.grid{display:none}}
+@media (max-width:640px){.pub-week{display:none}}
 @media (min-width:641px){.listing{display:none}}
-@media print{.grid{display:grid;background:#fff}.grid .head{color:#000}.cell{background:#eef3f1;color:#000;border-color:#888}.cell span,.cell i{color:#333}.listing{display:none}}
+@media print{
+  .pub-week{display:table;background:#fff;border-radius:0}
+  .pub-week th{color:#111;background:#f0f0ec;border-color:#9aa3a0}
+  .pub-week td{border-color:#9aa3a0}
+  .pub-week .slot{border-bottom-color:#ccc}
+  .pub-week .slot b{color:#111}
+  .pub-week .slot small{color:#555}
+  .pub-week .slot time{color:#111}
+  .pub-week .slot time+time,.pub-week .slot i{color:#444}
+  .listing{display:none}
+}
 @media print{body{background:#fff;color:#000}.tools{display:none}article,header,footer{border-color:#ccc}.meta span{border-color:#ccc;background:#fff}time{color:#000}}
 </style>
 </head>
@@ -3335,17 +3385,11 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
     <a class="primary" href="${icsUrl}">إضافة إلى التقويم</a>
     <a href="javascript:window.print()">طباعة</a>
   </div>
-  ${payload.rows.length ? `<div class="grid">
-    <div class="head"></div>
-    ${SHARE_DAY_NAMES.map(name => `<div class="head">${esc(name)}</div>`).join("")}
-    <div class="hours" style="height:${slotCount * 34}px">
-      ${Array.from({ length: slotCount + 1 }, (_, i) => `<span style="top:${i * 34}px">${clockOf(gridStart + i * 30)}</span>`).join("")}
-    </div>
-    ${gridCells.map(cells => `<div class="col" style="height:${slotCount * 34}px">
-      ${Array.from({ length: slotCount }, (_, i) => `<div class="row-line" style="top:${(i + 1) * 34}px"></div>`).join("")}
-      ${cells}
-    </div>`).join("")}
-  </div>` : ""}
+  ${payload.rows.length ? `<table class="pub-week">
+    <colgroup><col style="width:58px">${SHARE_DAY_NAMES.map(() => `<col>`).join("")}</colgroup>
+    <thead><tr><th class="t">الوقت</th>${SHARE_DAY_NAMES.map(name => `<th>${esc(name)}</th>`).join("")}</tr></thead>
+    <tbody>${tableBody}</tbody>
+  </table>` : ""}
   <div class="listing">
   ${byDay.length ? byDay.map(day => `<section>
     <h2>${esc(day.name)}</h2>

@@ -12,6 +12,17 @@
 
 @media print{
   /**
+   * The printer sees frame zero.
+   *
+   * Switching to print media flips .print-only from display:none to block,
+   * which STARTS the screen's entrance animation from its first keyframe —
+   * opacity:0 — and the raster is taken before the clock ever advances. The
+   * one element allowed on paper painted nothing, and every report came out
+   * as blank pages. On paper, nothing moves; so nothing animates.
+   */
+  *,*::before,*::after{animation:none !important;transition:none !important}
+
+  /**
    * Paper has no dark mode.
    *
    * The sheet used to come out of the printer as a column of black rectangles,

@@ -34,6 +34,38 @@ export const courseHue = (code: string, name = "") => {
   return COURSE_HUES[(hash >>> 0) % COURSE_HUES.length];
 };
 
+/* The two teaching rhythms this university actually runs: Sunday-Tuesday-
+   Thursday, and Monday-Wednesday. A lecture lives in one or the other. */
+export const DAY_PATTERN_135: DayKey[] = ["fsunday", "ftuesday", "fthursday"];
+export const DAY_PATTERN_24: DayKey[] = ["fmonday", "fwednesday"];
+
+/**
+ * The standard pattern that contains a given day.
+ *
+ * Dropping a Sunday-Tuesday-Thursday lecture on a Monday column is not a
+ * request to teach it four days a week — it is a request to move it to the
+ * other rhythm. This answers which rhythm the target day belongs to, and the
+ * caller asks the human before committing the switch.
+ */
+export function patternForDay(day: DayKey): DayKey[] {
+  return (DAY_PATTERN_24 as string[]).includes(day) ? DAY_PATTERN_24 : DAY_PATTERN_135;
+}
+
+/**
+ * A person's name, cut to what a small card can afford: the honorific if one
+ * leads, then the first and last names only. "د. عبدالرحمن ربل سليمان الشراد"
+ * reads as "د. عبدالرحمن الشراد" — still unmistakably him, half the width.
+ */
+export function firstLast(name: string): string {
+  const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 2) return words.join(" ");
+  const HONORIFICS = new Set(["د", "أ", "م", "أد", "الدكتور", "الدكتورة", "الأستاذ", "الأستاذة", "المهندس"]);
+  const lead = words[0].replace(/[.٫]/g, "");
+  const honorific = HONORIFICS.has(lead) ? words.shift()! : "";
+  if (words.length <= 2) return [honorific, ...words].filter(Boolean).join(" ");
+  return [honorific, words[0], words[words.length - 1]].filter(Boolean).join(" ");
+}
+
 export interface SqueezedCandidate {
   id: number;
   top: number;

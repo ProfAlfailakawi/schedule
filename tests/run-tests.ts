@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
-import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, pickLive } from "../src/utils/weekVisual";
+import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, pickLive } from "../src/utils/weekVisual";
 import { Repository, initDatabase } from "../src/db/repository";
 
 const originalLog = console.log;
@@ -119,6 +119,19 @@ async function runTests() {
     assert(!pickLive(rows, "fsunday", 9 * 60 + 30).running.has(1), "a lecture is over at its last minute");
     assert(pickLive(rows, "fsunday", 9 * 60 + 45).next === 3, "the nearest coming lecture is the next, not the first listed");
     assert(pickLive(rows, null, 9 * 60).running.size === 0 && pickLive(rows, null, 9 * 60).next === null, "a weekend has no running and no next");
+
+    // Day rhythms: dropping across patterns means switching rhythm.
+    assert(patternForDay("fmonday").join() === "fmonday,fwednesday", "Monday belongs to the Mon-Wed rhythm");
+    assert(patternForDay("fwednesday").join() === "fmonday,fwednesday", "Wednesday belongs to the Mon-Wed rhythm");
+    assert(patternForDay("fsunday").join() === "fsunday,ftuesday,fthursday", "Sunday belongs to the Sun-Tue-Thu rhythm");
+    assert(patternForDay("fthursday").join() === "fsunday,ftuesday,fthursday", "Thursday belongs to the Sun-Tue-Thu rhythm");
+
+    // Names cut to card width: honorific + first + last.
+    assert(firstLast("د. عبدالرحمن ربل سليمان الشراد") === "د. عبدالرحمن الشراد", "long name keeps honorific, first and last");
+    assert(firstLast("د. منى حسن") === "د. منى حسن", "short name passes untouched");
+    assert(firstLast("عبدالعزيز خالد العنزي") === "عبدالعزيز العنزي", "no honorific: first and last");
+    assert(firstLast("الدكتورة نورة سعد فهد العجمي") === "الدكتورة نورة العجمي", "full-word honorific recognised");
+    assert(firstLast("") === "", "empty name stays empty");
   }
 
   if (!originalDb) {

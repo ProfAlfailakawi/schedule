@@ -1298,7 +1298,46 @@
 .living-more:hover{border-color:var(--accent);color:var(--accent)}
 .living-primary-decision svg,.living-more svg{width:15px;height:15px}
 
-/* --- Panel chrome --------------------------------------------------------- */
+/* --- Panel chrome ---------------------------------------------------------
+   The block below is the panel's whole body — and it had gone missing: the
+   overlay backdrop existed, the scenes inside existed, but the aside between
+   them had no background, no width, no scroll. Every scene painted straight
+   onto the blurred grid. This is the desk-side drawer the scenes always
+   assumed they were standing in. */
+.living-panel{
+  position:relative;
+  margin-inline-start:auto;
+  width:min(680px,94vw);
+  height:100dvh;
+  display:flex;flex-direction:column;
+  background:var(--surface);
+  border-inline-start:1px solid var(--line);
+  box-shadow:var(--shadow-nav);
+  overflow:hidden;
+  animation:drawer-in .28s var(--ease-out) both;
+}
+.living-panel-head{
+  flex:none;
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s5) var(--s6) var(--s4);
+  border-bottom:1px solid var(--line);
+  background:var(--surface);
+}
+.living-panel-head h2,.living-panel-head strong{font-size:var(--t-h3);font-weight:650}
+.living-panel-head small{color:var(--muted);font-size:var(--t-xs)}
+.living-panel-head button{
+  margin-inline-start:auto;
+  width:30px;height:30px;display:grid;place-items:center;
+  border-radius:var(--r-full);color:var(--muted);
+  transition:background .14s var(--ease),color .14s var(--ease);
+}
+.living-panel-head button:hover{background:var(--surface-3);color:var(--ink)}
+.living-panel-body{
+  flex:1;min-height:0;
+  overflow-y:auto;overscroll-behavior:contain;
+  padding:var(--s5) var(--s6) var(--s7);
+  background:var(--canvas);
+}
 .living-scene-nav{
   display:flex;gap:var(--s1);flex-wrap:wrap;
   padding:0 var(--s6) var(--s4);

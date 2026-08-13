@@ -673,7 +673,9 @@
 */
 .week-title{-webkit-line-clamp:3}
 @container (max-height:56px){.week-when{display:none}}
-@container (max-height:44px){.week-who{display:none};.week-title{-webkit-line-clamp:2}}
+/* No semicolon between rules: a stray one here made the parser silently drop
+   the title clamp — found by CSSOM inspection, not by eye. */
+@container (max-height:44px){.week-who{display:none}.week-title{-webkit-line-clamp:2}}
 @container (max-height:30px){.week-title{-webkit-line-clamp:1}}
 @container (max-width:112px){.week-when i{display:none}}
 
@@ -2538,3 +2540,13 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .transfer-import-actions{display:flex;flex-wrap:wrap;gap:var(--s2)}
 .transfer-done{display:flex;align-items:center;gap:var(--s2);color:var(--success);font-size:var(--t-sm);line-height:1.6}
 .transfer-done svg{width:15px;height:15px;flex:none}
+
+/* --- No card goes blank ------------------------------------------------------
+   The title drops whole words it cannot fit — deliberate, because a broken
+   Arabic word reads as a misspelling. But on a lane narrower than the longest
+   word that policy left cards completely empty: colour with no name, worse
+   than any hyphen. Below 120px the card accepts an emergency mid-word break;
+   above it, the no-broken-words rule stands. */
+@container (max-width:120px){
+  .week-title{overflow-wrap:anywhere;word-break:normal}
+}
