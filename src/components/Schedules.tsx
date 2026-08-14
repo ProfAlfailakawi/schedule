@@ -5150,7 +5150,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           top: "auto",
                           insetInline: "auto",
                           width: "100%",
-                          height: 58,
+                          /* The fan is a scrollable list, not the grid: a card is
+                             free to be as tall as its own name and instructor need.
+                             A fixed height clipped Arabic descenders from below and
+                             tripped the height container-query that hid the time. */
+                          minHeight: 58,
                         }, 1)}
                       </div>
                     ))}

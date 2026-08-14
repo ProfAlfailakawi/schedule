@@ -629,7 +629,11 @@
   /* Fluid with the card's own width (container units): a full-width card in the
      expanded/filtered view grows the name to a readable size instead of leaving
      10px text stranded in a wide card, while dense lanes keep it compact. */
-  font-size:clamp(9px,calc(6.3px + 2.4cqw),16px);line-height:1.24;font-weight:640;
+  /* 1.24 was a hair too tight for Arabic: on a card whose title fills the last
+     line flush to the bottom, the descender of a final «ي/ن» clipped against the
+     card's overflow. 1.3 restores the tail with no reflow — the clamp counts and
+     card heights are unchanged. */
+  font-size:clamp(9px,calc(6.3px + 2.4cqw),16px);line-height:1.3;font-weight:640;
   color:var(--label);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   padding-inline-end:16px;
@@ -646,7 +650,7 @@
   background:currentColor;opacity:.4;
 }
 .week-who{
-  font-size:clamp(8px,calc(6px + 1.9cqw),13px);line-height:1.25;color:var(--ink-2);
+  font-size:clamp(8px,calc(6px + 1.9cqw),13px);line-height:1.34;color:var(--ink-2);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   opacity:.82;letter-spacing:-.1px;
 }
@@ -2478,11 +2482,14 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .week-band-identity strong{
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:9.25px;font-weight:600;line-height:1.1;
+  /* 1.1 clipped the descenders of the course name from below on a roomy band;
+     1.28 clears «ج/ح/ع/ي» — the dense two-column weave overrides this back to a
+     tight 1 where every pixel is spoken for. */
+  font-size:9.25px;font-weight:600;line-height:1.28;
 }
 .week-band-identity small{
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:7.5px;font-weight:300;line-height:1;color:color-mix(in srgb,var(--label) 72%,transparent);
+  font-size:7.5px;font-weight:300;line-height:1.2;color:color-mix(in srgb,var(--label) 72%,transparent);
 }
 .week-band-identity small::before{
   content:"·";margin-inline-end:4px;color:color-mix(in srgb,var(--label) 40%,transparent);
@@ -2556,6 +2563,23 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 @keyframes fan-in{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
 .week-fan-slot .week-event{box-shadow:var(--shadow-xs)}
 .week-fan-slot .week-event:hover{box-shadow:var(--shadow-sm)}
+/* --- Fan cards breathe --------------------------------------------------------
+   In the grid a card's height encodes its duration, so it uses size containment
+   and drops lines as it shrinks. In the fan there is no such constraint: the
+   list scrolls, so a card grows to fit its own name and instructor in full.
+   Switching to inline-size containment keeps the width-aware type scaling while
+   letting block height follow content — which also keeps the time row that the
+   fixed-height card used to hide. Arabic needs the descender room: the grid's
+   tight line-heights clipped «ج/ح/ع/ي» from below here, where the card is the
+   whole focus rather than a tile. */
+.week-fan-slot .week-event{
+  container-type:inline-size;
+  min-height:58px;height:auto;
+  padding-block:7px;gap:2px;
+}
+.week-fan-slot .week-title{line-height:1.45;-webkit-line-clamp:2;padding-block-end:2px}
+.week-fan-slot .week-who{line-height:1.5;padding-block-end:2px}
+.week-fan-slot .week-when{display:flex;margin-top:2px}
 
 /* --- Narrow cards stay horizontal --------------------------------------------
    Tried sideways, rejected in the field: this grid reads horizontally at
