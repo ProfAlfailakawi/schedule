@@ -97,7 +97,8 @@ import { previousYearSameTermName, sameTermName } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import ScheduleTransfer from "./ScheduleTransfer";
-import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
+import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
+import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
 import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../utils/weekVisual";
@@ -438,29 +439,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     incoming.forEach(row => merged.set(id(row), row));
     return sortByName([...merged.values()], name as any);
   };
-  const scopedLookupKey = useRef("");
-  useEffect(() => {
-    if (mode !== "schedule" || !workspaceReady || !filterSection) return;
-    const key = `${filterSection}|${filterTerm || 0}`;
-    if (scopedLookupKey.current === key) return;
-    scopedLookupKey.current = key;
-    let alive = true;
-    // The department's own staff, not the university register.
-    fetchJson(`/api/instructors?sectionId=${filterSection}&termId=${filterTerm || 0}`)
-      .then((list: any[]) => {
-        if (!alive || !Array.isArray(list)) return;
-        setInstructors(sortByName(list, row => row.AdInstructorName));
-      })
-      .catch(() => { if (alive) scopedLookupKey.current = ""; });
-    fetchJson(`/api/courses?sectionId=${filterSection}`)
-      .then((list: any[]) => {
-        if (!alive || !Array.isArray(list)) return;
-        setCourses(sortByName(list, row => row.CourseName));
-      })
-      .catch(() => { if (alive) scopedLookupKey.current = ""; });
-    return () => { alive = false; };
-  }, [mode, workspaceReady, filterSection, filterTerm]);
-
   const loadLookups = async () => {
     const [c, s, rawTerms] = await Promise.all([
       fetchJson("/api/colleges"),
@@ -729,22 +707,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * is which.
    */
   const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
-  useEffect(() => {
-    if (!filterCollege || !filterSection || !filterTerm) { setVisitingIds(new Set()); return; }
-    let alive = true;
-    const query = new URLSearchParams({
-      collegeId: String(filterCollege), sectionId: String(filterSection), termId: String(filterTerm),
-    });
-    fetch(`/api/visiting-roster?${query}`)
-      .then(response => (response.ok ? response.json() : null))
-      .then(data => {
-        if (!alive) return;
-        const ids = Array.isArray(data?.instructorIds) ? data.instructorIds : Array.isArray(data) ? data : [];
-        setVisitingIds(new Set(ids.map(Number).filter(Boolean)));
-      })
-      .catch(() => undefined);
-    return () => { alive = false; };
-  }, [filterCollege, filterSection, filterTerm]);
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -787,7 +749,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   /** Only the newest read may write the rows; a slower earlier one is discarded. */
   const loadToken = useRef(0);
   const loadAbort = useRef<AbortController | null>(null);
-  const loadRows = async () => {
+  /** `silent` refreshes without the reading indicator — the live channel uses
+   *  it so a colleague's change slides in without the screen looking busy. */
+  const loadRows = async (opts?: { silent?: boolean }) => {
     const p = new URLSearchParams();
     if (filterCollege) p.set("collegeId", String(filterCollege));
     if (filterSection) p.set("sectionId", String(filterSection));
@@ -796,7 +760,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     loadAbort.current?.abort();
     const controller = new AbortController();
     loadAbort.current = controller;
-    setRowsLoading(true);
+    if (!opts?.silent) setRowsLoading(true);
     try {
       const data = await fetchJson(`/api/schedules${p.size ? `?${p}` : ""}`, { signal: controller.signal });
       if (token === loadToken.current) setRows(data);
@@ -807,6 +771,119 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     }
   };
   useEffect(() => () => loadAbort.current?.abort(), []);
+  /**
+   * One request opens the whole department.
+   *
+   * The workspace read resolves the scope on the server — a coordinator's
+   * account already names their department — and answers with the catalogues,
+   * the term's rows, the department's own staff, courses and visiting roster in
+   * a single round trip. The waterfall of six requests that used to precede
+   * first paint is gone; on the campus connection each wait was the slow part.
+   * If the one-shot endpoint is unavailable (an older server mid-deploy), the
+   * same data is fetched the old way, piece by piece.
+   */
+  const appliedScope = useRef("");
+  /**
+   * The last answer this scope ever received, read straight from the service
+   * worker's own shelf. It paints the whole board in a few milliseconds while
+   * the network fetches the truth — and it lives in the very cache the logout
+   * button already clears, so no new place holds schedule data.
+   */
+  const warmWorkspaceSnapshot = async (url: string) => {
+    try {
+      if (typeof caches === "undefined") return null;
+      const names = (await caches.keys()).filter(name => name.startsWith("schedule-api-"));
+      for (const name of names) {
+        const hit = await (await caches.open(name)).match(url);
+        if (hit) return await hit.json();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  };
+  const loadWorkspace = async (
+    collegeId: number,
+    sectionId: number,
+    termId: number,
+    resolve = false,
+    onContext?: (context: { collegeId: number; sectionId: number; termId: number }) => void,
+  ) => {
+    const token = ++loadToken.current;
+    loadAbort.current?.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
+    setRowsLoading(true);
+    const apply = (data: any) => {
+      if (token !== loadToken.current) return null;
+      const context = {
+        collegeId: Number(data?.context?.collegeId ?? collegeId) || 0,
+        sectionId: Number(data?.context?.sectionId ?? sectionId) || 0,
+        termId: Number(data?.context?.termId ?? termId) || 0,
+      };
+      appliedScope.current = `${context.collegeId}|${context.sectionId}|${context.termId}`;
+      if (Array.isArray(data?.colleges) && data.colleges.length) setColleges(sortByName(data.colleges, (row: any) => row.AdCollegeName));
+      if (Array.isArray(data?.sections) && data.sections.length) setSections(sortByName(data.sections, (row: any) => row.AdSectionName));
+      if (Array.isArray(data?.terms) && data.terms.length) setTerms([...data.terms].sort((a: AdTerm, b: AdTerm) => Number(b.AdTermId) - Number(a.AdTermId)));
+      setRows(Array.isArray(data?.rows) ? data.rows : []);
+      // A scope with no chosen section keeps the names it already knows —
+      // parity with the old per-section lookups, which only ran once a
+      // section was picked, so the editor never loses a name it must display.
+      if (Array.isArray(data?.instructors) && data.instructors.length) setInstructors(sortByName(data.instructors, (row: any) => row.AdInstructorName));
+      if (Array.isArray(data?.courses) && data.courses.length) setCourses(sortByName(data.courses, (row: any) => row.CourseName));
+      setVisitingIds(new Set((Array.isArray(data?.visitingInstructorIds) ? data.visitingInstructorIds : []).map(Number).filter(Boolean)));
+      onContext?.(context);
+      return context;
+    };
+    try {
+      const query = new URLSearchParams();
+      if (collegeId) query.set("collegeId", String(collegeId));
+      if (sectionId) query.set("sectionId", String(sectionId));
+      if (termId) query.set("termId", String(termId));
+      if (resolve) query.set("resolve", "1");
+      const url = `/api/schedules/workspace?${query}`;
+      // The shelf answers first, the wire answers last: the snapshot paints the
+      // board immediately and the network response quietly replaces it.
+      let networkSettled = false;
+      void warmWorkspaceSnapshot(url).then(snapshot => {
+        if (!snapshot || networkSettled || token !== loadToken.current) return;
+        apply(snapshot);
+      });
+      try {
+        const data = await fetchJson(url, { signal: controller.signal });
+        networkSettled = true;
+        return apply(data);
+      } catch (workspaceError: any) {
+        networkSettled = true;
+        if (workspaceError?.name === "AbortError") return null;
+        const rowsQuery = new URLSearchParams();
+        if (collegeId) rowsQuery.set("collegeId", String(collegeId));
+        if (sectionId) rowsQuery.set("sectionId", String(sectionId));
+        if (termId) rowsQuery.set("termId", String(termId));
+        const [lookup, rowsData, instructorsData, coursesData, roster] = await Promise.all([
+          colleges.length ? Promise.resolve(null) : loadLookups(),
+          fetchJson(`/api/schedules${rowsQuery.size ? `?${rowsQuery}` : ""}`, { signal: controller.signal }),
+          sectionId ? fetchJson(`/api/instructors?sectionId=${sectionId}&termId=${termId || 0}`, { signal: controller.signal }).catch(() => []) : Promise.resolve([]),
+          sectionId ? fetchJson(`/api/courses?sectionId=${sectionId}`, { signal: controller.signal }).catch(() => []) : Promise.resolve([]),
+          collegeId && sectionId && termId
+            ? fetchJson(`/api/visiting-roster?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { signal: controller.signal }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
+        return apply({
+          context: { collegeId, sectionId, termId: termId || Number((lookup?.terms || terms)[0]?.AdTermId || 0) },
+          rows: rowsData,
+          instructors: instructorsData,
+          courses: coursesData,
+          visitingInstructorIds: roster?.instructorIds || [],
+        });
+      }
+    } catch (error: any) {
+      if (error?.name !== "AbortError") throw error;
+      return null;
+    } finally {
+      if (token === loadToken.current) setRowsLoading(false);
+    }
+  };
   useEffect(() => {
     setEditor("index");
     setEditId(null);
@@ -822,10 +899,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setCopyPreview(null);
     setCopyUndoPoint(null);
     setWorkspaceReady(false);
-    scopedLookupKey.current = "";
+    appliedScope.current = "";
     (async () => {
       try {
-        const lookup = await loadLookups();
         let pref: any = {};
         try {
           pref = JSON.parse(localStorage.getItem(prefsKey) || "{}");
@@ -834,9 +910,31 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           lastSavedHydrated.current = true;
           if (pref.lastSaved) lastSavedRef.current = pref.lastSaved;
         }
-        const latestTermId = Number(lookup.terms[0]?.AdTermId || 0);
         const savedCollege = Number(pref.filterCollege) || 0;
         const savedSection = Number(pref.filterSection) || 0;
+        if (mode === "schedule") {
+          // The server validates the saved scope, locks a coordinator inside
+          // their own department, and answers with that department alone.
+          const scoped = isPowerAdmin
+            ? { collegeId: savedCollege, sectionId: savedSection }
+            : coerceScopeValues(scopes, savedCollege, savedSection, false);
+          setViewMode(pref.viewMode === "week" ? "week" : pref.viewMode === "rooms" ? "rooms" : "list");
+          // The context callback runs on the warm snapshot first, so the board
+          // is alive in milliseconds; the network answer re-runs it with the
+          // authoritative scope moments later.
+          await loadWorkspace(scoped.collegeId, scoped.sectionId, 0, true, (context) => {
+            setFilterCollege(context.collegeId);
+            setFilterSection(context.sectionId);
+            // A stale preference must never silently reopen a decade-old term.
+            setFilterTerm(context.termId);
+            setWorkspaceReady(true);
+          });
+          return;
+        }
+        // The copy screen is a rare admin maintenance task; it keeps the
+        // catalogue-by-catalogue read.
+        const lookup = await loadLookups();
+        const latestTermId = Number(lookup.terms[0]?.AdTermId || 0);
         let defaultCollege = savedCollege && lookup.colleges.some(c => c.AdCollegeId === savedCollege) ? savedCollege : 0;
         let defaultSection = savedSection && lookup.sections.some(sec => sec.AdSectionId === savedSection) ? savedSection : 0;
         if (isPowerAdmin) {
@@ -848,19 +946,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           defaultCollege = scoped.collegeId;
           defaultSection = scoped.sectionId;
         }
-        if (mode === "schedule") {
-          setFilterCollege(defaultCollege);
-          setFilterSection(defaultSection);
-          // A stale preference must never silently reopen a decade-old term.
-          setFilterTerm(latestTermId);
-          setViewMode(pref.viewMode === "week" ? "week" : pref.viewMode === "rooms" ? "rooms" : "list");
-          setWorkspaceReady(true);
-        } else if (mode === "copy") {
-          setCopyCollege(defaultCollege);
-          setCopySection(defaultSection);
-          setCopyToTerm(latestTermId);
-          setCopyFromTerm(Number(lookup.terms.find(term => term.AdTermId !== latestTermId)?.AdTermId || 0));
-        }
+        setCopyCollege(defaultCollege);
+        setCopySection(defaultSection);
+        setCopyToTerm(latestTermId);
+        setCopyFromTerm(Number(lookup.terms.find(term => term.AdTermId !== latestTermId)?.AdTermId || 0));
       } catch (e: any) {
         setError(friendlyError(e));
       }
@@ -1551,6 +1640,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setConflicts([]);
       return;
     }
+    // The board already in memory answers first: a same-department collision
+    // lights up the instant a day or an hour is touched, with no request and no
+    // debounce. The server's verdict — which also sees other departments, the
+    // hall's ownership and campus travel — replaces it the moment it lands.
+    const candidate: any = { ...form, id: editId || -900001 };
+    setConflicts(findConflicts([candidate], editId ? rows.filter(row => row.id !== editId) : rows));
     const controller = new AbortController(),
       timer = window.setTimeout(async () => {
         setChecking(true);
@@ -1563,7 +1658,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           });
           setConflicts(data.conflicts || []);
         } catch (e: any) {
-          if (e?.name !== "AbortError") { setConflicts([]); setError(friendlyError(e)); }
+          if (e?.name !== "AbortError") { setError(friendlyError(e)); }
         } finally {
           setChecking(false);
         }
@@ -1575,6 +1670,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   }, [
     editor,
     editId,
+    rows,
     form.AdTermId,
     form.AdInstructorId,
     form.AdCourseId,
@@ -1683,13 +1779,33 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         }
       }
       rememberSave(form);
-      markChanged(editor === "edit" ? editId : null);
+      markChanged(editor === "edit" ? editId : Number(saved?.id || 0) || null);
       // Follow the save: the list jumps to the scope the row was filed under so
       // the user always sees what they just did.
       if (form.AdCollegeId && form.AdCollegeId !== filterCollege) setFilterCollege(form.AdCollegeId);
       if (form.AdSectionId && form.AdSectionId !== filterSection) setFilterSection(form.AdSectionId);
       if (form.AdTermId && form.AdTermId !== filterTerm) setFilterTerm(form.AdTermId);
-      await loadRows();
+      // The server already answered with the authoritative row — place it on
+      // the board directly instead of re-reading the whole scope. The board
+      // updates the same instant the save button releases.
+      const savedRow = saved && typeof saved === "object" && Number(saved.id) ? (saved as FSchedule) : null;
+      const scopeUnchanged =
+        (!form.AdCollegeId || form.AdCollegeId === filterCollege) &&
+        (!form.AdSectionId || form.AdSectionId === filterSection) &&
+        (!form.AdTermId || form.AdTermId === filterTerm);
+      if (savedRow && scopeUnchanged) {
+        setRows(current => {
+          const exists = current.some(item => item.id === savedRow.id);
+          const next = exists
+            ? current.map(item => (item.id === savedRow.id ? savedRow : item))
+            : [...current, savedRow];
+          return next.sort((a, b) => a.id - b.id);
+        });
+      } else if (scopeUnchanged) {
+        await loadRows();
+      }
+      // A save filed under another scope: the filters just moved, and the
+      // scope effect reloads that workspace on its own — nothing to do here.
       setMessage(editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد");
       back();
     } catch (e: any) {
@@ -1701,8 +1817,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const remove = async (id: number) => {
     if (!window.confirm("هل أنت متأكد من حذف بيانات المقرر الدراسي؟")) return;
     setError(null);
+    const before = rows.find((row) => row.id === id);
+    // The card leaves the board the moment the choice is confirmed; the network
+    // follows behind it, and a refusal puts the card back exactly where it was.
+    if (before) setRows(current => current.filter(item => item.id !== id));
     try {
-      const before = rows.find((row) => row.id === id);
       await fetchJson(`/api/schedules/${id}`, { method: "DELETE" });
       if (before) {
         const { id: _id, AdCourseName: _name, ...values } = before as any;
@@ -1711,13 +1830,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           [{ method: "POST", url: "/api/schedules", body: values }],
         );
       }
-      await loadRows();
+      if (!before) await loadRows({ silent: true });
     } catch (e: any) {
+      if (before) setRows(current =>
+        current.some(item => item.id === id) ? current : [...current, before].sort((a, b) => a.id - b.id));
       setError(friendlyError(e));
     }
   };
   useEffect(() => {
     if (mode !== "schedule" || rowsLoading || rows.length || !filterTerm) { setEmptyElsewhere([]); return; }
+    // A coordinator with one department has no "elsewhere" to be told about,
+    // so the wider probe is a read that can never show anything — skip it.
+    if (!isPowerAdmin && scopes.length <= 1) { setEmptyElsewhere([]); return; }
     const controller = new AbortController();
     (async () => {
       try {
@@ -1764,9 +1888,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   useEffect(() => {
     if (mode !== "schedule" || !workspaceReady) return;
+    // The scope the bootstrap already answered needs no second read.
+    if (appliedScope.current === `${filterCollege}|${filterSection}|${filterTerm}`) return;
     const timer = window.setTimeout(() => {
       setError(null);
-      loadRows().catch((error: any) => setError(friendlyError(error)));
+      loadWorkspace(filterCollege, filterSection, filterTerm).catch((error: any) => setError(friendlyError(error)));
     }, 60);
     return () => window.clearTimeout(timer);
   }, [mode, workspaceReady, filterCollege, filterSection, filterTerm]);
@@ -2083,7 +2209,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
 
       try {
-        await fetchJson("/api/schedules/move-batch", {
+        const outcome = await fetchJson("/api/schedules/move-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2091,6 +2217,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             moves: moves.map(move => ({ id: move.before.id, fields: moveFields(move.after) })),
           }),
         });
+        // The confirmation already carries the written rows — settle them in
+        // place instead of re-reading the whole scope after every drag.
+        if (Array.isArray(outcome?.rows) && outcome.rows.length) {
+          const confirmed = new Map<number, FSchedule>(outcome.rows.map((item: FSchedule) => [item.id, item]));
+          setRows(current => current.map(item => confirmed.get(item.id) || item));
+        }
       } catch (refusal) {
         // Nothing was written — put the grid back, and take back the optimistic
         // marker and undo so a refused move leaves no trace of having happened.
@@ -2110,10 +2242,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         setPhysicsNotice("");
         throw refusal;
       }
-      void loadRows();
     } catch (e: any) {
       setError(friendlyError(e));
-      void loadRows();
+      void loadRows({ silent: true });
     } finally {
       setSaving(false);
     }
@@ -2161,7 +2292,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
 
       try {
-        await fetchJson("/api/schedules/move-batch", {
+        const outcome = await fetchJson("/api/schedules/move-batch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2182,6 +2313,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             }],
           }),
         });
+        // Settle the server's own row in place — no follow-up read.
+        if (Array.isArray(outcome?.rows) && outcome.rows.length) {
+          const confirmed = new Map<number, FSchedule>(outcome.rows.map((item: FSchedule) => [item.id, item]));
+          setRows(current => current.map(item => confirmed.get(item.id) || item));
+        }
       } catch (refusal) {
         setRows(current => current.map(item => (item.id === row.id ? row : item)));
         setJustChangedId(current => (current === Number(row.id) ? null : current));
@@ -2197,10 +2333,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         }
         throw refusal;
       }
-      void loadRows();
     } catch (e: any) {
       setError(friendlyError(e));
-      void loadRows();
+      void loadRows({ silent: true });
     } finally {
       setSaving(false);
     }
@@ -2729,7 +2864,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
         aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${r.fstarttime}–${r.fendtime}${place ? ` · قاعة ${place}` : ""}`}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
-        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${hueFocusClass(r)}`}
+        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${hueFocusClass(r)}`}
         style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
         onPointerLeave={() => setPeek(current => (current?.row.id === r.id ? null : current))}
@@ -3293,28 +3428,66 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     return `${active ? `physics-target physics-${quality}` : ""} ${sampled ? `gravity-slot gravity-${sampled}` : ""} ${rank ? `suggested-slot suggested-${rank}` : ""}`.trim();
   };
   /**
-   * Which rows collide with another row in the same scope. Two appointments
-   * collide when they share a weekday, overlap in time, and reuse either the
-   * same instructor or the same room. Computed once per result set so the
-   * presentation board can highlight only what matters.
+   * The live radar: collisions and regulation notes, read on every change.
+   *
+   * Both readings are local and instant — no request, no debounce — so the
+   * numbers in the toolbar are always the numbers on the board. The clash scan
+   * knows the combined-delivery exemption the server knows, and the notes are
+   * the same review the approval sheet prints, run quietly on the open scope.
+   * The colliding cards themselves wear the ring in every view.
    */
-  const conflictIds = useMemo(() => {
-    const flagged = new Set<number>();
-    if (!presentationMode) return flagged;
-    const list = filteredRows;
-    for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length; j++) {
-        const a = list[i], b = list[j];
-        const sharesDay = days.some(day => Boolean(a[day.key]) && Boolean(b[day.key]));
-        if (!sharesDay) continue;
-        if (mins(a.fstarttime) >= mins(b.fendtime) || mins(b.fstarttime) >= mins(a.fendtime)) continue;
-        const sameInstructor = a.AdInstructorId && a.AdInstructorId === b.AdInstructorId;
-        const sameRoom = a.AdRoomCode && a.AdRoomCode === b.AdRoomCode && a.AdRoomHall === b.AdRoomHall;
-        if (sameInstructor || sameRoom) { flagged.add(a.id); flagged.add(b.id); }
-      }
+  const liveClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+  const conflictIds = liveClash.ids;
+  /**
+   * The living board: a colleague saves, your screen already knows.
+   *
+   * One server-sent event per change, answered with a quiet scoped re-read —
+   * no spinner, no refresh button, and never while a card is being dragged or
+   * the editor holds unsaved work; those moments queue the refresh and it runs
+   * the instant the hands are free.
+   */
+  const [liveFeed, setLiveFeed] = useState(false);
+  const liveRefreshPending = useRef(false);
+  const liveBusy = useRef(false);
+  useEffect(() => {
+    liveBusy.current = saving || editor !== "index" || Boolean(physicsActive) || Boolean(draggingId);
+  }, [saving, editor, physicsActive, draggingId]);
+  useEffect(() => {
+    if (mode !== "schedule" || !workspaceReady || typeof EventSource === "undefined") return;
+    let refreshTimer = 0;
+    const source = new EventSource("/api/schedules/events");
+    const refreshQuietly = () => {
+      if (liveBusy.current) { liveRefreshPending.current = true; return; }
+      liveRefreshPending.current = false;
+      void loadRows({ silent: true }).catch(() => undefined);
+    };
+    source.addEventListener("schedules", () => {
+      window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(refreshQuietly, 250);
+    });
+    source.onopen = () => setLiveFeed(true);
+    source.onerror = () => setLiveFeed(false);
+    return () => {
+      window.clearTimeout(refreshTimer);
+      source.close();
+      setLiveFeed(false);
+    };
+  }, [mode, workspaceReady]);
+  // A refresh that arrived mid-work runs as soon as the work lets go.
+  useEffect(() => {
+    if (!liveRefreshPending.current) return;
+    if (saving || editor !== "index" || physicsActive || draggingId) return;
+    liveRefreshPending.current = false;
+    void loadRows({ silent: true }).catch(() => undefined);
+  }, [saving, editor, physicsActive, draggingId]);
+  const liveNotes = useMemo(() => {
+    if (!filteredRows.length) return [];
+    try {
+      return reviewSchedule({ rows: filteredRows, courses: courseById, instructors: instructorById, nature });
+    } catch {
+      return [];
     }
-    return flagged;
-  }, [filteredRows, presentationMode]);
+  }, [filteredRows, courseById, instructorById, nature]);
 
   const [presentConflictsOnly, setPresentConflictsOnly] = useState(false);
 
@@ -4155,6 +4328,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           {rowsLoading ? <span className="filter-strip-busy" role="status"><i aria-hidden="true" />يقرأ الجدول…</span> : null}
         </div>
         <div className="schedule-tools" role="toolbar" aria-label="أدوات عرض الجدول">
+          <div className="schedule-view-cluster">
           <div className="segmented" role="group" aria-label="طريقة عرض الجدول">
             <button type="button" className={viewMode === "list" ? "active" : ""} aria-pressed={viewMode === "list"} onClick={() => changeView("list")}>
               <LayoutList aria-hidden="true" /> قائمة
@@ -4165,6 +4339,46 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             <button type="button" className={viewMode === "rooms" ? "active" : ""} aria-pressed={viewMode === "rooms"} onClick={() => changeView("rooms")}>
               <MapPin aria-hidden="true" /> القاعات
             </button>
+          </div>
+          {/* The live radar: what the board knows about itself, always visible.
+              Counted locally on every change, so the number never waits for a
+              request — pressing it takes you to the offending cards. */}
+          <span
+            className={`schedule-live-dot ${liveFeed ? "on" : ""}`}
+            title={liveFeed ? "بث مباشر: أي تغيير من زميل يظهر هنا تلقائياً" : "البث المباشر غير متصل — يحدَّث عند القراءة"}
+            role="status"
+            aria-label={liveFeed ? "البث المباشر متصل" : "البث المباشر غير متصل"}
+          />
+          {liveClash.pairs ? (
+            <button
+              type="button"
+              className="schedule-radar radar-clash"
+              onClick={() => {
+                setViewMode("week");
+                setReviewFocus(new Set([...liveClash.ids]));
+              }}
+              title={`أستاذ: ${liveClash.instructorPairs.toLocaleString("ar-KW-u-nu-latn")} · قاعة: ${liveClash.roomPairs.toLocaleString("ar-KW-u-nu-latn")} · تكرار: ${liveClash.duplicatePairs.toLocaleString("ar-KW-u-nu-latn")} — اضغط لإظهارها على الأسبوع`}
+            >
+              <AlertTriangle aria-hidden="true" />
+              {liveClash.pairs.toLocaleString("ar-KW-u-nu-latn")} تعارض
+            </button>
+          ) : null}
+          {liveNotes.length ? (
+            <button
+              type="button"
+              className="schedule-radar radar-notes"
+              onClick={() => setReviewOpen(true)}
+              title="ملاحظات اللائحة على النطاق المفتوح — اضغط لفتح مراجعة الاعتماد"
+            >
+              <ClipboardCheck aria-hidden="true" />
+              {liveNotes.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة
+            </button>
+          ) : null}
+          {!liveClash.pairs && !liveNotes.length && filteredRows.length ? (
+            <span className="schedule-radar radar-clean" title="لا تعارضات ولا ملاحظات لائحة على النطاق المفتوح">
+              <CheckCircle2 aria-hidden="true" /> سليم
+            </span>
+          ) : null}
           </div>
           <label className="schedule-quick-search" role="search">
             <Search aria-hidden="true" />
@@ -4394,7 +4608,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   i = instructorById.get(s.AdInstructorId);
                 return (
                   <article
-                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""}`}
+                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""}`}
                     key={s.id}
                     /* The course's own colour, carried into the list so a lecture
                        looks the same here as it does in the grid, the fan and the
@@ -4570,7 +4784,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               return (
                 <article
                   key={row.id}
-                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""}`}
+                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""}`}
                   style={cardStyle}
                   draggable={!saving}
                   onDragStart={(e) => {

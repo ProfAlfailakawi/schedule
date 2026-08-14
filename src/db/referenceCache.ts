@@ -86,7 +86,20 @@ export async function cachedReference<T>(key: string, load: () => Promise<T>): P
 const SCHEDULE_TTL_MS = 12_000;
 const scheduleStore = new Map<string, { value: unknown; expiresAt: number; loading?: Promise<unknown> }>();
 
-export function invalidateSchedules() { scheduleStore.clear(); }
+/**
+ * Every schedule write, whichever door it entered by, already clears this
+ * cache — so the clearing itself is a complete change signal. The live update
+ * channel subscribes here instead of hooking each of the five write paths.
+ */
+const scheduleChangeListeners = new Set<() => void>();
+export function onSchedulesInvalidated(listener: () => void) { scheduleChangeListeners.add(listener); }
+
+export function invalidateSchedules() {
+  scheduleStore.clear();
+  for (const listener of scheduleChangeListeners) {
+    try { listener(); } catch { /* a broken listener must never break a write */ }
+  }
+}
 
 export async function cachedSchedules<T>(key: string, load: () => Promise<T>): Promise<T> {
   if (!enabled) return load();

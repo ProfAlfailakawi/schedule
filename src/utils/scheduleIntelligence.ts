@@ -51,29 +51,29 @@ export interface ConflictInsight {
  * failing. It is only reported when the two rows occupy the very same placement,
  * which is the actual duplicate the check was written to catch.
  */
+const samePlacement=(a:FSchedule,b:FSchedule)=>
+  a.fstarttime===b.fstarttime && a.fendtime===b.fendtime &&
+  SCHEDULE_DAYS.every(day=>Boolean(a[day.key])===Boolean(b[day.key]));
+
+/**
+ * One lecturer can teach two registered sections as one combined class.
+ *
+ * In the legacy timetable that class is stored as one row per section, even
+ * though both rows describe the same teaching event: same course, lecturer,
+ * days, time and room. Counting the pair as both a lecturer clash and a room
+ * clash is what produced the alarming "40 critical conflicts" reading on a
+ * timetable that had already been built and approved without collisions.
+ * Different sections at different placements are still independent rows;
+ * only the exact shared delivery is exempt.
+ */
+const isCombinedDelivery=(a:FSchedule,b:FSchedule)=>
+  a.AdCourseId===b.AdCourseId &&
+  String(a.SCode)!==String(b.SCode) &&
+  Boolean(a.AdInstructorId) && a.AdInstructorId===b.AdInstructorId &&
+  roomKey(a)!=="|" && roomKey(a)===roomKey(b) &&
+  samePlacement(a,b);
+
 export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[]):ConflictInsight[] {
-  const samePlacement=(a:FSchedule,b:FSchedule)=>
-    a.fstarttime===b.fstarttime && a.fendtime===b.fendtime &&
-    SCHEDULE_DAYS.every(day=>Boolean(a[day.key])===Boolean(b[day.key]));
-
-  /**
-   * One lecturer can teach two registered sections as one combined class.
-   *
-   * In the legacy timetable that class is stored as one row per section, even
-   * though both rows describe the same teaching event: same course, lecturer,
-   * days, time and room. Counting the pair as both a lecturer clash and a room
-   * clash is what produced the alarming "40 critical conflicts" reading on a
-   * timetable that had already been built and approved without collisions.
-   * Different sections at different placements are still independent rows;
-   * only the exact shared delivery is exempt.
-   */
-  const isCombinedDelivery=(a:FSchedule,b:FSchedule)=>
-    a.AdCourseId===b.AdCourseId &&
-    String(a.SCode)!==String(b.SCode) &&
-    Boolean(a.AdInstructorId) && a.AdInstructorId===b.AdInstructorId &&
-    roomKey(a)!=="|" && roomKey(a)===roomKey(b) &&
-    samePlacement(a,b);
-
   const byPair=new Map<string,ConflictInsight>();
   for(const row of targetRows){
     for(const other of allRows){
@@ -110,6 +110,83 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[]):Confl
     }
   }
   return [...byPair.values()];
+}
+
+export interface LiveClashScan {
+  /** Every appointment that participates in at least one collision. */
+  ids: Set<number>;
+  /** Distinct colliding pairs, each counted once whatever its reasons. */
+  pairs: number;
+  instructorPairs: number;
+  roomPairs: number;
+  duplicatePairs: number;
+}
+
+/**
+ * The whole board read for collisions in one sweep, cheap enough to run live.
+ *
+ * findConflicts answers "does this one row clash?" and is quadratic when asked
+ * about everything at once. The board needs the everything answer on every
+ * change, so this buckets the rows per weekday, sorts each bucket once, and
+ * only compares appointments that actually overlap in time — the same
+ * instructor/room/duplicate reading and the same combined-delivery exemption,
+ * at a cost that stays flat while the term grows.
+ */
+export function fastConflictScan(rows:FSchedule[]):LiveClashScan {
+  const ids=new Set<number>();
+  const seen=new Set<string>();
+  let instructorPairs=0,roomPairs=0,duplicatePairs=0;
+  type Meta={row:FSchedule;start:number;end:number;room:string};
+  const metas:Meta[]=rows.map(row=>({
+    row,
+    start:timeToMinutes(String(row.fstarttime||"")),
+    end:timeToMinutes(String(row.fendtime||"")),
+    room:roomKey(row),
+  }));
+  for(const day of SCHEDULE_DAYS){
+    const todays=metas
+      .filter(meta=>Boolean(meta.row[day.key])&&meta.end>meta.start)
+      .sort((a,b)=>a.start-b.start);
+    const active:Meta[]=[];
+    for(const meta of todays){
+      for(let i=active.length-1;i>=0;i--) if(active[i].end<=meta.start) active.splice(i,1);
+      for(const other of active){
+        const a=meta.row,b=other.row;
+        if(a.id===b.id||a.AdTermId!==b.AdTermId) continue;
+        const sameInstructor=Boolean(a.AdInstructorId)&&a.AdInstructorId===b.AdInstructorId;
+        const sameRoom=meta.room!=="|"&&meta.room===other.room;
+        if(!sameInstructor&&!sameRoom) continue;
+        if(isCombinedDelivery(a,b)) continue;
+        const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
+        if(seen.has(key)) continue;
+        seen.add(key);
+        if(sameInstructor) instructorPairs++; else roomPairs++;
+        ids.add(a.id); ids.add(b.id);
+      }
+      active.push(meta);
+    }
+  }
+  // The exact twin — same course, same section, same placement — clashes even
+  // when it names no instructor and no room, so it is found by identity.
+  const twins=new Map<string,FSchedule[]>();
+  for(const meta of metas){
+    const row=meta.row;
+    if(!row.AdCourseId||!String(row.SCode||"").trim()) continue;
+    const key=`${row.AdTermId}:${row.AdCourseId}:${String(row.SCode).trim()}:${SCHEDULE_DAYS.map(day=>row[day.key]?1:0).join("")}:${row.fstarttime}:${row.fendtime}`;
+    const list=twins.get(key);
+    if(list) list.push(row); else twins.set(key,[row]);
+  }
+  for(const list of twins.values()){
+    if(list.length<2) continue;
+    for(let i=1;i<list.length;i++){
+      const key=list[0].id<list[i].id?`${list[0].id}:${list[i].id}`:`${list[i].id}:${list[0].id}`;
+      if(seen.has(key)) continue;
+      seen.add(key);
+      duplicatePairs++;
+    }
+    list.forEach(row=>ids.add(row.id));
+  }
+  return {ids,pairs:seen.size,instructorPairs,roomPairs,duplicatePairs};
 }
 
 function instructorGapStats(rows:FSchedule[]){

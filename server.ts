@@ -4,6 +4,7 @@ import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
 import { activeDataMode, initDatabase, Repository } from "./src/db/repository";
+import { onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
@@ -1340,6 +1341,54 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const softTravel = await interCampusWarnings(candidate, all);
   return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel];
 }
+
+/**
+ * The living schedule: one message the moment anything changes.
+ *
+ * Every write to the timetable — a save, a drag, a delete, a term copy, an
+ * import — already announces itself by clearing the schedule cache. This
+ * channel forwards that announcement to every open screen as a server-sent
+ * event, so a colleague's change appears on your board by itself, without
+ * anyone pressing refresh. The event deliberately carries no rows: each
+ * listener re-reads its own scope through the normal scoped road, so the
+ * permission walls stay exactly where they are.
+ *
+ * A short debounce turns a burst of writes (a six-card drag, an import) into
+ * one message, sent after the write has actually landed.
+ */
+const scheduleEventClients = new Set<Response>();
+let scheduleEventTimer: ReturnType<typeof setTimeout> | null = null;
+let scheduleEventSerial = 0;
+onSchedulesInvalidated(() => {
+  if (scheduleEventTimer) return;
+  scheduleEventTimer = setTimeout(() => {
+    scheduleEventTimer = null;
+    scheduleEventSerial += 1;
+    const payload = `id: ${scheduleEventSerial}\nevent: schedules\ndata: {"changedAt":${Date.now()}}\n\n`;
+    for (const client of scheduleEventClients) {
+      try { client.write(payload); } catch { scheduleEventClients.delete(client); }
+    }
+  }, 350);
+});
+
+app.get("/api/schedules/events", requirePermission(7), (req: AuthenticatedRequest, res: Response) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream; charset=utf-8",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write("retry: 4000\n\n");
+  scheduleEventClients.add(res);
+  // Proxies drop silent connections; a comment line every while keeps this one open.
+  const heartbeat = setInterval(() => {
+    try { res.write(": ping\n\n"); } catch { /* close event does the cleanup */ }
+  }, 25_000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    scheduleEventClients.delete(res);
+  });
+});
 
 /**
  * The whole workspace in one request.
