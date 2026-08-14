@@ -204,26 +204,31 @@
     width:100% !important;max-width:100% !important;
     border-collapse:collapse !important;table-layout:fixed !important;
     page-break-inside:auto !important;
+    /* A calm frame around the whole sheet: the outer edge is the colour of the
+       letterhead rule, so the table reads as one official document. */
+    border:1pt solid #1f6b5c !important;
   }
   .print-report thead{display:table-header-group !important}
   .print-report tbody{display:table-row-group !important}
   .print-report tr{break-inside:avoid !important;page-break-inside:avoid !important}
   .print-report th,.print-report td{
-    border:.6pt solid #9aa3a0 !important;
-    padding:2.1mm 1.6mm !important;
+    /* Interior rules are quiet; the frame carries the structure. */
+    border:.4pt solid #cbd4d0 !important;
+    padding:2.4mm 1.8mm !important;
     vertical-align:middle !important;text-align:right !important;
     white-space:normal !important;overflow:visible !important;
     overflow-wrap:anywhere !important;word-break:normal !important;
-    line-height:1.4 !important;font-size:8.4pt !important;
+    line-height:1.45 !important;font-size:8.4pt !important;
   }
   .print-report th{
-    font-weight:700 !important;font-size:8.2pt !important;
-    background:#e8efec !important;color:#0f4239 !important;
-    border-color:#7d8d88 !important;
+    font-weight:700 !important;font-size:8.2pt !important;letter-spacing:.01em !important;
+    background:#1f6b5c !important;color:#fff !important;
+    border-color:#1f6b5c !important;
     /* A heading is one word: "وحدات" must never wrap to "وح/دات" (Note 11). */
     white-space:nowrap !important;overflow-wrap:normal !important;word-break:keep-all !important;
+    print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
   }
-  .print-report tbody tr:nth-child(even) td{background:#f7f9f8 !important}
+  .print-report tbody tr:nth-child(even) td{background:#f4f8f6 !important}
   .print-report td[dir="ltr"]{
     direction:ltr !important;text-align:center !important;white-space:nowrap !important;
     font-family:"Plex Mono",ui-monospace,monospace !important;font-size:7.8pt !important;
@@ -233,18 +238,27 @@
   .print-report th:first-child,.print-report td:first-child{
     text-align:center !important;font-variant-numeric:tabular-nums !important;
   }
+  /* The serial column reads as a quiet index, not a data point. */
+  .print-report td:first-child{color:#6b7570 !important;font-size:7.6pt !important}
 
   /* --- summary, signatures ------------------------------------------------ */
 
   .print-scope{margin:0 0 4mm !important;font-size:9pt !important;color:#333 !important;text-align:right !important}
+  /* The summary as a row of quiet chips rather than a run of bold words. */
   .print-summary{
-    display:flex !important;flex-wrap:wrap !important;gap:4mm 10mm !important;
-    margin-top:4mm !important;padding-top:2.4mm !important;
-    border-top:.6pt solid #bbb !important;
-    font-size:9pt !important;font-weight:600 !important;
+    display:flex !important;flex-wrap:wrap !important;gap:3mm !important;
+    margin-top:4mm !important;padding:0 !important;border:0 !important;
+    font-size:8.6pt !important;font-weight:600 !important;
     break-inside:avoid !important;
   }
-  .print-summary b{color:#1f6b5c !important}
+  .print-summary span{
+    display:inline-flex !important;align-items:center !important;gap:2mm !important;
+    padding:1.4mm 3mm !important;
+    border:.5pt solid #cbd4d0 !important;border-radius:2mm !important;
+    background:#f4f8f6 !important;color:#333 !important;
+    print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
+  }
+  .print-summary b{color:#1f6b5c !important;font-weight:700 !important}
   .print-signatures{
     display:flex !important;gap:14mm !important;margin-top:16mm !important;
     page-break-inside:avoid !important;break-inside:avoid !important;

@@ -789,20 +789,56 @@
   min-height:640px;display:flex;flex-direction:column;
   border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface);overflow:hidden;
 }
-.copilot-head{display:flex;align-items:center;gap:var(--s3);padding:var(--s5);border-bottom:1px solid var(--line)}
-.copilot-head strong{font-size:var(--t-h4);font-weight:600}
-.copilot-head small,.copilot-head p{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-sm)}
-.copilot-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent)}
-.prompt-chips{display:flex;flex-wrap:wrap;gap:var(--s2);padding:var(--s3) var(--s5);border-bottom:1px solid var(--line)}
-.prompt-chips button{
-  padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-xs);
-  background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);
+.copilot-head{
+  display:flex;align-items:center;gap:var(--s3);padding:var(--s5);
+  border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));
 }
-.prompt-chips button:hover{color:var(--ink);border-color:var(--line-strong)}
-.copilot-thread{flex:1;overflow-y:auto;padding:var(--s5);display:flex;flex-direction:column;gap:var(--s3)}
-.chat-user,.chat-assistant{max-width:80%;padding:var(--s3) var(--s4);border-radius:var(--r-md);font-size:var(--t-sm);line-height:1.75}
-.chat-user{align-self:flex-start;background:var(--accent);color:var(--accent-contrast)}
-.chat-assistant{align-self:flex-end;border:1px solid var(--line);background:var(--surface-2)}
+.copilot-head strong{font-size:var(--t-h4);font-weight:600}
+.copilot-head h2{font-size:var(--t-h4);font-weight:600}
+.copilot-head small,.copilot-head p{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-sm)}
+.copilot-head .badge{margin-inline-start:auto}
+.copilot-mark{
+  width:44px;height:44px;flex:none;display:grid;place-items:center;border-radius:var(--r-lg);
+  background:linear-gradient(140deg,var(--accent),var(--accent-strong,var(--accent)));
+  color:var(--accent-contrast);box-shadow:0 6px 16px -8px color-mix(in srgb,var(--accent) 70%,transparent);
+}
+.copilot-mark svg{width:22px;height:22px}
+/* The suggested questions: pills that lift, so a hesitant reader has a way in. */
+.prompt-chips{display:flex;flex-wrap:wrap;gap:var(--s2);padding:var(--s4) var(--s5);border-bottom:1px solid var(--line)}
+.prompt-chips button{
+  display:inline-flex;align-items:center;gap:var(--s2);
+  padding:var(--s2) var(--s4);border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface-2);color:var(--ink-2);font-size:var(--t-sm);cursor:pointer;
+  transition:background .14s var(--ease),border-color .14s var(--ease),transform .12s var(--ease);
+}
+.prompt-chips button:hover{color:var(--accent-ink,var(--ink));border-color:color-mix(in srgb,var(--accent) 40%,var(--line));background:var(--accent-softer,var(--surface-2));transform:translateY(-1px)}
+.prompt-chips button svg{width:14px;height:14px;color:var(--accent)}
+.prompt-chips button:disabled{opacity:.5}
+.copilot-thread{flex:1;overflow-y:auto;padding:var(--s5);display:flex;flex-direction:column;gap:var(--s4)}
+/* A proper conversation: an avatar beside a bubble, the reader on one side and
+   the schedule's answer on the other, instead of an avatar trapped in a box. */
+.chat-user,.chat-assistant{display:flex;align-items:flex-start;gap:var(--s2);max-width:90%}
+.chat-user{align-self:flex-start}
+.chat-assistant{align-self:flex-end;flex-direction:row-reverse}
+.chat-user>span,.chat-assistant>span{
+  flex:none;width:30px;height:30px;display:grid;place-items:center;border-radius:var(--r-full);
+  font-size:var(--t-xs);font-weight:700;
+}
+.chat-user>span{background:var(--accent);color:var(--accent-contrast)}
+.chat-assistant>span{background:var(--accent-soft);color:var(--accent)}
+.chat-assistant>span svg{width:15px;height:15px}
+.chat-user>p,.chat-assistant>div{
+  padding:var(--s3) var(--s4);border-radius:var(--r-md);
+  font-size:var(--t-sm);line-height:1.75;min-width:0;
+}
+.chat-user>p{background:var(--accent);color:var(--accent-contrast);border-end-start-radius:var(--r-xs)}
+.chat-assistant>div{border:1px solid var(--line);background:var(--surface-2);border-end-end-radius:var(--r-xs)}
+.chat-assistant>div strong{display:block;font-weight:650;color:var(--ink)}
+.chat-assistant>div>p{margin-top:2px}
+.chat-assistant>div ul{margin:var(--s2) 0 0;padding-inline-start:var(--s5);display:flex;flex-direction:column;gap:2px}
+.chat-assistant>div small{display:flex;align-items:center;gap:var(--s2);margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
+.chat-assistant>div small svg{width:13px;height:13px;flex:none;color:var(--accent)}
 
 /* Natural-language MOVE preview (Idea 3): a before → after change the user
    confirms, with any conflicts surfaced before it is applied. */
@@ -832,10 +868,31 @@
 .nl-move-blocked{display:inline-flex;align-items:center;gap:var(--s2);color:var(--danger);font-weight:600}
 .nl-move-blocked svg{width:16px;height:16px;flex:none}
 .nl-move-hint{margin:0;color:var(--muted)}
-.copilot-empty{margin:auto;text-align:center;color:var(--muted);font-size:var(--t-sm)}
-.copilot-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s2);padding:var(--s4);border-top:1px solid var(--line)}
-.copilot-compose textarea{min-height:56px;max-height:140px}
-.copilot-compose button{min-width:48px;border-radius:var(--r-sm);background:var(--accent);color:var(--accent-contrast);display:grid;place-items:center}
+/* An inviting empty state: a soft-ringed icon and one worked example. */
+.copilot-empty{margin:auto;text-align:center;color:var(--muted);font-size:var(--t-sm);display:flex;flex-direction:column;align-items:center;gap:var(--s2);padding:var(--s7) var(--s5)}
+.copilot-empty>svg{
+  width:52px;height:52px;padding:14px;border-radius:var(--r-full);
+  color:var(--accent);background:var(--accent-soft);
+  box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 6%,transparent);
+}
+.copilot-empty strong{font-size:var(--t-h4);font-weight:600;color:var(--ink)}
+/* The compose bar as one rounded field with the send button riding inside it. */
+.copilot-compose{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s2);align-items:end;
+  padding:var(--s4);border-top:1px solid var(--line);background:var(--surface);
+}
+.copilot-compose textarea{
+  min-height:52px;max-height:140px;resize:none;
+  border-radius:var(--r-lg);padding:var(--s3) var(--s4);
+}
+.copilot-compose button{
+  width:44px;height:44px;min-width:44px;border-radius:var(--r-full);
+  background:var(--accent);color:var(--accent-contrast);display:grid;place-items:center;
+  transition:background .14s var(--ease),transform .12s var(--ease);
+}
+.copilot-compose button:hover:not(:disabled){background:var(--accent-strong);transform:scale(1.05)}
+.copilot-compose button:disabled{opacity:.45}
+.copilot-compose button svg{width:18px;height:18px}
 .copilot-context{height:max-content}
 .mini-command-list{display:grid;gap:var(--s2);margin-top:var(--s3)}
 /* The command chips are <span>s, so the old `button`-only rule left them entirely
