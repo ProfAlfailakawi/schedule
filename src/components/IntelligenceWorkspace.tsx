@@ -25,6 +25,7 @@ import {
   Save,
   Send,
   ShieldCheck,
+  ShieldAlert,
   SlidersHorizontal,
   Sparkles,
   Trash2,
@@ -58,6 +59,7 @@ import type {
 import IntelligenceContextBar from "./IntelligenceContextBar";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName } from "../utils/sorting";
+import { parseNaturalQuery } from "../utils/naturalQuery";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
   intelligenceDayLabels as dayLabels,
@@ -472,12 +474,42 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setError(null);
     setPrompt("");
     try {
+      // Idea 3: an imperative like "انقل 101 إلى 11:00" becomes a previewed move,
+      // not just an answer. Everything else stays a normal read-only question.
+      if (parseNaturalQuery(q).intent === "move") {
+        const move = await fetchJson("/api/intelligence/nl-move", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ collegeId, sectionId, termId, q }),
+        });
+        setChat((p) => [...p, { prompt: q, move } as any]);
+        return;
+      }
       const answer = await fetchJson("/api/intelligence/copilot", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId, prompt: q }),
       });
       setChat((p) => [...p, { prompt: q, answer }]);
+    } catch (e: any) {
+      setError(smartMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  // Applying a previewed natural-language move is a second, deliberate press —
+  // the same atomic door as a drag, so the same conflict rules protect it.
+  const applyMove = async (mv: any, index: number) => {
+    if (!mv?.move) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await fetchJson("/api/schedules/move-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strict: false, moves: [mv.move] }),
+      });
+      setChat((p) => p.map((item, i) => (i === index ? ({ ...item, move: { ...(item as any).move, applied: true } } as any) : item)));
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -1731,21 +1763,55 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span>
                         <Sparkles />
                       </span>
-                      <div>
-                        <strong>{item.answer.title}</strong>
-                        <p>{item.answer.summary}</p>
-                        {item.answer.bullets?.length ? (
-                          <ul>
-                            {item.answer.bullets.map((b: string, j: number) => (
-                              <li key={j}>{b}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        <small>
-                          <ShieldCheck />
-                          {item.answer.guardrail}
-                        </small>
-                      </div>
+                      {(item as any).move ? (
+                        <div className="nl-move">
+                          {(item as any).move.ok ? (() => {
+                            const mv = (item as any).move;
+                            return (
+                              <>
+                                <strong>{mv.preview.course}{mv.preview.section ? ` · شعبة ${mv.preview.section}` : ""}</strong>
+                                <div className="nl-move-change">
+                                  <span className="nl-from"><i>من</i>{mv.preview.before.days} · <time dir="ltr">{mv.preview.before.start}–{mv.preview.before.end}</time></span>
+                                  <ArrowLeft aria-hidden="true" />
+                                  <span className="nl-to"><i>إلى</i>{mv.preview.after.days} · <time dir="ltr">{mv.preview.after.start}–{mv.preview.after.end}</time></span>
+                                </div>
+                                {mv.conflicts?.length ? (
+                                  <ul className="nl-move-conflicts">
+                                    {mv.conflicts.slice(0, 4).map((c: any, j: number) => (
+                                      <li key={j} className={c.soft ? "soft" : c.severity}>{c.message}</li>
+                                    ))}
+                                  </ul>
+                                ) : <p className="nl-move-clear">لا مانع ظاهر لهذا النقل.</p>}
+                                {mv.applied ? (
+                                  <span className="nl-move-done"><CheckCircle2 aria-hidden="true" /> تم النقل بنجاح</span>
+                                ) : mv.canApply ? (
+                                  <button type="button" className="nl-move-apply" disabled={busy} onClick={() => applyMove(mv, i)}><WandSparkles aria-hidden="true" /> طبّق النقل</button>
+                                ) : (
+                                  <span className="nl-move-blocked"><ShieldAlert aria-hidden="true" /> {mv.blockedReason || "يوجد تعارض يمنع النقل"}</span>
+                                )}
+                              </>
+                            );
+                          })() : (
+                            <p className="nl-move-hint">{(item as any).move.hint || "لم أفهم أمر النقل."}</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div>
+                          <strong>{item.answer?.title}</strong>
+                          <p>{item.answer?.summary}</p>
+                          {item.answer?.bullets?.length ? (
+                            <ul>
+                              {item.answer.bullets.map((b: string, j: number) => (
+                                <li key={j}>{b}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          <small>
+                            <ShieldCheck />
+                            {item.answer?.guardrail}
+                          </small>
+                        </div>
+                      )}
                     </div>
                   </React.Fragment>
                 ))

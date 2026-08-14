@@ -1383,6 +1383,56 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });
 
 /**
+ * Natural-language MOVE (Idea 3). Parses "انقل 101 إلى 11:00" / "حرّك 344 إلى
+ * الأربعاء", finds the lecture in the open scope and returns a PREVIEW only —
+ * before/after plus any conflicts. Applying is a second, explicit step through
+ * /api/schedules/move-batch, so a sentence never writes on the schedule by itself.
+ */
+app.post("/api/intelligence/nl-move", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const parsed=parseNaturalQuery(String(req.body?.q||""));
+  if(parsed.intent!=="move"||!parsed.code){res.json({ok:false,hint:"اكتب أمر نقل، مثل: انقل 101 إلى 11:00 · أو: حرّك 344 إلى الأربعاء"});return;}
+  const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]);
+  const rows=scheduleData.rows;
+  const courseById=new Map(courses.map(c=>[c.AdCourseId,c]));
+  const dayLabelsOf=(r:any)=>SCHEDULE_DAY_KEYS.map((k,i)=>r[k]?DAY_LABELS[i]:null).filter(Boolean).join("، ")||"—";
+  const matches=rows.filter(r=>String(courseById.get(r.AdCourseId)?.CourseCode||"").trim()===parsed.code);
+  if(!matches.length){res.json({ok:false,hint:`لم أجد مقرراً برمز ${parsed.code} في هذا القسم والفصل.`});return;}
+  let target=matches[0];
+  if(matches.length>1){
+    const byDay=parsed.day!==null?matches.filter(r=>Boolean((r as any)[SCHEDULE_DAY_KEYS[parsed.day!]])):matches;
+    if(byDay.length===1)target=byDay[0];
+    else{res.json({ok:false,ambiguous:true,hint:`للمقرر ${parsed.code} أكثر من موعد — حدّد الشعبة أو اليوم.`,options:matches.slice(0,6).map(r=>({id:r.id,section:r.SCode,days:dayLabelsOf(r),start:r.fstarttime,end:r.fendtime}))});return;}
+  }
+  const dur=Math.max(30,timeToMinutes(target.fendtime)-timeToMinutes(target.fstarttime));
+  const newStart=parsed.time||target.fstarttime;
+  const newEnd=parsed.time?minutesToTime(timeToMinutes(newStart)+dur):target.fendtime;
+  const fields:any={fstarttime:newStart,fendtime:newEnd};
+  SCHEDULE_DAY_KEYS.forEach((k,i)=>{fields[k]=parsed.day!==null?i===parsed.day:Boolean((target as any)[k]);});
+  const after={...target,...fields};
+  const issues=schedulePayloadIssues(after);
+  if(issues.length){res.json({ok:false,hint:issues[0]});return;}
+  const conflicts=await scheduleConflicts(req,{...after,AdTermId:termId},target.id);
+  const blocking=conflicts.filter((c:any)=>!c.soft&&(c.severity==="high"||c.type==="duplicate"));
+  res.json({
+    ok:true,
+    move:{id:target.id,fields},
+    preview:{
+      course:courseById.get(target.AdCourseId)?.CourseName||target.AdCourseName||"",
+      code:parsed.code,section:target.SCode||"",
+      instructor:instructors.find(i=>i.AdInstructorId===target.AdInstructorId)?.AdInstructorName||"",
+      room:`${target.AdRoomCode||""}/${target.AdRoomHall||""}`.replace(/^\/$/,"—"),
+      before:{days:dayLabelsOf(target),start:target.fstarttime,end:target.fendtime},
+      after:{days:dayLabelsOf(after),start:newStart,end:newEnd},
+    },
+    conflicts,
+    canApply:blocking.length===0,
+    blockedReason:blocking.length?blocking[0].message:"",
+  });
+});
+
+/**
  * One request, one verdict, one write.
  *
  * The drag used to save as "check, then N separate PUTs" — two windows for

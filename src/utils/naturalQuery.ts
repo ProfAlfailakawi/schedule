@@ -8,7 +8,7 @@
  * answer, offline, with no data leaving the server.
  */
 
-export type NaturalIntent = "freeRooms" | "instructor" | "gaps" | "room" | "time" | "unknown";
+export type NaturalIntent = "freeRooms" | "instructor" | "gaps" | "room" | "time" | "move" | "unknown";
 
 export interface NaturalQuery {
   intent: NaturalIntent;
@@ -18,6 +18,8 @@ export interface NaturalQuery {
   time: string | null;
   name: string | null;
   room: string | null;
+  /** Course code to act on, for the "move" intent (e.g. "101"). */
+  code: string | null;
   raw: string;
 }
 
@@ -35,6 +37,10 @@ const FREE_ROOM_WORDS = /(قاع[ةه]|قاعات|غرف[ةه]|غرف)\s*(فاض
 const GAP_WORDS = /(فراغ|فراغات|فجو[ةه]|فجوات|وقت\s*فاضي)/;
 const SCHEDULE_WORDS = /(جدول|مواعيد|محاضرات|حص[ةص]|نصاب)/;
 const ROOM_CODE = /([؀-ۿ]{1,3}|[A-Za-z]{1,3})\s*[-‑–]\s*(\d{1,4})/;
+// An edit, not a question: "انقل 101 إلى 11:00", "نقل 344 الاثنين 9". The course
+// code is the number that follows the verb; the destination is a time and/or day.
+const MOVE_WORDS = /(انقل|نقل|حرّك|حرك|رحّل|رحل)/;
+const MOVE_CODE = /(?:انقل|نقل|حرّك|حرك|رحّل|رحل)\s*(?:مقرر|الماد[ةه]|ماد[ةه]|شعب[ةه])?\s*(\d{2,4})/;
 
 /** Arabic-Indic and Persian digits behave like ASCII digits everywhere here. */
 export function toEnglishDigits(value: string): string {
@@ -87,13 +93,19 @@ export function parseNaturalQuery(input: string): NaturalQuery {
   const roomMatch = text.match(ROOM_CODE);
   const room = roomMatch ? `${roomMatch[1]}-${roomMatch[2]}` : null;
   const time = readTime(text);
+  const moveMatch = text.match(MOVE_CODE);
+  const code = moveMatch ? moveMatch[1] : null;
 
-  if (FREE_ROOM_WORDS.test(text)) return { intent: "freeRooms", day, time, name: null, room, raw };
-  if (GAP_WORDS.test(text)) return { intent: "gaps", day, time, name: readName(text), room, raw };
-  if (room) return { intent: "room", day, time, name: null, room, raw };
-  if (SCHEDULE_WORDS.test(text)) return { intent: "instructor", day, time, name: readName(text), room, raw };
-  if (time || day !== null) return { intent: "time", day, time, name: readName(text), room, raw };
-  return { intent: "unknown", day, time, name: readName(text), room, raw };
+  // A move is an instruction, checked first: it needs the verb, a course code,
+  // and somewhere to go (a time and/or a day).
+  if (MOVE_WORDS.test(text) && code && (time || day !== null))
+    return { intent: "move", day, time, name: null, room, code, raw };
+  if (FREE_ROOM_WORDS.test(text)) return { intent: "freeRooms", day, time, name: null, room, code: null, raw };
+  if (GAP_WORDS.test(text)) return { intent: "gaps", day, time, name: readName(text), room, code: null, raw };
+  if (room) return { intent: "room", day, time, name: null, room, code: null, raw };
+  if (SCHEDULE_WORDS.test(text)) return { intent: "instructor", day, time, name: readName(text), room, code: null, raw };
+  if (time || day !== null) return { intent: "time", day, time, name: readName(text), room, code: null, raw };
+  return { intent: "unknown", day, time, name: readName(text), room, code: null, raw };
 }
 
 export const DAY_LABELS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];

@@ -714,6 +714,35 @@
 .chat-user,.chat-assistant{max-width:80%;padding:var(--s3) var(--s4);border-radius:var(--r-md);font-size:var(--t-sm);line-height:1.75}
 .chat-user{align-self:flex-start;background:var(--accent);color:var(--accent-contrast)}
 .chat-assistant{align-self:flex-end;border:1px solid var(--line);background:var(--surface-2)}
+
+/* Natural-language MOVE preview (Idea 3): a before → after change the user
+   confirms, with any conflicts surfaced before it is applied. */
+.nl-move{display:flex;flex-direction:column;gap:var(--s3);min-width:0}
+.nl-move>strong{font-size:var(--t-h4);font-weight:650;color:var(--ink)}
+.nl-move-change{
+  display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
+  padding:var(--s3) var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.nl-move-change>svg{width:18px;height:18px;color:var(--accent);flex:none}
+.nl-move-change span{display:flex;flex-direction:column;gap:2px;font-weight:600}
+.nl-move-change i{font-style:normal;color:var(--muted);font-size:var(--t-xs);font-weight:500}
+.nl-move-change .nl-to{color:var(--accent-strong)}
+.nl-move-change time{font-variant-numeric:tabular-nums}
+.nl-move-conflicts{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:var(--s1)}
+.nl-move-conflicts li{padding:var(--s2) var(--s3);border-radius:var(--r-sm);background:var(--danger-soft);color:var(--danger)}
+.nl-move-conflicts li.soft,.nl-move-conflicts li.warning{background:color-mix(in srgb,var(--brass) 14%,var(--surface));color:var(--brass)}
+.nl-move-clear{margin:0;color:var(--accent-strong);font-weight:600}
+.nl-move-apply{
+  align-self:flex-start;display:inline-flex;align-items:center;gap:var(--s2);
+  padding:var(--s2) var(--s4);border-radius:var(--r-sm);
+  background:var(--accent);color:var(--accent-contrast);font-weight:600}
+.nl-move-apply:hover{background:var(--accent-strong)}
+.nl-move-apply:disabled{opacity:.6}
+.nl-move-apply svg{width:15px;height:15px}
+.nl-move-done{display:inline-flex;align-items:center;gap:var(--s2);color:var(--accent-strong);font-weight:600}
+.nl-move-done svg{width:16px;height:16px}
+.nl-move-blocked{display:inline-flex;align-items:center;gap:var(--s2);color:var(--danger);font-weight:600}
+.nl-move-blocked svg{width:16px;height:16px;flex:none}
+.nl-move-hint{margin:0;color:var(--muted)}
 .copilot-empty{margin:auto;text-align:center;color:var(--muted);font-size:var(--t-sm)}
 .copilot-compose{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s2);padding:var(--s4);border-top:1px solid var(--line)}
 .copilot-compose textarea{min-height:56px;max-height:140px}
