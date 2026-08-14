@@ -129,6 +129,42 @@
 }
 .print-menu-pop button:hover{background:var(--surface-2);color:var(--ink)}
 .query-empty{min-height:300px;display:grid;place-items:center;padding:var(--s7)}
+/* --- The result list, waiting ------------------------------------------------
+   Placeholder rows in the shape of the answer, sharing the app's one shimmer
+   so every surface waits with the same voice. Decorative and inert. */
+.query-skeleton{
+  --sk-base:color-mix(in srgb,var(--ink) 8%,var(--surface-2));
+  --sk-sheen:color-mix(in srgb,var(--accent) 15%,var(--surface-3));
+  min-height:300px;display:flex;flex-direction:column;
+}
+.query-skeleton .qsk-row{
+  display:flex;align-items:center;gap:var(--s4);
+  padding:var(--s4) var(--s6);
+  border-bottom:1px solid var(--line);
+}
+.query-skeleton .qsk-row:last-child{border-bottom:0}
+.query-skeleton .qsk-core{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.query-skeleton .qsk-line,
+.query-skeleton .qsk-rank,
+.query-skeleton .qsk-time,
+.query-skeleton .qsk-tag{
+  display:block;border-radius:var(--r-sm);
+  background:linear-gradient(100deg,var(--sk-base) 28%,var(--sk-sheen) 50%,var(--sk-base) 72%);
+  background-size:220% 100%;
+  animation:sk-shimmer 1.4s ease-in-out infinite,sk-fade .42s var(--ease-out) both;
+  animation-delay:calc(var(--i,0)*-130ms),calc(var(--i,0)*44ms);
+}
+.query-skeleton .qsk-line{height:12px}
+.query-skeleton .qsk-dim{opacity:.6}
+.query-skeleton .qsk-rank{width:22px;height:12px;flex:none}
+.query-skeleton .qsk-time{width:86px;height:14px;flex:none}
+.query-skeleton .qsk-tag{width:58px;height:20px;border-radius:var(--r-full);flex:none}
+@media (prefers-reduced-motion:reduce){
+  .query-skeleton .qsk-line,
+  .query-skeleton .qsk-rank,
+  .query-skeleton .qsk-time,
+  .query-skeleton .qsk-tag{animation:sk-fade .42s var(--ease-out) both}
+}
 
 /* --- Lens: flat list ------------------------------------------------------ */
 

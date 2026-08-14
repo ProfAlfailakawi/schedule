@@ -27,6 +27,7 @@ import {
   LayoutList,
   Lightbulb,
   MapPin,
+  Contrast,
   MessageSquareText,
   Radio,
   Search,
@@ -269,6 +270,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
        a rule, not a preference the reader can turn off. */
     [strictNoConflict] = useState(true),
     [hueBy, setHueBy] = useState<"course" | "instructor">(savedPrefs.hueBy === "instructor" ? "instructor" : "course"),
+    /* Colour alone is never the only carrier of meaning. Off by default — when
+       on, every hue also gets a texture, so red/green pairs that look identical
+       to a deuteranopic reader stay tellable apart. */
+    [colorBlind, setColorBlind] = useState<boolean>(Boolean(savedPrefs.colorBlind)),
+    /* The legend's current focus: one colour identity lit, the rest hushed.
+       Its own state, deliberately separate from the lens and the x-ray so it
+       can never alter what either of them means. */
+    [hueFocus, setHueFocus] = useState<string | null>(null),
     /* Cards moved in the last minute, keyed to the undo entry that reverses
        them — the pill each one wears is the undo, in place. */
     [recentMoves, setRecentMoves] = useState<Record<number, string>>({}),
@@ -864,6 +873,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         lastSaved: lastSavedRef.current || savedPrefs.lastSaved || null,
         strictNoConflict,
         hueBy,
+        colorBlind,
       }),
     );
     setVisibleLimit(AGENDA_PAGE_SIZE);
@@ -874,11 +884,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     viewMode,
     strictNoConflict,
     hueBy,
+    colorBlind,
     form.AdRoomCode,
     form.AdRoomHall,
     mode,
     prefsKey,
   ]);
+  /* Flagged on the root the same way the theme is, because the cards it styles
+     are not all inside one subtree — the fan and the hover card are fixed and
+     mount at the end of the document. Removed on unmount so no other screen
+     inherits a setting that belongs to the schedule. */
+  useEffect(() => {
+    const root = document.documentElement;
+    if (colorBlind) root.setAttribute("data-colorblind", "true");
+    else root.removeAttribute("data-colorblind");
+    return () => root.removeAttribute("data-colorblind");
+  }, [colorBlind]);
   const formSections = useMemo(
       () =>
         sections.filter(
@@ -2663,6 +2684,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
        shortener may trim further on a squeezed lane. */
     const shortWho = i?.AdInstructorName ? instructorLabel(firstLast(i.AdInstructorName), widthShare) : who;
     const place = [r.AdRoomCode, r.AdRoomHall].filter(Boolean).join("/");
+    /* Computed once: the card wears it as colour, and — when the reader has
+       asked for it — as a weave keyed to the same number. */
+    const cardHue = hueFor(code, title, i?.AdInstructorName);
     // The drag lives on pointerdown. Recording where the press began has to be
     // merged with it rather than declared after it — a second onPointerDown prop
     // silently replaces the first, which is exactly how dragging was lost.
@@ -2698,8 +2722,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
         aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${r.fstarttime}–${r.fendtime}${place ? ` · قاعة ${place}` : ""}`}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
-        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""}`}
-        style={{ ...style, ["--hue" as any]: hueFor(code, title, i?.AdInstructorName) }}
+        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${hueFocusClass(r)}`}
+        style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
         onPointerLeave={() => setPeek(current => (current?.row.id === r.id ? null : current))}
         onFocus={(e) => openPeek(r, e.currentTarget)}
@@ -2753,6 +2777,79 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   /** One switch decides what colour answers: "which course?" or "whose?" */
   const hueFor = (code: string, title: string, instructorName?: string) =>
     hueBy === "instructor" ? courseHue(instructorName || "بدون أستاذ", "") : courseHue(code, title);
+
+  /**
+   * A weave for a hue — the second channel the colour-blind setting turns on.
+   *
+   * The wheel is cut into six, and each sixth gets a weave that survives on a
+   * five-pixel spine: only patterns that vary along the card's height are
+   * legible there, so the set varies dash length and angle rather than
+   * direction alone. The sixth is solid, which is as distinct as any pattern.
+   * Emitted always but read only under [data-colorblind] — three unused custom
+   * properties cost nothing and keep the style object in one shape.
+   */
+  const textureFor = (hue: number) => {
+    const band = Math.floor(((((hue % 360) + 360) % 360) / 60)) % 6;
+    const weave = [
+      { a: "0deg", on: "2px", off: "4px" },
+      { a: "0deg", on: "5px", off: "4px" },
+      { a: "45deg", on: "2px", off: "4px" },
+      { a: "-45deg", on: "2px", off: "4px" },
+      { a: "0deg", on: "1px", off: "3px" },
+      { a: "0deg", on: "100px", off: "0px" },
+    ][band];
+    return {
+      ["--cb-angle" as any]: weave.a,
+      ["--cb-on" as any]: weave.on,
+      ["--cb-off" as any]: weave.off,
+    };
+  };
+
+  /**
+   * What a card's colour actually stands for.
+   *
+   * The hue is a hash of exactly these inputs, so the legend derives its swatch
+   * from the same call rather than guessing — a chip can never show a colour the
+   * grid does not use. The key is prefixed by mode because the two modes are
+   * different alphabets: a focus held across the switch would be meaningless.
+   */
+  const hueIdentity = (r: FSchedule) => {
+    if (hueBy === "instructor") {
+      const name = instructorById.get(r.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+      return { key: `i:${name}`, label: firstLast(name), hue: courseHue(name, "") };
+    }
+    const course = courseById.get(r.AdCourseId);
+    const code = course?.CourseCode || r.AdCourseName || "—";
+    const title = r.AdCourseName || course?.CourseName || code;
+    return { key: `c:${code}·${title}`, label: title, hue: courseHue(code, title) };
+  };
+
+  /* The key to the week's colours, built from what is actually on screen and
+     ordered by weight, so the course a reader is most likely hunting sits
+     first. Rebuilt only when the rows or the colour's meaning change. */
+  const hueLegend = useMemo(() => {
+    const seen = new Map<string, { key: string; label: string; hue: number; count: number }>();
+    filteredRows.forEach(r => {
+      const id = hueIdentity(r);
+      const found = seen.get(id.key);
+      if (found) found.count += 1;
+      else seen.set(id.key, { ...id, count: 1 });
+    });
+    return [...seen.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "ar"));
+  }, [filteredRows, hueBy, courseById, instructorById]);
+
+  /* A focus is only meaningful against the rows it was chosen from: when the
+     scope or the colour's meaning changes, the old key names nothing.
+     Closing the tools closes the focus too — the key is the only way to lift a
+     focus, so a hidden key with the grid still hushed would be a trap with no
+     way out. */
+  useEffect(() => { setHueFocus(null); }, [hueBy, filterTerm, filterSection, filterCollege, workspaceToolsOpen]);
+
+  /* Applied to a card or a band while the legend holds a focus. Additive and
+     self-contained — it neither reads nor writes the lens or the x-ray, so
+     whatever those two mean is exactly what they meant before. */
+  const hueFocusClass = (r: FSchedule) =>
+    !hueFocus ? "" : hueIdentity(r).key === hueFocus ? "hue-lit" : "hue-shade";
 
   /**
    * Colour as information.
@@ -4716,12 +4813,62 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <Palette aria-hidden="true" />
                 {hueBy === "course" ? "التلوين حسب: المقرر" : "التلوين حسب: الأستاذ"}
               </button> : null}
+              {workspaceToolsOpen ? <button
+                type="button"
+                className={`week-pick-toggle ${colorBlind ? "active" : ""}`}
+                aria-pressed={colorBlind}
+                onClick={() => setColorBlind(v => !v)}
+                title="يضيف نقشاً مميزاً لكل لون، فلا يبقى اللون وحده هو الفارق"
+              >
+                <Contrast aria-hidden="true" />
+                {colorBlind ? "النقش: مفعّل" : "نقش مع اللون"}
+              </button> : null}
               {multiSelect.size ? (
                 <button type="button" className="week-pick-clear" onClick={() => setMultiSelect(new Set())}>
                   <X aria-hidden="true" />إلغاء التحديد
                 </button>
               ) : null}
             </div>
+            {/*
+              The key to the colours.
+
+              The grid has always been coloured, but nothing said what a colour
+              meant — the reader had to hover a card to learn it. The key names
+              every colour on screen, weightiest first, and pressing one hushes
+              the rest so a course's whole week stands out at once. The focus is
+              its own state: the lens still filters, the x-ray still relates,
+              and neither learns anything new from this.
+            */}
+            {workspaceToolsOpen && hueLegend.length > 1 ? (
+              <div className="week-legend" role="group" aria-label="مفتاح الألوان">
+                <span className="week-legend-cap">
+                  {hueBy === "course" ? "المقررات" : "الأساتذة"}
+                  <b className="num">{hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}</b>
+                </span>
+                <div className="week-legend-chips">
+                  {hueLegend.map(item => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`week-legend-chip ${hueFocus === item.key ? "is-on" : ""}`}
+                      style={{ ["--hue" as any]: item.hue, ...textureFor(item.hue) }}
+                      aria-pressed={hueFocus === item.key}
+                      title={`${item.label} — ${item.count} موعداً · اضغط لإبراز كل حصصه`}
+                      onClick={() => setHueFocus(v => (v === item.key ? null : item.key))}
+                    >
+                      <i aria-hidden="true" />
+                      <span>{item.label}</span>
+                      <em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
+                    </button>
+                  ))}
+                </div>
+                {hueFocus ? (
+                  <button type="button" className="week-legend-clear" onClick={() => setHueFocus(null)}>
+                    <X aria-hidden="true" />عرض الكل
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
             {/*
               The day strip.
 
@@ -5140,8 +5287,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   role="button"
                                   tabIndex={0}
                                   aria-label={`${bandTitle} · ${bandWho} · ${bandCode} · شعبة ${row.SCode || "—"} — اسحبها أو افتح المروحة`}
-                                  className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""}`}
-                                  style={{ ["--hue" as any]: hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName) }}
+                                  className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""} ${hueFocusClass(row)}`}
+                                  style={(() => {
+                                    const bandHue = hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName);
+                                    return { ["--hue" as any]: bandHue, ...textureFor(bandHue) };
+                                  })()}
                                   title={`${bandTitle} · ${bandWho} — اسحبها مباشرة أو اضغط للمروحة`}
                                   onPointerDown={(e) => {
                                     pressOrigin.current = { x: e.clientX, y: e.clientY };

@@ -105,6 +105,33 @@ const dayText = (row: FSchedule) => {
 };
 const share = (value: number, max: number) => `${Math.min(100, Math.round((value / Math.max(1, max)) * 100))}%`;
 
+/**
+ * The answer, drawn as light while the query runs.
+ *
+ * «جارٍ التحميل» in the middle of an empty pane says only that something is
+ * happening; a list of placeholder rows says what is coming and holds the
+ * scroll position steady when the real rows land in their place. Inert — no
+ * data, no interaction.
+ */
+function QuerySkeleton() {
+  return (
+    <div className="query-skeleton" role="status" aria-busy="true">
+      <span className="sr-only">يجري تنفيذ الاستعلام</span>
+      {Array.from({ length: 7 }).map((_, i) => (
+        <div className="qsk-row" key={i} style={{ ["--i" as any]: i }}>
+          <span className="qsk-rank" />
+          <span className="qsk-core">
+            <i className="qsk-line" style={{ width: `${58 - (i % 3) * 10}%` }} />
+            <i className="qsk-line qsk-dim" style={{ width: `${34 + (i % 4) * 8}%` }} />
+          </span>
+          <span className="qsk-time" />
+          <span className="qsk-tag" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Reports({ mode, user, scopes = [] }: Props) {
   const prefKey = `schedule-unified-prefs-${user?.SystemUserId || 0}`;
   let saved: any = {};
@@ -761,7 +788,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         </header>
 
         {loading ? (
-          <div className="query-empty"><EmptyState title="جارٍ التحميل" /></div>
+          <QuerySkeleton />
         ) : !results.length ? (
           <div className="query-empty"><EmptyState title="لا نتائج" detail="خفّف المرشحات" /></div>
         ) : lens === "list" ? (

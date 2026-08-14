@@ -2663,6 +2663,131 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-fan>header button:hover{background:var(--surface-3);color:var(--ink)}
 .week-fan>header button svg{width:14px;height:14px}
 .week-fan>p{font-size:var(--t-xs);color:var(--muted);line-height:1.55}
+/* --- The key to the colours ---------------------------------------------------
+   A strip of what is on screen, weightiest first. Pressing a chip lights that
+   course's whole week and hushes the rest; pressing it again returns everything.
+   The dimming is its own pair of classes, so the lens and the x-ray keep saying
+   exactly what they said before. */
+.week-legend{
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s2) var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);
+  animation:rise .24s var(--ease-out) both;
+}
+.week-legend-cap{
+  display:inline-flex;align-items:center;gap:5px;flex:none;
+  font-size:var(--t-xs);color:var(--muted);letter-spacing:-.1px;
+}
+.week-legend-cap .num{
+  font:700 10px var(--font-mono);color:var(--accent-ink,var(--accent));
+  padding:1px 6px;border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--accent) 14%,transparent);
+}
+.week-legend-chips{
+  flex:1;min-width:0;
+  display:flex;align-items:center;gap:6px;
+  overflow-x:auto;overscroll-behavior-x:contain;
+  padding-block:2px;
+  scrollbar-width:thin;
+}
+.week-legend-chip{
+  flex:none;display:inline-flex;align-items:center;gap:6px;
+  max-width:190px;min-height:28px;padding:2px 9px;
+  border:1px solid color-mix(in srgb,hsl(var(--hue,158) 50% 52%) 30%,var(--line));
+  border-radius:var(--r-full);
+  background:var(--surface);
+  color:var(--ink-2);font-size:var(--t-xs);
+  transition:border-color .16s var(--ease),background .16s var(--ease),color .16s var(--ease);
+}
+/* The swatch is the card's own spine, and under the colour-blind setting it
+   carries the very weave the card carries — the key teaches both channels. */
+.week-legend-chip>i{
+  flex:none;width:10px;height:10px;border-radius:3px;
+  background:hsl(var(--hue,158) 56% 52%);
+}
+:root[data-colorblind="true"] .week-legend-chip>i{
+  background-image:repeating-linear-gradient(
+    var(--cb-angle,0deg),
+    color-mix(in srgb,var(--ink) 62%,transparent) 0 var(--cb-on,2px),
+    transparent 0 var(--cb-off,4px)
+  );
+}
+.week-legend-chip>span{
+  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.week-legend-chip>.num{
+  flex:none;font:600 9.5px var(--font-mono);font-style:normal;color:var(--muted);
+  font-variant-numeric:tabular-nums;
+}
+.week-legend-chip:hover{
+  border-color:hsl(var(--hue,158) 56% 52%);
+  background:color-mix(in srgb,hsl(var(--hue,158) 50% 52%) 8%,var(--surface));
+  color:var(--ink);
+}
+.week-legend-chip.is-on{
+  border-color:hsl(var(--hue,158) 60% 52%);
+  background:color-mix(in srgb,hsl(var(--hue,158) 55% 52%) 16%,var(--surface));
+  color:var(--ink);font-weight:600;
+  box-shadow:0 0 0 1px hsl(var(--hue,158) 60% 52% / .35),0 4px 12px -6px hsl(var(--hue,158) 60% 50% / .6);
+}
+.week-legend-clear{
+  flex:none;display:inline-flex;align-items:center;gap:4px;
+  min-height:28px;padding:0 10px;border-radius:var(--r-full);
+  border:1px solid var(--line);background:var(--surface);
+  color:var(--muted);font-size:var(--t-xs);
+}
+.week-legend-clear:hover{color:var(--ink);border-color:var(--accent)}
+.week-legend-clear svg{width:12px;height:12px}
+/* Lit and hushed. Opacity only — no geometry moves, so a focus can never shift
+   a card by a pixel or interfere with a drag in flight. */
+.week-event.hue-shade,.week-bundle-band.hue-shade{opacity:.2}
+.week-event.hue-lit{box-shadow:0 0 0 1px hsl(var(--hue,158) 62% 55% / .7),var(--shadow-sm);z-index:5}
+.week-bundle-band.hue-lit{box-shadow:0 0 0 1px hsl(var(--hue,158) 62% 55% / .7)}
+@media (prefers-reduced-motion:reduce){
+  .week-legend{animation:none}
+  .week-legend-chip{transition:none}
+}
+
+/* --- Colour is never alone ----------------------------------------------------
+   Roughly one man in twelve cannot separate the red end of the wheel from the
+   green, which is precisely the range these hues sweep. With the setting on,
+   every card also carries a texture chosen by its hue's sixth of the wheel, so
+   two courses that read as one colour still read as two cards. The whole block
+   is behind [data-colorblind], so the default rendering is byte-for-byte what
+   it was. ::before is free on .week-event — its ::after belongs to the
+   just-changed flash. */
+/* Six weaves for six sixths of the wheel, each a hard-edged repeat so it
+   survives on a five-pixel spine where a soft pattern would blur into a tint.
+   Every card is already positioned — absolute in the grid, relative in the fan
+   — so the spine needs no containing-block help. Scoped to cards that actually
+   carry a hue, which leaves last term's ghost cards untouched. */
+:root[data-colorblind="true"] .week-event[style*="--hue"]::before{
+  content:"";position:absolute;z-index:1;pointer-events:none;
+  inset-block:0;inset-inline-start:0;width:5px;
+  opacity:.85;
+  background-image:repeating-linear-gradient(
+    var(--cb-angle,0deg),
+    color-mix(in srgb,var(--ink) 62%,transparent) 0 var(--cb-on,2px),
+    transparent 0 var(--cb-off,4px)
+  );
+}
+:root[data-colorblind="true"] .week-bundle-band{position:relative}
+:root[data-colorblind="true"] .week-bundle-band::before{
+  content:"";position:absolute;inset-block:0;inset-inline-start:0;width:3px;
+  pointer-events:none;opacity:.8;
+  background-image:repeating-linear-gradient(
+    var(--cb-angle,0deg),
+    color-mix(in srgb,var(--ink) 58%,transparent) 0 var(--cb-on,2px),
+    transparent 0 var(--cb-off,4px)
+  );
+}
+/* The hover card and the legend say the texture too, so the key and the card
+   agree. */
+:root[data-colorblind="true"] .week-peek{
+  border-inline-start-style:double;border-inline-start-width:6px;
+}
+
 /* --- The wall, drawn ---------------------------------------------------------
    A 32-bucket sweep of the hour: each bar is how many lectures are live at that
    instant. It turns «9 معاً» from a number into a shape — a spike at noon reads
