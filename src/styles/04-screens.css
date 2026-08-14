@@ -907,6 +907,65 @@
 }
 .occupancy-pick-empty{margin:0;padding:var(--s5);color:var(--muted);font-size:var(--t-sm);text-align:center}
 
+/* A report result opens as a side panel, not an accordion: the results list
+   keeps its exact place and scroll while the detail is read alongside, and
+   closing returns the reader to precisely where they were. On phones it becomes
+   a bottom sheet. Reuses the occupancy-pick header/rows; only re-homes the box. */
+.query-detail-backdrop{
+  position:fixed;inset:0;z-index:120;
+  background:color-mix(in srgb,var(--nav) 26%,transparent);
+  animation:fade .18s var(--ease) both;
+}
+.query-detail-panel{
+  position:fixed;z-index:121;
+  top:var(--s3);inset-inline-end:var(--s3);
+  width:min(440px,calc(100vw - 24px));
+  max-height:calc(100dvh - var(--s6));
+  margin:0;overflow-y:auto;
+  border-color:var(--line);border-radius:var(--r-2xl);
+  box-shadow:var(--shadow-lg);
+  animation:drawer-in .26s var(--ease-out) both;
+}
+.query-detail-panel>header{position:sticky;top:0;z-index:1}
+.query-detail-panel .occupancy-pick-rows{max-height:none}
+@media screen and (max-width:768px){
+  .query-detail-panel{
+    top:auto;inset-inline:0;bottom:0;width:100%;
+    border-radius:var(--r-2xl) var(--r-2xl) 0 0;
+    max-height:88dvh;
+    animation:sheet-up .26s var(--ease-out) both;
+  }
+}
+
+/* Academic add/edit opens as a side panel over the list — the master list keeps
+   its place and context instead of the whole page swapping to a form. Shared by
+   colleges, departments, instructors, courses and terms. Phone: a bottom sheet. */
+.catalog-form-backdrop{
+  position:fixed;inset:0;z-index:120;
+  background:color-mix(in srgb,var(--nav) 30%,transparent);
+  animation:fade .18s var(--ease) both;
+}
+.catalog-form-drawer{
+  position:fixed;z-index:121;
+  top:var(--s3);bottom:var(--s3);inset-inline-end:var(--s3);
+  width:min(520px,calc(100vw - 24px));
+  overflow-y:auto;
+  padding:var(--s5) var(--s5) var(--s6);
+  background:var(--canvas);
+  border:1px solid var(--line);border-radius:var(--r-2xl);
+  box-shadow:var(--shadow-lg);
+  animation:drawer-in .26s var(--ease-out) both;
+}
+.catalog-form-drawer .page-heading{padding-top:0}
+@media screen and (max-width:768px){
+  .catalog-form-drawer{
+    top:auto;inset-inline:0;bottom:0;width:100%;
+    border-radius:var(--r-2xl) var(--r-2xl) 0 0;
+    max-height:94dvh;
+    animation:sheet-up .26s var(--ease-out) both;
+  }
+}
+
 
 /* A campus of twenty buildings makes a hundred and ninety pairs; the search is
    how anyone reaches the two they came to change. */

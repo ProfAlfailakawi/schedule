@@ -105,10 +105,13 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
           : items,
       [items, query],
     ),
-    selected = items.find((x) => x.AdTermId === selectedId) || null;
-  if (mode !== "index")
-    return (
-      <div className="content-stack editor-page">
+    selected =
+      filtered.find((x) => x.AdTermId === selectedId) || filtered[0] || null,
+    activeId = selected?.AdTermId ?? null;
+  const editorDrawer = mode !== "index" ? (
+      <>
+      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
+      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء فصل جديد" : "تعديل بيانات الفصل"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="يظهر في الجداول والتقارير"
@@ -132,15 +135,23 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  aria-label="الفصل الدراسي"
+                  autoComplete="off"
+                  autoFocus
                   required
                 />
               </Field>
             </div>
-            <FormActions onBack={back} loading={loading} />
+            <FormActions
+              onBack={back}
+              loading={loading}
+              submitLabel={mode === "create" ? "إنشاء الفصل" : "حفظ التعديلات"}
+            />
           </form>
         </Surface>
-      </div>
-    );
+      </aside>
+      </>
+    ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
@@ -157,8 +168,9 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
         </PageTitle>
       )}
       {error ? <Notice>{error}</Notice> : null}
-      <div className="catalog-workspace">
+      <div className="catalog-workspace" aria-busy={loading}>
         <Surface className="catalog-master">
+          <h2 className="sr-only">قائمة الفصول الدراسية</h2>
           <ListToolbar
             value={query}
             onChange={setQuery}
@@ -173,19 +185,28 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                 <RecordCard
                   key={x.AdTermId}
                   onClick={() => setSelectedId(x.AdTermId)}
-                  className={selectedId === x.AdTermId ? "selected" : ""}
+                  className={activeId === x.AdTermId ? "selected" : ""}
                   icon={<CalendarDays />}
-                  title={x.AdTermName}
+                  title={(
+                    <>
+                      {x.AdTermName}
+                      {activeId === x.AdTermId ? <span className="sr-only">، محدد</span> : null}
+                    </>
+                  )}
                   subtitle="مرجع الجداول والتقارير"
                   meta={<MetaPill label="الترتيب" value={String(i + 1)} />}
                 />
               ))}
             </RecordDeck>
           ) : (
-            <EmptyState title="لا يوجد فصل مطابق" />
+            <EmptyState
+              title={query ? "لا يوجد فصل مطابق" : "لا توجد فصول دراسية بعد"}
+              detail={query ? "جرّب عبارة أخرى أو امسح البحث." : "أنشئ الفصل الأول ليظهر في الجداول والتقارير."}
+              action={query ? <SecondaryButton onClick={() => setQuery("")}>مسح البحث</SecondaryButton> : undefined}
+            />
           )}
         </Surface>
-        <aside className="academic-inspector">
+        <aside className="academic-inspector" aria-label="تفاصيل الفصل المحدد" aria-live="polite">
           {selected ? (
             <>
               <div className="academic-inspector-icon">
@@ -221,6 +242,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
           )}
         </aside>
       </div>
+      {editorDrawer}
     </div>
   );
 }

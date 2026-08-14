@@ -521,6 +521,16 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const maxLoad = Math.max(1, ...groups.map(group => group.load));
   const maxSlot = Math.max(1, ...byTime.map(slot => slot.count));
   const selectedResult = selectedResultId === null ? null : results.find(row => row.id === selectedResultId) || null;
+  const pickedCourse = selectedResult ? courseById.get(selectedResult.AdCourseId) : null;
+  const pickedInstructor = selectedResult ? instructorById.get(selectedResult.AdInstructorId) : null;
+  // The detail reads as a side panel, so the results list keeps its place and
+  // its scroll. Escape closes it back to exactly where the reader left off.
+  useEffect(() => {
+    if (selectedResultId === null) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setSelectedResultId(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedResultId]);
 
   const selectLens = (next: Lens) => runVisualTransition(() => {
     setLens(next);
@@ -747,82 +757,87 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         ) : !results.length ? (
           <div className="query-empty"><EmptyState title="لا نتائج" detail="خفّف المرشحات" /></div>
         ) : lens === "list" ? (
+          <>
           <div className="lens-list">
             {results.slice(0, visibleLimit).map((row, index) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
               const isSelected = selectedResultId === row.id;
               return (
-                <React.Fragment key={row.id}>
-                  <article
-                    className={isSelected ? "is-selected" : undefined}
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isSelected}
-                    aria-controls={isSelected ? `query-result-detail-${row.id}` : undefined}
-                    onClick={() => setSelectedResultId(current => current === row.id ? null : row.id)}
-                    onKeyDown={event => {
-                      if (event.key !== "Enter" && event.key !== " ") return;
-                      event.preventDefault();
-                      setSelectedResultId(current => current === row.id ? null : row.id);
-                    }}
-                  >
-                    <span className="lens-index">{String(index + 1).padStart(2, "0")}</span>
-                    <div className="lens-main">
-                      <strong>{course?.CourseName || row.AdCourseName}</strong>
-                      <div className="lens-tags">
-                        <span className="code-chip">{course?.CourseCode || "—"}</span>
-                        <span>{row.SCode}</span>
-                        <span><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}</span>
-                      </div>
+                <article
+                  key={row.id}
+                  className={isSelected ? "is-selected" : undefined}
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isSelected}
+                  aria-controls={isSelected ? "query-result-detail-panel" : undefined}
+                  onClick={() => setSelectedResultId(current => current === row.id ? null : row.id)}
+                  onKeyDown={event => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    setSelectedResultId(current => current === row.id ? null : row.id);
+                  }}
+                >
+                  <span className="lens-index">{String(index + 1).padStart(2, "0")}</span>
+                  <div className="lens-main">
+                    <strong>{course?.CourseName || row.AdCourseName}</strong>
+                    <div className="lens-tags">
+                      <span className="code-chip">{course?.CourseCode || "—"}</span>
+                      <span>{row.SCode}</span>
+                      <span><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}</span>
                     </div>
-                    <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
-                    <span className="lens-room"><Building2 aria-hidden="true" />{row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</span>
-                    <span className="lens-days">
-                      {dayFlags(row).length
-                        ? dayFlags(row).map(day => <i key={day.key} title={day.label}>{day.label}</i>)
-                        : <b>بلا أيام</b>}
-                    </span>
-                  </article>
-                  {isSelected && selectedResult ? (
-                    <aside
-                      className="occupancy-pick query-result-detail"
-                      id={`query-result-detail-${row.id}`}
-                      aria-label={`تفاصيل ${course?.CourseName || row.AdCourseName || "الموعد"}`}
-                    >
-                      <header>
-                        <div>
-                          <small>تفاصيل الموعد</small>
-                          <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
-                        </div>
-                        <span className="occupancy-pick-count">الشعبة {row.SCode || "—"}</span>
-                        <button type="button" onClick={() => setSelectedResultId(null)} aria-label="إغلاق تفاصيل الموعد" title="إغلاق">
-                          <X aria-hidden="true" />
-                        </button>
-                      </header>
-                      <div className="occupancy-pick-rows">
-                        <article>
-                          <strong>{instructor?.AdInstructorName || "بدون أستاذ"}</strong>
-                          <span>{sectionById.get(row.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
-                          <em>{dayText(row) || "بلا أيام"}</em>
-                          <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
-                        </article>
-                        <article>
-                          <strong>{course?.CourseCode || "بدون رمز"}</strong>
-                          <span>{collegeById.get(row.AdCollegeId)?.AdCollegeName || "بدون كلية"}</span>
-                          <em>{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
-                          <span>{row.fdetail || "لا توجد ملاحظات"}</span>
-                        </article>
-                      </div>
-                    </aside>
-                  ) : null}
-                </React.Fragment>
+                  </div>
+                  <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                  <span className="lens-room"><Building2 aria-hidden="true" />{row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</span>
+                  <span className="lens-days">
+                    {dayFlags(row).length
+                      ? dayFlags(row).map(day => <i key={day.key} title={day.label}>{day.label}</i>)
+                      : <b>بلا أيام</b>}
+                  </span>
+                </article>
               );
             })}
             {results.length > visibleLimit ? (
               <div className="lens-more"><SecondaryButton onClick={() => setVisibleLimit(v => v + 150)}>المزيد</SecondaryButton></div>
             ) : null}
           </div>
+          {selectedResult ? (
+            <>
+              <div className="query-detail-backdrop no-print" onMouseDown={() => setSelectedResultId(null)} aria-hidden="true" />
+              <aside
+                className="occupancy-pick query-detail-panel no-print"
+                id="query-result-detail-panel"
+                role="dialog"
+                aria-label={`تفاصيل ${pickedCourse?.CourseName || selectedResult.AdCourseName || "الموعد"}`}
+              >
+                <header>
+                  <div>
+                    <small>تفاصيل الموعد</small>
+                    <strong>{pickedCourse?.CourseName || selectedResult.AdCourseName || "—"}</strong>
+                  </div>
+                  <span className="occupancy-pick-count">الشعبة {selectedResult.SCode || "—"}</span>
+                  <button type="button" onClick={() => setSelectedResultId(null)} aria-label="إغلاق التفاصيل" title="إغلاق">
+                    <X aria-hidden="true" />
+                  </button>
+                </header>
+                <div className="occupancy-pick-rows">
+                  <article>
+                    <strong>{pickedInstructor?.AdInstructorName || "بدون أستاذ"}</strong>
+                    <span>{sectionById.get(selectedResult.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
+                    <em>{dayText(selectedResult) || "بلا أيام"}</em>
+                    <time dir="ltr">{selectedResult.fstarttime}–{selectedResult.fendtime}</time>
+                  </article>
+                  <article>
+                    <strong>{pickedCourse?.CourseCode || "بدون رمز"}</strong>
+                    <span>{collegeById.get(selectedResult.AdCollegeId)?.AdCollegeName || "بدون كلية"}</span>
+                    <em>{[selectedResult.AdRoomCode, selectedResult.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
+                    <span>{selectedResult.fdetail || "لا توجد ملاحظات"}</span>
+                  </article>
+                </div>
+              </aside>
+            </>
+          ) : null}
+          </>
         ) : lens === "week" ? (
           <div className="lens-week">
             {/*

@@ -163,10 +163,13 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
           )
         : items;
     }, [items, query]),
-    selected = items.find((x) => x.AdInstructorId === selectedId) || null;
-  if (mode !== "index")
-    return (
-      <div className="content-stack editor-page">
+    selected =
+      filtered.find((x) => x.AdInstructorId === selectedId) || filtered[0] || null,
+    activeId = selected?.AdInstructorId ?? null;
+  const editorDrawer = mode !== "index" ? (
+      <>
+      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
+      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء أستاذ جديد" : "تعديل بيانات الأستاذ"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="تحقق الرقم المدني فعّال"
@@ -193,6 +196,9 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   value={civil}
                   onChange={(e) => onCivil(e.target.value)}
                   onBlur={validateCivil}
+                  aria-label="الرقم المدني"
+                  autoComplete="off"
+                  autoFocus
                   required
                 />
               </Field>
@@ -200,6 +206,8 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  aria-label="اسم أستاذ المقرر"
+                  autoComplete="name"
                   required
                 />
               </Field>
@@ -208,17 +216,24 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   inputMode="numeric"
                   maxLength={8}
                   value={mobile}
+                  aria-label="رقم الهاتف"
+                  autoComplete="tel"
                   onChange={(e) => {
                     if (/^\d*$/.test(e.target.value)) setMobile(e.target.value);
                   }}
                 />
               </Field>
             </div>
-            <FormActions onBack={back} loading={loading} />
+            <FormActions
+              onBack={back}
+              loading={loading}
+              submitLabel={mode === "create" ? "إضافة الأستاذ" : "حفظ التعديلات"}
+            />
           </form>
         </Surface>
-      </div>
-    );
+      </aside>
+      </>
+    ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
@@ -235,8 +250,9 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
         </PageTitle>
       )}
       {error ? <Notice>{error}</Notice> : null}
-      <div className="catalog-workspace">
+      <div className="catalog-workspace" aria-busy={loading}>
         <Surface className="catalog-master">
+          <h2 className="sr-only">قائمة أساتذة المقررات</h2>
           <ListToolbar
             value={query}
             onChange={setQuery}
@@ -251,9 +267,14 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                 <RecordCard
                   key={x.AdInstructorId}
                   onClick={() => setSelectedId(x.AdInstructorId)}
-                  className={selectedId === x.AdInstructorId ? "selected" : ""}
+                  className={activeId === x.AdInstructorId ? "selected" : ""}
                   icon={<UserRound />}
-                  title={x.AdInstructorName}
+                  title={(
+                    <>
+                      {x.AdInstructorName}
+                      {activeId === x.AdInstructorId ? <span className="sr-only">، محدد</span> : null}
+                    </>
+                  )}
                   subtitle={
                     x.AdInstructorMobile
                       ? `هاتف ${x.AdInstructorMobile}`
@@ -270,7 +291,11 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
               ))}
             </RecordDeck>
           ) : (
-            <EmptyState title="لا يوجد أستاذ مطابق" />
+            <EmptyState
+              title={query ? "لا يوجد أستاذ مطابق" : "لا يوجد أساتذة بعد"}
+              detail={query ? "جرّب الاسم أو الرقم المدني أو امسح البحث." : "أضف الأستاذ الأول ليصبح متاحًا عند بناء الجدول."}
+              action={query ? <SecondaryButton onClick={() => setQuery("")}>مسح البحث</SecondaryButton> : undefined}
+            />
           )}
           {filtered.length > visibleLimit ? (
             <div className="catalog-more">
@@ -281,7 +306,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
             </div>
           ) : null}
         </Surface>
-        <aside className="academic-inspector">
+        <aside className="academic-inspector" aria-label="تفاصيل الأستاذ المحدد" aria-live="polite">
           {selected ? (
             <>
               <div className="academic-inspector-icon">
@@ -325,6 +350,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
           )}
         </aside>
       </div>
+      {editorDrawer}
     </div>
   );
 }

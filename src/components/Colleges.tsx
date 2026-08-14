@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, Landmark, Route, Save, Search, Trash2 } from "lucide-react";
+import { Building2, ChevronDown, Landmark, Route, Save, Search, Trash2 } from "lucide-react";
 import {
   AddButton,
   EmbeddedAction,
@@ -30,6 +30,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
     [mobility, setMobility] = useState<any | null>(null),
+    [mobilityOpen, setMobilityOpen] = useState(false),
     [mobilityBusy, setMobilityBusy] = useState(false),
     [mobilitySaved, setMobilitySaved] = useState(false),
     /**
@@ -60,7 +61,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     void load();
   }, []);
   useEffect(() => {
-    if (!selectedId || mode !== "index") { setMobility(null); return; }
+    if (!selectedId || mode !== "index" || !mobilityOpen) { setMobility(null); return; }
     let cancelled = false;
     (async () => {
       setMobilityBusy(true);
@@ -75,7 +76,8 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
       } finally { if (!cancelled) setMobilityBusy(false); }
     })();
     return () => { cancelled = true; };
-  }, [selectedId, mode]);
+  }, [selectedId, mode, mobilityOpen]);
+  useEffect(() => setMobilityFind(""), [selectedId]);
   const openCreate = () => {
       setCode("");
       setName("");
@@ -179,10 +181,13 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
           )
         : items;
     }, [items, query]),
-    selected = items.find((x) => x.AdCollegeId === selectedId) || null;
-  if (mode !== "index")
-    return (
-      <div className="content-stack editor-page">
+    selected =
+      filtered.find((x) => x.AdCollegeId === selectedId) || filtered[0] || null,
+    activeId = selected?.AdCollegeId ?? null;
+  const editorDrawer = mode !== "index" ? (
+      <>
+      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
+      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء كلية جديدة" : "تعديل بيانات الكلية"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="قواعد الحفظ كما هي"
@@ -206,6 +211,9 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                 <input
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
+                  aria-label="رمز الكلية"
+                  autoComplete="off"
+                  autoFocus
                   required
                 />
               </Field>
@@ -213,15 +221,22 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  aria-label="اسم الكلية"
+                  autoComplete="organization"
                   required
                 />
               </Field>
             </div>
-            <FormActions onBack={back} loading={loading} />
+            <FormActions
+              onBack={back}
+              loading={loading}
+              submitLabel={mode === "create" ? "إنشاء الكلية" : "حفظ التعديلات"}
+            />
           </form>
         </Surface>
-      </div>
-    );
+      </aside>
+      </>
+    ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
@@ -238,8 +253,9 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
         </PageTitle>
       )}
       {error ? <Notice>{error}</Notice> : null}
-      <div className="catalog-workspace">
+      <div className="catalog-workspace" aria-busy={loading}>
         <Surface className="catalog-master">
+          <h2 className="sr-only">قائمة الكليات</h2>
           <ListToolbar
             value={query}
             onChange={setQuery}
@@ -254,19 +270,28 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                 <RecordCard
                   key={x.AdCollegeId}
                   onClick={() => setSelectedId(x.AdCollegeId)}
-                  className={selectedId === x.AdCollegeId ? "selected" : ""}
+                  className={activeId === x.AdCollegeId ? "selected" : ""}
                   icon={<Landmark />}
-                  title={x.AdCollegeName}
+                  title={(
+                    <>
+                      {x.AdCollegeName}
+                      {activeId === x.AdCollegeId ? <span className="sr-only">، محددة</span> : null}
+                    </>
+                  )}
                   subtitle="كيان أكاديمي"
                   meta={<MetaPill label="الرمز" value={x.AdCollegeCode} />}
                 />
               ))}
             </RecordDeck>
           ) : (
-            <EmptyState title="لا توجد كلية مطابقة" />
+            <EmptyState
+              title={query ? "لا توجد كلية مطابقة" : "لا توجد كليات بعد"}
+              detail={query ? "جرّب عبارة أخرى أو امسح البحث." : "أنشئ الكلية الأولى لبناء الهيكل الأكاديمي."}
+              action={query ? <SecondaryButton onClick={() => setQuery("")}>مسح البحث</SecondaryButton> : undefined}
+            />
           )}
         </Surface>
-        <aside className="academic-inspector">
+        <aside className="academic-inspector" aria-label="تفاصيل الكلية المحددة" aria-live="polite">
           {selected ? (
             <>
               <div className="academic-inspector-icon">
@@ -285,22 +310,35 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                   <b>{selected.AdCollegeId}</b>
                 </article>
               </div>
-              <section className="campus-mobility-card">
-                <div className="campus-mobility-head">
+              <section className="campus-mobility-card" aria-labelledby="college-mobility-title">
+                <button
+                  type="button"
+                  className="campus-mobility-head"
+                  onClick={() => setMobilityOpen((open) => !open)}
+                  aria-expanded={mobilityOpen}
+                  aria-controls="college-mobility-settings"
+                  style={{ width: "100%", textAlign: "start", marginBottom: mobilityOpen ? undefined : 0 }}
+                >
                   <span><Route /></span>
                   <div>
-                    <strong>رادار الانتقال بين المباني</strong>
+                    <strong id="college-mobility-title">رادار الانتقال بين المباني</strong>
                     <p>المباني تُكتشف تلقائياً · حدّد زمن المشي مرة واحدة</p>
                   </div>
-                </div>
+                  <ChevronDown
+                    aria-hidden="true"
+                    style={{ marginInlineStart: "auto", transform: mobilityOpen ? "rotate(180deg)" : undefined }}
+                  />
+                </button>
+                {mobilityOpen ? (
+                  <div id="college-mobility-settings">
                 {mobilityBusy && !mobility ? <div className="mobility-loading">جاري قراءة مباني الكلية…</div> : null}
                 {mobility ? <>
                   <div className="detected-buildings">
                     {(mobility.buildings || []).slice(0, 8).map((b: any) => <span key={b.code}><Building2 /> مبنى {b.code}<small>{b.count} استخدام تاريخي</small></span>)}
                   </div>
                   <div className="mobility-defaults">
-                    <label><span>افتراضي بين مبنيين غير مضبوطين</span><div><input type="number" min="1" max="120" value={mobility.profile?.defaultTravelMinutes || 15} onChange={e=>setMobility((m:any)=>({...m,profile:{...m.profile,defaultTravelMinutes:Number(e.target.value)}}))}/><b>دقيقة</b></div></label>
-                    <label><span>داخل المبنى نفسه</span><div><input type="number" min="0" max="30" value={mobility.profile?.sameBuildingMinutes || 3} onChange={e=>setMobility((m:any)=>({...m,profile:{...m.profile,sameBuildingMinutes:Number(e.target.value)}}))}/><b>دقيقة</b></div></label>
+                    <label><span>افتراضي بين مبنيين غير مضبوطين</span><div><input type="number" min="1" max="120" value={mobility.profile?.defaultTravelMinutes || 15} onChange={e=>{setMobility((m:any)=>({...m,profile:{...m.profile,defaultTravelMinutes:Number(e.target.value)}}));setMobilitySaved(false);}}/><b>دقيقة</b></div></label>
+                    <label><span>داخل المبنى نفسه</span><div><input type="number" min="0" max="30" value={mobility.profile?.sameBuildingMinutes || 3} onChange={e=>{setMobility((m:any)=>({...m,profile:{...m.profile,sameBuildingMinutes:Number(e.target.value)}}));setMobilitySaved(false);}}/><b>دقيقة</b></div></label>
                   </div>
                   {mobilityPairs.length ? (() => {
                     const needle = mobilityFind.trim().toLowerCase();
@@ -334,6 +372,8 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                   })() : <p className="mobility-empty">يظهر ضبط المسافات تلقائياً بعد أن يكتشف النظام مبنيين أو أكثر من جداول هذه الكلية.</p>}
                   <button type="button" className="mobility-save" onClick={saveMobility} disabled={mobilityBusy}><Save /> {mobilityBusy ? "جاري الحفظ…" : mobilitySaved ? "تم حفظ خريطة الحركة" : "حفظ أزمنة الانتقال"}</button>
                 </> : null}
+                  </div>
+                ) : null}
               </section>
               <div className="inspector-actions">
                 <PrimaryButton onClick={() => openEdit(selected)}>
@@ -356,6 +396,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
           )}
         </aside>
       </div>
+      {editorDrawer}
     </div>
   );
 }

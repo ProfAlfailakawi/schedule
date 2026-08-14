@@ -127,10 +127,13 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
           )
         : items;
     }, [items, colleges, query]),
-    selected = items.find((x) => x.AdSectionId === selectedId) || null;
-  if (mode !== "index")
-    return (
-      <div className="content-stack editor-page">
+    selected =
+      filtered.find((x) => x.AdSectionId === selectedId) || filtered[0] || null,
+    activeId = selected?.AdSectionId ?? null;
+  const editorDrawer = mode !== "index" ? (
+      <>
+      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
+      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء قسم جديد" : "تعديل بيانات القسم"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="القسم مرتبط بكليته"
@@ -154,6 +157,8 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 <select
                   value={collegeId}
                   onChange={(e) => setCollegeId(e.target.value)}
+                  aria-label="الكلية"
+                  autoFocus
                   required
                 >
                   <option value="">اختر ...</option>
@@ -168,6 +173,8 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 <input
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
+                  aria-label="رمز القسم العلمي"
+                  autoComplete="off"
                   required
                 />
               </Field>
@@ -175,15 +182,22 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 <input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  aria-label="اسم القسم العلمي"
+                  autoComplete="organization"
                   required
                 />
               </Field>
             </div>
-            <FormActions onBack={back} loading={loading} />
+            <FormActions
+              onBack={back}
+              loading={loading}
+              submitLabel={mode === "create" ? "إنشاء القسم" : "حفظ التعديلات"}
+            />
           </form>
         </Surface>
-      </div>
-    );
+      </aside>
+      </>
+    ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
@@ -200,8 +214,9 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
         </PageTitle>
       )}
       {error ? <Notice>{error}</Notice> : null}
-      <div className="catalog-workspace">
+      <div className="catalog-workspace" aria-busy={loading}>
         <Surface className="catalog-master">
+          <h2 className="sr-only">قائمة الأقسام العلمية</h2>
           <ListToolbar
             value={query}
             onChange={setQuery}
@@ -216,9 +231,14 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 <RecordCard
                   key={x.AdSectionId}
                   onClick={() => setSelectedId(x.AdSectionId)}
-                  className={selectedId === x.AdSectionId ? "selected" : ""}
+                  className={activeId === x.AdSectionId ? "selected" : ""}
                   icon={<Building2 />}
-                  title={x.AdSectionName}
+                  title={(
+                    <>
+                      {x.AdSectionName}
+                      {activeId === x.AdSectionId ? <span className="sr-only">، محدد</span> : null}
+                    </>
+                  )}
                   subtitle={
                     <span className="record-path">
                       <Landmark />
@@ -230,10 +250,14 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
               ))}
             </RecordDeck>
           ) : (
-            <EmptyState title="لا يوجد قسم مطابق" />
+            <EmptyState
+              title={query ? "لا يوجد قسم مطابق" : "لا توجد أقسام علمية بعد"}
+              detail={query ? "جرّب عبارة أخرى أو امسح البحث." : "أنشئ القسم الأول واربطه بكليته."}
+              action={query ? <SecondaryButton onClick={() => setQuery("")}>مسح البحث</SecondaryButton> : undefined}
+            />
           )}
         </Surface>
-        <aside className="academic-inspector">
+        <aside className="academic-inspector" aria-label="تفاصيل القسم المحدد" aria-live="polite">
           {selected ? (
             <>
               <div className="academic-inspector-icon">
@@ -277,6 +301,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
           )}
         </aside>
       </div>
+      {editorDrawer}
     </div>
   );
 }

@@ -214,10 +214,13 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
           )
         : items;
     }, [items, colleges, sections, query]),
-    selected = items.find((x) => x.AdCourseId === selectedId) || null;
-  if (mode !== "index")
-    return (
-      <div className="content-stack editor-page">
+    selected =
+      filtered.find((x) => x.AdCourseId === selectedId) || filtered[0] || null,
+    activeId = selected?.AdCourseId ?? null;
+  const editorDrawer = mode !== "index" ? (
+      <>
+      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
+      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء مقرر جديد" : "تعديل بيانات المقرر"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="مرتبط بالكلية والقسم"
@@ -244,6 +247,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                     setCollegeId(e.target.value);
                     setSectionId("");
                   }}
+                  aria-label="الكلية"
+                  autoFocus
                   required
                 >
                   <option value="">اختر ...</option>
@@ -259,6 +264,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   value={sectionId}
                   onChange={(e) => setSectionId(e.target.value)}
                   disabled={!collegeId}
+                  aria-label="القسم العلمي"
                   required
                 >
                   <option value="">اختر ...</option>
@@ -275,6 +281,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   value={code}
                   onChange={(e) => numeric(e.target.value, setCode)}
                   onBlur={validateCourseCode}
+                  aria-label="رمز المقرر الدراسي"
+                  autoComplete="off"
                   required
                 />
               </Field>
@@ -283,6 +291,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   list="course-name-suggestions"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  aria-label="اسم المقرر الدراسي"
+                  autoComplete="off"
                   required
                 />
                 <datalist id="course-name-suggestions">
@@ -296,6 +306,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   inputMode="numeric"
                   value={credit}
                   onChange={(e) => numeric(e.target.value, setCredit)}
+                  aria-label="الوحدات"
                   required
                 />
               </Field>
@@ -304,6 +315,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   inputMode="decimal"
                   value={hours}
                   onChange={(e) => decimal(e.target.value, setHours)}
+                  aria-label="الساعات"
                   required
                 />
               </Field>
@@ -312,14 +324,20 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   inputMode="numeric"
                   value={capacity}
                   onChange={(e) => numeric(e.target.value, setCapacity)}
+                  aria-label="السعة القصوى للطلبة"
                 />
               </Field>
             </div>
-            <FormActions onBack={back} loading={loading} />
+            <FormActions
+              onBack={back}
+              loading={loading}
+              submitLabel={mode === "create" ? "إنشاء المقرر" : "حفظ التعديلات"}
+            />
           </form>
         </Surface>
-      </div>
-    );
+      </aside>
+      </>
+    ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
@@ -440,6 +458,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
           )}
         </aside>
       </div>
+      {editorDrawer}
     </div>
   );
 }
