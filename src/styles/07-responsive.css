@@ -148,6 +148,21 @@
 
   body{font-size:14px}
 
+  /* --- The colour key on a phone --------------------------------------------
+     One row cannot hold a caption, a search box, a scrolling strip and a clear
+     button on a 375px screen — the strip is what gets crushed, and the strip is
+     the point. So the controls take the first line and the chips get a full
+     width of their own underneath, still scrolling sideways. */
+  .week-legend{flex-wrap:wrap;row-gap:8px}
+  .week-legend-cap{order:1}
+  .week-legend-search{order:2;flex:1;min-width:0}
+  .week-legend-search input{width:100%}
+  .week-legend-clear{order:3}
+  .week-legend-chips{order:4;flex-basis:100%;padding-block:1px}
+  /* A chip is a touch target before it is a label. */
+  .week-legend-chip{min-height:34px;max-width:none}
+  .week-legend-clear,.week-legend-search{min-height:34px}
+
   .app-main{padding:var(--s5) var(--gutter) calc(var(--s10) + 58px + env(safe-area-inset-bottom))}
   .content-stack{gap:var(--s4)}
 

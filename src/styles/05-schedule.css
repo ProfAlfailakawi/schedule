@@ -2684,6 +2684,27 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   padding:1px 6px;border-radius:var(--r-full);
   background:color-mix(in srgb,var(--accent) 14%,transparent);
 }
+/* Asking the key a question. Appears only once the strip overflows, which the
+   measurement put at about a dozen courses. */
+.week-legend-search{
+  flex:none;display:inline-flex;align-items:center;gap:5px;
+  min-height:28px;padding:0 9px;
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);
+  transition:border-color .16s var(--ease);
+}
+.week-legend-search:focus-within{border-color:var(--accent)}
+.week-legend-search svg{width:12px;height:12px;color:var(--muted);flex:none}
+.week-legend-search input{
+  width:118px;min-width:0;border:0;background:none;padding:0;
+  color:var(--ink);font-size:var(--t-xs);font-family:inherit;
+}
+.week-legend-search input:focus{outline:none}
+.week-legend-search input::placeholder{color:var(--muted-2,var(--muted))}
+.week-legend-search input::-webkit-search-cancel-button{cursor:pointer}
+.week-legend-none{
+  flex:none;font-size:var(--t-xs);color:var(--muted);padding-inline:4px;
+}
 .week-legend-chips{
   flex:1;min-width:0;
   display:flex;align-items:center;gap:6px;

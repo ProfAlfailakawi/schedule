@@ -274,10 +274,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
        on, every hue also gets a texture, so red/green pairs that look identical
        to a deuteranopic reader stay tellable apart. */
     [colorBlind, setColorBlind] = useState<boolean>(Boolean(savedPrefs.colorBlind)),
-    /* The legend's current focus: one colour identity lit, the rest hushed.
-       Its own state, deliberately separate from the lens and the x-ray so it
-       can never alter what either of them means. */
-    [hueFocus, setHueFocus] = useState<string | null>(null),
+    /* The legend's current focus: the colour identities lit, everything else
+       hushed. A set rather than a single key because the question a coordinator
+       actually asks is comparative — «where do these two collide?» — and one
+       lit course at a time cannot answer it. Its own state, deliberately
+       separate from the lens and the x-ray so it can never alter what either of
+       them means. */
+    [hueFocus, setHueFocus] = useState<Set<string>>(() => new Set()),
+    /* Measured, not guessed: at thirty-two courses the key is already 6.3×
+       wider than the strip that holds it — six screens of sideways scrolling
+       to find one name. Past a dozen the key needs a way to be asked. */
+    [legendQuery, setLegendQuery] = useState(""),
     /* Cards moved in the last minute, keyed to the undo entry that reverses
        them — the pill each one wears is the undo, in place. */
     [recentMoves, setRecentMoves] = useState<Record<number, string>>({}),
@@ -2838,18 +2845,53 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     return [...seen.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "ar"));
   }, [filteredRows, hueBy, courseById, instructorById]);
 
+  /* Arabic is written with and without its diacritics and with three shapes of
+     alef, so a raw substring match makes the reader spell a name exactly as the
+     catalogue happens to store it. Folding both sides means «الاذاعة» finds
+     «الإذاعة». */
+  const foldArabic = (value: string) =>
+    String(value || "")
+      .replace(/[ً-ْٰـ]/g, "")
+      .replace(/[إأآٱ]/g, "ا")
+      .replace(/ى/g, "ي")
+      .replace(/ة/g, "ه")
+      .toLowerCase()
+      .trim();
+
+  const legendShown = useMemo(() => {
+    const needle = foldArabic(legendQuery);
+    if (!needle) return hueLegend;
+    return hueLegend.filter(item => foldArabic(item.label).includes(needle));
+  }, [hueLegend, legendQuery]);
+
+  /* The search only earns its place once the strip overflows; below that the
+     chips are all visible and a box would be furniture. */
+  const legendSearchable = hueLegend.length > 12;
+
   /* A focus is only meaningful against the rows it was chosen from: when the
      scope or the colour's meaning changes, the old key names nothing.
      Closing the tools closes the focus too — the key is the only way to lift a
      focus, so a hidden key with the grid still hushed would be a trap with no
      way out. */
-  useEffect(() => { setHueFocus(null); }, [hueBy, filterTerm, filterSection, filterCollege, workspaceToolsOpen]);
+  useEffect(() => {
+    setHueFocus(new Set());
+    setLegendQuery("");
+  }, [hueBy, filterTerm, filterSection, filterCollege, workspaceToolsOpen]);
 
   /* Applied to a card or a band while the legend holds a focus. Additive and
      self-contained — it neither reads nor writes the lens or the x-ray, so
      whatever those two mean is exactly what they meant before. */
   const hueFocusClass = (r: FSchedule) =>
-    !hueFocus ? "" : hueIdentity(r).key === hueFocus ? "hue-lit" : "hue-shade";
+    !hueFocus.size ? "" : hueFocus.has(hueIdentity(r).key) ? "hue-lit" : "hue-shade";
+
+  /* Toggling one identity in or out of the lit set. */
+  const toggleHueFocus = (key: string) =>
+    setHueFocus(current => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   /**
    * Colour as information.
@@ -4843,18 +4885,37 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               <div className="week-legend" role="group" aria-label="مفتاح الألوان">
                 <span className="week-legend-cap">
                   {hueBy === "course" ? "المقررات" : "الأساتذة"}
-                  <b className="num">{hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}</b>
+                  <b className="num">
+                    {legendQuery
+                      ? `${legendShown.length.toLocaleString("ar-KW-u-nu-latn")}/${hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}`
+                      : hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}
+                  </b>
                 </span>
+                {legendSearchable ? (
+                  <span className="week-legend-search">
+                    <Search aria-hidden="true" />
+                    <input
+                      type="search"
+                      value={legendQuery}
+                      onChange={e => setLegendQuery(e.target.value)}
+                      placeholder={hueBy === "course" ? "ابحث عن مقرر…" : "ابحث عن أستاذ…"}
+                      aria-label="تصفية مفتاح الألوان"
+                    />
+                  </span>
+                ) : null}
                 <div className="week-legend-chips">
-                  {hueLegend.map(item => (
+                  {legendShown.length === 0 ? (
+                    <span className="week-legend-none">لا مطابقة</span>
+                  ) : null}
+                  {legendShown.map(item => (
                     <button
                       key={item.key}
                       type="button"
-                      className={`week-legend-chip ${hueFocus === item.key ? "is-on" : ""}`}
+                      className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
                       style={{ ["--hue" as any]: item.hue, ...textureFor(item.hue) }}
-                      aria-pressed={hueFocus === item.key}
-                      title={`${item.label} — ${item.count} موعداً · اضغط لإبراز كل حصصه`}
-                      onClick={() => setHueFocus(v => (v === item.key ? null : item.key))}
+                      aria-pressed={hueFocus.has(item.key)}
+                      title={`${item.label} — ${item.count} موعداً · اضغط لإبراز حصصه، واضغط غيره لتقارن الاثنين`}
+                      onClick={() => toggleHueFocus(item.key)}
                     >
                       <i aria-hidden="true" />
                       <span>{item.label}</span>
@@ -4862,9 +4923,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     </button>
                   ))}
                 </div>
-                {hueFocus ? (
-                  <button type="button" className="week-legend-clear" onClick={() => setHueFocus(null)}>
+                {hueFocus.size ? (
+                  <button
+                    type="button"
+                    className="week-legend-clear"
+                    onClick={() => setHueFocus(new Set())}
+                    title={`${hueFocus.size} مُبرَز — أعد إظهار الجدول كاملاً`}
+                  >
                     <X aria-hidden="true" />عرض الكل
+                    {hueFocus.size > 1 ? <b className="num">{hueFocus.size.toLocaleString("ar-KW-u-nu-latn")}</b> : null}
                   </button>
                 ) : null}
               </div>
