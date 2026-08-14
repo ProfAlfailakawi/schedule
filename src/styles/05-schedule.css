@@ -123,6 +123,42 @@
 .agenda-index{
   font:500 var(--t-xs)/1 var(--font-mono);color:var(--muted-2);
   font-variant-numeric:tabular-nums;
+  /* Anchors the hue rail below. ::before here is free — the card's own ::before
+     belongs to «جارية الآن» and its ::after to the just-changed flash, so the
+     colour identity is hung on the index instead and can never collide. */
+  position:relative;
+}
+/* --- The course colour, carried into the list --------------------------------
+   A lecture wears one colour everywhere: the grid card, the band, the fan, the
+   hover card — and now the row. The rail sits on the reading edge of the index
+   and wakes when the row is hovered, so the list gains an identity without
+   gaining noise. */
+.agenda-index::before{
+  content:"";position:absolute;
+  inset-inline-start:-10px;inset-block-start:50%;
+  transform:translateY(-50%);
+  width:3px;height:16px;border-radius:var(--r-full);
+  background:hsl(var(--hue,158) 55% 55%);
+  opacity:.42;
+  transition:height .2s var(--ease),opacity .2s var(--ease),box-shadow .2s var(--ease);
+}
+.agenda-card:hover .agenda-index::before,
+.agenda-card:focus-within .agenda-index::before{
+  height:30px;opacity:1;
+  box-shadow:0 0 10px -2px hsl(var(--hue,158) 60% 55% / .8);
+}
+/* The seal before the name — the exact dot the hover card wears, so the eye
+   crossing from list to peek recognises the same lecture. */
+.agenda-title-row>strong{position:relative;padding-inline-start:15px}
+.agenda-title-row>strong::before{
+  /* Held 3px in from the edge so the ring clears the title's own overflow clip. */
+  content:"";position:absolute;inset-inline-start:3px;inset-block-start:.44em;
+  width:8px;height:8px;border-radius:var(--r-full);
+  background:hsl(var(--hue,158) 58% 55%);
+  box-shadow:0 0 0 3px hsl(var(--hue,158) 58% 55% / .18);
+}
+@media (prefers-reduced-motion:reduce){
+  .agenda-index::before{transition:none}
 }
 .agenda-core{min-width:0}
 .agenda-title-row{display:flex;align-items:center;gap:var(--s2);min-width:0;flex-wrap:wrap}
@@ -846,19 +882,34 @@
    painted on the viewport instead: it cannot be clipped by anything, and it
    keeps itself inside the window on every edge. */
 .week-peek{
+  --peek-hue:hsl(var(--hue,158) 62% 62%);
   position:fixed;z-index:400;
   width:max-content;min-width:200px;max-width:320px;
   padding:var(--s3) var(--s4);
+  /* The course colour rides in as a left spine — the same identity the card and
+     the band carry, so the hover card reads as the same lecture, not a new one. */
   border-radius:var(--r-md);
-  border:1px solid color-mix(in srgb,#fff 12%,transparent);
-  background:color-mix(in srgb,var(--nav) 97%,transparent);
+  border:1px solid color-mix(in srgb,var(--peek-hue) 22%,color-mix(in srgb,#fff 12%,transparent));
+  border-inline-start:3px solid var(--peek-hue);
+  background:
+    radial-gradient(120% 100% at 0% 0%,color-mix(in srgb,var(--peek-hue) 12%,transparent),transparent 60%),
+    color-mix(in srgb,var(--nav) 97%,transparent);
   color:#f2f6f3;
-  box-shadow:var(--shadow-lg);
+  box-shadow:0 10px 30px -12px color-mix(in srgb,var(--peek-hue) 40%,transparent),var(--shadow-lg);
   pointer-events:none;
   animation:peek-in .13s var(--ease-out) both;
 }
 @keyframes peek-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-.week-peek strong{display:block;font-size:var(--t-sm);line-height:1.35;font-weight:650}
+.week-peek strong{
+  display:block;font-size:var(--t-sm);line-height:1.35;font-weight:650;
+  /* A hue dot before the title seals the identity without shouting. */
+  padding-inline-start:14px;position:relative;
+}
+.week-peek strong::before{
+  content:"";position:absolute;inset-inline-start:0;inset-block-start:.42em;
+  width:8px;height:8px;border-radius:var(--r-full);
+  background:var(--peek-hue);box-shadow:0 0 0 3px color-mix(in srgb,var(--peek-hue) 22%,transparent);
+}
 .week-peek em{display:block;margin-top:2px;font-style:normal;font-size:var(--t-xs);opacity:.86}
 .week-peek dl{
   display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px var(--s3);
@@ -2526,9 +2577,52 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    A fixed panel rather than a child of the column, so no overflow clips it
    and a lecture can be dragged out of it across the whole grid. Sits under
    the peek (z400) and over everything else on the page. */
+/* --- Loading, drawn as light -------------------------------------------------
+   Placeholder blocks in the shape of the view about to load, each catching a
+   slow sheen of accent light. Desynced by index so the board breathes rather
+   than blinks. Inert — no data, no interaction. */
+.sched-skeleton-surface{overflow:hidden}
+.sched-skeleton{
+  --sk-base:color-mix(in srgb,var(--ink) 6%,var(--surface-2));
+  --sk-sheen:color-mix(in srgb,var(--accent) 12%,var(--surface-3));
+}
+.sched-skeleton .sk-line,
+.sched-skeleton .sk-chip,
+.sched-skeleton .sk-card,
+.sched-skeleton .sk-col-head{
+  display:block;border-radius:var(--r-sm);
+  background:linear-gradient(100deg,var(--sk-base) 28%,var(--sk-sheen) 50%,var(--sk-base) 72%);
+  background-size:220% 100%;
+  animation:sk-shimmer 1.4s ease-in-out infinite,sk-fade .42s var(--ease-out) both;
+  animation-delay:calc(var(--i,0)*-130ms),calc(var(--i,0)*42ms);
+}
+@keyframes sk-shimmer{from{background-position:180% 0}to{background-position:-40% 0}}
+@keyframes sk-fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.sched-skeleton-week{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;padding:6px}
+.sched-skeleton-week.is-rooms{grid-template-columns:repeat(6,minmax(0,1fr))}
+.sk-col{display:flex;flex-direction:column;gap:8px}
+.sk-col-head{height:22px;width:72%;border-radius:var(--r-full)}
+.sk-card{width:100%;border-radius:var(--r-xs)}
+.sched-skeleton-list{display:flex;flex-direction:column;gap:12px;padding:6px}
+.sk-row{display:flex;align-items:center;gap:12px}
+.sk-line{height:13px}
+.sk-line.sk-dim{opacity:.62}
+.sk-chip{width:62px;height:22px;border-radius:var(--r-full);margin-inline-start:auto;flex:none}
+@media (max-width:640px){
+  .sched-skeleton-week,.sched-skeleton-week.is-rooms{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media (prefers-reduced-motion:reduce){
+  .sched-skeleton .sk-line,.sched-skeleton .sk-chip,.sched-skeleton .sk-card,.sched-skeleton .sk-col-head{animation:sk-fade .42s var(--ease-out) both}
+}
+
 .week-fan-backdrop{
   position:fixed;inset:0;z-index:340;
-  background:color-mix(in srgb,var(--ink) 12%,transparent);
+  background:
+    radial-gradient(120% 90% at 50% 40%,transparent 30%,color-mix(in srgb,var(--ink) 16%,transparent) 100%),
+    color-mix(in srgb,var(--ink) 10%,transparent);
+  -webkit-backdrop-filter:blur(2px) saturate(1.05);
+  backdrop-filter:blur(2px) saturate(1.05);
+  animation:fade .22s var(--ease-out) both;
 }
 .week-fan{
   position:fixed;z-index:350;
@@ -2536,15 +2630,31 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   max-height:min(470px,80vh);
   display:flex;flex-direction:column;gap:8px;
   padding:14px;
-  background:var(--surface);
-  border:1px solid var(--line);
+  /* A whisper of light across the top edge lifts the panel off the backdrop —
+     the sheet catches the room's light rather than sitting flat on it. */
+  background:
+    linear-gradient(180deg,color-mix(in srgb,var(--accent) 5%,transparent),transparent 68px),
+    var(--surface);
+  border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));
   border-radius:var(--r-lg);
-  box-shadow:var(--shadow-lg);
+  box-shadow:
+    0 1px 0 0 color-mix(in srgb,#fff 6%,transparent) inset,
+    var(--shadow-lg);
   animation:sheet-up .3s var(--ease-spring) both;
 }
-.week-fan>header{display:flex;align-items:center;gap:8px}
-.week-fan>header b{flex:1;font-size:var(--t-sm);font-weight:650}
-.week-fan>header time{font:600 10.5px var(--font-mono);color:var(--muted)}
+.week-fan>header{display:flex;align-items:center;gap:8px;padding-bottom:9px;position:relative}
+/* A gradient hairline seals the header off from the deck without a hard rule. */
+.week-fan>header::after{
+  content:"";position:absolute;inset-inline:-2px;bottom:0;height:1px;
+  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 34%,var(--line)) 22%,color-mix(in srgb,var(--accent) 34%,var(--line)) 78%,transparent);
+}
+.week-fan>header b{flex:1;font-size:var(--t-sm);font-weight:650;letter-spacing:-.1px}
+.week-fan>header time{
+  font:650 10.5px var(--font-mono);color:var(--accent-ink,var(--accent));
+  padding:2px 7px;border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  letter-spacing:.2px;
+}
 .week-fan>header button{
   width:26px;height:26px;display:grid;place-items:center;
   border-radius:var(--r-full);color:var(--muted);
@@ -2553,6 +2663,67 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-fan>header button:hover{background:var(--surface-3);color:var(--ink)}
 .week-fan>header button svg{width:14px;height:14px}
 .week-fan>p{font-size:var(--t-xs);color:var(--muted);line-height:1.55}
+/* --- The wall, drawn ---------------------------------------------------------
+   A 32-bucket sweep of the hour: each bar is how many lectures are live at that
+   instant. It turns «9 معاً» from a number into a shape — a spike at noon reads
+   as a wall, a plateau reads as a long crowded stretch. Decorative and inert. */
+.fan-crowd{display:flex;flex-direction:column;gap:5px}
+.fan-crowd-cap{
+  display:flex;align-items:center;gap:6px;
+  font-size:var(--t-xs);color:var(--muted);letter-spacing:-.1px;
+}
+.fan-crowd-cap .num{
+  font:700 11px var(--font-mono);color:var(--accent-ink,var(--accent));
+  padding:1px 6px;border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--accent) 14%,transparent);
+}
+.fan-crowd-bars{
+  display:flex;align-items:flex-end;gap:2px;height:30px;
+  padding:4px 6px;border-radius:var(--r-sm);
+  background:color-mix(in srgb,var(--ink) 5%,var(--surface-2));
+  border:1px solid color-mix(in srgb,var(--line) 70%,transparent);
+}
+.fan-crowd-bars i{
+  flex:1 1 0;min-width:0;height:var(--h,10%);
+  border-radius:2px 2px 1px 1px;
+  background:color-mix(in srgb,var(--accent) calc(var(--lit,.6)*100%),var(--surface-3));
+  transform-origin:bottom;animation:crowd-rise .5s var(--ease-spring) both;
+  animation-delay:calc(var(--i,0)*8ms);
+}
+.fan-crowd-bars i[data-peak="true"]{
+  background:linear-gradient(180deg,color-mix(in srgb,var(--brass) 92%,transparent),var(--accent));
+  box-shadow:0 0 8px -2px color-mix(in srgb,var(--brass) 70%,transparent);
+}
+@keyframes crowd-rise{from{transform:scaleY(.04);opacity:0}to{transform:scaleY(1);opacity:1}}
+/* The axis: one slot per bucket, mirroring the bars' own track, so the caret
+   lands exactly under the wall it marks. */
+.fan-crowd-axis{
+  display:flex;gap:2px;height:5px;margin-top:-1px;padding:0 6px;
+}
+.fan-crowd-axis i{flex:1 1 0;min-width:0;position:relative}
+.fan-crowd-axis i[data-peak="true"]::after{
+  content:"";position:absolute;inset-inline:0;inset-block-start:1px;height:3px;
+  border-radius:var(--r-full);
+  background:var(--brass);
+  box-shadow:0 0 7px -1px color-mix(in srgb,var(--brass) 80%,transparent);
+  animation:fade .5s var(--ease-out) both;animation-delay:.28s;
+}
+.fan-crowd-scale{
+  display:flex;justify-content:space-between;padding:0 6px;
+  font:600 8.5px var(--font-mono);color:var(--muted-2,var(--muted));
+  letter-spacing:.2px;opacity:.75;
+}
+/* «الذروة 11:00» — the hour the wall stands, said in words beside the count. */
+.fan-crowd-at{
+  font-style:normal;margin-inline-start:auto;
+  display:inline-flex;align-items:center;gap:3px;
+  font-size:var(--t-xs);color:var(--brass);
+}
+.fan-crowd-at time{font:650 10px var(--font-mono);letter-spacing:.2px}
+@media (prefers-reduced-motion:reduce){
+  .fan-crowd-bars i{animation:none}
+  .fan-crowd-axis i[data-peak="true"]::after{animation:none}
+}
 .week-fan-cards{
   overflow-y:auto;overscroll-behavior:contain;
   display:flex;flex-direction:column;gap:6px;
@@ -2580,6 +2751,49 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-fan-slot .week-title{line-height:1.45;-webkit-line-clamp:2;padding-block-end:2px}
 .week-fan-slot .week-who{line-height:1.5;padding-block-end:2px}
 .week-fan-slot .week-when{display:flex;margin-top:2px}
+
+/* --- The deck is colour-coded ------------------------------------------------
+   In the grid every card wears the accent so a lane reads as one instrument.
+   In the fan the whole point is to tell eight overlapping lectures APART, so
+   each card is tinted by its own course hue: two runs of the same course share
+   a colour, a different course stands out at a glance. Scoped to the fan and
+   guarded by :not() so a selected / lensed / flagged card keeps its own state
+   colour untouched — the schedule's own logic is never overridden. */
+.week-fan-slot .week-event{--fan-hue:var(--hue,158)}
+.week-fan-slot .week-event:not(.week-picked):not(.review-flagged){
+  border-color:color-mix(in srgb,hsl(var(--fan-hue) 46% 50%) 26%,var(--line));
+  border-inline-start-color:hsl(var(--fan-hue) 58% 52%);
+}
+:root[data-theme="dark"] .week-fan-slot .week-event:not(.week-picked):not(.review-flagged){
+  border-color:color-mix(in srgb,hsl(var(--fan-hue) 40% 56%) 30%,var(--line));
+  border-inline-start-color:hsl(var(--fan-hue) 52% 60%);
+}
+/* Hover choreography: the card lifts a hair toward the reader and its spine
+   throws a soft coloured light — the one you are about to grab announces itself.
+   No transform is used (physics owns transform during a drag); only shadow and
+   the spine width move, so a hover can never collide with a lift-in-progress. */
+.week-fan-slot .week-event{
+  transition:box-shadow .18s var(--ease),border-inline-start-width .16s var(--ease),background .2s var(--ease);
+}
+.week-fan-slot .week-event:hover{
+  border-inline-start-width:5px;
+  box-shadow:
+    0 6px 18px -8px hsl(var(--fan-hue,158) 55% 45% / .5),
+    var(--shadow-sm);
+}
+.week-fan-slot .week-event:focus-visible{
+  outline:2px solid hsl(var(--fan-hue,158) 60% 55%);outline-offset:1px;
+}
+/* The deal: each card lands a beat after the last, sliding in along the spine. */
+.week-fan-slot{animation:fan-deal .38s var(--ease-spring) both;animation-delay:calc(var(--i,0)*32ms)}
+@keyframes fan-deal{
+  from{opacity:0;transform:translateY(12px) translateX(6px) scale(.975)}
+  to{opacity:1;transform:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .week-fan-slot{animation:none}
+  .week-fan-slot .week-event{transition:none}
+}
 
 /* --- Narrow cards stay horizontal --------------------------------------------
    Tried sideways, rejected in the field: this grid reads horizontally at

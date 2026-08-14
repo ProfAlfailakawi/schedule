@@ -15,6 +15,45 @@ import { ConsoleRail } from "./ui";
  * bookmarks and the browser's back button behave exactly as before.
  */
 
+/**
+ * The catalogue, drawn as light while its chunk arrives.
+ *
+ * A spinner says «wait»; a skeleton says «this is what is coming». Every one of
+ * the five catalogues opens in the same master-detail shape — a searchable list
+ * on one side, the selected record on the other — so the placeholder can be that
+ * exact shape and the real screen simply resolves into it. Inert: no data, no
+ * interaction, no state.
+ */
+function CatalogSkeleton() {
+  return (
+    <div className="catalog-skeleton" role="status" aria-busy="true">
+      <span className="sr-only">يجري تحميل السجل الأكاديمي</span>
+      {/* Master first, exactly as the real workspace orders it: the searchable
+          list holds the 34% column, the open record takes the rest. */}
+      <div className="csk-list">
+        <span className="csk-line csk-search" />
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div className="csk-row" key={i} style={{ ["--i" as any]: i }}>
+            <span className="csk-line" style={{ width: `${64 - (i % 3) * 11}%` }} />
+            <span className="csk-line csk-dim" style={{ width: `${40 + (i % 4) * 7}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="csk-detail">
+        <span className="csk-mark" />
+        <span className="csk-line csk-kicker" />
+        <span className="csk-line csk-title" />
+        <span className="csk-line csk-sub" />
+        <div className="csk-grid">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <span className="csk-box" key={i} style={{ ["--i" as any]: i }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
     factory().catch((err) => {
@@ -109,7 +148,7 @@ export default function AcademicConsole({
         />
         <div className="console-action-slot no-print" ref={setActionSlot} />
       </div>
-      <Suspense fallback={<div className="view-loading" aria-busy="true"><span /></div>}>
+      <Suspense fallback={<CatalogSkeleton />}>
         {active === "terms" ? <Terms embedded actionSlot={actionSlot} /> : null}
         {active === "colleges" ? <Colleges embedded actionSlot={actionSlot} /> : null}
         {active === "sections" ? <Sections embedded actionSlot={actionSlot} /> : null}

@@ -152,10 +152,10 @@ const SLOT_H = 46;
  * it slides back in. Nothing it says can be clipped by a column, which was the
  * entire failure of the version it replaces.
  */
-function WeekPeek({ anchor, title, who, code, section, days: dayText, from, to, room }: {
+function WeekPeek({ anchor, title, who, code, section, days: dayText, from, to, room, hue }: {
   anchor: { x: number; y: number };
   title: string; who: string; code: string; section: string;
-  days: string; from: string; to: string; room: string;
+  days: string; from: string; to: string; room: string; hue?: number;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [box, setBox] = useState<{ left: number; top: number } | null>(null);
@@ -176,7 +176,12 @@ function WeekPeek({ anchor, title, who, code, section, days: dayText, from, to, 
       className="week-peek"
       ref={ref}
       role="tooltip"
-      style={box ? { left: box.left, top: box.top } : { left: -9999, top: -9999 }}
+      style={{
+        ...(box ? { left: box.left, top: box.top } : { left: -9999, top: -9999 }),
+        // The same course hue the card and the band wear — one colour identity
+        // followed from the grid to the hover card, so the eye keeps its thread.
+        ...(hue != null ? { ["--hue" as any]: hue } : null),
+      }}
     >
       <strong>{title}</strong>
       <em>{who}</em>
@@ -186,6 +191,49 @@ function WeekPeek({ anchor, title, who, code, section, days: dayText, from, to, 
         <dt>الوقت</dt><dd dir="ltr">{from} – {to}</dd>
         <dt>القاعة</dt><dd dir="ltr">{room || "—"}</dd>
       </dl>
+    </div>
+  );
+}
+
+/**
+ * The board, drawn as light before its data arrives.
+ *
+ * A schedule loads by fetching a term's rows, and for a beat the surface was
+ * black — the reader could not tell «loading» from «empty». A skeleton in the
+ * exact shape of the view about to appear (day columns, a list, a room grid)
+ * turns that beat into a promise: this is where the week will be. Pure
+ * presentation; it renders nothing but shimmering placeholders and reads no
+ * scheduling state.
+ */
+function ScheduleSkeleton({ viewMode }: { viewMode: "week" | "list" | "rooms" }) {
+  if (viewMode === "list") {
+    return (
+      <div className="sched-skeleton sched-skeleton-list" role="status" aria-label="يجري تحميل المواعيد">
+        {Array.from({ length: 7 }).map((_, i) => (
+          <div className="sk-row" key={i} style={{ ["--i" as any]: i }}>
+            <span className="sk-line" style={{ width: `${52 - (i % 3) * 9}%` }} />
+            <span className="sk-line sk-dim" style={{ width: `${26 + (i % 4) * 6}%` }} />
+            <span className="sk-chip" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  const cols = viewMode === "rooms" ? 6 : 5;
+  return (
+    <div className={`sched-skeleton sched-skeleton-week ${viewMode === "rooms" ? "is-rooms" : ""}`} role="status" aria-label="يجري تحميل الجدول">
+      {Array.from({ length: cols }).map((_, c) => (
+        <div className="sk-col" key={c} style={{ ["--i" as any]: c }}>
+          <span className="sk-col-head" />
+          {Array.from({ length: 3 + ((c * 2) % 3) }).map((_, r) => (
+            <span
+              className="sk-card"
+              key={r}
+              style={{ height: 34 + ((c * 17 + r * 29) % 52), ["--i" as any]: c + r }}
+            />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -4185,7 +4233,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         experience={experience}
         onEnsureWeek={() => setViewMode("week")}
       />
-      {presentationMode ? (
+      {rowsLoading && !rows.length ? (
+        <Surface className="sched-skeleton-surface">
+          <ScheduleSkeleton viewMode={viewMode} />
+        </Surface>
+      ) : presentationMode ? (
         <CinemaView />
       ) : viewMode === "list" ? (
         <Surface className="schedule-agenda-surface">
@@ -4205,6 +4257,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   <article
                     className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""}`}
                     key={s.id}
+                    /* The course's own colour, carried into the list so a lecture
+                       looks the same here as it does in the grid, the fan and the
+                       hover card. A variable only — every state colour the card
+                       already owns (running, x-ray, just-changed) still wins. */
+                    style={{ ["--hue" as any]: hueFor(c?.CourseCode || s.AdCourseName || "—", s.AdCourseName || c?.CourseName || "", i?.AdInstructorName) }}
                     onClick={() => runVisualTransition(() => setXrayId((v) => (v === s.id ? null : s.id)))}
                     onDoubleClick={() => openEdit(s)}
                     tabIndex={0}
@@ -5127,6 +5184,35 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             if (!day) return null;
             const panelLeft = Math.max(12, Math.min(fanned.x - 160, window.innerWidth - 336));
             const panelTop = Math.max(66, Math.min(fanned.y - 8, window.innerHeight - 440));
+            /* The crowd profile: sweep the bundle's own span into buckets and count
+               how many lectures are live in each. It draws the real wall — a nine
+               that all lands at noon spikes; a nine spread across the morning stays
+               flat. Pure read of the rows already in hand; touches no scheduling
+               state, so it can never move a lecture. */
+            const crowdSpans = bundle.rows
+              .map(r => ({ s: mins(r.fstarttime), e: mins(r.fendtime) }))
+              .filter(x => Number.isFinite(x.s) && Number.isFinite(x.e) && x.e > x.s);
+            const crowdLo = crowdSpans.length ? Math.min(...crowdSpans.map(x => x.s)) : 0;
+            const crowdHi = crowdSpans.length ? Math.max(...crowdSpans.map(x => x.e)) : 0;
+            const CROWD_BUCKETS = 32;
+            const crowd = crowdHi > crowdLo
+              ? Array.from({ length: CROWD_BUCKETS }, (_, k) => {
+                  const t = crowdLo + ((crowdHi - crowdLo) * (k + 0.5)) / CROWD_BUCKETS;
+                  return crowdSpans.filter(x => x.s <= t && t < x.e).length;
+                })
+              : [];
+            const crowdPeak = crowd.reduce((m, v) => Math.max(m, v), 1);
+            /* When the wall stands. The first bucket that reaches the peak, read
+               back as a clock time — so the strip says not just «how many» but
+               «at what hour», which is the number a coordinator acts on. */
+            const crowdPeakAt = (() => {
+              if (crowd.length < 2 || crowdPeak < 2) return "";
+              const k = crowd.indexOf(crowdPeak);
+              if (k < 0) return "";
+              const t = crowdLo + ((crowdHi - crowdLo) * (k + 0.5)) / CROWD_BUCKETS;
+              const h = Math.floor(t / 60), m = Math.round(t % 60);
+              return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+            })();
             return (
               <>
                 <div className="week-fan-backdrop" onClick={() => setFanned(null)} />
@@ -5141,6 +5227,40 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     <time dir="ltr">{bundle.from}–{bundle.to}</time>
                     <button type="button" onClick={() => setFanned(null)} aria-label="إغلاق المروحة"><X aria-hidden="true" /></button>
                   </header>
+                  {crowd.length > 1 ? (
+                    <div className="fan-crowd" role="img" aria-label={`أعلى تزامن ${crowdPeak} محاضرات في وقت واحد`}>
+                      <span className="fan-crowd-cap">
+                        التزامن عبر الساعة
+                        {crowdPeakAt ? <i className="fan-crowd-at">الذروة <time dir="ltr">{crowdPeakAt}</time></i> : null}
+                        <b className="num">{crowdPeak}</b>
+                      </span>
+                      <div className="fan-crowd-bars">
+                        {crowd.map((v, k) => (
+                          <i
+                            key={k}
+                            data-peak={v === crowdPeak && crowdPeak > 1 ? "true" : undefined}
+                            style={{
+                              ["--h" as any]: `${Math.max(8, Math.round((v / crowdPeak) * 100))}%`,
+                              ["--lit" as any]: (0.35 + 0.65 * (v / crowdPeak)).toFixed(3),
+                              ["--i" as any]: k,
+                            }}
+                          />
+                        ))}
+                      </div>
+                      {/* The axis rides the same flex track as the bars — one slot
+                          per bucket — so the caret under the wall is aligned by
+                          construction, in either writing direction, with no maths. */}
+                      <div className="fan-crowd-axis" aria-hidden="true">
+                        {crowd.map((v, k) => (
+                          <i key={k} data-peak={v === crowdPeak && crowdPeak > 1 ? "true" : undefined} />
+                        ))}
+                      </div>
+                      <div className="fan-crowd-scale" aria-hidden="true">
+                        <time dir="ltr">{bundle.from}</time>
+                        <time dir="ltr">{bundle.to}</time>
+                      </div>
+                    </div>
+                  ) : null}
                   <p>اسحب أي بطاقة من هنا إلى الشبكة مباشرة — المروحة تبقى مفتوحة حتى يهبط النقل.</p>
                   <div className="week-fan-cards">
                     {bundle.rows.map((row, index) => (
@@ -5174,6 +5294,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               from={peek.row.fstarttime}
               to={peek.row.fendtime}
               room={[peek.row.AdRoomCode, peek.row.AdRoomHall].filter(Boolean).join("/")}
+              hue={hueFor(
+                courseById.get(peek.row.AdCourseId)?.CourseCode || peek.row.AdCourseName || "—",
+                peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "",
+                instructorById.get(peek.row.AdInstructorId)?.AdInstructorName,
+              )}
             />
           ) : null}
           <SchedulePhysicsLayer

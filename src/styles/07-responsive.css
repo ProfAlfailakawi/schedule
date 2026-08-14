@@ -72,8 +72,8 @@
    ≤ 1100px — two-column workspaces become one column.
    -------------------------------------------------------------------------- */
 @media screen and (max-width:1100px){
-  .catalog-workspace,.master-detail-shell,.audit-master-detail{grid-template-columns:minmax(0,1fr)}
-  .catalog-master,.master-pane{border-inline-start:0;border-bottom:1px solid var(--line)}
+  .catalog-workspace,.master-detail-shell,.audit-master-detail,.catalog-skeleton{grid-template-columns:minmax(0,1fr)}
+  .catalog-master,.master-pane,.catalog-skeleton .csk-list{border-inline-start:0;border-bottom:1px solid var(--line)}
   .catalog-master>.record-deck,.master-list{max-height:min(50vh,460px)}
   .academic-inspector,.inspector-pane{max-height:none;position:static}
 
