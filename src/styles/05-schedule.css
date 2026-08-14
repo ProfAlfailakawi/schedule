@@ -1350,7 +1350,19 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 /* Four things per row, so four columns: the code, who and what, when, where.
    Three columns left the room to wrap onto its own line and the course name to
    run straight into the instructor's. */
-.preview-list{display:flex;flex-direction:column;margin-top:var(--s4)}
+/* The per-record list is opt-in: the counts drive the copy decision, so the
+   list of someone else's schedule stays folded behind this toggle. */
+.preview-list-toggle{
+  display:flex;align-items:center;gap:var(--s2);width:100%;
+  margin-top:var(--s4);padding:var(--s3) var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);color:var(--muted);
+  font-size:var(--t-sm);font-weight:600;
+}
+.preview-list-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.preview-list-toggle>svg{width:15px;height:15px;flex:none}
+.preview-list-toggle>svg:last-child{margin-inline-start:auto;transition:transform .2s var(--ease)}
+.preview-list{display:flex;flex-direction:column;margin-top:var(--s3)}
 .preview-list article{
   display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;
   align-items:center;gap:var(--s3);

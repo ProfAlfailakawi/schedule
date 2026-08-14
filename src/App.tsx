@@ -217,6 +217,25 @@ export default function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+  // On phones the master list and its detail panel stack in one column, so
+  // tapping a row updated a panel far below the fold and the tap read as nothing
+  // happening ("where's the screen? we're at the very bottom"). One delegated
+  // listener brings the detail into view on every list tap, across every
+  // master/detail screen, with no per-screen wiring.
+  useEffect(() => {
+    const onPointerUp = (event: Event) => {
+      if (!window.matchMedia("(max-width:1100px)").matches) return;
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest?.(".record-card, .master-list button, .catalog-master button")) return;
+      const detail = document.querySelector<HTMLElement>(".academic-inspector, .inspector-pane");
+      if (!detail) return;
+      window.requestAnimationFrame(() =>
+        window.requestAnimationFrame(() => detail.scrollIntoView({ behavior: "smooth", block: "start" })),
+      );
+    };
+    document.addEventListener("click", onPointerUp);
+    return () => document.removeEventListener("click", onPointerUp);
+  }, []);
   // Persist ONLY an explicit user choice, so the day-mode default is never
   // silently written to storage on first load (Note 31: always day unless changed).
   const chooseTheme = (next: "light" | "dark") => {

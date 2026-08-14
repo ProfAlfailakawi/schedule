@@ -4,6 +4,19 @@
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
+   Touch devices: 16px form controls — everywhere.
+   iOS Safari zooms the whole viewport in when a focused field is smaller than
+   16px and does not reliably zoom back out, so the app appeared "big" with the
+   menu and details pushed off-screen — first noticed right after mobile login,
+   but it happens at every input under 16px (the UI runs at 14px). One rule on
+   touch pointers removes the trigger app-wide. `!important` is deliberate: it
+   must beat every component's own compact field font-size.
+   -------------------------------------------------------------------------- */
+@media (pointer: coarse) {
+  input, select, textarea { font-size: 16px !important; }
+}
+
+/* --------------------------------------------------------------------------
    ≤ 1119px — the rail folds into an off-canvas drawer with a real top bar.
    -------------------------------------------------------------------------- */
 @media screen and (max-width:1119px){

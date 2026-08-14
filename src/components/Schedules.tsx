@@ -22,6 +22,8 @@ import {
   Palette,
   Undo2,
   CornerUpRight,
+  ListChecks,
+  ChevronDown,
   LayoutList,
   Lightbulb,
   MapPin,
@@ -90,6 +92,7 @@ import {
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, sortByName } from "../utils/sorting";
+import { previousYearSameTermName, sameTermName } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import ScheduleTransfer from "./ScheduleTransfer";
@@ -268,6 +271,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [copySection, setCopySection] = useState(0),
     [copyFromTerm, setCopyFromTerm] = useState(0),
     [copyToTerm, setCopyToTerm] = useState(0),
+    // The copy decision is made from the counts; the per-record list is hidden
+    // until asked for, so the preview is not a wall of someone else's schedule.
+    [copyListOpen, setCopyListOpen] = useState(false),
     [copyPreview, setCopyPreview] = useState<any | null>(null),
     [copyUndoPoint, setCopyUndoPoint] = useState<any | null>(null),
     [previewing, setPreviewing] = useState(false);
@@ -3303,7 +3309,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               <Field label="الفصل الوجهة" required>
                 <select
                   value={copyToTerm || ""}
-                  onChange={(e) => setCopyToTerm(Number(e.target.value) || 0)}
+                  onChange={(e) => {
+                    const to = Number(e.target.value) || 0;
+                    setCopyToTerm(to);
+                    // Idea 1: a new term is usually last year's same semester with
+                    // light edits — so pre-pick that as the source to copy from.
+                    const destName = terms.find((t) => t.AdTermId === to)?.AdTermName;
+                    const wantName = previousYearSameTermName(destName);
+                    const match = wantName ? terms.find((t) => sameTermName(t.AdTermName, wantName)) : null;
+                    if (match) setCopyFromTerm(match.AdTermId);
+                  }}
                   required
                 >
                   <option value="">اختر ...</option>
@@ -3352,21 +3367,35 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   {copyPreview.sourceIssues?.length ? (
                     <Notice>{copyPreview.sourceIssues.join(" · ")}</Notice>
                   ) : null}
-                  <div className="preview-list">
-                    {copyPreview.preview.map((x: any) => (
-                      <article key={x.id}>
-                        <span className="code-chip">{x.courseCode}</span>
-                        <div>
-                          <strong>{x.courseName}</strong>
-                          {/* Note 28: the instructor name is noise in a copy preview
-                              — the copy is by course/section, not by teacher. */}
-                          <small>شعبة {x.sectionCode}</small>
-                        </div>
-                        <span dir="ltr">{x.time}</span>
-                        <span>{x.room}</span>
-                      </article>
-                    ))}
-                  </div>
+                  {copyPreview.preview?.length ? (
+                    <button
+                      type="button"
+                      className="preview-list-toggle"
+                      onClick={() => setCopyListOpen((v) => !v)}
+                      aria-expanded={copyListOpen}
+                    >
+                      <ListChecks aria-hidden="true" />
+                      {copyListOpen ? "إخفاء السجلات" : "عرض السجلات (اختياري)"}
+                      <ChevronDown aria-hidden="true" style={{ transform: copyListOpen ? "rotate(180deg)" : undefined }} />
+                    </button>
+                  ) : null}
+                  {copyListOpen ? (
+                    <div className="preview-list">
+                      {copyPreview.preview.map((x: any) => (
+                        <article key={x.id}>
+                          <span className="code-chip">{x.courseCode}</span>
+                          <div>
+                            <strong>{x.courseName}</strong>
+                            {/* Note 28: the instructor name is noise in a copy preview
+                                — the copy is by course/section, not by teacher. */}
+                            <small>شعبة {x.sectionCode}</small>
+                          </div>
+                          <span dir="ltr">{x.time}</span>
+                          <span>{x.room}</span>
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <div className="preview-state">

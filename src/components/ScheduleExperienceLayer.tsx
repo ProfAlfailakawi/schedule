@@ -52,7 +52,7 @@ const placement = (row: Partial<FSchedule>) =>
  * Every call now carries a ceiling and every failure carries an Arabic reason.
  * A tool that cannot answer must at least be able to say so.
  */
-async function fetchJson(url: string, options?: RequestInit, timeoutMs = 25_000) {
+async function fetchJson(url: string, options?: RequestInit, timeoutMs = 35_000) {
   const controller = new AbortController();
   const externalSignal = options?.signal;
   const abortFromCaller = () => controller.abort();
@@ -63,11 +63,18 @@ async function fetchJson(url: string, options?: RequestInit, timeoutMs = 25_000)
   try {
     response = await fetch(url, { ...options, signal: controller.signal });
   } catch (error: any) {
+    // A timeout or a flaky connection on a *background* smart read is not worth a
+    // scary banner — it is tagged `soft` so callers can degrade quietly instead
+    // of spamming the same message on every schedule change.
     if (error?.name === "AbortError") {
       if (externalSignal?.aborted) throw error;
-      throw new Error("استغرقت القراءة وقتاً أطول من المتوقع. حاول مرة أخرى.");
+      const timeoutErr = new Error("استغرقت القراءة وقتاً أطول من المتوقع. حاول مرة أخرى.");
+      (timeoutErr as any).soft = true;
+      throw timeoutErr;
     }
-    throw new Error("تعذر الوصول إلى الخدمة. تحقق من الاتصال.");
+    const netErr = new Error("تعذر الوصول إلى الخدمة. تحقق من الاتصال.");
+    (netErr as any).soft = true;
+    throw netErr;
   } finally {
     window.clearTimeout(timer);
     externalSignal?.removeEventListener("abort", abortFromCaller);
@@ -242,7 +249,11 @@ export function useScheduleExperience({
           setGenome(g);
           setConstraints(Array.isArray(c) ? c : []);
         } catch (e: any) {
-          if (e?.name !== "AbortError")
+          // The smart-reading layer is optional; the schedule is fully usable
+          // without it. A timeout or slow-network read (tagged `soft`) degrades
+          // silently — keeping the last insights — instead of raising the same
+          // banner after every move, which is what made it feel constant.
+          if (e?.name !== "AbortError" && !e?.soft)
             setInsightError(String(e?.message || e));
         } finally {
           if (!controller.signal.aborted) setInsightBusy(false);

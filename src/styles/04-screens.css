@@ -829,6 +829,36 @@
 }
 .about-editorial-hero p{max-width:60ch;margin-top:var(--s4);color:var(--muted);font-size:15px;line-height:1.8}
 .about-editorial-divider{height:1px;background:var(--line)}
+
+/* Install-as-app card (Idea 4). */
+.install-card{
+  display:flex;gap:var(--s4);align-items:flex-start;
+  max-width:720px;margin:var(--s6) auto 0;padding:var(--s5);
+  border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface-2);
+}
+.install-card.is-installed{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
+.install-icon{
+  flex:none;width:46px;height:46px;display:grid;place-items:center;
+  border-radius:var(--r-lg);background:var(--accent);color:var(--accent-contrast);
+}
+.install-icon svg{width:22px;height:22px}
+.install-copy{min-width:0}
+.install-copy strong{display:block;font-size:var(--t-h4);font-weight:650;color:var(--ink)}
+.install-copy p{margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.6}
+.install-btn{
+  display:inline-flex;align-items:center;gap:var(--s2);margin-top:var(--s3);
+  padding:var(--s2) var(--s4);border-radius:var(--r-sm);
+  background:var(--accent);color:var(--accent-contrast);font-size:var(--t-sm);font-weight:600;
+}
+.install-btn:hover{background:var(--accent-strong)}
+.install-btn svg{width:16px;height:16px}
+.install-steps{
+  margin:var(--s3) 0 0;padding-inline-start:var(--s5);
+  display:flex;flex-direction:column;gap:var(--s2);
+  color:var(--ink-2);font-size:var(--t-sm);line-height:1.6;
+}
+.install-steps svg{width:14px;height:14px;vertical-align:-2px;color:var(--accent)}
+
 .about-editorial-people{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
 .editorial-person{
   display:grid;grid-template-columns:132px minmax(0,1fr);
