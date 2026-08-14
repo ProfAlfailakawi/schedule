@@ -13,7 +13,7 @@ import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
-import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, interCampusMinutes } from "./src/utils/campusTravel";
+import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
 import {
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
@@ -1269,6 +1269,52 @@ function roomCastlingProposals(scopeRows:any[],termRows:any[],profile:any,instru
   return {radar,proposals:proposals.slice(0,8)};
 }
 
+const CAMPUS_LABEL: Record<string, string> = { jahra: "الجهراء", fahaheel: "الفحيحيل", main: "الحرم الرئيسي" };
+/**
+ * Note 38 — a soft "too little time between campuses" warning.
+ *
+ * The instructor's appointments are fetched across the whole term (every
+ * college), so a new placement can be checked against a same-day lecture on a
+ * different campus. If the gap is smaller than the commute (الجهراء/الفحيحيل/
+ * العارضية rules), we surface a `soft` warning: it explains the risk but never
+ * blocks the save — a real timetable sometimes has to accept a tight transfer.
+ */
+async function interCampusWarnings(candidate: any, all: any[]) {
+  const instructorId = Number(candidate.AdInstructorId || 0);
+  if (!instructorId || !candidate.fstarttime || !candidate.fendtime) return [];
+  const colleges = await Repository.getColleges();
+  const campusById = new Map<number, ReturnType<typeof campusOf>>(colleges.map((c: any) => [Number(c.AdCollegeId), campusOf(c.AdCollegeName)]));
+  const candCampus = campusById.get(Number(candidate.AdCollegeId));
+  if (!candCampus) return [];
+  const own = all.filter(r => Number(r.AdInstructorId) === instructorId && Number(r.id) !== Number(candidate.id));
+  const days: Array<[string, string]> = [["fsunday", "الأحد"], ["fmonday", "الاثنين"], ["ftuesday", "الثلاثاء"], ["fwednesday", "الأربعاء"], ["fthursday", "الخميس"]];
+  const cStart = timeToMinutes(candidate.fstarttime), cEnd = timeToMinutes(candidate.fendtime);
+  const seen = new Set<string>();
+  const warnings: any[] = [];
+  for (const [key, label] of days) {
+    if (!candidate[key]) continue;
+    for (const other of own) {
+      if (!other[key]) continue;
+      const otherCampus = campusById.get(Number(other.AdCollegeId));
+      if (!otherCampus) continue;
+      const need = interCampusMinutes(candCampus, otherCampus);
+      if (need == null) continue; // same campus — the per-building matrix handles it
+      const oStart = timeToMinutes(other.fstarttime), oEnd = timeToMinutes(other.fendtime);
+      // Gap only when the two do not overlap (an overlap is already a hard conflict).
+      const gap = cStart >= oEnd ? cStart - oEnd : (oStart >= cEnd ? oStart - cEnd : -1);
+      if (gap < 0 || gap >= need) continue;
+      const dedupe = `${key}:${[candCampus, otherCampus].sort().join("-")}`;
+      if (seen.has(dedupe)) continue;
+      seen.add(dedupe);
+      warnings.push({
+        type: "travel", severity: "warning", soft: true, rowId: 0,
+        message: `انتقال ضيّق بين ${CAMPUS_LABEL[candCampus]} و${CAMPUS_LABEL[otherCampus]}`,
+        detail: `${label}: التنقّل يحتاج قرابة ${need} دقيقة، والمتاح ${gap} دقيقة فقط بين موعدَي الأستاذ. يمكنك الحفظ مع الانتباه لهذا الفارق.`,
+      });
+    }
+  }
+  return warnings.slice(0, 3);
+}
 async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const termId=Number(row?.AdTermId||0);
   if(!termId||!row?.fstarttime||!row?.fendtime||!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))return[];
@@ -1290,7 +1336,8 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     // section number by design and must not be refused.
     return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",detail:visible&&other?`نفس الأيام ونفس الوقت ${other.fstarttime}-${other.fendtime}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
   });
-  return roomNotice?[...conflicts,roomNotice]:conflicts;
+  const softTravel = await interCampusWarnings(candidate, all);
+  return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel];
 }
 
 app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
@@ -1371,7 +1418,7 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     if (payloadIssues.length) { res.status(400).json({ error: payloadIssues[0], issues: payloadIssues }); return; }
     const conflicts = await scheduleConflicts(req, candidate.row, candidate.row.id);
     blocked.push(...conflicts.filter((c: any) =>
-      !movedIds.has(Number(c.rowId)) && (strict || c.severity === "high" || c.type === "duplicate")));
+      !c.soft && !movedIds.has(Number(c.rowId)) && (strict || c.severity === "high" || c.type === "duplicate")));
   }
   if (blocked.length) {
     const first = blocked[0];
@@ -1854,7 +1901,10 @@ app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedReques
   if (!term) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
   if (!instructor) { res.status(400).json({ error: "أستاذ المقرر المختار غير صالح" }); return; }
   const conflicts=await scheduleConflicts(req,{...req.body,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:courseId,AdInstructorId:instructorId});
-  if(conflicts.length){res.status(409).json({error:conflicts[0].message||"يوجد تعارض يمنع الحفظ",issues:conflicts});return;}
+  // Soft warnings (e.g. a tight inter-campus transfer, Note 38) are surfaced by
+  // the live check but never block the save.
+  const blockingSave=conflicts.filter((c:any)=>!c.soft);
+  if(blockingSave.length){res.status(409).json({error:blockingSave[0].message||"يوجد تعارض يمنع الحفظ",issues:blockingSave});return;}
 
   await captureScopeVersion(req, collegeId, sectionId, termId, "قبل إضافة موعد دراسي", "manual");
 
@@ -1927,7 +1977,8 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   if (!term) { res.status(400).json({ error: "الفصل الدراسي المختار غير صالح" }); return; }
   if (!instructor) { res.status(400).json({ error: "أستاذ المقرر المختار غير صالح" }); return; }
   const conflicts=await scheduleConflicts(req,{...req.body,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:courseId,AdInstructorId:instructorId},id);
-  if(conflicts.length){res.status(409).json({error:conflicts[0].message||"يوجد تعارض يمنع التعديل",issues:conflicts});return;}
+  const blockingEdit=conflicts.filter((c:any)=>!c.soft);
+  if(blockingEdit.length){res.status(409).json({error:blockingEdit[0].message||"يوجد تعارض يمنع التعديل",issues:blockingEdit});return;}
 
   try {
     await captureScopeVersion(req, existing.AdCollegeId, existing.AdSectionId, existing.AdTermId, "قبل تعديل موعد دراسي", "manual");
@@ -2928,7 +2979,7 @@ function staffLookupAllowed(token: string, ip: string): boolean {
   return seen.count <= STAFF_MAX_TRIES;
 }
 
-async function buildStaffCard(link: ScheduleShareLink, civil: string) {
+async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedTermId = 0) {
   const digits = String(civil || "").replace(/\D/g, "");
   if (digits.length < 8) return null;
 
@@ -2938,11 +2989,20 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string) {
   const person = instructors.find(row => String(row.AdInstructorCivil || "").replace(/\D/g, "") === digits);
   if (!person) return null;
 
+  // Security gate: the instructor must actually appear in the link's OWN term, so
+  // a wrong number and "teaches nothing" stay one indistinguishable 404 at the
+  // door. Only after passing may they pin another term (Idea 2).
+  const linkRows = (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: link.AdTermId }))
+    .filter(row => row.AdInstructorId === person.AdInstructorId);
+  if (!linkRows.length) return null;
+
   // The card covers the college that issued the link, so an instructor teaching
   // several of its sections sees one complete week rather than a fragment.
-  const rows = (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: link.AdTermId }))
-    .filter(row => row.AdInstructorId === person.AdInstructorId);
-  if (!rows.length) return null;
+  const displayTermId = requestedTermId && terms.some(t => t.AdTermId === requestedTermId) ? requestedTermId : link.AdTermId;
+  const rows = displayTermId === link.AdTermId
+    ? linkRows
+    : (await Repository.getSchedulesByScope({ collegeId: link.AdCollegeId, termId: displayTermId }))
+        .filter(row => row.AdInstructorId === person.AdInstructorId);
 
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
@@ -2980,7 +3040,10 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string) {
   return {
     name: person.AdInstructorName || "",
     college: colleges.find(row => row.AdCollegeId === link.AdCollegeId)?.AdCollegeName || "",
-    term: terms.find(row => row.AdTermId === link.AdTermId)?.AdTermName || "",
+    term: terms.find(row => row.AdTermId === displayTermId)?.AdTermName || "",
+    termId: displayTermId,
+    // Newest first, so the instructor can pin any semester from the card (Idea 2).
+    availableTerms: [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).map(t => ({ id: t.AdTermId, name: t.AdTermName })),
     expiresAt: link.expiresAt,
     weeklyMinutes,
     lectureCount: shaped.length,
@@ -3099,7 +3162,7 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
     res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
     return;
   }
-  const card = await buildStaffCard(resolved.link, String(req.body?.civil || ""));
+  const card = await buildStaffCard(resolved.link, String(req.body?.civil || ""), Number(req.body?.termId || 0));
   // One answer for a wrong number and for someone with no lectures this term:
   // the page must not become a way to test which numbers exist.
   if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
@@ -3199,6 +3262,12 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
   padding-bottom:18px;border-bottom:1px solid var(--line)}
 .head h1{margin:6px 0 0;font-size:clamp(24px,6vw,32px);font-weight:600;letter-spacing:-.03em;line-height:1.2}
 .head small{display:block;color:var(--dim);font-size:13px}
+.term-switch{display:flex;align-items:center;gap:10px;margin:0 0 20px;flex-wrap:wrap}
+.term-switch label{color:var(--dim);font-size:12px;font-weight:600}
+.term-switch select{flex:1;min-width:180px;min-height:44px;padding:0 14px;font-size:16px;
+  border:1px solid var(--line);border-radius:12px;background:var(--card);color:inherit}
+.pub-empty{padding:32px 16px;text-align:center;color:var(--dim);font-size:15px;
+  border:1px dashed var(--line);border-radius:16px}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;margin-bottom:22px}
 .stat{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
 .stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
@@ -3262,6 +3331,10 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
         <small id="scope"></small>
       </div>
     </div>
+    <div class="term-switch">
+      <label for="termPick">الفصل الدراسي</label>
+      <select id="termPick" aria-label="اختر الفصل الدراسي"></select>
+    </div>
     <div class="stats" id="stats"></div>
     <div id="days"></div>
     <div class="tools">
@@ -3300,9 +3373,24 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
       .catch(function(){go.disabled=false;go.textContent="عرض";note.textContent="تعذر الاتصال. تحقق من الإنترنت."});
   });
 
+  var currentCivil="";
+  function switchTerm(termId){
+    var pick=document.getElementById("termPick");if(pick)pick.disabled=true;
+    fetch("/api/public/staff/"+encodeURIComponent(TOKEN),{
+      method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({civil:currentCivil,termId:termId})
+    }).then(function(r){return r.json().then(function(d){return{ok:r.ok,data:d}})})
+      .then(function(res){if(pick)pick.disabled=false;if(res.ok)render(res.data,currentCivil);else if(pick)note.textContent=res.data&&res.data.error?res.data.error:"";})
+      .catch(function(){if(pick)pick.disabled=false});
+  }
   function render(d,value){
+    currentCivil=value;
     document.getElementById("name").textContent=d.name;
-    document.getElementById("scope").textContent=[d.college,d.term].filter(Boolean).join(" · ");
+    document.getElementById("scope").textContent=d.college||"";
+    var termPick=document.getElementById("termPick");
+    if(termPick&&d.availableTerms&&d.availableTerms.length){
+      termPick.innerHTML=d.availableTerms.map(function(t){return '<option value="'+t.id+'"'+(t.id===d.termId?' selected':'')+'>'+esc(t.name)+'</option>'}).join("");
+      termPick.onchange=function(){switchTerm(Number(termPick.value)||0)};
+    }
     document.getElementById("stats").innerHTML=[
       ["ساعة أسبوعياً",hours(d.weeklyMinutes)],
       ["محاضرة",ar(d.lectureCount)],
@@ -3341,6 +3429,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
       }).join("");
       return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.from+"–"+day.span.to:"")+'</em></h2>'+body+'</section>';
     }).join("");
+    if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
 
     document.getElementById("ics").setAttribute("href",
       "/api/public/staff-ics/"+encodeURIComponent(TOKEN)+"?civil="+encodeURIComponent(value));
