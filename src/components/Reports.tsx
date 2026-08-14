@@ -531,6 +531,13 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedResultId]);
+  // The room-occupancy reading is the same side panel; Escape closes it too.
+  useEffect(() => {
+    if (!roomPick) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setRoomPick(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [roomPick]);
 
   const selectLens = (next: Lens) => runVisualTransition(() => {
     setLens(next);
@@ -998,7 +1005,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 return dayOk && from < roomPick.point + 60 && to > roomPick.point;
               }).sort((a, b) => a.fstarttime.localeCompare(b.fstarttime));
               return (
-                <div className="occupancy-pick" id="query-room-detail" role="region" aria-label={`تفاصيل إشغال ${roomPick.room}`}>
+                <>
+                <div className="query-detail-backdrop no-print" onMouseDown={() => setRoomPick(null)} aria-hidden="true" />
+                <div className="occupancy-pick query-detail-panel no-print" id="query-room-detail" role="dialog" aria-label={`تفاصيل إشغال ${roomPick.room}`}>
                   <header>
                     <div>
                       <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${clock(roomPick.point)}`}</small>
@@ -1022,6 +1031,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                     <p className="occupancy-pick-empty">فاضية في هذا الوقت — لا يوجد أي حجز.</p>
                   )}
                 </div>
+                </>
               );
             })() : null}
             {roomLoad && roomDay !== "week" ? (

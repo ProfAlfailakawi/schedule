@@ -118,12 +118,12 @@ export function useDrawerA11y<T extends HTMLElement>(onClose: () => void) {
   return ref;
 }
 /** The academic add/edit side panel: a backdrop, a keyboard-complete drawer, one close. */
-export function CatalogFormDrawer({ label, onClose, children }: { label: string; onClose: () => void; children: React.ReactNode }) {
+export function CatalogFormDrawer({ label, onClose, children, wide = false }: { label: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   const ref = useDrawerA11y<HTMLElement>(onClose);
   return (
     <>
       <div className="catalog-form-backdrop no-print" onMouseDown={onClose} aria-hidden="true" />
-      <aside ref={ref} className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-modal="true" aria-label={label}>
+      <aside ref={ref} className={`content-stack editor-page catalog-form-drawer no-print ${wide ? "catalog-form-drawer-wide" : ""}`.trim()} role="dialog" aria-modal="true" aria-label={label}>
         <button type="button" className="drawer-close catalog-drawer-close" onClick={onClose} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></button>
         {children}
       </aside>

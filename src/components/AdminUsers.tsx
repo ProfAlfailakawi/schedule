@@ -25,6 +25,7 @@ import {
   PrimaryButton,
   SecondaryButton,
   Surface,
+  CatalogFormDrawer,
 } from "./ui";
 import {
   AdCollege,
@@ -400,9 +401,8 @@ export default function AdminUsers({
     </div>
   );
 
-  if (mode === "users" && page !== "index")
-    return (
-      <div className="content-stack editor-page">
+  const usersFormDrawer = (mode === "users" && page !== "index") ? (
+      <CatalogFormDrawer onClose={back} label={page === "create" ? "إنشاء مستخدم" : "تعديل المستخدم"}>
         <PageTitle
           eyebrow="إدارة النظام"
           subtitle="يمكن ربطه بأستاذ مقرر"
@@ -493,11 +493,10 @@ export default function AdminUsers({
             <FormActions onBack={back} />
           </form>
         </Surface>
-      </div>
-    );
-  if (mode === "permissions" && page !== "index")
-    return (
-      <div className="content-stack editor-page permission-editor-page">
+      </CatalogFormDrawer>
+    ) : null;
+  const permissionsFormDrawer = (mode === "permissions" && page !== "index") ? (
+      <CatalogFormDrawer onClose={back} label="صلاحيات المستخدم" wide>
         <PageTitle
           eyebrow="إدارة النظام"
           subtitle="مستخدم واحد · صلاحياته فقط"
@@ -566,11 +565,10 @@ export default function AdminUsers({
             <FormActions onBack={back} submitDisabled={!permUser || !permSelections.length} />
           </form>
         </Surface>
-      </div>
-    );
-  if (mode === "scopes" && page !== "index")
-    return (
-      <div className="content-stack editor-page">
+      </CatalogFormDrawer>
+    ) : null;
+  const scopesFormDrawer = (mode === "scopes" && page !== "index") ? (
+      <CatalogFormDrawer onClose={back} label="إنشاء نطاق أكاديمي">
         <PageTitle
           eyebrow="إدارة النظام"
           subtitle="الكلية والقسم يحددان ما يظهر"
@@ -640,8 +638,8 @@ export default function AdminUsers({
             <FormActions onBack={back} />
           </form>
         </Surface>
-      </div>
-    );
+      </CatalogFormDrawer>
+    ) : null;
 
   if (mode === "users") {
     const filtered = users.filter((u) =>
@@ -654,6 +652,7 @@ export default function AdminUsers({
         (x) => x.AdInstructorId === selected?.AdInstructorId,
       );
     return (
+      <>
       <div className="content-stack admin-page master-detail-page">
         {consoleHead(
           <AddButton
@@ -783,6 +782,8 @@ export default function AdminUsers({
           </aside>
         </div>
       </div>
+      {usersFormDrawer}
+      </>
     );
   }
 
@@ -799,6 +800,7 @@ export default function AdminUsers({
       perms.find((p) => permKey(p) === selectedPermKey) ||
       null;
     return (
+      <>
       <div className="content-stack admin-page master-detail-page">
         {consoleHead(
           <AddButton
@@ -903,6 +905,8 @@ export default function AdminUsers({
           </aside>
         </div>
       </div>
+      {permissionsFormDrawer}
+      </>
     );
   }
 
@@ -919,6 +923,7 @@ export default function AdminUsers({
       ),
       selected = selectedIndex >= 0 ? assigns[selectedIndex] : null;
     return (
+      <>
       <div className="content-stack admin-page master-detail-page">
         {consoleHead(
           <AddButton
@@ -1034,6 +1039,8 @@ export default function AdminUsers({
           </aside>
         </div>
       </div>
+      {scopesFormDrawer}
+      </>
     );
   }
 

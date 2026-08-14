@@ -971,6 +971,8 @@
   position:absolute;top:var(--s4);inset-inline-start:var(--s4);
   margin:0;z-index:3;
 }
+/* A roomier variant for forms with a grid (e.g. the permission picker). */
+.catalog-form-drawer-wide{width:min(680px,calc(100vw - 24px))}
 @media screen and (max-width:768px){
   .catalog-form-drawer{
     top:auto;inset-inline:0;bottom:0;width:100%;
