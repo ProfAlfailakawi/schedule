@@ -13,6 +13,7 @@ import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
+import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, interCampusMinutes } from "./src/utils/campusTravel";
 import {
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
@@ -804,7 +805,7 @@ app.put("/api/colleges/:id/mobility", requirePermission(2), async (req: Authenti
   const college=await Repository.getCollegeById(collegeId);if(!college){res.status(404).json({error:"الكلية غير موجودة"});return;}
   const rawPairs=Array.isArray(req.body?.pairs)?req.body.pairs:[];const seen=new Set<string>(),pairs:any[]=[];
   for(const raw of rawPairs){const fromBuilding=normalizedBuilding(raw?.fromBuilding).slice(0,40),toBuilding=normalizedBuilding(raw?.toBuilding).slice(0,40),minutes=Math.max(1,Math.min(120,Number(raw?.minutes)||0));if(!fromBuilding||!toBuilding||fromBuilding.toLocaleLowerCase()===toBuilding.toLocaleLowerCase())continue;const key=travelPairKey(fromBuilding,toBuilding);if(seen.has(key))continue;seen.add(key);pairs.push({fromBuilding,toBuilding,minutes});}
-  const profile=await Repository.upsertCampusMobilityProfile({AdCollegeId:collegeId,defaultTravelMinutes:Math.max(1,Math.min(120,Number(req.body?.defaultTravelMinutes)||15)),sameBuildingMinutes:Math.max(0,Math.min(30,Number(req.body?.sameBuildingMinutes)||3)),pairs,updatedAt:new Date().toISOString(),updatedBy:req.user.Name});
+  const profile=await Repository.upsertCampusMobilityProfile({AdCollegeId:collegeId,defaultTravelMinutes:Math.max(1,Math.min(120,Number(req.body?.defaultTravelMinutes)||DEFAULT_TRAVEL_MINUTES)),sameBuildingMinutes:Math.max(0,Math.min(30,Number(req.body?.sameBuildingMinutes)||SAME_BUILDING_MINUTES)),pairs,updatedAt:new Date().toISOString(),updatedBy:req.user.Name});
   res.json(profile);
 });
 
@@ -984,6 +985,8 @@ app.post("/api/instructors", requirePermission(3), async (req: Request, res: Res
 app.put("/api/instructors/:id", requirePermission(3), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
   const { AdInstructorCivil, AdInstructorName, AdInstructorMobile } = req.body;
+  const statusRaw = req.body?.AdInstructorStatus;
+  const status = statusRaw === "retired" || statusRaw === "sabbatical" ? statusRaw : null;
   if (!AdInstructorCivil || !String(AdInstructorName || "").trim()) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
     return;
@@ -1002,7 +1005,7 @@ app.put("/api/instructors/:id", requirePermission(3), async (req: Request, res: 
   }
 
   try {
-    const updated = await Repository.updateInstructor(id, AdInstructorCivil, AdInstructorName, AdInstructorMobile || "");
+    const updated = await Repository.updateInstructor(id, AdInstructorCivil, AdInstructorName, AdInstructorMobile || "", status);
     res.json(updated);
   } catch (e: any) {
     res.status(404).json({ error: e.message });
@@ -1191,12 +1194,15 @@ async function roomScopeNotice(row:any){
 }
 function normalizedBuilding(value: unknown){return String(value||"").trim();}
 function travelPairKey(a:string,b:string){const x=normalizedBuilding(a).toLocaleLowerCase(),y=normalizedBuilding(b).toLocaleLowerCase();return [x,y].sort().join("|");}
-function travelMinutesFor(profile:any,fromBuilding:string,toBuilding:string){
+function travelMinutesFor(profile:any,fromBuilding:string,toBuilding:string,fromCampus?:Campus,toCampus?:Campus){
+  // A move between the college's remote campuses (الجهراء / الفحيحيل / الرئيسي) is a
+  // commute, not a walk between halls — it overrides the per-building matrix.
+  if(fromCampus&&toCampus){const inter=interCampusMinutes(fromCampus,toCampus);if(inter!=null)return inter;}
   const from=normalizedBuilding(fromBuilding),to=normalizedBuilding(toBuilding);
   if(!from||!to)return 0;
-  if(from.toLocaleLowerCase()===to.toLocaleLowerCase())return Math.max(0,Number(profile?.sameBuildingMinutes)||3);
+  if(from.toLocaleLowerCase()===to.toLocaleLowerCase())return Math.max(0,Number(profile?.sameBuildingMinutes)||SAME_BUILDING_MINUTES);
   const pair=(profile?.pairs||[]).find((item:any)=>travelPairKey(item.fromBuilding,item.toBuilding)===travelPairKey(from,to));
-  return Math.max(1,Math.min(120,Number(pair?.minutes)||Number(profile?.defaultTravelMinutes)||15));
+  return Math.max(1,Math.min(120,Number(pair?.minutes)||Number(profile?.defaultTravelMinutes)||DEFAULT_TRAVEL_MINUTES));
 }
 function rowsOverlapOnDay(a:any,b:any,dayKey:string){return Boolean(a?.[dayKey]&&b?.[dayKey])&&scheduleOverlap(String(a.fstarttime||""),String(a.fendtime||""),String(b.fstarttime||""),String(b.fendtime||""));}
 function spatialBurnoutAnalysis(scopeRows:any[],termRows:any[],profile:any,instructors:any[]=[]){
@@ -1595,6 +1601,11 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
   res.json({ instructorIds: await Repository.getVisitingRoster(collegeId, sectionId, termId) });
+});
+
+// All delegate instructor ids across every roster, for the «منتدب» badge (Note 1).
+app.get("/api/delegates", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
+  res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() });
 });
 
 app.put("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

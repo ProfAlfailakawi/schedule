@@ -98,15 +98,20 @@ export default function InstructorPicker({ value, onChange, instructors, departm
 
   const departmentRank = useMemo(() => new Map(departmentIds.map((id, index) => [id, index])), [departmentIds]);
 
+  // A retired or sabbatical teacher keeps their existing appointments but is not
+  // offered for new ones, so their name stops appearing where it should not (Note 2).
+  const isHidden = (person: any) =>
+    person?.AdInstructorStatus === "retired" || person?.AdInstructorStatus === "sabbatical";
   const results = useMemo(() => {
     const needle = withoutTitles(query);
     if (!needle) {
       // Nothing typed: the department, in the order it actually teaches.
-      return departmentIds.map(id => byId.get(id)).filter(Boolean) as Instructor[];
+      return departmentIds.map(id => byId.get(id)).filter(p => p && !isHidden(p)) as Instructor[];
     }
     const pool = [...new Map([...instructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
     const scored = pool
       .map(person => {
+        if (isHidden(person)) return null;
         const name = withoutTitles(person.AdInstructorName);
         const civil = String(person.AdInstructorCivil || "");
         let score = -1;

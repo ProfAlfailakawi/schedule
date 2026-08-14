@@ -149,7 +149,14 @@ export function Segmented({ value, options, onChange, instant = false }: { value
  * told apart. The footer repeats on every page because a stack of loose sheets
  * is the normal way these reports are read.
  */
-export function PrintLetterhead({ title, scope }: { title: React.ReactNode; scope?: React.ReactNode }) {
+/**
+ * The official masthead of every printable report (Note 32).
+ *
+ * The college's own name leads, beside a dignified academic emblem, so a printed
+ * sheet reads as an institutional document rather than an app export. `college`
+ * is optional — without it the mark falls back to the workspace name.
+ */
+export function PrintLetterhead({ title, scope, college }: { title: React.ReactNode; scope?: React.ReactNode; college?: React.ReactNode }) {
   const stamp = new Date().toLocaleString("ar-KW-u-nu-latn", {
     year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"
   });
@@ -160,13 +167,24 @@ export function PrintLetterhead({ title, scope }: { title: React.ReactNode; scop
           <h1>{title}</h1>
           {scope ? <p>{scope}</p> : null}
         </div>
-        <div className="print-head-mark">
-          <strong>SCHEDULE</strong>
-          <span>الجدول الأكاديمي</span>
+        <div className="print-head-brand">
+          <span className="print-emblem" aria-hidden="true">
+            <svg viewBox="0 0 40 40" width="40" height="40" role="img">
+              <circle cx="20" cy="20" r="18.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
+              <circle cx="20" cy="20" r="15" fill="none" stroke="currentColor" strokeWidth="0.7" opacity="0.45" />
+              <path d="M20 13.4c-2.7-1.9-6-1.9-8.4 0v10.8c2.4-1.9 5.7-1.9 8.4 0 2.7-1.9 6-1.9 8.4 0V13.4c-2.4-1.9-5.7-1.9-8.4 0z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+              <line x1="20" y1="13.4" x2="20" y2="24.2" stroke="currentColor" strokeWidth="1.05" />
+              <path d="M20 5.4l1.05 2.13 2.35.34-1.7 1.66.4 2.34-2.1-1.1-2.1 1.1.4-2.34-1.7-1.66 2.35-.34z" fill="currentColor" />
+            </svg>
+          </span>
+          <div className="print-head-org">
+            <strong>{college || "الجدول الأكاديمي"}</strong>
+            <span>{college ? "نظام الجدول الأكاديمي" : "SCHEDULE"}</span>
+          </div>
         </div>
       </header>
       <footer className="print-foot">
-        <span>{title}</span>
+        <span>{college || title}</span>
         <span>{stamp}</span>
       </footer>
     </>

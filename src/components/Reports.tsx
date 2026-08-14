@@ -317,9 +317,10 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     clear: () => set(day.key, false)
   }));
 
+  const collegeName = collegeById.get(filters.collegeId)?.AdCollegeName || "";
   const scopeLine = [
     termById.get(filters.termId)?.AdTermName,
-    collegeById.get(filters.collegeId)?.AdCollegeName,
+    collegeName,
     sectionById.get(filters.sectionId)?.AdSectionName
   ].filter(Boolean).join(" · ");
 
@@ -1164,6 +1165,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           roomLoad={roomLoad}
           roomDay={roomDay}
           scopeLine={scopeLine}
+          collegeName={collegeName}
           courseById={courseById}
           instructorById={instructorById}
         />
@@ -1173,8 +1175,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 }
 
 /** Print output. Every legacy sheet is still reachable, now from one menu. */
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine, courseById, instructorById }: {
-  kind: PrintKind; rows: FSchedule[]; fairness: any; matrix: any; roomLoad: any; roomDay: number | "week"; scopeLine: string;
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine, collegeName, courseById, instructorById }: {
+  kind: PrintKind; rows: FSchedule[]; fairness: any; matrix: any; roomLoad: any; roomDay: number | "week"; scopeLine: string; collegeName: string;
   courseById: Map<number, AdCourse>; instructorById: Map<number, AdInstructor>;
 }) {
   if (!kind) return null;
@@ -1198,7 +1200,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
   if (kind === "Fairness") {
     return (
       <div className="print-report print-upright">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table>
           <colgroup><col style={{ width: "8%" }} /><col /><col style={{ width: "13%" }} /><col style={{ width: "11%" }} /><col style={{ width: "13%" }} /><col style={{ width: "13%" }} /></colgroup>
           <thead><tr><th>م</th><th>أستاذ المقرر</th><th>المواعيد</th><th>الأيام</th><th>الساعات</th><th>الفرق</th></tr></thead>
@@ -1231,14 +1233,14 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
     if (!matrix?.lines?.length) {
       return (
         <div className="print-report">
-          <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+          <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
           <p>لا توجد قاعات في هذا النطاق.</p>
         </div>
       );
     }
     return (
       <div className="print-report print-matrix">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table>
           <thead>
             <tr>
@@ -1281,7 +1283,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
     const dayLabel = roomDay === "week" ? "الأسبوع" : DAYS[roomDay].label;
     return (
       <div className="print-report print-occupancy">
-        <PrintLetterhead title={titles[kind]} scope={[scopeLine, dayLabel].filter(Boolean).join(" · ")} />
+        <PrintLetterhead title={titles[kind]} scope={[scopeLine, dayLabel].filter(Boolean).join(" · ")} college={collegeName} />
         <table>
           <thead>
             <tr>
@@ -1314,7 +1316,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
   if (kind === "WeekWithInstructor" || kind === "WeekWithInstructorByDept") {
     return (
       <div className="print-report">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table className="print-week">
           <colgroup>{DAYS.map(day => <col key={day.key} style={{ width: "20%" }} />)}</colgroup>
           <thead><tr>{DAYS.map(day => <th key={day.key}>{day.label}</th>)}</tr></thead>
@@ -1344,7 +1346,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
   if (kind === "ListofTeacherCourse" || kind === "TeacherWithCourse") {
     return (
       <div className="print-report">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table>
           <colgroup><col style={{ width: "4%" }} /><col style={{ width: "17%" }} /><col style={{ width: "10%" }} /><col /><col style={{ width: "9%" }} /><col style={{ width: "11%" }} /><col style={{ width: "16%" }} /><col style={{ width: "7%" }} /></colgroup>
           <thead><tr><th>م</th><th>الاسم</th><th>الرقم المدني</th><th>المقرر الدراسي</th><th>رمز المقرر</th><th>الوقت</th><th>الأيام</th><th>الوحدات</th></tr></thead>
@@ -1373,15 +1375,15 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
 
   return (
     <div className="print-report">
-      <PrintLetterhead title={titles[kind]} scope={scopeLine} />
+      <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
       <table>
         <colgroup>
-          <col style={{ width: "3.2%" }} /><col style={{ width: "6.4%" }} /><col style={{ width: "6%" }} /><col style={{ width: "15%" }} />
-          <col style={{ width: "5%" }} /><col style={{ width: "5%" }} /><col style={{ width: "4.6%" }} />
-          <col style={{ width: "9%" }} /><col style={{ width: "12.8%" }} /><col style={{ width: "5.5%" }} />
-          <col style={{ width: "6.5%" }} /><col style={{ width: "12.8%" }} /><col style={{ width: "8.2%" }} />
+          <col style={{ width: "3%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "5%" }} /><col style={{ width: "16%" }} />
+          <col style={{ width: "5.5%" }} /><col style={{ width: "5.5%" }} /><col style={{ width: "5%" }} />
+          <col style={{ width: "9.5%" }} /><col style={{ width: "11%" }} /><col style={{ width: "7.5%" }} />
+          <col style={{ width: "14%" }} /><col style={{ width: "11.5%" }} />
         </colgroup>
-        <thead><tr>{["م", "رمز المقرر", "الشعبة", "المقرر", "وحدات", "ساعات", "سعة", "الوقت", "الأيام", "المبنى", "القاعة", "أستاذ المقرر", "الرقم المدني"].map(head => <th key={head}>{head}</th>)}</tr></thead>
+        <thead><tr>{["م", "رمز المقرر", "الشعبة", "المقرر", "وحدات", "ساعات", "سعة", "الوقت", "الأيام", "القاعة", "أستاذ المقرر", "الرقم المدني"].map(head => <th key={head}>{head}</th>)}</tr></thead>
         <tbody>{rows.map((row, index) => {
           const instructor = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
           return (
@@ -1390,7 +1392,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
               <td>{course?.CourseName || row.AdCourseName || ""}</td><td className="num">{course?.CourseCredit ?? ""}</td>
               <td className="num">{course?.CourseHours ?? ""}</td><td className="num">{course?.MaxStudent ?? ""}</td>
               <td dir="ltr">{row.fstarttime}-{row.fendtime}</td><td>{dayText(row)}</td>
-              <td>{row.AdRoomCode}</td><td>{row.AdRoomHall}</td>
+              <td dir="ltr">{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")}</td>
               <td>{instructor?.AdInstructorName || ""}</td><td dir="ltr">{instructor?.AdInstructorCivil || ""}</td>
             </tr>
           );

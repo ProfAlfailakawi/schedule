@@ -205,7 +205,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       let list = items;
       if (listCollege) list = list.filter((x) => x.AdCollegeId === listCollege);
       if (listSection) list = list.filter((x) => x.AdSectionId === listSection);
-      return q
+      const base = q
         ? list.filter((x) =>
             [
               x.CourseCode,
@@ -219,6 +219,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             ),
           )
         : list;
+      return sortByName(base, (x: any) => x.CourseName);
     }, [items, colleges, sections, query, listCollege, listSection]),
     selected =
       filtered.find((x) => x.AdCourseId === selectedId) || filtered[0] || null,

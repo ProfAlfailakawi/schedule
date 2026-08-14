@@ -120,13 +120,14 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
     colleges.find((c) => c.AdCollegeId === id)?.AdCollegeName || "";
   const filtered = useMemo(() => {
       const q = query.trim();
-      return q
+      const base = q
         ? items.filter((x) =>
             [x.AdSectionCode, x.AdSectionName, collegeName(x.AdCollegeId)].some(
               (v) => String(v).includes(q),
             ),
           )
         : items;
+      return sortByName(base, (x: any) => x.AdSectionName);
     }, [items, colleges, query]),
     selected =
       filtered.find((x) => x.AdSectionId === selectedId) || filtered[0] || null,

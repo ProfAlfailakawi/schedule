@@ -29,6 +29,7 @@ import {
   ScheduleShareLink,
   VisitingRoster,
 } from "../types";
+import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -1183,19 +1184,22 @@ export const Repository = {
     return newIns;
   },
 
-  updateInstructor: async (id: number, civil: string, name: string, mobile: string): Promise<AdInstructor> => {
+  updateInstructor: async (id: number, civil: string, name: string, mobile: string, status?: "retired" | "sabbatical" | null): Promise<AdInstructor> => {
     invalidateReference(REFERENCE_KEYS.instructors);
+    // Only a real status is stored; anything else clears the field so the record
+    // stays clean and an active teacher carries no status at all (Note 2).
+    const statusField = status === "retired" || status === "sabbatical" ? { AdInstructorStatus: status } : {};
     if (firestoreDb) {
       const docRef = firestoreDb.collection("instructors").doc(`instructor_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("الأستاذ غير موجود");
-      const updated = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile };
+      const updated: AdInstructor = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile, ...statusField };
       await docRef.set(updated);
       return updated;
     }
     const idx = db.instructors.findIndex(i => i.AdInstructorId === id);
     if (idx === -1) throw new Error("الأستاذ غير موجود");
-    db.instructors[idx] = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile };
+    db.instructors[idx] = { AdInstructorId: id, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile, ...statusField };
     saveDatabase();
     return db.instructors[idx];
   },
@@ -1880,6 +1884,19 @@ export const Repository = {
     return unique;
   },
 
+  // Every instructor who is a delegate in any roster, so the staff screen can
+  // mark them with a «منتدب» badge (Note 1).
+  getAllDelegateInstructorIds: async (): Promise<number[]> => {
+    const set = new Set<number>();
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("visitingRosters").get();
+      snap.docs.forEach(doc => ((doc.data() as VisitingRoster).instructorIds || []).forEach(id => set.add(Number(id))));
+    } else {
+      (db.visitingRosters || []).forEach(row => (row.instructorIds || []).forEach(id => set.add(Number(id))));
+    }
+    return [...set];
+  },
+
   getScheduleConstraints: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleConstraint[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     if (firestoreDb) {
@@ -2012,14 +2029,14 @@ export const Repository = {
       const found = (db.campusMobilityProfiles || []).find(row => row.AdCollegeId === collegeId);
       if (found) return found;
     }
-    return { AdCollegeId: collegeId, defaultTravelMinutes: 15, sameBuildingMinutes: 3, pairs: [] };
+    return { AdCollegeId: collegeId, defaultTravelMinutes: DEFAULT_TRAVEL_MINUTES, sameBuildingMinutes: SAME_BUILDING_MINUTES, pairs: [] };
   },
 
   upsertCampusMobilityProfile: async (profile: CampusMobilityProfile): Promise<CampusMobilityProfile> => {
     const normalized: CampusMobilityProfile = {
       AdCollegeId: Number(profile.AdCollegeId),
-      defaultTravelMinutes: Math.max(1, Math.min(120, Number(profile.defaultTravelMinutes) || 15)),
-      sameBuildingMinutes: Math.max(0, Math.min(30, Number(profile.sameBuildingMinutes) || 3)),
+      defaultTravelMinutes: Math.max(1, Math.min(120, Number(profile.defaultTravelMinutes) || DEFAULT_TRAVEL_MINUTES)),
+      sameBuildingMinutes: Math.max(0, Math.min(30, Number(profile.sameBuildingMinutes) || SAME_BUILDING_MINUTES)),
       pairs: Array.isArray(profile.pairs) ? profile.pairs.map(pair => ({
         fromBuilding: String(pair.fromBuilding || "").trim().slice(0, 40),
         toBuilding: String(pair.toBuilding || "").trim().slice(0, 40),

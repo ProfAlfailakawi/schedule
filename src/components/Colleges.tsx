@@ -18,6 +18,7 @@ import {
   Surface,
   CatalogFormDrawer,
 } from "./ui";
+import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
 export default function Colleges({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
@@ -141,7 +142,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     for (let i = 0; i < buildings.length; i++) for (let j = i + 1; j < buildings.length; j++) {
       const a = buildings[i], b = buildings[j];
       const found = configured.find((p: any) => [String(p.fromBuilding).toLowerCase(), String(p.toBuilding).toLowerCase()].sort().join("|") === [a.toLowerCase(), b.toLowerCase()].sort().join("|"));
-      out.push({ fromBuilding: a, toBuilding: b, minutes: Number(found?.minutes || mobility?.profile?.defaultTravelMinutes || 15) });
+      out.push({ fromBuilding: a, toBuilding: b, minutes: Number(found?.minutes || mobility?.profile?.defaultTravelMinutes || DEFAULT_TRAVEL_MINUTES) });
     }
     return out;
   }, [mobility]);
@@ -160,8 +161,8 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     setMobilityBusy(true); setMobilitySaved(false); setError(null);
     try {
       const payload = {
-        defaultTravelMinutes: Number(mobility.profile?.defaultTravelMinutes || 15),
-        sameBuildingMinutes: Number(mobility.profile?.sameBuildingMinutes || 3),
+        defaultTravelMinutes: Number(mobility.profile?.defaultTravelMinutes || DEFAULT_TRAVEL_MINUTES),
+        sameBuildingMinutes: Number(mobility.profile?.sameBuildingMinutes || SAME_BUILDING_MINUTES),
         pairs: mobilityPairs,
       };
       const r = await fetch(`/api/colleges/${selectedId}/mobility`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -335,8 +336,8 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                     {(mobility.buildings || []).slice(0, 8).map((b: any) => <span key={b.code}><Building2 /> مبنى {b.code}<small>{b.count} استخدام تاريخي</small></span>)}
                   </div>
                   <div className="mobility-defaults">
-                    <label><span>افتراضي بين مبنيين غير مضبوطين</span><div><input type="number" min="1" max="120" value={mobility.profile?.defaultTravelMinutes || 15} onChange={e=>{setMobility((m:any)=>({...m,profile:{...m.profile,defaultTravelMinutes:Number(e.target.value)}}));setMobilitySaved(false);}}/><b>دقيقة</b></div></label>
-                    <label><span>داخل المبنى نفسه</span><div><input type="number" min="0" max="30" value={mobility.profile?.sameBuildingMinutes || 3} onChange={e=>{setMobility((m:any)=>({...m,profile:{...m.profile,sameBuildingMinutes:Number(e.target.value)}}));setMobilitySaved(false);}}/><b>دقيقة</b></div></label>
+                    <label><span>افتراضي بين مبنيين غير مضبوطين</span><div><input type="number" min="1" max="120" value={mobility.profile?.defaultTravelMinutes || DEFAULT_TRAVEL_MINUTES} onChange={e=>{setMobility((m:any)=>({...m,profile:{...m.profile,defaultTravelMinutes:Number(e.target.value)}}));setMobilitySaved(false);}}/><b>دقيقة</b></div></label>
+                    <label><span>داخل المبنى نفسه</span><div><input type="number" min="0" max="30" value={mobility.profile?.sameBuildingMinutes || SAME_BUILDING_MINUTES} onChange={e=>{setMobility((m:any)=>({...m,profile:{...m.profile,sameBuildingMinutes:Number(e.target.value)}}));setMobilitySaved(false);}}/><b>دقيقة</b></div></label>
                   </div>
                   {mobilityPairs.length ? (() => {
                     const needle = mobilityFind.trim().toLowerCase();

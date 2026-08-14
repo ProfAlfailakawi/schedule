@@ -53,6 +53,12 @@ export interface AdInstructor {
   AdInstructorCivil: string;
   AdInstructorName: string;
   AdInstructorMobile: string;
+  /**
+   * Additive, optional. Absent means an ordinary active teacher. A retired or
+   * sabbatical member keeps every historical appointment but is hidden from new
+   * assignment pickers so their name stops appearing where it should not (Note 2).
+   */
+  AdInstructorStatus?: "retired" | "sabbatical";
 }
 
 export interface AdCourse {

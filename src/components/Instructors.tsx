@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Phone, Trash2, UserRound } from "lucide-react";
 import { validateCivilId } from "../utils/civilId";
+import { sortByName } from "../utils/sorting";
 import {
   AddButton,
   EmbeddedAction,
@@ -32,7 +33,10 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
-    [visibleLimit, setVisibleLimit] = useState(160);
+    [visibleLimit, setVisibleLimit] = useState(160),
+    // Note 2: retired / sabbatical status. Note 1: which instructors are delegates.
+    [status, setStatus] = useState<"" | "retired" | "sabbatical">(""),
+    [delegateIds, setDelegateIds] = useState<Set<number>>(new Set());
   const load = async () => {
     setLoading(true);
     try {
@@ -53,6 +57,10 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
   };
   useEffect(() => {
     void load();
+    fetch("/api/delegates")
+      .then(r => (r.ok ? r.json() : { instructorIds: [] }))
+      .then(d => setDelegateIds(new Set((d.instructorIds || []).map(Number))))
+      .catch(() => undefined);
   }, []);
   const back = () => {
       setMode("index");
@@ -63,6 +71,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       setCivil("");
       setName("");
       setMobile("");
+      setStatus("");
       setMode("create");
       setError(null);
     },
@@ -71,6 +80,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       setCivil(x.AdInstructorCivil || "");
       setName(x.AdInstructorName || "");
       setMobile(x.AdInstructorMobile || "");
+      setStatus(x.AdInstructorStatus === "retired" || x.AdInstructorStatus === "sabbatical" ? x.AdInstructorStatus : "");
       setMode("edit");
       setError(null);
     };
@@ -125,6 +135,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
             AdInstructorCivil: civil,
             AdInstructorName: name.trim(),
             AdInstructorMobile: mobile.trim(),
+            AdInstructorStatus: status || null,
           }),
         },
       ),
@@ -150,7 +161,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
   useEffect(() => setVisibleLimit(160), [query]);
   const filtered = useMemo(() => {
       const q = query.trim().toLowerCase();
-      return q
+      const base = q
         ? items.filter((x) =>
             [
               x.AdInstructorCivil,
@@ -163,6 +174,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
             ),
           )
         : items;
+      return sortByName(base, (x: any) => x.AdInstructorName);
     }, [items, query]),
     selected =
       filtered.find((x) => x.AdInstructorId === selectedId) || filtered[0] || null,
@@ -222,7 +234,33 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   }}
                 />
               </Field>
+              <Field label="الحالة">
+                <div className="status-choice" role="radiogroup" aria-label="حالة الأستاذ">
+                  {[
+                    { value: "", label: "نشط" },
+                    { value: "sabbatical", label: "متفرّغ" },
+                    { value: "retired", label: "متقاعد" },
+                  ].map((opt) => (
+                    <button
+                      type="button"
+                      key={opt.value || "active"}
+                      role="radio"
+                      aria-checked={status === opt.value}
+                      className={status === opt.value ? "on" : ""}
+                      onClick={() => setStatus(opt.value as "" | "retired" | "sabbatical")}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </Field>
             </div>
+            {status ? (
+              <p className="smart-term-hint">
+                <UserRound aria-hidden="true" />
+                {status === "retired" ? "متقاعد" : "متفرّغ"}: يبقى في السجل ويحتفظ بمواعيده السابقة، لكن لا يظهر عند إسناد مواعيد جديدة.
+              </p>
+            ) : null}
             <FormActions
               onBack={back}
               loading={loading}
@@ -270,6 +308,9 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   title={(
                     <>
                       {x.AdInstructorName}
+                      {x.AdInstructorStatus === "retired" ? <span className="staff-badge is-retired">متقاعد</span>
+                        : x.AdInstructorStatus === "sabbatical" ? <span className="staff-badge is-sabbatical">متفرّغ</span> : null}
+                      {delegateIds.has(x.AdInstructorId) ? <span className="staff-badge is-delegate">منتدب</span> : null}
                       {activeId === x.AdInstructorId ? <span className="sr-only">، محدد</span> : null}
                     </>
                   )}

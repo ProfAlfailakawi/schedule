@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Trash2 } from "lucide-react";
+import { CalendarDays, Sparkles, Trash2 } from "lucide-react";
+import { suggestNextTermName } from "../utils/termSequence";
 import {
   AddButton,
   EmbeddedAction,
@@ -29,6 +30,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false);
+  // The list is sorted by descending id, so items[0] is the most recent term.
+  const suggestedTerm = useMemo(() => suggestNextTermName(items[0]?.AdTermName), [items]);
   const load = async () => {
     setLoading(true);
     try {
@@ -56,7 +59,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     },
     create = () => {
       setEditId(null);
-      setName("");
+      // Note 29: pre-fill the next term in sequence so the common case is one click.
+      setName(suggestedTerm);
       setMode("create");
       setError(null);
     },
@@ -141,6 +145,12 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                 />
               </Field>
             </div>
+            {mode === "create" && suggestedTerm && name === suggestedTerm ? (
+              <p className="smart-term-hint">
+                <Sparkles aria-hidden="true" />
+                اقتُرح تلقائياً بعد «{items[0]?.AdTermName}» — عدّله إن رغبت.
+              </p>
+            ) : null}
             <FormActions
               onBack={back}
               loading={loading}

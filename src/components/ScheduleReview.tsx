@@ -141,9 +141,23 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
               </button>
               {open === finding.rule && finding.rowIds.length ? (
                 <div className="review-rows">
-                  {finding.rowIds.slice(0, 12).map(id => (
-                    <p key={id}>{describe(byId.get(id))}</p>
-                  ))}
+                  {finding.rowIds.slice(0, 12).map(id => {
+                    const row = byId.get(id);
+                    if (!row) return null;
+                    const days = DAY_KEYS.filter(key => (row as any)[key]).map(key => DAY_NAMES[DAY_KEYS.indexOf(key)]).join("، ");
+                    const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "";
+                    const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+                    return (
+                      <article key={id} className="review-row-card">
+                        <span className="rrc-code" dir="ltr">{code || "—"}</span>
+                        <div className="rrc-main">
+                          <strong>{who}</strong>
+                          <small>شعبة {row.SCode} · {days || "بلا أيام"}</small>
+                        </div>
+                        <time className="rrc-time" dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                      </article>
+                    );
+                  })}
                   {finding.rowIds.length > 12 ? <p className="review-more">و{(finding.rowIds.length - 12).toLocaleString("ar-KW-u-nu-latn")} غيرها…</p> : null}
                   {onFocusRows ? (
                     <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds); onClose(); }}>

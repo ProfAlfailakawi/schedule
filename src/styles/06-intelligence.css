@@ -720,11 +720,16 @@
 .copilot-compose button{min-width:48px;border-radius:var(--r-sm);background:var(--accent);color:var(--accent-contrast);display:grid;place-items:center}
 .copilot-context{height:max-content}
 .mini-command-list{display:grid;gap:var(--s2);margin-top:var(--s3)}
-.mini-command-list button{
-  padding:var(--s3) var(--s4);border:1px solid var(--line);border-radius:var(--r-sm);
-  background:var(--surface);color:var(--ink);text-align:start;font-size:var(--t-sm);
+/* The command chips are <span>s, so the old `button`-only rule left them entirely
+   unstyled and cramped on mobile (Note 10). Style the actual elements and align
+   the ⌘ icon with its label. */
+.mini-command-list span,.mini-command-list button{
+  display:flex;align-items:center;gap:var(--s2);min-width:0;
+  padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink);text-align:start;font-size:var(--t-sm);line-height:1.35;
 }
-.mini-command-list button:hover{border-color:var(--accent);background:var(--accent-softer)}
+.mini-command-list span svg,.mini-command-list button svg{width:15px;height:15px;flex:none;color:var(--accent)}
+.mini-command-list span:hover,.mini-command-list button:hover{border-color:var(--accent);background:var(--accent-softer)}
 
 /* Twin / innovation suite */
 .twin-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,340px);gap:var(--s4);align-items:start}
@@ -789,8 +794,10 @@
 .twin-grid-corner,.twin-day-head,.twin-time,.twin-drop-cell{min-height:38px;border-bottom:1px solid var(--line);border-inline-start:1px solid var(--line)}
 .twin-day-head,.twin-time{display:grid;place-items:center;color:var(--muted);font-size:var(--t-xs)}
 .twin-time{font-family:var(--font-mono);direction:ltr}
-.twin-drop-cell{position:relative;background:var(--surface-2)}
-.twin-event{padding:var(--s2);border:1px solid var(--line);border-radius:var(--r-xs);background:var(--accent-softer);font-size:var(--t-xs);line-height:1.4}
+/* Stack, don't pile: several events in one slot line up with a gap instead of
+   overlapping, and the cell grows to hold them (Note 17). */
+.twin-drop-cell{position:relative;background:var(--surface-2);display:flex;flex-direction:column;gap:3px;padding:3px}
+.twin-event{padding:var(--s2);border:1px solid var(--line);border-radius:var(--r-xs);background:var(--accent-softer);font-size:var(--t-xs);line-height:1.4;overflow-wrap:break-word}
 .scenario-editor,.scenario-fields,.scenario-days{display:grid;gap:var(--s3)}
 .scenario-fields{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .change-ledger,.change-list{display:flex;flex-direction:column;gap:var(--s2)}

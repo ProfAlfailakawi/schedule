@@ -152,15 +152,19 @@
     margin:1.2mm 0 0 !important;
     font-size:9pt !important;color:#444 !important;text-align:right !important;
   }
-  .print-head-mark{
-    flex:none !important;text-align:left !important;
+  .print-head-brand{
+    flex:none !important;display:flex !important;align-items:center !important;
+    gap:3mm !important;text-align:left !important;
   }
-  .print-head-mark strong{
-    display:block !important;
-    font:700 10pt/1.2 "Plex Mono",ui-monospace,monospace !important;
-    letter-spacing:.16em !important;color:#1f6b5c !important;
+  .print-emblem{flex:none !important;display:flex !important;color:#1f6b5c !important}
+  .print-emblem svg{width:13mm !important;height:13mm !important}
+  .print-head-org{display:flex !important;flex-direction:column !important;gap:.6mm !important}
+  .print-head-org strong{
+    display:block !important;max-width:54mm !important;
+    font:700 10.5pt/1.25 "IBM Plex Sans Arabic",sans-serif !important;
+    color:#0f4239 !important;
   }
-  .print-head-mark span{display:block !important;font-size:7.6pt !important;color:#666 !important}
+  .print-head-org span{display:block !important;font-size:7.4pt !important;color:#666 !important;letter-spacing:.02em !important}
 
   /* Repeated on every printed page by the browser. */
   .print-foot{
@@ -193,6 +197,8 @@
     font-weight:700 !important;font-size:8.2pt !important;
     background:#e8efec !important;color:#0f4239 !important;
     border-color:#7d8d88 !important;
+    /* A heading is one word: "وحدات" must never wrap to "وح/دات" (Note 11). */
+    white-space:nowrap !important;overflow-wrap:normal !important;word-break:keep-all !important;
   }
   .print-report tbody tr:nth-child(even) td{background:#f7f9f8 !important}
   .print-report td[dir="ltr"]{

@@ -20,8 +20,8 @@ import {
   Hourglass,
   Layers,
   Palette,
-  ShieldCheck,
   Undo2,
+  CornerUpRight,
   LayoutList,
   Lightbulb,
   MapPin,
@@ -221,6 +221,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     /* Cards moved in the last minute, keyed to the undo entry that reverses
        them — the pill each one wears is the undo, in place. */
     [recentMoves, setRecentMoves] = useState<Record<number, string>>({}),
+    /* A fading dashed echo left where a card used to sit, so a move reads as a
+       journey from one place to another and not a card that merely appeared. */
+    [moveTraces, setMoveTraces] = useState<Array<{ key: string; dayKey: DayKey; top: number; height: number; label: string }>>([]),
     /* Which day the rooms matrix is reading, and which rooms are pinned. */
     [matrixDay, setMatrixDay] = useState<DayKey | "week">("week"),
     [matrixRooms, setMatrixRooms] = useState<Set<string>>(new Set()),
@@ -609,6 +612,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setUndoBarId(entry.id);
     // The id goes back to the caller so the moved card itself can wear it.
     return entry.id;
+  };
+  /* Takes back an undo entry that was offered optimistically when the server then
+     refuses the move — so a rejected move leaves no phantom undo bar or pill. */
+  const revokeUndo = (id: string) => {
+    if (!id) return;
+    setUndoLog(current => current.filter(item => item.id !== id));
+    setUndoBarId(current => (current === id ? null : current));
   };
   // A saved row, reduced to the one request that would put it back as it was.
   const restoreStep = (snapshot: FSchedule): UndoStep => {
@@ -1506,6 +1516,32 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setJustChangedId(Number(id));
     window.setTimeout(() => setJustChangedId((current) => (current === Number(id) ? null : current)), 6000);
   };
+  const traceBatch = useRef(0);
+  /* Records the spots a set of moved cards vacated and clears them after a beat,
+     so the grid briefly shows both where each card landed (the brass ring) and
+     where it came from (a fading dashed echo) — a move reads as a journey rather
+     than a card that merely appeared somewhere new (Notes 7 & 16). */
+  const leaveMoveTraces = (moves: Array<{ before: FSchedule; after: FSchedule }>) => {
+    const traces: Array<{ key: string; dayKey: DayKey; top: number; height: number; label: string }> = [];
+    moves.forEach(({ before, after }) => {
+      days.forEach((d) => {
+        if (!Boolean((before as any)[d.key])) return;
+        // No echo where nothing moved: same day and same start means it stayed put.
+        if (Boolean((after as any)[d.key]) && before.fstarttime === after.fstarttime) return;
+        traces.push({
+          key: `${d.key}-${before.id}-${before.fstarttime}`,
+          dayKey: d.key as DayKey,
+          top: ((mins(before.fstarttime) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
+          height: Math.max(SLOT_H - 4, ((mins(before.fendtime) - mins(before.fstarttime)) / SCHEDULE_SLOT_MINUTES) * SLOT_H - 3),
+          label: before.AdCourseName || courseById.get(before.AdCourseId)?.CourseName || "الموعد",
+        });
+      });
+    });
+    if (!traces.length) return;
+    const batch = ++traceBatch.current;
+    setMoveTraces(traces);
+    window.setTimeout(() => { if (traceBatch.current === batch) setMoveTraces([]); }, 4500);
+  };
 
   const rememberSave = (row: any) => {
     lastSavedRef.current = {
@@ -1930,6 +1966,40 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       // The grid answers immediately; the network catches up behind it.
       const patched = new Map(moves.map(m => [m.before.id, m.after]));
       setRows(current => current.map(item => patched.get(item.id) || item));
+
+      // Optimistic feedback — the "just moved" ring and the undo pill appear the
+      // instant the card lands, not after the network answers. On a slow campus
+      // link the old order left the moved card looking untouched for a long
+      // moment and its undo icon arriving late (Note 8/15). Everything here is
+      // rolled back below if the server refuses the move.
+      markChanged(row.id);
+      leaveMoveTraces(moves);
+      setPhysicsNotice("");
+      const label = days.find(d => d.key === day)?.label || "";
+      const movedIds = moves.map(m => m.before.id);
+      const undoId = offerUndo(
+        moves.length > 1
+          ? `نُقل ${moves.length} مواعيد إلى ${label} ${target.start}`
+          : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${target.start}`,
+        moves.map(move => restoreStep(move.before)),
+      );
+      let undoTimer: number | undefined;
+      if (undoId) {
+        /* The moved cards wear their own undo for a minute. */
+        setRecentMoves(current => {
+          const next = { ...current };
+          movedIds.forEach(id => { next[id] = undoId; });
+          return next;
+        });
+        undoTimer = window.setTimeout(() => {
+          setRecentMoves(current => {
+            const next = { ...current };
+            movedIds.forEach(id => { if (next[id] === undoId) delete next[id]; });
+            return next;
+          });
+        }, 60_000);
+      }
+
       try {
         await fetchJson("/api/schedules/move-batch", {
           method: "POST",
@@ -1940,37 +2010,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           }),
         });
       } catch (refusal) {
-        // Nothing was written — put the grid back exactly as it was.
+        // Nothing was written — put the grid back, and take back the optimistic
+        // marker and undo so a refused move leaves no trace of having happened.
         const restore = new Map(moves.map(m => [m.before.id, m.before]));
         setRows(current => current.map(item => restore.get(item.id) || item));
-        setPhysicsNotice("");
-        throw refusal;
-      }
-
-      markChanged(row.id);
-      setPhysicsNotice("");
-      const label = days.find(d => d.key === day)?.label || "";
-      const undoId = offerUndo(
-        moves.length > 1
-          ? `نُقل ${moves.length} مواعيد إلى ${label} ${target.start}`
-          : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${target.start}`,
-        moves.map(move => restoreStep(move.before)),
-      );
-      /* The moved cards wear their own undo for a minute. */
-      if (undoId) {
-        const movedIds = moves.map(m => m.before.id);
-        setRecentMoves(current => {
-          const next = { ...current };
-          movedIds.forEach(id => { next[id] = undoId; });
-          return next;
-        });
-        window.setTimeout(() => {
+        setJustChangedId(current => (current === Number(row.id) ? null : current));
+        setMoveTraces([]);
+        if (undoId) {
+          if (undoTimer !== undefined) window.clearTimeout(undoTimer);
           setRecentMoves(current => {
             const next = { ...current };
             movedIds.forEach(id => { if (next[id] === undoId) delete next[id]; });
             return next;
           });
-        }, 60_000);
+          revokeUndo(undoId);
+        }
+        setPhysicsNotice("");
+        throw refusal;
       }
       void loadRows();
     } catch (e: any) {
@@ -2000,6 +2056,28 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     try {
       /* Same atomic door the week drag uses: server-side re-check + one write. */
       setRows(current => current.map(item => (item.id === row.id ? after : item)));
+
+      // Optimistic feedback first — marker and undo pill land with the card, not
+      // after the network answers, and are rolled back on refusal (Note 8/15).
+      markChanged(row.id);
+      const place = [building, hall].filter(Boolean).join("/") || "بلا قاعة";
+      const undoId = offerUndo(
+        `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${place} ${start}`,
+        [restoreStep(row)],
+      );
+      let undoTimer: number | undefined;
+      if (undoId) {
+        setRecentMoves(current => ({ ...current, [row.id]: undoId }));
+        undoTimer = window.setTimeout(() => {
+          setRecentMoves(current => {
+            if (current[row.id] !== undoId) return current;
+            const next = { ...current };
+            delete next[row.id];
+            return next;
+          });
+        }, 60_000);
+      }
+
       try {
         await fetchJson("/api/schedules/move-batch", {
           method: "POST",
@@ -2024,24 +2102,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         });
       } catch (refusal) {
         setRows(current => current.map(item => (item.id === row.id ? row : item)));
-        throw refusal;
-      }
-      markChanged(row.id);
-      const place = [building, hall].filter(Boolean).join("/") || "بلا قاعة";
-      const undoId = offerUndo(
-        `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${place} ${start}`,
-        [restoreStep(row)],
-      );
-      if (undoId) {
-        setRecentMoves(current => ({ ...current, [row.id]: undoId }));
-        window.setTimeout(() => {
+        setJustChangedId(current => (current === Number(row.id) ? null : current));
+        if (undoId) {
+          if (undoTimer !== undefined) window.clearTimeout(undoTimer);
           setRecentMoves(current => {
             if (current[row.id] !== undoId) return current;
             const next = { ...current };
             delete next[row.id];
             return next;
           });
-        }, 60_000);
+          revokeUndo(undoId);
+        }
+        throw refusal;
       }
       void loadRows();
     } catch (e: any) {
@@ -3286,9 +3358,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         <span className="code-chip">{x.courseCode}</span>
                         <div>
                           <strong>{x.courseName}</strong>
-                          <small>
-                            {x.instructorName} · شعبة {x.sectionCode}
-                          </small>
+                          {/* Note 28: the instructor name is noise in a copy preview
+                              — the copy is by course/section, not by teacher. */}
+                          <small>شعبة {x.sectionCode}</small>
                         </div>
                         <span dir="ltr">{x.time}</span>
                         <span>{x.room}</span>
@@ -4543,13 +4615,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   ? (multiSelect.size ? `${multiSelect.size} موعدًا مختارًا · اسحب الآن` : "اختر المواعيد من الجدول")
                   : "نقل جماعي"}
               </button> : null}
-              <span
-                className="week-pick-toggle on week-safety-lock"
-                title="أي إفلات يخلق مانعاً يرتد تلقائياً ولا يُحفظ"
-              >
-                <ShieldCheck aria-hidden="true" />
-                منع التعارض مفعّل
-              </span>
+              {/*
+                Note 13: the "منع التعارض مفعّل" badge was removed from the toolbar
+                — it is not a user choice, it is an always-on backend guarantee
+                (any drop that creates a conflict auto-reverts and is never saved),
+                so surfacing it only added noise. The enforcement itself is untouched.
+              */}
               {workspaceToolsOpen ? <button
                 type="button"
                 className="week-pick-toggle"
@@ -4863,6 +4934,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             );
                           })
                       : null}
+                    {moveTraces
+                      .filter((trace) => trace.dayKey === d.key)
+                      .map((trace) => (
+                        <div
+                          key={`trace-${trace.key}`}
+                          className="week-move-trace"
+                          style={{ top: trace.top, height: trace.height }}
+                          aria-hidden="true"
+                        >
+                          <span><CornerUpRight aria-hidden="true" />نُقل من هنا</span>
+                        </div>
+                      ))}
                     {(weekLayout[d.key]?.spine || []).map((placed) => {
                       const c = courseById.get(placed.row.AdCourseId);
                       const railInstructor = instructorById.get(placed.row.AdInstructorId);

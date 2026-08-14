@@ -1,6 +1,7 @@
 import React, { useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, Check, Copy, Download, Plus, Upload, UserMinus, UserPlus, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
+import { validateCivilId } from "../utils/civilId";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -56,6 +57,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [rosterLoaded, setRosterLoaded] = useState(false);
   const [rosterQuery, setRosterQuery] = useState("");
   const [copyFrom, setCopyFrom] = useState(0);
+  // Note 1: a department adds its own delegates from right here, without needing
+  // the college-wide instructor registry.
+  const [newName, setNewName] = useState("");
+  const [newCivil, setNewCivil] = useState("");
 
   React.useEffect(() => {
     if (tab !== "visiting" || !scopeReadyRef.current) return;
@@ -77,6 +82,33 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       });
       onChanged();
     } finally { setBusy(false); }
+  };
+
+  // Create a brand-new delegate and drop them straight into this term's roster,
+  // so "where do I add my delegates?" has one answer: right here (Note 1).
+  const addNewDelegate = async () => {
+    const name = newName.trim(), civil = newCivil.trim();
+    if (!name || !civil) { setError("اكتب اسم المنتدب ورقمه المدني."); return; }
+    const check = validateCivilId(civil);
+    if (!check.isValid) { setError(check.message || "رقم مدني غير صالح."); return; }
+    if (instructors.some(person => String(person.AdInstructorCivil || "") === civil)) {
+      setError("هذا الرقم المدني مسجّل بالفعل — ابحث عن الاسم أعلاه وأضِفه.");
+      return;
+    }
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch("/api/instructors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: "" }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذّر إضافة المنتدب.");
+      setNewName(""); setNewCivil("");
+      onChanged();
+      await saveRoster([...roster, Number(data.AdInstructorId)]);
+    } catch (e: any) { setError(e.message || "تعذّر إضافة المنتدب."); }
+    finally { setBusy(false); }
   };
 
   const copyRoster = async () => {
@@ -362,6 +394,29 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                 </select>
                 <SecondaryButton type="button" onClick={copyRoster} disabled={!copyFrom || busy}><Copy />انسخ</SecondaryButton>
               </div>
+              <div className="roster-add">
+                <div className="roster-add-head"><UserPlus aria-hidden="true" /><strong>أضف منتدباً جديداً لقسمك</strong></div>
+                <div className="roster-add-fields">
+                  <input
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    placeholder="اسم المنتدب"
+                    aria-label="اسم المنتدب الجديد"
+                  />
+                  <input
+                    value={newCivil}
+                    onChange={e => setNewCivil(e.target.value.replace(/[^\d]/g, ""))}
+                    placeholder="الرقم المدني"
+                    inputMode="numeric"
+                    dir="ltr"
+                    maxLength={12}
+                    aria-label="الرقم المدني للمنتدب الجديد"
+                  />
+                  <PrimaryButton type="button" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}>
+                    <Plus />أضف وأدرِج
+                  </PrimaryButton>
+                </div>
+              </div>
               <input
                 className="roster-search"
                 value={rosterQuery}
@@ -411,7 +466,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                 {rosterQuery.trim() && !instructors.some(person =>
                   person.AdInstructorName.includes(rosterQuery.trim()) ||
                   String(person.AdInstructorCivil || "").includes(rosterQuery.trim())) ? (
-                  <p className="roster-empty">لا اسم يطابق «{rosterQuery.trim()}». أضِف الأستاذ من سجل الأساتذة أولاً ثم اختره هنا.</p>
+                  <p className="roster-empty">لا اسم يطابق «{rosterQuery.trim()}» — أضِفه بنموذج «أضف منتدباً جديداً» أعلاه.</p>
                 ) : null}
               </div>
             </>

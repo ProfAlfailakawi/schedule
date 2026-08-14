@@ -204,7 +204,8 @@ export default function App() {
   const [theme, setTheme] = useState<"light" | "dark">(() => {
     const stored = safeStorage.get("schedule-theme");
     if (stored === "dark" || stored === "light") return stored;
-    return "dark";
+    // Default to day/light mode; only an explicit user choice switches to dark.
+    return "light";
   });
   const [dataMode, setDataMode] = useState<{ mode: string; real: boolean } | null>(null);
   const [online, setOnline] = useState(() => navigator.onLine),
@@ -215,8 +216,13 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    safeStorage.set("schedule-theme", theme);
   }, [theme]);
+  // Persist ONLY an explicit user choice, so the day-mode default is never
+  // silently written to storage on first load (Note 31: always day unless changed).
+  const chooseTheme = (next: "light" | "dark") => {
+    setTheme(next);
+    safeStorage.set("schedule-theme", next);
+  };
   useEffect(() => {
     if (!user) return;
     let lastActivityAt = Date.now();
@@ -584,7 +590,7 @@ export default function App() {
           unauthorized()
         );
       case "intelligence":
-        return isPowerAdmin && hasPerm(7) ? (
+        return hasPerm(7) ? (
           <IntelligenceWorkspace user={user} scopes={scopes} />
         ) : (
           unauthorized()
@@ -819,7 +825,11 @@ export default function App() {
     className?: string;
     children: React.ReactNode;
   }) => {
-    const open = navGroups[id] ?? holdsActive;
+    // Note 33: the group holding the current screen is always open — a stale
+    // manual collapse can no longer hide the section you are actually in (which
+    // read as the accordion "hanging"). Manual open/close still applies to every
+    // other group.
+    const open = holdsActive || (navGroups[id] ?? false);
     const bodyId = `nav-section-${id}`;
     return (
       <div
@@ -1376,12 +1386,14 @@ export default function App() {
               />
             ) : null}
           </NavSection>
-          {isPowerAdmin && allowed.schedule ? (
+          {/* Note 20: decision tools are for everyone who works on the schedule,
+              not admins only. A non-admin is scoped to their own department by
+              resolveScopeSelection; publishing stays guarded server-side. */}
+          {allowed.schedule ? (
             <NavSection
               id="schedule"
               title="أدوات القرار"
               rail="schedule"
-              className="admin-only-nav"
               holdsActive={activeView === "intelligence"}
             >
               <NavButton
@@ -1484,7 +1496,7 @@ export default function App() {
                   theme === "dark" ? "تفعيل الوضع الفاتح" : "تفعيل الوضع الداكن"
                 }
                 title={theme === "dark" ? "الوضع الفاتح" : "الوضع الداكن"}
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                onClick={() => chooseTheme(theme === "dark" ? "light" : "dark")}
               >
                 {theme === "dark" ? <Sun /> : <Moon />}
               </button>

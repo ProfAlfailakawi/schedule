@@ -462,9 +462,9 @@ export default function LivingScheduleLayer({
     [
       { id: "pulse", label: "نظرة عامة", icon: <Activity /> },
       { id: "topology", label: "خريطة الضغط", icon: <Network /> },
-      { id: "why", label: "تحليل قرار", icon: <CircleHelp /> },
+      // Note 19: "تحليل قرار" and "مساعد القرار" are hidden for now (planned for a
+      // future release); their scene code stays in place, just not surfaced here.
       { id: "health", label: "الصحة والعدالة", icon: <Gauge /> },
-      { id: "copilot", label: "مساعد القرار", icon: <BrainCircuit /> },
       { id: "brief", label: "ملخص الدقيقة", icon: <Zap /> },
       { id: "genesis", label: "بداية الفصل", icon: <Dna /> },
       { id: "memory", label: "ذاكرة القرار", icon: <History /> },

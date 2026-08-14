@@ -120,7 +120,9 @@ export default function AdminUsers({
         } catch {
           setInstructors([]);
         }
-      if (mode === "permissions") {
+      // Note 26: permissions are edited inside the users screen now, so the users
+      // mode needs the same forms + grants the standalone screen used to load.
+      if (mode === "permissions" || mode === "users") {
         const d = await Promise.all([
           api("/api/permissions/forms"),
           api("/api/permissions"),
@@ -149,6 +151,13 @@ export default function AdminUsers({
     if (mode === "users" && users.length && !selectedUserId)
       setSelectedUserId(users[0].SystemUserId);
   }, [mode, users.length]);
+  // Note 26: keep the inline permission grid bound to the selected user, seeded
+  // from their current grants (re-seeds after a save reloads `perms`).
+  useEffect(() => {
+    if (mode !== "users" || !selectedUserId) return;
+    setPermUser(selectedUserId);
+    setPermSelections(perms.filter((item) => item.SystemUserId === selectedUserId).map((item) => item.FormNameId));
+  }, [mode, selectedUserId, perms]);
   useEffect(() => {
     if (mode === "permissions" && perms.length && !selectedPermKey)
       setSelectedPermKey(permKey(perms[0]));
@@ -253,11 +262,13 @@ export default function AdminUsers({
       setError(e.message);
     }
   };
-  const savePermission = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const savePermission = async (e?: React.FormEvent) => {
+    e?.preventDefault?.();
     setError(null);
-    if (!permUser || !permSelections.length) {
-      setError("اختر المستخدم ثم حدد صلاحية واحدة على الأقل");
+    // No lower bound on selections here: clearing every permission is a valid,
+    // deliberate action from the inline editor (removes all of the user's grants).
+    if (!permUser) {
+      setError("اختر المستخدم");
       return;
     }
     try {
@@ -346,9 +357,8 @@ export default function AdminUsers({
     permissions.length === 0 || permissions.includes(11)
       ? { value: "users", label: "المستخدمون", icon: <UsersRound /> }
       : null,
-    permissions.length === 0 || permissions.includes(12)
-      ? { value: "permissions", label: "الصلاحيات", icon: <ShieldCheck /> }
-      : null,
+    // Note 26: the standalone "الصلاحيات" tab is gone — permissions are edited
+    // inline on the users screen, so there is nothing useful to show on its own.
     permissions.length === 0 || permissions.includes(15)
       ? { value: "scopes", label: "النطاقات", icon: <Building2 /> }
       : null,
@@ -597,10 +607,23 @@ export default function AdminUsers({
                   <option value="">اختر ...</option>
                   {users.map((u) => (
                     <option key={u.SystemUserId} value={u.SystemUserId}>
-                      {u.SystemUserLogin}
+                      {u.Name} · {u.SystemUserLogin}
                     </option>
                   ))}
                 </select>
+                {/* Note 27: show which departments this user is already scoped to,
+                    right under their name, before adding another. */}
+                {scopeUser ? (
+                  <p className="smart-term-hint scope-current-hint">
+                    <Building2 aria-hidden="true" />
+                    {(() => {
+                      const mine = assigns.filter((a) => a.SystemUserId === scopeUser);
+                      if (!mine.length) return "لا أقسام مسندة لهذا المستخدم بعد.";
+                      const names = [...new Set(mine.map((a) => sectionById.get(a.AdSectionId)?.AdSectionName).filter(Boolean))];
+                      return `مسند حالياً إلى: ${names.join(" · ")}`;
+                    })()}
+                  </p>
+                ) : null}
               </Field>
               <Field label="اسم الكلية" required>
                 <select
@@ -764,6 +787,50 @@ export default function AdminUsers({
                     <b>{selected.SystemUserId}</b>
                   </article>
                 </div>
+                {/* Note 26: the permission editor lives here now — pick a user on the
+                    left and set exactly what they can reach, with no separate tab. */}
+                <section className="inspector-permissions" aria-label="صلاحيات المستخدم">
+                  <div className="inspector-perm-head">
+                    <span className="surface-kicker"><KeyRound aria-hidden="true" /> صلاحيات الوصول</span>
+                    <b>{permSelections.length} من {forms.length || "…"}</b>
+                  </div>
+                  {forms.length ? (
+                    <>
+                      <div className="permission-choice-grid" aria-label="اختيار صلاحيات المستخدم">
+                        {forms.map((f) => {
+                          const active = permSelections.includes(f.FormNameId);
+                          return (
+                            <button
+                              type="button"
+                              key={f.FormNameId}
+                              className={active ? "active" : ""}
+                              aria-pressed={active}
+                              onClick={() =>
+                                setPermSelections((current) =>
+                                  current.includes(f.FormNameId)
+                                    ? current.filter((id) => id !== f.FormNameId)
+                                    : [...current, f.FormNameId],
+                                )
+                              }
+                            >
+                              <span className="permission-check" aria-hidden="true">{active ? <Check /> : <KeyRound />}</span>
+                              <strong>{f.FormName}</strong>
+                              <small title="رقم الشاشة في النظام">{f.FormNameId}</small>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="inspector-perm-actions">
+                        <PrimaryButton onClick={() => savePermission()}>حفظ الصلاحيات</PrimaryButton>
+                        {permSelections.length ? (
+                          <SecondaryButton onClick={() => setPermSelections([])}>مسح الاختيار</SecondaryButton>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="soft-copy">جارٍ تحميل الصلاحيات…</p>
+                  )}
+                </section>
                 <div className="inspector-actions">
                   <PrimaryButton onClick={() => editUser(selected)}>
                     تعديل الحساب
