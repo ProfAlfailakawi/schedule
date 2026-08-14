@@ -1461,13 +1461,14 @@
   border-radius:var(--r-full);background:var(--accent-softer);color:var(--accent);
 }
 .pulse-rings svg{width:20px;height:20px}
+/* Static concentric rings instead of an endless expanding pulse — the beacon
+   reads as "live" without decorative motion that never comes to rest. */
 .pulse-rings i{
   position:absolute;inset:0;border-radius:var(--r-full);
-  border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);
-  animation:pulse-ring 2.6s var(--ease-out) infinite;
+  border:1px solid color-mix(in srgb,var(--accent) 24%,transparent);
 }
-.pulse-rings i:nth-child(2){animation-delay:.7s}
-.pulse-rings i:nth-child(3){animation-delay:1.4s}
+.pulse-rings i:nth-child(2){inset:-6px;opacity:.6}
+.pulse-rings i:nth-child(3){inset:-12px;opacity:.32}
 @keyframes pulse-ring{from{transform:scale(1);opacity:.7}to{transform:scale(1.5);opacity:0}}
 
 .pulse-decisions{display:grid;gap:var(--s2)}

@@ -17,6 +17,7 @@ import {
   SecondaryButton,
   SkeletonDeck,
   Surface,
+  CatalogFormDrawer,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
@@ -131,9 +132,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
       filtered.find((x) => x.AdSectionId === selectedId) || filtered[0] || null,
     activeId = selected?.AdSectionId ?? null;
   const editorDrawer = mode !== "index" ? (
-      <>
-      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
-      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء قسم جديد" : "تعديل بيانات القسم"}>
+      <CatalogFormDrawer onClose={back} label={mode === "create" ? "إنشاء قسم جديد" : "تعديل بيانات القسم"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="القسم مرتبط بكليته"
@@ -195,8 +194,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
             />
           </form>
         </Surface>
-      </aside>
-      </>
+      </CatalogFormDrawer>
     ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>

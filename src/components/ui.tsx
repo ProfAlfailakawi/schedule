@@ -85,6 +85,51 @@ export function Notice({ type = "error", children, inline = false, onDismiss, ac
   if (inline || typeof document === "undefined") return body;
   return createPortal(body, getToastHost());
 }
+const DRAWER_FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+/**
+ * Keyboard-complete side panels, in one hook.
+ *
+ * When a drawer opens it takes focus; Tab and Shift+Tab cycle inside it instead
+ * of escaping to the page behind; Escape closes it; and closing hands focus back
+ * to whatever opened it. Every panel that uses this behaves the same for a
+ * keyboard or a screen reader — the difference between a panel and a trap.
+ */
+export function useDrawerA11y<T extends HTMLElement>(onClose: () => void) {
+  const ref = React.useRef<T>(null);
+  React.useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const list = (): HTMLElement[] => {
+      const root = ref.current;
+      if (!root) return [];
+      return (Array.from(root.querySelectorAll(DRAWER_FOCUSABLE)) as HTMLElement[]).filter(el => el.offsetParent !== null);
+    };
+    (list()[0] || ref.current)?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key !== "Tab") return;
+      const els = list(); if (!els.length) return;
+      const first = els[0], last = els[els.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("keydown", onKey); opener?.focus?.(); };
+  }, [onClose]);
+  return ref;
+}
+/** The academic add/edit side panel: a backdrop, a keyboard-complete drawer, one close. */
+export function CatalogFormDrawer({ label, onClose, children }: { label: string; onClose: () => void; children: React.ReactNode }) {
+  const ref = useDrawerA11y<HTMLElement>(onClose);
+  return (
+    <>
+      <div className="catalog-form-backdrop no-print" onMouseDown={onClose} aria-hidden="true" />
+      <aside ref={ref} className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-modal="true" aria-label={label}>
+        <button type="button" className="drawer-close catalog-drawer-close" onClick={onClose} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></button>
+        {children}
+      </aside>
+    </>
+  );
+}
 export function PrimaryButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`btn btn-primary ${className}`.trim()}>{children}</button>; }
 export function SecondaryButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`btn btn-secondary ${className}`.trim()}>{children}</button>; }
 export function GhostButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`btn btn-ghost ${className}`.trim()}>{children}</button>; }

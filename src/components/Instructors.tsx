@@ -17,6 +17,7 @@ import {
   SecondaryButton,
   SkeletonDeck,
   Surface,
+  CatalogFormDrawer,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
@@ -167,9 +168,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       filtered.find((x) => x.AdInstructorId === selectedId) || filtered[0] || null,
     activeId = selected?.AdInstructorId ?? null;
   const editorDrawer = mode !== "index" ? (
-      <>
-      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
-      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء أستاذ جديد" : "تعديل بيانات الأستاذ"}>
+      <CatalogFormDrawer onClose={back} label={mode === "create" ? "إنشاء أستاذ جديد" : "تعديل بيانات الأستاذ"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="تحقق الرقم المدني فعّال"
@@ -231,8 +230,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
             />
           </form>
         </Surface>
-      </aside>
-      </>
+      </CatalogFormDrawer>
     ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>

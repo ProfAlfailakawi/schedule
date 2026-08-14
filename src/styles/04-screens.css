@@ -451,7 +451,17 @@
 .list-search button,.schedule-quick-search button{color:var(--muted);padding:var(--s1);display:grid;place-items:center}
 .list-search button svg,.schedule-quick-search button svg{width:14px;height:14px}
 .list-search button:hover,.schedule-quick-search button:hover{color:var(--ink)}
-.list-toolbar-side{display:flex;align-items:center;gap:var(--s2)}
+.list-toolbar-side{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+/* Compact per-screen filters that sit beside the search — quiet until used. */
+.list-filter{
+  min-height:38px;max-width:190px;
+  padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-xs);
+  background:var(--surface-2);color:var(--ink-2);
+  font-size:var(--t-sm);text-overflow:ellipsis;
+}
+.list-filter:hover{border-color:var(--line-strong)}
+.list-filter:focus{border-color:var(--accent);outline:none;box-shadow:var(--ring)}
 
 .record-deck{display:flex;flex-direction:column}
 .record-card{
@@ -957,6 +967,10 @@
   animation:drawer-in .26s var(--ease-out) both;
 }
 .catalog-form-drawer .page-heading{padding-top:0}
+.catalog-form-drawer .catalog-drawer-close{
+  position:absolute;top:var(--s4);inset-inline-start:var(--s4);
+  margin:0;z-index:3;
+}
 @media screen and (max-width:768px){
   .catalog-form-drawer{
     top:auto;inset-inline:0;bottom:0;width:100%;

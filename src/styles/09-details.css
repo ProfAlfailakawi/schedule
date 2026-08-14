@@ -334,6 +334,10 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 }
 .share-row-actions button svg,.share-row-actions a svg{width:15px;height:15px}
 .share-row-actions button.active{border-color:var(--accent);color:var(--accent);background:var(--accent-softer)}
+/* The destructive action stands apart from copy/QR/calendar — a small gap and a
+   danger-tinted hover so "stop the link" is never a neighbour-miss of "copy". */
+.share-row-actions button:last-child{margin-inline-start:var(--s2)}
+.share-row-actions button:last-child:hover:not(:disabled){border-color:var(--danger);color:var(--danger);background:var(--danger-soft)}
 /* The QR drops onto its own row under the link; the encoder draws a scalable
    SVG, kept on a white card so it stays high-contrast and scannable in any theme. */
 .share-qr{

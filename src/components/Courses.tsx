@@ -17,6 +17,7 @@ import {
   SecondaryButton,
   SkeletonDeck,
   Surface,
+  CatalogFormDrawer,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
@@ -24,6 +25,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
   const [items, setItems] = useState<any[]>([]),
     [colleges, setColleges] = useState<any[]>([]),
     [sections, setSections] = useState<any[]>([]),
+    [listCollege, setListCollege] = useState(0),
+    [listSection, setListSection] = useState(0),
     [mode, setMode] = useState<Mode>("index"),
     [editId, setEditId] = useState<number | null>(null),
     [selectedId, setSelectedId] = useState<number | null>(null),
@@ -199,8 +202,11 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       sections.find((s) => s.AdSectionId === id)?.AdSectionName || "";
   const filtered = useMemo(() => {
       const q = query.trim().toLowerCase();
+      let list = items;
+      if (listCollege) list = list.filter((x) => x.AdCollegeId === listCollege);
+      if (listSection) list = list.filter((x) => x.AdSectionId === listSection);
       return q
-        ? items.filter((x) =>
+        ? list.filter((x) =>
             [
               x.CourseCode,
               x.CourseName,
@@ -212,15 +218,13 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                 .includes(q),
             ),
           )
-        : items;
-    }, [items, colleges, sections, query]),
+        : list;
+    }, [items, colleges, sections, query, listCollege, listSection]),
     selected =
       filtered.find((x) => x.AdCourseId === selectedId) || filtered[0] || null,
     activeId = selected?.AdCourseId ?? null;
   const editorDrawer = mode !== "index" ? (
-      <>
-      <div className="catalog-form-backdrop no-print" onMouseDown={back} aria-hidden="true" />
-      <aside className="content-stack editor-page catalog-form-drawer no-print" role="dialog" aria-label={mode === "create" ? "إنشاء مقرر جديد" : "تعديل بيانات المقرر"}>
+      <CatalogFormDrawer onClose={back} label={mode === "create" ? "إنشاء مقرر جديد" : "تعديل بيانات المقرر"}>
         <PageTitle
           eyebrow="البيانات الأكاديمية"
           subtitle="مرتبط بالكلية والقسم"
@@ -335,8 +339,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             />
           </form>
         </Surface>
-      </aside>
-      </>
+      </CatalogFormDrawer>
     ) : null;
   return (
     <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
@@ -361,7 +364,30 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             onChange={setQuery}
             count={filtered.length}
             placeholder="رمز المقرر، اسمه، الكلية أو القسم"
-          />
+          >
+            <select
+              className="list-filter"
+              value={listCollege}
+              onChange={(e) => { setListCollege(Number(e.target.value)); setListSection(0); }}
+              aria-label="تصفية بالكلية"
+            >
+              <option value={0}>كل الكليات</option>
+              {colleges.map((c) => (
+                <option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>
+              ))}
+            </select>
+            <select
+              className="list-filter"
+              value={listSection}
+              onChange={(e) => setListSection(Number(e.target.value))}
+              aria-label="تصفية بالقسم"
+            >
+              <option value={0}>كل الأقسام</option>
+              {sections.filter((s) => !listCollege || s.AdCollegeId === listCollege).map((s) => (
+                <option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>
+              ))}
+            </select>
+          </ListToolbar>
           {loading ? (
             <SkeletonDeck count={6} />
           ) : filtered.length ? (
