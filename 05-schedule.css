@@ -33,6 +33,35 @@
 .schedule-tool-actions{display:flex;align-items:center;gap:var(--s2);justify-self:end;flex-wrap:wrap}
 .schedule-tool-actions .btn{min-height:38px;padding-inline:var(--s3)}
 
+/* --- Live radar ------------------------------------------------------------
+   Collisions and regulation notes are counted locally on every change, so the
+   chips never wait for a request; the colliding cards themselves wear the ring
+   in the list, the week and the rooms alike. */
+.schedule-view-cluster{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+.schedule-radar{
+  display:inline-flex;align-items:center;gap:6px;
+  min-height:38px;padding:0 var(--s3);
+  border-radius:999px;border:1px solid transparent;
+  font-size:var(--t-sm);font-weight:700;white-space:nowrap;
+}
+.schedule-radar svg{width:15px;height:15px;flex:none}
+button.schedule-radar{cursor:pointer;transition:filter .15s ease}
+button.schedule-radar:hover{filter:brightness(.96)}
+.radar-clash{
+  background:var(--danger-soft);color:var(--danger);
+  border-color:color-mix(in srgb,var(--danger) 32%,transparent);
+}
+.radar-notes{
+  background:var(--warning-soft);color:var(--warning);
+  border-color:color-mix(in srgb,var(--warning) 30%,transparent);
+}
+.radar-clean{background:var(--success-soft);color:var(--success)}
+.week-event.live-clash,.agenda-card.live-clash,.rooms-card.live-clash{
+  outline:2px solid var(--danger);outline-offset:1px;
+}
+.week-event.live-clash{box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 20%,transparent)}
+.agenda-card.live-clash{background:color-mix(in srgb,var(--danger-soft) 40%,var(--surface))}
+
 .scope-inline-note{
   display:flex;align-items:center;justify-content:space-between;gap:var(--s4);
   padding:var(--s3) var(--s4);

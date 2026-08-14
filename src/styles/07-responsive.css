@@ -157,11 +157,14 @@
   .week-legend-cap{order:1}
   .week-legend-search{order:2;flex:1;min-width:0}
   .week-legend-search input{width:100%}
-  .week-legend-clear{order:3}
-  .week-legend-chips{order:4;flex-basis:100%;padding-block:1px}
+  .week-legend-texture{order:3}
+  .week-legend-clear{order:4}
+  .week-legend-chips{order:5;flex-basis:100%;padding-block:1px}
   /* A chip is a touch target before it is a label. */
   .week-legend-chip{min-height:34px;max-width:none}
-  .week-legend-clear,.week-legend-search{min-height:34px}
+  .week-legend-clear,.week-legend-search,.week-legend-texture{min-height:34px}
+  /* On a narrow line the word can go; the icon and its pressed state carry it. */
+  .week-legend-texture:not(.is-on) span{display:none}
 
   .app-main{padding:var(--s5) var(--gutter) calc(var(--s10) + 58px + env(safe-area-inset-bottom))}
   .content-stack{gap:var(--s4)}

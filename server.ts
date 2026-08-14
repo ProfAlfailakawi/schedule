@@ -11,6 +11,7 @@ import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecas
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
+import { coerceScopeValues } from "./src/utils/scopeContext";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
 import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
@@ -1340,6 +1341,89 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel];
 }
 
+/**
+ * The whole workspace in one request.
+ *
+ * Opening the schedule used to be a conversation: colleges, then sections, then
+ * terms, then the rows, then the department's instructors and courses and its
+ * visiting roster — six requests in three waits, and on the campus connection
+ * every wait is the slow part. The account already names its department, so the
+ * server can resolve the scope itself and answer with everything that scope
+ * needs in a single round trip. The administrator gets the same single answer
+ * for whichever scope they ask about; everyone else is answered only from the
+ * sections that are theirs.
+ */
+app.get("/api/schedules/workspace", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const requestedCollege = Number(req.query.collegeId || 0);
+  const requestedSection = Number(req.query.sectionId || 0);
+  const requestedTerm = Number(req.query.termId || 0);
+  const resolveDefaults = String(req.query.resolve || "") === "1";
+
+  const [allColleges, allSections, terms] = await Promise.all([
+    Repository.getColleges(), Repository.getSections(), Repository.getTerms(),
+  ]);
+  const colleges = req.user.IsAdminUser
+    ? allColleges
+    : allColleges.filter(college => (req.scopes || []).some(scope => Number(scope.AdCollegeId) === college.AdCollegeId));
+  const sections = filterByScope(req, allSections);
+  const termId = requestedTerm && terms.some(term => Number(term.AdTermId) === requestedTerm)
+    ? requestedTerm
+    : terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+
+  let collegeId = requestedCollege, sectionId = requestedSection;
+  if (!req.user.IsAdminUser) {
+    // Whatever was asked for, the answer stays inside the account's own sections.
+    const coerced = coerceScopeValues(req.scopes || [], collegeId, sectionId, false);
+    collegeId = coerced.collegeId; sectionId = coerced.sectionId;
+  } else {
+    if (sectionId && !sections.some(section => section.AdSectionId === sectionId && (!collegeId || section.AdCollegeId === collegeId))) sectionId = 0;
+    if (sectionId && !collegeId) collegeId = Number(sections.find(section => section.AdSectionId === sectionId)?.AdCollegeId || 0);
+    if (collegeId && !colleges.some(college => college.AdCollegeId === collegeId)) { collegeId = 0; sectionId = 0; }
+    if (resolveDefaults) {
+      // First open: land on a real department instead of an empty "الكل".
+      if (!collegeId) collegeId = Number(sections[0]?.AdCollegeId || colleges[0]?.AdCollegeId || 0);
+      if (!sectionId) sectionId = Number(sections.find(section => section.AdCollegeId === collegeId)?.AdSectionId || 0);
+    }
+  }
+
+  const [rows, instructors, courses, visitingInstructorIds] = await Promise.all([
+    readSchedulesForRequest(req, collegeId, sectionId, termId),
+    sectionId
+      ? Repository.getInstructorsByScope(sectionId, termId)
+      : (collegeId ? Repository.getInstructorsByScheduleScope({ collegeId, termId }) : Promise.resolve([])),
+    sectionId ? Repository.getCoursesBySection(sectionId) : Promise.resolve([]),
+    sectionId && collegeId ? Repository.getVisitingRoster(collegeId, sectionId, termId) : Promise.resolve([] as number[]),
+  ]);
+
+  res.json({
+    context: { collegeId, sectionId, termId },
+    colleges, sections, terms,
+    rows, instructors, courses,
+    visitingInstructorIds,
+  });
+});
+
+/**
+ * The scoped read, shaped by who is asking.
+ *
+ * A department coordinator's account already says which sections are theirs, so
+ * a request with no section filter must not scan the whole university term and
+ * throw the surplus away — it reads the handful of sections the account owns,
+ * which is the same answer at a fraction of the weight. The administrator keeps
+ * the wide read, because for them the wide read is the answer.
+ */
+async function readSchedulesForRequest(req: AuthenticatedRequest, collegeId: number, sectionId: number, termId: number): Promise<FSchedule[]> {
+  if (!req.user?.IsAdminUser && !sectionId) {
+    const scopeSectionIds = [...new Set((req.scopes || [])
+      .filter(scope => !collegeId || Number(scope.AdCollegeId) === collegeId)
+      .map(scope => Number(scope.AdSectionId)).filter(Boolean))];
+    const groups = await Promise.all(scopeSectionIds.map(scopeSectionId =>
+      Repository.getSchedulesByScope({ sectionId: scopeSectionId, termId })));
+    return filterByScope(req, groups.flat());
+  }
+  return filterByScope(req, await Repository.getSchedulesByScope({ collegeId, sectionId, termId }));
+}
+
 app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
   let termId=Number(req.query.termId||0);
@@ -1347,8 +1431,7 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
   // available by sending termId explicitly, but a blank filter can no longer scan
   // the university's entire ten-year schedule collection.
   if(!termId){const terms=await Repository.getTerms();termId=terms.reduce((max,t)=>Math.max(max,Number(t.AdTermId)||0),0);}
-  let list = await Repository.getSchedulesByScope({collegeId,sectionId,termId});
-  list = filterByScope(req, list);
+  let list = await readSchedulesForRequest(req, collegeId, sectionId, termId);
 
   if (req.query.instructorId) {
     list = list.filter(s => s.AdInstructorId === parseInt(req.query.instructorId as string));
