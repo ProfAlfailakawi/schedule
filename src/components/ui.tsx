@@ -96,6 +96,14 @@ const DRAWER_FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),s
  */
 export function useDrawerA11y<T extends HTMLElement>(onClose: () => void) {
   const ref = React.useRef<T>(null);
+  // The close callback is read through a ref so the effect can mount ONCE.
+  // Keyed on `onClose` — which callers create fresh on every render — the
+  // effect re-ran on every keystroke, and its first act is to move focus to the
+  // first element in the drawer: the ✕ button. So typing one character threw
+  // the cursor onto Close, across every add/edit panel in the program. Now the
+  // focus lands once, when the drawer opens, and stays where the reader puts it.
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
   React.useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     const list = (): HTMLElement[] => {
@@ -103,9 +111,13 @@ export function useDrawerA11y<T extends HTMLElement>(onClose: () => void) {
       if (!root) return [];
       return (Array.from(root.querySelectorAll(DRAWER_FOCUSABLE)) as HTMLElement[]).filter(el => el.offsetParent !== null);
     };
-    (list()[0] || ref.current)?.focus();
+    // Open on the first real field, not the ✕ — a form should invite the first
+    // answer, and the close button is reached by Tab or Escape when wanted.
+    const focusables = list();
+    const firstField = focusables.find(el => !el.classList.contains("drawer-close")) || focusables[0] || ref.current;
+    firstField?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key === "Escape") { event.preventDefault(); onCloseRef.current(); return; }
       if (event.key !== "Tab") return;
       const els = list(); if (!els.length) return;
       const first = els[0], last = els[els.length - 1];
@@ -114,7 +126,7 @@ export function useDrawerA11y<T extends HTMLElement>(onClose: () => void) {
     };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); opener?.focus?.(); };
-  }, [onClose]);
+  }, []);
   return ref;
 }
 /** The academic add/edit side panel: a backdrop, a keyboard-complete drawer, one close. */

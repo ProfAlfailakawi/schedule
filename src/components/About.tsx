@@ -1,87 +1,9 @@
-import React, { useEffect, useState } from "react";
-import { AtSign, CheckCircle2, Download, Globe2, GraduationCap, Mail, Phone, Share } from "lucide-react";
+import React from "react";
+import { AtSign, Globe2, GraduationCap, Mail, Phone } from "lucide-react";
 
-/**
- * Idea 4 — install as an app.
- *
- * On Android/Chrome the browser fires `beforeinstallprompt`, which we hold and
- * replay behind one clean button. iOS Safari never fires it, so there the same
- * button reveals the two-step "add to home screen" path. If the app is already
- * running installed, it just says so. No clutter, one small affordance.
- */
-function InstallApp() {
-  const [deferred, setDeferred] = useState<any>(null);
-  const [installed, setInstalled] = useState(false);
-  const [showSteps, setShowSteps] = useState(false);
-  const isIos = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const isStandalone =
-    typeof window !== "undefined" &&
-    (window.matchMedia("(display-mode: standalone)").matches || (navigator as any).standalone === true);
-
-  useEffect(() => {
-    const onPrompt = (e: any) => { e.preventDefault(); setDeferred(e); };
-    const onInstalled = () => { setInstalled(true); setDeferred(null); };
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onPrompt);
-      window.removeEventListener("appinstalled", onInstalled);
-    };
-  }, []);
-
-  if (isStandalone || installed) {
-    return (
-      <div className="install-card is-installed">
-        <span className="install-icon"><CheckCircle2 /></span>
-        <div className="install-copy">
-          <strong>التطبيق مثبّت على جهازك</strong>
-          <p>افتحه من أيقونته على الشاشة الرئيسية مباشرة.</p>
-        </div>
-      </div>
-    );
-  }
-
-  const onInstall = async () => {
-    if (deferred) {
-      deferred.prompt();
-      const choice = await deferred.userChoice.catch(() => null);
-      if (choice?.outcome === "accepted") setInstalled(true);
-      setDeferred(null);
-    } else {
-      setShowSteps((v) => !v);
-    }
-  };
-
-  return (
-    <div className="install-card">
-      <span className="install-icon"><Download /></span>
-      <div className="install-copy">
-        <strong>ثبّت التطبيق على جهازك</strong>
-        <p>أيقونة على الشاشة الرئيسية، بملء الشاشة وأسرع فتحاً — كأي تطبيق.</p>
-        <button type="button" className="install-btn" onClick={onInstall}>
-          <Download /> {deferred ? "ثبّت الآن" : "طريقة التثبيت"}
-        </button>
-        {(showSteps || (!deferred && isIos)) ? (
-          <ol className="install-steps">
-            {isIos ? (
-              <>
-                <li>اضغط زر المشاركة <Share aria-hidden="true" /> في شريط Safari.</li>
-                <li>اختر «إضافة إلى الشاشة الرئيسية».</li>
-                <li>اضغط «إضافة» — تظهر أيقونة الجدول.</li>
-              </>
-            ) : (
-              <>
-                <li>افتح قائمة المتصفح (⋮).</li>
-                <li>اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</li>
-                <li>أكّد — تظهر أيقونة الجدول على جهازك.</li>
-              </>
-            )}
-          </ol>
-        ) : null}
-      </div>
-    </div>
-  );
-}
+// The install invitation moved to the dashboard, where a first-time visitor
+// actually lands — see components/InstallApp.tsx. It no longer sits on the
+// About page.
 
 const Person = ({
   name,
@@ -147,7 +69,6 @@ export default function About() {
           البحث فيه وإخراج تقاريره داخل مساحة واحدة واضحة وهادئة.
         </p>
       </header>
-      <InstallApp />
       <section className="about-editorial-people">
         <Person
           name="د. أحمد حسين الفيلكاوي"

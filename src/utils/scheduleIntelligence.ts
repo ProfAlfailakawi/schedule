@@ -282,11 +282,19 @@ function candidateConflictCount(candidate:FSchedule, allRows:FSchedule[], exclud
 export function conflictSolutions(row:FSchedule, allRows:FSchedule[], max=5){
   const rooms=[...new Map(allRows.filter(r=>r.AdRoomCode&&r.AdRoomHall).map(r=>[roomKey(r),{code:r.AdRoomCode,hall:r.AdRoomHall}])).values()];
   const preferredRooms=rooms.sort((a,b)=>Number(b.code===row.AdRoomCode)-Number(a.code===row.AdRoomCode)).slice(0,60);
+  // The universe checked against is only the rows that could ever collide: a
+  // candidate never changes the instructor and only lands in a preferred room,
+  // so the whole-term scan (millions of comparisons — seconds of thinking)
+  // narrows to the instructor's own rows plus the rows already in those rooms.
+  // Same answer, a fraction of the work.
+  const roomScope=new Set(preferredRooms.map(r=>`${String(r.code||"").trim()}|${String(r.hall||"").trim()}`));
+  roomScope.add(roomKey(row));
+  const relevant=allRows.filter(r=>r.AdInstructorId===row.AdInstructorId||roomScope.has(roomKey(r)));
   const dur=Math.max(30,duration(row)); const original=timeToMinutes(row.fstarttime); const candidates:Array<any>=[];
   for(let start=SCHEDULE_DAY_START;start+dur<=SCHEDULE_DAY_END;start+=SCHEDULE_SLOT_MINUTES){
     for(const room of [{code:row.AdRoomCode,hall:row.AdRoomHall},...preferredRooms]){
       const candidate={...row,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+dur),AdRoomCode:room.code,AdRoomHall:room.hall};
-      const conflicts=candidateConflictCount(candidate,allRows,row.id); const roomChanged=room.code!==row.AdRoomCode||room.hall!==row.AdRoomHall;
+      const conflicts=candidateConflictCount(candidate,relevant,row.id); const roomChanged=room.code!==row.AdRoomCode||room.hall!==row.AdRoomHall;
       const score=conflicts*10000+Math.abs(start-original)+(roomChanged?90:0)+(start>=16*60?80:0);
       candidates.push({score,conflicts,start:candidate.fstarttime,end:candidate.fendtime,roomCode:room.code,roomHall:room.hall,roomChanged});
     }

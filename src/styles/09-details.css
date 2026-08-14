@@ -426,11 +426,14 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .share-sheet>footer{display:flex;justify-content:flex-end;margin-top:var(--s6);padding-top:var(--s5);border-top:1px solid var(--line)}
 
 @media screen and (max-width:768px){
-  .share-backdrop{place-items:end center;padding:0}
+  /* A screen of its own on a phone — not a strip clinging to the bottom edge.
+     It fills the height and covers the schedule behind it completely, so the
+     publish flow reads as its own place rather than a panel that "appears
+     below" the grid. */
+  .share-backdrop{place-items:stretch;padding:0;background:color-mix(in srgb,var(--nav) 96%,transparent)}
   .share-sheet{
-    width:100%;max-height:92dvh;
-    border-radius:var(--r-2xl) var(--r-2xl) 0 0;
-    padding:var(--s6) var(--s5) calc(var(--s6) + env(safe-area-inset-bottom));
+    width:100%;height:100dvh;max-height:100dvh;border-radius:0;
+    padding:calc(var(--s6) + env(safe-area-inset-top)) var(--s5) calc(var(--s6) + env(safe-area-inset-bottom));
   }
   .share-kind{grid-template-columns:minmax(0,1fr)}
   .share-compose{flex-direction:column;align-items:stretch}
@@ -681,6 +684,26 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   flex:none;font-family:var(--font-mono);font-size:var(--t-xs);color:var(--ink-2);
   font-variant-numeric:tabular-nums;white-space:nowrap;letter-spacing:-.2px;
 }
+/* One person, once — the name is the row; its sections fold beneath. */
+.review-person{border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);overflow:hidden}
+.review-person-head{
+  display:flex;align-items:center;gap:var(--s3);width:100%;
+  padding:var(--s3);background:none;border:0;text-align:start;cursor:pointer;
+}
+.review-person:not(.open) .review-person-head:hover{background:var(--surface-3)}
+.review-person-head strong{flex:1;min-width:0;font-size:var(--t-sm);font-weight:640;color:var(--ink);overflow-wrap:anywhere}
+.review-person-head small{flex:none;font-size:var(--t-xs);color:var(--muted);font-family:var(--font-mono)}
+.review-person-count{
+  flex:none;padding:2px var(--s2);border-radius:var(--r-full);
+  background:var(--accent-soft);color:var(--accent-ink);
+  font-size:var(--t-eyebrow);font-weight:700;
+}
+.review-person-chevron{width:15px;height:15px;color:var(--muted-2);transition:transform .18s var(--ease)}
+.review-person.open .review-person-chevron{transform:rotate(180deg)}
+/* When grouped, the person's own sections sit in a quiet inset list. */
+.review-person-rows{display:flex;flex-direction:column;gap:var(--s2);padding:0 var(--s3) var(--s3)}
+.review-person.open .review-person-rows{animation:rise .18s var(--ease-out) both}
+.review-person-rows .review-row-card{background:var(--surface)}
 .review-more{padding:var(--s2) 0;color:var(--muted-2);font-size:var(--t-xs)}
 .review-clear{padding:var(--s9) var(--s6);text-align:center}
 .review-clear svg{width:34px;height:34px;color:var(--success)}

@@ -288,6 +288,10 @@
 .field input[type="time"],.field input[type="date"]{font-family:var(--font-mono);font-size:var(--t-sm)}
 
 .field-help,.field-hint{color:var(--muted-2);font-size:var(--t-xs);line-height:1.6}
+/* A whisper, not a label: the "first section for this course" note guides
+   without competing with the elegant field it sits under — thinner, lighter,
+   set in the italic that marks an aside. */
+.section-hint{font-weight:400;font-style:italic;color:color-mix(in srgb,var(--muted-2) 82%,transparent);letter-spacing:-.1px}
 
 .form-intro{
   display:grid;

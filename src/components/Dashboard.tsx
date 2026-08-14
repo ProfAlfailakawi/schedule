@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
+import InstallApp from"./InstallApp";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START}from"../utils/scheduleTime";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
@@ -128,6 +129,9 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    <time className="deck-chip" dateTime={dateValue}><CalendarDays aria-hidden="true"/>{dateLabel}</time>
    {data?.latestTermName?<span className="deck-chip"><GraduationCap aria-hidden="true"/>{data.latestTermName}</span>:null}
    <span className="deck-live" role="status" aria-label="البيانات محدّثة"><i aria-hidden="true"/></span>
+   {/* The install invitation lives here now — full the first time, a single
+       icon every time after. */}
+   <InstallApp />
   </header>
 
   {error?<Notice>{error}</Notice>:null}

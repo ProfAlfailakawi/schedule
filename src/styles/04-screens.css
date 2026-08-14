@@ -1026,34 +1026,52 @@
 .about-editorial-hero p{max-width:60ch;margin-top:var(--s4);color:var(--muted);font-size:15px;line-height:1.8}
 .about-editorial-divider{height:1px;background:var(--line)}
 
-/* Install-as-app card (Idea 4). */
-.install-card{
-  display:flex;gap:var(--s4);align-items:flex-start;
-  max-width:720px;margin:var(--s6) auto 0;padding:var(--s5);
-  border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface-2);
+/* Install-as-app (Idea 4): an icon in the identity bar, with the steps in a
+   small elegant popover on demand. No standing paragraph. */
+.install{position:relative;flex:none}
+.install-trigger{
+  width:34px;height:34px;display:grid;place-items:center;
+  border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));
+  border-radius:var(--r-full);
+  background:var(--surface);color:var(--accent-ink,var(--accent));cursor:pointer;
+  transition:background .15s var(--ease),border-color .15s var(--ease);
 }
-.install-card.is-installed{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 30%,var(--line))}
-.install-icon{
-  flex:none;width:46px;height:46px;display:grid;place-items:center;
-  border-radius:var(--r-lg);background:var(--accent);color:var(--accent-contrast);
+.install-trigger:hover,.install-trigger.active{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
+.install-trigger svg{width:16px;height:16px}
+.install-pop{
+  position:absolute;z-index:40;top:calc(100% + 8px);inset-inline-end:0;
+  width:240px;padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+  animation:install-open .2s var(--ease-out,ease) both;
 }
-.install-icon svg{width:22px;height:22px}
-.install-copy{min-width:0}
-.install-copy strong{display:block;font-size:var(--t-h4);font-weight:650;color:var(--ink)}
-.install-copy p{margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.6}
-.install-btn{
-  display:inline-flex;align-items:center;gap:var(--s2);margin-top:var(--s3);
+@keyframes install-open{from{opacity:0;transform:translateY(-6px) scale(.98)}to{opacity:1;transform:none}}
+.install-pop header{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--s3)}
+.install-pop header strong{font-size:var(--t-sm);font-weight:700;color:var(--ink)}
+.install-pop header button{width:24px;height:24px;display:grid;place-items:center;border-radius:var(--r-full);color:var(--muted);cursor:pointer}
+.install-pop header button:hover{background:var(--surface-2);color:var(--ink)}
+.install-pop header button svg{width:14px;height:14px}
+.install-pop p{margin:0 0 var(--s3);color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.install-go{
+  display:inline-flex;align-items:center;gap:var(--s2);width:100%;justify-content:center;
   padding:var(--s2) var(--s4);border-radius:var(--r-sm);
-  background:var(--accent);color:var(--accent-contrast);font-size:var(--t-sm);font-weight:600;
+  background:var(--accent);color:var(--accent-contrast);font-size:var(--t-sm);font-weight:600;cursor:pointer;
 }
-.install-btn:hover{background:var(--accent-strong)}
-.install-btn svg{width:16px;height:16px}
-.install-steps{
-  margin:var(--s3) 0 0;padding-inline-start:var(--s5);
-  display:flex;flex-direction:column;gap:var(--s2);
-  color:var(--ink-2);font-size:var(--t-sm);line-height:1.6;
+.install-go:hover{background:var(--accent-strong)}
+.install-go svg{width:15px;height:15px}
+/* Three short steps, numbered, as a quiet checklist. */
+.install-steps{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:var(--s2);counter-reset:step}
+.install-steps li{
+  display:flex;align-items:center;gap:var(--s2);
+  color:var(--ink-2);font-size:var(--t-sm);line-height:1.5;
 }
-.install-steps svg{width:14px;height:14px;vertical-align:-2px;color:var(--accent)}
+.install-steps li::before{
+  counter-increment:step;content:counter(step);
+  flex:none;width:20px;height:20px;display:grid;place-items:center;
+  border-radius:var(--r-full);background:var(--accent-soft);color:var(--accent-ink);
+  font-size:var(--t-eyebrow);font-weight:700;
+}
+.install-steps svg{width:14px;height:14px;color:var(--accent)}
 
 .about-editorial-people{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
 .editorial-person{
@@ -1242,9 +1260,15 @@
   box-shadow:var(--shadow-lg);
   animation:drawer-in .26s var(--ease-out) both;
 }
-.catalog-form-drawer .page-heading{padding-top:0}
+/* The heading keeps clear of the close button's corner so the title and the ✕
+   never share the same pixels. */
+.catalog-form-drawer .page-heading{padding-top:0;padding-inline-end:44px}
 .catalog-form-drawer .catalog-drawer-close{
-  position:absolute;top:var(--s4);inset-inline-start:var(--s4);
+  /* Moved to the opposite corner from the right-aligned title. At
+     inset-inline-start (top-right in RTL) it sat directly on top of the first
+     word of every drawer's heading; at inset-inline-end it has the empty
+     corner to itself. */
+  position:absolute;top:var(--s4);inset-inline-end:var(--s4);
   margin:0;z-index:3;
 }
 /* A roomier variant for forms with a grid (e.g. the permission picker). */

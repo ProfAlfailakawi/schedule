@@ -298,11 +298,11 @@ function NavSection({
   navGroups: Record<string, boolean>;
   onToggle: (id: string, open: boolean) => void;
 }) {
-  // Note 33: the group holding the current screen is always open — a stale
-  // manual collapse can no longer hide the section you are actually in (which
-  // read as the accordion "hanging"). Manual open/close still applies to every
-  // other group.
-  const open = holdsActive || (navGroups[id] ?? false);
+  // The rail opens closed. A section reveals itself only when pressed, and the
+  // group holding the current screen no longer forces itself open — that
+  // auto-expand was the reader's complaint. Where you are is still shown, as a
+  // marked header (contains-active-route), not as an opened wall of links.
+  const open = navGroups[id] ?? false;
   const bodyId = `nav-section-${id}`;
   return (
     <div
@@ -348,7 +348,11 @@ export default function App() {
     () => viewByPath.get(window.location.pathname.toLowerCase()) || "dashboard",
   );
   /** Which nav groups the reader has pressed open or shut, by group id. */
-  const [navGroups, setNavGroups] = useState<Record<string, boolean>>({});
+  // The primary workspace group opens by default so the daily destinations —
+  // dashboard, schedule, queries — are one press away; the secondary groups
+  // (decision tools, reference & administration) stay folded until asked for,
+  // which is what the reader wanted when the admin group used to spring open.
+  const [navGroups, setNavGroups] = useState<Record<string, boolean>>({ core: true });
   /* The rail starts present on a desk and folded on a phone; after that its
      state is the reader's, on every width alike. */
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -1504,7 +1508,12 @@ export default function App() {
         <nav className="side-nav" aria-label="القائمة الرئيسية">
           <NavSection
             navGroups={navGroups}
-            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
+            onToggle={(id, open) =>
+              // Each group opens and closes on its own; the default already
+              // keeps the rail tidy (core open, the rest folded), so a manual
+              // press should touch only the group it was aimed at.
+              setNavGroups(current => ({ ...current, [id]: !open }))
+            }
             id="core"
             title="مساحة العمل"
             rail="core"
@@ -1543,7 +1552,12 @@ export default function App() {
           {allowed.schedule ? (
             <NavSection
             navGroups={navGroups}
-            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
+            onToggle={(id, open) =>
+              // Each group opens and closes on its own; the default already
+              // keeps the rail tidy (core open, the rest folded), so a manual
+              // press should touch only the group it was aimed at.
+              setNavGroups(current => ({ ...current, [id]: !open }))
+            }
               id="schedule"
               title="أدوات القرار"
               rail="schedule"
@@ -1561,7 +1575,12 @@ export default function App() {
           {isPowerAdmin && academicEntry ? (
             <NavSection
             navGroups={navGroups}
-            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
+            onToggle={(id, open) =>
+              // Each group opens and closes on its own; the default already
+              // keeps the rail tidy (core open, the rest folded), so a manual
+              // press should touch only the group it was aimed at.
+              setNavGroups(current => ({ ...current, [id]: !open }))
+            }
               id="catalog"
               title="المرجع والإدارة"
               rail="catalog"
@@ -1605,7 +1624,12 @@ export default function App() {
           ) : isPowerAdmin && allowed.admin ? (
             <NavSection
             navGroups={navGroups}
-            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
+            onToggle={(id, open) =>
+              // Each group opens and closes on its own; the default already
+              // keeps the rail tidy (core open, the rest folded), so a manual
+              // press should touch only the group it was aimed at.
+              setNavGroups(current => ({ ...current, [id]: !open }))
+            }
               id="admin"
               title="إدارة النظام"
               rail="admin"

@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Info, Printer, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardCheck, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { PrintLetterhead, PrimaryButton, SecondaryButton } from "./ui";
 import {
@@ -33,6 +33,52 @@ interface Props {
 }
 
 const SEVERITY_LABEL: Record<string, string> = { high: "يمنع الاعتماد", medium: "يستحق المراجعة", low: "ملاحظة" };
+
+/**
+ * One person, once — with their sections folded beneath.
+ *
+ * A single lecturer can trip a finding in six sections, and printing the name
+ * six times turned a list of people into a list of rows. This shows the name and
+ * how many times it recurs; pressing it reveals exactly which sections, so the
+ * reader sees who first and the detail only when they ask for it.
+ */
+function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSchedule[] }; courses: Map<number, AdCourse> }) {
+  const [open, setOpen] = React.useState(false);
+  const { who, rows } = group;
+  const single = rows.length === 1;
+  return (
+    <div className={`review-person ${open ? "open" : ""}`}>
+      <button type="button" className="review-person-head" onClick={() => !single && setOpen(v => !v)} aria-expanded={single ? undefined : open}>
+        <strong>{who}</strong>
+        {single ? (
+          <small dir="ltr">{courses.get(rows[0].AdCourseId)?.CourseCode || rows[0].AdCourseName || "—"} · شعبة {rows[0].SCode}</small>
+        ) : (
+          <>
+            <span className="review-person-count">{rows.length.toLocaleString("ar-KW-u-nu-latn")} شعب</span>
+            <ChevronDown className="review-person-chevron" aria-hidden="true" />
+          </>
+        )}
+      </button>
+      {(open || single) ? (
+        <div className="review-person-rows">
+          {rows.map(row => {
+            const days = DAY_KEYS.filter(key => (row as any)[key]).map(key => DAY_NAMES[DAY_KEYS.indexOf(key)]).join("، ");
+            const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "";
+            return (
+              <article key={row.id} className="review-row-card">
+                <span className="rrc-code" dir="ltr">{code || "—"}</span>
+                <div className="rrc-main">
+                  <small>شعبة {row.SCode} · {days || "بلا أيام"}</small>
+                </div>
+                <time className="rrc-time" dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, meeting, onClose, onFocusRows }: Props) {
   const findings = useMemo(
@@ -141,23 +187,27 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
               </button>
               {open === finding.rule && finding.rowIds.length ? (
                 <div className="review-rows">
-                  {finding.rowIds.slice(0, 12).map(id => {
-                    const row = byId.get(id);
-                    if (!row) return null;
-                    const days = DAY_KEYS.filter(key => (row as any)[key]).map(key => DAY_NAMES[DAY_KEYS.indexOf(key)]).join("، ");
-                    const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "";
-                    const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
-                    return (
-                      <article key={id} className="review-row-card">
-                        <span className="rrc-code" dir="ltr">{code || "—"}</span>
-                        <div className="rrc-main">
-                          <strong>{who}</strong>
-                          <small>شعبة {row.SCode} · {days || "بلا أيام"}</small>
-                        </div>
-                        <time className="rrc-time" dir="ltr">{row.fstarttime}–{row.fendtime}</time>
-                      </article>
-                    );
-                  })}
+                  {/* The same person often appears many times in one finding —
+                      once per section they teach. Listing the name over and over
+                      buried the point; grouping by person shows each name once,
+                      with its sections tucked beneath, opened on a press. */}
+                  {(() => {
+                    const groups = new Map<string, { who: string; rows: FSchedule[] }>();
+                    for (const id of finding.rowIds) {
+                      const row = byId.get(id);
+                      if (!row) continue;
+                      const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+                      const key = `${row.AdInstructorId}:${who}`;
+                      const bucket = groups.get(key) || { who, rows: [] };
+                      bucket.rows.push(row);
+                      groups.set(key, bucket);
+                    }
+                    return [...groups.values()].slice(0, 12).map((group, index) => (
+                      <React.Fragment key={`${group.who}-${index}`}>
+                        <ReviewPersonGroup group={group} courses={courses} />
+                      </React.Fragment>
+                    ));
+                  })()}
                   {finding.rowIds.length > 12 ? <p className="review-more">و{(finding.rowIds.length - 12).toLocaleString("ar-KW-u-nu-latn")} غيرها…</p> : null}
                   {onFocusRows ? (
                     <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds); onClose(); }}>

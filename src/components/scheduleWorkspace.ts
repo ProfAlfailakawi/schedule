@@ -37,7 +37,7 @@ export const scheduleFriendlyError = (value: any) => {
   if (/Failed to fetch|NetworkError/i.test(text))
     return "تعذر الاتصال بالخادم. لم يتم حفظ أي تغيير؛ تحقق من الإنترنت ثم أعد المحاولة.";
   if (/Unexpected token|JSON/i.test(text))
-    return "وصل رد غير متوقع من الخادم. أعد تحميل الصفحة، وإذا استمرت المشكلة ارفع ملفات التحديث كاملة.";
+    return "الخادم مشغول لحظياً ولم يرسل رداً مكتملاً. أعد المحاولة بعد قليل.";
   return text;
 };
 

@@ -718,6 +718,23 @@
 .heat-legend{display:flex;flex-wrap:wrap;gap:var(--s3);margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
 
 .health-score{font-size:36px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+/* Data health as an infographic: one verdict chip, then three counts as tiles. */
+.health-verdict{display:inline-flex;align-items:center;gap:var(--s2);margin-top:var(--s3);padding:var(--s2) var(--s4);border-radius:var(--r-full);font-weight:700;font-size:var(--t-sm)}
+.health-verdict svg{width:16px;height:16px}
+.health-verdict.ok{background:var(--success-soft);color:var(--success)}
+.health-verdict.review{background:var(--warning-soft);color:var(--warning)}
+.health-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--s3);margin-top:var(--s4)}
+.health-tiles article{
+  display:flex;flex-direction:column;align-items:center;gap:2px;
+  padding:var(--s4) var(--s3);border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);text-align:center;
+}
+.health-tiles article b{font-size:30px;font-weight:600;line-height:1;color:var(--muted-2);font-variant-numeric:tabular-nums}
+.health-tiles article span{font-size:var(--t-xs);color:var(--muted);line-height:1.3}
+/* A tile with something in it earns colour; an empty one stays calm. */
+.health-tiles article.hit{border-color:color-mix(in srgb,var(--warning) 40%,var(--line));background:var(--warning-soft)}
+.health-tiles article.hit b{color:var(--warning)}
+.health-tiles article.hit span{color:color-mix(in srgb,var(--warning) 80%,var(--ink-2))}
 .genome-core{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s5);margin-top:var(--s4)}
 .genome-score{
   display:grid;place-items:center;min-height:150px;

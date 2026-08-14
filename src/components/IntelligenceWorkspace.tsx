@@ -221,8 +221,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       throw new Error(
         "أنت الآن دون اتصال. العرض متاح، لكن الحفظ والنشر متوقفان لحماية الجدول.",
       );
-    const r = await fetch(url, options),
-      d = await r.json();
+    // Text first, then parse: a gateway's HTML error page (busy/restarting
+    // instance) must read as "retry", never as a cryptic JSON crash.
+    const r = await fetch(url, options);
+    const body = await r.text();
+    let d: any = {};
+    if (body) {
+      try { d = JSON.parse(body); }
+      catch { throw new Error(r.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${r.status}). أعد المحاولة بعد قليل.`); }
+    }
     if (!r.ok)
       throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), {
         issues: d.issues,
@@ -1606,15 +1613,25 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
               <CheckCircle2 />
             </div>
-            <div className="health-score">
-              <strong>
-                {overview.dataHealth.healthy ? "سليمة" : "تحتاج مراجعة"}
-              </strong>
-              <span>
-                {overview.dataHealth.invalidRows} ناقص ·{" "}
-                {overview.dataHealth.duplicates} تكرار ·{" "}
-                {overview.dataHealth.unscheduledCourses} مقرر بلا موعد
-              </span>
+            <div className={`health-verdict ${overview.dataHealth.healthy ? "ok" : "review"}`}>
+              {overview.dataHealth.healthy ? <CheckCircle2 aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
+              <strong>{overview.dataHealth.healthy ? "سليمة" : "تحتاج مراجعة"}</strong>
+            </div>
+            {/* Three counts, read at a glance instead of a run-on line — each
+                tile is quiet when zero and lit when it holds something. */}
+            <div className="health-tiles">
+              <article className={overview.dataHealth.invalidRows ? "hit" : ""}>
+                <b>{Number(overview.dataHealth.invalidRows).toLocaleString("ar-KW-u-nu-latn")}</b>
+                <span>ناقص</span>
+              </article>
+              <article className={overview.dataHealth.duplicates ? "hit" : ""}>
+                <b>{Number(overview.dataHealth.duplicates).toLocaleString("ar-KW-u-nu-latn")}</b>
+                <span>تكرار</span>
+              </article>
+              <article className={overview.dataHealth.unscheduledCourses ? "hit" : ""}>
+                <b>{Number(overview.dataHealth.unscheduledCourses).toLocaleString("ar-KW-u-nu-latn")}</b>
+                <span>مقرر بلا موعد</span>
+              </article>
             </div>
             <p>
               هذه القراءة لا تحذف ولا تصحح شيئاً تلقائياً؛ هدفها فقط كشف ما قد

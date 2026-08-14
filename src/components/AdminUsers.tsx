@@ -138,8 +138,14 @@ export default function AdminUsers({
     [scopeCollege, setScopeCollege] = useState(0),
     [scopeSection, setScopeSection] = useState(0);
   const api = async (url: string, init?: RequestInit) => {
-    const r = await fetch(url, init),
-      d = await r.json();
+    // Defensive read: a non-JSON body is a busy gateway, not a crash to leak.
+    const r = await fetch(url, init);
+    const body = await r.text();
+    let d: any = {};
+    if (body) {
+      try { d = JSON.parse(body); }
+      catch { throw new Error(r.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${r.status}). أعد المحاولة بعد قليل.`); }
+    }
     if (!r.ok) throw new Error(d.error || "تعذر تنفيذ العملية");
     return d;
   };

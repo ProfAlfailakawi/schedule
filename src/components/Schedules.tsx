@@ -413,9 +413,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       throw new Error(
         "أنت الآن دون اتصال. العرض متاح، لكن الحفظ متوقف لحماية الجدول.",
       );
-    const res = await fetch(url, options),
-      data = await res.json();
-    if (!res.ok) throw new Error(data.error || "تعذر تحميل البيانات");
+    // Read the body as text, THEN parse — so a non-JSON response never explodes
+    // into «Unexpected token '<'». That response is almost always a gateway's
+    // own HTML page while the server is busy or restarting, not the client
+    // needing a re-upload; it is transient and the honest advice is "retry",
+    // which is what this now says.
+    const res = await fetch(url, options);
+    const body = await res.text();
+    let data: any = {};
+    if (body) {
+      try { data = JSON.parse(body); }
+      catch {
+        throw new Error(
+          res.ok
+            ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات."
+            : `الخادم مشغول حالياً (${res.status}). أعد المحاولة بعد قليل.`,
+        );
+      }
+    }
+    if (!res.ok) throw new Error(data.error || `تعذر إتمام العملية (${res.status}).`);
     return data;
   };
   /**
@@ -717,6 +733,20 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const timer = window.setTimeout(() => setReviewFocus(new Set()), 20000);
     return () => window.clearTimeout(timer);
   }, [reviewFocus]);
+  // A flagged lecture is often inside a weave, where it draws as no card at all.
+  // After the highlight is set, open the first weave that holds a flagged row —
+  // and scroll the lit card into view — so "أظهرها على الجدول" and the radar
+  // actually land the reader on the thing they asked to see, not a silent band.
+  useEffect(() => {
+    if (!reviewFocus.size || viewMode !== "week") return;
+    const raf = window.requestAnimationFrame(() => window.setTimeout(() => {
+      const band = document.querySelector<HTMLButtonElement>(".week-bundle.bundle-flagged .week-bundle-head");
+      if (band) { band.click(); band.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
+      const card = document.querySelector<HTMLElement>(".week-event.review-flagged");
+      card?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 60));
+    return () => window.cancelAnimationFrame(raf);
+  }, [reviewFocus, viewMode]);
   const [previousTermRows, setPreviousTermRows] = useState<FSchedule[]>([]);
   useEffect(() => {
     if (!reviewOpen || !filterTerm) return;
@@ -3863,7 +3893,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <Field
                   label="رمز المقرر الدراسي"
                   required
-                  hint={editId ? undefined : sectionHint}
+                  hint={editId || !sectionHint ? undefined : <span className="section-hint">{sectionHint}</span>}
                 >
                   <select
                     value={form.AdCourseId || ""}
@@ -3932,11 +3962,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     collegeId={Number(form.AdCollegeId) || filterCollege}
                     termId={Number(form.AdTermId) || filterTerm}
                   />
-                  {form.AdInstructorId ? (
-                    <span className="field-hint" dir="ltr">
-                      {selectedInstructor?.AdInstructorCivil || "0"}
-                    </span>
-                  ) : null}
+                  {/* The civil ID already sits inside the picker beneath the
+                      name; repeating it under the field was the same number
+                      twice. */}
                 </Field>
                 {courseNature && courseNature.confidence !== "low" ? (
                   <div className="nature-card">
@@ -4259,9 +4287,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             مبنى {x.roomCode} · قاعة {x.roomHall}
                           </small>
                         </div>
-                        <Badge tone={x.conflicts ? "warning" : "success"}>
-                          {x.label}
-                        </Badge>
+                        {/* A clear suggestion needs no "no obstacle" label — that
+                            is what being suggested already means. Only a real
+                            caveat earns a badge. */}
+                        {x.conflicts ? <Badge tone="warning">{x.label}</Badge> : null}
                       </button>
                     ))}
                   </div>
@@ -4357,10 +4386,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 setViewMode("week");
                 setReviewFocus(new Set([...liveClash.ids]));
               }}
-              title={`أستاذ: ${liveClash.instructorPairs.toLocaleString("ar-KW-u-nu-latn")} · قاعة: ${liveClash.roomPairs.toLocaleString("ar-KW-u-nu-latn")} · تكرار: ${liveClash.duplicatePairs.toLocaleString("ar-KW-u-nu-latn")} — اضغط لإظهارها على الأسبوع`}
+              title={`تداخل قائم في هذا النطاق — أستاذ: ${liveClash.instructorPairs.toLocaleString("ar-KW-u-nu-latn")} · قاعة: ${liveClash.roomPairs.toLocaleString("ar-KW-u-nu-latn")} · تكرار: ${liveClash.duplicatePairs.toLocaleString("ar-KW-u-nu-latn")} — اضغط لإظهارها على الأسبوع`}
             >
+              {/* "تعارض" implied something unsaveable, and the program never lets
+                  a real conflict be saved — so what the radar surfaces is an
+                  existing OVERLAP (usually inherited from legacy data), which is
+                  what the honest word describes. */}
               <AlertTriangle aria-hidden="true" />
-              {liveClash.pairs.toLocaleString("ar-KW-u-nu-latn")} تعارض
+              {liveClash.pairs.toLocaleString("ar-KW-u-nu-latn")} تداخل
             </button>
           ) : null}
           {liveNotes.length ? (
@@ -4375,7 +4408,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             </button>
           ) : null}
           {!liveClash.pairs && !liveNotes.length && filteredRows.length ? (
-            <span className="schedule-radar radar-clean" title="لا تعارضات ولا ملاحظات لائحة على النطاق المفتوح">
+            <span className="schedule-radar radar-clean" title="لا تداخل ولا ملاحظات لائحة على النطاق المفتوح">
               <CheckCircle2 aria-hidden="true" /> سليم
             </span>
           ) : null}
@@ -4392,19 +4425,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             {quickSearch ? <button type="button" onClick={() => setQuickSearch("")} aria-label="مسح البحث السريع">×</button> : null}
           </label>
           <div className="schedule-tool-actions" role="group" aria-label="أدوات الجدول الإضافية">
-            {viewMode === "week" ? (
-              <GhostButton
-                type="button"
-                className={lensOpen || lensActive ? "active" : ""}
-                onClick={() => setLensOpen(open => !open)}
-                aria-expanded={lensOpen}
-                aria-controls="schedule-week-lens"
-                title={lensActive ? `${weekLensCount} موعداً يطابق عدسة الجدول` : "اختيار أستاذ أو قاعة أو فترة دون إخفاء شكل الأسبوع"}
-              >
-                <Eye aria-hidden="true" />
-                {lensActive ? `العدسة · ${weekLensCount.toLocaleString("ar-KW-u-nu-latn")}` : "عدسة الجدول"}
-              </GhostButton>
-            ) : null}
+            {/* The schedule lens was retired: its one distinct trick — dimming
+                instead of removing — did not earn a permanent button in a busy
+                toolbar when the quick search answers the same question by name
+                and the query centre covers the structured cases in full. */}
             <GhostButton
               type="button"
               onClick={() => setWorkspaceToolsOpen(open => !open)}
@@ -4972,70 +4996,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           >
             {/* One question at a time, asked of the whole week. The controls
                 fold away; their answer remains visible on the toolbar button. */}
-            {lensOpen ? <div
-              id="schedule-week-lens"
-              className={`week-lens ${lensActive ? "active" : ""}`}
-              role="search"
-              aria-label="عدسة الجدول: إبراز المواعيد بحسب الأستاذ أو القاعة أو الفترة"
-            >
-              <Field label="أستاذ المقرر">
-                <select value={lens.instructorId || ""} onChange={(e) => setLens(v => ({ ...v, instructorId: Number(e.target.value) || 0 }))}>
-                  <option value="">كل الأساتذة</option>
-                  {weekInstructors.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-                </select>
-              </Field>
-              <Field label="المبنى">
-                <select value={lens.building} onChange={(e) => setLens(v => ({ ...v, building: e.target.value, rooms: [] }))}>
-                  <option value="">كل المباني</option>
-                  {weekBuildings.map(x => <option key={x} value={x}>{x}</option>)}
-                </select>
-              </Field>
-              <div className="field week-room-multiselect">
-                <label>القاعة</label>
-                <details>
-                  <summary>
-                    <span>{lens.rooms.length ? (lens.rooms.length === 1 ? weekRooms.find(room => `${room.building}|${room.hall}` === lens.rooms[0])?.label || "قاعة واحدة" : `${lens.rooms.length} قاعات`) : "كل القاعات"}</span>
-                    {lens.rooms.length ? <b className="num">{lens.rooms.length}</b> : null}
-                  </summary>
-                  <div className="week-room-menu">
-                    <header>
-                      <strong>اختر قاعة أو مجموعة قاعات</strong>
-                      {lens.rooms.length ? <button type="button" onClick={() => setLens(v => ({ ...v, rooms: [] }))}>عرض الكل</button> : null}
-                    </header>
-                    {weekRooms.map(room => {
-                      const key = `${room.building}|${room.hall}`;
-                      return (
-                        <label key={key}>
-                          <input
-                            type="checkbox"
-                            checked={lens.rooms.includes(key)}
-                            onChange={() => setLens(v => ({ ...v, rooms: v.rooms.includes(key) ? v.rooms.filter(item => item !== key) : [...v.rooms, key] }))}
-                          />
-                          <span dir="ltr">{room.label}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </details>
-              </div>
-              <Field label="الفترة">
-                <div className="time-pair">
-                  <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={lens.from} onChange={(e) => setLens(v => ({ ...v, from: e.target.value }))} aria-label="من" />
-                  <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={lens.to} onChange={(e) => setLens(v => ({ ...v, to: e.target.value }))} aria-label="إلى" />
-                </div>
-              </Field>
-              {lensActive ? (
-                <button type="button" className="week-lens-clear" title="مسح كل شروط العدسة" onClick={() => setLens({ instructorId: 0, building: "", rooms: [], from: "", to: "" })}>
-                  <X aria-hidden="true" />
-                  <b>{weekLensCount.toLocaleString("ar-KW-u-nu-latn")}</b> من {filteredRows.length.toLocaleString("ar-KW-u-nu-latn")}
-                </button>
-              ) : null}
-              {(lens.from && !lens.to) || (!lens.from && lens.to) ? (
-                <small className="week-lens-note">الفترة تحتاج طرفَيها — أكمل «من» و«إلى» لتعمل.</small>
-              ) : lens.from && lens.to && mins(lens.from) >= mins(lens.to) ? (
-                <small className="week-lens-note warn">«من» يجب أن يسبق «إلى».</small>
-              ) : null}
-            </div> : null}
+                {/* The schedule lens UI was removed with its toolbar button; the
+                    lens state remains inert (lensActive stays false) so week
+                    cards render without any dimming. */}
             <div
               className={`week-note ${physicsActive ? "gravity-note-active" : ""}`}
             >
@@ -5158,21 +5121,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     {hueFocus.size > 1 ? <b className="num">{hueFocus.size.toLocaleString("ar-KW-u-nu-latn")}</b> : null}
                   </button>
                 ) : null}
-                {/* The second channel, offered where the first one is being read.
-                    Someone who cannot tell two of these swatches apart is looking
-                    right at the switch that will separate them. */}
-                <button
-                  type="button"
-                  className={`week-legend-texture ${colorBlind ? "is-on" : ""}`}
-                  aria-pressed={colorBlind}
-                  onClick={() => setColorBlind(v => !v)}
-                  title={colorBlind
-                    ? "النقش مفعّل: لكل لون نسيج مميز أيضاً — اضغط للإيقاف"
-                    : "أضف نقشاً مميزاً لكل لون، فلا يبقى اللون وحده هو الفارق"}
-                >
-                  <Contrast aria-hidden="true" />
-                  <span>{colorBlind ? "النقش مفعّل" : "نقش"}</span>
-                </button>
+                {/* The «نقش» texture toggle was removed at the reader's request;
+                    the machinery stays inert (colorBlind defaults off) so nothing
+                    that reads the flag breaks. */}
               </div>
             ) : null}
             {/*
@@ -5346,7 +5297,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     {t}
                   </span>
                 ))}
-                <i className="week-time-end" dir="ltr">{SCHEDULE_DAY_END_TIME}</i>
+                {/* The 20:00 cap is gone: teaching ends by 19:50, so the label
+                    only ever marked an empty boundary. The grid still reaches it
+                    to hold a lecture that runs to 19:50 — it just isn't announced. */}
               </div>
               {days.map((d) => {
                 return (
@@ -5540,13 +5493,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           ? null
                           : { key: bundle.key, x: rect.left + rect.width / 2, y: rect.top });
                       };
+                      // A flagged lecture folded into a weave was invisible — so
+                      // "أظهرها على الجدول" and the radar seemed to do nothing.
+                      // The band now lights when it holds any flagged row, and
+                      // fans itself open so the highlighted card is actually seen.
+                      const flaggedHere = bundle.rows.filter(r => reviewFocus.has(r.id));
                       return (
                         <div
-                          className={`week-bundle ${lensActive && !hits ? "lens-miss" : ""}`}
+                          className={`week-bundle ${lensActive && !hits ? "lens-miss" : ""} ${flaggedHere.length ? "bundle-flagged" : ""}`}
                           key={bundle.key}
                           style={{ top: bundle.top, height: bundle.height }}
                           role="group"
-                          aria-label={`${bundle.rows.length} محاضرات متزامنة`}
+                          aria-label={`${bundle.rows.length} محاضرات متزامنة${flaggedHere.length ? ` · ${flaggedHere.length} مميّزة` : ""}`}
                         >
                           <button
                             type="button"
@@ -5813,12 +5771,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             </header>
             {undoLog.length ? (
               <ul>
-                {undoLog.map(entry => (
+                {undoLog.map(entry => {
+                  // The course and the teacher behind the change, pulled from the
+                  // affected row (or the step's own body for a re-create), and
+                  // set in a whisper-light line beneath the action.
+                  const step = entry.steps[0] as any;
+                  const idMatch = String(step?.url || "").match(/\/api\/schedules\/(\d+)/);
+                  const affected = idMatch ? rows.find(r => r.id === Number(idMatch[1])) : null;
+                  const courseId = Number(step?.body?.AdCourseId || affected?.AdCourseId || 0);
+                  const instrId = Number(step?.body?.AdInstructorId || affected?.AdInstructorId || 0);
+                  const courseName = courseById.get(courseId)?.CourseName || affected?.AdCourseName || "";
+                  const whoName = instructorById.get(instrId)?.AdInstructorName || "";
+                  return (
                   <li key={entry.id} className={entry.usedAt ? "used" : ""}>
                     <div className="undo-log-line">
                       <span className="undo-log-label">{entry.label}</span>
                       <time dateTime={new Date(entry.at).toISOString()}>{undoClock(entry.at)}</time>
                     </div>
+                    {courseName || whoName ? (
+                      <span className="undo-log-meta">{[courseName, whoName].filter(Boolean).join(" · ")}</span>
+                    ) : null}
                     {entry.usedAt ? (
                       <span className="undo-log-done">تُراجع عنه {undoClock(entry.usedAt)}</span>
                     ) : (
@@ -5827,7 +5799,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       </button>
                     )}
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             ) : (
               <p className="undo-log-empty">لم يُسجَّل أي تغيير اليوم.</p>
@@ -6166,15 +6139,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       }}
                     >
                       <span className="solver-rank">{x.rank}</span>
-                      <strong dir="ltr">
-                        {x.start}–{x.end}
-                      </strong>
-                      <small>
-                        {x.roomCode}/{x.roomHall}
-                      </small>
-                      <Badge tone={x.conflicts ? "warning" : "success"}>
-                        {x.label}
-                      </Badge>
+                      <div>
+                        <strong dir="ltr">
+                          {x.start}–{x.end}
+                        </strong>
+                        <small>
+                          مبنى {x.roomCode} · قاعة {x.roomHall}
+                        </small>
+                      </div>
+                      {x.conflicts ? <Badge tone="warning">{x.label}</Badge> : null}
                     </button>
                   ))}
                 </div>
