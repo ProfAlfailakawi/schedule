@@ -4,7 +4,7 @@ import{Notice,PrimaryButton}from"./ui";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START}from"../utils/scheduleTime";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
-interface DashboardData{history?:Array<{termId:number;termName:string;schedules:number;rooms:number;instructors:number}>;previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
+interface DashboardData{history?:Array<{termId:number;termName:string;schedules:number;rooms:number;instructors:number}>;previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;weekend?:boolean;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
 interface DecisionItem{severity?:string;level?:string;title?:string;label?:string;detail?:string;description?:string;message?:string}
 
 const num=(value:number|undefined)=>Number(value||0).toLocaleString("ar-KW-u-nu-latn");
@@ -196,7 +196,11 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
       {[8,11,14,17,20].map(hour=><span key={hour} style={{insetInlineStart:spot(hour*60)}} dir="ltr">{String(hour).padStart(2,"0")}</span>)}
      </div>
     </div>
-    {today.length?null:<p className="deck-clear"><CheckCircle2 aria-hidden="true"/>لا محاضرات</p>}
+    {/* On a weekend the row below is Sunday's schedule, not today's — saying
+     which day is being shown costs one line and prevents a reader from
+     planning a Friday around Sunday's lectures. */}
+    {data?.weekend?<p className="deck-clear deck-weekend"><CalendarDays aria-hidden="true"/>عطلة نهاية الأسبوع — المعروض جدول الأحد</p>
+     :today.length?null:<p className="deck-clear"><CheckCircle2 aria-hidden="true"/>لا محاضرات</p>}
     <div className="deck-today-actions">
      {canManageSchedule?<PrimaryButton onClick={()=>onNavigate?.("schedules")}><CalendarDays aria-hidden="true"/>الجدول</PrimaryButton>:null}
      {reportView||searchView?<button type="button" className="editorial-text-action" onClick={()=>onNavigate?.((reportView||searchView) as string)}>التقارير<ArrowLeft aria-hidden="true"/></button>:null}

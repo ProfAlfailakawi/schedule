@@ -185,6 +185,9 @@ export function PrintLetterhead({ title, scope, college }: { title: React.ReactN
       </header>
       <footer className="print-foot">
         <span>{college || title}</span>
+        {/* Filled by the print stylesheet's page counters — a loose stack of
+            sheets can be checked for completeness without reading them. */}
+        <span className="print-page-number" aria-hidden="true" />
         <span>{stamp}</span>
       </footer>
     </>

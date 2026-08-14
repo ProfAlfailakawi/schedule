@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2, CalendarDays, ChevronDown, Clock3, Download, LayoutList,
-  Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
+  Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrimaryButton, PrintLetterhead, SecondaryButton } from "./ui";
@@ -25,7 +25,7 @@ export type ReportMode =
   | "searchInstructor" | "searchRoom" | "searchTime" | "searchRoomTime" | "searchAdvanced"
   | "reportDepartment" | "reportInstructor" | "reportRoom" | "reportTime" | "reportRoomTime";
 
-type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "fairness";
+type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "fairness" | "balance";
 type PrintKind =
   | "DepartmentSchedule" | "ListofTeacherCourse" | "InstructorWithRoom" | "TeacherWithCourse"
   | "InstructorReport2" | "WeekWithInstructor" | "RoomReport2" | "WeekWithInstructorByDept"
@@ -68,7 +68,10 @@ const LENSES: Array<{ id: Lens; label: string; icon: React.ReactNode }> = [
   { id: "room", label: "القاعات", icon: <Building2 /> },
   { id: "matrix", label: "القاعات × الأوقات", icon: <Table2 /> },
   { id: "time", label: "الأوقات", icon: <Clock3 /> },
-  { id: "fairness", label: "العدالة", icon: <Scale /> }
+  { id: "fairness", label: "العدالة", icon: <Scale /> },
+  /* Main administrator only — see `shownLenses`. It is the one reading nobody
+     else is allowed to see, so it must not appear as a locked door to them. */
+  { id: "balance", label: "ميزان الأقسام", icon: <Landmark /> }
 ];
 
 const DAYS = [
@@ -211,21 +214,88 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     return () => { alive = false; };
   }, [filters.sectionId]);
 
-  useEffect(() => {
-    if (!filters.termId) return;
-    const controller = new AbortController();
+  /**
+   * The scope's rows, re-read when the scope changes — and when a colleague
+   * changes the schedule underneath it.
+   *
+   * `pending` exists because switching department used to leave the previous
+   * scope's answer on screen, complete with its count and a live print button,
+   * until the new payload arrived — a report printed in that window carries the
+   * wrong department's name over the right department's heading.
+   */
+  const [pending, setPending] = useState(false);
+  const [liveNudge, setLiveNudge] = useState(false);
+  /**
+   * ميزان الأقسام — every department of the term on one line each.
+   *
+   * Read only when the lens is opened, because it is the one reading that
+   * deliberately steps outside the chosen scope, and only the main
+   * administrator may ask for it at all.
+   */
+  const [balance, setBalance] = useState<any>(null);
+  const [balanceSort, setBalanceSort] = useState<{ key: string; desc: boolean }>({ key: "rows", desc: true });
+  const readScope = useCallback((signal?: AbortSignal, quiet = false) => {
+    if (!filters.termId) return Promise.resolve();
     const query = new URLSearchParams({ termId: String(filters.termId) });
     if (filters.collegeId) query.set("collegeId", String(filters.collegeId));
     if (filters.sectionId) query.set("sectionId", String(filters.sectionId));
-    (async () => {
-      try {
-        const response = await fetch(`/api/schedules?${query}`, { signal: controller.signal });
+    if (!quiet) setPending(true);
+    return fetch(`/api/schedules?${query}`, { signal })
+      .then(response => {
         if (!response.ok) throw new Error("تعذر تحميل مواعيد النطاق الحالي");
-        setAll(await response.json());
-      } catch (e: any) { if (e?.name !== "AbortError") setError(e.message); }
-    })();
-    return () => controller.abort();
+        return response.json();
+      })
+      .then(rows => {
+        setAll(rows);
+        setLiveNudge(false);
+        // A read that worked is the end of the previous failure. The banner used
+        // to be set three times and cleared never, so one hiccup pinned a red
+        // notice to the screen for the rest of the session.
+        setError(null);
+      })
+      .catch((e: any) => { if (e?.name !== "AbortError") setError(e.message); })
+      .finally(() => { if (!quiet) setPending(false); });
   }, [filters.collegeId, filters.sectionId, filters.termId]);
+
+  useEffect(() => {
+    if (!filters.termId) return;
+    const controller = new AbortController();
+    void readScope(controller.signal);
+    return () => controller.abort();
+  }, [readScope, filters.termId]);
+
+  /**
+   * A report is a photograph of a moving thing.
+   *
+   * The schedule workspace refreshes itself the moment anyone saves; this screen
+   * did not, so a coordinator could print a departmental sheet from rows that
+   * changed ten minutes ago while the schedule tab beside it showed the change
+   * live. The same channel is used here — but a report is often mid-read or
+   * mid-print, so nothing moves under the reader's hands: a quiet line offers
+   * the refresh and the reader decides when to take it.
+   */
+  /* The balance lens exists only for the account that can act on it. */
+  const shownLenses = useMemo(
+    () => LENSES.filter(item => item.id !== "balance" || isPowerAdmin),
+    [isPowerAdmin],
+  );
+  useEffect(() => {
+    if (lens !== "balance" || !isPowerAdmin || !filters.termId) return;
+    const controller = new AbortController();
+    fetch(`/api/reports/department-balance?termId=${filters.termId}`, { signal: controller.signal })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => { if (data) { setBalance(data); setError(null); } })
+      .catch((e: any) => { if (e?.name !== "AbortError") setError("تعذّر قراءة ميزان الأقسام"); });
+    return () => controller.abort();
+  }, [lens, isPowerAdmin, filters.termId, liveNudge]);
+
+  useEffect(() => {
+    if (typeof EventSource === "undefined") return;
+    const source = new EventSource("/api/schedules/events");
+    const onChange = () => setLiveNudge(true);
+    source.addEventListener("schedules", onChange);
+    return () => { source.removeEventListener("schedules", onChange); source.close(); };
+  }, []);
 
   useEffect(() => {
     if (!sections.length || isPowerAdmin) return;
@@ -259,7 +329,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     if (filters.building) rows = rows.filter(s => String(s.AdRoomCode || "").includes(filters.building));
     if (filters.hall) rows = rows.filter(s => String(s.AdRoomHall || "").includes(filters.hall));
     if (filters.startTime && filters.endTime) {
-      rows = rows.filter(s => (s.fstarttime <= filters.startTime && s.fendtime >= filters.startTime) || (s.fstarttime <= filters.endTime && s.fendtime >= filters.endTime));
+      /* A lecture that lives entirely inside the window is the most obvious
+         answer to "what is on between ten and twelve", and the old test — which
+         only matched appointments straddling an endpoint — was the one shape
+         that missed it. This is the same overlap rule the conflict detector
+         uses: any shared minute counts, and touching edges do not. */
+      rows = rows.filter(s => s.fstarttime < filters.endTime && s.fendtime > filters.startTime);
     }
     if (filters.courseId) rows = rows.filter(s => s.AdCourseId === filters.courseId);
     if (filters.courseCode.trim()) rows = rows.filter(s => (courseById.get(s.AdCourseId)?.CourseCode || "") === filters.courseCode.trim());
@@ -516,6 +591,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   // --- output --------------------------------------------------------------
 
+  /** Every filter the screen is showing travels with the export, so the
+   *  spreadsheet is the same answer in another format — not a wider one. */
   const queryString = () => {
     const params = new URLSearchParams();
     if (filters.termId) params.set("termId", String(filters.termId));
@@ -524,6 +601,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     if (filters.instructorId) params.set("instructorId", String(filters.instructorId));
     if (filters.building) params.set("building", filters.building);
     if (filters.hall) params.set("hall", filters.hall);
+    if (filters.courseId) params.set("courseId", String(filters.courseId));
+    if (filters.courseCode.trim()) params.set("courseCode", filters.courseCode.trim());
+    if (filters.civil.trim()) params.set("civil", filters.civil.trim());
+    if (filters.startTime && filters.endTime) {
+      params.set("startTime", filters.startTime);
+      params.set("endTime", filters.endTime);
+    }
+    DAYS.forEach(day => { if (filters[day.key]) params.set(day.key, "true"); });
     return params.toString();
   };
   const excel = () => { window.location.href = `/api/reports/excel/ScheduleExcel?${queryString()}`; };
@@ -591,7 +676,22 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     <div className="content-stack query-page">
       <PageTitle eyebrow="الاستعلامات والتقارير" subtitle="سؤال واحد · سبع عدسات">مركز الاستعلام</PageTitle>
 
-      {error ? <Notice>{error}</Notice> : null}
+      {error ? (
+        <Notice>
+          {error}
+          {/* A failure with no way forward is a dead end; one press retries the
+              read that failed rather than making the reader reload the page. */}
+          <button type="button" className="notice-retry" onClick={() => { setError(null); void readScope(); }}>
+            إعادة المحاولة
+          </button>
+        </Notice>
+      ) : null}
+      {liveNudge ? (
+        <button type="button" className="query-live-nudge no-print" onClick={() => void readScope()}>
+          <span className="query-live-dot" aria-hidden="true" />
+          تغيّر الجدول بعد فتح هذا التقرير — اضغط للتحديث
+        </button>
+      ) : null}
 
       <section className="query-bar no-print" aria-label="نطاق السؤال">
         <form
@@ -733,7 +833,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       </section>
 
       <nav className="lens-strip no-print" role="tablist" aria-label="طريقة عرض النتائج" aria-orientation="horizontal">
-        {LENSES.map((item, index) => (
+        {shownLenses.map((item, index) => (
           <button
             key={item.id}
             type="button"
@@ -787,10 +887,15 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           </div>
         </header>
 
-        {loading ? (
+        {loading || pending ? (
           <QuerySkeleton />
         ) : !results.length ? (
-          <div className="query-empty"><EmptyState title="لا نتائج" detail="خفّف المرشحات" /></div>
+          <div className="query-empty">
+            <EmptyState
+              title={error ? "تعذّرت القراءة" : "لا نتائج"}
+              detail={error ? "لم تصل بيانات النطاق — أعد المحاولة من الشريط أعلاه." : "خفّف المرشحات"}
+            />
+          </div>
         ) : lens === "list" ? (
           <>
           <div className="lens-list">
@@ -1055,9 +1160,33 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                         </article>
                       ))}
                     </div>
-                  ) : (
-                    <p className="occupancy-pick-empty">فاضية في هذا الوقت — لا يوجد أي حجز.</p>
-                  )}
+                  ) : (() => {
+                    /**
+                     * "Empty" and "not yours to see" are different answers.
+                     *
+                     * The heat grid is drawn from the whole campus on purpose —
+                     * a hall booked by another college is genuinely busy — but
+                     * this panel can only list the rows inside your own scope.
+                     * When the square is dark and the list is empty, the honest
+                     * sentence is "booked outside your scope", not "empty":
+                     * telling a coordinator an occupied hall is free is exactly
+                     * how a room gets double-booked.
+                     */
+                    const room = roomLoad?.rooms?.find((item: any) => item.name === roomPick.room);
+                    const takenElsewhere = roomPick.point == null
+                      ? Number(room?.cells?.reduce((sum: number, cell: any) => Math.max(sum, Number(cell.taken) || 0), 0) || 0)
+                      : Number(room?.cells?.find((cell: any) => cell.point === roomPick.point)?.taken || 0);
+                    if (takenElsewhere > 0) return (
+                      <p className="occupancy-pick-external">
+                        <b>محجوزة خارج نطاقك</b>
+                        <span>
+                          {roomPick.point == null ? "هذه القاعة مستخدمة" : "القاعة مشغولة في هذا الوقت"}
+                          {` في ${num(takenElsewhere)} ${takenElsewhere === 1 ? "يوم" : "أيام"} من قسم آخر — التفاصيل لا تظهر خارج نطاقك، لكن الحجز قائم.`}
+                        </span>
+                      </p>
+                    );
+                    return <p className="occupancy-pick-empty">فاضية في هذا الوقت — لا يوجد أي حجز.</p>;
+                  })()}
                 </div>
                 </>
               );
@@ -1156,6 +1285,13 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               </article>
             ))}
           </div>
+        ) : lens === "balance" ? (
+          <BalancePanel
+            balance={balance}
+            sort={balanceSort}
+            onSort={setBalanceSort}
+            num={num}
+          />
         ) : fairness ? (
           <div className="lens-fairness">
             <div className="fairness-summary">
@@ -1196,6 +1332,112 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           courseById={courseById}
           instructorById={instructorById}
         />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ميزان الأقسام — the comparison that was never on a screen.
+ *
+ * Every other report answers for one department, so the person who can see all
+ * of them was comparing by eye: open the fairness lens, note the number, change
+ * the department, repeat. Here each department is one line — what it carries,
+ * who carries it, how evenly, and what is still blocking it — and the sorting
+ * is the point, because the question is always "which one is the outlier".
+ */
+function BalancePanel({ balance, sort, onSort, num }: {
+  balance: any;
+  sort: { key: string; desc: boolean };
+  onSort: React.Dispatch<React.SetStateAction<{ key: string; desc: boolean }>>;
+  num: (value: number) => string;
+}) {
+  const COLUMNS = [
+    { key: "sectionName", label: "القسم العلمي" },
+    { key: "rows", label: "المواعيد" },
+    { key: "instructors", label: "الأساتذة" },
+    { key: "rooms", label: "القاعات" },
+    { key: "morningPct", label: "صباحي" },
+    { key: "fairness", label: "العدالة" },
+    { key: "quality", label: "الجودة" },
+    { key: "conflicts", label: "موانع" },
+  ];
+  const ordered = useMemo(() => {
+    const list = [...(balance?.departments || [])];
+    const direction = sort.desc ? -1 : 1;
+    return list.sort((a: any, b: any) =>
+      sort.key === "sectionName"
+        ? byArabic(a.sectionName, b.sectionName) * direction
+        : (Number(a[sort.key]) - Number(b[sort.key])) * direction);
+  }, [balance, sort]);
+
+  if (!balance) return <QuerySkeleton />;
+  return (
+    <div className="balance-lens">
+      <header className="balance-head">
+        <div>
+          <span className="surface-kicker">ميزان الأقسام · {balance.termName}</span>
+          <h3>{num(balance.totals.departments)} قسماً · {num(balance.totals.rows)} موعداً</h3>
+        </div>
+        {balance.totals.conflicts ? (
+          <span className="balance-flag">{num(balance.totals.conflicts)} مانع اعتماد على مستوى الجامعة</span>
+        ) : (
+          <span className="balance-clear">لا موانع اعتماد في أي قسم</span>
+        )}
+      </header>
+      <div className="balance-scroll">
+        <table className="balance-table">
+          <thead>
+            <tr>
+              {COLUMNS.map(column => (
+                <th key={column.key} aria-sort={sort.key === column.key ? (sort.desc ? "descending" : "ascending") : "none"}>
+                  <button
+                    type="button"
+                    className={sort.key === column.key ? "sorted" : ""}
+                    onClick={() => onSort(current =>
+                      current.key === column.key ? { key: column.key, desc: !current.desc } : { key: column.key, desc: true })}
+                  >
+                    {column.label}
+                    {sort.key === column.key ? <i aria-hidden="true">{sort.desc ? "▾" : "▴"}</i> : null}
+                  </button>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {ordered.map((item: any) => (
+              <tr key={item.sectionId} className={item.conflicts ? "has-conflicts" : ""}>
+                <td>
+                  <strong>{item.sectionName}</strong>
+                  <small>{item.collegeName}</small>
+                </td>
+                <td>{num(item.rows)}</td>
+                <td>{num(item.instructors)}</td>
+                <td>{num(item.rooms)}</td>
+                <td>
+                  {/* Morning against evening as one bar, rather than two numbers
+                      to subtract in your head. */}
+                  <span className="balance-split" title={`صباحي ${item.morningPct}٪ · مسائي ${item.eveningPct}٪`}>
+                    <i style={{ width: `${item.morningPct}%` }} />
+                  </span>
+                  <b>{num(item.morningPct)}٪</b>
+                </td>
+                <td>
+                  <span className={`balance-score ${item.fairness >= 78 ? "good" : item.fairness >= 62 ? "warn" : "bad"}`}>
+                    {num(item.fairness)}
+                  </span>
+                  {item.heaviest ? <small title="الأثقل حملاً">{item.heaviest}</small> : null}
+                </td>
+                <td>
+                  <span className={`balance-score ${item.quality >= 85 ? "good" : item.quality >= 70 ? "warn" : "bad"}`}>
+                    {num(item.quality)}
+                  </span>
+                </td>
+                <td>{item.conflicts ? <b className="balance-bad">{num(item.conflicts)}</b> : <span className="balance-ok">—</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -1266,7 +1508,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
       );
     }
     return (
-      <div className="print-report print-matrix">
+      <div className="print-report print-matrix print-wide">
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table>
           <thead>
@@ -1309,7 +1551,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
   if (kind === "RoomLoad") {
     const dayLabel = roomDay === "week" ? "الأسبوع" : DAYS[roomDay].label;
     return (
-      <div className="print-report print-occupancy">
+      <div className="print-report print-occupancy print-wide">
         <PrintLetterhead title={titles[kind]} scope={[scopeLine, dayLabel].filter(Boolean).join(" · ")} college={collegeName} />
         <table>
           <thead>
@@ -1342,7 +1584,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
 
   if (kind === "WeekWithInstructor" || kind === "WeekWithInstructorByDept") {
     return (
-      <div className="print-report">
+      // Five day columns need the wide page; the default is portrait now.
+      <div className="print-report print-wide">
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table className="print-week">
           <colgroup>{DAYS.map(day => <col key={day.key} style={{ width: "20%" }} />)}</colgroup>
@@ -1372,7 +1615,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
 
   if (kind === "ListofTeacherCourse" || kind === "TeacherWithCourse") {
     return (
-      <div className="print-report">
+      <div className="print-report print-wide">
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table>
           <colgroup><col style={{ width: "4%" }} /><col style={{ width: "17%" }} /><col style={{ width: "10%" }} /><col /><col style={{ width: "9%" }} /><col style={{ width: "11%" }} /><col style={{ width: "16%" }} /><col style={{ width: "7%" }} /></colgroup>
@@ -1401,7 +1644,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
   }
 
   return (
-    <div className="print-report">
+    <div className="print-report print-wide">
       <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
       <table>
         <colgroup>

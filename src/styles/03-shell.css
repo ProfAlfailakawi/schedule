@@ -517,6 +517,49 @@ html[data-schedule-workspace="focus"] .schedule-control{
    like the university's schedule on screen, so the only safe design is to say
    so permanently, above everything, until the application is on real data.
    -------------------------------------------------------------------------- */
+/* The keyboard's place in the palette: the row Enter would take. */
+.spotlight-body .spot-cursor{
+  outline:2px solid var(--accent);
+  outline-offset:-2px;
+  background:var(--accent-softer,var(--surface-2)) !important;
+}
+
+/* --- Idle warning ----------------------------------------------------------
+   The last minute of a session, said plainly. It sits above the work rather
+   than over it: nothing is blocked, because the reader is still reading. */
+.idle-warning{
+  position:fixed;
+  inset-block-end:calc(var(--s5) + env(safe-area-inset-bottom,0px));
+  inset-inline-start:50%;
+  transform:translateX(50%);
+  z-index:80;
+  display:flex;align-items:center;gap:var(--s4);
+  max-width:min(560px,calc(100vw - var(--s5) * 2));
+  padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--warning) 34%,var(--line));
+  border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--warning-soft) 82%,var(--surface));
+  box-shadow:var(--shadow-lg,0 18px 40px rgba(0,0,0,.18));
+  animation:idle-warning-in .32s cubic-bezier(.2,.8,.3,1) both;
+}
+.idle-warning>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.idle-warning strong{font-size:var(--t-sm);font-weight:700;color:var(--warning)}
+.idle-warning span{font-size:var(--t-xs);color:var(--ink-2);line-height:1.6}
+.idle-warning .btn{flex:none;min-height:38px}
+/* A minute, drawn: the ring empties as the session does. */
+.idle-warning-ring{
+  flex:none;width:26px;height:26px;border-radius:50%;
+  background:conic-gradient(var(--warning) var(--sweep,0turn),color-mix(in srgb,var(--warning) 20%,transparent) 0);
+  animation:idle-warning-sweep 60s linear both;
+}
+@keyframes idle-warning-in{from{opacity:0;transform:translateX(50%) translateY(12px)}to{opacity:1;transform:translateX(50%) translateY(0)}}
+@keyframes idle-warning-sweep{from{--sweep:1turn}to{--sweep:0turn}}
+@property --sweep{syntax:"<angle>";inherits:false;initial-value:0turn}
+@media (prefers-reduced-motion:reduce){
+  .idle-warning{animation:none}
+  .idle-warning-ring{animation:none;background:var(--warning)}
+}
+
 .fake-data-banner{
   position:sticky;top:0;z-index:60;
   display:flex;align-items:center;justify-content:center;gap:var(--s3);flex-wrap:wrap;

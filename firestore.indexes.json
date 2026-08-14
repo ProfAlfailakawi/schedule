@@ -1,14 +1,31 @@
 {
   "indexes": [
     {
+      "_comment": "The hot path: one department's courses, one term. Replaces an index on AdCollegeId+AdSectionId+AdTermId that matched no query in the code, because scoped reads resolve through the course catalogue rather than the denormalised fields.",
       "collectionGroup": "schedules",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "AdCollegeId", "order": "ASCENDING" },
-        { "fieldPath": "AdSectionId", "order": "ASCENDING" },
+        { "fieldPath": "AdCourseId", "order": "ASCENDING" },
         { "fieldPath": "AdTermId", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "_comment": "The history list: newest versions of one scope, without reading their embedded snapshots.",
+      "collectionGroup": "scheduleVersions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "scopeKey", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "_comment": "Expired sessions delete themselves. Every abandoned browser used to leave a document that lived forever, because cleanup only happened if someone presented the expired session again.",
+      "collectionGroup": "sessions",
+      "fieldPath": "expiresAtTtl",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
 }

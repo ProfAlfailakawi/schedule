@@ -3,11 +3,16 @@
    A printed report is a document, not a screenshot of a screen. It carries a
    letterhead, a scope line, a repeating table header, a footer on every page
    and, where it is signed, a signature block that never splits across pages.
-   Wide evidence tables use landscape; short official sheets use portrait.
+   A signed sheet is portrait by convention, so portrait is the DEFAULT: the
+   common case should not have to remember to opt out, and a new report that
+   forgets to choose comes out the right way round. Wide evidence tables opt
+   into landscape explicitly with .print-wide.
    ========================================================================== */
 
-@page{size:A4 landscape;margin:12mm 10mm 16mm}
-/* Named page so a six-column signed sheet is not stranded on a wide page. */
+@page{size:A4 portrait;margin:14mm 12mm 18mm}
+/* Named page for the genuinely wide sheets — the week grid and the matrices. */
+@page wide{size:A4 landscape;margin:12mm 10mm 16mm}
+/* Kept so existing sheets that already asked for portrait stay correct. */
 @page upright{size:A4 portrait;margin:14mm 12mm 18mm}
 
 @media print{
@@ -133,6 +138,8 @@
     padding-bottom:8mm !important;
   }
   .print-report.print-upright{page:upright}
+  /* Wide evidence tables ask for the wide page by name. */
+  .print-report.print-wide{page:wide}
 
   /* --- letterhead -------------------------------------------------------- */
 
@@ -174,6 +181,22 @@
     font-size:7.4pt !important;color:#666 !important;
   }
   .print-foot span{white-space:nowrap !important}
+  /**
+   * «صفحة ٢ من ٥» on every sheet.
+   *
+   * These reports are read as a loose stack on a desk, and a stack with no page
+   * numbers cannot be checked for completeness — a missing middle sheet is
+   * invisible. The browser resolves the counters at print time; the Arabic-Indic
+   * numerals match the rest of the document.
+   */
+  .print-foot .print-page-number::after{
+    content:"صفحة " counter(page) " من " counter(pages) !important;
+    font-variant-numeric:normal !important;
+  }
+  .print-foot .print-page-number{
+    font-size:7.4pt !important;color:#666 !important;
+    -moz-font-feature-settings:"anum";font-feature-settings:"anum" !important;
+  }
 
   /* --- tables ------------------------------------------------------------ */
 

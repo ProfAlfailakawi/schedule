@@ -4,7 +4,7 @@ import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
 import { activeDataMode, initDatabase, Repository } from "./src/db/repository";
-import { onSchedulesInvalidated } from "./src/db/referenceCache";
+import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
@@ -30,6 +30,49 @@ configureRuntimeEnvironment();
 
 const app = express();
 const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
+
+/**
+ * A rejected promise must reach the error handler, not the process.
+ *
+ * Express 4 predates async handlers: it calls them, ignores the promise they
+ * return, and never learns that one rejected. The rejection then rises as an
+ * unhandled rejection, which modern Node treats as fatal — so one slow moment
+ * from Firestore could kill an instance mid-day, dropping every request in
+ * flight and every live schedule stream with it.
+ *
+ * Rather than remember a wrapper at four hundred call sites, the routing verbs
+ * are taught it once, here, before any route is registered. Handlers keep their
+ * shape: a four-argument error handler is left exactly as written, a returned
+ * promise gets `.catch(next)`, and a synchronous throw is forwarded too. Any
+ * properties a middleware carries (a mounted router, Vite's connect app) are
+ * copied onto the wrapper so nothing that inspects them notices the difference.
+ */
+const asyncSafe = (handler: any) => {
+  if (typeof handler !== "function" || handler.length >= 4) return handler;
+  const wrapped = function (this: unknown, req: Request, res: Response, next: NextFunction) {
+    try {
+      const outcome = handler.call(this, req, res, next);
+      if (outcome && typeof outcome.then === "function") outcome.catch(next);
+      return outcome;
+    } catch (error) {
+      next(error);
+      return undefined;
+    }
+  };
+  return Object.assign(wrapped, handler);
+};
+for (const verb of ["get", "post", "put", "patch", "delete", "all", "use"] as const) {
+  const original = (app as any)[verb].bind(app);
+  (app as any)[verb] = (...args: any[]) => original(...args.map(asyncSafe));
+}
+// The last line of defence: whatever escapes everything above is written down,
+// and the university's server keeps serving.
+process.on("unhandledRejection", (reason) => {
+  console.error("[unhandled-rejection] الخادم مستمر في العمل:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("[uncaught-exception] الخادم مستمر في العمل:", error?.stack || error);
+});
 
 app.disable("x-powered-by");
 app.use((req, res, next) => {
@@ -127,6 +170,8 @@ interface AuthenticatedRequest extends Request {
   userId?: number;
   user?: any;
   scopes?: { AdCollegeId: number; AdSectionId: number }[];
+  /** FormName ids this session holds, resolved once with the identity. */
+  permissions?: number[];
 }
 
 /**
@@ -147,7 +192,7 @@ interface AuthenticatedRequest extends Request {
 // cache existed to remove. Two minutes still bounds how long a revoked account
 // could linger, and sign-out and account edits drop the entry immediately.
 const AUTH_CACHE_MS = 120_000;
-const authCache = new Map<string, { at: number; userId: number; user: any; scopes: any[] }>();
+const authCache = new Map<string, { at: number; userId: number; user: any; scopes: any[]; permissions: number[] }>();
 export function forgetAuthSession(sessionId?: string) {
   if (sessionId) authCache.delete(sessionId);
   else authCache.clear();
@@ -164,6 +209,7 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
     req.userId = cached.userId;
     req.user = cached.user;
     req.scopes = cached.scopes;
+    req.permissions = cached.permissions;
     next();
     return;
   }
@@ -174,8 +220,23 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
     const user = await Repository.getUserById(sess.userId);
     if (user && user.IsActive && !user.IsLocked && !user.IsDeleted) {
       req.user = user;
-      req.scopes = await Repository.getUserAssigns(user.SystemUserId);
-      authCache.set(sessionId, { at: Date.now(), userId: sess.userId, user, scopes: req.scopes || [] });
+      /**
+       * The permission list joins the identity, instead of being re-read on
+       * every single gated call.
+       *
+       * `requirePermission` runs in front of nearly every route, and it was the
+       * one identity read with no cache — so each API call still paid for a
+       * Firestore round trip even when the user and scopes were already known.
+       * Every permission write announces an identity change, which clears this
+       * cache immediately, so a revoked screen closes as fast as it ever did.
+       */
+      const [assigns, security] = await Promise.all([
+        Repository.getUserAssigns(user.SystemUserId),
+        Repository.getSecurityByUser(user.SystemUserId),
+      ]);
+      req.scopes = assigns;
+      req.permissions = security.map(item => Number(item.FormNameId));
+      authCache.set(sessionId, { at: Date.now(), userId: sess.userId, user, scopes: req.scopes || [], permissions: req.permissions });
       if (sess.expiresAt - Date.now() < 10 * 60 * 1000)
         await Repository.refreshSession(sessionId, SERVER_IDLE_SESSION_MS);
       next();
@@ -213,30 +274,71 @@ app.use("/api", authMiddleware as express.RequestHandler);
 // so passwords and other sensitive values never enter the operational history.
 app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   const mutating = ["POST", "PUT", "PATCH", "DELETE"].includes(req.method);
-  const skip = req.path.startsWith("/auth/") || req.path.endsWith("/check-conflicts");
+  /**
+   * Sign-ins belong in the record, and so do refusals.
+   *
+   * The trail used to skip everything under /auth/ and everything that failed —
+   * so the two questions an investigation actually opens with ("who was in the
+   * system that afternoon?" and "did anyone try and get turned away?") had no
+   * answer at all. Login, logout and denied attempts are recorded now; the
+   * heartbeat is not, because a heartbeat every four minutes per person would
+   * bury the log it is written in.
+   */
+  /**
+   * The path is read NOW, not when the response finishes.
+   *
+   * Express rewrites `req.url` while dispatching mounted middleware and puts it
+   * back afterwards — so by the time the `finish` event fires, `req.path` is the
+   * full original path again. Reading it there labelled every sign-in as a
+   * sign-out, and derived the entity from "api" instead of the collection.
+   */
+  const routePath = req.path;
+  const authKind = routePath === "/auth/login" ? "login" : routePath === "/auth/logout" ? "logout" : null;
+  const authEvent = authKind !== null;
+  const skip = (routePath.startsWith("/auth/") && !authEvent) || routePath.endsWith("/check-conflicts");
   if (!mutating || skip) { next(); return; }
   const startedUser = req.user ? { id: Number(req.user.SystemUserId), name: String(req.user.Name || req.user.SystemUserLogin || "") } : null;
   res.on("finish", () => {
-    if (!startedUser || res.statusCode < 200 || res.statusCode >= 400) return;
-    const pieces = req.path.split("/").filter(Boolean);
+    // A login has no `req.user` when it starts — the account is only known once
+    // it succeeds — so the auth trail reads the id the handler left behind.
+    const actor = startedUser
+      || (authEvent && res.locals?.auditUser ? res.locals.auditUser as { id: number; name: string } : null)
+      || (authEvent ? { id: 0, name: String(req.body?.username || "مجهول") } : null);
+    if (!actor) return;
+    const refused = res.statusCode >= 400;
+    // Everything that changed state is kept; of the refusals, only the ones
+    // worth investigating — a rejected login, a permission wall, a conflict.
+    if (refused && !authEvent && ![403, 409].includes(res.statusCode)) return;
+    if (!refused && !startedUser && !authEvent) return;
+    const pieces = routePath.split("/").filter(Boolean);
     const entity = pieces[0] || "system";
     const entityId = pieces.length > 1 ? pieces[pieces.length - 1] : undefined;
-    const action = req.path.includes("/safety-net/") && req.path.endsWith("/undo")
+    const action = routePath.includes("/safety-net/") && routePath.endsWith("/undo")
       ? "تراجع"
-      : req.path.includes("/versions/") && req.path.endsWith("/restore")
+      : routePath.includes("/versions/") && routePath.endsWith("/restore")
         ? "استرجاع"
-        : req.path.includes("/drafts/") && req.path.endsWith("/publish")
+        : routePath.includes("/drafts/") && routePath.endsWith("/publish")
           ? "نشر"
-          : req.path.includes("/copy")
+          : routePath.includes("/copy")
             ? "نسخ"
             : req.method === "POST"
               ? "إضافة"
               : req.method === "DELETE"
                 ? "حذف"
                 : "تعديل";
+    const finalAction = authKind
+      ? (authKind === "login" ? (refused ? "محاولة دخول مرفوضة" : "تسجيل دخول") : "تسجيل خروج")
+      : refused
+        ? (res.statusCode === 403 ? `${action} — مرفوض (خارج الصلاحية)` : `${action} — مرفوض (تعارض)`)
+        : action;
     void Repository.createAuditLog({
-      SystemUserId: startedUser.id, userName: startedUser.name, method: req.method, path: req.originalUrl,
-      action, entity, entityId, status: res.statusCode
+      SystemUserId: actor.id, userName: actor.name, method: req.method, path: req.originalUrl,
+      action: finalAction, entity, entityId,
+      // What actually changed, when the handler was able to say. A log that
+      // records "موعد #418 عُدّل" answers nothing; the question is always
+      // "from what, to what".
+      changes: (res.locals?.auditChanges as string | undefined) || undefined,
+      status: res.statusCode
     }).catch(error => console.error("Audit log write failed:", error));
   });
   next();
@@ -277,8 +379,10 @@ function requirePermission(formNameId: number) {
       return;
     }
     // Legacy navigation is driven by FormSecurity even when IsAdminUser=true.
-    const perms = await Repository.getSecurityByUser(req.user.SystemUserId);
-    const hasPerm = perms.some(p => p.FormNameId === formNameId);
+    // Resolved once per session by authMiddleware; the fallback covers a caller
+    // that reached here without passing through it.
+    const granted = req.permissions ?? (await Repository.getSecurityByUser(req.user.SystemUserId)).map(item => Number(item.FormNameId));
+    const hasPerm = granted.includes(formNameId);
     if (!hasPerm) {
       res.status(403).json({ error: "ليس لديك صلاحية للوصول إلى هذا القسم" });
       return;
@@ -297,8 +401,8 @@ function requireAnyPermission(formNameIds: number[]) {
       res.status(403).json({ error: "هذه الشاشة مخصصة لإدارة النظام الرئيسية" });
       return;
     }
-    const perms = await Repository.getSecurityByUser(req.user.SystemUserId);
-    if (!perms.some(p => formNameIds.includes(p.FormNameId))) {
+    const granted = req.permissions ?? (await Repository.getSecurityByUser(req.user.SystemUserId)).map(item => Number(item.FormNameId));
+    if (!granted.some(id => formNameIds.includes(id))) {
       res.status(403).json({ error: "ليس لديك صلاحية للوصول إلى هذا القسم" });
       return;
     }
@@ -446,9 +550,12 @@ app.post("/api/auth/login", rateLimitLogin, async (req: Request, res: Response) 
   }
 
   if (!Repository.verifyPassword(password, user.SystemUserPass)) {
+    // The trail records who was tried, not merely that something failed.
+    res.locals.auditUser = { id: Number(user.SystemUserId), name: String(user.Name || user.SystemUserLogin || "") };
     res.status(400).json({ error: "اسم المستخدم أو كلمة السر غير صحيحة" });
     return;
   }
+  res.locals.auditUser = { id: Number(user.SystemUserId), name: String(user.Name || user.SystemUserLogin || "") };
 
   if (!user.IsActive) {
     res.status(403).json({ error: "هذا الحساب غير فعال" });
@@ -533,9 +640,12 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
 
   // ASP.NET DayOfWeek returned 0 for Sunday, but the legacy view checked d == 7.
   // Therefore Sunday, Friday and Saturday retain Sunday's rows while dname stays blank.
+  // `weekend` lets the screen say so out loud instead of labelling Sunday's
+  // lectures with Friday's date, which is what the client's own clock did.
   const weekday = new Date().getDay();
+  const weekend = weekday === 5 || weekday === 6;
   let dayKey: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday" = "fsunday";
-  let dayName = "";
+  let dayName = weekday === 0 ? "الأحد" : "";
   if (weekday === 1) { dayKey = "fmonday"; dayName = "الاثنين"; }
   if (weekday === 2) { dayKey = "ftuesday"; dayName = "الثلاثاء"; }
   if (weekday === 3) { dayKey = "fwednesday"; dayName = "الأربعاء"; }
@@ -545,8 +655,19 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
     .filter(row => Boolean(row[dayKey]))
     .sort((a, b) => String(a.fstarttime).localeCompare(String(b.fstarttime)));
 
-  // The old table always used AdCollegeUserAssign section IDs, even for IsAdminUser users.
-  const visibleTableRows = daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  /**
+   * The administrator sees the university; everyone else sees their department.
+   *
+   * The legacy table filtered by AdCollegeUserAssign for everyone, including
+   * IsAdminUser — and the main administrator normally holds no assignment rows
+   * at all, so the day list came back empty. The result was a dashboard that
+   * said "لا محاضرات اليوم" directly beside a tile counting thousands of them:
+   * two numbers from the same page contradicting each other, and the one the
+   * reader trusts is the one that is wrong. A coordinator's view is unchanged.
+   */
+  const visibleTableRows = req.user.IsAdminUser
+    ? daySchedules
+    : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
   const instructorIds = new Set(latestScopedSchedules.map(row => row.AdInstructorId));
   const coursesById = new Map(allCourses.map(course => [course.AdCourseId, course]));
   const instructorsById = new Map(allInstructors.map(instructor => [instructor.AdInstructorId, instructor]));
@@ -645,6 +766,10 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
     latestTermId,
     latestTermName: latestTerm?.AdTermName || "",
     dayName,
+    // Friday and Saturday are not taught. The list below is Sunday's, by legacy
+    // design — so the screen is told plainly, instead of stamping today's date
+    // on another day's lectures.
+    weekend,
     // Legacy CountSchedule: admin = all rows for the selected day; non-admin = all scoped rows in latest term.
     dashboardTotal: req.user.IsAdminUser ? daySchedules.length : latestScopedSchedules.length,
     today: visibleTableRows.map(row => ({
@@ -1317,6 +1442,30 @@ async function interCampusWarnings(candidate: any, all: any[]) {
   }
   return warnings.slice(0, 3);
 }
+/**
+ * The one sentence the audit log was missing.
+ *
+ * "تعديل · موعد #418" records that something happened; nobody has ever opened a
+ * log to learn that. The question is always what moved and where it moved to,
+ * so a placement change is written the way a person would say it — days, time,
+ * hall and instructor, each named only when it actually changed.
+ */
+function describeScheduleChange(before: any, after: any, instructorName?: (id: number) => string): string {
+  const dayText = (row: any) => SCHEDULE_DAY_KEYS.map((key, index) => (row?.[key] ? DAY_LABELS[index] : null)).filter(Boolean).join("، ") || "بلا أيام";
+  const parts: string[] = [];
+  const beforeDays = dayText(before), afterDays = dayText(after);
+  if (beforeDays !== afterDays) parts.push(`الأيام ${beforeDays} ← ${afterDays}`);
+  if (before?.fstarttime !== after?.fstarttime || before?.fendtime !== after?.fendtime)
+    parts.push(`الوقت ${before?.fstarttime}-${before?.fendtime} ← ${after?.fstarttime}-${after?.fendtime}`);
+  const beforeRoom = `${before?.AdRoomCode || ""}/${before?.AdRoomHall || ""}`;
+  const afterRoom = `${after?.AdRoomCode || ""}/${after?.AdRoomHall || ""}`;
+  if (beforeRoom !== afterRoom) parts.push(`القاعة ${beforeRoom} ← ${afterRoom}`);
+  if (Number(before?.AdInstructorId || 0) !== Number(after?.AdInstructorId || 0))
+    parts.push(`الأستاذ ${instructorName?.(Number(before?.AdInstructorId || 0)) || before?.AdInstructorId} ← ${instructorName?.(Number(after?.AdInstructorId || 0)) || after?.AdInstructorId}`);
+  if (String(before?.SCode || "") !== String(after?.SCode || "")) parts.push(`الشعبة ${before?.SCode} ← ${after?.SCode}`);
+  return parts.join(" · ");
+}
+
 async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const termId=Number(row?.AdTermId||0);
   if(!termId||!row?.fstarttime||!row?.fendtime||!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))return[];
@@ -1359,17 +1508,43 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
 const scheduleEventClients = new Set<Response>();
 let scheduleEventTimer: ReturnType<typeof setTimeout> | null = null;
 let scheduleEventSerial = 0;
+/** Writes the event to every screen attached to THIS instance. */
+function broadcastScheduleChange() {
+  scheduleEventSerial += 1;
+  const payload = `id: ${scheduleEventSerial}\nevent: schedules\ndata: {"changedAt":${Date.now()}}\n\n`;
+  for (const client of scheduleEventClients) {
+    try { client.write(payload); } catch { scheduleEventClients.delete(client); }
+  }
+}
 onSchedulesInvalidated(() => {
   if (scheduleEventTimer) return;
   scheduleEventTimer = setTimeout(() => {
     scheduleEventTimer = null;
-    scheduleEventSerial += 1;
-    const payload = `id: ${scheduleEventSerial}\nevent: schedules\ndata: {"changedAt":${Date.now()}}\n\n`;
-    for (const client of scheduleEventClients) {
-      try { client.write(payload); } catch { scheduleEventClients.delete(client); }
-    }
+    broadcastScheduleChange();
+    // …and tell the other instances, which never saw this write at all.
+    void Repository.markSchedulesChanged();
   }, 350);
 });
+/**
+ * The other half of the live channel.
+ *
+ * Without this, "live" quietly meant "live for whoever shares my instance" —
+ * the moment Cloud Run runs a second copy, half the users stop receiving their
+ * colleagues' changes and nothing on screen suggests anything is wrong. The
+ * beacon document is watched here, so a change written anywhere is announced
+ * everywhere. The listener is started once the database is up.
+ */
+let stopScheduleBeacon: (() => void) | null = null;
+function listenForScheduleChangesAcrossInstances() {
+  if (stopScheduleBeacon) return;
+  stopScheduleBeacon = Repository.watchSchedulesChanged(() => {
+    // Another instance wrote. Our cached rows are stale, so they are dropped —
+    // quietly, because announcing a change we did not make would send the
+    // beacon straight back out and the two instances would echo forever.
+    clearScheduleCacheQuietly();
+    broadcastScheduleChange();
+  });
+}
 
 app.get("/api/schedules/events", requirePermission(7), (req: AuthenticatedRequest, res: Response) => {
   res.writeHead(200, {
@@ -1378,6 +1553,9 @@ app.get("/api/schedules/events", requirePermission(7), (req: AuthenticatedReques
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
+  // Each stream holds a connection for its whole life, so the door has a
+  // capacity. Past it the screen simply falls back to reading on demand.
+  if (scheduleEventClients.size >= 400) { res.end(); return; }
   res.write("retry: 4000\n\n");
   scheduleEventClients.add(res);
   // Proxies drop silent connections; a comment line every while keeps this one open.
@@ -1494,10 +1672,10 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
   const requestedStartTime = req.query.startTime as string | undefined;
   const requestedEndTime = req.query.endTime as string | undefined;
   if (requestedStartTime && requestedEndTime) {
-    list = list.filter(s =>
-      (s.fstarttime <= requestedStartTime && s.fendtime >= requestedStartTime) ||
-      (s.fstarttime <= requestedEndTime && s.fendtime >= requestedEndTime)
-    );
+    // Any shared minute is a match, including a lecture wholly inside the
+    // window; an appointment that merely ends as the window opens is not.
+    // Same rule as scheduleOverlap, so search and conflict-detection agree.
+    list = list.filter(s => s.fstarttime < requestedEndTime && s.fendtime > requestedStartTime);
   }
   // Exact legacy MainReport day semantics: selected weekdays are OR-ed together.
   const requestedDays = [
@@ -1611,6 +1789,16 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     return;
   }
   const updated = await Repository.moveSchedulesBatch(candidates.map(c => ({ id: c.row.id, fields: c.fields })));
+  // The drag is the most common change in the product, so it is the one the
+  // log most needs to describe: what moved, from where, to where.
+  const originalById = new Map(originals.map(row => [row.id, row]));
+  res.locals.auditChanges = updated
+    .map(row => {
+      const before = originalById.get(row.id);
+      const sentence = before ? describeScheduleChange(before, row) : "";
+      return sentence ? `${before?.AdCourseName || `موعد ${row.id}`}: ${sentence}` : "";
+    })
+    .filter(Boolean).join(" || ") || undefined;
   res.json({ success: true, rows: updated });
 });
 
@@ -1829,6 +2017,10 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
+  // The roster is a department's own record of who it invited; every other write
+  // path in this file asks this question, and this one used to take the caller's
+  // word for which department it was reading.
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   res.json({ instructorIds: await Repository.getVisitingRoster(collegeId, sectionId, termId) });
 });
 
@@ -1843,6 +2035,7 @@ app.put("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const termId = Number(req.body?.termId || 0);
   const ids: number[] = Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : [];
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   res.json({ instructorIds: await Repository.saveVisitingRoster(collegeId, sectionId, termId, ids) });
 });
 
@@ -1853,6 +2046,7 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
   const fromTermId = Number(req.body?.fromTermId || 0);
   const toTermId = Number(req.body?.toTermId || 0);
   if (!collegeId || !sectionId || !fromTermId || !toTermId) { res.status(400).json({ error: "حدد الفصلين." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const source = await Repository.getVisitingRoster(collegeId, sectionId, fromTermId);
   const target = await Repository.getVisitingRoster(collegeId, sectionId, toTermId);
   const merged = [...new Set([...target, ...source])];
@@ -2186,6 +2380,8 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
       AdRoomHall: AdRoomHall || "",
       fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday })
     });
+    // Hand the audit trail the sentence describing what actually moved.
+    res.locals.auditChanges = describeScheduleChange(existing, updated) || undefined;
     res.json(updated);
   } catch (e: any) {
     res.status(404).json({ error: e.message });
@@ -2199,7 +2395,11 @@ app.delete("/api/schedules/:id", requirePermission(7), async (req: Authenticated
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  if (sched) await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
+  if (sched) {
+    await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
+    // A deletion has no "after", so the record keeps what was standing there.
+    res.locals.auditChanges = `حُذف: ${sched.AdCourseName || "موعد"} · شعبة ${sched.SCode} · ${sched.fstarttime}-${sched.fendtime} · ${sched.AdRoomCode}/${sched.AdRoomHall}`;
+  }
   await Repository.deleteSchedule(id);
   res.json({ success: true });
 });
@@ -2508,7 +2708,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), requirePo
 });
 
 app.get("/api/intelligence/versions", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const versions=await Repository.getScheduleVersions(collegeId,sectionId,termId,80); res.json(versions.map(({rows,...meta})=>({...meta,rowCount:rows.length})));
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const versions=await Repository.getScheduleVersions(collegeId,sectionId,termId,80); res.json(versions.map(({rows,...meta})=>({...meta,rowCount:Number(meta.rowCount ?? rows.length)})));
 });
 app.get("/api/intelligence/versions/compare", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
@@ -2669,7 +2869,7 @@ app.post("/api/intelligence/meeting-minutes", requirePermission(7), requirePower
 });
 
 app.get("/api/intelligence/safety-net", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const versions=await Repository.getScheduleVersions(collegeId,sectionId,termId,18); res.json(versions.map(v=>({id:v.id,createdAt:v.createdAt,label:v.label,source:v.source,userName:v.userName,rowCount:v.rows.length,decisionLabel:`استرجع الجدول إلى ${v.label}`})));
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const versions=await Repository.getScheduleVersions(collegeId,sectionId,termId,18); res.json(versions.map(v=>({id:v.id,createdAt:v.createdAt,label:v.label,source:v.source,userName:v.userName,rowCount:Number(v.rowCount ?? v.rows.length),decisionLabel:`استرجع الجدول إلى ${v.label}`})));
 });
 
 app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -2697,11 +2897,23 @@ app.get("/api/admin-instructor-options", requirePermission(11), async (_req: Req
 
 app.get("/api/users", requirePermission(11), async (req: Request, res: Response) => {
   const usersList = (await Repository.getUsers()).filter(user => !user.IsDeleted);
+  /**
+   * A password is never sent to a browser, not even an administrator's.
+   *
+   * The legacy SystemUser/Index screen printed the password in a column, and
+   * this endpoint reproduced it faithfully by decrypting the vault on every
+   * read. Faithful, and wrong: it meant one borrowed admin session — or one
+   * screenshot in a meeting, or one browser cache on a shared machine — was
+   * every credential in the university at once.
+   *
+   * What an administrator actually needs from this screen is whether a password
+   * exists, so an account that was never given one can be spotted. That single
+   * fact is what leaves the building now; setting a new password still works
+   * exactly as before, because setting one never required reading the old one.
+   */
   const users = usersList.map(user => ({
     ...safeSystemUser(user),
-    // Legacy SystemUser/Index displayed the password. The value is recovered only for users
-    // who already passed FormName 11 authorization; Firestore stores AES-GCM ciphertext, not plaintext.
-    SystemUserPassDisplay: Repository.decryptPasswordFromVault(user.SystemUserPassVault)
+    HasPassword: Boolean(String(user.SystemUserPass || "").trim())
   }));
   res.json(users);
 });
@@ -2728,7 +2940,7 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
     IsDeleted: false,
     AdInstructorId: Number(AdInstructorId) || 0
   });
-  res.status(201).json({ ...safeSystemUser(newUser), SystemUserPassDisplay: Repository.decryptPasswordFromVault(newUser.SystemUserPassVault) });
+  res.status(201).json({ ...safeSystemUser(newUser), HasPassword: true });
 });
 
 app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Response) => {
@@ -2761,7 +2973,7 @@ app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Respo
 
   try {
     const updated = await Repository.updateUser(id, fields);
-    res.json({ ...safeSystemUser(updated), SystemUserPassDisplay: Repository.decryptPasswordFromVault(updated.SystemUserPassVault) });
+    res.json({ ...safeSystemUser(updated), HasPassword: Boolean(String(updated.SystemUserPass || "").trim()) });
   } catch (e: any) {
     res.status(404).json({ error: e.message });
   }
@@ -2849,15 +3061,32 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   if (!required) { res.status(400).json({ error: "نوع التقرير غير صحيح" }); return; }
   const perms = await Repository.getSecurityByUser(req.user.SystemUserId);
   if (!perms.some(p => p.FormNameId === required)) { res.status(403).json({ error: "ليس لديك صلاحية للوصول إلى هذا القسم" }); return; }
-  const { termId, collegeId, sectionId, instructorId, building, hall } = req.query;
+  /**
+   * The spreadsheet must contain exactly what the screen contains.
+   *
+   * Export used to accept six filters while the query screen offered eleven, so
+   * narrowing to "Sunday, course 321, before noon" and pressing Excel produced
+   * the department's entire term instead — a file that looks like an answer and
+   * is not one. The whole filter set travels now, and the two string filters use
+   * the same `includes` the screen uses rather than an exact match.
+   */
+  const { termId, collegeId, sectionId, instructorId, building, hall, courseId, courseCode, civil, startTime, endTime } = req.query;
   let resolvedTermId=Number(termId||0);
   if(!resolvedTermId){const terms=await Repository.getTerms();resolvedTermId=terms.reduce((max,t)=>Math.max(max,Number(t.AdTermId)||0),0);}
   let schedules = await Repository.getSchedulesByScope({termId:resolvedTermId,collegeId:Number(collegeId||0),sectionId:Number(sectionId||0)});
   schedules = filterByScope(req, schedules);
 
   if (instructorId) schedules = schedules.filter(s => s.AdInstructorId === parseInt(instructorId as string));
-  if (building) schedules = schedules.filter(s => s.AdRoomCode === (building as string));
-  if (hall) schedules = schedules.filter(s => s.AdRoomHall === (hall as string));
+  if (building) schedules = schedules.filter(s => String(s.AdRoomCode || "").includes(String(building)));
+  if (hall) schedules = schedules.filter(s => String(s.AdRoomHall || "").includes(String(hall)));
+  if (courseId) schedules = schedules.filter(s => s.AdCourseId === parseInt(courseId as string));
+  if (startTime && endTime) schedules = schedules.filter(s => s.fstarttime < String(endTime) && s.fendtime > String(startTime));
+  const exportDays = [
+    req.query.sun === "true" && "fsunday", req.query.mon === "true" && "fmonday",
+    req.query.tue === "true" && "ftuesday", req.query.wed === "true" && "fwednesday",
+    req.query.thr === "true" && "fthursday",
+  ].filter(Boolean) as Array<"fsunday"|"fmonday"|"ftuesday"|"fwednesday"|"fthursday">;
+  if (exportDays.length) schedules = schedules.filter(s => exportDays.some(day => Boolean(s[day])));
 
   // Load reference data once. The legacy implementation performed four database
   // lookups per schedule row (N+1), which became very expensive with a decade of data.
@@ -2871,6 +3100,10 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   const sectionById = new Map(sections.map(x => [x.AdSectionId, x]));
   const instructorById = new Map(instructors.map(x => [x.AdInstructorId, x]));
   const courseById = new Map(courses.map(x => [x.AdCourseId, x]));
+
+  // These two read through a relation, so they wait for the maps above.
+  if (courseCode) schedules = schedules.filter(s => (courseById.get(s.AdCourseId)?.CourseCode || "") === String(courseCode).trim());
+  if (civil) schedules = schedules.filter(s => String(instructorById.get(s.AdInstructorId)?.AdInstructorCivil || "").includes(String(civil).trim()));
 
   const reportData = schedules.map(s => {
     const coll = collegeById.get(s.AdCollegeId);
@@ -3042,6 +3275,76 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
  * no instructor, nothing that belongs to another department. Rooms the caller
  * owns are marked so the screen can separate "my load" from "campus load".
  */
+/**
+ * ميزان الأقسام — the one report only the main administrator can act on.
+ *
+ * Every other report answers for a single department, which means the person
+ * who can see all of them has been comparing by eye: open the fairness lens,
+ * write the number down, change the department, repeat. The comparison itself
+ * was never on a screen.
+ *
+ * This puts every department of the term on one line each — how many
+ * appointments it carries, how many staff and halls it uses, how its teaching
+ * load splits between morning and evening, how evenly the burden falls across
+ * its instructors, and how many collisions it still holds. Nothing here is new
+ * analysis; it is the readings the product already computes, finally side by
+ * side. It reads the whole term once and derives every row from that, so the
+ * page costs one read rather than one per department.
+ */
+app.get("/api/reports/department-balance", requirePermission(14), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  let termId = Number(req.query.termId || 0);
+  const terms = await Repository.getTerms();
+  if (!termId) termId = terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+  const [termRows, sections, colleges, instructors, courses] = await Promise.all([
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getSections(), Repository.getColleges(), Repository.getInstructors(), Repository.getCourses(),
+  ]);
+  const collegeById = new Map(colleges.map(item => [item.AdCollegeId, item]));
+  const bySection = new Map<number, FSchedule[]>();
+  for (const row of termRows) {
+    const list = bySection.get(Number(row.AdSectionId));
+    if (list) list.push(row); else bySection.set(Number(row.AdSectionId), [row]);
+  }
+  const MORNING_END = 14 * 60;
+  const departments = [...bySection.entries()].map(([sectionId, rows]) => {
+    const section = sections.find(item => item.AdSectionId === sectionId);
+    const fairness = buildFairnessEngine(rows, instructors);
+    const analysis = analyzeSchedule(rows, termRows, courses, instructors);
+    let morning = 0, evening = 0;
+    for (const row of rows) {
+      const meetings = Math.max(1, activeDays(row).length);
+      (timeToMinutes(row.fstarttime) < MORNING_END ? (morning += meetings) : (evening += meetings));
+    }
+    const meetings = Math.max(1, morning + evening);
+    const rooms = new Set(rows.filter(row => row.AdRoomCode).map(row => `${row.AdRoomCode}|${row.AdRoomHall}`));
+    return {
+      sectionId,
+      sectionName: section?.AdSectionName || `قسم ${sectionId}`,
+      collegeName: collegeById.get(Number(section?.AdCollegeId || 0))?.AdCollegeName || "",
+      rows: rows.length,
+      instructors: new Set(rows.map(row => row.AdInstructorId).filter(Boolean)).size,
+      rooms: rooms.size,
+      morningPct: Math.round((morning / meetings) * 100),
+      eveningPct: Math.round((evening / meetings) * 100),
+      fairness: fairness.score,
+      heaviest: fairness.profiles[0]?.name || "",
+      quality: analysis.score,
+      conflicts: analysis.metrics.criticalConflicts,
+      lateRows: analysis.metrics.lateRows,
+    };
+  }).sort((a, b) => b.rows - a.rows);
+  res.json({
+    termId,
+    termName: terms.find(term => term.AdTermId === termId)?.AdTermName || "",
+    departments,
+    totals: {
+      departments: departments.length,
+      rows: departments.reduce((sum, item) => sum + item.rows, 0),
+      conflicts: departments.reduce((sum, item) => sum + item.conflicts, 0),
+    },
+  });
+});
+
 app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -3850,6 +4153,27 @@ async function startServer() {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
   });
 
+  /**
+   * One request may fail. The building may not fall down.
+   *
+   * Express 4 does not catch a rejected promise from an async handler, so a
+   * single Firestore DEADLINE_EXCEEDED used to travel all the way up as an
+   * unhandled rejection — which on modern Node terminates the process. One slow
+   * network moment would drop every in-flight request in the university and cut
+   * every live schedule stream, and the person who saw it got a blank 503 with
+   * nothing to report.
+   *
+   * Now the failure stops here: it is logged with its route so it can be found,
+   * and the caller is answered in the language they are reading. The response
+   * says only that the read failed — an internal message may name a collection
+   * or a document path, and that is not a stranger's business.
+   */
+  app.use((error: any, req: Request, res: Response, _next: NextFunction) => {
+    console.error(`[api-error] ${req.method} ${req.originalUrl}:`, error?.stack || error?.message || error);
+    if (res.headersSent) { try { res.end(); } catch { /* the socket is already gone */ } return; }
+    res.status(500).json({ error: "تعذّر إتمام العملية الآن. حاول مرة أخرى، وإذا تكرر الأمر أبلغ إدارة النظام." });
+  });
+
   const isProduction = process.env.NODE_ENV === "production" ||
                        process.env.npm_lifecycle_event === "start" ||
                        process.argv[1]?.endsWith("server.cjs");
@@ -3904,6 +4228,9 @@ async function startServer() {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
+
+  // The live channel spans instances only once the database is up.
+  if (!databaseDown) listenForScheduleChangesAcrossInstances();
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);

@@ -142,7 +142,8 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             x.AdCourseId !== editId,
         )
       ) {
-        setCode("");
+        // The typed value stays. Erasing the field on a duplicate warning made
+        // the reader retype a code they could no longer see to compare.
         setError("تم تسجيل رمز المقرر الدراسي هذا من قبل");
       }
     };
@@ -181,7 +182,20 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       setError(d.error || "فشل حفظ بيانات المقررات الدراسية");
       return;
     }
-    await load();
+    /* The answer contains the saved record, so the list updates from it. The
+       old path re-read every course in the university — plus the colleges and
+       the sections — to show one edited line. */
+    if (d && Number(d.AdCourseId)) {
+      setItems(current => {
+        const exists = current.some(item => Number(item.AdCourseId) === Number(d.AdCourseId));
+        return exists
+          ? current.map(item => (Number(item.AdCourseId) === Number(d.AdCourseId) ? { ...item, ...d } : item))
+          : sortByName([...current, d], (row: any) => row.CourseName);
+      });
+      setSelectedId(Number(d.AdCourseId));
+    } else {
+      await load();
+    }
     back();
   };
   const remove = async (id: number) => {
@@ -192,8 +206,9 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       setError(d.error || "فشل حذف بيانات المقرر الدراسي");
       return;
     }
+    // The row leaves the list directly; nothing else on this screen changed.
     setSelectedId(null);
-    await load();
+    setItems(current => current.filter(item => Number(item.AdCourseId) !== Number(id)));
   };
   useEffect(() => setVisibleLimit(160), [query]);
   const coll = (id: number) =>
@@ -397,7 +412,11 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                 <RecordCard
                   key={x.AdCourseId}
                   onClick={() => setSelectedId(x.AdCourseId)}
-                  className={selectedId === x.AdCourseId ? "selected" : ""}
+                  /* `activeId` is what the inspector is actually showing —
+                     `selectedId` is null until the reader clicks, so on first
+                     load the panel described a course whose card looked
+                     unselected. Every sibling screen keys on activeId. */
+                  className={activeId === x.AdCourseId ? "selected" : ""}
                   icon={<BookOpen />}
                   title={x.CourseName}
                   subtitle={

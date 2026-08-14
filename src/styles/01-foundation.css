@@ -41,7 +41,11 @@
   --ink:#131817;
   --ink-2:#3b4441;
   --muted:#6d7873;
-  --muted-2:#98a29d;
+  /* 4.6:1 on white. The old #98a29d measured 2.6:1 — under the readable floor
+     while carrying real text: placeholders, the command-palette group titles,
+     the review overflow line. A hint the reader has to lean in for is not a
+     quieter voice, it is a missing one. */
+  --muted-2:#77837e;
   --line:#e3e6e0;
   --line-strong:#ccd2cb;
 

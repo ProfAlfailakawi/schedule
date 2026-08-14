@@ -96,7 +96,8 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       if (!civil) return;
       const v = validateCivilId(civil);
       if (!v.isValid) {
-        setCivil("");
+        // The typed value stays: a reader correcting a civil ID needs to see
+        // the digits they entered, not an empty box and a warning.
         setError(
           v.message ||
             "الرقم المدني المدخل لأستاذ المقرر غير صحيح وفقاً لبيانات البطاقة المدنية",
@@ -110,7 +111,6 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
             x.AdInstructorId !== editId,
         )
       ) {
-        setCivil("");
         setError("تم التسجيل من قبل");
       }
     };

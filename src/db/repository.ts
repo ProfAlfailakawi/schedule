@@ -3,7 +3,7 @@ import { cachedReference, cachedSchedules, invalidateReference, invalidateSchedu
 import path from "path";
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { Firestore, WriteBatch } from "firebase-admin/firestore";
 import { defaultPrivateDirectory, isCloudRunRuntime, materializePackagedSnapshotOnce, packagedSnapshotPath, readJsonSnapshot } from "./snapshot";
 import {
@@ -258,8 +258,21 @@ async function getFirestoreSchedulesForCourseIds(courseIds: number[], termId = 0
     const allowed = new Set(uniqueIds);
     return snap.docs.map(doc => doc.data() as FSchedule).filter(row => allowed.has(Number(row.AdCourseId)));
   }
+  /**
+   * The term is asked for at the database, not sorted out afterwards.
+   *
+   * This query used to fetch every row those courses had ever had — thirty-one
+   * terms of history — and then discard all but one term in JavaScript. Opening
+   * this week's timetable paid for a decade of it. Adding the term to the query
+   * needs the composite index declared in firestore.indexes.json
+   * (AdCourseId + AdTermId); without a term the historical read is still
+   * available, deliberately, for maintenance jobs that want everything.
+   */
   const snapshots = await Promise.all(
-    chunks(uniqueIds).map(batch => firestoreDb!.collection("schedules").where("AdCourseId", "in", batch).get())
+    chunks(uniqueIds).map(batch => {
+      const base = firestoreDb!.collection("schedules").where("AdCourseId", "in", batch);
+      return (termId ? base.where("AdTermId", "==", termId) : base).get();
+    })
   );
   const rows = new Map<number, FSchedule>();
   for (const snap of snapshots) for (const doc of snap.docs) {
@@ -645,7 +658,14 @@ export const Repository = {
     const now = Date.now();
     const session: StoredSession = { sessionId, userId, createdAt: now, expiresAt: now + ttlMs };
     if (firestoreDb) {
-      await firestoreDb.collection("sessions").doc(sessionId).set(session);
+      // `expiresAt` stays a number because the code compares it as one. The
+      // Timestamp twin exists purely so Firestore's own TTL policy can sweep
+      // abandoned sessions away — previously a closed browser left a document
+      // that lived for the life of the deployment.
+      await firestoreDb.collection("sessions").doc(sessionId).set({
+        ...session,
+        expiresAtTtl: Timestamp.fromMillis(session.expiresAt),
+      });
       return;
     }
     demoSessions.set(sessionId, session);
@@ -676,7 +696,7 @@ export const Repository = {
     const expiresAt = Date.now() + ttlMs;
     if (firestoreDb) {
       const ref = firestoreDb.collection("sessions").doc(sessionId);
-      await ref.set({ expiresAt }, { merge: true });
+      await ref.set({ expiresAt, expiresAtTtl: Timestamp.fromMillis(expiresAt) }, { merge: true });
       return;
     }
     const session = demoSessions.get(sessionId);
@@ -780,16 +800,41 @@ export const Repository = {
     return db.users[idx];
   },
 
+  /**
+   * A deleted account takes its keys with it.
+   *
+   * Legacy SQL had no cascade from FormSecurity or AdCollegeUserAssign to
+   * SystemUser, and the real database still carries the orphan rows that proves
+   * it. Reproducing that faithfully turned out to be dangerous rather than
+   * merely untidy: `createUser` numbers a new account `max(id) + 1`, so
+   * deleting the newest user and creating another hands the new person the old
+   * one's permissions and the old one's departments — silently, on their first
+   * login, with nothing on any screen to suggest it.
+   *
+   * The grants are therefore removed in the same operation as the account, and
+   * the identity caches are told once at the end so no instance keeps serving
+   * the departed session. Rows belonging to accounts deleted before today are
+   * untouched: this closes the door, it does not rewrite history.
+   */
   deleteUser: async (id: number): Promise<void> => {
-    announceIdentityChange();
-    // Legacy SQL has no FK/cascade from FormSecurity or AdCollegeUserAssign to SystemUser.
-    // Historical orphan rows in the real database prove user deletion left those records behind.
     if (firestoreDb) {
-      await firestoreDb.collection("users").doc(`user_${id}`).delete();
+      const [permissions, scopes] = await Promise.all([
+        firestoreDb.collection("formSecurity").where("SystemUserId", "==", id).get(),
+        firestoreDb.collection("userScopes").where("SystemUserId", "==", id).get(),
+      ]);
+      const batch = firestoreDb.batch();
+      permissions.docs.forEach(doc => batch.delete(doc.ref));
+      scopes.docs.forEach(doc => batch.delete(doc.ref));
+      batch.delete(firestoreDb.collection("users").doc(`user_${id}`));
+      await batch.commit();
+      announceIdentityChange();
       return;
     }
     db.users = db.users.filter(u => u.SystemUserId !== id);
+    db.formSecurity = db.formSecurity.filter(row => row.SystemUserId !== id);
+    db.collegeUserAssign = db.collegeUserAssign.filter(row => row.SystemUserId !== id);
     saveDatabase();
+    announceIdentityChange();
   },
 
   // FormSecurity
@@ -1672,6 +1717,9 @@ export const Repository = {
       id: randomUUID(),
       createdAt: new Date().toISOString(),
       scopeKey: `${entry.AdCollegeId}:${entry.AdSectionId}:${entry.AdTermId}`,
+      // Stored beside the rows so the history list can say "٤١ موعداً" without
+      // reading the snapshot it counted.
+      rowCount: entry.rows.length,
       rows: entry.rows.map(item => ({ ...item }))
     };
     if (firestoreDb) {
@@ -1689,8 +1737,22 @@ export const Repository = {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 60));
     if (firestoreDb) {
-      const snap = await firestoreDb.collection("scheduleVersions").where("scopeKey", "==", scopeKey).limit(200).get();
-      return snap.docs.map(doc => doc.data() as ScheduleVersion).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,safeLimit);
+      /**
+       * Newest first, at the database, without the snapshots.
+       *
+       * Every version document embeds a complete copy of the department's term,
+       * so reading two hundred of them to show sixty one-line labels moved
+       * megabytes to build a list. Ordering and limiting now happen in
+       * Firestore, and `.select()` asks for the metadata fields only — the rows
+       * stay where they are until something actually needs to restore them.
+       */
+      const snap = await firestoreDb.collection("scheduleVersions")
+        .where("scopeKey", "==", scopeKey)
+        .orderBy("createdAt", "desc")
+        .limit(safeLimit)
+        .select("id", "scopeKey", "createdAt", "SystemUserId", "userName", "AdCollegeId", "AdSectionId", "AdTermId", "label", "source", "rowCount")
+        .get();
+      return snap.docs.map(doc => ({ rows: [], ...(doc.data() as ScheduleVersion) }));
     }
     return (db.scheduleVersions || []).filter(row => row.scopeKey === scopeKey).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,safeLimit);
   },
@@ -1859,6 +1921,46 @@ export const Repository = {
   },
 
   /** The seconded staff a department is using this term. */
+  /**
+   * The live channel, across every instance.
+   *
+   * A server-sent event only reaches the clients connected to the instance that
+   * performed the write — so the moment Cloud Run runs a second copy, half the
+   * university stops seeing their colleagues' changes and nothing looks broken.
+   * One tiny document fixes it: each write stamps it, and every instance keeps
+   * a listener on it, so a change made anywhere is announced everywhere.
+   *
+   * It is a beacon, not a payload: it carries a counter and a time, never a
+   * schedule row, so no permission decision depends on it. In demo mode there
+   * is only ever one process, and this quietly does nothing.
+   */
+  markSchedulesChanged: async (): Promise<void> => {
+    if (!firestoreDb) return;
+    try {
+      await firestoreDb.doc("_meta/schedulesChanged").set({
+        changedAt: Date.now(),
+        serial: FieldValue.increment(1),
+      }, { merge: true });
+    } catch {
+      // The in-process broadcast still fires; a missed beacon costs a live
+      // refresh on other instances, never correctness.
+    }
+  },
+
+  watchSchedulesChanged: (onChange: () => void): (() => void) => {
+    if (!firestoreDb) return () => undefined;
+    let first = true;
+    const stop = firestoreDb.doc("_meta/schedulesChanged").onSnapshot(
+      () => {
+        // The first callback is the document's current state, not news.
+        if (first) { first = false; return; }
+        onChange();
+      },
+      error => console.error("Schedule change listener stopped:", error?.message || error),
+    );
+    return stop;
+  },
+
   getVisitingRoster: async (collegeId: number, sectionId: number, termId: number): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     if (firestoreDb) {

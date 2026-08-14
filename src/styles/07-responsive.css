@@ -188,7 +188,9 @@
   }
   .mobile-dock-icon{display:grid;place-items:center}
   .mobile-dock-icon svg{width:21px;height:21px}
-  .mobile-dock-label{font-size:10.5px;font-weight:600;line-height:1;letter-spacing:-.01em}
+    /* Arabic needs more optical size than Latin at the same point size, and these
+     five words are the whole navigation on a phone. */
+  .mobile-dock-label{font-size:11.5px;font-weight:600;line-height:1.15;letter-spacing:-.01em}
   .mobile-dock-link.active,
   .mobile-dock-link.context-active{color:var(--accent)}
   .mobile-dock-link:active{background:var(--surface-2)}

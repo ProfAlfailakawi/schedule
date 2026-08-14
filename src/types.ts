@@ -129,6 +129,12 @@ export interface AuditLogEntry {
   action: string;
   entity: string;
   entityId?: string;
+  /**
+   * What changed, in words — «الوقت 10:00 ← 11:00 · القاعة A/101 ← B/202».
+   * Optional and additive: entries written before this existed simply have
+   * none, and a handler that cannot describe its change omits it.
+   */
+  changes?: string;
   status: number;
 }
 
@@ -138,6 +144,8 @@ export interface ScheduleVersion {
   id: string;
   scopeKey: string;
   createdAt: string;
+  /** How many appointments the snapshot holds, so a list never reads `rows`. */
+  rowCount?: number;
   SystemUserId: number;
   userName: string;
   AdCollegeId: number;

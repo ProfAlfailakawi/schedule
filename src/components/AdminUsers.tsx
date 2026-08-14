@@ -42,7 +42,8 @@ interface SafeUser {
   SystemUserId: number;
   Name: string;
   SystemUserLogin: string;
-  SystemUserPassDisplay?: string;
+  /** Whether an account has a password at all. The value itself never leaves the server. */
+  HasPassword?: boolean;
   IsAdminUser: boolean;
   IsActive: boolean;
   IsLocked: boolean;
@@ -52,6 +53,52 @@ interface Props {
   mode: AdminMode;
   onNavigate?: (mode: AdminMode) => void;
   permissions?: number[];
+}
+
+/**
+ * Declared here, not inside the screen — and that is the whole fix.
+ *
+ * A component defined in another component's body is a NEW component type on
+ * every render, so React cannot reconcile it: it unmounts the old input and
+ * mounts a fresh one. The visible symptom was that the admin search boxes lost
+ * focus and the caret after every single keystroke, on all four screens, and
+ * the only way to type a name was to click back into the field each letter.
+ * At module scope the type is stable and the input simply keeps its focus.
+ */
+function SearchBox({
+  value,
+  onChange,
+  placeholder = "بحث...",
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  placeholder?: string;
+}) {
+  return (
+    <label className="master-search">
+      <Search />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+      />
+      {value ? (
+        <button type="button" onClick={() => onChange("")} aria-label="مسح">
+          ×
+        </button>
+      ) : null}
+    </label>
+  );
+}
+
+function EmptyInspector({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="master-empty">
+      {icon}
+      <strong>{title}</strong>
+      <span>اختر عنصراً من القائمة</span>
+    </div>
+  );
 }
 
 export default function AdminUsers({
@@ -215,7 +262,7 @@ export default function AdminUsers({
   const saveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    if (!name.trim() || !login.trim() || !password) {
+    if (!name.trim() || !login.trim() || (!editUserId && !password)) {
       setError("الرجاء إدخال الحقول المطلوبة بالأحمر");
       return;
     }
@@ -226,7 +273,7 @@ export default function AdminUsers({
         body: JSON.stringify({
           Name: name.trim(),
           SystemUserLogin: login.trim(),
-          password,
+          password: password || undefined,
           IsAdminUser: isAdmin,
           IsActive: isActive,
           IsLocked: isLocked,
@@ -245,7 +292,9 @@ export default function AdminUsers({
     setEditUserId(u.SystemUserId);
     setName(u.Name);
     setLogin(u.SystemUserLogin);
-    setPassword(u.SystemUserPassDisplay || "");
+    // Empty means "leave the current password untouched" — the old value is
+    // never sent to the browser, so there is nothing here to prefill.
+    setPassword("");
     setIsAdmin(u.IsAdminUser);
     setIsActive(u.IsActive);
     setIsLocked(u.IsLocked);
@@ -253,7 +302,13 @@ export default function AdminUsers({
     setPage("edit");
   };
   const deleteUser = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف بيانات المستخدم؟")) return;
+    // Deletion now removes the account's permissions and departments with it,
+    // so the sentence says so — a confirmation that hides half the consequence
+    // is not a confirmation.
+    const who = users.find(user => user.SystemUserId === id);
+    if (!confirm(
+      `حذف «${who?.Name || "المستخدم"}»؟\nستُحذف معه صلاحياته وارتباطه بالأقسام العلمية، ولا يمكن التراجع.`,
+    )) return;
     try {
       await api(`/api/users/${id}`, { method: "DELETE" });
       setSelectedUserId(null);
@@ -382,34 +437,6 @@ export default function AdminUsers({
       {error ? <Notice>{error}</Notice> : null}
     </>
   );
-  const SearchBox = ({ placeholder = "بحث..." }: { placeholder?: string }) => (
-    <label className="master-search">
-      <Search />
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={placeholder}
-      />
-      {query ? (
-        <button type="button" onClick={() => setQuery("")} aria-label="مسح">
-          ×
-        </button>
-      ) : null}
-    </label>
-  );
-  const EmptyInspector = ({
-    icon,
-    title,
-  }: {
-    icon: React.ReactNode;
-    title: string;
-  }) => (
-    <div className="master-empty">
-      {icon}
-      <strong>{title}</strong>
-      <span>اختر عنصراً من القائمة</span>
-    </div>
-  );
 
   const usersFormDrawer = (mode === "users" && page !== "index") ? (
       <CatalogFormDrawer onClose={back} label={page === "create" ? "إنشاء مستخدم" : "تعديل المستخدم"}>
@@ -446,11 +473,18 @@ export default function AdminUsers({
                   required
                 />
               </Field>
-              <Field label="كلمة السر" required>
+              <Field
+                label="كلمة السر"
+                required={!editUserId}
+                hint={editUserId ? "اتركها فارغة للإبقاء على كلمة السر الحالية" : undefined}
+              >
                 <input
+                  type="password"
+                  autoComplete="new-password"
                   value={password}
+                  placeholder={editUserId ? "••••••••" : ""}
                   onChange={(e) => setPassword(e.target.value)}
-                  required
+                  required={!editUserId}
                 />
               </Field>
               <Field
@@ -704,7 +738,7 @@ export default function AdminUsers({
         <div className="master-detail-shell">
           <section className="master-pane">
             <header>
-              <SearchBox placeholder="الاسم أو اسم المستخدم" />
+              <SearchBox value={query} onChange={setQuery} placeholder="الاسم أو اسم المستخدم" />
               <span>{filtered.length}</span>
             </header>
             <div className="master-list">
@@ -774,9 +808,14 @@ export default function AdminUsers({
                     <span>اسم المستخدم</span>
                     <b dir="ltr">{selected.SystemUserLogin}</b>
                   </article>
+                  {/* A password is a state to confirm, never a value to read:
+                      the vault stays on the server, and this row answers the
+                      only question an administrator has — is one set at all? */}
                   <article>
-                    <span>كلمة السر الحالية</span>
-                    <b dir="ltr">{selected.SystemUserPassDisplay || "—"}</b>
+                    <span>كلمة السر</span>
+                    <b className={selected.HasPassword === false ? "fact-warn" : ""}>
+                      {selected.HasPassword === false ? "غير مضبوطة" : "محفوظة ومشفّرة"}
+                    </b>
                   </article>
                   <article>
                     <span>لوحة الأستاذ</span>
@@ -885,7 +924,7 @@ export default function AdminUsers({
         <div className="master-detail-shell">
           <section className="master-pane">
             <header className="master-filter-stack">
-              <SearchBox placeholder="بحث بالمستخدم أو الوظيفة" />
+              <SearchBox value={query} onChange={setQuery} placeholder="بحث بالمستخدم أو الوظيفة" />
               <select
                 value={filterUser || ""}
                 onChange={(e) => setFilterUser(Number(e.target.value) || 0)}
@@ -1007,7 +1046,7 @@ export default function AdminUsers({
         <div className="master-detail-shell">
           <section className="master-pane">
             <header className="master-filter-stack">
-              <SearchBox placeholder="بحث بالمستخدم أو القسم" />
+              <SearchBox value={query} onChange={setQuery} placeholder="بحث بالمستخدم أو القسم" />
               <select
                 value={filterUser || ""}
                 onChange={(e) => setFilterUser(Number(e.target.value) || 0)}
@@ -1111,8 +1150,11 @@ export default function AdminUsers({
     );
   }
 
+  /* The change sentence is searchable too, so «القاعة» finds every room move,
+     and the user filter matches the sibling permission and scope screens. */
   const filteredLogs = logs.filter((x) =>
-      `${x.userName} ${x.action} ${x.entity} ${x.path} ${x.method} ${x.entityId || ""}`
+      (!filterUser || Number(x.SystemUserId) === filterUser) &&
+      `${x.userName} ${x.action} ${x.entity} ${x.path} ${x.method} ${x.entityId || ""} ${x.changes || ""}`
         .toLowerCase()
         .includes(query.toLowerCase()),
     ),
@@ -1128,7 +1170,18 @@ export default function AdminUsers({
       <div className="master-detail-shell audit-master-detail">
         <section className="master-pane">
           <header>
-            <SearchBox placeholder="المستخدم، العملية أو المسار" />
+            <SearchBox value={query} onChange={setQuery} placeholder="المستخدم، العملية أو ما تغيّر" />
+            <select
+              className="audit-user-filter"
+              value={filterUser || ""}
+              onChange={(e) => setFilterUser(Number(e.target.value) || 0)}
+              aria-label="تصفية السجل بالمستخدم"
+            >
+              <option value="">كل المستخدمين</option>
+              {users.map((u) => (
+                <option key={u.SystemUserId} value={u.SystemUserId}>{u.Name}</option>
+              ))}
+            </select>
             <span>{filteredLogs.length}</span>
           </header>
           <div className="master-list audit-master">
@@ -1148,6 +1201,9 @@ export default function AdminUsers({
                   <strong>
                     {x.action} · {x.entity}
                   </strong>
+                  {/* What changed, in the row itself — the log is read by
+                      scanning, and the answer should not need a second click. */}
+                  {x.changes ? <em className="audit-change">{x.changes}</em> : null}
                   <small>
                     {x.userName} ·{" "}
                     {new Date(x.timestamp).toLocaleString("ar-KW-u-nu-latn")}
@@ -1186,6 +1242,12 @@ export default function AdminUsers({
                   </p>
                 </div>
               </div>
+              {selectedLog.changes ? (
+                <div className="audit-change-card">
+                  <span>ما الذي تغيّر</span>
+                  <p>{selectedLog.changes}</p>
+                </div>
+              ) : null}
               <div className="inspector-facts">
                 <article>
                   <span>المستخدم</span>

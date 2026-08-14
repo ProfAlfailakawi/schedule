@@ -23,7 +23,7 @@ function conflictCountForRow(candidate:FSchedule, universe:FSchedule[]){
   return findConflicts([candidate],universe.filter(row=>row.id!==candidate.id).concat(candidate)).filter(item=>item.rowId===candidate.id||item.otherId===candidate.id).length;
 }
 
-export function buildConflictTopology(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
+function computeConflictTopology(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
   const courseById=new Map(courses.map(c=>[c.AdCourseId,c]));
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const conflicts=findConflicts(rows,universe);
@@ -45,7 +45,50 @@ export function buildConflictTopology(rows:FSchedule[], universe:FSchedule[], co
   return {nodes:ranked.slice(0,90),edges:edges.filter(edge=>ranked.slice(0,90).some(n=>n.id===edge.source)&&ranked.slice(0,90).some(n=>n.id===edge.target)).slice(0,220),hotspots:ranked.slice(0,8),conflicts:conflicts.length};
 }
 
-export function buildFairnessEngine(rows:FSchedule[], instructors:AdInstructor[]){
+
+/**
+ * The same question, asked eleven times, answered once.
+ *
+ * These readings compose: the pulse asks health, health asks fragility,
+ * fragility asks room-resilience and fairness — and the one-minute brief asks
+ * the whole chain over again. One request for the living dashboard therefore
+ * ran `analyzeSchedule` about eleven times and the O(rows × rooms × universe)
+ * room-resilience pass six times, all synchronously on the single thread every
+ * other request is waiting on.
+ *
+ * Nothing about the calculations changes here. They are pure functions of the
+ * arrays handed to them, so an answer already computed for exactly those arrays
+ * — identity, not contents — is simply reused. The cache keys on every input,
+ * so a fresh read (which produces new arrays) always recomputes, and it holds
+ * only the last few entries so it can never grow into a leak.
+ */
+let identitySeed = 0;
+const identities = new WeakMap<object, number>();
+const identityOf = (value: unknown) => {
+  if (!value || typeof value !== "object") return "0";
+  const known = identities.get(value as object);
+  if (known !== undefined) return String(known);
+  identities.set(value as object, ++identitySeed);
+  return String(identitySeed);
+};
+const MEMO_LIMIT = 24;
+function memoizeByIdentity<A extends any[], R>(compute: (...args: A) => R): (...args: A) => R {
+  const cache = new Map<string, R>();
+  return (...args: A): R => {
+    const key = args.map(identityOf).join("|");
+    if (cache.has(key)) return cache.get(key) as R;
+    const value = compute(...args);
+    cache.set(key, value);
+    // Oldest out first: a Map preserves insertion order, so this is one line.
+    if (cache.size > MEMO_LIMIT) cache.delete(cache.keys().next().value as string);
+    return value;
+  };
+}
+
+/** The innermost repeated cost of all — the full schedule analysis. */
+const analyze = memoizeByIdentity(analyzeSchedule);
+
+function computeFairnessEngine(rows:FSchedule[], instructors:AdInstructor[]){
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const ids=[...new Set(rows.map(r=>r.AdInstructorId).filter(Boolean))];
   const profiles=ids.map(id=>{
@@ -67,15 +110,15 @@ function roomFreeFor(row:FSchedule, room:{code:string;hall:string}, universe:FSc
   return !conflicts.some(c=>c.severity==="high"&&(c.rowId===candidate.id||c.otherId===candidate.id));
 }
 
-export function buildRoomResilience(rows:FSchedule[], universe:FSchedule[]){
+function computeRoomResilience(rows:FSchedule[], universe:FSchedule[]){
   const groups=new Map<string,FSchedule[]>(); rows.forEach(r=>{const key=roomKey(r);if(key!=="|"){const list=groups.get(key)||[];list.push(r);groups.set(key,list)}});
   const universeRooms=[...new Map(universe.filter(r=>roomKey(r)!=="|").map(r=>[roomKey(r),{code:r.AdRoomCode,hall:r.AdRoomHall}])).values()];
   const rooms=[...groups.entries()].map(([key,list])=>{const [code,hall]=key.split("|");let recoverable=0;for(const row of list){if(universeRooms.some(room=>`${room.code}|${room.hall}`!==key&&roomFreeFor(row,room,universe)))recoverable++}const dependency=rows.length?list.length/rows.length:0;const recoverability=list.length?recoverable/list.length:1;const risk=clamp(dependency*72+(1-recoverability)*42,0,100);return{key,code,hall,sessions:list.length,dependencyPct:Math.round(dependency*100),recoverable,recoverabilityPct:Math.round(recoverability*100),risk:Math.round(risk),singlePoint:risk>=38&&list.length>=Math.max(3,rows.length*.08)}}).sort((a,b)=>b.risk-a.risk);
   return {rooms,topRisk:rooms[0]||null,singlePoints:rooms.filter(r=>r.singlePoint)};
 }
 
-export function buildFragilityMap(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
-  const analysis=analyzeSchedule(rows,universe,courses,instructors);const total=Math.max(1,rows.length);const room=buildRoomResilience(rows,universe);const fairness=buildFairnessEngine(rows,instructors);
+function computeFragilityMap(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
+  const analysis=analyze(rows,universe,courses,instructors);const total=Math.max(1,rows.length);const room=buildRoomResilience(rows,universe);const fairness=buildFairnessEngine(rows,instructors);
   const instructorCounts=new Map<number,number>();rows.forEach(r=>instructorCounts.set(r.AdInstructorId,(instructorCounts.get(r.AdInstructorId)||0)+1));
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const professorRisk=[...instructorCounts.entries()].map(([id,count])=>({type:"instructor",key:String(id),label:instructorById.get(id)?.AdInstructorName||`أستاذ ${id}`,affected:count,impactPct:Math.round(count/total*100),severity:count/total>.12?"high":count/total>.07?"medium":"low"})).sort((a,b)=>b.affected-a.affected).slice(0,5);
@@ -85,14 +128,14 @@ export function buildFragilityMap(rows:FSchedule[], universe:FSchedule[], course
   return {resilience,label:resilience>=88?"مرن":resilience>=72?"متماسك":resilience>=55?"هش جزئيًا":"هش",quality:analysis.score,roomRisk,professorRisk,dayRisk,roomIntelligence:room};
 }
 
-export function buildScheduleHealth2(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
-  const quality=analyzeSchedule(rows,universe,courses,instructors);const fragility=buildFragilityMap(rows,universe,courses,instructors);const fairness=buildFairnessEngine(rows,instructors);const composite=Math.round(quality.score*.58+fragility.resilience*.28+fairness.score*.14);
+function computeScheduleHealth2(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
+  const quality=analyze(rows,universe,courses,instructors);const fragility=buildFragilityMap(rows,universe,courses,instructors);const fairness=buildFairnessEngine(rows,instructors);const composite=Math.round(quality.score*.58+fragility.resilience*.28+fairness.score*.14);
   const descriptor=quality.score>=90&&fragility.resilience<65?"ممتاز… لكنه هش":quality.score>=85&&fairness.score<70?"قوي… لكنه غير متوازن":composite>=88?"صحي ومرن":composite>=75?"جيد مع نقاط تحسين":"يحتاج تدخل";
   return {score:composite,descriptor,quality:quality.score,resilience:fragility.resilience,fairness:fairness.score,readiness:quality.readiness,fragility};
 }
 
-export function buildSchedulePulse(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
-  const analysis=analyzeSchedule(rows,universe,courses,instructors);const health=buildScheduleHealth2(rows,universe,courses,instructors);const issues:Array<any>=[];
+function computeSchedulePulse(rows:FSchedule[], universe:FSchedule[], courses:AdCourse[], instructors:AdInstructor[]){
+  const analysis=analyze(rows,universe,courses,instructors);const health=buildScheduleHealth2(rows,universe,courses,instructors);const issues:Array<any>=[];
   analysis.alerts.filter((alert:any)=>alert.title!=="الوضع مستقر").forEach((alert:any)=>issues.push({type:"quality",severity:alert.severity,title:alert.title,detail:alert.detail,score:alert.severity==="critical"?100:alert.severity==="warning"?70:30}));
   const room=health.fragility.roomIntelligence.topRisk;if(room?.singlePoint)issues.push({type:"room",severity:"warning",title:`${room.code}/${room.hall} نقطة اعتماد حساسة`,detail:`ترتبط بـ${room.sessions} مواعيد، ويمكن استيعاب ${room.recoverabilityPct}% منها فقط في قاعات بديلة بنفس الوقت.`,score:82});
   if(health.fairness<75)issues.push({type:"fairness",severity:"warning",title:"عدالة التوزيع تحتاج مراجعة",detail:`مؤشر العدالة ${health.fairness}/100؛ يوجد تفاوت ملحوظ في الأيام والفراغات والأوقات الثقيلة.`,score:74});
@@ -152,3 +195,11 @@ export function createEmergencyPlans(kind:"room"|"day"|"instructor",value:string
   });
   return {kind,value,affected:affected.length,plans};
 }
+
+/* The memoized faces of the readings above: same signatures, same answers. */
+export const buildFairnessEngine = memoizeByIdentity(computeFairnessEngine);
+export const buildRoomResilience = memoizeByIdentity(computeRoomResilience);
+export const buildFragilityMap = memoizeByIdentity(computeFragilityMap);
+export const buildScheduleHealth2 = memoizeByIdentity(computeScheduleHealth2);
+export const buildSchedulePulse = memoizeByIdentity(computeSchedulePulse);
+export const buildConflictTopology = memoizeByIdentity(computeConflictTopology);

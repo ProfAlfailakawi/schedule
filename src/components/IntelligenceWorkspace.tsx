@@ -252,11 +252,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     (async () => {
       setLoading(true);
       try {
+        /**
+         * A power-only panel must not take the whole room down with it.
+         *
+         * `lookups` is reserved for the main administrator, and `Promise.all`
+         * rejects on the first refusal — so a department coordinator, who is
+         * allowed on this screen and needs most of it, used to arrive at a
+         * blank page with a permission error and no way forward. The optional
+         * pieces now fail alone: their panels stay quiet, the rest opens.
+         */
         const [c, s, t, lookups] = await Promise.all([
           fetchJson("/api/colleges"),
           fetchJson("/api/sections"),
           fetchJson("/api/terms"),
-          fetchJson("/api/intelligence/lookups"),
+          fetchJson("/api/intelligence/lookups").catch(() => null),
         ]);
         setColleges(sortByName(c, (row:any)=>row.AdCollegeName));
         setSections(sortByName(s, (row:any)=>row.AdSectionName));
@@ -298,30 +307,39 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       }).toString(),
     [collegeId, sectionId, termId],
   );
+  /** Only the newest read may paint. Switching scope quickly used to let an
+   *  older answer land last and describe another department's numbers under
+   *  the new department's name. */
+  const reloadSerial = useRef(0);
   const reload = async () => {
     if (!collegeId || !sectionId || !termId) return;
+    const serial = ++reloadSerial.current;
     setLoading(true);
     setError(null);
     try {
+      /* The two readings everyone is allowed must arrive; the four that are
+         the main administrator's alone degrade to empty rather than throwing
+         the page away. Same reasoning as the mount above. */
       const [o, r, d, v, g, cx] = await Promise.all([
         fetchJson(`/api/intelligence/overview?${contextQuery}`),
         fetchJson(`/api/schedules?${contextQuery}`),
-        fetchJson(`/api/intelligence/drafts?${contextQuery}`),
-        fetchJson(`/api/intelligence/versions?${contextQuery}`),
-        fetchJson(`/api/intelligence/genome?${contextQuery}`),
-        fetchJson(`/api/intelligence/constraints?${contextQuery}`),
+        fetchJson(`/api/intelligence/drafts?${contextQuery}`).catch(() => []),
+        fetchJson(`/api/intelligence/versions?${contextQuery}`).catch(() => []),
+        fetchJson(`/api/intelligence/genome?${contextQuery}`).catch(() => null),
+        fetchJson(`/api/intelligence/constraints?${contextQuery}`).catch(() => []),
       ]);
+      if (serial !== reloadSerial.current) return;
       setOverview(o);
       setRows(r);
-      setDrafts(d);
-      setVersions(v);
+      setDrafts(Array.isArray(d) ? d : []);
+      setVersions(Array.isArray(v) ? v : []);
       setGenome(g);
-      setConstraints(cx);
+      setConstraints(Array.isArray(cx) ? cx : []);
       if (!scenario) setScenarioId(r[0]?.id || "");
     } catch (e: any) {
-      setError(smartMessage(e));
+      if (serial === reloadSerial.current) setError(smartMessage(e));
     } finally {
-      setLoading(false);
+      if (serial === reloadSerial.current) setLoading(false);
     }
   };
   useEffect(() => {

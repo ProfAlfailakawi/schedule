@@ -690,12 +690,134 @@
   font-size:var(--t-body);color:var(--ink);
 }
 .master-search input::placeholder{color:var(--muted-2)}
+/* The dot stays 24px because that is the right size to look at; the target
+   around it is 44px because that is the right size to hit with a thumb. */
 .master-search>button{
   width:24px;height:24px;display:grid;place-items:center;
   border-radius:var(--r-full);background:var(--surface-3);color:var(--muted);
   font-size:15px;line-height:1;
+  position:relative;
+}
+.master-search>button::after{
+  content:"";position:absolute;inset:50% auto auto 50%;
+  width:44px;height:44px;transform:translate(50%,-50%);
 }
 .master-search>button:hover{color:var(--ink)}
+/* --- Audit trail -----------------------------------------------------------
+   The log is read by scanning, so the sentence that answers "what changed"
+   sits in the row itself rather than one click away. */
+/* --- ميزان الأقسام ---------------------------------------------------------
+   Every department on one line, sortable by the column you suspect. This is
+   the only reading in the product that deliberately crosses scope, so it is
+   drawn as a ledger: quiet rules, tabular figures, and colour used only where
+   a number needs a verdict. */
+.balance-lens{display:flex;flex-direction:column;gap:var(--s4);padding:var(--s5)}
+.balance-head{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--s4);flex-wrap:wrap}
+.balance-head h3{margin:var(--s2) 0 0;font-size:var(--t-h3);font-weight:600;letter-spacing:-.02em}
+.balance-flag{
+  padding:var(--s2) var(--s4);border-radius:var(--r-full);
+  background:var(--danger-soft);color:var(--danger);
+  font-size:var(--t-sm);font-weight:700;
+}
+.balance-clear{
+  padding:var(--s2) var(--s4);border-radius:var(--r-full);
+  background:var(--success-soft);color:var(--success);
+  font-size:var(--t-sm);font-weight:700;
+}
+.balance-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r-lg)}
+.balance-table{width:100%;border-collapse:collapse;font-size:var(--t-sm);min-width:760px}
+.balance-table th{
+  position:sticky;top:0;z-index:1;
+  background:var(--surface-2);border-bottom:1px solid var(--line);
+  text-align:start;white-space:nowrap;
+}
+.balance-table th button{
+  display:flex;align-items:center;gap:4px;width:100%;
+  padding:var(--s3) var(--s4);
+  color:var(--muted);font-size:var(--t-xs);font-weight:600;letter-spacing:.02em;
+  background:none;border:0;cursor:pointer;text-align:start;
+}
+.balance-table th button:hover{color:var(--ink)}
+.balance-table th button.sorted{color:var(--accent)}
+.balance-table th button i{font-style:normal;font-size:10px}
+.balance-table td{
+  padding:var(--s3) var(--s4);
+  border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums;vertical-align:middle;
+}
+.balance-table tbody tr:last-child td{border-bottom:0}
+.balance-table tbody tr:hover td{background:var(--surface-2)}
+.balance-table tbody tr.has-conflicts td:first-child{box-shadow:inset 3px 0 0 var(--danger)}
+.balance-table td strong{display:block;font-weight:600}
+.balance-table td small{display:block;color:var(--muted);font-size:var(--t-xs);margin-top:2px}
+.balance-split{
+  display:block;width:64px;height:6px;border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--brass) 26%,var(--surface-3));overflow:hidden;
+}
+.balance-split i{display:block;height:100%;background:var(--accent);border-radius:var(--r-full)}
+.balance-table td b{font-size:var(--t-xs);color:var(--muted);font-weight:600}
+.balance-score{
+  display:inline-grid;place-items:center;
+  min-width:38px;padding:2px var(--s2);border-radius:var(--r-sm);
+  font-weight:700;
+}
+.balance-score.good{background:var(--success-soft);color:var(--success)}
+.balance-score.warn{background:var(--warning-soft);color:var(--warning)}
+.balance-score.bad{background:var(--danger-soft);color:var(--danger)}
+.balance-bad{color:var(--danger);font-weight:700}
+.balance-ok{color:var(--muted-2)}
+
+/* --- Query centre: live + recovery ----------------------------------------
+   A report is a photograph of a moving thing, so the screen offers the refresh
+   rather than taking it — nothing shifts under a reader mid-print. */
+.query-live-nudge{
+  display:flex;align-items:center;gap:var(--s3);
+  width:100%;padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
+  border-radius:var(--r-md);
+  background:var(--accent-softer,var(--surface-2));
+  color:var(--accent-ink,var(--ink));font-size:var(--t-sm);font-weight:600;
+  text-align:start;cursor:pointer;
+  animation:query-nudge-in .3s ease both;
+}
+.query-live-nudge:hover{border-color:var(--accent)}
+.query-live-dot{
+  width:8px;height:8px;flex:none;border-radius:50%;background:var(--success);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--success) 18%,transparent);
+}
+@keyframes query-nudge-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.notice-retry{
+  margin-inline-start:var(--s3);
+  padding:2px var(--s3);border-radius:var(--r-full);
+  border:1px solid currentColor;background:transparent;color:inherit;
+  font-size:var(--t-xs);font-weight:600;cursor:pointer;
+}
+@media (prefers-reduced-motion:reduce){.query-live-nudge{animation:none}}
+
+.audit-change{
+  display:block;font-style:normal;
+  font-size:var(--t-xs);color:var(--ink-2);line-height:1.6;
+  margin-block:2px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.audit-user-filter{
+  min-height:38px;max-width:190px;
+  padding-inline:var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface-2);color:var(--ink);font-size:var(--t-sm);
+}
+.audit-change-card{
+  margin:var(--s4) 0 0;padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--accent) 20%,var(--line));
+  border-radius:var(--r-md);
+  background:var(--accent-softer,var(--surface-2));
+}
+.audit-change-card span{
+  display:block;font-size:var(--t-eyebrow);font-weight:600;
+  letter-spacing:.06em;color:var(--accent);margin-bottom:4px;
+}
+.audit-change-card p{margin:0;font-size:var(--t-sm);color:var(--ink);line-height:1.8;word-break:break-word}
+
 .master-list{display:flex;flex-direction:column}
 .master-list>button,.master-list>article{
   position:relative;
@@ -1058,6 +1180,18 @@
   font-family:var(--font-mono);white-space:nowrap;
 }
 .occupancy-pick-empty{margin:0;padding:var(--s5);color:var(--muted);font-size:var(--t-sm);text-align:center}
+/* A hall booked by another department is busy, not empty — and the panel says
+   so in the colour of a warning rather than the grey of an absence. */
+.occupancy-pick-external{
+  margin:0;padding:var(--s5);text-align:center;
+  display:flex;flex-direction:column;gap:6px;
+}
+.occupancy-pick-external b{font-size:var(--t-sm);font-weight:700;color:var(--warning)}
+.occupancy-pick-external span{font-size:var(--t-xs);color:var(--ink-2);line-height:1.7}
+/* An account with no password set is a state worth seeing at a glance. */
+.inspector-facts .fact-warn{color:var(--warning)}
+/* Weekend: the day bar below is Sunday's, and the line says which day it is. */
+.deck-weekend{color:var(--brass)}
 
 /* A report result opens as a side panel, not an accordion: the results list
    keeps its exact place and scroll while the detail is read alongside, and

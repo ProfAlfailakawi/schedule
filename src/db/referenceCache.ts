@@ -101,6 +101,18 @@ export function invalidateSchedules() {
   }
 }
 
+/**
+ * Drops the cached rows WITHOUT announcing a change.
+ *
+ * Used when the news arrived from somewhere else — another server instance
+ * telling us the schedule moved. Announcing it again would be this instance
+ * reporting someone else's write as its own, which would bounce straight back
+ * through the beacon and never stop.
+ */
+export function clearScheduleCacheQuietly() {
+  scheduleStore.clear();
+}
+
 export async function cachedSchedules<T>(key: string, load: () => Promise<T>): Promise<T> {
   if (!enabled) return load();
   const now = Date.now();

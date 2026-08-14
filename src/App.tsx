@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Building2,
@@ -171,13 +171,173 @@ function prefetchView(view: View) {
 }
 
 const IDLE_LOGOUT_MS = 15 * 60 * 1000;
+/** How long before the door closes the reader is warned it is closing. */
+const IDLE_WARNING_MS = 60 * 1000;
+/**
+ * `pointermove` is deliberately absent.
+ *
+ * It fired on every pixel of a schedule drag — each one clearing and re-arming
+ * a timer and re-checking the heartbeat — for no information the other four do
+ * not already carry. A person who is reading rather than moving the mouse is
+ * covered by the warning below, which is the honest answer to "am I still
+ * here?" rather than a mouse twitch.
+ */
 const IDLE_ACTIVITY_EVENTS: Array<keyof WindowEventMap> = [
   "pointerdown",
-  "pointermove",
   "keydown",
   "scroll",
   "touchstart",
 ];
+
+/**
+ * The rail's parts live at module scope — and that is load-bearing.
+ *
+ * Defined inside App, each of these was a brand-new component type on every
+ * single App render, so React threw the whole navigation away and rebuilt it:
+ * typing one letter into the spotlight tore down the sidebar, every nav group
+ * and the phone dock, restarting the 0fr→1fr fold animation mid-keystroke. The
+ * same happened on every theme toggle and every online/offline flip. Hoisted,
+ * the types are stable, the rail simply re-renders, and the folds stay still.
+ */
+function NavButton({
+  view,
+  icon,
+  label,
+  active,
+  activeView,
+  onGo,
+}: {
+  view: View;
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+  activeView: View;
+  onGo: (view: View) => void;
+}) {
+  const on = active ?? activeView === view;
+  return (
+    <button
+      type="button"
+      className={`side-nav-link ${on ? "active" : ""}`}
+      aria-current={on ? "page" : undefined}
+      aria-label={label}
+      title={label}
+      onPointerEnter={() => prefetchView(view)}
+      onFocus={() => prefetchView(view)}
+      onClick={() => onGo(view)}
+    >
+      {icon}
+      <span>{label}</span>
+      {on ? <ChevronLeft className="nav-arrow" /> : null}
+    </button>
+  );
+}
+
+function MobileDockLink({
+  view,
+  icon,
+  label,
+  active,
+  activeView,
+  onGo,
+}: {
+  view: View;
+  icon: React.ReactNode;
+  label: string;
+  active?: boolean;
+  activeView: View;
+  onGo: (view: View) => void;
+}) {
+  const on = active ?? activeView === view;
+  return (
+    <button
+      type="button"
+      className={`mobile-dock-link ${on ? "active" : ""}`}
+      aria-current={on ? "page" : undefined}
+      aria-label={label}
+      onPointerEnter={() => prefetchView(view)}
+      onFocus={() => prefetchView(view)}
+      onClick={() => onGo(view)}
+    >
+      <span className="mobile-dock-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="mobile-dock-label">{label}</span>
+    </button>
+  );
+}
+
+/**
+ * A nav group that folds.
+ *
+ * Four headings stacked above eight links made the rail a wall of text to
+ * read top to bottom before choosing. Folded, it is four words — and the one
+ * group holding the screen you are on is the one left open, so the rail
+ * always shows where you are without showing everywhere you could be.
+ *
+ * `holdsActive` is the default, not the state: once a group is pressed the
+ * reader's choice is kept, and only that group's own entry is remembered, so
+ * moving to another screen still opens the group that screen lives in.
+ */
+function NavSection({
+  id,
+  title,
+  rail,
+  holdsActive,
+  className,
+  children,
+  navGroups,
+  onToggle,
+}: {
+  id: string;
+  title: string;
+  rail: string;
+  holdsActive: boolean;
+  className?: string;
+  children: React.ReactNode;
+  navGroups: Record<string, boolean>;
+  onToggle: (id: string, open: boolean) => void;
+}) {
+  // Note 33: the group holding the current screen is always open — a stale
+  // manual collapse can no longer hide the section you are actually in (which
+  // read as the accordion "hanging"). Manual open/close still applies to every
+  // other group.
+  const open = holdsActive || (navGroups[id] ?? false);
+  const bodyId = `nav-section-${id}`;
+  return (
+    <div
+      className={`nav-section ${
+        holdsActive ? "contains-active-route" : ""
+      } ${className || ""}`}
+      data-rail={rail}
+      data-open={open ? "true" : undefined}
+      data-active={holdsActive ? "true" : undefined}
+    >
+      <button
+        type="button"
+        className={`nav-section-title ${
+          holdsActive ? "has-active-route" : ""
+        }`}
+        aria-expanded={open}
+        aria-controls={bodyId}
+        onClick={() => onToggle(id, open)}
+        title={open ? `طيّ ${title}` : `فتح ${title}`}
+      >
+        <span>{title}</span>
+        <ChevronLeft className="nav-section-chevron" aria-hidden="true" />
+      </button>
+      {/* One wrapper, because the 0fr→1fr fold measures a single grid row. */}
+      <div
+        className="nav-section-body"
+        id={bodyId}
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
+      >
+        <div>{children}</div>
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
   const [user, setUser] = useState<SessionUser | null>(null),
@@ -208,6 +368,8 @@ export default function App() {
     return "light";
   });
   const [dataMode, setDataMode] = useState<{ mode: string; real: boolean } | null>(null);
+  /** True for the last minute before an idle sign-out, so the screen can say so. */
+  const [idleWarning, setIdleWarning] = useState(false);
   const [online, setOnline] = useState(() => navigator.onLine),
     [onboardingStep, setOnboardingStep] = useState(-1),
     [usage, setUsage] = useState<Record<string, number>>({}),
@@ -247,11 +409,24 @@ export default function App() {
     let lastActivityAt = Date.now();
     let lastHeartbeatAt = 0;
     let timer = 0;
+    let warnTimer = 0;
     let heartbeatBusy = false;
     const HEARTBEAT_EVERY_MS = 4 * 60 * 1000;
+    /**
+     * The session ends with a warning, not a trapdoor.
+     *
+     * Fifteen silent minutes used to end in an instant logout that took a
+     * half-written appointment with it — the reader was reading, not idle, and
+     * the screen gave no sign anything was about to happen. A minute before the
+     * end the countdown appears and one press of anything at all keeps the
+     * session; ignoring it still signs out, which is the point of the rule.
+     */
     const arm = () => {
       window.clearTimeout(timer);
+      window.clearTimeout(warnTimer);
+      setIdleWarning(false);
       const remaining = Math.max(0, IDLE_LOGOUT_MS - (Date.now() - lastActivityAt));
+      warnTimer = window.setTimeout(() => setIdleWarning(true), Math.max(0, remaining - IDLE_WARNING_MS));
       timer = window.setTimeout(() => void logout(), remaining);
     };
     const heartbeat = async () => {
@@ -289,6 +464,7 @@ export default function App() {
     arm();
     return () => {
       window.clearTimeout(timer);
+      window.clearTimeout(warnTimer);
       IDLE_ACTIVITY_EVENTS.forEach((event) =>
         window.removeEventListener(event, markActivity),
       );
@@ -338,13 +514,78 @@ export default function App() {
         e.preventDefault();
         setSearchOpen(true);
       }
-      if (e.key === "Escape") setSearchOpen(false);
+      if (e.key === "Escape") {
+        setSearchOpen(false);
+        // The tour is a courtesy, not a gate: Escape leaves it like any dialog.
+        setOnboardingStep(current => (current >= 0 ? -1 : current));
+      }
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
   }, []);
   useEffect(() => {
     if (searchOpen) setTimeout(() => searchInput.current?.focus(), 30);
+  }, [searchOpen]);
+  /**
+   * A command palette you can finish with the keyboard.
+   *
+   * Opening with ⌘K and then being made to reach for the mouse is the palette
+   * failing at the one thing it is for. Down and Up walk the offered commands
+   * and results, Enter takes the highlighted one, and Tab is kept inside the
+   * dialog so it cannot wander into the page behind it — which it could, since
+   * the panel declares `aria-modal` and nothing enforced it. Focus returns to
+   * whatever the reader was on when the palette closes.
+   *
+   * The highlight is applied directly to the rendered buttons rather than held
+   * in React state: the list is rebuilt as the query changes, and this way a
+   * keystroke never costs a re-render of the whole shell.
+   */
+  useEffect(() => {
+    if (!searchOpen) return;
+    const opener = document.activeElement as HTMLElement | null;
+    let cursor = -1;
+    const rows = () => Array.from(
+      document.querySelectorAll<HTMLElement>(
+        ".spotlight-body .command-actions > button, .spotlight-body .spotlight-results > button, .spotlight-body .favorite-grid > button",
+      ),
+    );
+    const paint = (items: HTMLElement[]) => {
+      items.forEach((item, index) => item.classList.toggle("spot-cursor", index === cursor));
+      if (cursor >= 0) items[cursor]?.scrollIntoView({ block: "nearest" });
+    };
+    const onKey = (event: KeyboardEvent) => {
+      const items = rows();
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        if (!items.length) return;
+        event.preventDefault();
+        cursor = event.key === "ArrowDown"
+          ? (cursor + 1) % items.length
+          : (cursor <= 0 ? items.length - 1 : cursor - 1);
+        paint(items);
+        return;
+      }
+      if (event.key === "Enter" && cursor >= 0 && items[cursor]) {
+        event.preventDefault();
+        items[cursor].click();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const panel = document.querySelector<HTMLElement>(".spotlight");
+      if (!panel) return;
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+      ).filter(element => element.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      rows().forEach(item => item.classList.remove("spot-cursor"));
+      opener?.focus?.();
+    };
   }, [searchOpen]);
   useEffect(() => {
     if (!searchOpen) {
@@ -399,8 +640,18 @@ export default function App() {
     };
   }, [query, searchOpen]);
 
-  const hasPerm = (id: number) => permissions.includes(id),
-    hasAny = (...ids: number[]) => ids.some(hasPerm);
+  /**
+   * Stable across renders — and that stability is load-bearing.
+   *
+   * As a fresh arrow function on every App render, this changed the identity of
+   * everything derived from it. The academic console keyed an effect on that
+   * identity, so all five catalogues — including the 1,400-course and 743-name
+   * payloads — were re-downloaded on every re-render of the shell: a theme
+   * toggle, an online/offline flip, a keystroke in the spotlight. Now the
+   * function only changes when the permissions themselves do.
+   */
+  const hasPerm = useCallback((id: number) => permissions.includes(id), [permissions]);
+  const hasAny = useCallback((...ids: number[]) => ids.some(hasPerm), [hasPerm]);
   const allowed = useMemo(
     () => ({
       menu: hasAny(2, 3, 4, 5),
@@ -759,131 +1010,6 @@ export default function App() {
     }
   };
 
-  const NavButton = ({
-    view,
-    icon,
-    label,
-    active,
-  }: {
-    view: View;
-    icon: React.ReactNode;
-    label: string;
-    active?: boolean;
-  }) => {
-    const on = active ?? activeView === view;
-    return (
-      <button
-        type="button"
-        className={`side-nav-link ${on ? "active" : ""}`}
-        aria-current={on ? "page" : undefined}
-        aria-label={label}
-        title={label}
-        onPointerEnter={() => prefetchView(view)}
-        onFocus={() => prefetchView(view)}
-        onClick={() => go(view)}
-      >
-        {icon}
-        <span>{label}</span>
-        {on ? <ChevronLeft className="nav-arrow" /> : null}
-      </button>
-    );
-  };
-  const MobileDockLink = ({
-    view,
-    icon,
-    label,
-    active,
-  }: {
-    view: View;
-    icon: React.ReactNode;
-    label: string;
-    active?: boolean;
-  }) => {
-    const on = active ?? activeView === view;
-    return (
-      <button
-        type="button"
-        className={`mobile-dock-link ${on ? "active" : ""}`}
-        aria-current={on ? "page" : undefined}
-        aria-label={label}
-        onPointerEnter={() => prefetchView(view)}
-        onFocus={() => prefetchView(view)}
-        onClick={() => go(view)}
-      >
-        <span className="mobile-dock-icon" aria-hidden="true">
-          {icon}
-        </span>
-        <span className="mobile-dock-label">{label}</span>
-      </button>
-    );
-  };
-  /**
-   * A nav group that folds.
-   *
-   * Four headings stacked above eight links made the rail a wall of text to
-   * read top to bottom before choosing. Folded, it is four words — and the one
-   * group holding the screen you are on is the one left open, so the rail
-   * always shows where you are without showing everywhere you could be.
-   *
-   * `holdsActive` is the default, not the state: once a group is pressed the
-   * reader's choice is kept, and only that group's own entry is remembered, so
-   * moving to another screen still opens the group that screen lives in.
-   */
-  const NavSection = ({
-    id,
-    title,
-    rail,
-    holdsActive,
-    className,
-    children,
-  }: {
-    id: string;
-    title: string;
-    rail: string;
-    holdsActive: boolean;
-    className?: string;
-    children: React.ReactNode;
-  }) => {
-    // Note 33: the group holding the current screen is always open — a stale
-    // manual collapse can no longer hide the section you are actually in (which
-    // read as the accordion "hanging"). Manual open/close still applies to every
-    // other group.
-    const open = holdsActive || (navGroups[id] ?? false);
-    const bodyId = `nav-section-${id}`;
-    return (
-      <div
-        className={`nav-section ${
-          holdsActive ? "contains-active-route" : ""
-        } ${className || ""}`}
-        data-rail={rail}
-        data-open={open ? "true" : undefined}
-        data-active={holdsActive ? "true" : undefined}
-      >
-        <button
-          type="button"
-          className={`nav-section-title ${
-            holdsActive ? "has-active-route" : ""
-          }`}
-          aria-expanded={open}
-          aria-controls={bodyId}
-          onClick={() => setNavGroups(current => ({ ...current, [id]: !open }))}
-          title={open ? `طيّ ${title}` : `فتح ${title}`}
-        >
-          <span>{title}</span>
-          <ChevronLeft className="nav-section-chevron" aria-hidden="true" />
-        </button>
-        {/* One wrapper, because the 0fr→1fr fold measures a single grid row. */}
-        <div
-          className="nav-section-body"
-          id={bodyId}
-          aria-hidden={!open}
-          inert={!open ? true : undefined}
-        >
-          <div>{children}</div>
-        </div>
-      </div>
-    );
-  };
   const hitIcon = (kind: SearchHit["kind"]) =>
     kind === "instructor" ? (
       <UsersRound />
@@ -1377,6 +1503,8 @@ export default function App() {
         </button>
         <nav className="side-nav" aria-label="القائمة الرئيسية">
           <NavSection
+            navGroups={navGroups}
+            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
             id="core"
             title="مساحة العمل"
             rail="core"
@@ -1388,9 +1516,11 @@ export default function App() {
               reportViews.includes(activeView as ReportMode)
             }
           >
-            <NavButton view="dashboard" icon={<House />} label="لوحة العمل" />
+            <NavButton activeView={activeView} onGo={go} view="dashboard" icon={<House />} label="لوحة العمل" />
             {allowed.schedule ? (
               <NavButton
+                activeView={activeView}
+                onGo={go}
                 view="schedules"
                 icon={<CalendarDays />}
                 label="فتح الجدول"
@@ -1398,6 +1528,8 @@ export default function App() {
             ) : null}
             {smartSearchView || smartReportView ? (
               <NavButton
+                activeView={activeView}
+                onGo={go}
                 view={(smartSearchView || smartReportView) as View}
                 active={searchViews.includes(activeView as ReportMode) || reportViews.includes(activeView as ReportMode)}
                 icon={<FileSearch />}
@@ -1410,12 +1542,16 @@ export default function App() {
               resolveScopeSelection; publishing stays guarded server-side. */}
           {allowed.schedule ? (
             <NavSection
+            navGroups={navGroups}
+            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
               id="schedule"
               title="أدوات القرار"
               rail="schedule"
               holdsActive={activeView === "intelligence"}
             >
               <NavButton
+                activeView={activeView}
+                onGo={go}
                 view="intelligence"
                 icon={<WandSparkles />}
                 label="مركز القرار"
@@ -1424,6 +1560,8 @@ export default function App() {
           ) : null}
           {isPowerAdmin && academicEntry ? (
             <NavSection
+            navGroups={navGroups}
+            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
               id="catalog"
               title="المرجع والإدارة"
               rail="catalog"
@@ -1436,6 +1574,8 @@ export default function App() {
               }
             >
               <NavButton
+                activeView={activeView}
+                onGo={go}
                 view={academicEntry}
                 active={academicViews.includes(activeView as AcademicTab)}
                 icon={<Library />}
@@ -1443,6 +1583,8 @@ export default function App() {
               />
               {allowed.admin ? (
                 <NavButton
+                  activeView={activeView}
+                  onGo={go}
                   view="users"
                   active={adminViews.includes(activeView as AdminMode)}
                   icon={<SlidersHorizontal />}
@@ -1451,15 +1593,19 @@ export default function App() {
               ) : null}
               {allowed.schedule && user.SystemUserId === 1 ? (
                 <NavButton
+                  activeView={activeView}
+                  onGo={go}
                   view="scheduleCopy"
                   icon={<CopyPlus />}
                   label="نسخ فصل"
                 />
               ) : null}
-              <NavButton view="about" icon={<Info />} label="عن البرنامج" />
+              <NavButton activeView={activeView} onGo={go} view="about" icon={<Info />} label="عن البرنامج" />
             </NavSection>
           ) : isPowerAdmin && allowed.admin ? (
             <NavSection
+            navGroups={navGroups}
+            onToggle={(id, open) => setNavGroups(current => ({ ...current, [id]: !open }))}
               id="admin"
               title="إدارة النظام"
               rail="admin"
@@ -1471,6 +1617,8 @@ export default function App() {
               }
             >
               <NavButton
+                activeView={activeView}
+                onGo={go}
                 view="users"
                 active={adminViews.includes(activeView as AdminMode)}
                 icon={<SlidersHorizontal />}
@@ -1478,12 +1626,14 @@ export default function App() {
               />
               {allowed.schedule && user.SystemUserId === 1 ? (
                 <NavButton
+                  activeView={activeView}
+                  onGo={go}
                   view="scheduleCopy"
                   icon={<CopyPlus />}
                   label="نسخ فصل"
                 />
               ) : null}
-              <NavButton view="about" icon={<Info />} label="عن البرنامج" />
+              <NavButton activeView={activeView} onGo={go} view="about" icon={<Info />} label="عن البرنامج" />
             </NavSection>
           ) : null}
         </nav>
@@ -1545,6 +1695,21 @@ export default function App() {
           <span>هذه ليست قاعدة بيانات الجامعة. أي تعديل هنا لن يظهر في الجدول الحقيقي.</span>
         </div>
       ) : null}
+      {/* The last minute, said out loud. Any key, tap or scroll dismisses it —
+          the same activity that keeps the session alive — so the button is a
+          courtesy for a reader who has stopped touching anything, not a toll. */}
+      {idleWarning ? (
+        <div className="idle-warning no-print" role="alertdialog" aria-live="assertive" aria-label="الجلسة على وشك الانتهاء">
+          <span className="idle-warning-ring" aria-hidden="true" />
+          <div>
+            <strong>الجلسة تنتهي خلال دقيقة</strong>
+            <span>لحمايتك، يُغلق الحساب بعد ١٥ دقيقة بلا حركة. أي ضغطة تكفي لمتابعة العمل.</span>
+          </div>
+          <PrimaryButton type="button" onClick={() => setIdleWarning(false)}>
+            أكمل العمل
+          </PrimaryButton>
+        </div>
+      ) : null}
       <main className="app-main">
         <div className="content-frame">
           <Suspense fallback={<div className="view-loading" aria-busy="true"><span /></div>}>{renderView()}</Suspense>
@@ -1552,9 +1717,11 @@ export default function App() {
       </main>
 
       <nav className="mobile-bottom-dock no-print" aria-label="التنقل السريع">
-        <MobileDockLink view="dashboard" icon={<House />} label="الرئيسية" />
+        <MobileDockLink activeView={activeView} onGo={go} view="dashboard" icon={<House />} label="الرئيسية" />
         {allowed.schedule ? (
           <MobileDockLink
+            activeView={activeView}
+            onGo={go}
             view="schedules"
             icon={<CalendarDays />}
             label="الجدول"
@@ -1562,6 +1729,8 @@ export default function App() {
         ) : null}
         {smartSearchView || smartReportView ? (
           <MobileDockLink
+            activeView={activeView}
+            onGo={go}
             view={(smartSearchView || smartReportView) as View}
             icon={<FileSearch />}
             label="الاستعلامات"
@@ -1573,6 +1742,8 @@ export default function App() {
         ) : null}
         {isPowerAdmin && allowed.schedule ? (
           <MobileDockLink
+            activeView={activeView}
+            onGo={go}
             view="intelligence"
             icon={<WandSparkles />}
             label="القرار"
@@ -1810,7 +1981,14 @@ export default function App() {
       ) : null}
       {onboardingStep >= 0 ? (
         <div className="onboarding-backdrop no-print">
-          <section className="onboarding-card">
+          {/* The first thing a new user meets should announce itself to a
+              screen reader and answer Escape like every other dialog here. */}
+          <section
+            className="onboarding-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="جولة تعريفية"
+          >
             {onboardingSteps.map((step, index) =>
               index === onboardingStep ? (
                 <React.Fragment key={index}>
