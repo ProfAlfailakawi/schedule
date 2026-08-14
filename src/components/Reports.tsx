@@ -1088,7 +1088,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                   <span />
                 </div>
                 {roomLoad.rooms.map((room: any) => (
-                  <div key={room.key} className={`occupancy-row ${room.mine ? "mine" : ""} ${roomPick?.room === room.name ? "picked" : ""}`}>
+                  <div key={room.key} className={`occupancy-row ${room.mine ? "mine" : ""} ${Number(room.rate) >= 60 ? "busy" : ""} ${roomPick?.room === room.name ? "picked" : ""}`}>
                     <button
                       type="button"
                       className="occupancy-name"

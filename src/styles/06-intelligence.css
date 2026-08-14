@@ -326,39 +326,75 @@
 .occupancy-legend i{width:12px;height:12px;border-radius:3px}
 .occupancy-legend span{margin-inline-start:var(--s2);color:var(--muted);font-size:var(--t-xs);font-variant-numeric:tabular-nums}
 
-.occupancy-grid{padding:var(--s3) var(--s6) var(--s5);overflow-x:auto}
+/* ── The occupancy heatmap, rebuilt ─────────────────────────────────────────
+   A room per line, the teaching day across, and how busy each hour is carried
+   by a single-hue ramp — the honest encoding for one sequential quantity. The
+   cells are real buttons (click one to see what's inside), so the colour rules
+   below target the buttons, not the decorative <i> they used to miss. Rooms the
+   caller owns are marked; the busiest hour of each room is quietly ringed. */
+.occupancy-grid{
+  padding:var(--s4) var(--s6) var(--s6);overflow-x:auto;
+  --cell:22px;--gap:3px;
+}
 .occupancy-ruler,.occupancy-row{
   display:grid;
-  grid-template-columns:112px repeat(var(--slots),minmax(16px,1fr)) 44px;
-  align-items:center;gap:3px;
+  grid-template-columns:120px repeat(var(--slots),minmax(var(--cell),1fr)) 56px;
+  align-items:center;gap:var(--gap);
   min-width:560px;
 }
+.occupancy-ruler{margin-bottom:var(--s2)}
 .occupancy-ruler b{
-  font:500 10px/1 var(--font-mono);color:var(--muted-2);
+  font:600 10px/1 var(--font-mono);color:var(--muted-2);
   text-align:center;font-variant-numeric:tabular-nums;
 }
-.occupancy-row{padding-block:2px}
+.occupancy-row{
+  padding-block:3px;border-radius:var(--r-sm);
+  transition:background .14s var(--ease);
+}
+.occupancy-row:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.occupancy-row.picked{background:color-mix(in srgb,var(--accent) 9%,transparent)}
 .occupancy-name{
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:var(--t-xs);color:var(--muted);
+  font-size:var(--t-xs);color:var(--muted);padding-inline-start:2px;
 }
-.occupancy-row.mine .occupancy-name{color:var(--ink);font-weight:600}
-.occupancy-rate{font:600 var(--t-xs)/1 var(--font-mono);color:var(--muted);text-align:end;font-variant-numeric:tabular-nums}
+/* A room the caller owns leads with a small accent tick and darker ink. */
+.occupancy-row.mine .occupancy-name{
+  color:var(--ink);font-weight:600;
+  border-inline-start:2px solid var(--brass);padding-inline-start:var(--s2);
+}
 
-.occupancy-row i,.occupancy-legend i{
-  display:block;height:16px;border-radius:3px;
+/* The cells: the actual heat. Rounded, gapped, and coloured by level. */
+.occupancy-row>button[data-level]{
+  height:var(--cell);border:0;border-radius:5px;padding:0;cursor:pointer;
   background:var(--surface-3);
-  transition:transform .14s var(--ease);
+  transition:transform .12s var(--ease),box-shadow .12s var(--ease),filter .12s var(--ease);
 }
-.occupancy-row i{cursor:default}
-.occupancy-row i:hover{transform:scaleY(1.35)}
-.occupancy-row i[data-level="0"],.occupancy-legend i[data-level="0"]{background:var(--surface-3)}
-.occupancy-row i[data-level="1"],.occupancy-legend i[data-level="1"]{background:color-mix(in srgb,var(--accent) 26%,var(--surface-3))}
-.occupancy-row i[data-level="2"]{background:color-mix(in srgb,var(--accent) 44%,var(--surface-3))}
-.occupancy-row i[data-level="3"],.occupancy-legend i[data-level="3"]{background:color-mix(in srgb,var(--accent) 62%,var(--surface-3))}
-.occupancy-row i[data-level="4"]{background:color-mix(in srgb,var(--accent) 80%,var(--surface-3))}
-.occupancy-row i[data-level="5"],.occupancy-legend i[data-level="5"]{background:var(--accent)}
-.occupancy-row i[data-mine="1"]{box-shadow:inset 0 0 0 1.5px var(--brass)}
+.occupancy-row>button[data-level]:hover{transform:scale(1.14);z-index:2;box-shadow:var(--shadow-sm)}
+.occupancy-row>button[data-level="0"]{background:color-mix(in srgb,var(--surface-3) 60%,var(--surface))}
+.occupancy-row>button[data-level="1"]{background:color-mix(in srgb,var(--accent) 22%,var(--surface-3))}
+.occupancy-row>button[data-level="2"]{background:color-mix(in srgb,var(--accent) 42%,var(--surface-3))}
+.occupancy-row>button[data-level="3"]{background:color-mix(in srgb,var(--accent) 62%,var(--surface-2))}
+.occupancy-row>button[data-level="4"]{background:color-mix(in srgb,var(--accent) 82%,var(--surface))}
+.occupancy-row>button[data-level="5"]{background:var(--accent)}
+/* This department's own booking in a shared hall carries a brass inner ring. */
+.occupancy-row>button[data-mine="1"]{box-shadow:inset 0 0 0 1.5px var(--brass)}
+.occupancy-row>button[data-level].picked{outline:2px solid var(--ink);outline-offset:1px;z-index:3}
+
+/* The rate reads as a number over a faint track, so "how full" is felt, not
+   only counted. The track width is the number itself, set inline as --rate. */
+.occupancy-rate{
+  position:relative;text-align:center;
+  font:700 var(--t-xs)/1.6 var(--font-mono);color:var(--ink-2);
+  font-variant-numeric:tabular-nums;
+}
+.occupancy-row.busy .occupancy-rate{color:var(--accent)}
+
+/* The legend swatches read on the same ramp as the cells. */
+.occupancy-legend i{display:block;width:13px;height:13px;border-radius:4px;background:var(--surface-3)}
+.occupancy-legend i[data-level="0"]{background:color-mix(in srgb,var(--surface-3) 60%,var(--surface))}
+.occupancy-legend i[data-level="1"]{background:color-mix(in srgb,var(--accent) 22%,var(--surface-3))}
+.occupancy-legend i[data-level="3"]{background:color-mix(in srgb,var(--accent) 62%,var(--surface-2))}
+.occupancy-legend i[data-level="5"]{background:var(--accent)}
 
 .occupancy-windows{
   display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:var(--s3);
