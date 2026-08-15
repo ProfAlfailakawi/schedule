@@ -4687,10 +4687,21 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const [needs, courses, schedules, links, history, allTerms] = await Promise.all([
+  /* Two scoped reads, not one unscoped one.
+   *
+   * This used to call getSchedules() — the entire collection, every department,
+   * every one of ten years — and then filter it in memory to find one section's
+   * week. Harmless on a test database with ninety rows; on the real one it is
+   * tens of thousands of documents fetched on every open of a single reading,
+   * and it grows every term forever. The term's week is what the placement
+   * search needs; the section's own history is what the room and teacher
+   * preferences are read from. Nothing here ever needed another department's
+   * back-catalogue. */
+  const [needs, courses, termWeek, sectionHistory, links, history, allTerms] = await Promise.all([
     Repository.getStudentNeeds(collegeId, sectionId, termId),
     Repository.getCourses(),
-    Repository.getSchedules(),
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getSchedulesByScope({ collegeId, sectionId }),
     Repository.getShareLinks(collegeId, sectionId, termId).catch(() => []),
     Repository.getStudentNeedHistory(collegeId, sectionId).catch(() => []),
     Repository.getTerms().catch(() => []),
@@ -4721,8 +4732,8 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   /* The repair search, on the real week. It is skipped entirely when nobody has
      answered — a department that has never run a survey pays nothing for a
      feature it is not using. */
-  const week = schedules.filter(row =>
-    Number(row.AdSectionId) === sectionId && Number(row.AdTermId) === termId);
+  const week = termWeek.filter(row =>
+    Number(row.AdSectionId) === sectionId && Number(row.AdCollegeId) === collegeId);
   const style = reading.respondents || prediction.courses.length
     ? await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId })
     : null;
@@ -4739,12 +4750,10 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const people = reading.respondents || prediction.courses.length
     ? await Repository.getInstructors().catch(() => [])
     : [];
-  const sectionHistory = schedules.filter(row =>
-    Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId);
   const openings = reading.respondents || prediction.courses.length
     ? readSectionOpenings(
         week,
-        schedules.filter(row => Number(row.AdTermId) === termId),
+        termWeek,
         mine, people, sectionHistory, reading, prediction,
         style?.reading || null, style?.doorway || 0,
       )

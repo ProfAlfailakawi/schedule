@@ -144,6 +144,40 @@ const clean = (rows: FSchedule[], all: FSchedule[], pairs: Set<string>, doorway:
   findConflicts(rows, all, { cohortPairs: pairs, doorwayMinutes: doorway }).length === 0;
 
 /**
+ * A hall holds one lecture and a teacher stands in one room — with no exemption.
+ *
+ * The sweep deliberately excuses one case: same course, same teacher, same hall,
+ * same hour, different section codes. That is a real thing — one lecture
+ * delivered to two combined groups — and treating it as a clash would flood a
+ * legitimate timetable with findings.
+ *
+ * It is also exactly wrong here. A section proposed because 34 students do not
+ * fit in 25 seats is not a combined delivery; putting it in the same hall at the
+ * same hour creates the second section on paper and nowhere else. Measured: the
+ * search proposed «مقرر ١» twice into G12/12 at 08:00 and the sweep called it
+ * clean, because from its side it was.
+ *
+ * So placements are checked against physics directly, and physics has no
+ * exemptions.
+ */
+const physicallyFree = (candidate: FSchedule, week: FSchedule[]): boolean => {
+  const day = dayOf(candidate);
+  if (!day) return false;
+  const from = timeToMinutes(candidate.fstarttime), to = timeToMinutes(candidate.fendtime);
+  const room = `${candidate.AdRoomCode || ""}|${candidate.AdRoomHall || ""}`;
+  for (const row of week) {
+    if (row.id === candidate.id) continue;
+    if (Number(row.AdTermId) !== Number(candidate.AdTermId)) continue;
+    if (!(row as any)[day]) continue;
+    const overlaps = timeToMinutes(row.fstarttime) < to && timeToMinutes(row.fendtime) > from;
+    if (!overlaps) continue;
+    if (room !== "|" && `${row.AdRoomCode || ""}|${row.AdRoomHall || ""}` === room) return false;
+    if (candidate.AdInstructorId && Number(row.AdInstructorId) === Number(candidate.AdInstructorId)) return false;
+  }
+  return true;
+};
+
+/**
  * @param week      every row in this term for this section — the week being planned
  * @param universe  every row in the term from every department, for hall clashes
  * @param demand    the survey reading; its cohort pairs are enforced on placements
@@ -249,6 +283,7 @@ export function readSectionOpenings(
             const candidates = teachers.length ? [...teachers, 0] : [0];
             for (const teacherId of candidates) {
               const candidate = draft(seed, day, at, length, room, teacherId, draftId);
+              if (!physicallyFree(candidate, working)) continue;
               if (!clean([candidate], [...working, candidate], pairs, doorway)) continue;
               draftId -= 1;
               working.push(candidate);
@@ -296,17 +331,21 @@ export function readSectionOpenings(
 /** One sentence per course, built from its own numbers. */
 export function describeProposal(proposal: SectionProposal): string {
   const found = proposal.placements.length;
+  const open = proposal.openSections
+    ? `والمفتوح ${countOf(proposal.openSections, AR.section)} بسعة ${proposal.capacity} لكل شعبة`
+    : `ولا شعبة مفتوحة له، وسعة الشعبة ${proposal.capacity}`;
   const head = `«${proposal.courseName}»: طلبه ${countOf(proposal.demand, AR.student)}` +
-    `${proposal.predicted ? " (توقُّع)" : ""}، والمفتوح ${countOf(proposal.openSections, AR.section)} ` +
-    `بسعة ${proposal.capacity} لكل شعبة — ${countOf(proposal.shortfall, AR.student)} بلا مقعد.`;
-  if (!found)
-    return `${head} تحتاج ${countOf(proposal.needed, AR.section)}، ولم أجد وقتاً يخلو من كل التعارضات.`;
+    `${proposal.predicted ? " (توقُّع)" : ""}، ${open} — ${countOf(proposal.shortfall, AR.student)} بلا مقعد.`;
+  /* «تحتاج شعبتان» is wrong — تحتاج governs the accusative, شعبتين. The counted
+     phrase is made a predicate after a colon instead, where the nominative is
+     the correct case at every number. */
+  const need = `المطلوب: ${countOf(proposal.needed, AR.section)}`;
+  if (!found) return `${head} ${need} — ولم أجد وقتاً يخلو من كل التعارضات.`;
   if (found < proposal.needed)
-    return `${head} تحتاج ${countOf(proposal.needed, AR.section)}، ووجدتُ مكاناً نظيفاً لـ${countOf(found, AR.section)} فقط.`;
-  // «ولكلٍّ منها» over one section is wrong; one section has a place, not each of them.
+    return `${head} ${need} — ووجدتُ مكاناً نظيفاً لـ${countOf(found, AR.section)} فقط.`;
   return proposal.needed === 1
-    ? `${head} تحتاج شعبة واحدة، ولها مكان نظيف.`
-    : `${head} تحتاج ${countOf(proposal.needed, AR.section)}، ولكلٍّ منها مكان نظيف.`;
+    ? `${head} ${need} — ولها مكان نظيف.`
+    : `${head} ${need} — ولكلٍّ منها مكان نظيف.`;
 }
 
 /** The one line above the list. */
