@@ -450,7 +450,28 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     // own HTML page while the server is busy or restarting, not the client
     // needing a re-upload; it is transient and the honest advice is "retry",
     // which is what this now says.
-    const res = await fetch(url, options);
+    /**
+     * A request that never answers used to hold the screen hostage.
+     *
+     * `saving` is one flag shared by every write, cleared in a `finally` — which
+     * only runs when the promise settles. A gateway that accepts the socket and
+     * then holds it open forever therefore left the flag true for the rest of
+     * the session: the form's buttons stayed dead, dragging stayed disabled, and
+     * the live channel went on believing the reader was mid-write. A request
+     * now has a horizon; past it, it fails honestly and everything unlocks.
+     */
+    const timeout = new AbortController();
+    const timer = window.setTimeout(() => timeout.abort(), 35_000);
+    let res: Response;
+    try {
+      res = await fetch(url, { ...options, signal: options?.signal ?? timeout.signal });
+    } catch (error: any) {
+      if (error?.name === "AbortError" && timeout.signal.aborted)
+        throw new Error("تأخر الخادم في الرد ولم يُحفظ أي تغيير. أعد المحاولة.");
+      throw error;
+    } finally {
+      window.clearTimeout(timer);
+    }
     const body = await res.text();
     let data: any = {};
     if (body) {
@@ -817,13 +838,38 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   /** Only the newest read may write the rows; a slower earlier one is discarded. */
   const loadToken = useRef(0);
   const loadAbort = useRef<AbortController | null>(null);
+  /**
+   * The scope this screen is looking at, readable from anywhere at any age.
+   *
+   * ── The board that emptied itself ─────────────────────────────────────────
+   * The live channel's listener is registered once, when the workspace first
+   * becomes ready, and its dependencies are deliberately narrow so the socket
+   * is not torn down and rebuilt on every keystroke. That listener therefore
+   * closed over the `loadRows` of that first render — and with it over the
+   * college, department and term as they stood *then*, which on first paint is
+   * whatever the server resolved before the reader chose anything.
+   *
+   * So the sequence the reader reported: drag a lecture, the write succeeds,
+   * the server announces the change, the stale listener re-reads the schedule
+   * of the FIRST scope, and `setRows` replaces this department's week with that
+   * one's — usually empty. The board goes blank, nothing is wrong with the
+   * data, and re-choosing the college and department fixes it because that path
+   * calls the workspace read with the scope that is actually on screen.
+   *
+   * A ref cannot go stale. Every reader of the scope now goes through this one,
+   * so a listener of any age asks for the department the reader is looking at.
+   */
+  const scopeRef = useRef({ collegeId: 0, sectionId: 0, termId: 0 });
+  scopeRef.current = { collegeId: filterCollege, sectionId: filterSection, termId: filterTerm };
   /** `silent` refreshes without the reading indicator — the live channel uses
    *  it so a colleague's change slides in without the screen looking busy. */
   const loadRows = async (opts?: { silent?: boolean }) => {
+    const scope = scopeRef.current;
     const p = new URLSearchParams();
-    if (filterCollege) p.set("collegeId", String(filterCollege));
-    if (filterSection) p.set("sectionId", String(filterSection));
-    if (filterTerm) p.set("termId", String(filterTerm));
+    if (scope.collegeId) p.set("collegeId", String(scope.collegeId));
+    if (scope.sectionId) p.set("sectionId", String(scope.sectionId));
+    if (scope.termId) p.set("termId", String(scope.termId));
+    const stamp = `${scope.collegeId}|${scope.sectionId}|${scope.termId}`;
     const token = ++loadToken.current;
     loadAbort.current?.abort();
     const controller = new AbortController();
@@ -831,6 +877,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!opts?.silent) setRowsLoading(true);
     try {
       const data = await fetchJson(`/api/schedules${p.size ? `?${p}` : ""}`, { signal: controller.signal });
+      // Second guard, belt to the ref's braces: an answer that arrives after the
+      // reader has moved to another department describes a board that is no
+      // longer on screen, and must never be painted onto the one that is.
+      const now = scopeRef.current;
+      if (stamp !== `${now.collegeId}|${now.sectionId}|${now.termId}`) return;
       if (token === loadToken.current) setRows(data);
     } catch (error: any) {
       if (error?.name !== "AbortError") throw error;
@@ -1194,6 +1245,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setForm(blank());
       setCourseName("");
     };
+  /* The Escape listener is registered once; these keep it from asking an old
+     render whether an editor is open. */
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
+  const backRef = useRef<(() => void) | null>(null);
+  backRef.current = back;
   const setNumber = (key: keyof typeof form, raw: string) =>
     setForm((prev) => ({ ...prev, [key]: Number(raw) || 0 }));
   const englishDigits = (v: string) => /^\d*$/.test(v);
@@ -1725,6 +1782,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     else delete document.documentElement.dataset.scheduleWorkspace;
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // The editor is a whole page, not a drawer, so it has no close of its
+        // own; Escape is the habit every other editor in the program already
+        // answers to, and it must answer here too.
+        if (editorRef.current !== "index") { backRef.current?.(); return; }
         setContext(null);
         if (focusMode || presentationMode) {
           setFocusMode(false);
@@ -1842,8 +1903,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     moves.forEach(({ before, after }) => {
       days.forEach((d) => {
         if (!Boolean((before as any)[d.key])) return;
-        // No echo where nothing moved: same day and same start means it stayed put.
-        if (Boolean((after as any)[d.key]) && before.fstarttime === after.fstarttime) return;
+        // No echo where nothing moved. "Moved" has to include a change of hall:
+        // carrying a lecture from F6 to F7 at the same hour is exactly the move
+        // the reader said left no trace, and the old test — same day, same start
+        // — called it a card that had stayed put.
+        const sameRoom =
+          String((before as any).AdRoomCode || "") === String((after as any).AdRoomCode || "") &&
+          String((before as any).AdRoomHall || "") === String((after as any).AdRoomHall || "");
+        if (Boolean((after as any)[d.key]) && before.fstarttime === after.fstarttime && sameRoom) return;
         traces.push({
           key: `${d.key}-${before.id}-${before.fstarttime}`,
           dayKey: d.key as DayKey,
@@ -1856,7 +1923,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!traces.length) return;
     const batch = ++traceBatch.current;
     setMoveTraces(traces);
-    window.setTimeout(() => { if (traceBatch.current === batch) setMoveTraces([]); }, 4500);
+    // Held as long as the destination's halo, so the two marks are on screen
+    // together for the whole time the eye needs to join them.
+    window.setTimeout(() => { if (traceBatch.current === batch) setMoveTraces([]); }, 7000);
   };
 
   const rememberSave = (row: any) => {
@@ -2501,6 +2570,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       // Optimistic feedback first — marker and undo pill land with the card, not
       // after the network answers, and are rolled back on refusal (Note 8/15).
       markChanged(row.id);
+      // A room move is a move: it earns the same pair of marks as a week drag —
+      // the brass halo where the lecture landed, and the dashed echo where it
+      // used to be. Carrying a lecture from F6 to F7 said nothing at all before
+      // this line; now it reads exactly like every other move in the program.
+      leaveMoveTraces([{ before: row, after }]);
       const place = [building, hall].filter(Boolean).join("/") || "بلا قاعة";
       const undoId = offerUndo(
         `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${place} ${start}`,
@@ -3511,6 +3585,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     physics.state.phase !== "armed",
   );
   /**
+   * The watchdog over a drag that never ended.
+   *
+   * Every ordinary ending — a drop, an escape, a refusal — clears the carried
+   * state on its way out. An extraordinary one does not: a tab switched
+   * mid-flight pauses the animation frame that would have finished the settle,
+   * so the gesture simply stops, and the screen goes on believing a card is
+   * still in the air. That belief is not cosmetic — it is the flag the live
+   * channel reads to decide the reader is busy, so a schedule that thinks it is
+   * mid-drag stops accepting a colleague's changes entirely, silently, until
+   * the page is reloaded.
+   *
+   * So: if the physics has been at rest for a beat while this screen still
+   * thinks a card is travelling, the belief is wrong and is dropped. The delay
+   * is what keeps it from firing inside the first frame of a real drag.
+   */
+  useEffect(() => {
+    if (!physics.supported || !draggingId || physics.state.phase !== "idle") return;
+    const timer = window.setTimeout(() => clearRipple(), 500);
+    return () => window.clearTimeout(timer);
+  }, [physics.supported, physics.state.phase, draggingId]);
+  /**
    * One compact before/after sentence, built from the same live target the
    * physics layer is judging. It replaces the generic drag hint in-place, so
    * the grid never jumps and no second floating panel competes with the
@@ -3712,7 +3807,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     let refreshTimer = 0;
     const source = new EventSource("/api/schedules/events");
     const refreshQuietly = () => {
-      if (liveBusy.current) { liveRefreshPending.current = true; return; }
+      if (liveBusy.current) {
+        // Deferred, and deliberately re-armed: the companion effect below only
+        // runs when saving/editor/drag actually change, so a refresh that
+        // arrived while the reader was mid-gesture could sit pending forever if
+        // nothing changed afterwards — the live channel would go quietly deaf.
+        liveRefreshPending.current = true;
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(refreshQuietly, 1200);
+        return;
+      }
       liveRefreshPending.current = false;
       void loadRows({ silent: true }).catch(() => undefined);
     };
@@ -4043,6 +4147,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   if (editor !== "index")
     return (
       <div className="content-stack editor-page schedule-editor">
+        {/* The way out, at the top where the eye already is. The only exit used
+            to be a button at the far end of a four-section form, below the fold
+            on any ordinary screen — so changing one's mind meant scrolling a
+            whole page to find permission to leave. */}
+        <button
+          type="button"
+          className="drawer-close schedule-editor-close no-print"
+          onClick={back}
+          aria-label="إغلاق بدون حفظ"
+          title="إغلاق بدون حفظ (Esc)"
+        >
+          <X aria-hidden="true" />
+        </button>
         <PageTitle
           eyebrow="الجدول الدراسي"
           subtitle="فحص لحظي قبل الحفظ"

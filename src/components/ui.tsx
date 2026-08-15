@@ -148,7 +148,18 @@ export function GhostButton({ children, className = "", ...props }: React.Button
 export function AddButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) { return <PrimaryButton onClick={onClick}><Plus aria-hidden="true" />{children}</PrimaryButton>; }
 export function IconAction({ label, kind, onClick }: { label: string; kind: "edit" | "delete"; onClick: () => void }) { return <button className={`icon-action icon-action-${kind}`} type="button" title={label} aria-label={label} onClick={onClick}>{kind === "edit" ? <Edit2 aria-hidden="true" /> : <Trash2 aria-hidden="true" />}</button>; }
 export function Field({ label, required, children, hint }: { label: React.ReactNode; required?: boolean; children: React.ReactNode; hint?: React.ReactNode }) { return <div className="field"><label>{label}{required ? <span className="required">*</span> : null}</label>{children}{hint ? <span className="field-help">{hint}</span> : null}</div>; }
-export function FormActions({ onBack, loading, submitDisabled, submitLabel = "موافق" }: { onBack: () => void; loading?: boolean; submitDisabled?: boolean; submitLabel?: React.ReactNode }) { return <div className="form-actions"><PrimaryButton type="submit" disabled={loading || submitDisabled}>{submitLabel}</PrimaryButton><SecondaryButton type="button" onClick={onBack} disabled={loading}>تراجع</SecondaryButton></div>; }
+/**
+ * The way out is never disabled.
+ *
+ * Cancel used to be greyed out alongside submit whenever a request was in
+ * flight, and the two share one busy flag — so a request that never settled
+ * (a dropped campus connection, a gateway holding the socket open) left a
+ * person inside a form with both buttons dead and no other exit: "it will not
+ * let me out, and nothing happens". Leaving is a pure client-side reset with
+ * nothing to lose, so it stays live at all times; only submit is guarded,
+ * which is the button that could write twice.
+ */
+export function FormActions({ onBack, loading, submitDisabled, submitLabel = "موافق" }: { onBack: () => void; loading?: boolean; submitDisabled?: boolean; submitLabel?: React.ReactNode }) { return <div className="form-actions"><PrimaryButton type="submit" disabled={loading || submitDisabled}>{submitLabel}</PrimaryButton><SecondaryButton type="button" onClick={onBack}>تراجع</SecondaryButton></div>; }
 export function EmptyRow({ colSpan, label = "لا توجد بيانات مطابقة" }: { colSpan: number; label?: string }) { return <tr><td className="empty-cell" colSpan={colSpan}><span>{label}</span></td></tr>; }
 export function ListToolbar({ value, onChange, placeholder = "بحث داخل البيانات", count, children }: { value: string; onChange: (value: string) => void; placeholder?: string; count?: number; children?: React.ReactNode }) { return <div className="list-toolbar"><div className="list-search"><Search aria-hidden="true"/><input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}/>{value?<button type="button" onClick={()=>onChange("")} aria-label="مسح"><X/></button>:null}</div><div className="list-toolbar-side">{typeof count === "number" ? <span className="count-chip">{count.toLocaleString("ar-KW-u-nu-latn")} سجل</span> : null}{children}</div></div>; }
 export function StatCard({ label, value, detail, icon }: { label: React.ReactNode; value: React.ReactNode; detail?: React.ReactNode; icon?: React.ReactNode }) { return <article className="stat-card"><div className="stat-icon">{icon}</div><div><strong>{value}</strong><span>{label}</span>{detail ? <small>{detail}</small> : null}</div></article>; }

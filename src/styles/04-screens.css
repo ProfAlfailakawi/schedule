@@ -1252,7 +1252,7 @@
 .catalog-form-drawer{
   position:fixed;z-index:121;
   top:var(--s3);bottom:var(--s3);inset-inline-end:var(--s3);
-  width:min(520px,calc(100vw - 24px));
+  width:min(760px,calc(100vw - 24px));
   overflow-y:auto;
   padding:var(--s5) var(--s5) var(--s6);
   background:var(--canvas);
@@ -1272,7 +1272,11 @@
   margin:0;z-index:3;
 }
 /* A roomier variant for forms with a grid (e.g. the permission picker). */
-.catalog-form-drawer-wide{width:min(680px,calc(100vw - 24px))}
+/* The drawer already pads the sheet; the card inside it padding again spent a
+   hundred pixels of a narrow container on nothing, and the fields paid. */
+.catalog-form-drawer .form-card,
+.catalog-form-drawer .smart-form{padding:var(--s5)}
+.catalog-form-drawer-wide{width:min(960px,calc(100vw - 24px))}
 @media screen and (max-width:768px){
   .catalog-form-drawer{
     top:auto;inset-inline:0;bottom:0;width:100%;

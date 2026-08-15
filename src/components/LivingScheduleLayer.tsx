@@ -462,14 +462,17 @@ export default function LivingScheduleLayer({
     [
       { id: "pulse", label: "نظرة عامة", icon: <Activity /> },
       { id: "topology", label: "خريطة الضغط", icon: <Network /> },
-      // Note 19: "تحليل قرار" and "مساعد القرار" are hidden for now (planned for a
-      // future release); their scene code stays in place, just not surfaced here.
+      // Note 19: four scenes are hidden for now — "تحليل قرار", "مساعد القرار",
+      // "ذاكرة القرار" and "محضر القرار". Only the entries in THIS array were
+      // removed: every scene body, handler, state field and endpoint behind them
+      // is untouched and still typechecks, so bringing one back is re-inserting
+      // its one line here and nothing else:
+      //   { id: "memory",  label: "ذاكرة القرار", icon: <History /> },
+      //   { id: "meeting", label: "محضر القرار", icon: <FileClock /> },
       { id: "health", label: "الصحة والعدالة", icon: <Gauge /> },
       { id: "brief", label: "ملخص الدقيقة", icon: <Zap /> },
       { id: "genesis", label: "بداية الفصل", icon: <Dna /> },
-      { id: "memory", label: "ذاكرة القرار", icon: <History /> },
       { id: "safety", label: "شبكة الأمان", icon: <RotateCcw /> },
-      { id: "meeting", label: "محضر القرار", icon: <FileClock /> },
     ];
   return (
     <>

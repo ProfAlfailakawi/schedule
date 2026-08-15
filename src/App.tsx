@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   BookOpen,
   Building2,
@@ -279,6 +279,23 @@ function MobileDockLink({
  * reader's choice is kept, and only that group's own entry is remembered, so
  * moving to another screen still opens the group that screen lives in.
  */
+/**
+ * The rail's fold, readable by a component.
+ *
+ * The stylesheet decides a great deal from `html[data-rail]`, and the sidebar's
+ * groups have to agree with it — a body the CSS has drawn open must not be
+ * marked inert. Rather than thread the flag through four call sites, the groups
+ * subscribe to the same attribute the stylesheet reads.
+ */
+function readRailFolded() {
+  return typeof document !== "undefined" && document.documentElement.dataset.rail === "closed";
+}
+function subscribeRail(onChange: () => void) {
+  if (typeof MutationObserver === "undefined") return () => {};
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-rail"] });
+  return () => observer.disconnect();
+}
 function NavSection({
   id,
   title,
@@ -303,6 +320,9 @@ function NavSection({
   // auto-expand was the reader's complaint. Where you are is still shown, as a
   // marked header (contains-active-route), not as an opened wall of links.
   const open = navGroups[id] ?? false;
+  /* Whether the rail itself is folded to its spine — read from the same flag the
+     stylesheet reads, so the two can never disagree about it again. */
+  const railFolded = useSyncExternalStore(subscribeRail, readRailFolded, () => false);
   const bodyId = `nav-section-${id}`;
   return (
     <div
@@ -327,11 +347,17 @@ function NavSection({
         <ChevronLeft className="nav-section-chevron" aria-hidden="true" />
       </button>
       {/* One wrapper, because the 0fr→1fr fold measures a single grid row. */}
+      {/* Drawn and dead was the worst of both: while the rail rests as a spine
+          the CSS above stands every group open, yet `open` is false, so those
+          glyphs were painted, unclickable, untabbable and missing from the
+          accessibility tree — against the rail's own promise that "every icon
+          still navigates on its own". A body is inert only when it is folded
+          for real, which is now the same condition in both languages. */}
       <div
         className="nav-section-body"
         id={bodyId}
-        aria-hidden={!open}
-        inert={!open ? true : undefined}
+        aria-hidden={!open && !railFolded}
+        inert={!open && !railFolded ? true : undefined}
       >
         <div>{children}</div>
       </div>

@@ -313,7 +313,18 @@
 .form-intro strong{display:block;font-size:var(--t-h3);font-weight:600}
 .form-intro p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm);line-height:1.7}
 
-.form-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s5) var(--s4);align-items:end}
+/* The field row sizes itself to the room it is actually in.
+
+   Three hard tracks were declared against the page the editors used to be, then
+   the editors moved into a 520px drawer and the arithmetic went with them: a
+   third of 520, minus the drawer's padding, the card's padding and a select's
+   own chrome, left about 68px of text — which is why every name in the program
+   arrived as «كلية التربية ...». A viewport media query cannot see this, because
+   the container is narrow while the window is wide. `auto-fit` can: the column
+   COUNT becomes a function of the real width, and 260px is the measured floor at
+   which a select shows a full Arabic department name. `min(100%,260px)` keeps a
+   phone at one column instead of overflowing. */
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--s5) var(--s4);align-items:end}
 .form-grid>.field:has(.day-pills),
 .form-grid>.field:has(.checkbox-row),
 .form-grid>.field:has(textarea),

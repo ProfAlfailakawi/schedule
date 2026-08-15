@@ -300,7 +300,13 @@
     justify-content:center;padding-inline:0;gap:0;
   }
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .user-card{grid-template-columns:1fr;justify-items:center;gap:0}
-  html[data-rail="closed"] .nav-section-body{grid-template-rows:1fr}
+  /* Only the RESTING spine stands its groups open — there the labels are gone,
+     so an open body is just a column of icons and nothing can hide. The moment
+     the rail is approached and floats out at full width, the groups go back to
+     saying what they actually are: this rule used to apply there too, so a
+     hovered rail drew every group open while its chevron and its keyboard
+     state both said "closed" — a menu that looked opened by nobody. */
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .nav-section-body{grid-template-rows:1fr}
   html[data-rail="closed"] .nav-section+.nav-section{margin-top:var(--s1)}
 
   /* Approaching floats the full rail over the work, not through it. */

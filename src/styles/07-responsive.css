@@ -83,7 +83,8 @@
 
   .schedule-editor-grid{grid-template-columns:minmax(0,1fr)}
   .schedule-editor .conflict-panel{position:static}
-  .schedule-editor .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  /* The count is decided by the container now (02-primitives), not by the
+     window — a fixed track count here would re-pin it and undo that. */
   .week-lens{grid-template-columns:repeat(2,minmax(0,1fr))}
   .week-lens-clear,.week-lens-note{grid-column:1/-1;justify-content:center}
 
@@ -110,7 +111,6 @@
    ≤ 900px — tablet portrait.
    -------------------------------------------------------------------------- */
 @media screen and (max-width:900px){
-  .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .filter-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
   .filter-strip>.btn{grid-column:1/-1}
   .schedule-tools{grid-template-columns:minmax(0,1fr);gap:var(--s3)}

@@ -896,27 +896,32 @@ button.schedule-radar:hover{filter:brightness(.96)}
    A dashed accent placeholder marks the slot a card just left, then fades on its
    own after a few seconds — so a move reads as "from here → to there" instead of
    a card that silently reappeared somewhere new (Notes 7 & 16). */
+/* The place it left. The second of the two marks a move needs: one says
+   "here it is now", this one says "it was here" — and between them the eye
+   draws the line itself. Both are deliberately loud; a whisper is what the
+   reader was complaining about. */
 .week-move-trace{
   position:absolute;inset-inline:5px;z-index:3;
-  border:1.5px dashed color-mix(in srgb,var(--accent) 55%,transparent);
+  border:2px dashed color-mix(in srgb,var(--brass) 72%,transparent);
   border-radius:var(--r-sm);
-  background:color-mix(in srgb,var(--accent) 8%,transparent);
+  background:color-mix(in srgb,var(--brass) 12%,transparent);
   display:flex;align-items:center;justify-content:center;
   pointer-events:none;overflow:hidden;
-  animation:week-move-trace-fade 4.5s cubic-bezier(.4,0,.2,1) forwards;
+  animation:week-move-trace-fade 7s cubic-bezier(.4,0,.2,1) forwards;
 }
 .week-move-trace span{
-  display:inline-flex;align-items:center;gap:3px;
-  padding:1px 6px;border-radius:999px;
-  background:var(--surface);color:var(--accent);
-  font-size:9px;font-weight:650;letter-spacing:-.2px;white-space:nowrap;
-  box-shadow:var(--shadow-xs);
+  display:inline-flex;align-items:center;gap:4px;
+  padding:2px 8px;border-radius:999px;
+  border:1px solid color-mix(in srgb,var(--brass) 40%,transparent);
+  background:var(--surface);color:var(--brass);
+  font-size:10px;font-weight:700;letter-spacing:-.2px;white-space:nowrap;
+  box-shadow:var(--shadow-sm);
 }
 .week-move-trace span svg{width:10px;height:10px}
 @keyframes week-move-trace-fade{
   0%{opacity:0;transform:scale(.97)}
-  10%{opacity:1;transform:scale(1)}
-  65%{opacity:1}
+  8%{opacity:1;transform:scale(1)}
+  75%{opacity:1}
   100%{opacity:0}
 }
 @media (prefers-reduced-motion:reduce){
@@ -1107,7 +1112,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 /* --- Editor / save preview / conflicts ------------------------------------ */
 
 .schedule-editor-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,.5fr);gap:var(--s5)}
-.schedule-editor .form-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s5) var(--s4)}
+.schedule-editor .form-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--s5) var(--s4)}
 .schedule-editor .conflict-panel{position:sticky;top:var(--s5)}
 .schedule-form-sections{display:flex;flex-direction:column;gap:var(--s7)}
 .schedule-form-section{display:flex;flex-direction:column;gap:var(--s5)}
@@ -3365,8 +3370,14 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 @container (max-width:150px){
   .week-code{
     display:flex;
-    top:3px;bottom:auto;left:4px;right:auto;
+    /* The logical resets come FIRST, deliberately. Written after the physical
+       insets they undid them: in this RTL card `inset-inline-end` IS `left`,
+       so `inset-inline-end:auto` cancelled `left:4px`, both insets became auto,
+       and the stamp fell back to its static position — the top-RIGHT corner,
+       directly over the first word of every Arabic title. That collision is the
+       "112 printed on top of تكنولوجيا التعليم" the reader was looking at. */
     inset-inline-start:auto;inset-inline-end:auto;
+    top:3px;bottom:auto;left:4px;right:auto;
     height:auto;padding:0;background:transparent;
     font-size:10px;
     color:color-mix(in srgb,var(--label) 68%,transparent);
@@ -3707,4 +3718,60 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 @media (prefers-reduced-motion:reduce){
   .schedule-dock,.quick-create{animation:none}
+}
+
+/* ==========================================================================
+   NO BLUE SMEAR — the board is a board, not a paragraph
+   Dragging a lecture used to drag a text selection with it: the browser sees a
+   press on a title and starts selecting, so the card travels inside a widening
+   blue highlight. The cure is at the origin, not in a handler: a gesture can
+   only select if the element it began on is selectable, so the surfaces that
+   are dragged say they are not text. Nothing here touches pointer-events or
+   touch-action, so the drag, the drop, the target preview and touch scrolling
+   all behave exactly as before.
+   ========================================================================== */
+
+.week-calendar,
+.week-event,
+.week-unplaced,
+.week-daystrip,
+.week-legend,
+.rooms-surface,
+.schedule-physics-overlay,
+.week-fan{
+  -webkit-user-select:none;
+  -moz-user-select:none;
+  user-select:none;
+}
+/* The long-press that starts a drag on a phone must not also raise iOS's
+   copy/look-up bubble over the card being carried. */
+.week-event,
+.week-unplaced-card,
+.rooms-card,
+.week-bundle-band{
+  -webkit-touch-callout:none;
+}
+/* ...and anything a person actually types into stays ordinary text. */
+.week-calendar input,.week-calendar textarea,.week-calendar select,
+.week-legend input,.week-legend textarea,.week-legend select,
+.rooms-surface input,.rooms-surface textarea,.rooms-surface select,
+.week-calendar [contenteditable="true"],
+.rooms-surface [contenteditable="true"]{
+  -webkit-user-select:text;
+  -moz-user-select:text;
+  user-select:text;
+  -webkit-touch-callout:default;
+}
+
+/* The schedule editor's own way out. The page keeps its full-width layout —
+   this is the missing affordance, not a redesign: a close of the same shape
+   every drawer in the program already carries, held at the top of the sheet so
+   changing one's mind never means scrolling to the end of a four-part form. */
+.schedule-editor{position:relative}
+.schedule-editor-close{
+  position:absolute;inset-block-start:2px;inset-inline-start:2px;
+  margin:0;z-index:6;
+}
+@media (max-width:768px){
+  .schedule-editor-close{inset-block-start:0;inset-inline-start:0}
 }

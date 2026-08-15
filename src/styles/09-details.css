@@ -508,28 +508,61 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
    has to hunt the grid for what they just did.
    ========================================================================== */
 
+/*
+  Where it landed — said loudly enough to be found.
+
+  The ring was declared `!important`, which outranks an animation declaration in
+  the cascade: the fade never ran, so the mark was a flat hairline that vanished
+  without ever having drawn attention. It is now a real brass halo that holds,
+  then decays, and it wins over hover and the legend's dimming by specificity
+  instead of by force — which is what `!important` was standing in for.
+
+  And it now reaches every surface a lecture can land on: the week card, the
+  band inside a folded hour, the room track, the list. A move you cannot find is
+  a move you have to undo.
+*/
 .just-changed{
   position:relative;
-  box-shadow:0 0 0 2px var(--brass), var(--shadow-sm) !important;
-  animation:just-changed-fade 6s var(--ease) forwards;
+  z-index:6;
+  animation:just-changed-fade 7s var(--ease) forwards;
+}
+.week-calendar .week-event.just-changed,
+.week-calendar .week-bundle-band.just-changed,
+.rooms-track .rooms-card.just-changed,
+.rooms-surface .rooms-card.just-changed,
+.schedule-agenda .agenda-card.just-changed,
+.week-chip.just-changed{
+  box-shadow:
+    0 0 0 3px var(--brass),
+    0 0 0 8px color-mix(in srgb,var(--brass) 22%,transparent),
+    var(--shadow-md);
 }
 .week-event.just-changed::after,
+.week-bundle-band.just-changed::after,
+.rooms-card.just-changed::after,
 .week-chip.just-changed::after,
 .agenda-card.just-changed::after{
   content:"";
-  position:absolute;top:6px;inset-inline-end:6px;
-  width:8px;height:8px;border-radius:50%;
+  position:absolute;top:5px;inset-inline-end:5px;z-index:8;
+  width:10px;height:10px;border-radius:50%;
   background:var(--brass);
-  box-shadow:0 0 0 4px color-mix(in srgb,var(--brass) 22%,transparent);
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--brass) 26%,transparent);
   animation:pulse 1.6s ease-in-out infinite;
 }
 @keyframes just-changed-fade{
-  0%,70%{box-shadow:0 0 0 2px var(--brass), var(--shadow-sm)}
+  0%,75%{
+    box-shadow:
+      0 0 0 3px var(--brass),
+      0 0 0 8px color-mix(in srgb,var(--brass) 22%,transparent),
+      var(--shadow-md);
+  }
   100%{box-shadow:0 0 0 0 transparent, var(--shadow-xs)}
 }
 @media (prefers-reduced-motion:reduce){
   .just-changed{animation:none}
-  .week-event.just-changed::after,.week-chip.just-changed::after,.agenda-card.just-changed::after{animation:none}
+  .week-event.just-changed::after,.week-bundle-band.just-changed::after,
+  .rooms-card.just-changed::after,.week-chip.just-changed::after,
+  .agenda-card.just-changed::after{animation:none}
 }
 
 /* ==========================================================================
