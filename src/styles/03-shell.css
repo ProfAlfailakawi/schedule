@@ -291,6 +291,8 @@
   .app-main{transition:margin-inline-start .24s var(--ease-out)}
 
   html[data-rail="closed"] .sidebar{width:72px;z-index:61}
+  /* The dock measures itself against the folded spine instead of the full rail. */
+  html[data-rail="closed"] .schedule-dock{--dock-rail:72px}
   html[data-rail="closed"] .app-main{margin-inline-start:72px}
 
   /* Rest state: every label collapses to its glyph, groups all stand open so

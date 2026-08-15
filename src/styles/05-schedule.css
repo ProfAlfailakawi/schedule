@@ -7,6 +7,10 @@
 /* --- Scope + tools -------------------------------------------------------- */
 
 .schedule-control{
+  /* Above what follows it. A menu opened from this strip — the saved views —
+     was being painted under the statistics cards further down the page, because
+     nothing here claimed a layer and DOM order decided for us. */
+  position:relative;z-index:60;
   padding:var(--s5);
   display:flex;
   flex-direction:column;
@@ -2018,7 +2022,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .undo-bar{
   position:fixed;z-index:150;
   inset-inline:auto;inset-inline-start:var(--s5);
-  bottom:calc(var(--s5) + env(safe-area-inset-bottom));
+  /* Clear of the dock's line entirely: they used to meet on a narrow window and
+     the reader had to choose which one they meant to press. */
+  bottom:calc(var(--s5) + 52px + env(safe-area-inset-bottom));
   display:flex;align-items:center;gap:var(--s3);
   padding:var(--s2) var(--s3) var(--s2) var(--s4);
   border:1px solid var(--line);border-radius:var(--r-full);
@@ -3675,7 +3681,17 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 
 .schedule-dock{
   position:fixed;z-index:140;
-  left:50%;transform:translateX(-50%);
+  /*
+   * Centred on the work, not on the window.
+   *
+   * The rail occupies one side of the screen, so the middle of the viewport is
+   * not the middle of what the reader is looking at — the dock sat visibly off
+   * to one side and drifted into the undo bar. It now measures itself against
+   * the board: half the rail's width is taken out of the calculation, and the
+   * folded rail and the full rail each state their own.
+   */
+  --dock-rail:var(--sidebar-w);
+  left:calc(50% - (var(--dock-rail) / 2));transform:translateX(-50%);
   bottom:calc(var(--s4) + env(safe-area-inset-bottom));
   display:flex;align-items:center;gap:var(--s2);
   padding:6px;
@@ -3685,7 +3701,19 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   -webkit-backdrop-filter:blur(14px) saturate(1.3);
   backdrop-filter:blur(14px) saturate(1.3);
   box-shadow:var(--shadow-nav);
-  animation:rise .24s var(--ease-out) both;
+  /*
+   * Its own entrance, because `rise` animates `transform` — and this element
+   * uses `transform` to centre itself. With `animation-fill-mode: both` the
+   * keyframe's `transform:none` held after the animation finished and quietly
+   * cancelled the `translateX(-50%)`, so the dock sat half a dock to one side
+   * of where it was told to be and drifted into the undo bar. A shared keyframe
+   * cannot be used by anything that is positioned by a transform.
+   */
+  animation:dock-rise .24s var(--ease-out) both;
+}
+@keyframes dock-rise{
+  from{opacity:0;transform:translateX(-50%) translateY(10px)}
+  to{opacity:1;transform:translateX(-50%)}
 }
 .schedule-dock button{
   display:inline-flex;align-items:center;justify-content:center;gap:5px;
@@ -4047,7 +4075,8 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   border:1px solid var(--line);border-radius:var(--r-full);
   background:var(--surface);box-shadow:var(--shadow-md);
   font-size:var(--t-xs);
-  animation:rise .16s var(--ease-out) both;
+  /* Same trap, same cure: this strip is centred by a transform too. */
+  animation:dock-rise .16s var(--ease-out) both;
 }
 .keymove-bar strong{font-size:var(--t-sm);color:var(--ink);font-weight:650}
 .keymove-bar>span[dir="ltr"]{

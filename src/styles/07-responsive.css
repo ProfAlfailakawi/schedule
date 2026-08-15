@@ -177,7 +177,9 @@
   /* The phone already has a dock at the very bottom — the one that moves between
      screens. The schedule's own rides above it rather than on top of it, so
      neither ever steals the other's press. */
-  .schedule-dock{bottom:calc(70px + env(safe-area-inset-bottom))}
+  /* No rail on a phone: the board IS the window, so the dock centres on it. */
+  .schedule-dock{--dock-rail:0px;bottom:calc(70px + env(safe-area-inset-bottom))}
+  .undo-bar{bottom:calc(70px + 52px + env(safe-area-inset-bottom))}
 
   /* The phone dock — the few places one moves between, plus "more" for the rest:
      icon over name, the active one lit, resting above the safe area. */

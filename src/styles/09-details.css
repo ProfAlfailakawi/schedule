@@ -398,10 +398,23 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   padding-top:var(--s2);
 }
 .share-step-actions .btn{min-width:0}
+/* A definition list read as a list, not poured into a flex row.
+   The pairs were laid out inline, so every label found itself on one line and
+   its value on another with nothing tying them together. Each pair is now a
+   column of its own: the quiet label above the answer it belongs to. */
 .share-choice-summary{
-  display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;
-  padding:var(--s3);border:1px dashed var(--line-strong);border-radius:var(--r-md);
-  background:var(--surface-2);color:var(--ink-2);font-size:var(--t-sm);
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,110px),1fr));
+  gap:var(--s3);margin:0;
+  padding:var(--s3) var(--s4);border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface-2);
+}
+.share-choice-summary>div{display:grid;gap:2px;min-width:0}
+.share-choice-summary dt{
+  font-size:var(--t-eyebrow);color:var(--muted);font-weight:600;letter-spacing:.04em;
+}
+.share-choice-summary dd{
+  margin:0;font-size:var(--t-sm);font-weight:650;color:var(--ink);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .share-created,.share-status{
   display:grid;gap:var(--s2);
@@ -673,6 +686,16 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 }
 .review-head{
   position:relative;
+  /*
+   * A flex item shrinks below its own content unless it says not to.
+   *
+   * The sheet is a flex column with a height cap, so when the list underneath
+   * grew, the browser took the space out of the header — and `overflow:hidden`
+   * turned that into a verdict with its own title sliced off by the bar below
+   * it. The header and the bar now hold their height and the LIST is what
+   * scrolls, which is the only part that should.
+   */
+  flex:none;
   display:grid;grid-template-columns:auto minmax(0,1fr) auto;
   align-items:center;gap:var(--s5);
   padding:var(--s6);
@@ -706,6 +729,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 
 /* The term as one bar. Its clean stretch is the answer at a glance. */
 .review-spread{
+  flex:none;
   padding:var(--s4) var(--s6);
   border-bottom:1px solid var(--line);background:var(--surface-2);
 }

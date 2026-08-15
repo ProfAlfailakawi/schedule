@@ -4291,6 +4291,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         execute: () => { changeView("week"); setReviewFocus(new Set([...liveClash.ids])); },
       },
       {
+        id: "schedule.keymove", group: "الجدول", label: "نقل المحاضرة بلوحة المفاتيح",
+        keywords: ["keyboard", "كيبورد", "لوحة", "نقل", "اسهم"],
+        icon: <GripVertical />, shortcut: "Space",
+        enabled: viewMode === "week" && Boolean(context?.selected),
+        execute: () => {
+          const row = rows.find(item => item.id === context?.selected?.id);
+          if (row) pickUpWithKeyboard(row);
+        },
+      },
+      {
         id: "schedule.repair", group: "الجدول", label: "أصلح التداخل بأقل أثر",
         keywords: ["repair", "fix", "اصلاح", "تعارض", "تداخل", "سلسلة"],
         icon: <WandSparkles />, enabled: liveClash.pairs > 0 && !repairing,
@@ -6009,7 +6019,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   ? `قبل: ${dragComparison.before} ← بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
                   : picking
                     ? "النقل الجماعي: اختر المواعيد المطلوبة، ثم اسحب أي واحد منها — تنتقل المجموعة معاً بعد فحص الموانع."
-                    : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · التراجع متاح بعد كل نقل."}
+                    : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · أو انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}
               </span>
               {(workspaceToolsOpen || picking || multiSelect.size > 0) ? <button
                 type="button"
@@ -7032,7 +7042,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               <div><dt><kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>لوحة الأوامر</dd></div>
               <div><dt><kbd>/</kbd></dt><dd>البحث السريع</dd></div>
               <div><dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt><dd>التراجع عن آخر تغيير</dd></div>
-              <div><dt><kbd>Esc</kbd></dt><dd>إغلاق ما هو مفتوح</dd></div>
+              <div><dt><kbd>Tab</kbd></dt><dd>التنقّل بين المحاضرات على الشبكة</dd></div>
+              <div><dt><kbd>Space</kbd></dt><dd>التقاط المحاضرة المحددة لنقلها بالأسهم</dd></div>
+              <div><dt><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></dt><dd>تحريك المحاضرة الملتقَطة</dd></div>
+              <div><dt><kbd>Enter</kbd></dt><dd>تنفيذ النقل</dd></div>
+              <div><dt><kbd>Esc</kbd></dt><dd>إلغاء النقل · إغلاق ما هو مفتوح</dd></div>
               <div><dt><kbd>?</kbd></dt><dd>هذه القائمة</dd></div>
             </dl>
             <p className="shortcuts-note">تعمل الاختصارات خارج حقول الكتابة فقط، ولا تعمل أثناء السحب.</p>
