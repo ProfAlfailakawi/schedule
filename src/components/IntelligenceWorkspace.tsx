@@ -522,6 +522,27 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setBusy(false);
     }
   };
+  /**
+   * Turning a proposal down.
+   *
+   * A proposal that can only be accepted is not a proposal, it is a queue — the
+   * reader is left to scroll past it and hope they remember it was never meant
+   * to happen. Refusal is therefore a stated act with its own record: the card
+   * says out loud that nothing was changed, and offers the proposal back for as
+   * long as the thread lives, because "no" is frequently "not yet".
+   */
+  const discardMove = (index: number) =>
+    setChat((p) =>
+      p.map((item, i) =>
+        i === index ? ({ ...item, move: { ...(item as any).move, discarded: true } } as any) : item,
+      ),
+    );
+  const restoreMove = (index: number) =>
+    setChat((p) =>
+      p.map((item, i) =>
+        i === index ? ({ ...item, move: { ...(item as any).move, discarded: false } } as any) : item,
+      ),
+    );
   // Applying a previewed natural-language move is a second, deliberate press —
   // the same atomic door as a drag, so the same conflict rules protect it.
   const applyMove = async (mv: any, index: number) => {
@@ -1769,9 +1790,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div>
                 <span className="surface-kicker">مساعد الجدول</span>
                 <h2>اسأل الجدول نفسه</h2>
-                <p>تحليل فقط · بلا تعديل</p>
+                {/* The old line said «بلا تعديل», which stopped being true the
+                    day an imperative could be understood. The honest guarantee
+                    is not that nothing changes — it is that nothing changes
+                    without a press. */}
+                <p>يجيب ويقترح · ولا ينفّذ قبل تأكيدك</p>
               </div>
-              <Badge tone="success">تحليل فقط</Badge>
+              <Badge tone="success">تأكيد قبل التنفيذ</Badge>
             </div>
             <div className="prompt-chips">
               {[
@@ -1804,6 +1829,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             const mv = (item as any).move;
                             return (
                               <>
+                                {/* The promise, said on the card rather than in a
+                                    settings page: this is a proposal, and a
+                                    proposal changes nothing by existing. */}
+                                <span className="nl-move-pledge">
+                                  <ShieldCheck aria-hidden="true" />
+                                  اقتراح — لا يُنفَّذ شيء قبل تأكيدك
+                                </span>
                                 <strong>{mv.preview.course}{mv.preview.section ? ` · شعبة ${mv.preview.section}` : ""}</strong>
                                 <div className="nl-move-change">
                                   <span className="nl-from"><i>من</i>{mv.preview.before.days} · <time dir="ltr">{mv.preview.before.start}–{mv.preview.before.end}</time></span>
@@ -1819,8 +1851,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                 ) : <p className="nl-move-clear">لا مانع ظاهر لهذا النقل.</p>}
                                 {mv.applied ? (
                                   <span className="nl-move-done"><CheckCircle2 aria-hidden="true" /> تم النقل بنجاح</span>
+                                ) : mv.discarded ? (
+                                  <span className="nl-move-dropped">
+                                    <X aria-hidden="true" /> تم تجاهل الاقتراح — لم يتغير شيء في الجدول
+                                    <button type="button" onClick={() => restoreMove(i)}>استرجاع</button>
+                                  </span>
                                 ) : mv.canApply ? (
-                                  <button type="button" className="nl-move-apply" disabled={busy} onClick={() => applyMove(mv, i)}><WandSparkles aria-hidden="true" /> طبّق النقل</button>
+                                  <div className="nl-move-decide">
+                                    <button type="button" className="nl-move-drop" disabled={busy} onClick={() => discardMove(i)}>
+                                      <X aria-hidden="true" /> تجاهل
+                                    </button>
+                                    <button type="button" className="nl-move-apply" disabled={busy} onClick={() => applyMove(mv, i)}>
+                                      <WandSparkles aria-hidden="true" /> تأكيد النقل
+                                    </button>
+                                  </div>
                                 ) : (
                                   <span className="nl-move-blocked"><ShieldAlert aria-hidden="true" /> {mv.blockedReason || "يوجد تعارض يمنع النقل"}</span>
                                 )}

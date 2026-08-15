@@ -14,6 +14,7 @@ import {
   Edit2,
   Expand,
   Eye,
+  EyeOff,
   Focus,
   GripVertical,
   History,
@@ -29,6 +30,7 @@ import {
   MapPin,
   Contrast,
   MessageSquareText,
+  Plus,
   Radio,
   Search,
   Sparkles,
@@ -271,7 +273,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     /* A timetable is only valid when it is conflict-free. This is deliberately
        a rule, not a preference the reader can turn off. */
     [strictNoConflict] = useState(true),
-    [hueBy, setHueBy] = useState<"course" | "instructor">(savedPrefs.hueBy === "instructor" ? "instructor" : "course"),
+    /* What a colour stands for. Three alphabets, not two: a room is the third
+       thing a week is actually read by — «which hall is carrying this day» is
+       a question the course and the instructor palettes cannot answer. */
+    [hueBy, setHueBy] = useState<"course" | "instructor" | "room">(
+      savedPrefs.hueBy === "instructor" ? "instructor" : savedPrefs.hueBy === "room" ? "room" : "course",
+    ),
     /* Colour alone is never the only carrier of meaning. Off by default — when
        on, every hue also gets a texture, so red/green pairs that look identical
        to a deuteranopic reader stay tellable apart. */
@@ -283,6 +290,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
        separate from the lens and the x-ray so it can never alter what either of
        them means. */
     [hueFocus, setHueFocus] = useState<Set<string>>(() => new Set()),
+    /* Layers folded away. Distinct from a focus on purpose: hushing asks «where
+       are these two?», folding asks «what is left once these are out of the
+       way?» — the second is how a crowded week is actually untangled. Nothing
+       is deleted and nothing is filtered out of any count that matters; the
+       strip keeps saying how many layers are folded and offers them back. */
+    [hueHidden, setHueHidden] = useState<Set<string>>(() => new Set()),
     /* Measured, not guessed: at thirty-two courses the key is already 6.3×
        wider than the strip that holds it — six screens of sideways scrolling
        to find one name. Past a dozen the key needs a way to be asked. */
@@ -391,6 +404,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const [paint, setPaint] = useState<{ day: DayKey; from: string; to: string } | null>(null);
   const paintRef = useRef<{ day: DayKey; anchor: number } | null>(null);
+  /* Where the stroke ended, held open as a card until it is answered or
+     dismissed. Saving from here is a deliberate press like any other; nothing
+     is written by the gesture itself. */
+  const [quick, setQuick] = useState<QuickSeed | null>(null);
+  /* The dock's search button has nothing of its own to search with — it brings
+     the reader to the one field that already exists, rather than owning a
+     second one that could disagree with it. */
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  const [quickError, setQuickError] = useState<string | null>(null);
   const paintOpen = useRef<((seed: { day: DayKey; start: string; end: string; x: number; y: number }) => void) | null>(null);
   useEffect(() => {
     const finish = (event: PointerEvent) => {
@@ -528,6 +550,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!code) return [] as string[];
     return [...(estate.get(code) || [])].sort(byArabic);
   }, [estate, form.AdRoomCode]);
+  /* The same reading, asked about any building rather than the form's — the
+     quick card names its own building and needs the halls that go with it. */
+  const hallsOf = useCallback(
+    (building: string) => [...(estate.get(String(building || "").trim()) || [])].sort(byArabic),
+    [estate],
+  );
 
   /**
    * The next section number, offered rather than imposed.
@@ -1169,9 +1197,79 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const setNumber = (key: keyof typeof form, raw: string) =>
     setForm((prev) => ({ ...prev, [key]: Number(raw) || 0 }));
   const englishDigits = (v: string) => /^\d*$/.test(v);
+  /**
+   * The scope a painted appointment is filed under.
+   *
+   * The grid a stroke was drawn on already belongs to one college, one
+   * department and one term — that is what makes it *this* grid. The card
+   * therefore never asks again; it reads the open scope, falls back to the last
+   * save the way the full form does, and lets the scope rules have the last
+   * word so a coordinator can never file a lecture outside their own remit.
+   */
+  const quickScope = () => {
+    const last = lastSavedRef.current || savedPrefs.lastSaved || null;
+    const preferredCollege =
+      filterCollege || Number(last?.AdCollegeId) || Number(savedPrefs.filterCollege) || filterScope.defaultCollegeId || 0;
+    const preferredSection =
+      filterSection || Number(last?.AdSectionId) || Number(savedPrefs.filterSection) || 0;
+    const scoped = coerceScopeValues(scopes, preferredCollege, preferredSection, isPowerAdmin);
+    const sectionId =
+      scoped.sectionId || resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0;
+    return {
+      collegeId: scoped.collegeId,
+      sectionId,
+      termId: filterTerm || Number(last?.AdTermId) || latestTermId || 0,
+    };
+  };
+  /* The courses the card may offer: the department's own, which is the only set
+     a lecture on this grid can be drawn from. */
+  const quickCourses = useMemo(
+    () => courses.filter(c => c.AdSectionId === quickScope().sectionId),
+    [courses, filterSection, filterCollege, filterTerm, scopes, isPowerAdmin],
+  );
   // The paint gesture ends on a window listener registered once, so it reaches
-  // the form opener through a ref rather than by re-binding on every render.
-  paintOpen.current = openCreate;
+  // the card through a ref rather than by re-binding on every render.
+  paintOpen.current = (seed) => {
+    setQuickError(null);
+    // Nothing to choose from is not a card, it is a dead end — the full editor
+    // can still fetch and explain, so the stroke goes there instead.
+    if (!quickCourses.length || !instructors.length) { openCreate(seed); return; }
+    const last = lastSavedRef.current || savedPrefs.lastSaved || null;
+    setQuick({
+      day: seed.day,
+      dayLabel: days.find(d => d.key === seed.day)?.label || "",
+      start: seed.start,
+      end: seed.end,
+      x: seed.x,
+      y: seed.y,
+      instructorId: Number(last?.AdInstructorId) || 0,
+      room: String(last?.AdRoomCode || savedPrefs.lastRoomCode || ""),
+      hall: String(last?.AdRoomHall || savedPrefs.lastRoomHall || ""),
+    });
+  };
+  /**
+   * What the browser can already tell about a painted hour.
+   *
+   * Modest on purpose, exactly like the drag field: it names only what is
+   * certainly true of rows already on screen — this instructor or this hall
+   * busy across the same minutes — and leaves every subtler judgement to the
+   * server, which stays the only thing that can refuse a save.
+   */
+  const quickConflict = (draft: QuickDraft, day: DayKey): string | null => {
+    const from = mins(draft.start), to = mins(draft.end);
+    if (to <= from) return "وقت النهاية يجب أن يكون بعد وقت البداية.";
+    if (!withinScheduleDay(from, to)) return "الوقت خارج اليوم الدراسي (08:00–20:00).";
+    const room = draft.room.trim(), hall = draft.hall.trim();
+    const busy = rows.find(r =>
+      Boolean((r as any)[day]) &&
+      mins(r.fstarttime) < to && mins(r.fendtime) > from &&
+      ((draft.instructorId && r.AdInstructorId === draft.instructorId) ||
+        (room && hall && String(r.AdRoomCode) === room && String(r.AdRoomHall) === hall)));
+    if (!busy) return null;
+    const what = busy.AdCourseName || courseById.get(busy.AdCourseId)?.CourseName || "موعد آخر";
+    const why = draft.instructorId && busy.AdInstructorId === draft.instructorId ? "الأستاذ مرتبط بـ" : "القاعة محجوزة لـ";
+    return `${why}${what} ${busy.fstarttime}–${busy.fendtime}`;
+  };
   const selectedFormDays = days.filter(d=>Boolean(form[d.key]));
   // A brand-new form should not open already scolding. The validation strip
   // waits until the days or the time have been touched, or until a save is
@@ -1853,6 +1951,96 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     } finally {
       setSaving(false);
     }
+  };
+  /**
+   * Saving the card that was drawn on the grid.
+   *
+   * It writes through the very same door as the full form — one POST, the same
+   * server rules, the same undo entry, the same "this one just changed" ring —
+   * so an appointment created in two seconds is in every respect the same
+   * record as one created in two minutes. A refusal is said on the card itself
+   * and the card stays open, because the fastest fix for a busy hall is the
+   * field that is already under the reader's hand.
+   */
+  const createQuick = async (draft: QuickDraft) => {
+    if (!quick) return;
+    setQuickError(null);
+    const scope = quickScope();
+    if (!scope.collegeId || !scope.sectionId || !scope.termId) {
+      setQuickError("اختر الكلية والقسم والفصل من الشريط أعلى الجدول أولاً.");
+      return;
+    }
+    const payload: any = {
+      ...blank(),
+      AdCollegeId: scope.collegeId,
+      AdSectionId: scope.sectionId,
+      AdTermId: scope.termId,
+      AdCourseId: draft.courseId,
+      SCode: draft.scode.trim(),
+      AdInstructorId: draft.instructorId,
+      fstarttime: draft.start,
+      fendtime: draft.end,
+      AdRoomCode: draft.room.trim(),
+      AdRoomHall: draft.hall.trim(),
+    };
+    payload[quick.day] = true;
+    setSaving(true);
+    try {
+      const saved = await fetchJson("/api/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const createdId = Number(saved?.id || 0);
+      if (createdId)
+        offerUndo(
+          `إضافة ${courseById.get(draft.courseId)?.CourseName || "موعد"}`,
+          [{ method: "DELETE", url: `/api/schedules/${createdId}` }],
+        );
+      rememberSave(payload);
+      markChanged(createdId || null);
+      const savedRow = saved && typeof saved === "object" && createdId ? (saved as FSchedule) : null;
+      const scopeUnchanged =
+        (!filterCollege || filterCollege === scope.collegeId) &&
+        (!filterSection || filterSection === scope.sectionId) &&
+        (!filterTerm || filterTerm === scope.termId);
+      if (savedRow && scopeUnchanged) {
+        setRows(current =>
+          (current.some(item => item.id === savedRow.id)
+            ? current.map(item => (item.id === savedRow.id ? savedRow : item))
+            : [...current, savedRow]
+          ).sort((a, b) => a.id - b.id));
+      } else {
+        // Filed somewhere the board is not currently looking: follow it there.
+        if (scope.collegeId !== filterCollege) setFilterCollege(scope.collegeId);
+        if (scope.sectionId !== filterSection) setFilterSection(scope.sectionId);
+        if (scope.termId !== filterTerm) setFilterTerm(scope.termId);
+        if (scopeUnchanged) await loadRows();
+      }
+      setQuick(null);
+      setMessage("تم حفظ الموعد");
+    } catch (e: any) {
+      setQuickError(friendlyError(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+  /* «تفاصيل أكثر»: the same draft, handed to the full editor without losing a
+     keystroke — the card is a shortcut through the form, never a smaller one. */
+  const expandQuick = (draft: QuickDraft) => {
+    if (!quick) return;
+    const seedDay = quick.day, start = draft.start, end = draft.end;
+    setQuick(null);
+    openCreate({ day: seedDay, start, end });
+    setForm(prev => ({
+      ...prev,
+      AdCourseId: draft.courseId || prev.AdCourseId,
+      SCode: draft.scode.trim() || prev.SCode,
+      AdInstructorId: draft.instructorId || prev.AdInstructorId,
+      AdRoomCode: draft.room.trim() || prev.AdRoomCode,
+      AdRoomHall: draft.hall.trim() || prev.AdRoomHall,
+    }));
+    if (draft.courseId) setCourseName(courseById.get(draft.courseId)?.CourseName || "");
   };
   const remove = async (id: number) => {
     if (!window.confirm("هل أنت متأكد من حذف بيانات المقرر الدراسي؟")) return;
@@ -2868,7 +3056,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const place = [r.AdRoomCode, r.AdRoomHall].filter(Boolean).join("/");
     /* Computed once: the card wears it as colour, and — when the reader has
        asked for it — as a weave keyed to the same number. */
-    const cardHue = hueFor(code, title, i?.AdInstructorName);
+    const cardHue = hueFor(code, title, i?.AdInstructorName, placeOf(r));
     // The drag lives on pointerdown. Recording where the press began has to be
     // merged with it rather than declared after it — a second onPointerDown prop
     // silently replaces the first, which is exactly how dragging was lost.
@@ -2957,8 +3145,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     );
   };
   /** One switch decides what colour answers: "which course?" or "whose?" */
-  const hueFor = (code: string, title: string, instructorName?: string) =>
-    hueBy === "instructor" ? courseHue(instructorName || "بدون أستاذ", "") : courseHue(code, title);
+  /** «مبنى/قاعة», or the honest absence of one — one spelling, used everywhere. */
+  const placeOf = (r: FSchedule) =>
+    [String(r.AdRoomCode || "").trim(), String(r.AdRoomHall || "").trim()].filter(Boolean).join("/") || "بدون قاعة";
+  const hueFor = (code: string, title: string, instructorName?: string, room?: string) =>
+    hueBy === "instructor"
+      ? courseHue(instructorName || "بدون أستاذ", "")
+      : hueBy === "room"
+        ? courseHue(room || "بدون قاعة", "")
+        : courseHue(code, title);
 
   /**
    * A weave for a hue — the second channel the colour-blind setting turns on.
@@ -2999,6 +3194,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (hueBy === "instructor") {
       const name = instructorById.get(r.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
       return { key: `i:${name}`, label: firstLast(name), hue: courseHue(name, "") };
+    }
+    if (hueBy === "room") {
+      const place = placeOf(r);
+      return { key: `r:${place}`, label: place, hue: courseHue(place, "") };
     }
     const course = courseById.get(r.AdCourseId);
     const code = course?.CourseCode || r.AdCourseName || "—";
@@ -3050,14 +3249,30 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      that made this reset necessary cannot occur. */
   useEffect(() => {
     setHueFocus(new Set());
+    setHueHidden(new Set());
     setLegendQuery("");
   }, [hueBy, filterTerm, filterSection, filterCollege]);
 
   /* Applied to a card or a band while the legend holds a focus. Additive and
      self-contained — it neither reads nor writes the lens or the x-ray, so
      whatever those two mean is exactly what they meant before. */
-  const hueFocusClass = (r: FSchedule) =>
-    !hueFocus.size ? "" : hueFocus.has(hueIdentity(r).key) ? "hue-lit" : "hue-shade";
+  const hueFocusClass = (r: FSchedule) => {
+    const key = hueIdentity(r).key;
+    /* A folded layer wins over a focus: asking for a card to be out of the way
+       and asking for it to be lit are contradictory, and the fold is the more
+       recent, more deliberate instruction. */
+    if (hueHidden.has(key)) return "hue-folded";
+    return !hueFocus.size ? "" : hueFocus.has(key) ? "hue-lit" : "hue-shade";
+  };
+  /* Folding a layer away, and unfolding it. Presentation only — the row is on
+     the board, in every count and every conflict scan, merely not drawn. */
+  const toggleHueHidden = (key: string) =>
+    setHueHidden(current => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   /* Toggling one identity in or out of the lit set. */
   const toggleHueFocus = (key: string) =>
@@ -4427,6 +4642,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             <Search aria-hidden="true" />
             <input
               type="search"
+              ref={searchRef}
               value={quickSearch}
               onChange={e => setQuickSearch(e.target.value)}
               placeholder="بحث سريع: مقرر، أستاذ، شعبة، قاعة..."
@@ -4648,7 +4864,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                        looks the same here as it does in the grid, the fan and the
                        hover card. A variable only — every state colour the card
                        already owns (running, x-ray, just-changed) still wins. */
-                    style={{ ["--hue" as any]: hueFor(c?.CourseCode || s.AdCourseName || "—", s.AdCourseName || c?.CourseName || "", i?.AdInstructorName) }}
+                    style={{ ["--hue" as any]: hueFor(c?.CourseCode || s.AdCourseName || "—", s.AdCourseName || c?.CourseName || "", i?.AdInstructorName, placeOf(s)) }}
                     onClick={() => runVisualTransition(() => setXrayId((v) => (v === s.id ? null : s.id)))}
                     onDoubleClick={() => openEdit(s)}
                     tabIndex={0}
@@ -4804,7 +5020,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               const visualTo = placement?.visualTo ?? actualTo;
               const visualSpan = Math.max(1, visualTo - visualFrom);
               const cardStyle: React.CSSProperties = {
-                ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName),
+                ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName, placeOf(row)),
                 right: `${pct(visualFrom)}%`,
                 width: `${Math.max(3, pct(visualTo) - pct(visualFrom))}%`,
                 ...(placement ? {
@@ -5046,11 +5262,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               {workspaceToolsOpen ? <button
                 type="button"
                 className="week-pick-toggle"
-                onClick={() => setHueBy(v => (v === "course" ? "instructor" : "course"))}
-                title="بدّل معنى اللون: كل مقرر بلون، أو كل أستاذ بلون"
+                onClick={() => setHueBy(v => (v === "course" ? "instructor" : v === "instructor" ? "room" : "course"))}
+                title="بدّل معنى اللون: كل مقرر بلون، أو كل أستاذ، أو كل قاعة"
               >
                 <Palette aria-hidden="true" />
-                {hueBy === "course" ? "التلوين حسب: المقرر" : "التلوين حسب: الأستاذ"}
+                {hueBy === "course" ? "التلوين حسب: المقرر" : hueBy === "instructor" ? "التلوين حسب: الأستاذ" : "التلوين حسب: القاعة"}
               </button> : null}
               {/* The texture switch used to live here, beside the other tools.
                   It now sits inside the colour key, where the colours it
@@ -5080,14 +5296,33 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             */}
             {hueLegend.length > 1 ? (
               <div className="week-legend" role="group" aria-label="مفتاح الألوان">
-                <span className="week-legend-cap">
-                  {hueBy === "course" ? "المقررات" : "الأساتذة"}
+                {/* The alphabet the colours are written in, switched where the
+                    colours are actually being read rather than three menus away.
+                    Three readings of one week: who teaches it, what is taught,
+                    and which hall carries it. */}
+                <div className="week-legend-basis" role="group" aria-label="معنى اللون">
+                  {([
+                    { key: "course", label: "المقررات" },
+                    { key: "instructor", label: "الأساتذة" },
+                    { key: "room", label: "القاعات" },
+                  ] as const).map(basis => (
+                    <button
+                      key={basis.key}
+                      type="button"
+                      className={hueBy === basis.key ? "is-on" : ""}
+                      aria-pressed={hueBy === basis.key}
+                      onClick={() => setHueBy(basis.key)}
+                      title={`لوّن الأسبوع حسب ${basis.label}`}
+                    >
+                      {basis.label}
+                    </button>
+                  ))}
                   <b className="num">
                     {legendQuery
                       ? `${legendShown.length.toLocaleString("ar-KW-u-nu-latn")}/${hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}`
                       : hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}
                   </b>
-                </span>
+                </div>
                 {legendSearchable ? (
                   <span className="week-legend-search">
                     <Search aria-hidden="true" />
@@ -5095,7 +5330,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       type="search"
                       value={legendQuery}
                       onChange={e => setLegendQuery(e.target.value)}
-                      placeholder={hueBy === "course" ? "ابحث عن مقرر…" : "ابحث عن أستاذ…"}
+                      placeholder={hueBy === "course" ? "ابحث عن مقرر…" : hueBy === "room" ? "ابحث عن قاعة…" : "ابحث عن أستاذ…"}
                       aria-label="تصفية مفتاح الألوان"
                     />
                   </span>
@@ -5104,22 +5339,54 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   {legendShown.length === 0 ? (
                     <span className="week-legend-none">لا مطابقة</span>
                   ) : null}
-                  {legendShown.map(item => (
-                    <button
-                      key={item.key}
-                      type="button"
-                      className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
-                      style={{ ["--hue" as any]: item.hue, ...textureFor(item.hue) }}
-                      aria-pressed={hueFocus.has(item.key)}
-                      title={`${item.label} — ${item.count} موعداً · اضغط لإبراز حصصه، واضغط غيره لتقارن الاثنين`}
-                      onClick={() => toggleHueFocus(item.key)}
-                    >
-                      <i aria-hidden="true" />
-                      <span>{item.label}</span>
-                      <em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
-                    </button>
-                  ))}
+                  {legendShown.map(item => {
+                    const folded = hueHidden.has(item.key);
+                    return (
+                      <span
+                        className={`week-legend-item ${folded ? "is-folded" : ""}`}
+                        key={item.key}
+                        style={{ ["--hue" as any]: item.hue, ...textureFor(item.hue) }}
+                      >
+                        <button
+                          type="button"
+                          className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
+                          aria-pressed={hueFocus.has(item.key)}
+                          disabled={folded}
+                          title={`${item.label} — ${item.count} موعداً · اضغط لإبراز حصصه، واضغط غيره لتقارن الاثنين`}
+                          onClick={() => toggleHueFocus(item.key)}
+                        >
+                          <i aria-hidden="true" />
+                          <span>{item.label}</span>
+                          <em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
+                        </button>
+                        {/* Folding, kept a separate press from hushing: one asks
+                            «where are these?», the other «what is left without
+                            them?». Nothing is deleted either way. */}
+                        <button
+                          type="button"
+                          className="week-legend-eye"
+                          aria-pressed={folded}
+                          aria-label={folded ? `إظهار ${item.label}` : `إخفاء ${item.label} من الشبكة`}
+                          title={folded ? `إظهار ${item.label} على الشبكة` : `أخفِ ${item.label} من الشبكة مؤقتاً — لا يُحذف شيء`}
+                          onClick={() => toggleHueHidden(item.key)}
+                        >
+                          {folded ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
+                {hueHidden.size ? (
+                  <button
+                    type="button"
+                    className="week-legend-clear is-folded-clear"
+                    onClick={() => setHueHidden(new Set())}
+                    title={`${hueHidden.size} طبقة مطوية — أعدها إلى الشبكة`}
+                  >
+                    <EyeOff aria-hidden="true" />أعد المطوي
+                    <b className="num">{hueHidden.size.toLocaleString("ar-KW-u-nu-latn")}</b>
+                  </button>
+                ) : null}
                 {hueFocus.size ? (
                   <button
                     type="button"
@@ -5194,7 +5461,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         {...grip}
                         key={`unplaced-${r.id}`}
                         className="week-unplaced-card"
-                        style={{ ["--hue" as any]: hueFor(code, r.AdCourseName || c?.CourseName || "", i?.AdInstructorName) }}
+                        style={{ ["--hue" as any]: hueFor(code, r.AdCourseName || c?.CourseName || "", i?.AdInstructorName, placeOf(r)) }}
                         onPointerDown={(e) => {
                           pressOrigin.current = { x: e.clientX, y: e.clientY };
                           grip.onPointerDown?.(e);
@@ -5563,7 +5830,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   aria-label={`${bandTitle} · ${bandWho} · ${bandCode} · شعبة ${row.SCode || "—"} — اسحبها أو افتح المروحة`}
                                   className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""} ${hueFocusClass(row)}`}
                                   style={(() => {
-                                    const bandHue = hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName);
+                                    const bandHue = hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName, placeOf(row));
                                     return { ["--hue" as any]: bandHue, ...textureFor(bandHue) };
                                   })()}
                                   title={`${bandTitle} · ${bandWho} — اسحبها مباشرة أو اضغط للمروحة`}
@@ -5722,7 +5989,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 courseById.get(peek.row.AdCourseId)?.CourseCode || peek.row.AdCourseName || "—",
                 peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "",
                 instructorById.get(peek.row.AdInstructorId)?.AdInstructorName,
+                placeOf(peek.row),
               )}
+            />
+          ) : null}
+          {quick ? (
+            <QuickCreatePopover
+              seed={quick}
+              courses={quickCourses}
+              instructors={instructors}
+              buildings={buildingOptions}
+              hallsFor={hallsOf}
+              conflictOf={quickConflict}
+              saving={saving}
+              error={quickError}
+              onCancel={() => { setQuick(null); setQuickError(null); }}
+              onExpand={expandQuick}
+              onCreate={createQuick}
             />
           ) : null}
           <SchedulePhysicsLayer
@@ -5742,6 +6025,67 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           />
         </>
       )}
+      {/*
+        The dock.
+
+        The toolbar sits at the top of a page that scrolls, and the week is
+        taller than any window — so by the time a reader is looking at Thursday
+        afternoon, every control that could act on it is a scroll away. The four
+        things a hand reaches for constantly (change the view, find a name, jump
+        to today, add an appointment) therefore ride with the reader instead,
+        near the thumb on a phone and out of the way of the grid on a desk.
+
+        It adds no power of its own: every button here is the same call the
+        toolbar already makes, so nothing new can be done from it and nothing
+        can drift out of step. It stands down for the cinema view, which is a
+        room the audience is not meant to be steering.
+      */}
+      {!presentationMode ? (
+        <nav className="schedule-dock no-print" aria-label="أدوات الجدول السريعة">
+          <div className="dock-views" role="group" aria-label="طريقة العرض">
+            <button
+              type="button" className={viewMode === "list" ? "on" : ""} aria-pressed={viewMode === "list"}
+              onClick={() => changeView("list")} title="عرض القائمة" aria-label="عرض القائمة"
+            ><LayoutList aria-hidden="true" /></button>
+            <button
+              type="button" className={viewMode === "week" ? "on" : ""} aria-pressed={viewMode === "week"}
+              onClick={() => changeView("week")} title="عرض الأسبوع" aria-label="عرض الأسبوع"
+            ><CalendarDays aria-hidden="true" /></button>
+            <button
+              type="button" className={viewMode === "rooms" ? "on" : ""} aria-pressed={viewMode === "rooms"}
+              onClick={() => changeView("rooms")} title="عرض القاعات" aria-label="عرض القاعات"
+            ><MapPin aria-hidden="true" /></button>
+          </div>
+          <span className="dock-split" aria-hidden="true" />
+          <button
+            type="button"
+            className={`dock-act ${quickSearch ? "on" : ""}`}
+            onClick={() => {
+              searchRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+              searchRef.current?.focus();
+            }}
+            title="بحث سريع في المواعيد"
+            aria-label="بحث سريع في المواعيد"
+          ><Search aria-hidden="true" /></button>
+          <button
+            type="button"
+            className={`dock-act ${expandedDay && expandedDay === todayKey ? "on" : ""}`}
+            onClick={() => {
+              if (viewMode !== "week") changeView("week");
+              setExpandedDay(current => (current === todayKey ? null : (todayKey as DayKey)));
+            }}
+            title={todayKey ? "اعرض يوم اليوم وحده" : "اليوم خارج أيام الدراسة"}
+            aria-label="اليوم"
+            disabled={!todayKey}
+          ><Focus aria-hidden="true" /></button>
+          <button
+            type="button"
+            className="dock-add"
+            onClick={() => openCreate()}
+            title="إضافة موعد جديد"
+          ><Plus aria-hidden="true" /><span>موعد</span></button>
+        </nav>
+      ) : null}
       {undoAction ? (
         <div className="undo-bar no-print" role="status">
           <History aria-hidden="true" />

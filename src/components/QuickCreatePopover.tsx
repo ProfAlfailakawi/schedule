@@ -117,6 +117,7 @@ export default function QuickCreatePopover({
   hallsFor,
   conflictOf,
   saving,
+  error,
   onCancel,
   onExpand,
   onCreate,
@@ -128,6 +129,9 @@ export default function QuickCreatePopover({
   hallsFor: (building: string) => string[];
   conflictOf: (draft: QuickDraft, day: DayKey) => string | null;
   saving: boolean;
+  /** A refusal from the server, said on the card rather than at the top of a
+      page the reader is not currently looking at. */
+  error?: string | null;
   onCancel: () => void;
   onExpand: (draft: QuickDraft) => void;
   onCreate: (draft: QuickDraft) => void;
@@ -248,10 +252,13 @@ export default function QuickCreatePopover({
           onPick={(m) => setStart(Math.floor(start / 60) * 60 + m)}
         />
         <Wheel
-          label="المدة"
+          label="المدة (د)"
           values={spans}
           value={spans.includes(span) ? span : spans.reduce((best, s) => (Math.abs(s - span) < Math.abs(best - span) ? s : best), spans[0])}
-          format={(s) => `${s}د`}
+          /* The unit belongs in the column's name, not glued to each number: an
+             Arabic «د» beside a Latin numeral inside an RTL cell renders on the
+             wrong side of the value it measures. */
+          format={(s) => String(s)}
           onPick={setSpan}
         />
         <div className="qc-until">
@@ -326,7 +333,9 @@ export default function QuickCreatePopover({
         </label>
       </div>
 
-      {!digitsOk ? (
+      {error ? (
+        <p className="qc-warn qc-warn-hard"><AlertTriangle aria-hidden="true" />{error}</p>
+      ) : !digitsOk ? (
         <p className="qc-warn"><AlertTriangle aria-hidden="true" />الرجاء كتابة رقم الشعبة بالأرقام الإنجليزية.</p>
       ) : clash ? (
         <p className="qc-warn"><AlertTriangle aria-hidden="true" />{clash}</p>

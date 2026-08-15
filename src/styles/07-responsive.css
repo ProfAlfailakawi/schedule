@@ -154,7 +154,7 @@
      the point. So the controls take the first line and the chips get a full
      width of their own underneath, still scrolling sideways. */
   .week-legend{flex-wrap:wrap;row-gap:8px}
-  .week-legend-cap{order:1}
+  .week-legend-cap,.week-legend-basis{order:1}
   .week-legend-search{order:2;flex:1;min-width:0}
   .week-legend-search input{width:100%}
   .week-legend-texture{order:3}
@@ -162,6 +162,9 @@
   .week-legend-chips{order:5;flex-basis:100%;padding-block:1px}
   /* A chip is a touch target before it is a label. */
   .week-legend-chip{min-height:34px;max-width:none}
+  /* The fold is a touch target too, and the basis switch beside it. */
+  .week-legend-eye{min-height:34px;width:34px}
+  .week-legend-basis>button{min-height:30px}
   .week-legend-clear,.week-legend-search,.week-legend-texture{min-height:34px}
   /* On a narrow line the word can go; the icon and its pressed state carry it. */
   .week-legend-texture:not(.is-on) span{display:none}
@@ -170,6 +173,11 @@
   .content-stack{gap:var(--s4)}
 
   .mobile-topbar{padding-inline:var(--s3)}
+
+  /* The phone already has a dock at the very bottom — the one that moves between
+     screens. The schedule's own rides above it rather than on top of it, so
+     neither ever steals the other's press. */
+  .schedule-dock{bottom:calc(70px + env(safe-area-inset-bottom))}
 
   /* The phone dock — the few places one moves between, plus "more" for the rest:
      icon over name, the active one lit, resting above the safe area. */

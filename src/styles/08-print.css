@@ -122,7 +122,7 @@
   /* Belt and braces: anything explicitly marked stays off paper entirely. */
   .no-print,.sidebar,.sidebar-launcher,.sidebar-backdrop,.mobile-topbar,
   .toast-layer,.spotlight-backdrop,.onboarding-backdrop,.living-overlay,
-  .schedule-drag-hud,.week-peek,.undo-bar{display:none !important}
+  .schedule-drag-hud,.week-peek,.undo-bar,.quick-create,.schedule-dock{display:none !important}
   .report-paper{box-shadow:none !important;border:0 !important;padding:0 !important;min-height:0 !important;background:#fff !important;color:#111 !important}
 
   /* --- sheet ------------------------------------------------------------- */
