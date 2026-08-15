@@ -1978,3 +1978,41 @@
 .walk-cost{font-size:var(--t-xs);color:var(--danger);font-weight:600}
 .walk-cost b{font-family:var(--font-mono)}
 .walk-more{color:var(--muted);font-size:var(--t-xs)}
+
+/* ==========================================================================
+   بداية الفصل — القراءة قبل النسخ
+   The copy was always safe; it was never informative. This is the sentence that
+   belongs before the button: what carries over by itself, and what carries a
+   decision inside it.
+   ========================================================================== */
+
+.genesis-reading{
+  display:grid;gap:var(--s3);
+  padding:var(--s4) var(--s5);margin-bottom:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);
+}
+.genesis-reading>strong{font-size:var(--t-h4);font-weight:650;color:var(--ink);line-height:1.7}
+.genesis-reading-grid{
+  display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);
+  font-size:var(--t-sm);color:var(--muted);
+}
+.genesis-reading-grid b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.genesis-reading-grid .is-concern{color:var(--brass)}
+.genesis-reading-grid .is-concern b{color:var(--brass)}
+.genesis-concerns{
+  list-style:none;margin:0;padding:0;display:grid;gap:var(--s1);
+  max-height:200px;overflow-y:auto;
+}
+.genesis-concerns li{
+  display:grid;gap:1px;padding:var(--s2) var(--s3);
+  border-radius:var(--r-sm);background:var(--surface);
+  border-inline-start:3px solid color-mix(in srgb,var(--brass) 60%,transparent);
+}
+.genesis-concerns strong{font-size:var(--t-sm);font-weight:650;color:var(--ink)}
+.genesis-concerns span{font-size:var(--t-xs);color:var(--muted);line-height:1.6}
+.genesis-concerns-more{
+  background:none !important;border:0 !important;
+  color:var(--muted);font-size:var(--t-xs);padding-inline-start:var(--s3) !important;
+}
+.genesis-reading>small{color:var(--muted);font-size:var(--t-xs);line-height:1.6}

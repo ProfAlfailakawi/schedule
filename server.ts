@@ -9,6 +9,7 @@ import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
+import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
 import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
@@ -2985,6 +2986,56 @@ app.post("/api/intelligence/emergency", requirePermission(7), requirePowerAdmin,
   const value=kind==="instructor"?Number(req.body?.value||0):String(req.body?.value||""); if((kind==="instructor"&&!value)||(kind!=="instructor"&&!value)){res.status(400).json({error:"حدد العنصر المتأثر بالطوارئ"});return;}
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول في هذا النطاق"});return;}
   const result=createEmergencyPlans(kind,value,rows,universe,courses,instructors,constraints); if(!result.affected){res.status(400).json({error:"لم أجد مواعيد تتأثر بهذه الحالة"});return;} res.json({...result,guardrail:"الخطط الثلاث سيناريوهات فقط. لا شيء يُنشر قبل حفظه كمسودة ثم اعتماده صراحة."});
+});
+
+/**
+ * The reading that belongs BEFORE the copy.
+ *
+ * `/genesis` already builds next term from last term into a draft, and touches
+ * nothing real. What it never said is the one thing a coordinator needs first:
+ * of three hundred lectures, which carry a decision inside them? A course that
+ * has left the catalogue, a teacher on sabbatical, a hall nobody uses any more,
+ * a course whose name was rewritten — each of those is a row somebody has to
+ * think about, and the other two hundred and eighty are not.
+ *
+ * This reads; it does not write. The draft is still made by the endpoint below,
+ * and only after a person has seen this.
+ */
+app.get("/api/intelligence/rollover", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const sourceTermId = Number(req.query.sourceTermId || 0);
+  if (!collegeId || !sectionId || !sourceTermId || !isScopeAllowed(req, collegeId, sectionId)) {
+    res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
+    return;
+  }
+  const [source, courses, instructors, everyRow] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId: sourceTermId }),
+    Repository.getCourses(),
+    Repository.getInstructors(),
+    Repository.getSchedules(),
+  ]);
+  const catalogue = courses.filter(course => course.AdCollegeId === collegeId && course.AdSectionId === sectionId);
+  // "Still in use" means: this hall appears somewhere in the system today. A
+  // room is not retired because this department stopped using it.
+  const liveRooms = [...new Set(everyRow
+    .map(row => [String(row.AdRoomCode || "").trim(), String(row.AdRoomHall || "").trim()].filter(Boolean).join("/"))
+    .filter(Boolean))];
+  const reading = readTermRollover(source, catalogue, instructors, liveRooms);
+  res.json({
+    ...reading,
+    // The rows themselves are heavy and the screen only lists a few.
+    concerns: reading.concerns.slice(0, 40).map(concern => ({
+      id: concern.row.id,
+      course: concern.row.AdCourseName || "",
+      section: concern.row.SCode,
+      flags: concern.flags,
+      why: concern.why,
+    })),
+    concernCount: reading.concerns.length,
+    sentence: describeRollover(reading),
+    guardrail: "قراءة فقط. لم يُنشأ شيء ولم يتغيّر شيء.",
+  });
 });
 
 app.post("/api/intelligence/genesis", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {

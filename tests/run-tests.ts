@@ -8,6 +8,7 @@ import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternFor
 import { findConflicts } from "../src/utils/scheduleIntelligence";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
+import { describeRollover, readTermRollover } from "../src/utils/termRollover";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -323,6 +324,49 @@ async function runTests() {
 
     const nothing = readCampusFlow([], who, { day: "week" });
     assert(nothing.bands.length === 0 && nothing.peak === null, "an empty scope reads as empty, not as a crash");
+  }
+
+  /* --- 10. What carries over, and what carries a decision ------------------ */
+  originalLog("\n--- 10. Term rollover reading ---");
+  {
+    let seed = 1;
+    const card = (over: any): any => ({
+      id: seed++, AdCollegeId: 1, AdSectionId: 1, AdTermId: 26, AdCourseId: 1, AdCourseName: "مقرر",
+      SCode: "101", AdInstructorId: 1,
+      fsunday: true, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+      ...over,
+    });
+    const catalogue: any[] = [
+      { AdCourseId: 1, AdCollegeId: 1, AdSectionId: 1, CourseCode: "112", CourseName: "مقرر", CourseCredit: 3, CourseHours: 3 },
+      { AdCourseId: 2, AdCollegeId: 1, AdSectionId: 1, CourseCode: "205", CourseName: "الاسم الجديد", CourseCredit: 3, CourseHours: 3 },
+      { AdCourseId: 9, AdCollegeId: 1, AdSectionId: 1, CourseCode: "999", CourseName: "مقرر لم يُدرَّس بعد", CourseCredit: 3, CourseHours: 3 },
+    ];
+    const people: any[] = [
+      { AdInstructorId: 1, AdInstructorName: "د. سلطان", AdInstructorCivil: "1", AdInstructorMobile: "" },
+      { AdInstructorId: 2, AdInstructorName: "د. منى", AdInstructorCivil: "2", AdInstructorMobile: "", AdInstructorStatus: "sabbatical" },
+    ];
+    const source = [
+      card({ AdCourseId: 1, AdInstructorId: 1, AdRoomCode: "12", AdRoomHall: "F6" }),           // clean
+      card({ AdCourseId: 1, AdInstructorId: 1, AdRoomCode: "12", AdRoomHall: "F7" }),           // clean
+      card({ AdCourseId: 2, AdCourseName: "الاسم القديم", AdInstructorId: 1 }),                  // course renamed
+      card({ AdCourseId: 7, AdCourseName: "مقرر محذوف", AdInstructorId: 1 }),                   // course gone
+      card({ AdCourseId: 1, AdInstructorId: 2 }),                                               // instructor away
+      card({ AdCourseId: 1, AdInstructorId: 1, AdRoomCode: "33", AdRoomHall: "Z9" }),           // hall retired
+    ];
+    const live = ["12/F6", "12/F7", "14/201"];
+    const reading = readTermRollover(source, catalogue, people, live);
+
+    assert(reading.sourceRows === 6, "the reading states the size of what it read");
+    assert(reading.confident === 2, `only the untroubled rows are called confident (got ${reading.confident})`);
+    assert(reading.concerns.length === 4, "every row carrying a decision is listed");
+    assert(reading.newCourses.length === 1 && reading.newCourses[0].AdCourseId === 9, "a course never taught last term is new work");
+    assert(reading.unavailableInstructors.length === 1, "an instructor on sabbatical is named once, not per row");
+    assert(reading.changedCourses.length === 1, "a renamed course is flagged as changed, not as missing");
+    assert(reading.retiredRooms.join(",") === "33/Z9", "a hall that appears nowhere else is retired");
+    assert(reading.concerns.some(c => c.flags.includes("course-gone")), "a deleted course is a concern of its own kind");
+    assert(describeRollover(reading).includes("يمكن نقلها بثقة"), "the sentence is built from the numbers");
+    assert(describeRollover(readTermRollover([], catalogue, people, live)).includes("لا جدول"), "an empty previous term says so plainly");
   }
 
   if (!originalDb) {

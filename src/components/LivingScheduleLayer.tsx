@@ -272,6 +272,31 @@ export default function LivingScheduleLayer({
       setBusy(false);
     }
   };
+  /**
+   * What the copy would carry, read before it is made.
+   *
+   * The draft was always safe — it writes nothing real — but it was also silent
+   * about the only thing that matters first: of three hundred lectures, which
+   * ones carry a decision? This asks, and says so in one sentence, so the
+   * coordinator spends their attention on the twenty rows that need a person
+   * rather than on the two hundred and eighty that do not.
+   */
+  const [rollover, setRollover] = useState<any>(null);
+  useEffect(() => {
+    if (scene !== "genesis" || !sourceTerm || !collegeId || !sectionId) { setRollover(null); return; }
+    let alive = true;
+    (async () => {
+      try {
+        const query = new URLSearchParams({
+          collegeId: String(collegeId), sectionId: String(sectionId), sourceTermId: String(sourceTerm),
+        });
+        const data = await json(`/api/intelligence/rollover?${query}`);
+        if (alive) setRollover(data);
+      } catch { if (alive) setRollover(null); }
+    })();
+    return () => { alive = false; };
+  }, [scene, sourceTerm, collegeId, sectionId]);
+
   const runGenesis = async () => {
     if (!sourceTerm) return;
     setBusy(true);
@@ -709,6 +734,31 @@ export default function LivingScheduleLayer({
                       </p>
                     </div>
                   </div>
+                  {rollover && rollover.sourceRows ? (
+                    <div className="genesis-reading">
+                      <strong>{rollover.sentence}</strong>
+                      <div className="genesis-reading-grid">
+                        <span><b className="num">{rollover.confident}</b> يمكن نقلها بثقة</span>
+                        {rollover.newCourses?.length ? <span><b className="num">{rollover.newCourses.length}</b> مقرراً جديداً</span> : null}
+                        {rollover.unavailableInstructors?.length ? <span><b className="num">{rollover.unavailableInstructors.length}</b> أستاذاً غير متاح</span> : null}
+                        {rollover.changedCourses?.length ? <span><b className="num">{rollover.changedCourses.length}</b> مقرراً تغيّر</span> : null}
+                        {rollover.retiredRooms?.length ? <span><b className="num">{rollover.retiredRooms.length}</b> قاعة متوقفة</span> : null}
+                        {rollover.concernCount ? <span className="is-concern"><b className="num">{rollover.concernCount}</b> قراراً يستحق المراجعة</span> : null}
+                      </div>
+                      {rollover.concerns?.length ? (
+                        <ul className="genesis-concerns">
+                          {rollover.concerns.slice(0, 6).map((concern: any) => (
+                            <li key={concern.id}>
+                              <strong>{concern.course || `موعد ${concern.id}`}</strong>
+                              <span>شعبة {concern.section} · {concern.why}</span>
+                            </li>
+                          ))}
+                          {rollover.concernCount > 6 ? <li className="genesis-concerns-more">و{rollover.concernCount - 6} أخرى.</li> : null}
+                        </ul>
+                      ) : null}
+                      <small>{rollover.guardrail}</small>
+                    </div>
+                  ) : null}
                   <div className="genesis-controls">
                     <label>
                       <span>الفصل المصدر</span>
