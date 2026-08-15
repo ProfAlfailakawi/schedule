@@ -1921,3 +1921,60 @@
   color:var(--success);font-size:var(--t-sm);
 }
 .spatial-clear svg{width:16px;height:16px}
+
+/* ==========================================================================
+   حركة الحرم
+   The corridor a timetable creates, drawn from the timetable alone. Bars, not
+   a chart library; counts, not estimates; and the impossible walks listed as
+   what they are — mistakes with names attached.
+   ========================================================================== */
+
+.campus-flow{display:grid;gap:var(--s5)}
+.campus-flow-head{display:grid;gap:var(--s1)}
+.campus-flow-head h2{font-size:var(--t-h3);font-weight:600}
+.campus-flow-head p{color:var(--muted);font-size:var(--t-sm);line-height:1.8;max-width:64ch}
+.campus-flow-bars{
+  display:flex;align-items:flex-end;gap:var(--s2);
+  min-height:160px;padding:var(--s4) var(--s3) 0;
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);
+  overflow-x:auto;overscroll-behavior-x:contain;
+}
+.campus-flow-bar{
+  flex:1 0 46px;min-width:46px;
+  display:grid;grid-template-rows:1fr auto auto;justify-items:center;gap:4px;
+  height:130px;
+}
+.campus-flow-bar i{
+  width:100%;max-width:26px;align-self:end;border-radius:var(--r-xs) var(--r-xs) 0 0;
+  background:color-mix(in srgb,var(--accent) 42%,transparent);
+  transition:background .16s var(--ease);
+}
+.campus-flow-bar.is-peak i{background:var(--brass)}
+.campus-flow-bar:hover i{background:var(--accent)}
+.campus-flow-bar b{font:700 var(--t-sm)/1 var(--font-mono);color:var(--ink);font-variant-numeric:tabular-nums}
+.campus-flow-bar span{font:500 9.5px/1 var(--font-mono);color:var(--muted);letter-spacing:-.2px}
+.campus-flow-peak{margin:0;font-size:var(--t-sm);color:var(--ink-2);line-height:1.8}
+.campus-flow-peak b{color:var(--brass);font-weight:700}
+.campus-flow-empty,.campus-flow-clear{
+  margin:0;padding:var(--s4);border-radius:var(--r-md);
+  background:var(--success-soft);color:var(--success);
+  font-size:var(--t-sm);line-height:1.7;
+}
+.campus-flow-walks{
+  display:grid;gap:var(--s2);padding:var(--s4);
+  border:1px solid color-mix(in srgb,var(--danger) 24%,var(--line));
+  border-radius:var(--r-md);background:color-mix(in srgb,var(--danger-soft) 45%,var(--surface));
+}
+.campus-flow-walks>strong{font-size:var(--t-h4);font-weight:700;color:var(--danger)}
+.campus-flow-walks>small{color:var(--muted);font-size:var(--t-xs);line-height:1.7}
+.campus-flow-walks article{
+  display:grid;gap:2px;padding:var(--s2) var(--s3);
+  border-radius:var(--r-sm);background:var(--surface);
+}
+.walk-who{font-size:var(--t-sm);font-weight:650;color:var(--ink)}
+.walk-path{font-size:var(--t-xs);color:var(--ink-2);line-height:1.6}
+.walk-path b{font-family:var(--font-mono);font-weight:600;color:var(--muted)}
+.walk-cost{font-size:var(--t-xs);color:var(--danger);font-weight:600}
+.walk-cost b{font-family:var(--font-mono)}
+.walk-more{color:var(--muted);font-size:var(--t-xs)}

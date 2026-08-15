@@ -123,7 +123,10 @@ export function readCampusFlow(
         const from = buildingOf(ending), to = buildingOf(arriving);
         if (!from || !to || from === to) continue;
         band.crossing += 1;
-        const key = `${from} → ${to}`;
+        // Written in words rather than with an arrow: a bare "12 → 14" sits in
+        // an Arabic sentence as a neutral-direction run, and the two ends swap
+        // places on screen depending on what surrounds them.
+        const key = `من ${from} إلى ${to}`;
         band.paths.set(key, (band.paths.get(key) || 0) + 1);
       }
       bands.set(endsAt, band);

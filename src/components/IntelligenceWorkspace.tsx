@@ -60,6 +60,7 @@ import IntelligenceContextBar from "./IntelligenceContextBar";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName } from "../utils/sorting";
 import { parseNaturalQuery } from "../utils/naturalQuery";
+import { readCampusFlow } from "../utils/campusFlow";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
   intelligenceDayLabels as dayLabels,
@@ -127,6 +128,7 @@ type InsightScene =
   | "rooms"
   | "professors"
   | "health"
+  | "flow"
   | "genome";
 type ChatItem = { prompt: string; answer: any };
 interface Props {
@@ -982,6 +984,19 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setTab(
       value === "understand" ? "command" : value === "try" ? "twin" : "history",
     );
+  /**
+   * The corridor this timetable creates.
+   *
+   * Derived entirely from the rows already loaded — no new request, no new
+   * field, and nothing claimed about how many students there are or how fast
+   * anyone walks. Two honest readings: the crowd that has to change building
+   * between two periods, and the walk a teacher could not physically make.
+   */
+  const campusFlow = useMemo(
+    () => readCampusFlow(rows, new Map(instructors.map(item => [item.AdInstructorId, item]))),
+    [rows, instructors],
+  );
+
   const insightScenes: Array<{
     value: InsightScene;
     label: string;
@@ -1049,6 +1064,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             ? "سليمة"
             : String(overview.dataHealth?.invalidRows || 0),
           icon: <CheckCircle2 />,
+        },
+        {
+          value: "flow" as const,
+          label: "حركة الحرم",
+          detail: "الانتقال بين المباني بين الفترات",
+          metric: campusFlow.peak ? String(campusFlow.peak.crossing) : "—",
+          icon: <Network />,
         },
         ...(genome
           ? [
@@ -1619,6 +1641,80 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <p className="insight-method">يجمع الحمل الساعات الأسبوعية وعدد أيام الحضور لكل عضو، مع أطول فراغٍ متصل بين محاضرتين في اليوم نفسه.</p>
             </details>
           </Surface>
+            </div>
+            {/* ── حركة الحرم ────────────────────────────────────────────
+                Where the schedule puts people at the change of period, and the
+                one walk it asks of a teacher that a teacher cannot make. Both
+                counted from the rows on screen; nothing here is estimated. */}
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-flow"
+              role="tabpanel"
+              aria-labelledby="insight-tab-flow"
+              hidden={activeInsightKey !== "flow"}
+              tabIndex={activeInsightKey === "flow" ? 0 : -1}
+            >
+              <Surface className="campus-flow">
+                <div className="campus-flow-head">
+                  <span className="surface-kicker">حركة الحرم</span>
+                  <h2>من أين إلى أين، بين الفترتين</h2>
+                  <p>
+                    كل عمود فاصل بين فترتين: كم محاضرة تنتهي هنا وتبدأ في مبنى آخر.
+                    محسوب من المواعيد نفسها — بلا تقدير لأعداد الطلاب أو سرعة المشي.
+                  </p>
+                </div>
+                {campusFlow.bands.length ? (
+                  <>
+                    <div className="campus-flow-bars" role="img" aria-label="العبور بين المباني عند كل فاصل">
+                      {campusFlow.bands.map(band => (
+                        <div
+                          className={`campus-flow-bar ${campusFlow.peak?.at === band.at ? "is-peak" : ""}`}
+                          key={band.at}
+                          title={`${band.label} · ${band.crossing} انتقالاً بين المباني${band.busiestPath ? ` · الأثقل ${band.busiestPath}` : ""}`}
+                        >
+                          <i style={{ height: `${Math.max(6, (band.crossing / Math.max(1, campusFlow.peak?.crossing || 1)) * 100)}%` }} />
+                          <b className="num">{band.crossing}</b>
+                          <span dir="ltr">{band.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {campusFlow.peak ? (
+                      <p className="campus-flow-peak">
+                        الذروة عند <b dir="ltr">{campusFlow.peak.label}</b> —
+                        <b className="num"> {campusFlow.peak.crossing}</b> انتقالاً بين المباني
+                        {campusFlow.peak.busiestPath ? <> ، أثقل ممر <bdi>{campusFlow.peak.busiestPath}</bdi></> : null}.
+                      </p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="campus-flow-empty">لا انتقال بين المباني في هذا النطاق — كل فترة تليها فترة في المبنى نفسه.</p>
+                )}
+
+                {campusFlow.impossible.length ? (
+                  <div className="campus-flow-walks">
+                    <strong>مشيات لا يمكن أداؤها</strong>
+                    <small>الوقت بين المحاضرتين أقل مما يحتاجه الانتقال. هذه ليست إحصاءً — هذه أخطاء.</small>
+                    {campusFlow.impossible.slice(0, 6).map((walk, index) => (
+                      <article key={index}>
+                        <span className="walk-who">{walk.instructor}</span>
+                        <span className="walk-path">
+                          <bdi>{walk.fromCourse}</bdi> <b dir="ltr">{walk.fromPlace}</b>
+                          {" ← "}
+                          <bdi>{walk.toCourse}</bdi> <b dir="ltr">{walk.toPlace}</b>
+                        </span>
+                        <span className="walk-cost">
+                          {walk.dayLabel} · متاح <b className="num">{walk.gap}</b> د · يحتاج <b className="num">{walk.needs}</b> د
+                        </span>
+                      </article>
+                    ))}
+                    {campusFlow.impossible.length > 6 ? (
+                      <small className="walk-more">و{campusFlow.impossible.length - 6} أخرى.</small>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="campus-flow-clear">لا مشية يتعذّر أداؤها في هذا النطاق.</p>
+                )}
+              </Surface>
             </div>
             <div
               className="content-stack insight-scene-panel"

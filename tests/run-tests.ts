@@ -304,7 +304,7 @@ async function runTests() {
     assert(flow.buildings.join(",") === "12,14", "the buildings in use are read from the rows themselves");
     assert(flow.peak?.label === "09:00", "the busiest crossing is the 09:00 break");
     assert(flow.peak?.crossing === 4, "and it counts every lecture that changes building across it");
-    assert(flow.peak?.busiestPath === "12 → 14", "the heaviest corridor is named");
+    assert(flow.peak?.busiestPath === "من 12 إلى 14", "the heaviest corridor is named, in words rather than an arrow");
 
     const tight = [
       card({ fsunday: true, AdInstructorId: 1, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12", AdCourseName: "أ" }),
