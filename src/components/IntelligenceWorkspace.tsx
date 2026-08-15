@@ -1305,13 +1305,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             : String(overview.dataHealth?.invalidRows || 0),
           icon: <CheckCircle2 />,
         },
-        ...(demand && (demand.respondents || demand.survey?.length || isPowerAdmin)
+        ...(demand && (demand.respondents || demand.prediction?.courses?.length || demand.survey?.length || isPowerAdmin)
           ? [
               {
                 value: "students" as const,
                 label: "طلبات الطلاب",
                 detail: "ما طلبوه، وما لا يجوز أن يتقاطع",
-                metric: String(demand.repairs?.length || demand.pairs?.length || 0),
+                metric: String(demand.repairs?.length || demand.pairs?.length || demand.prediction?.pairs?.length || 0),
                 icon: <UsersRound />,
               },
             ]
@@ -1962,7 +1962,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </details>
           </Surface>
             </div>
-          {demand && (demand.respondents || demand.survey?.length || isPowerAdmin) ? (
+          {demand && (demand.respondents || demand.prediction?.courses?.length || demand.survey?.length || isPowerAdmin) ? (
             <div
               className="content-stack insight-scene-panel"
               id="insight-panel-students"
@@ -2040,6 +2040,44 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </article>
                 )}
               </div>
+
+              {/* ── التوقّع ──────────────────────────────────────────────────
+                  فصلٌ بلا إجابات بعد يرث توقُّعاً من الفصل الذي قبله. مكتوبٌ
+                  عليه أنه توقُّع في كل مكان يظهر فيه، ويسقط فوراً عند أول إجابة
+                  حقيقية. */}
+              {!demand.respondents && demand.prediction?.courses?.length ? (
+                <div className="demand-forecast">
+                  <p className="demand-headline forecast">
+                    <Sparkles aria-hidden="true" /> {demand.prediction.headline}
+                  </p>
+                  <div className="demand-bars">
+                    {demand.prediction.courses.slice(0, 8).map((course: any) => (
+                      <article key={course.courseId}>
+                        <span title={course.because}>{course.name}</span>
+                        <i><b style={{ width: `${Math.min(100, Math.max(6, Math.round((course.expected / demand.prediction.from) * 100)))}%` }} /></i>
+                        <strong dir="ltr">~{course.expected}/{demand.prediction.from}</strong>
+                      </article>
+                    ))}
+                  </div>
+                  {demand.prediction.pairs?.length ? (
+                    <ul className="demand-stuck">
+                      {demand.prediction.pairs.slice(0, 5).map((pair: any, index: number) => (
+                        <li key={index}>
+                          يُتوقَّع أن يحتاج «{pair.nameA}» و«{pair.nameB}» معاً
+                          نحو <b>{countOf(pair.expected, AR.student)}</b> — ضعهما في وقتين مختلفين من الآن.
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {/* من جديد ومن عائد — السؤال الذي طرحه القسم بنفسه. */}
+              {demand.turnover?.total ? (
+                <p className="demand-turnover">
+                  <UsersRound aria-hidden="true" /> {demand.turnover.headline}
+                </p>
+              ) : null}
 
               {/* الرقم أولاً، ثم التفصيل — كبقية القراءات. */}
               <div className="demand-figures">
@@ -2133,6 +2171,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </li>
                     ))}
                   </ul>
+                </details>
+              ) : null}
+
+              {demand.succession?.links?.length ? (
+                <details className="insight-disclosure">
+                  <summary>تسلسل المقررات — ما الذي يأتي بعد ماذا ({demand.succession.links.length})</summary>
+                  <p className="insight-method">{demand.succession.headline}</p>
+                  <ul className="demand-sequence">
+                    {demand.succession.links.map((link: any) => (
+                      <li key={`${link.from}-${link.to}`}>
+                        <b>{link.fromName}</b>
+                        <ArrowLeftRight aria-hidden="true" />
+                        <b>{link.toName}</b>
+                        <em dir="ltr">{link.students}/{link.base}</em>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="insight-method">
+                    مقروءة من طلابٍ أجابوا في أكثر من فصل. لا تُعرَض علاقة أقل من ثلاثة
+                    طلاب — لا لأن الرقم صغير، بل لأنه عندها يصف مسار شخصٍ بعينه.
+                    ولا يُحفظ اسم ولا رقم مدني في أي مرحلة.
+                  </p>
                 </details>
               ) : null}
 

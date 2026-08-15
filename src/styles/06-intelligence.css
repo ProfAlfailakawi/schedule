@@ -2322,3 +2322,37 @@
   .demand-bars article{grid-template-columns:minmax(0,1fr) auto}
   .demand-bars i{grid-column:1 / -1}
 }
+
+/* التوقّع: يجب أن يُرى أنه توقُّع، لا قراءة. لونٌ أهدأ وحدٌّ متقطّع — الفرق
+   بين «هذا ما قالوه» و«هذا ما نتوقّعه» يجب أن يُدرَك قبل قراءة الكلمات. */
+.demand-forecast{
+  margin-block-start:var(--s4);padding:var(--s4);
+  border:1px dashed color-mix(in srgb,var(--accent) 38%,var(--line));
+  border-radius:var(--r-lg);background:color-mix(in srgb,var(--accent) 3%,transparent);
+}
+.demand-headline.forecast{
+  display:flex;align-items:flex-start;gap:var(--s2);
+  margin:0 0 var(--s3);border-inline-start:0;background:transparent;padding:0;
+  color:var(--muted);
+}
+.demand-headline.forecast svg{width:16px;height:16px;flex:none;color:var(--accent);margin-block-start:2px}
+.demand-forecast .demand-bars i b{background:color-mix(in srgb,var(--accent) 55%,var(--surface-3))}
+.demand-turnover{
+  display:flex;align-items:center;gap:var(--s2);
+  margin-block-start:var(--s3);color:var(--muted);font-size:var(--t-sm);line-height:1.7;
+}
+.demand-turnover svg{width:15px;height:15px;flex:none;color:var(--muted)}
+
+/* التسلسل: من ← إلى، ومعه قاعدته دائماً. */
+.demand-sequence{margin:var(--s3) 0 0;padding:0;list-style:none;display:grid;gap:var(--s2)}
+.demand-sequence li{
+  display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;
+  padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface-2);font-size:var(--t-sm);
+}
+.demand-sequence li>svg{width:14px;height:14px;flex:none;color:var(--accent)}
+.demand-sequence b{font-weight:650;min-width:0}
+.demand-sequence em{
+  margin-inline-start:auto;font-style:normal;color:var(--muted);font-size:var(--t-xs);
+  font-variant-numeric:tabular-nums lining-nums;
+}

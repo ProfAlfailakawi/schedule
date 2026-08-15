@@ -20,6 +20,7 @@ import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./sr
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { readDemandRepairs } from "./src/utils/demandRepair";
+import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
@@ -4685,14 +4686,36 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const [needs, courses, schedules, links] = await Promise.all([
+  const [needs, courses, schedules, links, history, allTerms] = await Promise.all([
     Repository.getStudentNeeds(collegeId, sectionId, termId),
     Repository.getCourses(),
     Repository.getSchedules(),
     Repository.getShareLinks(collegeId, sectionId, termId).catch(() => []),
+    Repository.getStudentNeedHistory(collegeId, sectionId).catch(() => []),
+    Repository.getTerms().catch(() => []),
   ]);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId);
   const reading = readStudentDemand(needs, mine);
+
+  /* ── الطلبة يتغيّرون كل فصل ────────────────────────────────────────────────
+     Two things follow from that, and both are computed here. How much of this
+     term's answer set is new; and — when the term has no answers at all, which
+     is precisely when the timetable is being written — what the term before it
+     predicts, walked forward along the paths students actually took. */
+  const succession = readCourseSuccession(history, mine);
+  const turnover = cohortTurnover(history, termId);
+  const previousTermId = Math.max(0, ...allTerms
+    .map(term => Number(term.AdTermId))
+    .filter(id => id < Number(termId)));
+  const previousNeeds = previousTermId
+    ? history.filter(need => Number(need.AdTermId) === previousTermId)
+    : [];
+  const previousTermName = allTerms.find(term => Number(term.AdTermId) === previousTermId)?.AdTermName || "الفصل السابق";
+  // A prediction is only ever offered where there is nothing better. Real
+  // answers for this term always win, and the prediction is not even computed.
+  const prediction = !reading.respondents && previousNeeds.length
+    ? predictDemand(succession, previousNeeds, mine, previousTermName)
+    : { courses: [], pairs: [], from: 0, fromTermName: previousTermName, headline: "" };
 
   /* The repair search, on the real week. It is skipped entirely when nobody has
      answered — a department that has never run a survey pays nothing for a
@@ -4718,6 +4741,10 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     ...reading,
     ...repairs,
     survey,
+    succession: { links: succession.links.slice(0, 10), pathsSeen: succession.pathsSeen,
+                  termsSpanned: succession.termsSpanned, headline: succession.headline },
+    turnover,
+    prediction,
     // The limit travels with the answer: this speaks for whoever answered, and
     // is never the registrar's roll.
     limit: "مبنيّ على من أجاب الاستبيان فقط — ليس بيانات التسجيل.",

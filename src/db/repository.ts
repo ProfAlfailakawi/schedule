@@ -2047,6 +2047,25 @@ export const Repository = {
   },
 
   /** Every answer for one board. The only read the coordinator's side needs. */
+  /**
+   * Every answer this section has ever collected, all terms.
+   *
+   * The per-term read above is what a reading of *this* term needs. This one is
+   * what learning a sequence needs: the same anonymous hand appearing in two
+   * terms is what makes «what follows what» knowable at all. Single-field
+   * query, so no composite index is involved.
+   */
+  getStudentNeedHistory: async (collegeId: number, sectionId: number): Promise<StudentNeed[]> => {
+    const mine = (item: StudentNeed) =>
+      Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId;
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("studentNeeds")
+        .where("AdSectionId", "==", sectionId).limit(20000).get();
+      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+    }
+    return (db.studentNeeds || []).filter(mine);
+  },
+
   getStudentNeeds: async (collegeId: number, sectionId: number, termId: number): Promise<StudentNeed[]> => {
     const mine = (item: StudentNeed) =>
       Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId
