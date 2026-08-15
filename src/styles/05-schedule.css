@@ -4194,3 +4194,105 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-event.ghost-removed::before{color:var(--danger)}
 .week-event.ghost-changed::before{color:var(--brass)}
 .week-event.ghost-same::before{color:var(--muted)}
+
+/* ==========================================================================
+   THE WHOLE WEEK, ANSWERED BEFORE THE DROP
+   While a lecture is in the air every empty square states its own answer, and
+   there are three of them — not two. Green: take it. Amber: the hour is yours,
+   the room is not. Red: the teacher is busy, or the day has run out.
+   Colour is never alone — the amber squares carry a rule and the red ones a
+   cross-hatch, so the reading survives greyscale and colour-blindness.
+   ========================================================================== */
+
+.week-slot.field-tier{position:relative}
+.week-slot.field-tier::after{
+  content:"";position:absolute;inset:1px;border-radius:5px;pointer-events:none;
+  transition:background-color .16s var(--ease);
+}
+.week-slot.tier-free::after{
+  background:color-mix(in srgb,var(--success) 13%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--success) 22%,transparent);
+}
+.week-slot.tier-room::after{
+  background:color-mix(in srgb,var(--warning) 14%,transparent);
+  background-image:repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb,var(--warning) 30%,transparent) 0 1px,
+    transparent 1px 7px
+  );
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warning) 30%,transparent);
+}
+.week-slot.tier-blocked::after{
+  background:color-mix(in srgb,var(--danger) 10%,transparent);
+  background-image:repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb,var(--danger) 22%,transparent) 0 2px,
+    transparent 2px 6px
+  );
+}
+/* The square actually under the pointer keeps its own stronger ring on top. */
+.week-slot.physics-target.field-tier::after{opacity:.35}
+@media (prefers-reduced-motion:reduce){
+  .week-slot.field-tier::after{transition:none}
+}
+
+/* ==========================================================================
+   THE ROOMS BOARD, DRAGGED LIKE THE WEEK
+   Same engine, same lift, same verdict, same ring — the only difference is that
+   a landing square here also names a hall. These squares are invisible until a
+   lecture is in the air; then they answer exactly as the week's do.
+   ========================================================================== */
+
+.rooms-slot{
+  position:absolute;inset-block:0;z-index:1;
+  pointer-events:auto;
+}
+/* At rest they are nothing at all. */
+.rooms-slot::after{content:none}
+.rooms-track:not(.gravity-field-active) .rooms-slot{pointer-events:none}
+html.schedule-physics-active .rooms-slot{pointer-events:auto}
+/* In the air: the same three answers, drawn along the track. */
+html.schedule-physics-active .rooms-slot.field-tier::after{
+  content:"";position:absolute;inset:2px 0;border-radius:3px;pointer-events:none;
+}
+html.schedule-physics-active .rooms-slot.tier-free::after{
+  background:color-mix(in srgb,var(--success) 15%,transparent);
+}
+html.schedule-physics-active .rooms-slot.tier-room::after{
+  background:color-mix(in srgb,var(--warning) 16%,transparent);
+  background-image:repeating-linear-gradient(
+    0deg,color-mix(in srgb,var(--warning) 30%,transparent) 0 1px,transparent 1px 6px);
+}
+html.schedule-physics-active .rooms-slot.tier-blocked::after{
+  background:color-mix(in srgb,var(--danger) 11%,transparent);
+  background-image:repeating-linear-gradient(
+    -45deg,color-mix(in srgb,var(--danger) 22%,transparent) 0 2px,transparent 2px 6px);
+}
+/* The square under the pointer wears the week's own landing ring. */
+html.schedule-physics-active .rooms-slot.physics-target::before{
+  content:"";position:absolute;inset:1px -1px;border-radius:5px;pointer-events:none;
+  border:1.5px solid var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent);
+  z-index:2;
+}
+html.schedule-physics-active .rooms-slot.physics-excellent::before,
+html.schedule-physics-active .rooms-slot.physics-good::before{
+  border-color:var(--success);
+  background:color-mix(in srgb,var(--success) 14%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--success) 14%,transparent);
+}
+html.schedule-physics-active .rooms-slot.physics-suboptimal::before{
+  border-color:var(--warning);
+  background:color-mix(in srgb,var(--warning) 14%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--warning) 14%,transparent);
+}
+html.schedule-physics-active .rooms-slot.physics-impossible::before{
+  border-color:var(--danger);border-style:dashed;
+  background:color-mix(in srgb,var(--danger) 12%,transparent);
+  box-shadow:none;
+}
+/* The lifted card here is the same lifted card. */
+.rooms-card.physics-source-lift{
+  z-index:420;box-shadow:var(--shadow-lg);
+}

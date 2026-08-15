@@ -3696,7 +3696,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     disabled:
       mode !== "schedule" ||
       editor !== "index" ||
-      viewMode !== "week" ||
+      (viewMode !== "week" && viewMode !== "rooms") ||
       saving ||
       presentationMode ||
       // One card, one hand: while the keyboard is carrying a lecture the
@@ -3742,6 +3742,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     onDropRequest: (request) => {
       clearRipple();
       setPhysicsField({});
+      const room = (request.target as any)?.room as { code: string; hall: string } | undefined;
+      if (room) {
+        // The rooms board: the square names a hall, so the landing carries one.
+        void commitRoomMove(request.row, request.target.day as DayKey, request.target.start, room.code, room.hall);
+        return;
+      }
       if (isSamePlacement(request.row, request.sourceDay, request.target)) {
         setPhysicsNotice("");
         return;
@@ -3939,9 +3945,20 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const dragField = useMemo(() => {
     const blocked = new Map<string, string>();
+    /**
+     * Three answers, not two.
+     *
+     * A square the carried lecture cannot take is not one thing. Sometimes the
+     * teacher is busy, and no amount of rearranging helps — that is a wall.
+     * Sometimes only the HALL is taken, and the hour is perfectly good for this
+     * teacher: that is not a refusal, it is "yes, in another room", and it was
+     * being painted in the same red as the wall. So the reader was steered away
+     * from half the hours that were actually available to them.
+     */
+    const tier = new Map<string, "free" | "room" | "blocked">();
     const suggestions: Array<{ day: DayKey; start: string; score: number }> = [];
     const carried = physics.state.row;
-    if (!carried || physics.state.phase === "idle") return { blocked, suggestions };
+    if (!carried || physics.state.phase === "idle") return { blocked, tier, suggestions };
     const span = Math.max(30, mins(carried.fendtime) - mins(carried.fstarttime));
     const instructorRows = weekRows.filter(row => row.id !== carried.id && carried.AdInstructorId && row.AdInstructorId === carried.AdInstructorId);
     const hallRows = weekRows.filter(row => row.id !== carried.id && carried.AdRoomCode && row.AdRoomCode === carried.AdRoomCode && row.AdRoomHall === carried.AdRoomHall);
@@ -3950,19 +3967,28 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         const key = `${day.key}:${slot}`;
         const from = mins(slot);
         const to = from + span;
-        if (to > gridWindow.end) { blocked.set(key, "المحاضرة أطول من الوقت المتبقي في هذا اليوم"); continue; }
+        if (to > gridWindow.end) {
+          blocked.set(key, "المحاضرة أطول من الوقت المتبقي في هذا اليوم");
+          tier.set(key, "blocked");
+          continue;
+        }
         const clash = (list: FSchedule[]) => list.find(row =>
           (row as any)[day.key] && mins(row.fstarttime) < to && mins(row.fendtime) > from);
         const instructorClash = clash(instructorRows);
         if (instructorClash) {
           blocked.set(key, `الأستاذ مرتبط بـ${instructorClash.AdCourseName || courseById.get(instructorClash.AdCourseId)?.CourseName || "موعد آخر"} ${instructorClash.fstarttime}`);
+          tier.set(key, "blocked");
           continue;
         }
         const hallClash = clash(hallRows);
         if (hallClash) {
-          blocked.set(key, `القاعة محجوزة لـ${hallClash.AdCourseName || courseById.get(hallClash.AdCourseId)?.CourseName || "موعد آخر"} ${hallClash.fstarttime}`);
+          // The hour is free for this teacher; only the room is taken. That is
+          // a different answer, and it gets a different colour.
+          blocked.set(key, `الساعة متاحة للأستاذ، لكن القاعة محجوزة لـ${hallClash.AdCourseName || courseById.get(hallClash.AdCourseId)?.CourseName || "موعد آخر"} — يلزم تبديل القاعة`);
+          tier.set(key, "room");
           continue;
         }
+        tier.set(key, "free");
         let score = 100;
         // A lecture that sits against another of the same instructor's is kinder
         // than one that leaves an hour of waiting in the middle of their day.
@@ -3984,7 +4010,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
     }
     suggestions.sort((a, b) => b.score - a.score);
-    return { blocked, suggestions: suggestions.slice(0, 3) };
+    return { blocked, tier, suggestions: suggestions.slice(0, 3) };
   }, [physics.state.row, physics.state.phase, weekRows, timeSlots, gridWindow, courseById]);
   const dragSuggestions = dragField.suggestions;
   const suggestionRank = useMemo(() => {
@@ -4207,13 +4233,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     // Where the server has since given a verdict for a square the pointer
     // actually visited, that verdict wins — it knows rules this reading cannot.
     const sampled = physicsField[key] || (dragField.blocked.has(key) ? "impossible" : "");
+    const shade = dragField.tier.get(key);
     const active =
       physics.state.target?.day === day &&
       physics.state.target?.start === start;
     const quality = active
       ? physics.state.decision?.quality || sampled || "unknown"
       : sampled || "";
-    return `${active ? `physics-target physics-${quality}` : ""} ${sampled ? `gravity-slot gravity-${sampled}` : ""} ${rank ? `suggested-slot suggested-${rank}` : ""}`.trim();
+    return `${active ? `physics-target physics-${quality}` : ""} ${sampled ? `gravity-slot gravity-${sampled}` : ""} ${shade ? `field-tier tier-${shade}` : ""} ${rank ? `suggested-slot suggested-${rank}` : ""}`.trim();
   };
   /**
    * The live radar: collisions and regulation notes, read on every change.
@@ -5862,12 +5889,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   ["--actual-width" as any]: `${Math.max(3, ((actualTo - actualFrom) / visualSpan) * 100)}%`,
                 } : {}),
               };
+              // The card is bound to the same drag engine the week uses, so it
+              // lifts, floats, is judged and lands with the identical behaviour
+              // — not an imitation of it.
+              const trackGrip = physics.bindEvent(row, (activeRoomDays[0]?.key || "fsunday") as any);
               return (
                 <article
+                  {...trackGrip}
                   key={row.id}
-                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""}`}
+                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""}`}
                   style={cardStyle}
-                  draggable={!saving}
+                  draggable={!saving && !physics.supported}
                   onDragStart={(e) => {
                     e.dataTransfer.setData("text/schedule-id", String(row.id));
                     e.dataTransfer.effectAllowed = "move";
@@ -5981,8 +6013,24 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             className="rooms-track rooms-compact-track"
                             style={{ height: `${Math.max(74, compact.lanes * 68 + 8)}px` }}
                             onDragOver={(e) => e.preventDefault()}
+                            data-physics-day-column="true"
                             onDrop={trackDrop(room.building, room.hall, firstDay)}
                           >
+                            {/* The landing squares, on the compact track too —
+                                this is the layout the week view actually shows,
+                                and it was the one left without them. */}
+                            {timeSlots.map(slot => (
+                              <i
+                                key={`slot-${slot}`}
+                                className={`rooms-slot ${physicsSlotClass(firstDay as DayKey, slot)}`}
+                                data-physics-slot="true"
+                                data-physics-day={firstDay}
+                                data-physics-start={slot}
+                                data-physics-label={`${room.building}/${room.hall}`}
+                                data-physics-room={`${room.building}|${room.hall}`}
+                                style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
+                              />
+                            ))}
                             {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
                             {nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
                             {compact.items.map(item => renderTrackCard(item.row, item))}
@@ -6001,7 +6049,30 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             return (
                               <div className="rooms-row" key={`${room.key}|${day.key}`}>
                                 <small className="rooms-day-label">{day.label}</small>
-                                <div className="rooms-track" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}>
+                                <div
+                                  className="rooms-track"
+                                  data-physics-day-column="true"
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}
+                                >
+                                  {/* The same landing squares the week grid has,
+                                      laid along the track instead of down a
+                                      column — so the drag engine reads this
+                                      board with the identical code, and the
+                                      lift, the verdict and the ring are the
+                                      same here as they are there. */}
+                                  {timeSlots.map(slot => (
+                                    <i
+                                      key={`slot-${slot}`}
+                                      className={`rooms-slot ${physicsSlotClass(day.key as DayKey, slot)}`}
+                                      data-physics-slot="true"
+                                      data-physics-day={day.key}
+                                      data-physics-start={slot}
+                                      data-physics-label={`${day.label} · ${room.building}/${room.hall}`}
+                                      data-physics-room={`${room.building}|${room.hall}`}
+                                      style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
+                                    />
+                                  ))}
                                   {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
                                   {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
                                   {inRoom.map(row => renderTrackCard(row))}

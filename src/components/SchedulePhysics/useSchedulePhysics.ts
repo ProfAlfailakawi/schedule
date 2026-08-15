@@ -77,7 +77,14 @@ function targetFromPoint(x: number, y: number): SchedulePhysicsTarget | null {
   const day = slot.dataset.physicsDay as ScheduleDayKey | undefined;
   const start = slot.dataset.physicsStart || "";
   if (!day || !start) return null;
-  return { day, start, label: slot.dataset.physicsLabel || "", rect: slot.getBoundingClientRect() };
+  const room = slot.dataset.physicsRoom;
+  return {
+    day, start,
+    label: slot.dataset.physicsLabel || "",
+    rect: slot.getBoundingClientRect(),
+    // "code|hall" on the element, or nothing at all on the week grid.
+    room: room ? { code: room.split("|")[0] || "", hall: room.split("|")[1] || "" } : undefined,
+  };
 }
 
 export default function useSchedulePhysics(options: Options) {

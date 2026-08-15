@@ -9,6 +9,13 @@ export interface SchedulePhysicsTarget {
   start: string;
   label: string;
   rect?: DOMRect;
+  /**
+   * The hall this landing square belongs to, when the board is organised by
+   * room rather than by day. The week grid leaves it undefined; the rooms
+   * matrix fills it, and that is the only difference between the two boards as
+   * far as the drag engine is concerned.
+   */
+  room?: { code: string; hall: string };
 }
 
 export interface SchedulePhysicsFingerprintItem {
