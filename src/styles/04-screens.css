@@ -234,6 +234,12 @@
 }
 .daybar-block b{
   display:none;
+  /* A flex item refuses to shrink below its own content unless it is told it
+     may: without `min-width:0` the label kept its full width, overflowed the
+     pill, and the pill's `overflow:hidden` cut it — which is the half-code the
+     reader was still seeing after the pill itself had been made wide enough.
+     With the floor removed, `text-overflow` can finally do its job. */
+  min-width:0;max-width:100%;
   font:600 var(--t-xs)/1 var(--font-mono);
   direction:ltr;unicode-bidi:isolate;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;

@@ -3797,7 +3797,98 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     return map;
   }, [dragSuggestions]);
   /** Why this square cannot take the carried card, for its tooltip. */
+  /**
+   * ── The decision field ────────────────────────────────────────────────────
+   *
+   * The engine that judges a placement already exists; it just never spoke
+   * until the card was already in the air. So a coordinator learned that
+   * eleven o'clock was a bad idea by dragging there, reading the verdict, and
+   * dragging back — the answer arrived after the question had been acted on.
+   *
+   * Opening a lecture's reading panel now asks the same engine about the whole
+   * week at once, and the empty squares answer in place: where this lecture
+   * would sit well, where it would sit badly, and where it cannot sit at all.
+   * The reasoning is identical to the one the drag uses — the same instructor,
+   * the same hall, the same day-end, the same closeness-to-their-other-lectures
+   * scoring — because it is the same code path, only asked earlier.
+   *
+   * It is deliberately a *reading*: it paints nothing over the lectures
+   * themselves, adds no control, and disappears the moment the panel closes or
+   * a real drag begins, when the live evaluation takes over.
+   */
+  const decisionField = useMemo(() => {
+    const field = new Map<string, { tier: "excellent" | "good" | "fair" | "blocked"; why: string }>();
+    const row: FSchedule | null =
+      viewMode === "week" && !physicsActive && !saving && context?.selected
+        ? rows.find(item => item.id === context.selected.id) || null
+        : null;
+    if (!row || !row.fstarttime || !row.fendtime) return field;
+    const span = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
+    const carriedDays = days.filter(d => Boolean((row as any)[d.key])).map(d => d.key as DayKey);
+    const instructorRows = weekRows.filter(item => item.id !== row.id && row.AdInstructorId && item.AdInstructorId === row.AdInstructorId);
+    const hallRows = weekRows.filter(item =>
+      item.id !== row.id && row.AdRoomCode &&
+      item.AdRoomCode === row.AdRoomCode && item.AdRoomHall === row.AdRoomHall);
+    const nameOf = (item: FSchedule) =>
+      item.AdCourseName || courseById.get(item.AdCourseId)?.CourseName || "موعد آخر";
+
+    for (const day of days) {
+      for (const slot of timeSlots) {
+        const key = `${day.key}:${slot}`;
+        const from = mins(slot);
+        const to = from + span;
+        if (carriedDays.includes(day.key as DayKey) && slot === row.fstarttime) continue; // where it already is
+        if (to > gridWindow.end) {
+          field.set(key, { tier: "blocked", why: "المحاضرة أطول من الوقت المتبقي في هذا اليوم" });
+          continue;
+        }
+        const clash = (list: FSchedule[]) =>
+          list.find(item => (item as any)[day.key] && mins(item.fstarttime) < to && mins(item.fendtime) > from);
+        const busyInstructor = clash(instructorRows);
+        if (busyInstructor) {
+          field.set(key, { tier: "blocked", why: `الأستاذ مرتبط بـ${nameOf(busyInstructor)} ${busyInstructor.fstarttime}` });
+          continue;
+        }
+        const busyHall = clash(hallRows);
+        if (busyHall) {
+          field.set(key, { tier: "blocked", why: `القاعة محجوزة لـ${nameOf(busyHall)} ${busyHall.fstarttime}` });
+          continue;
+        }
+        /* Same scoring the drag uses, in the same order of importance. */
+        let score = 100;
+        const reasons: string[] = [];
+        const sameDay = instructorRows
+          .filter(item => (item as any)[day.key])
+          .map(item => ({ from: mins(item.fstarttime), to: mins(item.fendtime) }));
+        if (sameDay.length) {
+          const nearest = Math.min(...sameDay.map(other =>
+            other.to <= from ? from - other.to : other.from >= to ? other.from - to : 0));
+          score -= Math.min(40, Math.round(nearest / 15) * 4);
+          reasons.push(nearest === 0
+            ? "ملاصق لمحاضرة أخرى للأستاذ"
+            : `فراغ ${nearest} دقيقة عن أقرب محاضرة للأستاذ`);
+        } else {
+          score -= 12;
+          reasons.push("يوم جديد للأستاذ — يكلّف انتقالاً");
+        }
+        const expected = day.key === "fmonday" || day.key === "fwednesday" ? 90 : 60;
+        if (span !== expected) { score -= 18; reasons.push(`طول غير معتاد ليوم ${day.label}`); }
+        if (from < 8 * 60 || from >= 14 * 60) { score -= 8; reasons.push("خارج ذروة اليوم الدراسي"); }
+        const tier = score >= 88 ? "excellent" : score >= 70 ? "good" : "fair";
+        field.set(key, {
+          tier,
+          why: `${tier === "excellent" ? "ممتاز" : tier === "good" ? "جيد" : "ممكن بتنازل"} — ${reasons.join(" · ")}`,
+        });
+      }
+    }
+    return field;
+  }, [viewMode, physicsActive, saving, context?.selected?.id, rows, weekRows, timeSlots, gridWindow, courseById]);
+
   const slotBlockReason = (day: DayKey, start: string) => dragField.blocked.get(`${day}:${start}`) || "";
+  /* The field's own class and sentence for a square. A live drag always wins:
+     the moment a card is actually carried, the server-backed evaluation is the
+     better answer and this reading steps aside. */
+  const decisionSlot = (day: DayKey, start: string) => decisionField.get(`${day}:${start}`) || null;
 
   const physicsSlotClass = (day: DayKey, start: string) => {
     const key = `${day}:${start}`;
@@ -5775,12 +5866,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         data-physics-day={d.key}
                         data-physics-start={t}
                         data-physics-label={d.label}
-                        className={`week-slot ${ripple?.targetDay === d.key && ripple?.targetStart === t ? "ripple-target" : ""} ${physicsSlotClass(d.key, t)} ${lensRoomActive && !lensRoomBusy.has(`${d.key}|${t}`) ? "room-free" : ""}`}
+                        className={`week-slot ${ripple?.targetDay === d.key && ripple?.targetStart === t ? "ripple-target" : ""} ${physicsSlotClass(d.key, t)} ${lensRoomActive && !lensRoomBusy.has(`${d.key}|${t}`) ? "room-free" : ""} ${decisionSlot(d.key as DayKey, t) ? `field-${decisionSlot(d.key as DayKey, t)!.tier}` : ""}`}
                         key={t}
                         onDragOver={(e) => e.preventDefault()}
                         role="button"
                         tabIndex={-1}
-                        title={slotBlockReason(d.key as DayKey, t) || `إضافة موعد · ${d.label} ${t}`}
+                        title={
+                          slotBlockReason(d.key as DayKey, t) ||
+                          (decisionSlot(d.key as DayKey, t)
+                            ? `${d.label} ${t} — ${decisionSlot(d.key as DayKey, t)!.why}`
+                            : `إضافة موعد · ${d.label} ${t}`)
+                        }
                         onPointerDown={(e) => {
                           // Only a press on the empty square itself; a press that
                           // landed on a lecture belongs to that lecture.
