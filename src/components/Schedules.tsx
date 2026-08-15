@@ -2943,6 +2943,39 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     };
   }, []);
   /**
+   * ── «الآن» على الأسبوع ──────────────────────────────────────────────────
+   *
+   * The rooms matrix has had a now-marker for a while; the week board — the
+   * screen people actually live in — has never had one. Opening it between two
+   * lectures told you everything about the week and nothing about the minute.
+   *
+   * Two conditions gate it, and both matter. It is drawn **only in today's
+   * column**, because in a weekly grid the other four days are not happening —
+   * a rule stretched across all five would say something false about Tuesday.
+   * And it is drawn **only while the term on screen is the term now running**,
+   * because a line labelled «الآن» over a schedule from 2019 is worse than no
+   * line at all. Where a term carries its start date and length, that is the
+   * test; where it does not — and ten years of terms do not — the newest term
+   * is taken as the current one, which is this department's own convention.
+   */
+  const termIsRunning = useMemo(() => {
+    const term = terms.find((item: any) => Number(item.AdTermId) === Number(filterTerm));
+    if (!term) return false;
+    const start = String((term as any).AdTermStart || "");
+    const weeks = Number((term as any).AdTermWeeks || 0);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(start) && weeks > 0) {
+      const from = Date.parse(`${start}T00:00:00`);
+      if (Number.isFinite(from)) {
+        const to = from + weeks * 7 * 86400000;
+        const now = Date.now();
+        return now >= from && now < to;
+      }
+    }
+    const newest = Math.max(0, ...terms.map((item: any) => Number(item.AdTermId) || 0));
+    return Number(filterTerm) === newest;
+  }, [terms, filterTerm]);
+
+  /**
    * Which column, if any, is today.
    *
    * Friday and Saturday are not taught, so they return null — which is how the
@@ -3008,6 +3041,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const snapUp = (value: number) => Math.ceil(value / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES;
     return { start: Math.max(0, snapDown(start)), end: Math.min(24 * 60, snapUp(end)) };
   }, [weekRows]);
+  /** Where the line sits inside a day column, in pixels from its top. */
+  const nowOffset = useMemo(() => {
+    if (!todayKey || !termIsRunning) return null;
+    if (nowMinutes < gridWindow.start || nowMinutes > gridWindow.end) return null;
+    return ((nowMinutes - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H;
+  }, [todayKey, termIsRunning, nowMinutes, gridWindow]);
+
   /**
    * The rooms matrix, computed once per change of data — not once per render.
    *
@@ -6963,12 +7003,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     {/* Today's column carries the hour it actually is. Positioned by the
                         same arithmetic as every card above it, and deliberately free of
                         pointer handlers — a stray one here would land on the cards and
-                        take the drag with it. */}
+                        take the drag with it.
+                        It also asks WHICH term is on screen. «الآن» drawn across a term
+                        that finished in 2019 is not a clock, it is a false statement
+                        about a schedule nobody is teaching; and a line that means "this
+                        minute" has no business on a sheet of paper. */}
                     {todayKey === d.key &&
+                    termIsRunning &&
                     nowMinutes >= gridWindow.start &&
                     nowMinutes <= gridWindow.end ? (
                       <div
-                        className="week-now"
+                        className="week-now no-print"
                         style={{ top: ((nowMinutes - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H }}
                         aria-hidden="true"
                       >

@@ -647,3 +647,28 @@
 @media (forced-colors:active){
   .btn,.icon-action,.badge,.surface,.stat-card{border:1px solid CanvasText}
 }
+
+/* ── الجدول أوّل ما تراه على الهاتف ──────────────────────────────────────────
+ *
+ * Measured on a 375×812 phone: the board began at 1130px — one and a half
+ * screens down, behind the page title, an «إضافة موعد» button, a 442px filter
+ * card and 243px of statistics. Everything above it is preparation; the board
+ * is the thing. On a desktop there is room for both and the order is right; on
+ * a phone there is not.
+ *
+ * Nothing moves in the markup and no logic is touched — the page is already a
+ * flex column, so the board simply comes first and its scaffolding follows.
+ * A reader who wants the filters scrolls once, which is the trade a phone makes
+ * anyway; a reader who wants the schedule now stops scrolling entirely.
+ */
+@media (max-width:760px){
+  .schedule-page{display:flex;flex-direction:column}
+  .schedule-page>.week-surface,
+  .schedule-page>.schedule-agenda-surface,
+  .schedule-page>.rooms-surface,
+  .schedule-page>.sched-skeleton-surface{order:-1}
+  /* The scope line still has to come first among what is left, because a board
+     read against the wrong term is worse than a board found late. */
+  .schedule-page>.schedule-control{order:0}
+  .schedule-page>.schedule-mini-stats{order:1}
+}
