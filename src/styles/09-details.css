@@ -1241,7 +1241,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-
   font:700 clamp(46px,9vw,76px)/1 var(--font-mono);
   letter-spacing:-.04em;color:var(--ink);font-variant-numeric:tabular-nums;
 }
-.journey-figure span{color:var(--muted);font-size:var(--t-body)}
+.journey-figure span{color:var(--ink-2);font-size:var(--t-body)}
 .journey-grid{
   display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));
   gap:var(--s3);
@@ -1253,7 +1253,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-
 .journey-grid b{
   font:700 var(--t-h2)/1 var(--font-mono);color:var(--ink);font-variant-numeric:tabular-nums;
 }
-.journey-grid span{font-size:var(--t-xs);color:var(--muted);line-height:1.6}
+.journey-grid span{font-size:var(--t-xs);color:var(--ink-2);line-height:1.6}
 .journey-grid-small b{font-size:var(--t-h3)}
 .journey-milestone{
   margin:var(--s3) 0 0;text-align:center;
@@ -1263,12 +1263,12 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-
 
 .journey-current{display:grid;gap:var(--s3);padding-top:var(--s5);border-top:1px solid var(--line)}
 .journey-current>header{display:grid;gap:2px}
-.journey-current>header span{font-size:var(--t-eyebrow);color:var(--muted);font-weight:600;letter-spacing:.06em}
-.journey-current>header strong{font-size:var(--t-h3);font-weight:600}
+.journey-current>header span{font-size:var(--t-eyebrow);color:var(--brass);font-weight:700;letter-spacing:.06em}
+.journey-current>header strong{font-size:var(--t-h3);font-weight:700;color:var(--ink)}
 .journey-reading-small{margin:0;color:var(--muted);font-size:var(--t-sm)}
 
 .journey-timeline{display:grid;gap:var(--s3);padding-top:var(--s5);border-top:1px solid var(--line)}
-.journey-timeline h3,.journey-philosophy h3{font-size:var(--t-h4);font-weight:600;color:var(--ink)}
+.journey-timeline h3,.journey-philosophy h3{font-size:var(--t-h4);font-weight:700;color:var(--ink)}
 .journey-timeline ol{list-style:none;margin:0;padding:0;display:grid;gap:var(--s3)}
 .journey-timeline li{
   display:grid;gap:2px;
@@ -1284,8 +1284,17 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-
   width:1px;background:var(--line);
 }
 .journey-timeline li:last-child::after{display:none}
-.journey-timeline strong{font-size:var(--t-sm);font-weight:650}
-.journey-timeline span{font-size:var(--t-xs);color:var(--muted);line-height:1.7}
+/*
+   Weight 650 is not a face this document owns.
+   The typeface is self-hosted at 300/400/500/600/700 (01-foundation.css), so a
+   650 asks the browser to invent one — and an invented weight renders thinner
+   and greyer on some screens than the number promises, which is exactly how a
+   heading meant to lead a line ended up looking like a caption. Every heading
+   here now names a weight that exists and states its own colour, so nothing is
+   left to inheritance or to synthesis.
+*/
+.journey-timeline strong{font-size:var(--t-body);font-weight:700;color:var(--ink)}
+.journey-timeline span{font-size:var(--t-sm);color:var(--ink-2);line-height:1.75}
 
 .journey-philosophy{display:grid;gap:var(--s2);padding-top:var(--s5);border-top:1px solid var(--line)}
 .journey-motto{
@@ -1298,7 +1307,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-
   padding-top:var(--s5);border-top:1px solid var(--line);
 }
 .journey-foot span{display:block;font-size:var(--t-eyebrow);color:var(--muted);letter-spacing:.06em}
-.journey-foot strong{font-size:var(--t-sm);font-weight:600;color:var(--ink-2)}
+.journey-foot strong{font-size:var(--t-sm);font-weight:700;color:var(--ink)}
 .journey-foot small{font:600 10px/1 var(--font-mono);color:var(--muted-2,var(--muted));letter-spacing:.08em}
 
 .journey-empty,.journey-first{

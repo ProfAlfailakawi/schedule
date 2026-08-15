@@ -1688,8 +1688,15 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
         <div className="print-summary">
           <span>عدد القاعات: <b>{roomLoad?.rooms?.length ?? 0}</b></span>
           <span>متوسط الإشغال: <b>{roomLoad?.totalRate ?? 0}٪</b></span>
-          <span>المربع المعبأ = ساعة مشغولة، والفارغ = فراغ متاح للحجز.</span>
         </div>
+        {/* A key, drawn in the same ink as the grid it explains — so the sheet
+            can be read after a photocopier has removed every colour from it. */}
+        {(roomLoad?.rooms || []).length ? (
+          <div className="print-legend">
+            <span><i className="legend-taken" aria-hidden="true" /> ساعة مشغولة</span>
+            <span><i className="legend-free" aria-hidden="true" /> فراغ متاح للحجز</span>
+          </div>
+        ) : null}
       </div>
     );
   }

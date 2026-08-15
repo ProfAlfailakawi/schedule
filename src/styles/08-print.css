@@ -404,11 +404,38 @@
   /* The grid keeps its shape on paper: a filled square is a taken hour, an
      empty one is a free hour, so the sheet is readable in greyscale too. */
   .print-occupancy table{table-layout:fixed !important}
-  .print-occupancy td.cell{padding:0 !important;height:5.2mm !important}
-  .print-occupancy td.cell[data-taken="1"]{background:#1f6b5c !important}
+  .print-occupancy td.cell{padding:0 !important;height:5.4mm !important;position:relative !important}
+  /*
+   * Ink is expensive and a photocopier is colour-blind.
+   *
+   * A solid jade block per busy hour reads as one flat mass on a grey copy and
+   * drinks toner on a colour one. A busy hour is now a light ground with a
+   * diagonal rule through it and a solid edge — three signals, all of which
+   * survive greyscale, and far less coverage.
+   */
+  .print-occupancy td.cell[data-taken="1"]{
+    background:#dde9e5 !important;
+    background-image:repeating-linear-gradient(-45deg,#1f6b5c 0 .5pt,transparent .5pt 2.2pt) !important;
+    border-color:#1f6b5c !important;
+  }
   .print-occupancy td.cell[data-taken="0"]{background:#fff !important}
   .print-occupancy td.room{text-align:right !important;font-size:7.8pt !important}
   .print-occupancy th.hour{font-size:7pt !important;padding:1.4mm .4mm !important;text-align:center !important}
+
+  .print-legend{
+    display:flex !important;gap:6mm !important;margin-top:2.4mm !important;
+    font-size:7.4pt !important;color:#333 !important;break-inside:avoid !important;
+  }
+  .print-legend span{display:inline-flex !important;align-items:center !important;gap:1.6mm !important}
+  .print-legend i{
+    width:4.4mm;height:3.2mm;border:.5pt solid #1f6b5c;display:inline-block;
+    print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
+  }
+  .print-legend .legend-taken{
+    background:#dde9e5;
+    background-image:repeating-linear-gradient(-45deg,#1f6b5c 0 .5pt,transparent .5pt 2.2pt);
+  }
+  .print-legend .legend-free{background:#fff;border-color:#9aa3a0}
 
   /* --- halls x hours ------------------------------------------------------ */
   /* The sheet a department has kept on paper for years, printed as paper. */
@@ -428,9 +455,19 @@
     display:block !important;
     border-inline-start:.8pt solid #1f6b5c !important;padding-inline-start:1mm !important;
   }
-  .print-matrix td span + span{margin-top:.8mm !important;border-top:.4pt dashed #bbb !important;padding-top:.8mm !important}
-  .print-matrix td b{display:block !important;font-weight:700 !important;font-size:6.4pt !important}
-  .print-matrix td i{display:block !important;font-style:normal !important;color:#444 !important;font-size:6pt !important}
+  .print-matrix td span + span{margin-top:1.1mm !important;border-top:.4pt dashed #9aa3a0 !important;padding-top:1.1mm !important}
+  /* A cell is a small paragraph with an order of importance, not three lines of
+     the same weight: the course leads, the teacher follows in a lighter hand,
+     and the catalogue numbers sit smallest — so a reader scanning a wall of
+     halls finds the course first every time. */
+  .print-matrix td b{
+    display:block !important;font-weight:700 !important;font-size:6.8pt !important;
+    color:#111 !important;line-height:1.25 !important;
+  }
+  .print-matrix td i{
+    display:block !important;font-style:normal !important;font-weight:400 !important;
+    color:#3d4644 !important;font-size:6.2pt !important;line-height:1.25 !important;
+  }
   .print-matrix td u{
     display:block !important;text-decoration:none !important;color:#666 !important;
     font-family:"Plex Mono",ui-monospace,monospace !important;font-size:5.6pt !important;
