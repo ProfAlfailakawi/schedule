@@ -13,6 +13,7 @@ import { buildCalendar, escapeText, foldLine } from "../src/utils/icalendar";
 import { createPresenceClient, createPresencePainter, type PresencePeer } from "../src/components/schedulePresence";
 import { readSettledDrift, settledTerm } from "../src/utils/settledDrift";
 import { reachAboutCard, unreachable, whatsappNumber } from "../src/utils/reachInstructor";
+import { learnRhythm, offRhythm, describeRhythm } from "../src/utils/departmentRhythm";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -622,6 +623,99 @@ async function runTests() {
     const noNumber: any = { AdInstructorId: 2, AdInstructorName: "د. سلطان", AdInstructorMobile: "" };
     assert(reachAboutCard(noNumber, "https://x.test/s/abc").href === null, "no number means no dead link");
     assert(unreachable([person, noNumber]).length === 1, "the unreachable are named so the record can be fixed");
+  }
+
+  /* --- 16. The style a department keeps, learned from its own history ------ */
+  originalLog("\n--- 16. Department rhythm ---");
+  {
+    let seed = 100;
+    const at = (day: string, from: string, to: string, term = 1): any => ({
+      id: seed++, AdTermId: term, AdCollegeId: 1, AdSectionId: 1, AdCourseId: seed, AdInstructorId: 0,
+      SCode: String(seed), fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      [day]: true, fstarttime: from, fendtime: to, AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+    });
+
+    /* A department with TWO rhythms, as a Kuwaiti week actually has. Sunday,
+       Tuesday and Thursday run an hour with ten minutes between; Monday and
+       Wednesday run an hour and a half with the same break. Ten terms of it,
+       because a habit is what survives across years. */
+    const history: any[] = [];
+    for (let term = 1; term <= 10; term += 1) {
+      for (const day of ["fsunday", "ftuesday", "fthursday"])
+        history.push(at(day, "08:00", "09:00", term), at(day, "09:10", "10:10", term),
+                     at(day, "10:20", "11:20", term));
+      for (const day of ["fmonday", "fwednesday"])
+        history.push(at(day, "08:00", "09:30", term), at(day, "09:40", "11:10", term));
+    }
+    const reading = learnRhythm(history);
+
+    assert(reading.patterns.length === 2, "a week with two interleaved patterns is read as two");
+    const odd = reading.forDay("fsunday" as any)!;
+    const even = reading.forDay("fmonday" as any)!;
+    assert(odd.days.includes("ftuesday" as any) && odd.days.includes("fthursday" as any),
+      "Sunday shares its rhythm with Tuesday and Thursday");
+    assert(even.days.includes("fwednesday" as any) && !even.days.includes("fsunday" as any),
+      "Monday shares its rhythm with Wednesday alone");
+
+    assert(odd.breakMinutes === 10 && even.breakMinutes === 10,
+      "the ten-minute break is read back out of the rows, on both patterns");
+    assert(odd.durationMinutes === 60, `Sun/Tue/Thu lectures are an hour (got ${odd.durationMinutes})`);
+    assert(even.durationMinutes === 90, `Mon/Wed lectures are an hour and a half (got ${even.durationMinutes})`);
+    // The whole reason for reading per pattern: one average would be 72
+    // minutes, which is a length this department has never once used.
+    assert(odd.durationMinutes !== even.durationMinutes, "and the two are never averaged into one");
+    assert(odd.ladder.includes("08:00") && odd.ladder.includes("09:10"), "the habitual start ladder is learned");
+    assert(reading.learnedFrom.terms === 10, "the reading states how much history it rests on");
+
+    /* THE CASE THIS EXISTS FOR: someone types 08:55 on a Monday where every
+       Monday for ten years has begun at 08:00 or 09:40. Invisible to every
+       other check in the program — no clash, no rule, nothing. */
+    const slip = offRhythm({ fmonday: true, fstarttime: "09:35", fendtime: "11:05" } as any, reading);
+    assert(slip.includes("09:40") && slip.includes("09:35"),
+      `a five-minute slip is named with the habit it missed (got "${slip}")`);
+    assert(slip.includes("الاثنين"), "and the day it belongs to");
+
+    // A deliberately different hour is a decision, not a slip, and is silent.
+    assert(offRhythm({ fmonday: true, fstarttime: "14:00", fendtime: "15:30" } as any, reading) === "",
+      "a different hour altogether is a decision, and is not remarked on");
+    // An unusual LENGTH is remarked on, whatever the hour.
+    const wrongLength = offRhythm({ fsunday: true, fstarttime: "08:00", fendtime: "10:30" } as any, reading);
+    assert(wrongLength.includes("مدة"), `an off-pattern length is named (got "${wrongLength}")`);
+    // Following the habit exactly says nothing at all.
+    assert(offRhythm({ fsunday: true, fstarttime: "09:10", fendtime: "10:10" } as any, reading) === "",
+      "a lecture that follows the habit is silent");
+
+    // Refusing to guess: no habit, no claim.
+    const noHabit = ["fsunday", "fmonday", "ftuesday", "fwednesday"].flatMap(day => [
+      at(day, "08:00", "09:00"), at(day, "09:05", "10:00"), at(day, "10:20", "11:15")]);
+    const vague = learnRhythm(noHabit);
+    assert(vague.patterns.every(pattern => pattern.breakMinutes === 0),
+      "a department with no single habit is told nothing about breaks");
+    assert(learnRhythm([]).patterns.every(pattern => !pattern.breakMinutes && !pattern.durationMinutes),
+      "an empty history states nothing");
+    assert(describeRhythm(learnRhythm([])) === "", "and has no sentence to say");
+    assert(describeRhythm(reading).includes("10 دقائق") && describeRhythm(reading).includes("60 دقيقة"),
+      "the sentence carries both rhythms");
+    // Arabic counts three ways; «10 فصلاً» reads as machine output.
+    assert(describeRhythm(reading).includes("10 فصول"), "and counts the terms the way Arabic does");
+    const oneTerm = learnRhythm(history.filter(row => row.AdTermId === 1));
+    assert(describeRhythm(oneTerm).includes("فصل واحد") || describeRhythm(oneTerm) === "",
+      "a single term is counted as one, not as «1 فصول»");
+
+    /* The learned break, handed to the sweep. Exactly ten is fine; tighter is
+       a remark and never a refusal. */
+    const room = (id: number, from: string, to: string): any => ({
+      id, AdTermId: 1, AdCollegeId: 1, AdSectionId: 1, AdCourseId: id, AdInstructorId: 0, SCode: String(id),
+      fsunday: true, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: from, fendtime: to, AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+    });
+    const exactly = [room(1, "08:00", "09:00"), room(2, "09:10", "10:10")];
+    assert(findConflicts(exactly, exactly, { doorwayMinutes: 10 }).length === 0,
+      "a break of exactly the learned length is not a finding");
+    const tooTight = [room(1, "08:00", "09:00"), room(2, "09:05", "10:05")];
+    const caught = findConflicts(tooTight, tooTight, { doorwayMinutes: 10 })[0];
+    assert(caught?.type === "doorway" && caught.severity === "low",
+      "five minutes where the department keeps ten is remarked on, softly");
   }
 
   if (!originalDb) {

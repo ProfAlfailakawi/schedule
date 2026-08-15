@@ -20,6 +20,7 @@ import {
   GripVertical,
   History,
   Inbox,
+  Timer,
   Hourglass,
   Layers,
   Palette,
@@ -4345,6 +4346,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const [drift, setDrift] = useState<any>(null);
   const [driftOpen, setDriftOpen] = useState(false);
+  /**
+   * The break the department already keeps.
+   *
+   * Nobody should be asked to type a number the schedule has been stating for
+   * years. The server reads it back out of the rows and offers it here, once,
+   * as a sentence with one button — and once it is declared or waved away the
+   * offer is gone for good.
+   */
+  const [habit, setHabit] = useState<any>(null);
+  const habitDismissed = useRef(false);
   /** What the department's own instructors have said, and not yet been answered. */
   const [inbox, setInbox] = useState<any[]>([]);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -4354,7 +4365,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     void fetch(`/api/intelligence/settled-drift?collegeId=${filterCollege}&sectionId=${filterSection}`,
       { credentials: "include" })
       .then(response => (response.ok ? response.json() : null))
-      .then(data => { if (alive) setDrift(data?.watching && data.total ? data : null); })
+      .then(data => {
+        if (!alive) return;
+        setDrift(data?.watching && data.total ? data : null);
+        // Offered once. A department that declines it, or declares the rule,
+        // never sees this line again.
+        setHabit(data?.habit && !habitDismissed.current ? data.habit : null);
+      })
       .catch(() => undefined);
     return () => { alive = false; };
     // liveFeedSerial changes when the live channel reports a write anywhere.
@@ -6448,6 +6465,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 {/* The schedule lens UI was removed with its toolbar button; the
                     lens state remains inert (lensActive stays false) so week
                     cards render without any dimming. */}
+            {/* What the program has worked out about this department, from its
+                whole history. It is not an offer and there is nothing to press:
+                the conflict engine already obeys it. This only lets a person
+                see what it believes, and correct it by scheduling differently. */}
+            {habit ? (
+              <div className="rhythm-offer" role="note">
+                <Timer aria-hidden="true" />
+                <p>
+                  {habit.sentence}
+                  <em>يُطبَّق تلقائياً كتنبيه لطيف — لا يمنع أي حفظ.</em>
+                </p>
+                <button
+                  type="button"
+                  className="rhythm-hide"
+                  onClick={() => { setHabit(null); habitDismissed.current = true; }}
+                  aria-label="إخفاء"
+                ><X aria-hidden="true" /></button>
+              </div>
+            ) : null}
             <div
               className={`week-note ${physicsActive ? "gravity-note-active" : ""}`}
             >

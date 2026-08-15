@@ -15,6 +15,7 @@ import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
+import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
@@ -1634,21 +1635,47 @@ function describeScheduleChange(before: any, after: any, instructorName?: (id: n
 }
 
 /**
- * How many minutes this department says its doors need.
+ * ── ما تعلّمه النظام من عشر سنوات ───────────────────────────────────────────
  *
- * Read from the rules the department already writes for itself — no new store,
- * no new screen concept. Absent means the rule was never declared, and an
- * undeclared rule must produce no findings at all rather than a default that
- * nobody chose.
+ * The department's own style, read out of its entire history — every term it
+ * has ever scheduled, not just the one on screen. Nobody declares it and
+ * nobody is asked for it; a habit repeated a few thousand times is a stronger
+ * statement than any settings field.
+ *
+ * Cached per department against the same change beacon the live feed already
+ * runs on, so reading it costs one pass over the rows and then nothing at all
+ * until some schedule somewhere is written.
+ *
+ * A declared rule still wins. If a department has explicitly stated a doorway,
+ * that number is used and the learned one is not — a person who says something
+ * out loud outranks a pattern the software inferred.
  */
-async function declaredDoorway(row:any):Promise<number>{
+const rhythmCache=new Map<string,{serial:number;reading:RhythmReading;doorway:number}>();
+
+async function departmentStyle(row:any):Promise<{reading:RhythmReading|null;doorway:number}>{
   const collegeId=Number(row?.AdCollegeId||0),sectionId=Number(row?.AdSectionId||0),termId=Number(row?.AdTermId||0);
-  if(!collegeId||!termId)return 0;
+  if(!collegeId)return{reading:null,doorway:0};
+  const key=`${collegeId}:${sectionId}`;
+  const cached=rhythmCache.get(key);
+  if(cached&&cached.serial===driftSerial)
+    return{reading:cached.reading,doorway:cached.doorway};
   try{
-    const rules=await Repository.getScheduleConstraints(collegeId,sectionId,termId);
-    const rule=rules.find(item=>item.type==="room_doorway"&&item.enabled!==false);
-    return Math.max(0,Math.min(60,Number(rule?.maxMinutes||0)));
-  }catch{return 0;}
+    // Every term this department has ever run. History is the whole point:
+    // a habit is what survives across years, and one term of it is chance.
+    const history=(await Repository.getSchedules()).filter(item=>
+      Number(item.AdCollegeId)===collegeId&&(!sectionId||Number(item.AdSectionId)===sectionId));
+    const reading=learnRhythm(history);
+    const rules=termId?await Repository.getScheduleConstraints(collegeId,sectionId,termId).catch(()=>[]):[];
+    const declared=Number(rules.find(item=>item.type==="room_doorway"&&item.enabled!==false)?.maxMinutes||0);
+    /* The learned break is per pattern; the sweep takes one number, so it takes
+       the SMALLEST habit across patterns. Flagging at the tighter of the two
+       cannot invent a finding on the looser one. */
+    const learned=Math.min(...reading.patterns.map(p=>p.breakMinutes||Infinity));
+    const doorway=Math.max(0,Math.min(60,declared||(Number.isFinite(learned)?learned:0)));
+    rhythmCache.set(key,{serial:driftSerial,reading,doorway});
+    if(rhythmCache.size>200)rhythmCache.clear();
+    return{reading,doorway};
+  }catch{return{reading:null,doorway:0};}
 }
 
 async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
@@ -1661,7 +1688,8 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     roomScopeNotice(candidate),
   ]);
   const all=candidateRows.filter(item=>item.id!==excludeId);
-  const raw=findConflicts([candidate],all,{doorwayMinutes:await declaredDoorway(candidate)});
+  const style=await departmentStyle(candidate);
+  const raw=findConflicts([candidate],all,{doorwayMinutes:style.doorway});
   const conflicts=raw.map((conflict:any)=>{
     /* The turnaround rule is advice, not a refusal. `soft` is what keeps it out
        of the blocked list in move-batch and out of the 409 on save — a
@@ -1684,7 +1712,16 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",detail:visible&&other?`نفس الأيام ونفس الوقت ${other.fstarttime}-${other.fendtime}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
   });
   const softTravel = await interCampusWarnings(candidate, all);
-  return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel];
+  /* The department's own habit, broken. Not an error — a lecture beginning at
+     08:55 where every other lecture on that day has begun at 08:50 for ten
+     years is almost always a slip of the finger, and occasionally a decision.
+     So it is said once, softly, and never refuses a save. */
+  const habit = style.reading ? offRhythm(candidate, style.reading) : "";
+  const rhythmNote = habit
+    ? [{ type: "rhythm", severity: "low", soft: true, rowId: 0, otherId: 0,
+         message: "خارج إيقاع القسم المعتاد", detail: habit }]
+    : [];
+  return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel, ...rhythmNote];
 }
 
 /**
@@ -2935,8 +2972,12 @@ app.get("/api/intelligence/constraints", requirePermission(7), requirePowerAdmin
 });
 app.post("/api/intelligence/constraints", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const type=String(req.body?.type||"");const allowed=new Set(["instructor_latest_end","instructor_day_off","department_day_off","course_room","max_instructor_gap"]);if(!allowed.has(type)){res.status(400).json({error:"نوع القاعدة غير صالح"});return;}
-  const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);const instructorId=Number(req.body?.AdInstructorId||0),courseId=Number(req.body?.AdCourseId||0),day=String(req.body?.day||""),time=String(req.body?.time||"").slice(0,5),roomCode=String(req.body?.roomCode||"").trim().slice(0,40),roomHall=String(req.body?.roomHall||"").trim().slice(0,40),maxMinutes=Math.max(30,Math.min(480,Number(req.body?.maxMinutes||120)));
+  const type=String(req.body?.type||"");const allowed=new Set(["instructor_latest_end","instructor_day_off","department_day_off","course_room","max_instructor_gap","room_doorway"]);if(!allowed.has(type)){res.status(400).json({error:"نوع القاعدة غير صالح"});return;}
+  const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);const instructorId=Number(req.body?.AdInstructorId||0),courseId=Number(req.body?.AdCourseId||0),day=String(req.body?.day||""),time=String(req.body?.time||"").slice(0,5),roomCode=String(req.body?.roomCode||"").trim().slice(0,40),roomHall=String(req.body?.roomHall||"").trim().slice(0,40),maxMinutes=type==="room_doorway"
+    // A doorway is a handful of minutes; the instructor-gap clamp starts at
+    // thirty and would silently turn a ten-minute break into half an hour.
+    ?Math.max(1,Math.min(60,Number(req.body?.maxMinutes||0)))
+    :Math.max(30,Math.min(480,Number(req.body?.maxMinutes||120)));
   const instructor=instructors.find(i=>i.AdInstructorId===instructorId),course=courses.find(c=>c.AdCourseId===courseId&&c.AdCollegeId===collegeId&&c.AdSectionId===sectionId);
   if((type==="instructor_latest_end"||type==="instructor_day_off"||(type==="max_instructor_gap"&&instructorId))&&!instructor){res.status(400).json({error:"اختر أستاذ مقرر صالح"});return;}
   if(type==="instructor_latest_end"&&(!/^\d{2}:\d{2}$/.test(time)||timeToMinutes(time)<SCHEDULE_DAY_START||timeToMinutes(time)>SCHEDULE_DAY_END)){res.status(400).json({error:`حدد آخر وقت مسموح بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`});return;}
@@ -3286,10 +3327,37 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
 
   const terms = await Repository.getTerms();
   const { term } = settledTerm(terms);
+  const newest = [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId))[0];
+
+  /* What the system has worked out about this department, so the board can
+     show it rather than ask for it. It is a statement, not an offer — there is
+     nothing here to accept. */
+  const readHabit = async () => {
+    const style = await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId,
+      AdTermId: newest?.AdTermId || 0 });
+    if (!style.reading) return null;
+    const sentence = describeRhythm(style.reading);
+    return sentence ? {
+      sentence,
+      patterns: style.reading.patterns
+        .filter(pattern => pattern.breakMinutes || pattern.durationMinutes)
+        .map(pattern => ({
+          days: pattern.days, breakMinutes: pattern.breakMinutes,
+          durationMinutes: pattern.durationMinutes, durationRange: pattern.durationRange,
+          ladder: pattern.ladder, lectures: pattern.lectures,
+        })),
+      learnedFrom: style.reading.learnedFrom,
+    } : null;
+  };
+
   if (!term) {
     // Nothing has been closed yet, and saying "no problems" would be a claim
     // about a check that has not run.
-    const body = { watching: false, reason: "لا يوجد فصل معتمد بعد — الاعتماد يتحقق بإنشاء الفصل التالي." };
+    const body = {
+      watching: false,
+      reason: "لا يوجد فصل معتمد بعد — الاعتماد يتحقق بإنشاء الفصل التالي.",
+      habit: await readHabit(),
+    };
     driftCache.set(key, { serial: driftSerial, body });
     res.json(body);
     return;
@@ -3310,9 +3378,12 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
   const courses = reading.findings.length ? await Repository.getCourses() : [];
   const nameOf = (row: any) => row?.AdCourseName
     || courses.find(course => course.AdCourseId === row?.AdCourseId)?.CourseName || "موعد";
+  const habit = await readHabit();
   const body = {
     watching: true,
     term: { id: term.AdTermId, name: term.AdTermName },
+    // The habit the department keeps but has never written down.
+    habit,
     scanned: reading.scanned,
     total: reading.findings.length,
     foreign: reading.foreign,
