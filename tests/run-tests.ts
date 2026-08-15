@@ -6,6 +6,7 @@ import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
 import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../src/utils/weekVisual";
 import { findConflicts } from "../src/utils/scheduleIntelligence";
+import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -220,6 +221,61 @@ async function runTests() {
     await Repository.deleteSchedule(second.id);
   }
 
+
+  /* --- 8. Repair chains: the domino, and the promise of the shortest one ---- */
+  originalLog("\n--- 8. Least-impact repair chains ---");
+  {
+    let seed = 1;
+    const card = (over: any): any => ({
+      id: seed++, AdCollegeId: 1, AdSectionId: 1, AdTermId: 27, AdCourseId: 1, AdCourseName: "مقرر",
+      SCode: String(100 + seed), AdInstructorId: 1,
+      fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+      ...over,
+    });
+
+    const a = card({ fsunday: true, AdInstructorId: 1, AdCourseName: "أ" });
+    const b = card({ fsunday: true, AdInstructorId: 2, AdCourseName: "ب" });
+    const simple = findRepairChain(b, [a, b]);
+    assert(!!simple, "a chain is found for a plain two-card clash");
+    assert(simple!.moves.length === 1, "and it is ONE move — the shortest chain wins, not the first found");
+    assert(simple!.after === 0 && simple!.after < simple!.before, "the clash is gone and the board is strictly better");
+
+    // A day with no free hour left: the fix has to displace something.
+    const crowded: any[] = [];
+    for (let hour = 8; hour < 13; hour++)
+      crowded.push(card({ fsunday: true, AdInstructorId: 1, AdCourseName: `س${hour}`,
+        fstarttime: `${String(hour).padStart(2, "0")}:00`, fendtime: `${String(hour + 1).padStart(2, "0")}:00` }));
+    const intruder = card({ fsunday: true, AdInstructorId: 9, AdCourseName: "الدخيل", fstarttime: "09:00", fendtime: "10:00" });
+    crowded.push(intruder);
+    const domino = findRepairChain(intruder, crowded, { maxDepth: 4 });
+    assert(!!domino, "a chain is found on a crowded day");
+    assert(domino!.after < domino!.before, "the crowded case ends with fewer conflicts than it began");
+    assert(new Set(domino!.moves.map(m => m.id)).size === domino!.moves.length, "no card is moved twice in one chain");
+
+    // A board with nowhere to go must refuse rather than invent.
+    const full: any[] = [];
+    for (let hour = 8; hour < 20; hour++)
+      for (const hall of ["F6", "F7"])
+        full.push(card({ fsunday: true, fmonday: true, ftuesday: true, fwednesday: true, fthursday: true,
+          AdInstructorId: 1, AdRoomHall: hall, AdCourseName: `ملء${hour}${hall}`,
+          fstarttime: `${String(hour).padStart(2, "0")}:00`, fendtime: `${String(hour + 1).padStart(2, "0")}:00` }));
+    const stuck = findRepairChain(full[0], full, { maxDepth: 2, maxBranch: 3 });
+    assert(stuck === null || stuck.after <= stuck.before, "an impossible board yields no chain, never a worse one");
+
+    // A hall closes tomorrow: every lecture in it must find somewhere else.
+    const hallRows = [
+      card({ fsunday: true, AdInstructorId: 1, AdRoomHall: "F6", AdCourseName: "أ" }),
+      card({ fsunday: true, AdInstructorId: 2, AdRoomHall: "F6", AdCourseName: "ب", fstarttime: "10:00", fendtime: "11:00" }),
+      card({ fmonday: true, AdInstructorId: 3, AdRoomHall: "F7", AdCourseName: "ج" }),
+    ];
+    const closed = hallRows.filter(row => row.AdRoomHall === "F6");
+    const rescue = planDisruption(closed, hallRows, { maxDepth: 3 });
+    assert(!!rescue, "a rescue plan exists when a hall closes");
+    assert(rescue!.moves.length === closed.length, "every lecture in the closed hall is moved");
+    assert(rescue!.moves.every(move => move.roomHall !== "F6"), "and none of them stays in the hall that closed");
+    assert(rescue!.after <= rescue!.before, "the rescue leaves no new conflict behind");
+  }
 
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");

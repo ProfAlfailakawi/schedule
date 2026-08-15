@@ -112,6 +112,7 @@ import {
 import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
+import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
 import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../utils/weekVisual";
@@ -4184,6 +4185,81 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * that is not possible right now says so by being dimmed; one that makes no
    * sense at all is simply absent.
    */
+  /**
+   * ── أصلح بأقل أثر ─────────────────────────────────────────────────────────
+   *
+   * The chain is searched, shown whole, and only then written — as one atomic
+   * batch through the same door a drag uses, so either every card in it lands
+   * or none does. Nothing here decides anything: the sheet states the cost in
+   * plain numbers and waits.
+   */
+  const [repair, setRepair] = useState<RepairChain | null>(null);
+  const [repairing, setRepairing] = useState(false);
+
+  const proposeRepair = useCallback(() => {
+    const first = rows.find(row => liveClash.ids.has(row.id));
+    if (!first) { setMessage("لا يوجد تداخل في هذا النطاق."); return; }
+    setRepairing(true);
+    // The search is synchronous and bounded; a frame is yielded first so the
+    // press feels answered rather than frozen.
+    window.setTimeout(() => {
+      try {
+        const chain = findRepairChain(first, rows);
+        if (!chain) setMessage("لم أجد سلسلة إصلاح لا تُنشئ تعارضاً جديداً. جرّب تحرير قاعة أو ساعة أولاً.");
+        else setRepair(chain);
+      } finally {
+        setRepairing(false);
+      }
+    }, 0);
+  }, [rows, liveClash]);
+
+  const applyRepair = useCallback(async () => {
+    if (!repair) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const payload = repair.moves.map(move => ({
+        id: move.id,
+        rev: move.before.rev,
+        fields: {
+          fsunday: move.day === "fsunday", fmonday: move.day === "fmonday",
+          ftuesday: move.day === "ftuesday", fwednesday: move.day === "fwednesday",
+          fthursday: move.day === "fthursday",
+          fstarttime: move.start, fendtime: move.end,
+          AdRoomCode: move.roomCode, AdRoomHall: move.roomHall,
+        },
+      }));
+      const outcome = await fetchJson("/api/schedules/move-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ strict: strictNoConflict, moves: payload }),
+      });
+      if (Array.isArray(outcome?.rows) && outcome.rows.length) {
+        const written = new Map<number, FSchedule>(outcome.rows.map((row: FSchedule) => [row.id, row]));
+        setRows(current => current.map(row => written.get(row.id) || row));
+      }
+      // Every card in the chain wears the same marks a hand-made move wears.
+      repair.moves.forEach(move => markChanged(move.id));
+      leaveMoveTraces(repair.moves.map(move => ({
+        before: move.before,
+        after: { ...move.before, fstarttime: move.start, fendtime: move.end,
+          AdRoomCode: move.roomCode, AdRoomHall: move.roomHall } as FSchedule,
+      })));
+      offerUndo(
+        `إصلاح بسلسلة ${repair.moves.length.toLocaleString("ar-KW-u-nu-latn")} حركات`,
+        repair.moves.map(move => restoreStep(move.before)),
+      );
+      setRepair(null);
+      setMessage(`نُفِّذت السلسلة — ${repair.moves.length} حركات، والتداخل ${repair.before} ← ${repair.after}.`);
+    } catch (e: any) {
+      if (e?.revisionConflict) setClash({ current: e.current, yours: null });
+      else setError(friendlyError(e));
+      void loadRows({ silent: true });
+    } finally {
+      setSaving(false);
+    }
+  }, [repair, strictNoConflict]);
+
   const commands = useMemo<ScheduleCommand[]>(() => {
     const inWeek = viewMode === "week";
     const list: ScheduleCommand[] = [
@@ -4213,6 +4289,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         id: "schedule.clash", group: "الجدول", label: "الانتقال إلى التداخل",
         keywords: ["conflict", "تعارض", "تداخل"], icon: <AlertTriangle />, enabled: liveClash.pairs > 0,
         execute: () => { changeView("week"); setReviewFocus(new Set([...liveClash.ids])); },
+      },
+      {
+        id: "schedule.repair", group: "الجدول", label: "أصلح التداخل بأقل أثر",
+        keywords: ["repair", "fix", "اصلاح", "تعارض", "تداخل", "سلسلة"],
+        icon: <WandSparkles />, enabled: liveClash.pairs > 0 && !repairing,
+        execute: proposeRepair,
       },
       { id: "schedule.review", group: "الجدول", label: "مراجعة الاعتماد", keywords: ["review", "اعتماد", "مراجعة"], icon: <ClipboardCheck />, execute: () => setReviewOpen(true) },
       { id: "schedule.focus", group: "العرض", label: focusMode ? "إنهاء التركيز" : "وضع التركيز", keywords: ["focus", "تركيز"], icon: <Focus />, execute: () => { setFocusMode(!focusMode); setPresentationMode(false); if (!focusMode) changeView("week"); } },
@@ -6817,6 +6899,46 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         beside what they were about to write, and offers to keep theirs (which
         re-sends on top of the current revision) or to take the newer one.
       */}
+      {/* The chain, whole, before anything is written. */}
+      {repair ? (
+        <div className="views-dialog-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) setRepair(null); }}>
+          <div className="views-dialog repair-sheet" role="dialog" aria-modal="true" aria-label="سلسلة إصلاح مقترحة">
+            <header>
+              <strong>سلسلة إصلاح مقترحة</strong>
+              <button type="button" onClick={() => setRepair(null)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+            </header>
+            <div className="repair-cost">
+              <span><b>{repair.moves.length.toLocaleString("ar-KW-u-nu-latn")}</b> حركات</span>
+              <span><b>{repair.before.toLocaleString("ar-KW-u-nu-latn")} ← {repair.after.toLocaleString("ar-KW-u-nu-latn")}</b> تداخل</span>
+              <span><b>{repair.instructorsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> أساتذة متأثرون</span>
+              <span><b>{repair.roomsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> قاعات</span>
+            </div>
+            <ol className="repair-steps">
+              {repair.moves.map((move, index) => (
+                <li key={move.id}>
+                  <span className="repair-index">{index + 1}</span>
+                  <div>
+                    <strong>{move.before.AdCourseName || courseById.get(move.before.AdCourseId)?.CourseName || `موعد ${move.id}`}</strong>
+                    <em>{move.because}</em>
+                    <span className="repair-line">
+                      <bdi>{arabicDays(move.before) || "بلا يوم"} · {move.before.fstarttime}</bdi>
+                      {" ← "}
+                      <bdi>{days.find(d => d.key === move.day)?.label} · {move.start} · {move.roomCode}/{move.roomHall}</bdi>
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <p className="repair-note">لن يُكتب شيء حتى تضغط التنفيذ، وتُنفَّذ السلسلة كاملة أو لا تُنفَّذ.</p>
+            <footer>
+              <button type="button" className="views-dialog-cancel" onClick={() => setRepair(null)}>تجاهل</button>
+              <button type="button" className="views-dialog-save" disabled={saving} onClick={() => void applyRepair()}>
+                {saving ? "أنفّذ…" : "نفّذ السلسلة"}
+              </button>
+            </footer>
+          </div>
+        </div>
+      ) : null}
       {clash ? (
         <div className="views-dialog-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) setClash(null); }}>
           <div className="views-dialog clash-sheet" role="dialog" aria-modal="true" aria-label="تغيّر هذا الموعد أثناء عملك">

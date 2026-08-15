@@ -1323,3 +1323,27 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-
 @media (prefers-reduced-motion:reduce){
   .journey,.journey-backdrop{animation:none}
 }
+
+/* The repair chain, stated before it is written: what moves, why, and the cost. */
+.repair-sheet{width:min(560px,100%)}
+.repair-cost{
+  display:flex;flex-wrap:wrap;gap:var(--s2) var(--s4);
+  padding:var(--s3);border-radius:var(--r-md);
+  background:var(--surface-2);border:1px solid var(--line);
+  font-size:var(--t-xs);color:var(--muted);
+}
+.repair-cost b{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.repair-steps{list-style:none;margin:0;padding:0;display:grid;gap:var(--s2);max-height:38vh;overflow-y:auto}
+.repair-steps li{display:flex;gap:var(--s2);align-items:flex-start}
+.repair-index{
+  flex:none;width:22px;height:22px;display:grid;place-items:center;
+  border-radius:var(--r-full);background:var(--accent-soft);color:var(--accent-ink);
+  font:700 10px/1 var(--font-mono);
+}
+.repair-steps strong{display:block;font-size:var(--t-sm);font-weight:650;color:var(--ink)}
+.repair-steps em{display:block;font-style:normal;font-size:var(--t-xs);color:var(--muted)}
+.repair-line{
+  display:block;margin-top:2px;font-size:var(--t-xs);color:var(--ink-2);
+  font-variant-numeric:tabular-nums;
+}
+.repair-note{margin:0;font-size:var(--t-xs);color:var(--muted);line-height:1.7}
