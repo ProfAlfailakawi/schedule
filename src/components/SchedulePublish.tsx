@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, Check, Copy, IdCard, Link2, QrCode, Trash2, Users, X } from "lucide-react";
+import { CalendarPlus, Check, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
+import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
+import type { AdInstructor } from "../types";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
 
 interface ShareLink {
@@ -129,6 +131,28 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
   };
 
   const publicUrl = (id: string) => `${window.location.origin}/s/${id}`;
+  /**
+   * ── التسليم ────────────────────────────────────────────────────────────
+   *
+   * A staff link that nobody receives is a link that does not exist. This is
+   * the last mile, and it turns out the department already had everything it
+   * needed for it: every instructor record carries a mobile number.
+   *
+   * Nothing is sent by this program. Each row opens a conversation with the
+   * message already written; a person presses send. That is the property that
+   * makes it safe — the system can address people, and only a human can
+   * contact them.
+   */
+  const [deliver, setDeliver] = useState<string | null>(null);
+  const [staff, setStaff] = useState<AdInstructor[]>([]);
+  const [sent, setSent] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    if (!deliver) return;
+    void fetch(`/api/instructors?sectionId=${sectionId}&termId=${termId}`, { credentials: "include" })
+      .then(response => (response.ok ? response.json() : []))
+      .then(data => setStaff(Array.isArray(data) ? data : []))
+      .catch(() => setStaff([]));
+  }, [deliver, sectionId, termId]);
   // The QR encodes the same public link. The ~50KB encoder is lazy-loaded, so it
   // only ships to the browser when someone actually asks for a code.
   const showQr = async (id: string) => {
@@ -392,7 +416,17 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                           >
                             {copied === link.id ? <Check /> : <Copy />}
                           </button>
-                          {link.kind === "staff" ? null : (
+                          {link.kind === "staff" ? (
+                            <button
+                              type="button"
+                              title="تسليم البطاقة للأساتذة"
+                              aria-label="تسليم البطاقة للأساتذة"
+                              onClick={() => setDeliver(link.id)}
+                              disabled={dead}
+                            >
+                              <Send />
+                            </button>
+                          ) : (
                             <a
                               href={`/api/public/ics/${link.id}`}
                               title="إضافة إلى التقويم"
@@ -412,6 +446,55 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                           <div className="share-qr">
                             <div className="share-qr-code" role="img" aria-label={`رمز QR للرابط ${link.label || link.id.slice(0, 6)}`} dangerouslySetInnerHTML={{ __html: qr.svg }} />
                             <small>وجّه كاميرا الهاتف على الرمز لفتح الجدول المنشور.</small>
+                          </div>
+                        ) : null}
+                        {deliver === link.id ? (
+                          <div className="share-deliver">
+                            <p className="share-deliver-lead">
+                              كل سطر يفتح محادثة واتساب مكتوبة مسبقاً على جهازك. البرنامج لا يرسل شيئاً بنفسه.
+                            </p>
+                            {(() => {
+                              const missing = unreachable(staff);
+                              const reachable = staff.filter(person => whatsappNumber(person.AdInstructorMobile));
+                              return (
+                                <>
+                                  <ul className="share-deliver-list">
+                                    {reachable.map(person => {
+                                      const message = reachAboutCard(person, publicUrl(link.id));
+                                      const done = sent.has(person.AdInstructorId);
+                                      return (
+                                        <li key={person.AdInstructorId} className={done ? "sent" : ""}>
+                                          <span className="share-deliver-name">{person.AdInstructorName}</span>
+                                          <a
+                                            href={message.href || undefined}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            onClick={() => setSent(current => new Set(current).add(person.AdInstructorId))}
+                                          >
+                                            {done ? <Check /> : <Send />}
+                                            {done ? "فُتحت" : "افتح المحادثة"}
+                                          </a>
+                                        </li>
+                                      );
+                                    })}
+                                  </ul>
+                                  {/* Quietly the most useful thing here: the department
+                                      cannot know which records have no number until
+                                      something tries to use them. */}
+                                  {missing.length ? (
+                                    <p className="share-deliver-missing">
+                                      {missing.length.toLocaleString("ar-KW-u-nu-latn")} أستاذاً بلا رقم جوّال صالح:{" "}
+                                      {missing.slice(0, 6).map(person => person.AdInstructorName).join(" · ")}
+                                      {missing.length > 6 ? " …" : ""}
+                                    </p>
+                                  ) : null}
+                                  {!reachable.length && !missing.length ? (
+                                    <p className="share-deliver-missing">لا أساتذة في هذا النطاق بعد.</p>
+                                  ) : null}
+                                </>
+                              );
+                            })()}
+                            <GhostButton type="button" onClick={() => setDeliver(null)}>إغلاق التسليم</GhostButton>
                           </div>
                         ) : null}
                       </article>

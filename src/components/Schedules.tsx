@@ -19,6 +19,7 @@ import {
   Focus,
   GripVertical,
   History,
+  Inbox,
   Hourglass,
   Layers,
   Palette,
@@ -953,6 +954,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const presence = useMemo(createPresenceClient, []);
   const presencePaint = useMemo(() => createPresencePainter(), []);
   const [peers, setPeers] = useState<PresencePeer[]>([]);
+  /** Bumped whenever the live channel reports a write, so readings that depend
+   *  on the whole university can refresh without anyone polling for them. */
+  const [liveFeedSerial, setLiveFeedSerial] = useState(0);
   useEffect(() => () => presence.dispose(), [presence]);
   /** `silent` refreshes without the reading indicator — the live channel uses
    *  it so a colleague's change slides in without the screen looking busy. */
@@ -4330,6 +4334,40 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * The colliding cards themselves wear the ring in every view.
    */
   const liveClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+  /**
+   * What changed under the settled schedule while nobody was looking.
+   *
+   * Asked for once per department and re-asked only when the live feed says
+   * some schedule somewhere was written. It is silent by construction: the
+   * state is null until the server has something to report, and the strip below
+   * does not exist at all until then. A banner that is always present is a
+   * banner nobody reads.
+   */
+  const [drift, setDrift] = useState<any>(null);
+  const [driftOpen, setDriftOpen] = useState(false);
+  /** What the department's own instructors have said, and not yet been answered. */
+  const [inbox, setInbox] = useState<any[]>([]);
+  const [inboxOpen, setInboxOpen] = useState(false);
+  useEffect(() => {
+    if (mode !== "schedule" || !workspaceReady || !filterCollege) { setDrift(null); return; }
+    let alive = true;
+    void fetch(`/api/intelligence/settled-drift?collegeId=${filterCollege}&sectionId=${filterSection}`,
+      { credentials: "include" })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => { if (alive) setDrift(data?.watching && data.total ? data : null); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+    // liveFeedSerial changes when the live channel reports a write anywhere.
+  }, [mode, workspaceReady, filterCollege, filterSection, liveFeedSerial]);
+  const loadInbox = useCallback(() => {
+    if (mode !== "schedule" || !workspaceReady || !filterCollege || !filterTerm) { setInbox([]); return; }
+    void fetch(`/api/schedules/staff-inbox?collegeId=${filterCollege}&sectionId=${filterSection}&termId=${filterTerm}`,
+      { credentials: "include" })
+      .then(response => (response.ok ? response.json() : []))
+      .then(data => setInbox(Array.isArray(data) ? data : []))
+      .catch(() => undefined);
+  }, [mode, workspaceReady, filterCollege, filterSection, filterTerm]);
+  useEffect(loadInbox, [loadInbox]);
 
   /**
    * ── The command registry ──────────────────────────────────────────────────
@@ -4613,6 +4651,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     source.addEventListener("schedules", () => {
       window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(refreshQuietly, 250);
+      setLiveFeedSerial(current => current + 1);
     });
     source.onopen = () => setLiveFeed(true);
     source.onerror = () => setLiveFeed(false);
@@ -4644,6 +4683,115 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     liveRefreshPending.current = false;
     void loadRows({ silent: true }).catch(() => undefined);
   }, [saving, editor, physicsActive, draggingId]);
+  /**
+   * The settled-term sheet.
+   *
+   * Deliberately a reading, not a workspace: it names what changed and who
+   * changed it, and stops. Nothing here edits a term the department has closed
+   * — reopening one is a decision a person makes on the board, with all the
+   * ordinary checks, not a button on a warning.
+   */
+  const driftSheet = drift && driftOpen ? (
+    <div className="drift-sheet-backdrop no-print" role="presentation" onClick={() => setDriftOpen(false)}>
+      <section
+        className="drift-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={`ما تغيّر تحت ${drift.term?.name || "الفصل المعتمد"}`}
+        onClick={event => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <p className="drift-eyebrow">فصل معتمد · لم يعد أحد يعدّله</p>
+            <h2>{drift.term?.name || "الفصل المعتمد"}</h2>
+          </div>
+          <button type="button" onClick={() => setDriftOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+        </header>
+        <p className="drift-headline">{drift.headline}</p>
+        <ul className="drift-list">
+          {drift.findings.map((item: any) => (
+            <li key={`${item.rowId}:${item.otherId}`} className={item.foreign ? "drift-foreign" : ""}>
+              <div className="drift-row">
+                <strong>{item.name}</strong>
+                <time>{item.time}</time>
+                {item.room ? <span className="drift-room">{item.room}</span> : null}
+              </div>
+              <p>{item.detail}</p>
+              {item.foreign ? (
+                <p className="drift-source">
+                  {item.otherName ? `المصدر: ${item.otherName}` : "المصدر خارج نطاق عرضك"}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        <footer>{drift.limit}</footer>
+      </section>
+    </div>
+  ) : null;
+
+  /**
+   * The tray.
+   *
+   * Every note is pinned to the lecture it is about, so answering one is the
+   * ordinary act of opening that lecture — there is no second workflow here and
+   * nothing that edits a schedule from inside a message. «فهمت» resolves the
+   * note through the same endpoint the appointment panel already uses.
+   */
+  const inboxTray = inbox.length && inboxOpen ? (
+    <div className="drift-sheet-backdrop no-print" role="presentation" onClick={() => setInboxOpen(false)}>
+      <section
+        className="drift-sheet inbox-sheet"
+        role="dialog" aria-modal="true" aria-label="رسائل الأساتذة"
+        onClick={event => event.stopPropagation()}
+      >
+        <header>
+          <div>
+            <p className="drift-eyebrow">وصلت من بطاقات الأساتذة</p>
+            <h2>{inbox.length.toLocaleString("ar-KW-u-nu-latn")} رسالة تنتظر</h2>
+          </div>
+          <button type="button" onClick={() => setInboxOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+        </header>
+        <ul className="drift-list">
+          {inbox.map((note: any) => (
+            <li key={note.id} className={note.kind === "apology" ? "inbox-apology" : ""}>
+              <div className="drift-row">
+                <strong>{note.from}</strong>
+                {note.course ? <span className="drift-room">{note.course}</span> : null}
+                {note.time ? <time>{note.time}</time> : null}
+              </div>
+              <p>{note.text}</p>
+              <div className="inbox-actions">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const row = rows.find(item => item.id === note.scheduleId);
+                    setInboxOpen(false);
+                    if (row) { setViewMode("week"); setReviewFocus(new Set([row.id])); openContext(row); }
+                  }}
+                >افتح الموعد</button>
+                <button
+                  type="button"
+                  className="inbox-done"
+                  onClick={() => {
+                    setInbox(current => current.filter(item => item.id !== note.id));
+                    // The route that already resolves a note from the
+                    // appointment panel. A second one would be a second truth.
+                    void fetch(`/api/intelligence/comments/${note.scheduleId}/${encodeURIComponent(note.id)}`, {
+                      method: "PUT", headers: { "Content-Type": "application/json" },
+                      credentials: "include", body: JSON.stringify({ resolved: true }),
+                    }).catch(loadInbox);
+                  }}
+                >عولجت</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <footer>الرسالة ملاحظة بجانب الموعد؛ لا تغيّر الجدول بنفسها ولا تحجز شيئاً.</footer>
+      </section>
+    </div>
+  ) : null;
+
   const liveNotes = useMemo(() => {
     if (!filteredRows.length) return [];
     try {
@@ -5624,6 +5772,34 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             >
               <ClipboardCheck aria-hidden="true" />
               {liveNotes.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة
+            </button>
+          ) : null}
+          {/* What arrived from the department's own instructors. It is the only
+              chip here that is about people rather than rows, so it says who,
+              not how many. */}
+          {inbox.length ? (
+            <button
+              type="button"
+              className="schedule-radar radar-inbox"
+              onClick={() => setInboxOpen(true)}
+              title={`${inbox.length.toLocaleString("ar-KW-u-nu-latn")} رسالة من أساتذة القسم — اضغط للقراءة`}
+            >
+              <Inbox aria-hidden="true" />
+              {inbox.length.toLocaleString("ar-KW-u-nu-latn")} من الأساتذة
+            </button>
+          ) : null}
+          {/* The settled term. It appears only when it has something to say, and
+              what it says is about a term nobody is editing — so it is a mark,
+              not a colour, and it never joins the counters above. */}
+          {drift ? (
+            <button
+              type="button"
+              className={`schedule-radar radar-drift ${drift.foreign ? "radar-drift-foreign" : ""}`}
+              onClick={() => setDriftOpen(true)}
+              title={`${drift.headline} — اضغط للتفصيل`}
+            >
+              <History aria-hidden="true" />
+              {drift.term?.name || "الفصل المعتمد"}
             </button>
           ) : null}
           {!liveClash.pairs && !liveNotes.length && filteredRows.length ? (
@@ -7217,6 +7393,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           </div>
         </div>
       ) : null}
+      {driftSheet}
+      {inboxTray}
       {clash ? (
         <div className="views-dialog-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) setClash(null); }}>
           <div className="views-dialog clash-sheet" role="dialog" aria-modal="true" aria-label="تغيّر هذا الموعد أثناء عملك">

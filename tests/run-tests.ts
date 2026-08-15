@@ -11,6 +11,8 @@ import { readCampusFlow } from "../src/utils/campusFlow";
 import { describeRollover, readTermRollover } from "../src/utils/termRollover";
 import { buildCalendar, escapeText, foldLine } from "../src/utils/icalendar";
 import { createPresenceClient, createPresencePainter, type PresencePeer } from "../src/components/schedulePresence";
+import { readSettledDrift, settledTerm } from "../src/utils/settledDrift";
+import { reachAboutCard, unreachable, whatsappNumber } from "../src/utils/reachInstructor";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -528,6 +530,98 @@ async function runTests() {
     painter.clear();
     (globalThis as any).document = realDocument;
     (globalThis as any).requestAnimationFrame = realRaf;
+  }
+
+  /* --- 13. The doorway a hall needs ---------------------------------------- */
+  originalLog("\n--- 13. Doorway turnaround ---");
+  {
+    const at = (id: number, from: string, to: string, room = "12", hall = "F6"): any => ({
+      id, AdTermId: 1, AdCollegeId: 1, AdSectionId: 1, AdCourseId: id, AdInstructorId: 0, SCode: String(id),
+      fsunday: true, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: from, fendtime: to, AdRoomCode: room, AdRoomHall: hall, fdetail: "",
+    });
+    const back2back = [at(1, "08:00", "09:00"), at(2, "09:00", "10:00")];
+
+    // The rule is undeclared by default, and an undeclared rule must find nothing.
+    assert(findConflicts(back2back, back2back).length === 0,
+      "with no declared doorway, back-to-back lectures are not a finding");
+    const tight = findConflicts(back2back, back2back, { doorwayMinutes: 10 });
+    assert(tight.length === 1 && tight[0].type === "doorway", "a declared doorway catches the turnaround");
+    assert(tight[0].severity === "low", "and it is never as loud as a double booking");
+    assert(tight[0].detail.includes("0") && tight[0].detail.includes("10"),
+      "the finding states the gap it found and the gap it needs");
+
+    // Different halls empty through different doors.
+    const elsewhere = [at(1, "08:00", "09:00"), at(2, "09:00", "10:00", "14", "201")];
+    assert(findConflicts(elsewhere, elsewhere, { doorwayMinutes: 10 }).length === 0,
+      "two halls need no doorway between them");
+    // A real overlap must stay the louder finding and must not be counted twice.
+    const overlapping = [at(1, "08:00", "09:30"), at(2, "09:00", "10:00")];
+    const both = findConflicts(overlapping, overlapping, { doorwayMinutes: 10 });
+    assert(both.length === 1 && both[0].type === "room" && both[0].severity === "high",
+      "an overlap outranks a tight turnaround and is named once");
+    const roomy = [at(1, "08:00", "09:00"), at(2, "09:15", "10:00")];
+    assert(findConflicts(roomy, roomy, { doorwayMinutes: 10 }).length === 0,
+      "a gap wider than the doorway is silent");
+  }
+
+  /* --- 14. What changed under the settled schedule ------------------------- */
+  originalLog("\n--- 14. Settled-term drift ---");
+  {
+    const terms: any[] = [
+      { AdTermId: 1, AdTermName: "خريف 2026" },
+      { AdTermId: 2, AdTermName: "ربيع 2027" },
+    ];
+    // The department's own rule: creating the next term is what closes this one.
+    assert(settledTerm([terms[0]]).term === null, "one term alone means nothing is settled yet");
+    assert(settledTerm(terms).term?.AdTermId === 1, "the term before the newest is the settled one");
+
+    const at = (id: number, college: number, from: string, to: string): any => ({
+      id, AdTermId: 1, AdCollegeId: college, AdSectionId: 1, AdCourseId: id, AdInstructorId: 0, SCode: String(id),
+      fsunday: true, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: from, fendtime: to, AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+      AdCourseName: `مقرر ${id}`,
+    });
+    const mine = [at(1, 1, "08:00", "09:30")];
+    // Another college walked into the same hall, months after this was approved.
+    const intruder = at(9, 7, "09:00", "10:00");
+
+    const seen = readSettledDrift(terms, mine, [...mine, intruder], () => true);
+    assert(seen.findings.length === 1, "a foreign booking in a settled term is found");
+    assert(seen.findings[0].foreign, "and it is marked as coming from outside the department");
+    assert(seen.findings[0].other?.id === 9, "an entitled reader is told which lecture it is");
+    assert(seen.headline.includes("خريف 2026"), "the sentence names the term it is about");
+
+    const masked = readSettledDrift(terms, mine, [...mine, intruder], () => false);
+    assert(masked.findings.length === 1, "a reader outside that scope still learns the collision exists");
+    assert(masked.findings[0].other === null, "...but is never told whose lecture it is");
+    assert(masked.findings[0].detail.includes("خارج نطاق عرضك"), "and is told plainly why");
+
+    assert(readSettledDrift(terms, mine, mine, () => true).findings.length === 0,
+      "an untouched settled term reports nothing at all");
+    assert(readSettledDrift([terms[1]], mine, mine, () => true).headline === "",
+      "with nothing settled there is no sentence to say");
+  }
+
+  /* --- 15. Reaching an instructor ------------------------------------------ */
+  originalLog("\n--- 15. Reaching an instructor ---");
+  {
+    assert(whatsappNumber("99001122") === "96599001122", "a local Kuwaiti mobile gains its country code");
+    assert(whatsappNumber("96599001122") === "96599001122", "a number that already carries it is left alone");
+    assert(whatsappNumber("+965 6600 1122") === "96566001122", "spaces and a plus sign are ignored");
+    assert(whatsappNumber("22334455") === null, "a landline is refused rather than guessed at");
+    assert(whatsappNumber("") === null && whatsappNumber("لا يوجد") === null, "an empty or textual field is refused");
+
+    const person: any = { AdInstructorId: 1, AdInstructorName: "د. نورة العجمي", AdInstructorMobile: "99001122" };
+    const message = reachAboutCard(person, "https://x.test/s/abc");
+    assert(message.href?.startsWith("https://wa.me/96599001122?text="), "the conversation opens with the right number");
+    assert(message.text.includes("https://x.test/s/abc"), "the card's own address is in the message");
+    // A message is forwarded; a link is not. No times, rooms or colleagues in it.
+    assert(!/\d{2}:\d{2}/.test(message.text), "no lecture times travel inside the message");
+
+    const noNumber: any = { AdInstructorId: 2, AdInstructorName: "د. سلطان", AdInstructorMobile: "" };
+    assert(reachAboutCard(noNumber, "https://x.test/s/abc").href === null, "no number means no dead link");
+    assert(unreachable([person, noNumber]).length === 1, "the unreachable are named so the record can be fixed");
   }
 
   if (!originalDb) {

@@ -58,6 +58,16 @@ export interface CalendarDocument {
    * ends where the term ends, and re-reading it a hundred times changes nothing.
    */
   startDate?: string;
+  /** One line under the calendar's name in the subscriber's app. */
+  description?: string;
+  /**
+   * Minutes before each lecture to raise a reminder. Zero means none.
+   *
+   * Off unless asked for. A teaching week is thirteen alarms, and a person who
+   * did not choose them will silence the whole calendar rather than the alarms
+   * — which loses the schedule, not the noise.
+   */
+  alarmMinutes?: number;
   lectures: CalendarLecture[];
   /** The moment the file was produced, for DTSTAMP. */
   now?: Date;
@@ -140,6 +150,7 @@ export function buildCalendar(document: CalendarDocument): string {
     ? new Date(`${document.startDate}T00:00:00Z`)
     : null;
   const from = anchor && !Number.isNaN(anchor.getTime()) ? anchor : now;
+  const alarm = Math.max(0, Math.min(120, Number(document.alarmMinutes || 0)));
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -148,6 +159,7 @@ export function buildCalendar(document: CalendarDocument): string {
     "METHOD:PUBLISH",
     `X-WR-CALNAME:${escapeText(document.name)}`,
     `X-WR-TIMEZONE:${TZID}`,
+    ...(document.description ? [`X-WR-CALDESC:${escapeText(document.description)}`] : []),
     // Apple and Outlook both honour this; Google uses its own poll interval.
     "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
     "X-PUBLISHED-TTL:PT6H",
@@ -196,6 +208,17 @@ export function buildCalendar(document: CalendarDocument): string {
       lecture.room ? `LOCATION:${escapeText(lecture.room)}` : "",
       detail ? `DESCRIPTION:${escapeText(detail)}` : "",
       "TRANSP:OPAQUE",
+      // A lecture is a fact about the week, not a proposal — CONFIRMED stops
+      // clients drawing it as tentative.
+      "STATUS:CONFIRMED",
+      "CATEGORIES:محاضرة",
+      ...(alarm > 0 ? [
+        "BEGIN:VALARM",
+        "ACTION:DISPLAY",
+        `TRIGGER:-PT${alarm}M`,
+        `DESCRIPTION:${escapeText(lecture.title)}`,
+        "END:VALARM",
+      ] : []),
       "END:VEVENT",
     );
   }

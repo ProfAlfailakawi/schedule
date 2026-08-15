@@ -1970,6 +1970,39 @@ export const Repository = {
     return (db.scheduleComments || []).filter(row=>row.scheduleId===scheduleId).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
   },
 
+  /**
+   * Everything the instructors of one department have said, still unanswered.
+   *
+   * Deliberately scoped and deliberately unresolved-only: this is a tray, and a
+   * tray that also shows what has been dealt with stops being read.
+   */
+  getStaffInbox: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleComment[]> => {
+    const keep = (row: ScheduleComment) =>
+      row.source === "staff-card" && !row.resolved &&
+      Number(row.AdCollegeId) === collegeId && Number(row.AdTermId) === termId &&
+      (!sectionId || Number(row.AdSectionId) === sectionId);
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("scheduleComments")
+        .where("source", "==", "staff-card").where("AdTermId", "==", termId).limit(300).get();
+      return snap.docs.map(doc => doc.data() as ScheduleComment).filter(keep)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return (db.scheduleComments || []).filter(keep).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  /** How many notes one instructor has left today — the daily cap's counter. */
+  countStaffNotesToday: async (instructorId: number): Promise<number> => {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const mine = (row: ScheduleComment) =>
+      row.source === "staff-card" && Number(row.fromInstructorId) === instructorId && row.createdAt >= since;
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("scheduleComments")
+        .where("fromInstructorId", "==", instructorId).limit(60).get();
+      return snap.docs.map(doc => doc.data() as ScheduleComment).filter(mine).length;
+    }
+    return (db.scheduleComments || []).filter(mine).length;
+  },
+
   setScheduleCommentResolved: async (id: string, resolved: boolean): Promise<void> => {
     if (firestoreDb) {
       const ref=firestoreDb.collection("scheduleComments").doc(id); const doc=await ref.get();

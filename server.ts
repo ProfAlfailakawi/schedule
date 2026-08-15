@@ -14,6 +14,7 @@ import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine,
 import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
+import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
@@ -1632,6 +1633,24 @@ function describeScheduleChange(before: any, after: any, instructorName?: (id: n
   return parts.join(" · ");
 }
 
+/**
+ * How many minutes this department says its doors need.
+ *
+ * Read from the rules the department already writes for itself — no new store,
+ * no new screen concept. Absent means the rule was never declared, and an
+ * undeclared rule must produce no findings at all rather than a default that
+ * nobody chose.
+ */
+async function declaredDoorway(row:any):Promise<number>{
+  const collegeId=Number(row?.AdCollegeId||0),sectionId=Number(row?.AdSectionId||0),termId=Number(row?.AdTermId||0);
+  if(!collegeId||!termId)return 0;
+  try{
+    const rules=await Repository.getScheduleConstraints(collegeId,sectionId,termId);
+    const rule=rules.find(item=>item.type==="room_doorway"&&item.enabled!==false);
+    return Math.max(0,Math.min(60,Number(rule?.maxMinutes||0)));
+  }catch{return 0;}
+}
+
 async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const termId=Number(row?.AdTermId||0);
   if(!termId||!row?.fstarttime||!row?.fendtime||!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))return[];
@@ -1642,8 +1661,19 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     roomScopeNotice(candidate),
   ]);
   const all=candidateRows.filter(item=>item.id!==excludeId);
-  const raw=findConflicts([candidate],all);
+  const raw=findConflicts([candidate],all,{doorwayMinutes:await declaredDoorway(candidate)});
   const conflicts=raw.map((conflict:any)=>{
+    /* The turnaround rule is advice, not a refusal. `soft` is what keeps it out
+       of the blocked list in move-batch and out of the 409 on save — a
+       department that deliberately runs back-to-back lectures must never be
+       stopped from saying so. */
+    if(conflict.type==="doorway"){
+      const other=all.find(item=>item.id===conflict.otherId);
+      const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
+      return{...conflict,soft:true,severity:"low",rowId:visible&&other?other.id:0,
+        message:"مهلة الباب غير كافية",
+        detail:visible?conflict.detail:"القاعة تُخلى وتُملأ مباشرة، والموعد الآخر خارج نطاق العرض الحالي."};
+    }
     const other=all.find(item=>item.id===conflict.otherId);
     const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
     if(conflict.type==="instructor"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`الأستاذ ${instructor?.AdInstructorName||""} لديه محاضرة متداخلة`,detail:visible?`${other.AdCourseName||"مقرر"} — ${other.fstarttime}-${other.fendtime}`:`يوجد له موعد متداخل خارج نطاق القسم — ${other.fstarttime}-${other.fendtime}`};
@@ -3229,6 +3259,82 @@ app.post("/api/intelligence/emergency", requirePermission(7), requirePowerAdmin,
  * This reads; it does not write. The draft is still made by the endpoint below,
  * and only after a person has seen this.
  */
+/**
+ * ── ما الذي تغيّر تحت الجدول المعتمد ────────────────────────────────────────
+ *
+ * The one check nobody triggers. It is deliberately lazy: the answer is kept
+ * per scope and thrown away the moment ANY schedule anywhere is written, using
+ * the change beacon the live feed already runs on. A department that reads this
+ * ten times an hour on an unchanged university pays for one scan.
+ *
+ * There is no cron, no background job, and nothing that wakes a server up.
+ */
+const driftCache = new Map<string, { serial: number; body: unknown }>();
+let driftSerial = 0;
+onSchedulesInvalidated(() => { driftSerial += 1; });
+
+app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  if (!collegeId || !isScopeAllowed(req, collegeId, sectionId)) {
+    res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
+    return;
+  }
+  const key = `${collegeId}:${sectionId}`;
+  const cached = driftCache.get(key);
+  if (cached && cached.serial === driftSerial) { res.json(cached.body); return; }
+
+  const terms = await Repository.getTerms();
+  const { term } = settledTerm(terms);
+  if (!term) {
+    // Nothing has been closed yet, and saying "no problems" would be a claim
+    // about a check that has not run.
+    const body = { watching: false, reason: "لا يوجد فصل معتمد بعد — الاعتماد يتحقق بإنشاء الفصل التالي." };
+    driftCache.set(key, { serial: driftSerial, body });
+    res.json(body);
+    return;
+  }
+
+  /* One indexed read for the whole university's term, which the row cache
+     already memoises, and one scoped read for the department's own rows. */
+  const [universe, mine, rules] = await Promise.all([
+    Repository.getSchedulesByScope({ termId: term.AdTermId }),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId: term.AdTermId }),
+    Repository.getScheduleConstraints(collegeId, sectionId, term.AdTermId).catch(() => []),
+  ]);
+  const doorway = Number(rules.find(item => item.type === "room_doorway" && item.enabled !== false)?.maxMinutes || 0);
+  const reading = readSettledDrift(terms, mine, universe,
+    other => Boolean(req.user?.IsAdminUser || isScopeAllowed(req, other.AdCollegeId, other.AdSectionId)),
+    { doorwayMinutes: Math.max(0, Math.min(60, doorway)) });
+
+  const courses = reading.findings.length ? await Repository.getCourses() : [];
+  const nameOf = (row: any) => row?.AdCourseName
+    || courses.find(course => course.AdCourseId === row?.AdCourseId)?.CourseName || "موعد";
+  const body = {
+    watching: true,
+    term: { id: term.AdTermId, name: term.AdTermName },
+    scanned: reading.scanned,
+    total: reading.findings.length,
+    foreign: reading.foreign,
+    headline: reading.headline,
+    // The honest limit, carried with the answer so the interface cannot forget
+    // to say it: silence here means nothing was FOUND, not that nothing is wrong.
+    limit: "يقرأ ما هو مسجَّل في هذا النظام فقط؛ إغلاق قاعة أو جدول خارج النظام لا يظهر هنا.",
+    findings: reading.findings.slice(0, 40).map(item => ({
+      rowId: item.row.id, otherId: item.other ? item.otherId : 0,
+      name: nameOf(item.row),
+      otherName: item.other ? nameOf(item.other) : "",
+      day: SCHEDULE_DAY_KEYS.find(key => Boolean((item.row as any)[key])) || "",
+      time: `${item.row.fstarttime}-${item.row.fendtime}`,
+      room: [item.row.AdRoomCode, item.row.AdRoomHall].filter(Boolean).join("/"),
+      type: item.type, message: item.message, detail: item.detail, foreign: item.foreign,
+    })),
+  };
+  driftCache.set(key, { serial: driftSerial, body });
+  if (driftCache.size > 200) driftCache.clear();
+  res.json(body);
+});
+
 app.get("/api/intelligence/rollover", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
@@ -4021,21 +4127,45 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
    itself when it is guessing. */
 const TERM_WEEKS = 16;
 
-/** Sends a calendar, with the headers that make a browser show a subscription. */
-async function sendCalendar(res: Response, name: string, termId: number, lectures: CalendarLecture[]) {
+/**
+ * Sends a calendar, with the headers that make a browser show a subscription.
+ *
+ * A subscribed feed is re-read by every phone that holds it, several times a
+ * day, forever. Almost every one of those reads finds a file identical to the
+ * last, so the response carries an ETag: an unchanged week costs a 304 and no
+ * body at all. That is the difference between a feed a department can hand to
+ * four hundred people and one it cannot.
+ */
+async function sendCalendar(req: Request, res: Response, name: string, termId: number, lectures: CalendarLecture[]) {
   const term = (await Repository.getTerms()).find(row => row.AdTermId === termId);
   const startDate = term?.AdTermStart;
   const weeks = Number(term?.AdTermWeeks) || TERM_WEEKS;
-  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
-  res.setHeader("Content-Disposition", `inline; filename="schedule.ics"`);
-  res.setHeader("Cache-Control", "no-store");
-  res.send(buildCalendar({
+  // Opt-in only, and named in the URL so the subscriber's own choice travels
+  // with their subscription instead of being decided for everyone.
+  const alarmMinutes = Math.max(0, Math.min(120, Number(req.query.alarm || 0)));
+
+  const body = buildCalendar({
     // A calendar that had to guess its own term says so in the name it puts on
     // the subscriber's phone, rather than presenting an invented semester as if
     // it were the registrar's.
     name: startDate ? name : `${name} (تواريخ الفصل غير مسجّلة)`,
-    weeks, startDate, lectures,
-  }));
+    description: startDate
+      ? `${term?.AdTermName || ""} · يبدأ ${startDate} ويستمر ${weeks} أسبوعاً · للقراءة فقط، ويُحدَّث من نفسه.`
+      : `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة، والمدة تقديرية (${weeks} أسبوعاً) · للقراءة فقط.`,
+    weeks, startDate, alarmMinutes, lectures,
+  });
+
+  /* Weak, because the only thing that must match is the meaning of the file:
+     DTSTAMP moves on every build and would defeat a strong comparison for no
+     reason. Hashing the body without its stamps is what makes the tag stable. */
+  const tag = `W/"${createHmac("sha256", "ics").update(body.replace(/^DTSTAMP:.*$/gm, "")).digest("hex").slice(0, 24)}"`;
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", `inline; filename="schedule.ics"`);
+  res.setHeader("ETag", tag);
+  // Re-validate every time, but let the tag decide whether a body is needed.
+  res.setHeader("Cache-Control", "no-cache, must-revalidate");
+  if (req.headers["if-none-match"] === tag) { res.status(304).end(); return; }
+  res.send(body);
 }
 
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
@@ -4044,7 +4174,7 @@ app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
-  await sendCalendar(res, payload.label || "الجدول الدراسي", resolved.link.AdTermId, payload.rows.map(row => ({
+  await sendCalendar(req, res, payload.label || "الجدول الدراسي", resolved.link.AdTermId, payload.rows.map(row => ({
     id: row.id,
     title: [row.code, row.name].filter(Boolean).join(" · "),
     code: row.code, section: row.section, instructor: row.instructor,
@@ -4087,7 +4217,7 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
 
-  await sendCalendar(res, `جدول ${person.AdInstructorName || "الأستاذ"}`, resolved.link.AdTermId, rows.map(row => {
+  await sendCalendar(req, res, `جدول ${person.AdInstructorName || "الأستاذ"}`, resolved.link.AdTermId, rows.map(row => {
     const course = courseById.get(row.AdCourseId);
     return {
       id: row.id,
@@ -4096,6 +4226,127 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
       room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),
       start: row.fstarttime, end: row.fendtime,
       days: shareDayIndexes(row), revision: Number(row.rev || 0),
+    };
+  }));
+});
+
+/**
+ * ── بطاقة الأستاذ تتكلّم ────────────────────────────────────────────────────
+ *
+ * This is the only place in the system where a person with no account proves
+ * who they are, and until now that proof was spent entirely on a read.
+ *
+ * Every disruption in a department begins with exactly that person — the
+ * lecture they cannot give next Tuesday, the hall that is too small, the clash
+ * with the exam they were told about yesterday — and it currently reaches the
+ * coordinator by telephone, where it is written on nothing and lost.
+ *
+ * The system has no way to SEND — it does not even store an email address — but
+ * it needs none in order to RECEIVE. It needs only identity, and the card has
+ * already established that: the same link, the same civil ID, the same rate
+ * limit, the same single indistinguishable answer for a wrong number and for
+ * someone who teaches nothing.
+ *
+ * Three walls, because an unauthenticated write deserves them:
+ *   1. The card is rebuilt from scratch, so a note can only be attached to a
+ *      lecture this instructor actually teaches.
+ *   2. It writes a NOTE beside an appointment. It is structurally incapable of
+ *      touching the appointment — there is no path from here to a schedule row.
+ *   3. A daily cap per instructor on top of the per-link rate limit.
+ */
+const STAFF_NOTES_PER_DAY = 8;
+
+app.post("/api/public/staff/:token/note", async (req: Request, res: Response) => {
+  const token = String(req.params.token || "");
+  const resolved = await resolveShareToken(token);
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (resolved.link.kind !== "staff") { res.status(404).json({ error: "هذا الرابط ليس بطاقة أستاذ" }); return; }
+  if (!staffLookupAllowed(token, req.ip || "unknown")) {
+    res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
+    return;
+  }
+
+  const body = (req.body || {}) as Record<string, unknown>;
+  const card = await buildStaffCard(resolved.link, String(body.civil || ""));
+  if (!card) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+
+  const scheduleId = Number(body.scheduleId || 0);
+  const lecture = card.rows.find(row => row.id === scheduleId);
+  // The wall that matters: a note may only be left beside a lecture that is
+  // actually on this instructor's own card.
+  if (!lecture) { res.status(404).json({ error: "هذا الموعد ليس ضمن جدولك" }); return; }
+
+  const instructors = await Repository.getInstructors();
+  const digits = String(body.civil || "").replace(/\D/g, "");
+  const person = instructors.find(row => String(row.AdInstructorCivil || "").replace(/\D/g, "") === digits);
+  if (!person) { res.status(404).json({ error: "لا توجد بطاقة بهذا الرقم في هذا الفصل" }); return; }
+
+  if (await Repository.countStaffNotesToday(person.AdInstructorId) >= STAFF_NOTES_PER_DAY) {
+    res.status(429).json({ error: "بلغتَ حدّ الملاحظات اليومي. تواصل مع منسّق القسم مباشرة." });
+    return;
+  }
+
+  const kind = body.kind === "apology" ? "apology" : "change";
+  const text = String(body.text || "").trim().slice(0, 400);
+  const day = (value: unknown) => {
+    const raw = String(value || "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(raw)) ? raw : undefined;
+  };
+  const fromDate = day(body.fromDate), toDate = day(body.toDate);
+  if (!text && kind === "change") { res.status(400).json({ error: "اكتب سطراً واحداً يوضّح المطلوب" }); return; }
+
+  const headline = kind === "apology" ? "اعتذار عن محاضرة" : "طلب تعديل";
+  const when = fromDate ? (toDate && toDate !== fromDate ? ` (${fromDate} — ${toDate})` : ` (${fromDate})`) : "";
+  /* The note is filed where the LECTURE lives, not where the link points. A
+     staff link is issued for a whole college with no section of its own, so
+     taking the scope from the link filed every note under section zero — and
+     the department's tray, which asks by section, never saw one. */
+  const actual = await Repository.getScheduleById(lecture.id);
+  const row = await Repository.createScheduleComment({
+    SystemUserId: 0,
+    userName: person.AdInstructorName || "أستاذ",
+    scheduleId: lecture.id,
+    AdCollegeId: Number(actual?.AdCollegeId || resolved.link.AdCollegeId),
+    AdSectionId: Number(actual?.AdSectionId || 0),
+    AdTermId: Number(actual?.AdTermId || card.termId),
+    text: `${headline}${when}${text ? ` — ${text}` : ""}`,
+    source: "staff-card",
+    fromInstructorId: person.AdInstructorId,
+    kind, fromDate, toDate,
+  } as any);
+
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  res.setHeader("Cache-Control", "no-store");
+  // The instructor is told it landed, so they do not phone to ask whether it did.
+  res.status(201).json({ id: row.id, createdAt: row.createdAt, text: row.text });
+});
+
+/** The department's tray. Empty is the normal state and costs one scoped read. */
+app.get("/api/schedules/staff-inbox", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !termId || !isScopeAllowed(req, collegeId, sectionId)) {
+    res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
+    return;
+  }
+  const [notes, courses, schedules] = await Promise.all([
+    Repository.getStaffInbox(collegeId, sectionId, termId),
+    Repository.getCourses(),
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+  ]);
+  const rowById = new Map(schedules.map(row => [row.id, row]));
+  res.setHeader("Cache-Control", "no-store");
+  res.json(notes.map(note => {
+    const row: any = rowById.get(note.scheduleId);
+    return {
+      id: note.id, createdAt: note.createdAt, from: note.userName,
+      kind: note.kind || "change", text: note.text,
+      scheduleId: note.scheduleId,
+      course: row?.AdCourseName || courses.find(c => c.AdCourseId === row?.AdCourseId)?.CourseName || "",
+      time: row ? `${row.fstarttime}-${row.fendtime}` : "",
+      day: row ? (SCHEDULE_DAY_KEYS.find(key => Boolean(row[key])) || "") : "",
+      room: row ? [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") : "",
     };
   }));
 });
@@ -4227,8 +4478,55 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
 .sub button{background:transparent;border:1px solid var(--line);color:var(--ink)}
 /* When the clipboard is unavailable the address is shown instead; making it
    select as one unit means a long-press picks up the whole URL, not a word. */
+.subalarm{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink);cursor:pointer;padding-inline:2px}
+.subalarm input{accent-color:var(--jade);inline-size:16px;block-size:16px;flex:none}
 .sub small{font-size:11.5px;color:#4d5a55;text-align:center;line-height:1.8;-webkit-user-select:all;user-select:all;word-break:break-all}
 @media (prefers-reduced-motion:reduce){.sub{animation:none}}
+/* ── الإبلاغ ────────────────────────────────────────────────────────────
+ * The trigger is the quietest thing in the slot on purpose: a card is opened
+ * to read a week, and the ninety per cent who only want that must not have to
+ * look past a form to do it. */
+/* The slot is a two-column grid whose first column hugs the course name — the
+   button landed in it and was squeezed to 24px, measured. Both additions span
+   the whole row, which is also where they read best: an action about a lecture
+   belongs under the lecture, not beside its title. */
+.slot{position:relative}
+button.say,.sayform{grid-column:1/-1}
+button.say{
+  justify-self:start;
+  margin-block-start:8px;min-height:36px;padding:0 13px;border-radius:9px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--dim);
+  font:600 11.5px/1 inherit;white-space:nowrap;transition:color .16s,border-color .16s;
+}
+button.say:hover:not(:disabled){color:var(--jade);border-color:var(--jade)}
+button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
+.sayform{display:grid;gap:8px;margin-block-start:9px;padding-block-start:9px;border-block-start:1px solid var(--line);
+  animation:sub-in .18s cubic-bezier(.2,.8,.3,1) both}
+.saykinds{display:grid;gap:4px}
+/* A radio dot is 15px and nobody's thumb is. The label is the target, so it
+   carries the height instead. */
+.saykinds label{
+  display:flex;align-items:center;gap:9px;min-height:42px;padding-inline:10px;
+  border:1px solid var(--line);border-radius:10px;background:var(--bg);
+  font-size:13px;color:var(--ink);cursor:pointer;
+}
+.saykinds label:has(input:checked){border-color:var(--jade);color:var(--jade)}
+.saykinds input{accent-color:var(--jade);inline-size:15px;block-size:15px}
+.sayform input[type=date],.sayform textarea{
+  inline-size:100%;box-sizing:border-box;padding:9px 10px;border-radius:10px;
+  border:1px solid var(--line);background:var(--bg);color:var(--ink);
+  font:400 13px/1.7 inherit;resize:vertical;
+}
+.saysend{
+  min-height:40px;border-radius:10px;cursor:pointer;
+  background:var(--jade);border:1px solid var(--jade);color:#04100d;font:600 13.5px/1 inherit;
+}
+.saysend:disabled{opacity:.6;cursor:default}
+.saynote,.saydone{margin:0;font-size:11px;line-height:1.8;color:var(--dim)}
+.saydone{color:var(--jade);font-weight:600}
+.saydone span{color:var(--dim);font-weight:400}
+@media (prefers-reduced-motion:reduce){.sayform{animation:none}}
+@media print{button.say,.sayform{display:none !important}}
 .foot{margin-top:26px;color:#4d5a55;font-size:11.5px;text-align:center;line-height:1.9}
 /* The approved report table — the same five-column week the reports print,
    so the professor's shared card and the official sheet read as one family. */
@@ -4285,6 +4583,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
     </div>
     <div class="sub" id="sub" hidden>
       <p>اشتراك دائم — التقويم يتابع الجدول من نفسه، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
+      <label class="subalarm"><input type="checkbox" id="subAlarm"> ذكّرني قبل كل محاضرة بربع ساعة</label>
       <a id="subNow" href="#">اشتراك الآن · آيفون · ماك · أوتلوك</a>
       <button type="button" id="subCopy">نسخ الرابط لتقويم جوجل</button>
       <small id="subNote">في تقويم جوجل: «تقويمات أخرى ← من رابط».</small>
@@ -4424,24 +4723,40 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
             lead='<div class="gap"><i></i>فراغ <time>'+esc(before[0].from)+'–'+esc(before[0].to)+'</time> · '+ar(before[0].minutes)+' دقيقة</div>';
           }
         }
-        return lead+'<div class="slot"><strong>'+esc(row.name||row.code)+'</strong>'+
+        /* The slot gains one quiet affordance and nothing else. It is a
+           button that opens a form, not a form — a card opened to read a week
+           must not become a wall of inputs. */
+        return lead+'<div class="slot" data-lecture="'+row.id+'"><strong>'+esc(row.name||row.code)+'</strong>'+
                '<time>'+esc(row.start)+'–'+esc(row.end)+'</time>'+
-               '<small>'+[row.code,row.section&&("شعبة "+row.section),(row.room||row.hall)&&(esc(row.room)+"/"+esc(row.hall))].filter(Boolean).join(" · ")+'</small></div>';
+               '<small>'+[row.code,row.section&&("شعبة "+row.section),(row.room||row.hall)&&(esc(row.room)+"/"+esc(row.hall))].filter(Boolean).join(" · ")+'</small>'+
+               '<button type="button" class="say" data-say="'+row.id+'" aria-expanded="false">أبلغ القسم</button>'+
+               '<div class="sayform" hidden></div></div>';
       }).join("");
       return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.from+"–"+day.span.to:"")+'</em></h2>'+body+'</section>';
     }).join("");
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
     renderChanges(d,value);
+    wireNotes(value);
 
     /* The subscription address. It carries a derived key, never the civil ID,
        so it is safe to sit in a phone's calendar settings forever. */
-    var feed = "/api/public/ics/"+encodeURIComponent(TOKEN)+"/"+encodeURIComponent(d.calendarKey||"");
-    var https = location.origin + feed;
+    var base = "/api/public/ics/"+encodeURIComponent(TOKEN)+"/"+encodeURIComponent(d.calendarKey||"");
+    /* The reminder is the subscriber's own choice and travels inside their own
+       subscription — a department cannot decide to make four hundred phones
+       ring, and a person who wants it does not have to ask anyone. */
+    var alarmBox = document.getElementById("subAlarm");
+    var feed = base, https = location.origin + base;
+    function retune(){
+      feed = base + (alarmBox.checked ? "?alarm=15" : "");
+      https = location.origin + feed;
+      document.getElementById("subNow").setAttribute("href", "webcal://" + location.host + feed);
+    }
+    alarmBox.onchange = retune;
     var ics = document.getElementById("ics"), panel = document.getElementById("sub");
     /* webcal: is what tells a phone to SUBSCRIBE rather than to download one
        frozen copy — the whole difference between a calendar that follows the
        schedule and a snapshot that quietly goes stale. */
-    document.getElementById("subNow").setAttribute("href", "webcal://" + location.host + feed);
+    retune();
     ics.onclick = function(e){
       e.preventDefault();
       var open = panel.hasAttribute("hidden");
@@ -4449,6 +4764,65 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
       ics.setAttribute("aria-expanded", open ? "true" : "false");
       if(open) panel.scrollIntoView({block:"nearest",behavior:"smooth"});
     };
+    /**
+     * ── الإبلاغ من البطاقة ────────────────────────────────────────────────
+     *
+     * The whole of the inbound channel, in one delegated listener. Every
+     * lecture already carries its own id, so the form is built where it is
+     * needed and thrown away afterwards — nothing is rendered for the ninety
+     * per cent of visits that only want to read the week.
+     */
+    function wireNotes(civil){
+      var open = null;
+      document.getElementById("days").onclick = function(e){
+        var trigger = e.target.closest("button.say");
+        if(!trigger) return;
+        var slot = trigger.closest(".slot"), form = slot.querySelector(".sayform");
+        if(open && open !== form){ open.setAttribute("hidden",""); open.innerHTML="";
+          open.closest(".slot").querySelector("button.say").setAttribute("aria-expanded","false"); }
+        if(!form.hasAttribute("hidden")){
+          form.setAttribute("hidden",""); form.innerHTML=""; open=null;
+          trigger.setAttribute("aria-expanded","false"); return;
+        }
+        form.innerHTML =
+          '<div class="saykinds">'+
+            '<label><input type="radio" name="k'+slot.dataset.lecture+'" value="apology" checked> أعتذر عن هذه المحاضرة</label>'+
+            '<label><input type="radio" name="k'+slot.dataset.lecture+'" value="change"> أحتاج تعديلاً</label>'+
+          '</div>'+
+          '<input type="date" class="sayfrom" aria-label="التاريخ المعني">'+
+          '<textarea class="saytext" rows="2" maxlength="400" placeholder="سطر واحد يوضّح المطلوب (اختياري للاعتذار)"></textarea>'+
+          '<button type="button" class="saysend">إرسال إلى القسم</button>'+
+          '<p class="saynote">يصل إلى منسّق القسم مرفقاً بهذه المحاضرة. لا يغيّر الجدول بنفسه.</p>';
+        form.removeAttribute("hidden");
+        trigger.setAttribute("aria-expanded","true");
+        open = form;
+        form.querySelector(".saysend").onclick = function(){
+          var send = form.querySelector(".saysend"), note = form.querySelector(".saynote");
+          send.disabled = true; note.textContent = "جارٍ الإرسال…";
+          fetch("/api/public/staff/"+encodeURIComponent(TOKEN)+"/note", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({
+              civil: civil, scheduleId: Number(slot.dataset.lecture),
+              kind: form.querySelector("input[type=radio]:checked").value,
+              fromDate: form.querySelector(".sayfrom").value || undefined,
+              text: form.querySelector(".saytext").value.trim(),
+            })
+          }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+            .then(function(x){
+              if(!x.ok){ note.textContent = x.d.error || "تعذّر الإرسال."; send.disabled = false; return; }
+              /* The instructor is shown that it landed, so nobody has to phone
+                 the department to ask whether it did. */
+              form.innerHTML = '<p class="saydone">وصل إلى القسم ✓ — <span>'+esc(x.d.text)+'</span></p>';
+              open = null;
+              trigger.setAttribute("aria-expanded","false");
+              trigger.textContent = "أُبلغ القسم";
+              trigger.disabled = true;
+            })
+            .catch(function(){ note.textContent = "تعذّر الإرسال — تحقّق من الاتصال."; send.disabled = false; });
+        };
+      };
+    }
+
     document.getElementById("subCopy").onclick = function(){
       var note = document.getElementById("subNote"), said = "تم نسخ الرابط.";
       var done = function(){ note.textContent = said; setTimeout(function(){

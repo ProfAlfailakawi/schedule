@@ -208,10 +208,26 @@ export interface ScheduleComment {
   AdTermId: number;
   text: string;
   resolved: boolean;
+  /**
+   * Where this note came in from.
+   *
+   * A note from the staff card is the same record the appointment panel already
+   * shows and resolves — no second inbox, no second lifecycle. The two fields
+   * exist only so the department can tell «قالها زميل في النظام» apart from
+   * «قالها الأستاذ نفسه من بطاقته».
+   */
+  source?: "staff-card";
+  fromInstructorId?: number;
+  /** What the instructor is saying: an apology, or a request to change. */
+  kind?: "apology" | "change";
+  /** The day or range it concerns, as YYYY-MM-DD. Optional — «كل أسبوع» is a
+   *  real answer too. */
+  fromDate?: string;
+  toDate?: string;
 }
 
 
-export type ScheduleConstraintType = "instructor_latest_end" | "instructor_day_off" | "department_day_off" | "course_room" | "max_instructor_gap";
+export type ScheduleConstraintType = "instructor_latest_end" | "instructor_day_off" | "department_day_off" | "course_room" | "max_instructor_gap" | "room_doorway";
 
 export interface ScheduleConstraint {
   id: string;

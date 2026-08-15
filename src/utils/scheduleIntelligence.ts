@@ -19,16 +19,46 @@ export function sharesDay(a:Partial<FSchedule>,b:Partial<FSchedule>):boolean{ret
 export function overlaps(a:Partial<FSchedule>,b:Partial<FSchedule>):boolean {
   return sharesDay(a,b) && timeToMinutes(String(a.fstarttime||"")) < timeToMinutes(String(b.fendtime||"")) && timeToMinutes(String(b.fstarttime||"")) < timeToMinutes(String(a.fendtime||""));
 }
+
+/**
+ * ── مهلة الباب ─────────────────────────────────────────────────────────────
+ *
+ * Two lectures in the same hall, one ending at ten and the next beginning at
+ * ten, do not overlap by a single minute — and are impossible anyway. Thirty
+ * people have to leave through one door while thirty more come in through it,
+ * and the second lecture starts late every week for the whole term.
+ *
+ * The department knows how many minutes its doors need. Once that number is
+ * declared it is added to the end of every room occupancy HERE, in the one
+ * sweep every conflict in this product passes through, so the drag verdict,
+ * the radar, the repair chain and the review all inherit it at once without a
+ * single one of them learning a new rule.
+ *
+ * It is deliberately a quieter kind of finding. A double booking is an error;
+ * a tight turnaround may be exactly what someone intended, and the two must
+ * never wear the same colour.
+ */
+const roomsTouch=(a:Partial<FSchedule>,b:Partial<FSchedule>,doorway:number):boolean=>{
+  if(!sharesDay(a,b)) return false;
+  const aStart=timeToMinutes(String(a.fstarttime||"")),aEnd=timeToMinutes(String(a.fendtime||""));
+  const bStart=timeToMinutes(String(b.fstarttime||"")),bEnd=timeToMinutes(String(b.fendtime||""));
+  return aStart < bEnd + doorway && bStart < aEnd + doorway;
+};
 const roomKey=(row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${String(row.AdRoomHall||"").trim()}`;
 const duration=(row:Partial<FSchedule>)=>Math.max(0,timeToMinutes(String(row.fendtime||""))-timeToMinutes(String(row.fstarttime||"")));
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 
 export interface ConflictInsight {
-  type:"room"|"instructor"|"duplicate";
-  severity:"high"|"medium";
+  type:"room"|"instructor"|"duplicate"|"doorway";
+  severity:"high"|"medium"|"low";
   rowId:number;otherId:number;message:string;detail:string;
   /** Every reason this one pair collides, so a clash is never counted twice. */
-  reasons?:Array<"room"|"instructor"|"duplicate">;
+  reasons?:Array<"room"|"instructor"|"duplicate"|"doorway">;
+}
+
+export interface ConflictOptions {
+  /** Minutes a hall needs between two lectures. Zero means the rule is unset. */
+  doorwayMinutes?:number;
 }
 
 /**
@@ -73,38 +103,53 @@ const isCombinedDelivery=(a:FSchedule,b:FSchedule)=>
   roomKey(a)!=="|" && roomKey(a)===roomKey(b) &&
   samePlacement(a,b);
 
-export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[]):ConflictInsight[] {
+export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], options?:ConflictOptions):ConflictInsight[] {
+  const doorway=Math.max(0,Number(options?.doorwayMinutes||0));
   const byPair=new Map<string,ConflictInsight>();
   for(const row of targetRows){
     for(const other of allRows){
       if(row.id===other.id || row.AdTermId!==other.AdTermId) continue;
       if(isCombinedDelivery(row,other)) continue;
       const clashing=overlaps(row,other);
+      const sameRoom=roomKey(row)!=="|" && roomKey(row)===roomKey(other);
+      /* A turnaround too short to empty the hall. Only meaningful when the two
+         do not already overlap — an overlap is the louder problem, and naming
+         one pair twice would double every count in the product. */
+      const tight=doorway>0 && sameRoom && !clashing && roomsTouch(row,other,doorway);
       const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
-      if(!clashing && !twin) continue;
+      if(!clashing && !twin && !tight) continue;
 
       const pair=[row.id,other.id].sort((a,b)=>a-b).join(":");
       if(byPair.has(pair)) continue;
 
-      const reasons:Array<"room"|"instructor"|"duplicate">=[];
+      const reasons:Array<"room"|"instructor"|"duplicate"|"doorway">=[];
       if(clashing && row.AdInstructorId && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
-      if(clashing && roomKey(row)!=="|" && roomKey(row)===roomKey(other)) reasons.push("room");
+      if(clashing && sameRoom) reasons.push("room");
       if(twin) reasons.push("duplicate");
+      if(tight) reasons.push("doorway");
       if(!reasons.length) continue;
 
       // The pair is named after the most serious thing true about it.
-      const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room":"duplicate";
+      const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room"
+        :reasons.includes("duplicate")?"duplicate":"doorway";
+      const gap=Math.abs(timeToMinutes(String(other.fstarttime||""))-timeToMinutes(String(row.fendtime||"")));
       const message=type==="instructor"?"حجز مزدوج لأستاذ المقرر"
         :type==="room"?"حجز مزدوج للقاعة"
-        :"موعدان متطابقان لنفس الشعبة";
+        :type==="duplicate"?"موعدان متطابقان لنفس الشعبة"
+        :"مهلة الباب غير كافية";
       const detail=type==="instructor"
         ? `الموعدان ${row.fstarttime}-${row.fendtime} و ${other.fstarttime}-${other.fendtime} يتقاطعان في يوم مشترك.`
         : type==="room"
           ? `القاعة ${row.AdRoomCode}/${row.AdRoomHall} مستخدمة في موعد متداخل.`
-          : "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت.";
+          : type==="duplicate"
+            ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت."
+            : `القاعة ${row.AdRoomCode}/${row.AdRoomHall} تُخلى وتُملأ خلال ${gap} دقيقة، والقسم يحتاج ${doorway}.`;
       byPair.set(pair,{
         type,
-        severity:type==="duplicate"?"medium":"high",
+        /* Never a save-blocker. A tight turnaround can be deliberate, and
+           dressing it in the colour that also means a real double booking
+           teaches people to stop reading that colour. */
+        severity:type==="doorway"?"low":type==="duplicate"?"medium":"high",
         rowId:row.id,otherId:other.id,message,detail,reasons,
       });
     }
