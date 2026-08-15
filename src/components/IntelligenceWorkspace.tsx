@@ -35,6 +35,7 @@ import {
   Link2,
   QrCode,
   Printer,
+  Plus,
   X,
 } from "lucide-react";
 import {
@@ -825,6 +826,49 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     window.setTimeout(() => setSurveyCopied(current => (current === id ? null : current)), 1800);
   };
 
+  /**
+   * Open a proposed section inside the trial copy — added, not saved.
+   *
+   * Same doctrine as every other proposal here: the engine's answer ends at
+   * "this would fit". The row appears in the duplicate week with a negative id
+   * so nothing can mistake it for something the database has seen, and it stays
+   * a draft until a person saves and publishes it.
+   */
+  const openSectionDraft = async (proposal: any, slot: any) => {
+    const base = (scenario || rows).map(row => ({ ...row }));
+    const sibling = base.find(row => Number(row.AdCourseId) === Number(proposal.courseId)) || base[0];
+    if (!sibling) return;
+    const fresh: any = {
+      ...sibling,
+      id: -Math.abs(Date.now() % 100000) - proposal.courseId,
+      // Comes from the engine: the save path refuses anything non-numeric.
+      SCode: String(slot.sectionCode || proposal.openSections + slot.index),
+      AdRoomCode: slot.roomCode,
+      AdRoomHall: slot.roomHall,
+      AdInstructorId: slot.instructorId || 0,
+      fstarttime: slot.start,
+      fendtime: slot.end,
+      fsunday: slot.day === "fsunday",
+      fmonday: slot.day === "fmonday",
+      ftuesday: slot.day === "ftuesday",
+      fwednesday: slot.day === "fwednesday",
+      fthursday: slot.day === "fthursday",
+    };
+    const applied = [...base, fresh];
+    setActiveDraftId(null);
+    setScenario(applied);
+    setScenarioId(fresh.id);
+    setTab("twin");
+    showTwinCard("editor");
+    setMessage(
+      `أُضيفت شعبة «${proposal.courseName}» داخل النسخة التجريبية فقط: ${slot.dayLabel} ${slot.start}` +
+      `${slot.roomCode ? ` · ${slot.roomCode}${slot.roomHall ? "/" + slot.roomHall : ""}` : ""}. ` +
+      (slot.instructorId ? "" : "اختر لها أستاذاً. ") +
+      "لا شيء منشور — راجعها ثم احفظها كمسودة.",
+    );
+    await evaluateScenario(applied);
+  };
+
   const openRepair = async (fix: any) => {
     const base = (scenario || rows).map(row => ({ ...row }));
     const applied = base.map(row =>
@@ -1305,13 +1349,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             : String(overview.dataHealth?.invalidRows || 0),
           icon: <CheckCircle2 />,
         },
-        ...(demand && (demand.respondents || demand.prediction?.courses?.length || demand.survey?.length || isPowerAdmin)
+        ...(demand && (demand.respondents || demand.prediction?.courses?.length || demand.openings?.proposals?.length || demand.survey?.length || isPowerAdmin)
           ? [
               {
                 value: "students" as const,
                 label: "طلبات الطلاب",
-                detail: "ما طلبوه، وما لا يجوز أن يتقاطع",
-                metric: String(demand.repairs?.length || demand.pairs?.length || demand.prediction?.pairs?.length || 0),
+                detail: "كم شعبة نفتح، وأين نضعها",
+                metric: String(demand.openings?.proposals?.reduce((sum: number, item: any) => sum + item.needed, 0)
+                  || demand.repairs?.length || demand.pairs?.length || demand.prediction?.pairs?.length || 0),
                 icon: <UsersRound />,
               },
             ]
@@ -1962,7 +2007,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </details>
           </Surface>
             </div>
-          {demand && (demand.respondents || demand.prediction?.courses?.length || demand.survey?.length || isPowerAdmin) ? (
+          {demand && (demand.respondents || demand.prediction?.courses?.length || demand.openings?.proposals?.length || demand.survey?.length || isPowerAdmin) ? (
             <div
               className="content-stack insight-scene-panel"
               id="insight-panel-students"
@@ -1975,7 +2020,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="surface-head">
                 <div>
                   <span className="surface-kicker">ما قاله الطلاب</span>
-                  <h2>الطلب، والتقاطع، والنقلة التي تُزيله</h2>
+                  <h2>كم شعبة نفتح، وأين نضعها</h2>
                 </div>
                 <UsersRound />
               </div>
@@ -2102,6 +2147,73 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <small>بلا أثر جانبي</small>
                 </article>
               </div>
+
+              {/* ── الشعب ────────────────────────────────────────────────────
+                  السؤال الذي يُرسَل الاستبيان لأجله: الطلب مقابل سعة المقرر،
+                  ثم مكانٌ نظيف لكل شعبة جديدة. */}
+              {demand.openings?.proposals?.length ? (
+                <div className="demand-openings">
+                  <p className="demand-headline">{demand.openings.headline}</p>
+                  {demand.openings.proposals.map((item: any) => (
+                    <article key={item.courseId} className="opening-card">
+                      <header>
+                        <div>
+                          <b>{item.courseName}</b>
+                          <span>{item.courseCode}{item.predicted ? " · توقُّع" : ""}</span>
+                        </div>
+                        <strong className="opening-need">
+                          +<Num value={item.needed} /> {nounFor(item.needed, AR.section)}
+                        </strong>
+                      </header>
+
+                      {/* الحساب ظاهرٌ كاملاً: الطلب ÷ السعة − المفتوح. */}
+                      <div className="opening-math">
+                        <span><small>طلبوه</small><b><Num value={item.demand} /></b></span>
+                        <em>÷</em>
+                        <span><small>سعة الشعبة</small><b><Num value={item.capacity} /></b></span>
+                        <em>−</em>
+                        <span><small>المفتوح</small><b><Num value={item.openSections} /></b></span>
+                        <em>=</em>
+                        <span className="opening-gap">
+                          <small>بلا مقعد</small><b><Num value={item.shortfall} /></b>
+                        </span>
+                      </div>
+
+                      {item.placements.length ? (
+                        <div className="opening-slots">
+                          {item.placements.map((slot: any) => (
+                            <div key={slot.index} className="opening-slot">
+                              <span className="opening-slot-day">{slot.dayLabel}</span>
+                              <b dir="ltr">{slot.start}–{slot.end}</b>
+                              <span className="opening-slot-room">
+                                {slot.roomCode}{slot.roomHall ? `/${slot.roomHall}` : ""}
+                              </span>
+                              <span className={`opening-slot-who${slot.instructorId ? "" : " vacant"}`}>
+                                {slot.instructorName || "بلا أستاذ"}
+                              </span>
+                              <SecondaryButton onClick={() => openSectionDraft(item, slot)}>
+                                <Plus /> افتحها في النسخة التجريبية
+                              </SecondaryButton>
+                              {slot.note ? <small className="opening-note">{slot.note}</small> : null}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="opening-note">
+                          لم أجد وقتاً يخلو من كل التعارضات — كل ساعة يستخدمها قسمك مشغولة
+                          بأستاذٍ أو قاعة، أو تتقاطع مع مقرر يحتاجه هؤلاء الطلاب أنفسهم.
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                  {demand.openings.noCeiling?.length ? (
+                    <p className="opening-note">
+                      {demand.openings.noCeiling.length} من المقررات المطلوبة بلا «الحد الأعلى للطلبة» —
+                      سجّله في شاشة المقررات ليُحسب عدد الشعب.
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
 
               {/* ── الاقتراح ─────────────────────────────────────────────────
                   Each card is one move that was tried against the real week and

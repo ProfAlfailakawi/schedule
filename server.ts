@@ -21,6 +21,7 @@ import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departm
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { readDemandRepairs } from "./src/utils/demandRepair";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
+import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
@@ -4722,12 +4723,32 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
      feature it is not using. */
   const week = schedules.filter(row =>
     Number(row.AdSectionId) === sectionId && Number(row.AdTermId) === termId);
-  const style = reading.respondents
+  const style = reading.respondents || prediction.courses.length
     ? await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId })
     : null;
   const repairs = reading.respondents
     ? readDemandRepairs(week, reading, style?.reading || null, style?.doorway || 0)
     : { repairs: [], unsolved: [], examined: 0, headline: "" };
+
+  /* ── كم شعبة نفتح، وأين ────────────────────────────────────────────────────
+     The question the survey is actually sent to answer. The department mails it
+     before the term and registers in the first week, by which time the board is
+     written — so what the answers change is not where a lecture sits, it is how
+     many sections exist. Priced against each course's own MaxStudent, and every
+     new section placed against the real week before it is offered. */
+  const people = reading.respondents || prediction.courses.length
+    ? await Repository.getInstructors().catch(() => [])
+    : [];
+  const sectionHistory = schedules.filter(row =>
+    Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId);
+  const openings = reading.respondents || prediction.courses.length
+    ? readSectionOpenings(
+        week,
+        schedules.filter(row => Number(row.AdTermId) === termId),
+        mine, people, sectionHistory, reading, prediction,
+        style?.reading || null, style?.doorway || 0,
+      )
+    : { proposals: [], noCeiling: [], headline: "" };
 
   /* The door itself, so the screen that shows the answers can also show the way
      to collect more of them. Revoked and expired links are not doors. */
@@ -4741,6 +4762,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     ...reading,
     ...repairs,
     survey,
+    openings,
     succession: { links: succession.links.slice(0, 10), pathsSeen: succession.pathsSeen,
                   termsSpanned: succession.termsSpanned, headline: succession.headline },
     turnover,
@@ -5331,7 +5353,17 @@ body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
 .wrap{max-inline-size:640px;margin-inline:auto}
 .kicker{font:600 11px/1 system-ui;letter-spacing:.22em;color:var(--brass);text-transform:uppercase}
 h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
-.sub{margin:0 0 22px;font-size:13.5px;color:var(--dim);line-height:1.85}
+.sub{margin:0 0 12px;font-size:13.5px;color:var(--dim);line-height:1.85}
+.sub b{color:var(--ink);font-weight:650}
+/* «هذا ليس تسجيلاً» — أهم سطر في الصفحة أثناء أسبوع التسجيل، فيجب أن يُقرأ
+   بوضوح ولا يصرخ: إطار هادئ بلون النحاس، لا لافتة حمراء. */
+.warn-line{
+  margin:0 0 22px;padding:10px 13px;
+  border:1px solid rgba(199,155,95,.32);border-radius:11px;
+  background:rgba(199,155,95,.07);
+  color:var(--dim);font-size:13px;line-height:1.8;text-align:start;
+}
+.warn-line b{color:var(--brass);font-weight:700}
 .step{margin-block:26px 10px;display:flex;align-items:center;gap:9px;font-size:12px;color:var(--dim)}
 .step b{inline-size:21px;block-size:21px;flex:none;display:grid;place-items:center;border-radius:50%;
   background:var(--card);border:1px solid var(--line);font:700 11px/1 system-ui;color:var(--jade)}
@@ -5373,16 +5405,88 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 @keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
 .done h2{margin:20px 0 6px;font-size:20px;font-weight:700}
 .done p{margin:0;color:var(--dim);font-size:13.5px;line-height:1.9}
-.count{position:sticky;inset-block-end:14px;margin-block-start:18px}
+/* The button is sticky, which is right — a student choosing twelve courses
+   should never hunt for it. But sticky means content scrolls UNDER it, and with
+   no backdrop the last two courses showed through the button and neither could
+   be read. So it carries a band of the page's own background, fading upward,
+   and the page reserves room beneath it so the final row is never trapped. */
+/* البحث السريع */
+.seek{position:relative;margin-block-end:10px}
+.seek input{
+  inline-size:100%;padding:12px 14px;font:inherit;font-size:15px;
+  color:var(--ink);background:var(--card);
+  border:1px solid var(--line);border-radius:12px;outline:none;
+}
+.seek input:focus{border-color:var(--jade)}
+.seek span{
+  position:absolute;inset-block-start:50%;inset-inline-end:14px;transform:translateY(-50%);
+  color:var(--dim);font-size:12px;pointer-events:none;
+}
+
+/* The hidden attribute is only display:none in the browser's own stylesheet,
+   so the display:flex below would beat it and paint an empty box under the
+   search. Same trap as the workspace, same one-line answer. */
+[hidden]{display:none !important}
+
+/* المختار — مثبّت فوق، فلا يضيع خلف مجموعة مطويّة */
+.chosen{
+  display:flex;flex-wrap:wrap;align-items:center;gap:6px;
+  margin-block-end:12px;padding:10px 12px;
+  border:1px solid rgba(105,192,168,.3);border-radius:12px;background:rgba(105,192,168,.07);
+}
+.chosen-label{color:var(--dim);font-size:12px;margin-inline-end:2px}
+.chip{
+  padding:5px 10px;border:1px solid rgba(105,192,168,.4);border-radius:999px;
+  background:transparent;color:var(--jade);font:inherit;font-size:12.5px;cursor:pointer;
+  direction:ltr;unicode-bidi:isolate;
+}
+.chip em{font-style:normal;opacity:.7}
+.chip:hover{background:rgba(105,192,168,.12)}
+
+/* الأكورديون — المقررات كثيرة، فالافتراضي مطويّ */
+.fold{margin-block-end:8px;border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--card)}
+.fold-head{
+  inline-size:100%;display:flex;align-items:center;gap:9px;
+  padding:13px 14px;border:0;background:transparent;color:var(--ink);
+  font:inherit;font-size:14.5px;font-weight:650;cursor:pointer;text-align:start;
+}
+.fold-name{flex:1;min-inline-size:0;direction:ltr;unicode-bidi:isolate;text-align:start}
+.fold-count{
+  padding:2px 9px;border-radius:999px;background:rgba(255,255,255,.06);
+  color:var(--dim);font-size:12px;font-weight:600;
+}
+.fold-caret{color:var(--dim);font-size:15px;transition:transform .18s ease}
+.fold.open .fold-caret{transform:rotate(180deg)}
+.fold .grid{display:none;padding:0 10px 12px}
+.fold.open .grid{display:grid}
+.fold[hidden]{display:none}
+
+.count{
+  position:sticky;inset-block-end:0;z-index:3;
+  margin-block-start:18px;padding-block:12px 14px;
+  background:linear-gradient(to top,var(--bg) 72%,rgba(10,16,15,0));
+}
+body{padding-block-end:8px}
 @media (prefers-reduced-motion:reduce){.pick,.done .tick{transition:none;animation:none}}
 </style></head>
 <body><div class="wrap" id="root">
   <div class="kicker">استبيان المقررات</div>
   <h1 id="head">…</h1>
-  <p class="sub" id="sub">اختر المقررات التي تحتاجها. يساعد القسم على معرفة الطلب قبل بناء الجدول — ولا يضمن فتح أي شعبة.</p>
+  <p class="sub" id="sub">اختر المقررات التي <b>تنوي تسجيلها</b> هذا الفصل. القسم يستخدم العدد ليقرّر كم شعبة يفتح.</p>
+  <p class="warn-line"><b>هذا ليس تسجيلاً.</b> إجابتك لا تحجز لك مقعداً ولا تُغني عن التسجيل، ولا تضمن فتح شعبة — التسجيل يبقى في مكانه المعتاد.</p>
   <div id="body"></div>
 </div>
 <script>
+/* العدد والمعدود — نفس قاعدة البرنامج، مكتوبة هنا لأن هذه الصفحة لا تحمل حزمته. */
+function arCourses(n){
+  n = Math.max(0, Number(n) || 0);
+  if (n === 1) return "مقرراً واحداً";
+  if (n === 2) return "مقررين";
+  var rest = n % 100;
+  if (rest >= 3 && rest <= 10) return n + " مقررات";
+  return n + " مقرراً";
+}
+
 (function(){
   var TOKEN=${JSON.stringify(token)};
   var picked=new Set();
@@ -5399,28 +5503,115 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
     })
     .catch(function(){ body.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت وأعد المحاولة.</div>'; });
 
+  /* ── قائمة طويلة، وهاتف ────────────────────────────────────────────────
+     A department can offer a hundred courses, and a student on a phone should
+     not scroll a hundred cards to find four. So: a search that filters as you
+     type, the list folded into groups by course code, and everything already
+     chosen pinned above the fold so it is never lost behind a closed group. */
+  function groupsOf(courses){
+    var order=[], map={};
+    courses.forEach(function(c){
+      var key=String(c.code||"").trim().split(/[\s-]/)[0].replace(/[0-9]+$/,"") || "أخرى";
+      if(!map[key]){ map[key]=[]; order.push(key); }
+      map[key].push(c);
+    });
+    return order.map(function(k){ return {key:k, items:map[k]}; });
+  }
+
   function render(d){
+    var groups=groupsOf(d.courses);
+    /* Folded is the default the moment the list stops fitting on a phone. With
+       a dozen courses folding them away only hides them; with sixty it is the
+       difference between a page and a wall. One group is never folded — a
+       grouping of one is not a grouping. */
+    var openAll = groups.length<2 || d.courses.length<=14;
     body.innerHTML=
       '<div class="step"><b>1</b> أي المقررات تحتاجها؟</div>'+
-      '<div class="grid" id="grid">'+d.courses.map(function(c){
-        return '<button type="button" class="pick" data-id="'+c.id+'" aria-pressed="false">'+
-               '<i>✓</i><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>';
+      '<div class="seek"><input id="seek" type="search" inputmode="search" '+
+        'placeholder="ابحث باسم المقرر أو رمزه…" autocomplete="off" enterkeyhint="search">'+
+        '<span id="seekcount"></span></div>'+
+      '<div id="chosen" class="chosen" hidden></div>'+
+      '<div id="groups">'+groups.map(function(g,i){
+        return '<section class="fold'+(openAll?" open":"")+'" data-key="'+esc(g.key)+'">'+
+          '<button type="button" class="fold-head">'+
+            '<span class="fold-name">'+esc(g.key)+'</span>'+
+            '<span class="fold-count">'+g.items.length+'</span>'+
+            '<span class="fold-caret" aria-hidden="true">⌄</span>'+
+          '</button>'+
+          '<div class="grid">'+g.items.map(function(c){
+            return '<button type="button" class="pick" data-id="'+c.id+'" '+
+                   'data-find="'+esc((c.name+" "+c.code).toLowerCase())+'" aria-pressed="false">'+
+                   '<i>✓</i><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>';
+          }).join("")+'</div></section>';
       }).join("")+'</div>'+
+      '<p class="note" id="nohit" hidden>لا مقرر بهذا الاسم أو الرمز.</p>'+
       '<div class="step"><b>2</b> من أنت؟</div>'+
       '<div class="field"><label for="nm">الاسم</label><input id="nm" autocomplete="name" enterkeyhint="next"></div>'+
       '<div class="field"><label for="cv">الرقم المدني</label>'+
         '<input id="cv" inputmode="numeric" maxlength="12" autocomplete="off" enterkeyhint="done"></div>'+
       '<div class="count"><button type="button" class="send" id="send" disabled>اختر مقرراً واحداً على الأقل</button></div>'+
-      '<p class="note">اسمك ورقمك لا يُحفظان مع إجابتك — يُستخدمان مرة واحدة لمنع التكرار فقط.</p>'+
+      '<p class="note">اسمك ورقمك لا يُحفظان مع إجابتك — يُستخدمان مرة واحدة لمنع التكرار فقط. '+
+        'وإن غيّرت رأيك، افتح الرابط وأجب مرة أخرى فتحلّ إجابتك الجديدة محل القديمة.</p>'+
       '<div id="err"></div>';
 
     var send=document.getElementById("send");
-    document.getElementById("grid").addEventListener("click",function(e){
+    var groupsEl=document.getElementById("groups");
+    var chosenEl=document.getElementById("chosen");
+    var seek=document.getElementById("seek");
+    var seekCount=document.getElementById("seekcount");
+    var nohit=document.getElementById("nohit");
+    var byId={}; d.courses.forEach(function(c){ byId[c.id]=c; });
+
+    function paintChosen(){
+      var ids=[...picked];
+      chosenEl.hidden = ids.length===0;
+      chosenEl.innerHTML = ids.length
+        ? '<span class="chosen-label">اخترت</span>'+ids.map(function(id){
+            var c=byId[id]||{};
+            return '<button type="button" class="chip" data-id="'+id+'">'+
+                   esc(c.code||"")+' <em>×</em></button>';
+          }).join("")
+        : "";
+    }
+
+    groupsEl.addEventListener("click",function(e){
+      var head=e.target.closest(".fold-head");
+      if(head){ head.parentNode.classList.toggle("open"); return; }
       var b=e.target.closest(".pick"); if(!b) return;
       var id=Number(b.dataset.id);
       if(picked.has(id)){ picked.delete(id); b.setAttribute("aria-pressed","false"); }
       else { picked.add(id); b.setAttribute("aria-pressed","true"); }
-      refresh();
+      paintChosen(); refresh();
+    });
+
+    // Removing from the pinned row must also un-press the card it came from.
+    chosenEl.addEventListener("click",function(e){
+      var chip=e.target.closest(".chip"); if(!chip) return;
+      var id=Number(chip.dataset.id);
+      picked.delete(id);
+      var card=groupsEl.querySelector('.pick[data-id="'+id+'"]');
+      if(card) card.setAttribute("aria-pressed","false");
+      paintChosen(); refresh();
+    });
+
+    seek.addEventListener("input",function(){
+      var q=seek.value.trim().toLowerCase();
+      var hits=0;
+      [...groupsEl.querySelectorAll(".fold")].forEach(function(section){
+        var shown=0;
+        [...section.querySelectorAll(".pick")].forEach(function(card){
+          var on = !q || card.dataset.find.indexOf(q)>=0;
+          card.hidden = !on;
+          if(on) shown++;
+        });
+        section.hidden = shown===0;
+        // Searching opens what it finds; clearing the box folds it back.
+        if(q) section.classList.add("open");
+        else section.classList.toggle("open", openAll);
+        hits += shown;
+      });
+      nohit.hidden = hits>0;
+      seekCount.textContent = q ? arCourses(hits) : "";
     });
     ["nm","cv"].forEach(function(k){ document.getElementById(k).addEventListener("input",refresh); });
 
@@ -5449,8 +5640,8 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
           document.getElementById("root").innerHTML=
             '<div class="done"><div class="tick">✓</div>'+
             '<h2>وصلت إجابتك</h2>'+
-            '<p>شكراً '+esc(x.d.name)+' — سجّلنا '+x.d.count+' مقرراً.<br>'+
-            'يمكنك فتح الرابط مرة أخرى لتعديل اختيارك.</p></div>';
+            '<p>شكراً '+esc(x.d.name)+' — سجّلنا اختيارك: '+arCourses(x.d.count)+'.<br>'+
+            'هذا ليس تسجيلاً؛ أكمل تسجيلك كالمعتاد. ويمكنك فتح الرابط مرة أخرى لتعديل اختيارك.</p></div>';
           window.scrollTo(0,0);
         })
         .catch(function(){ document.getElementById("err").innerHTML='<div class="err">تعذر الإرسال — تحقق من الاتصال.</div>';

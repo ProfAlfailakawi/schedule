@@ -2356,3 +2356,66 @@
   margin-inline-start:auto;font-style:normal;color:var(--muted);font-size:var(--t-xs);
   font-variant-numeric:tabular-nums lining-nums;
 }
+
+/* ── الشعب الجديدة ───────────────────────────────────────────────────────────
+ *
+ * The arithmetic is shown, not summarised. «٣٤ ÷ ٢٥ − ١ = ٩ بلا مقعد» is a
+ * sentence a head of department can check in two seconds and argue with; «تحتاج
+ * شعبة» is a number they have to trust. Every proposal here is checkable.
+ */
+.demand-openings{display:grid;gap:var(--s3);margin-block-start:var(--s4)}
+.opening-card{
+  display:grid;gap:var(--s3);padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);
+}
+.opening-card header{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s3)}
+.opening-card header b{display:block;font-size:var(--t-body);font-weight:650;line-height:1.5}
+.opening-card header span{color:var(--muted);font-size:var(--t-xs)}
+.opening-need{
+  flex:none;padding:var(--s1) var(--s3);border-radius:var(--r-full);
+  background:var(--accent-soft);color:var(--accent-strong,var(--accent));
+  font-size:var(--t-sm);font-weight:650;white-space:nowrap;
+}
+
+/* الحساب: أرقامٌ ورموزٌ بينها، تُقرأ من اليمين كجملة عربية. */
+.opening-math{
+  display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--s2) var(--s3);
+  padding:var(--s3) var(--s4);border-radius:var(--r-md);background:var(--surface-2);
+}
+.opening-math span{display:grid;gap:2px;min-width:0}
+.opening-math small{color:var(--muted);font-size:var(--t-xs)}
+.opening-math b{
+  font-size:var(--t-h4);font-weight:650;line-height:1;
+  font-variant-numeric:tabular-nums lining-nums;direction:ltr;unicode-bidi:isolate;
+}
+.opening-math em{
+  font-style:normal;color:var(--muted);font-size:var(--t-body);font-weight:600;
+  align-self:center;padding-block-start:var(--s3);
+}
+.opening-gap b{color:var(--accent-strong,var(--accent))}
+
+.opening-slots{display:grid;gap:var(--s2)}
+.opening-slot{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);
+  padding:var(--s3) var(--s4);
+  border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));
+  border-radius:var(--r-md);background:color-mix(in srgb,var(--accent) 3%,transparent);
+}
+.opening-slot-day{font-size:var(--t-sm);font-weight:650}
+.opening-slot>b{
+  font-size:var(--t-sm);font-weight:650;
+  font-variant-numeric:tabular-nums lining-nums;direction:ltr;unicode-bidi:isolate;
+}
+.opening-slot-room{
+  padding:2px var(--s2);border-radius:var(--r-sm);background:var(--surface-3);
+  color:var(--muted);font-size:var(--t-xs);direction:ltr;unicode-bidi:isolate;
+}
+.opening-slot-who{color:var(--muted);font-size:var(--t-xs)}
+.opening-slot-who.vacant{color:var(--warn,#b8860b);font-weight:600}
+.opening-slot button{margin-inline-start:auto}
+.opening-note{
+  flex-basis:100%;margin:0;color:var(--muted);font-size:var(--t-xs);line-height:1.7;
+}
+@media (max-width:640px){
+  .opening-slot button{margin-inline-start:0;width:100%;justify-content:center}
+}
