@@ -136,6 +136,8 @@
 /* --- Identity bar --------------------------------------------------------- */
 
 .deck-bar{
+  /* Above the cards that follow it, below the shell's own furniture. */
+  position:relative;z-index:45;
   display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
   padding:var(--s3) var(--s5);
   border:1px solid var(--line);
@@ -206,22 +208,41 @@
   position:absolute;top:0;bottom:0;width:1px;
   background:color-mix(in srgb,var(--line-strong) 70%,transparent);
 }
+/*
+  A pill is as wide as its lecture is long, and nothing measures the word inside
+  it. An hour is 8% of the teaching day — about 54px on a laptop, 38px of it
+  left after padding, which is five characters of a course code. So «ELE 112»
+  arrived as a smear of half-glyphs, and two of them side by side read as one
+  unbroken number. The pill now asks itself whether it can hold a word: above
+  the measured threshold it prints the code, below it stays a clean bar and the
+  code lives where it already lived — in the tooltip and the accessible name.
+*/
 .daybar-block{
   position:absolute;top:8px;bottom:8px;
-  min-width:26px;
+  min-width:8px;
   display:flex;align-items:center;justify-content:center;
-  padding:0 var(--s2);
+  padding:0 3px;
   border-radius:var(--r-xs);
   background:var(--accent);
   color:var(--accent-contrast);
+  /* A hairline of the track between neighbours, so two touching lectures never
+     read as one long block. */
+  box-shadow:inset 0 0 0 1px var(--surface-2);
   overflow:hidden;
+  container-type:inline-size;
   transition:transform .16s var(--ease),box-shadow .16s var(--ease);
 }
 .daybar-block b{
+  display:none;
   font:600 var(--t-xs)/1 var(--font-mono);
-  direction:ltr;white-space:nowrap;overflow:hidden;text-overflow:clip;
+  direction:ltr;unicode-bidi:isolate;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
-.daybar-block:hover{transform:translateY(-2px);box-shadow:var(--shadow-sm);z-index:2}
+/* 62px: eight characters at the mono advance of --t-xs, plus the 6px padding. */
+@container (min-width:62px){
+  .daybar-block b{display:block}
+}
+.daybar-block:hover{transform:translateY(-2px);box-shadow:inset 0 0 0 1px var(--surface-2),var(--shadow-sm);z-index:2}
 .daybar-now{
   position:absolute;top:0;bottom:0;width:2px;z-index:3;
   background:var(--brass);

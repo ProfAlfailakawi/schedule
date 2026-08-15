@@ -247,6 +247,12 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   .content-stack>*:nth-child(5){animation-delay:.2s}
   .content-stack>*:nth-child(6){animation-delay:.25s}
   .content-stack>*:nth-child(n+7){animation-delay:.3s}
+  /* ...except the identity bar. Its arrival animation created a stacking
+     context, and the install popover that hangs off its download button was
+     sealed inside it — so a card that must float over the page was painted
+     under every card that came after. The bar is the first row; losing a
+     0.42s rise costs nothing, and the popover gets its freedom back. */
+  .deck-bar{animation:none}
 
   /* Gauges draw their arc once, from empty. */
   .gauge-value{animation:gauge-sweep .95s var(--ease-out) both}
@@ -299,7 +305,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 }
 .share-sheet{
   position:relative;
-  width:min(560px,100%);max-height:88vh;overflow-y:auto;overscroll-behavior:contain;
+  width:min(620px,100%);max-height:min(88vh,900px);overflow-y:auto;overscroll-behavior:contain;
   padding:var(--s7);
   border:1px solid var(--line);border-radius:var(--r-2xl);
   background:var(--surface);box-shadow:var(--shadow-lg);
@@ -328,6 +334,84 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .share-error{
   margin-top:var(--s4);padding:var(--s3) var(--s4);border-radius:var(--r-sm);
   background:var(--danger-soft);color:var(--danger);font-size:var(--t-sm);
+}
+
+/* --------------------------------------------------------------------------
+   THE PUBLISH WIZARD
+   The three-step flow shipped without a stylesheet of its own, so it fell back
+   to the browser's defaults: the <ol> drew its own decimal marker beside the
+   number the button already prints (hence "1. 1نوع الرابط"), <strong> and
+   <small> ran together on one line with nothing between them, and the panes
+   stacked to a height the sheet could not hold. Nothing about the markup was
+   wrong; it simply had no clothes.
+   -------------------------------------------------------------------------- */
+.share-progress{margin-top:var(--s5)}
+.share-steps{
+  margin:0;padding:0;list-style:none;
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);
+}
+.share-steps>li{min-width:0}
+.share-steps button{
+  width:100%;min-width:0;
+  display:grid;grid-template-columns:22px minmax(0,1fr);
+  grid-template-areas:"num title" "num hint";
+  align-items:center;column-gap:var(--s2);row-gap:2px;
+  padding:var(--s2) var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface-2);text-align:start;
+  transition:border-color .16s var(--ease),background .16s var(--ease);
+}
+.share-steps button:hover{border-color:var(--line-strong)}
+.share-steps button>span{
+  grid-area:num;
+  width:22px;height:22px;display:grid;place-items:center;
+  border-radius:var(--r-full);background:var(--surface-3);color:var(--muted);
+  font-size:var(--t-eyebrow);font-weight:700;font-variant-numeric:tabular-nums;
+}
+.share-steps button>span svg{width:13px;height:13px}
+.share-steps button>strong{
+  grid-area:title;color:var(--ink);font-size:var(--t-sm);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.share-steps button>small{
+  grid-area:hint;color:var(--muted);font-size:var(--t-xs);line-height:1.4;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.share-steps li.active button{border-color:var(--accent);background:var(--accent-softer)}
+.share-steps li.active button>span{background:var(--accent);color:var(--accent-contrast)}
+.share-steps li.active button>strong{color:var(--accent-ink)}
+.share-steps li.complete button>span{background:var(--success-soft);color:var(--success)}
+
+.share-step{display:grid;gap:var(--s4);margin-top:var(--s5)}
+/* [hidden] must keep winning over the display:grid above. */
+.share-step[hidden]{display:none}
+.share-sheet .share-step-head{display:grid;gap:var(--s1)}
+.share-sheet .share-step-head small{
+  color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.08em;
+}
+.share-sheet .share-step-head h3{font-size:var(--t-h3);font-weight:600;color:var(--ink)}
+.share-sheet .share-step-head p{color:var(--muted);font-size:var(--t-sm);line-height:1.6}
+/* The actions sit at the end of their pane and stay inside the sheet, which is
+   what the clipped «التالي · الصلاحية» was asking for. */
+.share-step-actions{
+  display:flex;justify-content:flex-start;align-items:center;gap:var(--s2);flex-wrap:wrap;
+  padding-top:var(--s2);
+}
+.share-step-actions .btn{min-width:0}
+.share-choice-summary{
+  display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;
+  padding:var(--s3);border:1px dashed var(--line-strong);border-radius:var(--r-md);
+  background:var(--surface-2);color:var(--ink-2);font-size:var(--t-sm);
+}
+.share-created,.share-status{
+  display:grid;gap:var(--s2);
+  padding:var(--s3) var(--s4);border-radius:var(--r-md);
+  background:var(--surface-2);border:1px solid var(--line);font-size:var(--t-sm);
+}
+@media (max-width:600px){
+  .share-steps{grid-template-columns:minmax(0,1fr)}
+  .share-step-actions{justify-content:stretch}
+  .share-step-actions .btn{flex:1}
 }
 
 /* Which kind of link is being made — chosen before anything else about it. */

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { CalendarPlus, Check, Copy, IdCard, Link2, QrCode, Trash2, Users, X } from "lucide-react";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
 
@@ -175,7 +176,16 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
         {active.length ? <b className="tool-count">{active.length}</b> : null}
       </GhostButton>
 
-      {open ? (
+      {/*
+        The sheet is painted on the window, not inside the toolbar.
+
+        It is a fixed, full-window dialog with a z-index of 500, and it was
+        still being covered — because the toolbar it is written inside carries
+        its own stacking context, and inside that context 500 means nothing
+        against the cards that come after it. A dialog belongs to the document,
+        so it is rendered there and stops arguing with its neighbours.
+      */}
+      {open ? createPortal((
         <div
           className="share-backdrop no-print"
           onMouseDown={event => {
@@ -423,7 +433,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
             </footer>
           </section>
         </div>
-      ) : null}
+      ), document.body) : null}
     </>
   );
 }

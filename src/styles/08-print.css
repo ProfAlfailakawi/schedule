@@ -100,6 +100,21 @@
    * is silent on paper by default, and stays silent without maintenance.
    */
   body{visibility:hidden !important}
+  /*
+   * ...but hidden is not gone.
+   *
+   * `visibility:hidden` keeps every box in the layout: a three-hundred-row
+   * schedule screen is still nineteen thousand pixels tall, still fragments
+   * into page boxes, and still asks the printer for every one of them. The
+   * eight pages of the actual sheet were therefore followed by forty blank
+   * ones. Removing the screen's blocks outright collapses that height, and the
+   * `:has()` test keeps whichever block actually contains the sheet — at any
+   * depth, without naming a single screen. An engine that does not understand
+   * `:has()` simply ignores this and prints exactly as it does today.
+   */
+  .app-main>*{display:none !important}
+  .app-main>*:has(.print-only){display:block !important}
+  .app-main>*:has(.print-only)>*:not(:has(.print-only)):not(.print-only){display:none !important}
   .print-only,.print-only *{visibility:visible !important}
   .print-only{
     display:block !important;
@@ -228,6 +243,15 @@
     white-space:nowrap !important;overflow-wrap:normal !important;word-break:keep-all !important;
     print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
   }
+  /* A row header is not a column header. `.print-report th` paints every th
+     white-on-jade for the heading strip; a th inside the body then kept the
+     white text and took a pale background from its own rule — white on white,
+     which is how the rooms matrix printed its room names as blank space. */
+  .print-report tbody th{
+    background:#f2f6f4 !important;color:#111 !important;
+    border-color:#cbd4d0 !important;font-size:7.8pt !important;
+    white-space:normal !important;overflow-wrap:anywhere !important;
+  }
   .print-report tbody tr:nth-child(even) td{background:#f4f8f6 !important}
   .print-report td[dir="ltr"]{
     direction:ltr !important;text-align:center !important;white-space:nowrap !important;
@@ -240,6 +264,10 @@
   }
   /* The serial column reads as a quiet index, not a data point. */
   .print-report td:first-child{color:#6b7570 !important;font-size:7.6pt !important}
+  /* ...but only where the first cell really is a serial number. */
+  .print-matrix td:first-child,.print-matrix th:first-child{
+    color:#111 !important;font-size:6.6pt !important;text-align:right !important;
+  }
 
   /* --- summary, signatures ------------------------------------------------ */
 
@@ -284,7 +312,12 @@
     padding:1.4mm 1mm !important;vertical-align:top !important;font-size:6.6pt !important;
   }
   .print-matrix thead th{font-size:6.4pt !important;text-align:center !important;white-space:nowrap !important}
-  .print-matrix tbody th{background:#f2f6f4 !important;white-space:nowrap !important}
+  .print-matrix tbody th{
+    background:#f2f6f4 !important;color:#111 !important;border-color:#cbd4d0 !important;
+    /* Wrapping here also relieves the width pressure that squeezed the hour
+       columns: a long hall name no longer has to fit on one line. */
+    white-space:normal !important;overflow-wrap:anywhere !important;
+  }
   .print-matrix tbody th small{display:block !important;color:#555 !important;font-size:5.8pt !important}
   .print-matrix td span{
     display:block !important;
