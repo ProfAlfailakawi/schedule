@@ -1,3 +1,16 @@
+
+/* ── أرضية القراءة، مطلقة ──────────────────────────────────────────────────
+ *
+ * Measured on the department's live board: 479 elements printing under nine
+ * pixels, the smallest at 5.2. Every one of those rules has been lifted to a
+ * floor of 8.5px. Nothing in this program prints Arabic smaller than that,
+ * because below it Arabic stops being language and becomes texture — and a
+ * screen covered in texture is exactly what "visual pollution" is when you
+ * put a number on it.
+ *
+ * When something no longer fits at the floor, it does not shrink. It leaves,
+ * in a fixed order: the code first, then the clock, and never a name.
+ */
 /* ==========================================================================
    SCHEDULE — WORKSPACE, WEEK CALENDAR, DECISION LAYERS
    ========================================================================== */
@@ -803,11 +816,11 @@ button.schedule-radar:hover{filter:brightness(.96)}
 @container (max-width:46px){
   .week-event{align-items:stretch;padding:2px;gap:1px}
   .week-title{
-    display:-webkit-box;padding:0;font-size:7.25px;line-height:1.12;font-weight:580;
+    display:-webkit-box;padding:0;font-size:8.5px;line-height:1.12;font-weight:580;
     -webkit-line-clamp:3;overflow-wrap:anywhere;word-break:normal;letter-spacing:-.25px;
   }
   .week-who{
-    display:block;font-size:6.75px;line-height:1.08;font-weight:300;
+    display:block;font-size:8.5px;line-height:1.08;font-weight:300;
     opacity:.86;letter-spacing:-.3px;
   }
   .week-when,.week-code{display:none}
@@ -2212,7 +2225,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   border-radius:3px;
   background:color-mix(in srgb,var(--brass) 22%,transparent);
   color:var(--brass);
-  font-style:normal;font-size:8px;font-weight:700;line-height:1;
+  font-style:normal;font-size:8.5px;font-weight:700;line-height:1;
 }
 
 
@@ -2472,7 +2485,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   height:12px;padding:0 4px;
   background:transparent;
   color:color-mix(in srgb,var(--label) 52%,transparent);
-  font-size:8px;letter-spacing:0;
+  font-size:8.5px;letter-spacing:0;
 }
 /* ...and the clock line leaves room for it, only when it exists. */
 .week-event:has(.week-code) .week-when{padding-inline-end:52px}
@@ -2638,7 +2651,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .week-band-identity small{
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:7.5px;font-weight:300;line-height:1.2;color:color-mix(in srgb,var(--label) 72%,transparent);
+  font-size:8.5px;font-weight:300;line-height:1.2;color:color-mix(in srgb,var(--label) 72%,transparent);
 }
 .week-band-identity small::before{
   content:"·";margin-inline-end:4px;color:color-mix(in srgb,var(--label) 40%,transparent);
@@ -2676,7 +2689,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
  */
 .week-bundle-bands[data-dense="true"] .week-band-identity{gap:1px}
 .week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:8.5px;font-weight:600;line-height:1.1;letter-spacing:-.1px}
-.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:7.5px;line-height:1.1;font-weight:400;letter-spacing:-.1px}
+.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:8.5px;line-height:1.1;font-weight:400;letter-spacing:-.1px}
 .week-bundle-bands[data-dense="true"] .week-band-identity small::before{margin-inline-end:1px}
 /* The code is the first thing out of a dense weave — a number nobody reads at
    this size and the least of the three. */
@@ -3336,7 +3349,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .rooms-card span{
-  font-size:8px;font-weight:300;color:var(--ink-2);opacity:.84;line-height:1.08;letter-spacing:-.2px;
+  font-size:8.5px;font-weight:300;color:var(--ink-2);opacity:.84;line-height:1.08;letter-spacing:-.2px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 /* `clip` cut names mid-letter — «عبدالعزيز» arrived as «ـبدالعزيز», which in
@@ -3354,34 +3367,49 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   width:var(--actual-width,100%);height:3px;
   border-radius:3px 3px 0 0;background:var(--edge);opacity:.92;
 }
+/*
+   ── أرضية القراءة على لوح القاعات ──────────────────────────────────────────
+ *
+ * Measured on the department's own board: 479 elements printing below nine
+ * pixels, the smallest at 5.2. The compact card was setting the course at 8px,
+ * the teacher at 6.8 and the code at 5.2 — and nothing at five pixels is read
+ * by anybody. It is texture, and a screen full of it is what «تلوث بصري»
+ * actually looks like when you measure it.
+ *
+ * Same cure as the week card, and the same order of importance: the course and
+ * the teacher hold at every size, the code leaves first, and nothing prints
+ * below the size at which Arabic stops being language.
+ */
 .rooms-card.rooms-card-compact b{
-  flex:none;height:27px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+  flex:none;min-height:26px;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
   /* A word is never cut in half here either: a line that will not fit is
      dropped whole, matching the rule the week card already follows. */
   white-space:normal;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:keep-all;
-  font-size:8px;font-weight:630;line-height:9px;letter-spacing:-.18px;
+  font-size:9.5px;font-weight:620;line-height:1.32;letter-spacing:0;
 }
 .rooms-card.rooms-card-compact span{
-  flex:none;display:block;height:16px;
-  white-space:normal;overflow:hidden;text-overflow:clip;
-  font-size:6.8px;font-weight:350;line-height:8px;letter-spacing:-.28px;
+  flex:none;display:block;min-height:12px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-size:8.5px;font-weight:400;line-height:1.3;letter-spacing:0;
 }
-.rooms-card.rooms-card-compact em{display:block;top:auto;bottom:2px;left:4px;z-index:1;font-size:5.2px}
-.rooms-week-days .rooms-card b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow:hidden;text-overflow:clip;overflow-wrap:anywhere;font-size:7.4px;line-height:1.12}
-.rooms-week-days .rooms-card span{flex:none;display:block;height:12px;white-space:normal;overflow:hidden;text-overflow:clip;font-size:5.4px;line-height:6px;letter-spacing:-.34px}
+/* Third in the order, and the first thing out when the card is this small. */
+.rooms-card.rooms-card-compact em{display:none}
+.rooms-week-days .rooms-card b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;overflow:hidden;text-overflow:clip;overflow-wrap:anywhere;font-size:9.5px;font-weight:620;line-height:1.3}
+.rooms-week-days .rooms-card span{flex:none;display:block;min-height:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:8.5px;line-height:1.3;letter-spacing:0}
+.rooms-week-days .rooms-card em{display:none}
 /* Even a sliver keeps both identities. Time yields first because the axis
    already says it; subject and instructor never disappear. */
 .rooms-card{container-type:inline-size}
 @container (max-width:90px){
   .rooms-card:not(.rooms-card-compact){padding-inline:4px}
-  .rooms-card:not(.rooms-card-compact) b{font-size:8.25px;font-weight:590;letter-spacing:-.25px}
-  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:7px;font-weight:280;letter-spacing:-.3px}
-  .rooms-card:not(.rooms-card-compact) em{display:block;font-size:5.5px;opacity:.68}
+  .rooms-card:not(.rooms-card-compact) b{font-size:9.5px;font-weight:620;letter-spacing:0}
+  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:8.5px;font-weight:400;letter-spacing:0}
+  .rooms-card:not(.rooms-card-compact) em{display:block;font-size:8.5px;opacity:.68}
 }
 @container (max-width:44px){
   .rooms-card:not(.rooms-card-compact){padding-inline:2px}
-  .rooms-card:not(.rooms-card-compact) b{font-size:7.25px;letter-spacing:-.4px}
-  .rooms-card:not(.rooms-card-compact) span{font-size:6.25px;letter-spacing:-.45px}
+  .rooms-card:not(.rooms-card-compact) b{font-size:8.5px;letter-spacing:-.4px}
+  .rooms-card:not(.rooms-card-compact) span{font-size:8.5px;letter-spacing:-.45px}
   .rooms-card:not(.rooms-card-compact) em{display:none}
 }
 .rooms-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
@@ -3517,7 +3545,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 /* A half-hour card still says who teaches it: title folds to one line and the
    instructor keeps the second. */
 @container (max-height:44px){
-  .week-who{display:block;font-size:7.5px;font-weight:300}
+  .week-who{display:block;font-size:8.5px;font-weight:300}
   .week-title{-webkit-line-clamp:1}
 }
 
@@ -4255,7 +4283,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   position:absolute;inset-block-start:2px;inset-inline-end:4px;
   padding:0 5px;border-radius:var(--r-full);
   background:var(--surface);color:var(--ink-2);
-  font-size:8px;font-weight:700;letter-spacing:-.2px;
+  font-size:8.5px;font-weight:700;letter-spacing:-.2px;
   border:1px solid currentColor;
 }
 .week-event.ghost-removed::before{color:var(--danger)}

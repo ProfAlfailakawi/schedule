@@ -28,6 +28,7 @@ import {
   CampusMobilityProfile,
   ScheduleShareLink,
   VisitingRoster,
+  StudentNeed,
 } from "../types";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 
@@ -169,6 +170,7 @@ interface DBState {
   scheduleVersions?: ScheduleVersion[];
   scheduleDrafts?: ScheduleDraft[];
   scheduleComments?: ScheduleComment[];
+  studentNeeds?: StudentNeed[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
   visitingRosters?: VisitingRoster[];
@@ -198,6 +200,7 @@ let db: DBState = {
   scheduleVersions: [],
   scheduleDrafts: [],
   scheduleComments: [],
+  studentNeeds: [],
   schedulePublications: [],
   scheduleConstraints: [],
   visitingRosters: [],
@@ -2001,6 +2004,53 @@ export const Repository = {
       return snap.docs.map(doc => doc.data() as ScheduleComment).filter(mine).length;
     }
     return (db.scheduleComments || []).filter(mine).length;
+  },
+
+  /**
+   * ── ما يحتاجه الطالب ──────────────────────────────────────────────────────
+   *
+   * The thinnest record in the system, and deliberately so. No name and no
+   * civil ID are stored — only a fingerprint that can tell two submissions
+   * apart and can never be turned back into a person. See StudentNeed in
+   * types.ts for why that is a feature and not caution.
+   *
+   * Writing the same fingerprint twice REPLACES the earlier answer rather than
+   * adding a second: a student who changes their mind has changed their mind,
+   * and counting both would inflate every number on the coordinator's screen.
+   */
+  saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">): Promise<StudentNeed> => {
+    const row: StudentNeed = { ...entry, id: randomUUID(), createdAt: new Date().toISOString() };
+    const sameHand = (item: StudentNeed) =>
+      item.fingerprint === row.fingerprint && Number(item.AdTermId) === Number(row.AdTermId)
+      && Number(item.AdSectionId) === Number(row.AdSectionId);
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("studentNeeds")
+        .where("fingerprint", "==", row.fingerprint).limit(20).get();
+      const batch = firestoreDb.batch();
+      snap.docs.filter(doc => sameHand(doc.data() as StudentNeed)).forEach(doc => batch.delete(doc.ref));
+      batch.set(firestoreDb.collection("studentNeeds").doc(row.id), row);
+      await batch.commit();
+      return row;
+    }
+    if (!Array.isArray(db.studentNeeds)) db.studentNeeds = [];
+    db.studentNeeds = db.studentNeeds.filter(item => !sameHand(item));
+    db.studentNeeds.unshift(row);
+    if (db.studentNeeds.length > 20000) db.studentNeeds.length = 20000;
+    saveDatabase();
+    return row;
+  },
+
+  /** Every answer for one board. The only read the coordinator's side needs. */
+  getStudentNeeds: async (collegeId: number, sectionId: number, termId: number): Promise<StudentNeed[]> => {
+    const mine = (item: StudentNeed) =>
+      Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId
+      && Number(item.AdTermId) === termId;
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("studentNeeds")
+        .where("AdTermId", "==", termId).limit(5000).get();
+      return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
+    }
+    return (db.studentNeeds || []).filter(mine);
   },
 
   setScheduleCommentResolved: async (id: string, resolved: boolean): Promise<void> => {

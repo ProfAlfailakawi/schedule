@@ -722,7 +722,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   fill:var(--dial);font-size:19px;font-weight:600;letter-spacing:-.03em;
   font-variant-numeric:tabular-nums;
 }
-.review-ring .ring-unit{fill:var(--muted-2);font-size:6.5px;letter-spacing:-.02em}
+.review-ring .ring-unit{fill:var(--muted-2);font-size:8.5px;letter-spacing:-.02em}
 .review-title{min-width:0}
 .review-title h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
 .review-title p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm)}

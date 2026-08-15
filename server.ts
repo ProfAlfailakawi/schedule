@@ -18,6 +18,7 @@ import { AR, countOf } from "./src/utils/arabicCount";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
+import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
 import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
@@ -4500,6 +4501,116 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
   res.status(201).json({ id: row.id, createdAt: row.createdAt, text: row.text });
 });
 
+/**
+ * ── الاستبيان ───────────────────────────────────────────────────────────────
+ *
+ * A door for students, and the only one in the system. It is scoped to ONE
+ * section by the link itself, and that is load-bearing: sections here are
+ * already separated by gender, so the link decides which cohort is answering
+ * and nobody has to guess anything from a person's name. A boys' survey and a
+ * girls' survey are two links, issued the same way as any other.
+ *
+ * The civil ID is checked against the Kuwaiti checksum — an invented number
+ * never reaches the store — then hashed and discarded. The name is asked for,
+ * shown back so the student knows their answer landed, and never written. What
+ * remains cannot identify anybody, and still tells two people apart.
+ */
+const surveyFingerprint = (civil: string) =>
+  createHmac("sha256", CALENDAR_SECRET).update(`need|${civil}`).digest("hex").slice(0, 32);
+
+app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
+
+  const [courses, history, sections, terms] = await Promise.all([
+    Repository.getCourses(), Repository.getSchedules(), Repository.getSections(), Repository.getTerms(),
+  ]);
+  /* The courses offered are the ones this section has ACTUALLY taught — read
+     from its own history, newest first. A catalogue entry nobody has taught in
+     a decade is not something to ask a student about. */
+  const taught = new Map<number, number>();
+  for (const row of history) {
+    if (Number(row.AdSectionId) !== Number(resolved.link.AdSectionId)) continue;
+    taught.set(Number(row.AdCourseId), Math.max(taught.get(Number(row.AdCourseId)) || 0, Number(row.AdTermId)));
+  }
+  const offered = courses
+    .filter(course => taught.has(course.AdCourseId))
+    .map(course => ({ id: course.AdCourseId, code: course.CourseCode, name: course.CourseName,
+                      lastTaught: taught.get(course.AdCourseId) || 0 }))
+    .sort((a, b) => b.lastTaught - a.lastTaught || String(a.code).localeCompare(String(b.code), "ar"));
+
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    section: sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "",
+    term: terms.find(row => row.AdTermId === resolved.link.AdTermId)?.AdTermName || "",
+    label: resolved.link.label, expiresAt: resolved.link.expiresAt,
+    courses: offered,
+  });
+});
+
+app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
+  const token = String(req.params.token || "");
+  const resolved = await resolveShareToken(token);
+  if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
+  if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
+  if (!staffLookupAllowed(token, req.ip || "unknown")) {
+    res.status(429).json({ error: "محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة." });
+    return;
+  }
+
+  const body = (req.body || {}) as Record<string, unknown>;
+  const civil = String(body.civil || "").replace(/\D/g, "");
+  // The checksum is the whole gate: one person, one answer, and no account.
+  if (!validateCivilId(civil).isValid) { res.status(400).json({ error: "الرقم المدني غير صحيح" }); return; }
+  const name = String(body.name || "").trim().slice(0, 60);
+  if (name.length < 3) { res.status(400).json({ error: "اكتب اسمك كاملاً" }); return; }
+
+  const courses = await Repository.getCourses();
+  const allowed = new Set(courses.filter(course =>
+    Number(course.AdSectionId) === Number(resolved.link.AdSectionId)).map(course => course.AdCourseId));
+  const courseIds = [...new Set((Array.isArray(body.courseIds) ? body.courseIds : [])
+    .map(Number).filter(id => allowed.has(id)))].slice(0, 12);
+  if (!courseIds.length) { res.status(400).json({ error: "اختر مقرراً واحداً على الأقل" }); return; }
+
+  await Repository.saveStudentNeed({
+    fingerprint: surveyFingerprint(civil),
+    AdCollegeId: resolved.link.AdCollegeId,
+    AdSectionId: resolved.link.AdSectionId,
+    AdTermId: resolved.link.AdTermId,
+    courseIds,
+  });
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  res.setHeader("Cache-Control", "no-store");
+  /* The name is echoed once, here, and stored nowhere — so the student sees
+     their own answer landed without the department ever holding it. */
+  res.status(201).json({ name, count: courseIds.length });
+});
+
+/** What the students said, for the department. Never names, only numbers. */
+app.get("/api/schedules/demand", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0);
+  const sectionId = Number(req.query.sectionId || 0);
+  const termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId || !isScopeAllowed(req, collegeId, sectionId)) {
+    res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
+    return;
+  }
+  const [needs, courses] = await Promise.all([
+    Repository.getStudentNeeds(collegeId, sectionId, termId),
+    Repository.getCourses(),
+  ]);
+  const mine = courses.filter(course => Number(course.AdSectionId) === sectionId);
+  const reading = readStudentDemand(needs, mine);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    ...reading,
+    // The limit travels with the answer: this speaks for whoever answered, and
+    // is never the registrar's roll.
+    limit: "مبنيّ على من أجاب الاستبيان فقط — ليس بيانات التسجيل.",
+  });
+});
+
 /** The department's tray. Empty is the normal state and costs one scoped read. */
 app.get("/api/schedules/staff-inbox", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
@@ -5022,6 +5133,180 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 </body>
 </html>`;
 }
+
+/**
+ * ── صفحة الطالب ─────────────────────────────────────────────────────────────
+ *
+ * Twenty seconds, one screen, no account. A student opens a link, taps the
+ * courses they need, types a name and a civil ID, and is finished.
+ *
+ * Three things it deliberately never does:
+ *   · It shows no counts. The moment a student can see how many others chose a
+ *     course, this stops being a survey and becomes a campaign.
+ *   · It asks nothing it can answer from the link. The section — and with it
+ *     the cohort — is in the link, so nobody is asked which one they belong to.
+ *   · It promises nothing. «يُساعد القسم» is true; «سيُفتح» is not, and one
+ *     broken promise ends the usefulness of every survey after it.
+ */
+function surveyPage(token: string, label: string): string {
+  return `<!doctype html>
+<html lang="ar" dir="rtl"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>${label} · SCHEDULE</title>
+<style>
+:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
+*{box-sizing:border-box}
+body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
+  -webkit-text-size-adjust:100%;padding:22px 16px 40px}
+.wrap{max-inline-size:640px;margin-inline:auto}
+.kicker{font:600 11px/1 system-ui;letter-spacing:.22em;color:var(--brass);text-transform:uppercase}
+h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
+.sub{margin:0 0 22px;font-size:13.5px;color:var(--dim);line-height:1.85}
+.step{margin-block:26px 10px;display:flex;align-items:center;gap:9px;font-size:12px;color:var(--dim)}
+.step b{inline-size:21px;block-size:21px;flex:none;display:grid;place-items:center;border-radius:50%;
+  background:var(--card);border:1px solid var(--line);font:700 11px/1 system-ui;color:var(--jade)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(158px,1fr));gap:8px}
+.pick{
+  position:relative;display:flex;flex-direction:column;gap:4px;
+  padding:13px 13px 12px;border:1px solid var(--line);border-radius:14px;
+  background:var(--card);color:var(--ink);text-align:start;cursor:pointer;
+  font:inherit;transition:border-color .16s,background .16s,transform .12s;
+}
+.pick:active{transform:scale(.985)}
+.pick strong{font-size:13.5px;font-weight:600;line-height:1.4}
+.pick small{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
+.pick[aria-pressed="true"]{border-color:var(--jade);background:color-mix(in srgb,var(--jade) 12%,var(--card))}
+.pick i{position:absolute;inset-block-start:11px;inset-inline-end:11px;inline-size:17px;block-size:17px;
+  border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-style:normal;
+  font-size:11px;color:transparent;transition:.16s}
+.pick[aria-pressed="true"] i{border-color:var(--jade);background:var(--jade);color:#04100d}
+.field{display:grid;gap:6px;margin-block-end:12px}
+.field label{font-size:12.5px;color:var(--dim)}
+.field input{
+  inline-size:100%;padding:13px 14px;border-radius:12px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink);font:400 15px/1.5 inherit;
+}
+.field input:focus{outline:none;border-color:var(--jade)}
+.field input[inputmode=numeric]{direction:ltr;text-align:start;font-variant-numeric:tabular-nums}
+.send{
+  inline-size:100%;min-block-size:52px;margin-block-start:8px;border-radius:14px;cursor:pointer;
+  background:var(--jade);border:1px solid var(--jade);color:#04100d;font:700 15.5px/1 inherit;
+}
+.send:disabled{opacity:.45;cursor:default}
+.note{margin:14px 0 0;font-size:11.5px;line-height:1.9;color:#4d5a55;text-align:center}
+.err{margin:12px 0 0;padding:11px 13px;border-radius:11px;font-size:13px;line-height:1.7;
+  background:color-mix(in srgb,#a2402f 16%,transparent);border:1px solid color-mix(in srgb,#a2402f 40%,transparent)}
+.done{text-align:center;padding-block:52px}
+.done .tick{inline-size:62px;block-size:62px;margin-inline:auto;border-radius:50%;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--jade) 18%,transparent);border:1.5px solid var(--jade);
+  font-size:29px;color:var(--jade);animation:pop .34s cubic-bezier(.2,.9,.3,1.2) both}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:none;opacity:1}}
+.done h2{margin:20px 0 6px;font-size:20px;font-weight:700}
+.done p{margin:0;color:var(--dim);font-size:13.5px;line-height:1.9}
+.count{position:sticky;inset-block-end:14px;margin-block-start:18px}
+@media (prefers-reduced-motion:reduce){.pick,.done .tick{transition:none;animation:none}}
+</style></head>
+<body><div class="wrap" id="root">
+  <div class="kicker">استبيان المقررات</div>
+  <h1 id="head">…</h1>
+  <p class="sub" id="sub">اختر المقررات التي تحتاجها. يساعد القسم على معرفة الطلب قبل بناء الجدول — ولا يضمن فتح أي شعبة.</p>
+  <div id="body"></div>
+</div>
+<script>
+(function(){
+  var TOKEN=${JSON.stringify(token)};
+  var picked=new Set();
+  var esc=function(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});};
+  var body=document.getElementById("body");
+
+  fetch("/api/public/survey/"+encodeURIComponent(TOKEN))
+    .then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});})
+    .then(function(x){
+      if(!x.ok){ body.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح الاستبيان")+'</div>'; return; }
+      document.getElementById("head").textContent=x.d.section||x.d.label||"مقررات القسم";
+      render(x.d);
+    })
+    .catch(function(){ body.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت وأعد المحاولة.</div>'; });
+
+  function render(d){
+    body.innerHTML=
+      '<div class="step"><b>1</b> أي المقررات تحتاجها؟</div>'+
+      '<div class="grid" id="grid">'+d.courses.map(function(c){
+        return '<button type="button" class="pick" data-id="'+c.id+'" aria-pressed="false">'+
+               '<i>✓</i><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>';
+      }).join("")+'</div>'+
+      '<div class="step"><b>2</b> من أنت؟</div>'+
+      '<div class="field"><label for="nm">الاسم</label><input id="nm" autocomplete="name" enterkeyhint="next"></div>'+
+      '<div class="field"><label for="cv">الرقم المدني</label>'+
+        '<input id="cv" inputmode="numeric" maxlength="12" autocomplete="off" enterkeyhint="done"></div>'+
+      '<div class="count"><button type="button" class="send" id="send" disabled>اختر مقرراً واحداً على الأقل</button></div>'+
+      '<p class="note">اسمك ورقمك لا يُحفظان مع إجابتك — يُستخدمان مرة واحدة لمنع التكرار فقط.</p>'+
+      '<div id="err"></div>';
+
+    var send=document.getElementById("send");
+    document.getElementById("grid").addEventListener("click",function(e){
+      var b=e.target.closest(".pick"); if(!b) return;
+      var id=Number(b.dataset.id);
+      if(picked.has(id)){ picked.delete(id); b.setAttribute("aria-pressed","false"); }
+      else { picked.add(id); b.setAttribute("aria-pressed","true"); }
+      refresh();
+    });
+    ["nm","cv"].forEach(function(k){ document.getElementById(k).addEventListener("input",refresh); });
+
+    function refresh(){
+      var nm=document.getElementById("nm").value.trim();
+      var cv=document.getElementById("cv").value.replace(/\D/g,"");
+      var ready=picked.size>0 && nm.length>=3 && cv.length===12;
+      send.disabled=!ready;
+      /* The button says what is missing rather than sitting grey and silent. */
+      send.textContent = picked.size===0 ? "اختر مقرراً واحداً على الأقل"
+        : nm.length<3 ? "اكتب اسمك"
+        : cv.length!==12 ? "أدخل الرقم المدني (12 رقماً)"
+        : "إرسال · "+picked.size+" مقرر";
+    }
+
+    send.onclick=function(){
+      send.disabled=true; send.textContent="جارٍ الإرسال…";
+      fetch("/api/public/survey/"+encodeURIComponent(TOKEN),{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name:document.getElementById("nm").value.trim(),
+          civil:document.getElementById("cv").value,courseIds:[].slice.call(picked)})
+      }).then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});})
+        .then(function(x){
+          if(!x.ok){ document.getElementById("err").innerHTML='<div class="err">'+esc(x.d.error)+'</div>';
+            send.disabled=false; refresh(); return; }
+          document.getElementById("root").innerHTML=
+            '<div class="done"><div class="tick">✓</div>'+
+            '<h2>وصلت إجابتك</h2>'+
+            '<p>شكراً '+esc(x.d.name)+' — سجّلنا '+x.d.count+' مقرراً.<br>'+
+            'يمكنك فتح الرابط مرة أخرى لتعديل اختيارك.</p></div>';
+          window.scrollTo(0,0);
+        })
+        .catch(function(){ document.getElementById("err").innerHTML='<div class="err">تعذر الإرسال — تحقق من الاتصال.</div>';
+          send.disabled=false; refresh(); });
+    };
+  }
+})();
+</script></body></html>`;
+}
+
+app.get("/q/:token", async (req: Request, res: Response) => {
+  const resolved = await resolveShareToken(String(req.params.token));
+  res.setHeader("Cache-Control", "no-store");
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+  const esc = (value: string) => String(value || "").replace(/[&<>"']/g,
+    c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+  if ("error" in resolved) {
+    res.status(resolved.status).send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SCHEDULE</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a100f;color:#eef2ee;font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif}p{font-size:15px;color:#93a09a}</style></head><body><div style="text-align:center"><div style="font:600 13px/1 system-ui;letter-spacing:.24em;color:#c79b5f">SCHEDULE</div><p>${esc(resolved.error)}</p></div></body></html>`);
+    return;
+  }
+  if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><p dir=rtl>هذا الرابط ليس استبياناً.</p>"); return; }
+  res.send(surveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات")));
+});
 
 app.get("/s/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));

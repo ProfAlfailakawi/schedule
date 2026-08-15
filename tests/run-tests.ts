@@ -12,6 +12,7 @@ import { describeRollover, readTermRollover } from "../src/utils/termRollover";
 import { buildCalendar, escapeText, foldLine } from "../src/utils/icalendar";
 import { createPresenceClient, createPresencePainter, type PresencePeer } from "../src/components/schedulePresence";
 import { readSettledDrift, settledTerm } from "../src/utils/settledDrift";
+import { readStudentDemand, cohortPairs, sharedBetween, PAIR_FLOOR } from "../src/utils/studentDemand";
 import { reachAboutCard, unreachable, whatsappNumber } from "../src/utils/reachInstructor";
 import { learnRhythm, offRhythm, describeRhythm } from "../src/utils/departmentRhythm";
 import { AR, countOf, nounFor } from "../src/utils/arabicCount";
@@ -937,6 +938,52 @@ async function runTests() {
     const rungs = (w: { start: number; end: number }) => Math.round((w.end - w.start) / 30);
     assert(rungs(ordinary) === 24, "twelve hours is twenty-four half-hour rungs");
     assert(rungs(both) === 28, "…and a widened window grows its ladder to match");
+  }
+
+  /* --- 22. الاستبيان: الطلب ورسم الاشتراك ---------------------------------- */
+  originalLog("\n--- 22. Student demand ---");
+  {
+    const courses: any[] = [
+      { AdCourseId: 1, AdCollegeId: 1, AdSectionId: 1, CourseCode: "ISL 210", CourseName: "أصول الفقه", CourseCredit: 3, CourseHours: 3 },
+      { AdCourseId: 2, AdCollegeId: 1, AdSectionId: 1, CourseCode: "ARB 220", CourseName: "البلاغة", CourseCredit: 3, CourseHours: 3 },
+      { AdCourseId: 3, AdCollegeId: 1, AdSectionId: 1, CourseCode: "EDU 305", CourseName: "طرق التدريس", CourseCredit: 3, CourseHours: 3 },
+      { AdCourseId: 9, AdCollegeId: 1, AdSectionId: 1, CourseCode: "OLD 900", CourseName: "مقرر لم يطلبه أحد", CourseCredit: 3, CourseHours: 3 },
+    ];
+    const need = (n: number, ids: number[]): any =>
+      ({ id: `n${n}`, fingerprint: `f${n}`, AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+         courseIds: ids, createdAt: "2026-01-01T00:00:00Z" });
+    // Four students who need both 1 and 2; one who needs only 3.
+    const needs = [need(1,[1,2]), need(2,[1,2]), need(3,[1,2]), need(4,[1,2,3]), need(5,[3])];
+    const reading = readStudentDemand(needs, courses);
+
+    assert(reading.respondents === 5, "every number is quoted against who answered");
+    assert(reading.courses[0].courseId === 1 && reading.courses[0].students === 4,
+      "demand is counted per course, strongest first");
+    assert(reading.courses[0].share === 80, "…and stated as a share of the respondents");
+
+    /* THE PRIZE. Nothing in ten years of schedules can say which courses share
+       students; this is the only thing that can, and it is what turns a survey
+       into a constraint. */
+    const pair = reading.pairs.find(p => (p.a === 1 && p.b === 2) || (p.a === 2 && p.b === 1));
+    assert(Boolean(pair) && pair!.shared === 4, "the co-enrolment graph is built from the answers");
+    assert(sharedBetween(reading, 1, 2) === 4 && sharedBetween(reading, 2, 1) === 4,
+      "…and a pair is the same pair whichever way round it is asked");
+    assert(cohortPairs(reading).has("1|2"), "the constraint is emitted in the engine's own shape");
+
+    // Two people wanting the same two courses is not a cohort.
+    assert(!reading.pairs.some(p => p.shared < PAIR_FLOOR), "a pair below the floor is noise and is dropped");
+    assert(sharedBetween(reading, 1, 3) === 0, "…so a one-student overlap yields no constraint");
+
+    assert(reading.unwanted.length === 1 && reading.unwanted[0].courseId === 9,
+      "a course nobody asked for is named — worth knowing before opening it");
+    assert(readStudentDemand([], courses).headline === "", "no answers means no claim at all");
+    assert(reading.headline.includes("5 طلاب"), "the sentence counts students the way Arabic does");
+
+    // A student who changes their mind replaces their answer; they are one person.
+    const twice = readStudentDemand([need(1,[1]), { ...need(1,[1,2]), id: "n1b" }], courses);
+    assert(twice.respondents === 2, "the reading counts the rows it is given…");
+    assert(cohortPairs(readStudentDemand([need(1,[1,2])], courses)).size === 0,
+      "…and one person alone never makes a pair");
   }
 
   if (!originalDb) {
