@@ -3699,8 +3699,27 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .rooms-chip.on b{background:var(--accent);color:var(--accent-contrast)}
 
+.mobile-complex-view-note{display:none}
+
 @media (max-width:768px){
+  .mobile-complex-view-note{
+    display:flex;align-items:flex-start;gap:var(--s3);
+    margin:0 0 var(--s3);padding:var(--s3);
+    border:1px solid color-mix(in srgb,var(--info) 24%,var(--line));
+    border-radius:var(--r-md);background:color-mix(in srgb,var(--info-soft) 62%,var(--surface));
+    color:var(--ink-2);
+  }
+  .mobile-complex-view-note>svg{width:16px;height:16px;flex:none;margin-top:2px;color:var(--info)}
+  .mobile-complex-view-note>div{display:grid;gap:2px;min-width:0}
+  .mobile-complex-view-note strong{font-size:var(--t-xs);font-weight:700;color:var(--ink)}
+  .mobile-complex-view-note span{font-size:10.5px;line-height:1.55;color:var(--muted)}
+
   .rooms-surface{padding:var(--s3)}
+  /* A phone opens one day first, so the timeline can be materially narrower
+     without lying about time. The reader can still choose the full week, which
+     remains scrollable rather than being crushed into unreadable slivers. */
+  .rooms-scale,.rooms-rows{min-width:720px}
+  .rooms-scale-week,.rooms-rows:has(.rooms-compare-room){min-width:840px}
   .rooms-scale,.rooms-row{grid-template-columns:54px minmax(0,1fr)}
   .rooms-scale-week,.rooms-compare-row{grid-template-columns:54px 62px minmax(0,1fr)}
   .rooms-week-room-head{padding-inline:var(--s3)}

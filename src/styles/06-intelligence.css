@@ -118,13 +118,20 @@
 .print-menu{position:relative}
 .print-menu-pop{
   position:absolute;top:calc(100% + 6px);inset-inline-end:0;z-index:40;
-  min-width:190px;padding:var(--s2);
+  width:min(320px,calc(100vw - 32px));max-height:min(70vh,620px);overflow:auto;
+  padding:var(--s2);
   border:1px solid var(--line);border-radius:var(--r-md);
   background:var(--surface);box-shadow:var(--shadow-md);
   animation:rise .18s var(--ease-out) both;
 }
+.print-menu-group{padding:var(--s1) 0}
+.print-menu-group+.print-menu-group{border-top:1px solid var(--line);margin-top:var(--s1);padding-top:var(--s2)}
+.print-menu-group>span{
+  display:block;padding:var(--s1) var(--s3);
+  color:var(--muted-2);font-size:10px;font-weight:650;letter-spacing:.01em;
+}
 .print-menu-pop button{
-  width:100%;min-height:40px;padding:0 var(--s3);
+  width:100%;min-height:38px;padding:0 var(--s3);
   border-radius:var(--r-xs);color:var(--ink-2);text-align:start;font-size:var(--t-sm);
 }
 .print-menu-pop button:hover{background:var(--surface-2);color:var(--ink)}

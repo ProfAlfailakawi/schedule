@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardCheck, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
-import { PrintLetterhead, PrimaryButton, SecondaryButton } from "./ui";
+import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton } from "./ui";
 import {
   DAY_KEYS, DAY_NAMES, regulationScore, reviewSchedule,
   type DayKey, type RegulationFinding
@@ -27,6 +27,7 @@ interface Props {
   /** What each course has habitually been, learned from every term on record. */
   nature?: Map<number, CourseNature> | null;
   scopeLine: string;
+  collegeName?: string;
   meeting?: { day: DayKey; from: string; to: string } | null;
   onClose: () => void;
   onFocusRows?: (ids: number[]) => void;
@@ -80,7 +81,7 @@ function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSc
   );
 }
 
-export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, meeting, onClose, onFocusRows }: Props) {
+export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, collegeName, meeting, onClose, onFocusRows }: Props) {
   const findings = useMemo(
     () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
     [rows, courses, instructors, previousRows, meeting, nature]
@@ -235,9 +236,9 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       </section>
 
       {/* The signed sheet. */}
-      <div className="print-only print-sheet-modal">
+      <PrintPortal className="print-sheet-modal">
         <div className="print-report print-upright">
-          <PrintLetterhead title="تقرير مراجعة الجدول قبل الاعتماد" scope={scopeLine} />
+          <PrintLetterhead title="تقرير مراجعة الجدول قبل الاعتماد" scope={scopeLine} college={collegeName} />
           <div className="print-summary">
             <span>مؤشر المطابقة: <b>{score} / 100</b></span>
             <span>عدد المواعيد: <b>{rows.length}</b></span>
@@ -266,7 +267,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
             <div><span>التاريخ</span><i /></div>
           </div>
         </div>
-      </div>
+      </PrintPortal>
     </div>
   );
 }

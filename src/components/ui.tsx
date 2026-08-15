@@ -189,7 +189,51 @@ export function Segmented({ value, options, onChange, instant = false }: { value
  * sheet reads as an institutional document rather than an app export. `college`
  * is optional — without it the mark falls back to the workspace name.
  */
-export function PrintLetterhead({ title, scope, college }: { title: React.ReactNode; scope?: React.ReactNode; college?: React.ReactNode }) {
+let printHost: HTMLDivElement | null = null;
+let printPortalUsers = 0;
+
+/**
+ * A printable document lives outside the application layout.
+ *
+ * Keeping the sheet inside a long screen and merely hiding the screen with
+ * `visibility:hidden` still leaves every hidden box in pagination. That is how
+ * a one-page report can acquire a tail of blank pages. A shared body-level host
+ * gives the browser one clean document tree to paginate, while the normal app
+ * remains completely untouched on screen. Multiple printable surfaces may be
+ * mounted at once (the schedule plus its review dialog), so the host is shared
+ * and reference-counted.
+ */
+function getPrintHost() {
+  if (typeof document === "undefined") return null;
+  if (printHost?.isConnected) return printHost;
+  const existing = document.getElementById("app-print-root");
+  if (existing instanceof HTMLDivElement) {
+    printHost = existing;
+    return printHost;
+  }
+  printHost = document.createElement("div");
+  printHost.id = "app-print-root";
+  printHost.className = "print-portal-root";
+  document.body.appendChild(printHost);
+  return printHost;
+}
+
+export function PrintPortal({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const host = React.useMemo(() => getPrintHost(), []);
+  React.useLayoutEffect(() => {
+    if (!host) return;
+    printPortalUsers += 1;
+    document.body.classList.add("has-print-portal");
+    return () => {
+      printPortalUsers = Math.max(0, printPortalUsers - 1);
+      if (!printPortalUsers) document.body.classList.remove("has-print-portal");
+    };
+  }, [host]);
+  if (!host) return null;
+  return createPortal(<div className={`print-only ${className}`.trim()}>{children}</div>, host);
+}
+
+export function PrintLetterhead({ title, scope, college, footer = true }: { title: React.ReactNode; scope?: React.ReactNode; college?: React.ReactNode; footer?: boolean }) {
   const stamp = new Date().toLocaleString("ar-KW-u-nu-latn", {
     year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"
   });
@@ -216,16 +260,18 @@ export function PrintLetterhead({ title, scope, college }: { title: React.ReactN
           </div>
         </div>
       </header>
-      <footer className="print-foot">
-        <span>{college || title}</span>
-        {/* The page counter is kept in the markup but not printed: the browsers
-            these sheets are produced from resolve `counter(pages)` to zero, and
-            «صفحة ٠ من ٠» on every sheet is worse than no number at all. The
-            stylesheet hides it; the day it can be produced truthfully, it is
-            one rule away. */}
-        <span className="print-page-number" aria-hidden="true" />
-        <span>{stamp}</span>
-      </footer>
+      {footer ? (
+        <footer className="print-foot">
+          <span>{college || title}</span>
+          {/* The page counter is kept in the markup but not printed: the browsers
+              these sheets are produced from resolve `counter(pages)` to zero, and
+              «صفحة ٠ من ٠» on every sheet is worse than no number at all. The
+              stylesheet hides it; the day it can be produced truthfully, it is
+              one rule away. */}
+          <span className="print-page-number" aria-hidden="true" />
+          <span>{stamp}</span>
+        </footer>
+      ) : null}
     </>
   );
 }

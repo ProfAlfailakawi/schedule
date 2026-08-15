@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Building2, CalendarDays, ChevronDown, Clock3, Download, LayoutList,
   Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
-import { EmptyState, Field, GhostButton, Notice, PageTitle, PrimaryButton, PrintLetterhead, SecondaryButton } from "./ui";
+import { EmptyState, Field, GhostButton, Notice, PageTitle, PrimaryButton, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
@@ -174,6 +174,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<PrintKind>(null);
   const [printOpen, setPrintOpen] = useState(false);
+  const printMenuRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [visibleLimit, setVisibleLimit] = useState(150);
@@ -641,16 +642,60 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
   };
 
-  const PRINTS: Array<{ kind: Exclude<PrintKind, null>; label: string }> = [
-    { kind: "DepartmentSchedule", label: "جدول القسم" },
-    { kind: "WeekWithInstructor", label: "شبكة الأسبوع" },
-    { kind: "ListofTeacherCourse", label: "كشف المزاولة" },
-    { kind: "InstructorWithRoom", label: "الأساتذة مفصل" },
-    { kind: "RoomReport2", label: "المباني والقاعات" },
-    { kind: "RoomLoad", label: "إشغال القاعات والفراغات" },
-    { kind: "RoomMatrix", label: "جدول القاعات × الأوقات" },
-    { kind: "TimeReport2", label: "الأوقات" },
-    { kind: "Fairness", label: "عدالة العبء" }
+  // The print portal is mounted only for the requested sheet. Once the native
+  // print dialog closes, remove it so Ctrl/Cmd+P cannot accidentally repeat an
+  // old report after the reader has moved to another lens.
+  useEffect(() => {
+    const clearPrintedSheet = () => setPrintKind(null);
+    window.addEventListener("afterprint", clearPrintedSheet);
+    return () => window.removeEventListener("afterprint", clearPrintedSheet);
+  }, []);
+
+  useEffect(() => {
+    if (!printOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!printMenuRef.current?.contains(event.target as Node)) setPrintOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPrintOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [printOpen]);
+
+  const PRINT_GROUPS: Array<{ label: string; items: Array<{ kind: Exclude<PrintKind, null>; label: string }> }> = [
+    {
+      label: "الجداول الأساسية",
+      items: [
+        { kind: "DepartmentSchedule", label: "تقرير القسم العلمي الشامل" },
+        { kind: "WeekWithInstructor", label: "الجدول الأسبوعي المختصر" },
+        { kind: "WeekWithInstructorByDept", label: "الجدول الأسبوعي — القسم" },
+      ],
+    },
+    {
+      label: "الأساتذة والمزاولة",
+      items: [
+        { kind: "ListofTeacherCourse", label: "كشف المزاولة" },
+        { kind: "TeacherWithCourse", label: "استمارة المزاولة" },
+        { kind: "InstructorWithRoom", label: "الأساتذة — تفصيلي" },
+        { kind: "InstructorReport2", label: "تقرير الأستاذ" },
+      ],
+    },
+    {
+      label: "القاعات والأوقات",
+      items: [
+        { kind: "RoomReport2", label: "المباني والقاعات" },
+        { kind: "RoomLoad", label: "إشغال القاعات والفراغات" },
+        { kind: "RoomMatrix", label: "جدول القاعات × الأوقات" },
+        { kind: "TimeReport2", label: "تقرير الوقت" },
+        { kind: "RoomTimeReport2", label: "الوقت والقاعات" },
+      ],
+    },
+    { label: "التحليل", items: [{ kind: "Fairness", label: "عدالة توزيع العبء" }] },
   ];
 
   const groups = lens === "instructor" ? byInstructor : lens === "room" ? byRoom : [];
@@ -682,7 +727,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   });
 
   const moveLensFocus = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
-    const last = LENSES.length - 1;
+    const last = shownLenses.length - 1;
     let target = index;
     if (event.key === "Home") target = 0;
     else if (event.key === "End") target = last;
@@ -690,14 +735,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     else if (event.key === "ArrowRight") target = index === 0 ? last : index - 1;
     else return;
     event.preventDefault();
-    const next = LENSES[target];
+    const next = shownLenses[target];
     selectLens(next.id);
     requestAnimationFrame(() => document.getElementById(`query-lens-tab-${next.id}`)?.focus());
   };
 
   return (
     <div className="content-stack query-page">
-      <PageTitle eyebrow="الاستعلامات والتقارير" subtitle="سؤال واحد · سبع عدسات">مركز الاستعلام</PageTitle>
+      <PageTitle eyebrow="الاستعلامات والتقارير" subtitle={`سؤال واحد · ${shownLenses.length === 8 ? "ثماني عدسات" : "سبع عدسات"}`}>مركز الاستعلام</PageTitle>
 
       {error ? (
         <Notice>
@@ -890,7 +935,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           <div className="query-canvas-actions">
-            <div className="print-menu">
+            <div className="print-menu" ref={printMenuRef}>
               <SecondaryButton
                 type="button"
                 onClick={() => setPrintOpen(v => !v)}
@@ -902,7 +947,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               </SecondaryButton>
               {printOpen ? (
                 <div className="print-menu-pop" id="query-print-menu" role="menu" aria-label="نماذج الطباعة">
-                  {PRINTS.map(item => <button key={item.kind} type="button" role="menuitem" onClick={() => print(item.kind)}>{item.label}</button>)}
+                  {PRINT_GROUPS.map(group => (
+                    <div className="print-menu-group" key={group.label} role="group" aria-label={group.label}>
+                      <span>{group.label}</span>
+                      {group.items.map(item => (
+                        <button key={item.kind} type="button" role="menuitem" onClick={() => print(item.kind)}>{item.label}</button>
+                      ))}
+                    </div>
+                  ))}
                 </div>
               ) : null}
             </div>
@@ -1342,20 +1394,22 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         )}
       </section>
 
-      <div className="print-only">
-        <PrintSheet
-          kind={printKind}
-          rows={results}
-          fairness={fairness}
-          matrix={matrix}
-          roomLoad={roomLoad}
-          roomDay={roomDay}
-          scopeLine={scopeLine}
-          collegeName={collegeName}
-          courseById={courseById}
-          instructorById={instructorById}
-        />
-      </div>
+      {printKind ? (
+        <PrintPortal>
+          <PrintSheet
+            kind={printKind}
+            rows={results}
+            fairness={fairness}
+            matrix={matrix}
+            roomLoad={roomLoad}
+            roomDay={roomDay}
+            scopeLine={scopeLine}
+            collegeName={collegeName}
+            courseById={courseById}
+            instructorById={instructorById}
+          />
+        </PrintPortal>
+      ) : null}
     </div>
   );
 }
@@ -1617,6 +1671,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
       <div className="print-report print-matrix print-wide">
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table>
+          <colgroup>
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "11%" }} />
+            {matrix.columns.map((point: number) => <col key={`col-${point}`} />)}
+          </colgroup>
           <thead>
             <tr>
               <th>القاعة</th>
@@ -1703,9 +1762,10 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
   }
 
   if (kind === "WeekWithInstructor" || kind === "WeekWithInstructorByDept") {
+    const instructorIds = new Set(rows.map(row => Number(row.AdInstructorId || 0)).filter(Boolean));
+    const showInstructor = kind === "WeekWithInstructorByDept" || instructorIds.size > 1;
     return (
-      // Five day columns need the wide page; the default is portrait now.
-      <div className="print-report print-wide">
+      <div className={`print-report print-week-report print-wide ${showInstructor ? "print-week-department" : "print-week-instructor"}`}>
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table className="print-week">
           <colgroup>{DAYS.map(day => <col key={day.key} style={{ width: "20%" }} />)}</colgroup>
@@ -1716,19 +1776,36 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
                 <td key={day.key}>
                   {rows.filter(row => (row as any)[day.flag])
                     .sort((a, b) => a.fstarttime.localeCompare(b.fstarttime))
-                    .map(row => (
-                      <span className="slot" key={`${day.key}-${row.id}`}>
-                        <b>{courseById.get(row.AdCourseId)?.CourseCode || row.AdCourseName}</b>
-                        <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
-                        <time>{row.AdRoomCode}/{row.AdRoomHall}</time>
-                      </span>
-                    ))}
+                    .map(row => {
+                      const course = courseById.get(row.AdCourseId);
+                      const courseName = course?.CourseName || row.AdCourseName || "—";
+                      const courseCode = course?.CourseCode || "—";
+                      const instructor = instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+                      const place = placeOfRow(row);
+                      return (
+                        <span className="slot" key={`${day.key}-${row.id}`}>
+                          <span className="slot-course">
+                            <b>{courseName}</b>
+                            <i dir="ltr">{courseCode} · {row.SCode || "—"}</i>
+                          </span>
+                          {showInstructor ? <span className="slot-who">{instructor}</span> : null}
+                          <span className="slot-meta">
+                            <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                            <bdi className="print-ltr">{place}</bdi>
+                          </span>
+                        </span>
+                      );
+                    })}
+                  {!rows.some(row => Boolean((row as any)[day.flag])) ? <span className="slot-empty">لا مواعيد</span> : null}
                 </td>
               ))}
             </tr>
           </tbody>
         </table>
-        <div className="print-summary"><span>عدد المواعيد: <b>{rows.length}</b></span></div>
+        <div className="print-summary">
+          <span>عدد المواعيد: <b>{rows.length}</b></span>
+          <span>مجموع الساعات الأسبوعية: <b>{Math.round(totalHours / 60)}</b></span>
+        </div>
       </div>
     );
   }
@@ -1780,12 +1857,17 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
 
   /* ── تقرير المباني والقاعات — the room is the structure ─────────────────── */
   if (kind === "RoomReport2") {
-    const groups = groupRows(rows, row => placeOfRow(row)).map(group => ({
-      key: group.key,
-      title: <>القاعة <bdi className="print-ltr">{group.key}</bdi></>,
-      meta: <span>المواعيد: <b>{group.rows.length}</b></span>,
-      rows: group.rows,
-    }));
+    const groups = groupRows(rows, row => placeOfRow(row)).map(group => {
+      const [building, hall] = group.key === "بلا قاعة" ? ["", ""] : group.key.split("/");
+      return {
+        key: group.key,
+        title: group.key === "بلا قاعة"
+          ? "بلا قاعة"
+          : <>المبنى <bdi className="print-ltr">{building || "—"}</bdi> · القاعة <bdi className="print-ltr">{hall || "—"}</bdi></>,
+        meta: <span>المواعيد: <b>{group.rows.length}</b></span>,
+        rows: group.rows,
+      };
+    });
     return (
       <div className="print-report print-rooms print-wide">
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
@@ -1877,24 +1959,69 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
   if (kind === "InstructorReport2") {
     const byInstructor = groupRows(rows, row => String(row.AdInstructorId || 0));
     const single = byInstructor.length === 1 ? byInstructor[0] : null;
-    const instructor = single ? instructorById.get(Number(single.key)) : null;
-    const minutes = (single?.rows || rows).reduce(
-      (total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0);
-    const dayCount = new Set((single?.rows || rows).flatMap(row => DAYS.filter(day => (row as any)[day.flag]).map(day => day.key))).size;
     const list = single?.rows || rows;
-    return (
-      <div className={`print-report print-instructor-report ${single ? "print-upright" : "print-wide"}`}>
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        {single ? (
-          <div className="print-identity">
-            <div><span>الأستاذ</span><strong>{instructor?.AdInstructorName || "بدون أستاذ"}</strong></div>
-            <div><span>الرقم المدني</span><strong className="print-ltr">{instructor?.AdInstructorCivil || "—"}</strong></div>
-            <div><span>عدد المقررات</span><strong>{new Set(list.map(row => row.AdCourseId)).size}</strong></div>
-            <div><span>عدد المواعيد</span><strong>{list.length}</strong></div>
-            <div><span>الساعات الأسبوعية</span><strong>{Math.round(minutes / 60)}</strong></div>
-            <div><span>أيام التدريس</span><strong>{dayCount}</strong></div>
+    const teachingMinutes = list.reduce(
+      (total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0);
+
+    // When the report is opened without an instructor filter, repeating one
+    // anonymous seven-column table would lose the very field the report is
+    // about. In that case each instructor becomes a small named section.
+    if (!single) {
+      const groups = byInstructor.map(group => {
+        const instructor = instructorById.get(Number(group.key));
+        const minutes = group.rows.reduce(
+          (total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0);
+        return {
+          key: group.key,
+          title: instructor?.AdInstructorName || "بدون أستاذ",
+          meta: (
+            <>
+              <span>الرقم المدني: <bdi className="print-ltr">{instructor?.AdInstructorCivil || "—"}</bdi></span>
+              <span>المواعيد: <b>{group.rows.length}</b></span>
+              <span>الساعات الأسبوعية: <b>{Math.round(minutes / 60)}</b></span>
+            </>
+          ),
+          rows: group.rows,
+        };
+      });
+      return (
+        <div className="print-report print-instructor-report print-wide">
+          <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
+          <PrintGroupedTable
+            groups={groups}
+            emptyLabel="لا توجد مواعيد ضمن النطاق المحدد."
+            columns={[
+              { key: "course", head: "المقرر", width: "31%", className: "print-wrap", cell: row => courseById.get(row.AdCourseId)?.CourseName || row.AdCourseName || "" },
+              { key: "code", head: "الرمز", width: "10%", className: "print-ltr", cell: row => courseById.get(row.AdCourseId)?.CourseCode || "" },
+              { key: "section", head: "الشعبة", width: "8%", className: "print-ltr", cell: row => row.SCode },
+              { key: "days", head: "الأيام", width: "18%", className: "print-days", cell: row => dayCell(row) },
+              { key: "time", head: "الوقت", width: "14%", className: "print-ltr", cell: row => `${row.fstarttime}-${row.fendtime}` },
+              { key: "room", head: "القاعة", width: "11%", className: "print-ltr", cell: row => placeOfRow(row) },
+              { key: "credit", head: "وحدات", width: "8%", className: "num", cell: row => courseById.get(row.AdCourseId)?.CourseCredit ?? "" },
+            ]}
+          />
+          <div className="print-summary">
+            <span>عدد الأساتذة: <b>{groups.length}</b></span>
+            <span>عدد المواعيد: <b>{rows.length}</b></span>
+            <span>مجموع الساعات الأسبوعية: <b>{Math.round(teachingMinutes / 60)}</b></span>
           </div>
-        ) : null}
+        </div>
+      );
+    }
+
+    const instructor = instructorById.get(Number(single.key));
+    const dayCount = new Set(list.flatMap(row => DAYS.filter(day => (row as any)[day.flag]).map(day => day.key))).size;
+    return (
+      <div className="print-report print-instructor-report print-upright">
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
+        <div className="print-identity">
+          <div><span>الأستاذ</span><strong>{instructor?.AdInstructorName || "بدون أستاذ"}</strong></div>
+          <div><span>الرقم المدني</span><strong className="print-ltr">{instructor?.AdInstructorCivil || "—"}</strong></div>
+          <div><span>عدد المقررات</span><strong>{new Set(list.map(row => row.AdCourseId)).size}</strong></div>
+          <div><span>عدد المواعيد</span><strong>{list.length}</strong></div>
+          <div><span>الساعات الأسبوعية</span><strong>{Math.round(teachingMinutes / 60)}</strong></div>
+          <div><span>أيام التدريس</span><strong>{dayCount}</strong></div>
+        </div>
         {list.length ? (
           <table>
             <colgroup>
@@ -1919,7 +2046,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
         ) : <p className="print-empty">لا توجد مواعيد ضمن النطاق المحدد.</p>}
         <div className="print-summary">
           <span>عدد المواعيد: <b>{list.length}</b></span>
-          <span>مجموع الساعات الأسبوعية: <b>{Math.round(minutes / 60)}</b></span>
+          <span>مجموع الساعات الأسبوعية: <b>{Math.round(teachingMinutes / 60)}</b></span>
         </div>
       </div>
     );
@@ -1944,7 +2071,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
             /* A form is a document about one person: it begins on its own page,
                so it can be signed, filed and handed over on its own. */
             <section className="print-form" key={form.key} style={index ? { breakBefore: "page" } : undefined}>
-              <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
+              <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={index === 0} />
               <div className="print-identity">
                 <div><span>الأستاذ</span><strong>{instructor?.AdInstructorName || "بدون أستاذ"}</strong></div>
                 <div><span>الرقم المدني</span><strong className="print-ltr">{instructor?.AdInstructorCivil || "—"}</strong></div>
@@ -1953,10 +2080,10 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
               </div>
               <table>
                 <colgroup>
-                  <col style={{ width: "32%" }} /><col style={{ width: "11%" }} /><col style={{ width: "9%" }} />
-                  <col style={{ width: "19%" }} /><col style={{ width: "15%" }} /><col style={{ width: "14%" }} />
+                  <col style={{ width: "31%" }} /><col style={{ width: "10%" }} /><col style={{ width: "8%" }} />
+                  <col style={{ width: "18%" }} /><col style={{ width: "15%" }} /><col style={{ width: "12%" }} /><col style={{ width: "6%" }} />
                 </colgroup>
-                <thead><tr><th>المقرر</th><th>الرمز</th><th>الشعبة</th><th>الأيام</th><th>الوقت</th><th>القاعة</th></tr></thead>
+                <thead><tr><th>المقرر</th><th>الرمز</th><th>الشعبة</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>وحدات</th></tr></thead>
                 <tbody>
                   {form.rows.map(row => (
                     <tr key={row.id}>
@@ -1966,6 +2093,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
                       <td className="print-days">{dayCell(row)}</td>
                       <td className="print-ltr">{row.fstarttime}-{row.fendtime}</td>
                       <td className="print-ltr">{placeOfRow(row)}</td>
+                      <td className="num">{courseById.get(row.AdCourseId)?.CourseCredit ?? ""}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2019,45 +2147,57 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
     );
   }
 
-  return (
-    <div className="print-report print-wide">
-      <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-      <table>
-        {/* The space follows the meaning. A course name and an instructor's name
-            are the two things a reader is looking for, and the two things that
-            wrap; a section number is three characters and never needs more than
-            three characters' worth of paper. The old distribution gave them all
-            roughly the same share, which is why the names broke while «سعة» sat
-            in a column twice as wide as its contents. */}
-        <colgroup>
-          <col style={{ width: "2.5%" }} /><col style={{ width: "6%" }} /><col style={{ width: "4%" }} /><col style={{ width: "20%" }} />
-          <col style={{ width: "4%" }} /><col style={{ width: "4%" }} /><col style={{ width: "4%" }} />
-          <col style={{ width: "9%" }} /><col style={{ width: "12%" }} /><col style={{ width: "6.5%" }} />
-          <col style={{ width: "17%" }} /><col style={{ width: "11%" }} />
-        </colgroup>
-        <thead><tr>{["م", "رمز المقرر", "الشعبة", "المقرر", "وحدات", "ساعات", "سعة", "الوقت", "الأيام", "القاعة", "أستاذ المقرر", "الرقم المدني"].map(head => <th key={head}>{head}</th>)}</tr></thead>
-        <tbody>{rows.map((row, index) => {
-          const instructor = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
-          return (
-            <tr key={row.id}>
-              <td>{index + 1}</td><td className="print-ltr">{course?.CourseCode || ""}</td><td className="print-ltr">{row.SCode}</td>
-              <td className="print-wrap">{course?.CourseName || row.AdCourseName || ""}</td><td className="num">{course?.CourseCredit ?? ""}</td>
-              <td className="num">{course?.CourseHours ?? ""}</td><td className="num">{course?.MaxStudent ?? ""}</td>
-              <td className="print-ltr">{row.fstarttime}-{row.fendtime}</td><td className="print-days">{dayCell(row)}</td>
-              <td className="print-ltr">{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")}</td>
-              <td className="print-wrap">{instructor?.AdInstructorName || ""}</td><td className="print-ltr">{instructor?.AdInstructorCivil || ""}</td>
-            </tr>
-          );
-        })}</tbody>
-      </table>
-      <div className="print-summary">
-        <span>عدد المواعيد: <b>{rows.length}</b></span>
-        <span>مجموع الساعات الأسبوعية: <b>{Math.round(totalHours / 60)}</b></span>
+  if (kind === "DepartmentSchedule") {
+    return (
+      <div className="print-report print-department print-wide">
+        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
+        {rows.length ? (
+          <table>
+            <colgroup>
+              <col style={{ width: "3%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "4.5%" }} /><col style={{ width: "20%" }} />
+              <col style={{ width: "4.5%" }} /><col style={{ width: "4.5%" }} /><col style={{ width: "4.5%" }} />
+              <col style={{ width: "9.5%" }} /><col style={{ width: "12.5%" }} /><col style={{ width: "7%" }} />
+              <col style={{ width: "15.5%" }} /><col style={{ width: "8%" }} />
+            </colgroup>
+            <thead>
+              <tr>{["م", "رمز المقرر", "الشعبة", "المقرر", "وحدات", "ساعات", "سعة", "الوقت", "الأيام", "القاعة", "أستاذ المقرر", "الرقم المدني"].map(head => <th key={head}>{head}</th>)}</tr>
+            </thead>
+            <tbody>{rows.map((row, index) => {
+              const instructor = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
+              return (
+                <tr key={row.id}>
+                  <td>{index + 1}</td>
+                  <td className="print-ltr">{course?.CourseCode || ""}</td>
+                  <td className="print-ltr">{row.SCode}</td>
+                  <td className="print-wrap">{course?.CourseName || row.AdCourseName || ""}</td>
+                  <td className="num">{course?.CourseCredit ?? ""}</td>
+                  <td className="num">{course?.CourseHours ?? ""}</td>
+                  <td className="num">{course?.MaxStudent ?? ""}</td>
+                  <td className="print-ltr">{row.fstarttime}-{row.fendtime}</td>
+                  <td className="print-days">{dayCell(row)}</td>
+                  <td className="print-ltr">{placeOfRow(row)}</td>
+                  <td className="print-wrap">{instructor?.AdInstructorName || ""}</td>
+                  <td className="print-ltr">{instructor?.AdInstructorCivil || ""}</td>
+                </tr>
+              );
+            })}</tbody>
+          </table>
+        ) : <p className="print-empty">لا توجد مواعيد ضمن النطاق المحدد.</p>}
+        <div className="print-summary">
+          <span>عدد المواعيد: <b>{rows.length}</b></span>
+          <span>مجموع الساعات الأسبوعية: <b>{Math.round(totalHours / 60)}</b></span>
+          <span>عدد المقررات: <b>{new Set(rows.map(row => row.AdCourseId)).size}</b></span>
+          <span>عدد الأساتذة: <b>{new Set(rows.map(row => row.AdInstructorId).filter(Boolean)).size}</b></span>
+        </div>
+        <div className="print-signatures">
+          <div><span>منسق الجدول</span><i /></div>
+          <div><span>رئيس القسم العلمي</span><i /></div>
+        </div>
       </div>
-      <div className="print-signatures">
-        <div><span>منسق الجدول</span><i /></div>
-        <div><span>رئيس القسم العلمي</span><i /></div>
-      </div>
-    </div>
-  );
+    );
+  }
+
+  // Every PrintKind above owns its own renderer. Keeping a generic fallback here
+  // would silently turn the next report someone adds into the wrong document.
+  return null;
 }
