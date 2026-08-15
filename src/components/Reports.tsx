@@ -106,6 +106,28 @@ const dayText = (row: FSchedule) => {
   const detail = String(row.fdetail || "").trim();
   return /[\u0600-\u06FF]/.test(detail) ? detail : "";
 };
+/**
+ * The days of a lecture, printed as days.
+ *
+ * A cell that simply held «الأحد · الاثنين» was wrapped by the browser at the
+ * nearest opportunity, and Arabic offers no hyphen to soften it — so a narrow
+ * column split «الأربعاء» into «الأر / بعاء». Each name is its own unbreakable
+ * unit here and the separator is the only place a line may end, which is the
+ * one break an Arabic reader would have made themselves.
+ */
+const dayCell = (row: FSchedule) => {
+  const named = dayFlags(row).map(day => day.label);
+  if (!named.length) {
+    const detail = String(row.fdetail || "").trim();
+    return /[\u0600-\u06FF]/.test(detail) ? detail : "";
+  }
+  return named.map((label, index) => (
+    <React.Fragment key={label}>
+      {index ? " · " : null}
+      <bdi>{label}</bdi>
+    </React.Fragment>
+  ));
+};
 const share = (value: number, max: number) => `${Math.min(100, Math.round((value / Math.max(1, max)) * 100))}%`;
 
 /**
@@ -1553,6 +1575,12 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
     return (
       <div className="print-report print-occupancy print-wide">
         <PrintLetterhead title={titles[kind]} scope={[scopeLine, dayLabel].filter(Boolean).join(" · ")} college={collegeName} />
+        {/* A grid of nothing is not an answer, it is several blank pages with a
+            footer on them. When the scope holds no rooms the sheet says so in
+            one line, on one page, and stops. */}
+        {!(roomLoad?.rooms || []).length ? (
+          <p className="print-empty">لا توجد قاعات ضمن النطاق المحدد.</p>
+        ) : (
         <table>
           <thead>
             <tr>
@@ -1573,6 +1601,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
             ))}
           </tbody>
         </table>
+        )}
         <div className="print-summary">
           <span>عدد القاعات: <b>{roomLoad?.rooms?.length ?? 0}</b></span>
           <span>متوسط الإشغال: <b>{roomLoad?.totalRate ?? 0}٪</b></span>
@@ -1618,15 +1647,18 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
       <div className="print-report print-wide">
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
         <table>
-          <colgroup><col style={{ width: "4%" }} /><col style={{ width: "17%" }} /><col style={{ width: "10%" }} /><col /><col style={{ width: "9%" }} /><col style={{ width: "11%" }} /><col style={{ width: "16%" }} /><col style={{ width: "7%" }} /></colgroup>
+        {/* The course is the widest column and the name the second widest —
+            those are the two that wrap. Everything else is a fixed-length token
+            and takes exactly the paper a token needs. */}
+          <colgroup><col style={{ width: "3.5%" }} /><col style={{ width: "19%" }} /><col style={{ width: "10%" }} /><col /><col style={{ width: "8%" }} /><col style={{ width: "10%" }} /><col style={{ width: "13%" }} /><col style={{ width: "6%" }} /></colgroup>
           <thead><tr><th>م</th><th>الاسم</th><th>الرقم المدني</th><th>المقرر الدراسي</th><th>رمز المقرر</th><th>الوقت</th><th>الأيام</th><th>الوحدات</th></tr></thead>
           <tbody>{rows.map((row, index) => {
             const instructor = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
             return (
               <tr key={row.id}>
-                <td>{index + 1}</td><td>{instructor?.AdInstructorName || ""}</td><td dir="ltr">{instructor?.AdInstructorCivil || ""}</td>
-                <td>{course?.CourseName || row.AdCourseName || ""}</td><td dir="ltr">{course?.CourseCode || ""}</td>
-                <td dir="ltr">{row.fstarttime}-{row.fendtime}</td><td>{dayText(row)}</td><td className="num">{course?.CourseCredit ?? ""}</td>
+                <td>{index + 1}</td><td className="print-wrap">{instructor?.AdInstructorName || ""}</td><td className="print-ltr">{instructor?.AdInstructorCivil || ""}</td>
+                <td className="print-wrap">{course?.CourseName || row.AdCourseName || ""}</td><td className="print-ltr">{course?.CourseCode || ""}</td>
+                <td className="print-ltr">{row.fstarttime}-{row.fendtime}</td><td className="print-days">{dayCell(row)}</td><td className="num">{course?.CourseCredit ?? ""}</td>
               </tr>
             );
           })}</tbody>
@@ -1647,23 +1679,29 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, scopeLine
     <div className="print-report print-wide">
       <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
       <table>
+        {/* The space follows the meaning. A course name and an instructor's name
+            are the two things a reader is looking for, and the two things that
+            wrap; a section number is three characters and never needs more than
+            three characters' worth of paper. The old distribution gave them all
+            roughly the same share, which is why the names broke while «سعة» sat
+            in a column twice as wide as its contents. */}
         <colgroup>
-          <col style={{ width: "3%" }} /><col style={{ width: "6.5%" }} /><col style={{ width: "5%" }} /><col style={{ width: "16%" }} />
-          <col style={{ width: "5.5%" }} /><col style={{ width: "5.5%" }} /><col style={{ width: "5%" }} />
-          <col style={{ width: "9.5%" }} /><col style={{ width: "11%" }} /><col style={{ width: "7.5%" }} />
-          <col style={{ width: "14%" }} /><col style={{ width: "11.5%" }} />
+          <col style={{ width: "2.5%" }} /><col style={{ width: "6%" }} /><col style={{ width: "4%" }} /><col style={{ width: "20%" }} />
+          <col style={{ width: "4%" }} /><col style={{ width: "4%" }} /><col style={{ width: "4%" }} />
+          <col style={{ width: "9%" }} /><col style={{ width: "12%" }} /><col style={{ width: "6.5%" }} />
+          <col style={{ width: "17%" }} /><col style={{ width: "11%" }} />
         </colgroup>
         <thead><tr>{["م", "رمز المقرر", "الشعبة", "المقرر", "وحدات", "ساعات", "سعة", "الوقت", "الأيام", "القاعة", "أستاذ المقرر", "الرقم المدني"].map(head => <th key={head}>{head}</th>)}</tr></thead>
         <tbody>{rows.map((row, index) => {
           const instructor = instructorById.get(row.AdInstructorId), course = courseById.get(row.AdCourseId);
           return (
             <tr key={row.id}>
-              <td>{index + 1}</td><td dir="ltr">{course?.CourseCode || ""}</td><td dir="ltr">{row.SCode}</td>
-              <td>{course?.CourseName || row.AdCourseName || ""}</td><td className="num">{course?.CourseCredit ?? ""}</td>
+              <td>{index + 1}</td><td className="print-ltr">{course?.CourseCode || ""}</td><td className="print-ltr">{row.SCode}</td>
+              <td className="print-wrap">{course?.CourseName || row.AdCourseName || ""}</td><td className="num">{course?.CourseCredit ?? ""}</td>
               <td className="num">{course?.CourseHours ?? ""}</td><td className="num">{course?.MaxStudent ?? ""}</td>
-              <td dir="ltr">{row.fstarttime}-{row.fendtime}</td><td>{dayText(row)}</td>
-              <td dir="ltr">{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")}</td>
-              <td>{instructor?.AdInstructorName || ""}</td><td dir="ltr">{instructor?.AdInstructorCivil || ""}</td>
+              <td className="print-ltr">{row.fstarttime}-{row.fendtime}</td><td className="print-days">{dayCell(row)}</td>
+              <td className="print-ltr">{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")}</td>
+              <td className="print-wrap">{instructor?.AdInstructorName || ""}</td><td className="print-ltr">{instructor?.AdInstructorCivil || ""}</td>
             </tr>
           );
         })}</tbody>

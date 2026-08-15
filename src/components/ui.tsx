@@ -208,8 +208,11 @@ export function PrintLetterhead({ title, scope, college }: { title: React.ReactN
       </header>
       <footer className="print-foot">
         <span>{college || title}</span>
-        {/* Filled by the print stylesheet's page counters — a loose stack of
-            sheets can be checked for completeness without reading them. */}
+        {/* The page counter is kept in the markup but not printed: the browsers
+            these sheets are produced from resolve `counter(pages)` to zero, and
+            «صفحة ٠ من ٠» on every sheet is worse than no number at all. The
+            stylesheet hides it; the day it can be produced truthfully, it is
+            one rule away. */}
         <span className="print-page-number" aria-hidden="true" />
         <span>{stamp}</span>
       </footer>

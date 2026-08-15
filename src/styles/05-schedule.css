@@ -3775,3 +3775,44 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 @media (max-width:768px){
   .schedule-editor-close{inset-block-start:0;inset-inline-start:0}
 }
+
+/* ==========================================================================
+   THE ARTICLES, READ WHILE THE APPOINTMENT IS BEING WRITTEN
+   Advice, never a gate: the save is refused by a real clash and by nothing
+   else. A department that departs from an article on purpose is told once,
+   plainly, and is left to decide.
+   ========================================================================== */
+
+.regulation-advice{
+  display:grid;gap:var(--s2);
+  margin-top:var(--s3);padding:var(--s3);
+  border:1px solid color-mix(in srgb,var(--warning) 26%,var(--line));
+  border-radius:var(--r-md);
+  background:color-mix(in srgb,var(--warning-soft) 55%,var(--surface));
+}
+.regulation-advice-head{
+  display:flex;align-items:center;gap:6px;
+  color:var(--warning);font-size:var(--t-sm);font-weight:700;
+}
+.regulation-advice-head svg{width:14px;height:14px;flex:none}
+.regulation-advice-head strong{flex:1;min-width:0}
+.regulation-advice-head em{
+  flex:none;font-style:normal;font-weight:600;font-size:9.5px;
+  padding:2px 8px;border-radius:var(--r-full);
+  background:var(--surface);color:var(--muted);
+  border:1px solid var(--line);
+}
+.regulation-advice-item{
+  display:grid;gap:2px;
+  padding:var(--s2);border-radius:var(--r-sm);
+  background:var(--surface);
+  border-inline-start:3px solid color-mix(in srgb,var(--warning) 60%,transparent);
+}
+.regulation-advice-item.sev-high{border-inline-start-color:var(--danger)}
+.regulation-advice-item.sev-low{border-inline-start-color:var(--line-strong)}
+.regulation-advice-item .regulation-article{
+  font:600 9.5px var(--font-mono);color:var(--muted);letter-spacing:-.2px;
+}
+.regulation-advice-item strong{font-size:var(--t-sm);color:var(--ink);font-weight:650;line-height:1.4}
+.regulation-advice-item>span:last-child{font-size:var(--t-xs);color:var(--muted);line-height:1.55}
+.regulation-advice-more{font-size:var(--t-xs);color:var(--muted);padding-inline-start:var(--s1)}

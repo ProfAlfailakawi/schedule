@@ -1399,6 +1399,44 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setForm(prev => ({ ...prev, fstarttime: slot.start, fendtime: slot.end, AdRoomCode: slot.room, AdRoomHall: slot.hall }));
     setSlotIdeas(null);
   };
+  /**
+   * What the regulation would say about this appointment, said while it is
+   * still being written.
+   *
+   * The articles were only ever read over a finished term — the approval review
+   * — so a coordinator learned that a lecture breaks م.8 long after they had
+   * left the form. The same reading now runs on the draft, against the rest of
+   * the scope so the context rules (an instructor's day, a course's habit) mean
+   * what they mean, and reports only what is true of THIS appointment.
+   *
+   * It is advice and it stays advice: nothing here can disable the save. A
+   * department that knows why it is departing from the article should not have
+   * to argue with a form about it — it should simply be told, once, plainly.
+   */
+  const editorRegulation = useMemo(() => {
+    if (editor === "index") return [];
+    if (!form.AdCourseId || !form.fstarttime || !form.fendtime) return [];
+    if (!days.some(d => Boolean((form as any)[d.key]))) return [];
+    if (mins(form.fendtime) <= mins(form.fstarttime)) return [];
+    const draftId = editId || -1;
+    const draft = { ...(form as any), id: draftId, AdCourseName: courseName || undefined } as FSchedule;
+    const around = rows.filter(row => row.id !== draftId && Number(row.AdTermId) === Number(form.AdTermId));
+    try {
+      return reviewSchedule({
+        rows: [...around, draft],
+        courses: courseById,
+        instructors: instructorById,
+        nature,
+      }).filter(finding => finding.rowIds.includes(draftId));
+    } catch {
+      return [];
+    }
+  }, [
+    editor, editId, courseName, rows, courseById, instructorById, nature,
+    form.AdCourseId, form.AdInstructorId, form.AdTermId, form.SCode,
+    form.fstarttime, form.fendtime, form.AdRoomCode, form.AdRoomHall,
+    form.fsunday, form.fmonday, form.ftuesday, form.fwednesday, form.fthursday,
+  ]);
   const timeRangeInvalid = Boolean(form.fstarttime&&form.fendtime)&&mins(form.fendtime)<=mins(form.fstarttime);
   const outsideTeachingDay = Boolean(form.fstarttime && form.fendtime) && !timeRangeInvalid &&
     !withinScheduleDay(mins(form.fstarttime), mins(form.fendtime));
@@ -4602,6 +4640,33 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </span>
               </div>
             )}
+            {/*
+              The articles, read on the draft. Deliberately below the blocking
+              check and deliberately never blocking: a save is refused only by
+              a real clash, and a departure from the regulation is a thing the
+              department is told about, not prevented from doing.
+            */}
+            {editorRegulation.length ? (
+              <div className="regulation-advice" role="status">
+                <div className="regulation-advice-head">
+                  <ClipboardCheck aria-hidden="true" />
+                  <strong>ملاحظات اللائحة</strong>
+                  <em>تحذير — لا يمنع الحفظ</em>
+                </div>
+                {editorRegulation.slice(0, 4).map(finding => (
+                  <article key={finding.rule} className={`regulation-advice-item sev-${finding.severity}`}>
+                    <span className="regulation-article">{finding.article}</span>
+                    <strong>{finding.title}</strong>
+                    <span>{finding.detail}</span>
+                  </article>
+                ))}
+                {editorRegulation.length > 4 ? (
+                  <small className="regulation-advice-more">
+                    و{(editorRegulation.length - 4).toLocaleString("ar-KW-u-nu-latn")} ملاحظة أخرى تظهر في مراجعة الاعتماد.
+                  </small>
+                ) : null}
+              </div>
+            ) : null}
             {conflicts.length ? (
               <div className="solver-box">
                 <SecondaryButton
@@ -6315,7 +6380,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           }}
         />
       ) : null}
-      <div className="print-only schedule-print">
+      {/* The week is a wide document; it is printed on a wide page, in the same
+          hand as every other sheet the program produces. */}
+      <div className="print-only schedule-print print-report print-wide">
         <PrintLetterhead
           title="الجدول الدراسي"
           scope={[
@@ -6351,18 +6418,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             {filteredRows.map((s, i) => (
               <tr key={s.id}>
                 <td>{i + 1}</td>
-                <td>
+                <td className="print-wrap">
                   {courseById.get(s.AdCourseId)?.CourseCode} — {s.AdCourseName}
                 </td>
-                <td>{s.SCode}</td>
-                <td>
+                <td className="print-ltr">{s.SCode}</td>
+                <td className="print-wrap">
                   {instructorById.get(s.AdInstructorId)?.AdInstructorName}
                 </td>
-                <td>{arabicDays(s)}</td>
-                <td dir="ltr">
+                <td className="print-days">
+                  {days.filter(d => Boolean((s as any)[d.key])).map((d, index) => (
+                    <React.Fragment key={d.key}>{index ? " · " : null}<bdi>{d.label}</bdi></React.Fragment>
+                  ))}
+                </td>
+                <td className="print-ltr">
                   {s.fstarttime} - {s.fendtime}
                 </td>
-                <td>
+                <td className="print-ltr">
                   {s.AdRoomCode}/{s.AdRoomHall}
                 </td>
               </tr>
