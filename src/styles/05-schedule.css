@@ -2659,17 +2659,39 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-bundle-bands[data-dense="true"] .week-bundle-band{
   min-width:0;min-height:0;padding-inline:1.5px;gap:1px;border-inline-start-width:2px;
 }
+/*
+   ── الحزمة المزدحمة: متى يتوقف الشريط عن محاولة الكلام ─────────────────────
+ *
+ * Measured with twenty lectures in one hour: each band came out 95×7 pixels
+ * and printed the course name at 6.25px, the teacher at 5.35px and the code at
+ * 4.1px. Those are not small type. Nothing at four pixels is read by anybody;
+ * it is a texture that looks like damage, and it was the reason a crowded hour
+ * looked broken rather than busy.
+ *
+ * So a band that cannot print a name stops trying. Below fourteen pixels it
+ * becomes what it honestly is — a clean coloured slice, one per lecture, in
+ * the lecture's own hue. The identity is not lost: it is in the tooltip, in
+ * the accessible label, in the hover card, and in full the instant the hour is
+ * opened or the fan is fanned. A readable stripe beats an unreadable sentence.
+ */
 .week-bundle-bands[data-dense="true"] .week-band-identity{gap:1px}
-.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:6.25px;font-weight:570;line-height:1;letter-spacing:-.28px}
-.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:5.35px;line-height:1;font-weight:300;letter-spacing:-.32px}
+.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:8.5px;font-weight:600;line-height:1.1;letter-spacing:-.1px}
+.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:7.5px;line-height:1.1;font-weight:400;letter-spacing:-.1px}
 .week-bundle-bands[data-dense="true"] .week-band-identity small::before{margin-inline-end:1px}
-.week-bundle-bands[data-dense="true"] .week-bundle-band em{
-  display:block;flex:none;max-width:22px;overflow:hidden;text-overflow:ellipsis;
-  font-size:4.1px;font-weight:500;letter-spacing:-.35px;opacity:.62;
+/* The code is the first thing out of a dense weave — a number nobody reads at
+   this size and the least of the three. */
+.week-bundle-bands[data-dense="true"] .week-bundle-band em{display:none}
+
+/* Past this many in one hour there is no room for type at all, at any size. */
+.week-bundle-bands[data-crush="true"] .week-band-identity{display:none}
+.week-bundle-bands[data-crush="true"] .week-bundle-band{
+  border-inline-start-width:0;border-radius:3px;
+  background:hsl(var(--hue) 44% 62% / .58);
+  min-height:5px;
 }
-.week-bundle-bands[data-count="9"] .week-band-identity strong{font-size:5.8px}
-.week-bundle-bands[data-count="9"] .week-band-identity small{font-size:4.9px}
-.week-bundle-bands[data-count="9"] .week-bundle-band em{font-size:3.8px;max-width:20px}
+.week-bundle-bands[data-crush="true"] .week-bundle-band:hover{
+  background:hsl(var(--hue) 52% 50% / .92);
+}
 
 /* --- The fan ---------------------------------------------------------------
    A fixed panel rather than a child of the column, so no overflow clips it

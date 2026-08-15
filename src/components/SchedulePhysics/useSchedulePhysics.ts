@@ -58,19 +58,48 @@ const IDLE: SchedulePhysicsDragState = {
 function targetFromPoint(x: number, y: number): SchedulePhysicsTarget | null {
   const hit = document.elementFromPoint(x, y) as HTMLElement | null;
   let slot = hit?.closest?.("[data-physics-slot='true']") as HTMLElement | null;
-  // Events sit above the slot grid. Resolve the slot beneath an occupied card from its day column,
-  // so conflict-heavy targets can still be evaluated rather than becoming accidental dead zones.
+  /*
+   * Cards sit ABOVE the slot grid, so a pointer over an occupied part of the
+   * board hits a card and finds no slot beneath it — `closest` walks upward,
+   * and a card is a sibling of the slots, not their child. This recovers the
+   * slot from the track the card belongs to, so a crowded target stays usable
+   * instead of becoming a dead zone.
+   *
+   * **The axis is discovered, never assumed.** This used to resolve purely by
+   * `y`, which is correct on the week grid, where slots are stacked down a day
+   * column. On the rooms board the same slots run ACROSS a horizontal track —
+   * every one of them shares the same vertical band — so a `y` search matched
+   * the first slot wherever the pointer was, every drop resolved to 08:00, and
+   * the card appeared not to move at all. Which axis a track uses is a fact
+   * about the DOM, so it is measured here rather than guessed.
+   */
   if (!slot) {
     const column = hit?.closest?.("[data-physics-day-column='true']") as HTMLElement | null;
     if (column) {
       const slots = Array.from(column.querySelectorAll<HTMLElement>("[data-physics-slot='true']"));
-      const firstRect = slots[0]?.getBoundingClientRect(), lastRect = slots[slots.length - 1]?.getBoundingClientRect();
-      if (firstRect && lastRect && y >= firstRect.top && y < lastRect.bottom) slot = slots.find(item => { const rect = item.getBoundingClientRect(); return y >= rect.top && y < rect.bottom; })
-        || slots.reduce<HTMLElement | null>((best, item) => {
-          if (!best) return item;
-          const a = item.getBoundingClientRect(), b = best.getBoundingClientRect();
-          return Math.abs((a.top + a.bottom) / 2 - y) < Math.abs((b.top + b.bottom) / 2 - y) ? item : best;
-        }, null);
+      const first = slots[0]?.getBoundingClientRect();
+      const last = slots[slots.length - 1]?.getBoundingClientRect();
+      if (first && last) {
+        // Whichever end moved further between the first slot and the last is
+        // the direction this track runs in.
+        const horizontal = Math.abs(last.left - first.left) > Math.abs(last.top - first.top);
+        const within = horizontal
+          ? y >= Math.min(first.top, last.top) && y < Math.max(first.bottom, last.bottom)
+          : y >= first.top && y < last.bottom;
+        if (within) {
+          const inside = (rect: DOMRect) => horizontal
+            ? x >= rect.left && x < rect.right
+            : y >= rect.top && y < rect.bottom;
+          const centreGap = (rect: DOMRect) => horizontal
+            ? Math.abs((rect.left + rect.right) / 2 - x)
+            : Math.abs((rect.top + rect.bottom) / 2 - y);
+          slot = slots.find(item => inside(item.getBoundingClientRect()))
+            || slots.reduce<HTMLElement | null>((best, item) => {
+              if (!best) return item;
+              return centreGap(item.getBoundingClientRect()) < centreGap(best.getBoundingClientRect()) ? item : best;
+            }, null);
+        }
+      }
     }
   }
   if (!slot) return null;

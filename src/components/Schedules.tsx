@@ -2978,7 +2978,36 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * show the pressure before the day is opened.
    */
   const dayLoad = useMemo(() => computeDayLoad(weekRows as any), [weekRows]);
-  const gridWindow = useMemo(() => ({ start: SCHEDULE_DAY_START, end: SCHEDULE_DAY_END }), []);
+  /**
+   * ── الشبكة تتّسع لما فيها ───────────────────────────────────────────────
+   *
+   * This was fixed at 08:00–20:00. A lecture outside that window was not
+   * filtered out — it was POSITIONED outside the grid and then clipped away by
+   * the surface's own `overflow`, so it existed, it counted in every total, it
+   * blocked its hall, and it was invisible. A coordinator looking for it would
+   * search the week and conclude it had been deleted.
+   *
+   * The teaching day is still 08:00–20:00 and every rule that guards it is
+   * unchanged: a lecture cannot be CREATED outside it. But a schedule imported
+   * from a decade of legacy data can already contain one, and a grid that
+   * silently hides a row it is displaying the totals for is lying.
+   *
+   * So the window is the union of the teaching day and whatever the data
+   * actually holds, snapped outward to whole slots. In the ordinary case that
+   * is exactly 08:00–20:00 and nothing changes; in the case that was broken,
+   * the missing cards appear.
+   */
+  const gridWindow = useMemo(() => {
+    let start = SCHEDULE_DAY_START, end = SCHEDULE_DAY_END;
+    for (const row of weekRows as FSchedule[]) {
+      const from = mins(row.fstarttime), to = mins(row.fendtime);
+      if (Number.isFinite(from) && from < start) start = from;
+      if (Number.isFinite(to) && to > end) end = to;
+    }
+    const snapDown = (value: number) => Math.floor(value / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES;
+    const snapUp = (value: number) => Math.ceil(value / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES;
+    return { start: Math.max(0, snapDown(start)), end: Math.min(24 * 60, snapUp(end)) };
+  }, [weekRows]);
   /**
    * The rooms matrix, computed once per change of data — not once per render.
    *
@@ -3032,7 +3061,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       });
     });
     const hourMarks: number[] = [];
-    for (let m = SCHEDULE_DAY_START; m <= SCHEDULE_DAY_END; m += 60) hourMarks.push(m);
+    for (let m = gridWindow.start; m <= gridWindow.end; m += 60) hourMarks.push(m);
     const compactByRoom = new Map<string, {
       items: Array<{ row: FSchedule; lane: number; visualFrom: number; visualTo: number }>;
       lanes: number;
@@ -3078,9 +3107,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     });
     return { displayDays, allRooms, byDayRoom, compactByRoom, noRoomByDay, roomCounts, hourMarks, span: Math.max(60, gridWindow.end - gridWindow.start) };
   }, [filteredRows, matrixDay, gridWindow]);
+  /* The ladder is the window's own, not the constant's. It already declared
+     `gridWindow` as its dependency and then ignored it — so a window that grew
+     to hold an early or late lecture produced a card with nowhere to stand. */
   const timeSlots = useMemo(
-    () => Array.from({ length: Math.round((SCHEDULE_DAY_END - SCHEDULE_DAY_START) / SCHEDULE_SLOT_MINUTES) }, (_, i) =>
-      timeFromMins(SCHEDULE_DAY_START + i * SCHEDULE_SLOT_MINUTES),
+    () => Array.from({ length: Math.round((gridWindow.end - gridWindow.start) / SCHEDULE_SLOT_MINUTES) }, (_, i) =>
+      timeFromMins(gridWindow.start + i * SCHEDULE_SLOT_MINUTES),
     ),
     [gridWindow],
   );
@@ -7071,6 +7103,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           <div
                             className="week-bundle-bands"
                             data-dense={(bundle.height - 22) / bundle.rows.length < 15 ? "true" : undefined}
+                            /* Below fourteen pixels a band cannot print a name at
+                               any size, so it stops trying and becomes a stripe.
+                               Measured: twenty in one hour gave 7px bands. */
+                            data-crush={(bundle.height - 22) / bundle.rows.length < 14 ? "true" : undefined}
                             data-count={bundle.rows.length}
                           >
                             {bundle.rows.map((row) => {

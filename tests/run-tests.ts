@@ -862,6 +862,83 @@ async function runTests() {
     assert(countOf(3, AR.room) === "3 قاعات", "and it still counts correctly");
   }
 
+  /* --- 20. هدف السحب على مسار أفقي ----------------------------------------- */
+  originalLog("\n--- 20. Drag target axis ---");
+  {
+    /* The rooms board lays its slots ACROSS a track; the week stacks them DOWN
+       a column. The recovery that finds a slot under an occupied card used to
+       search by `y` only — correct for the week, and on the rooms board it
+       matched the first slot wherever the pointer was, so every drop resolved
+       to 08:00 and the card never appeared to move.
+       This reproduces both layouts against the same resolver logic. */
+    const rect = (left: number, top: number, w: number, h: number) =>
+      ({ left, top, right: left + w, bottom: top + h, width: w, height: h } as DOMRect);
+
+    /** The shipped rule, isolated: pick the slot the pointer is actually over. */
+    const resolve = (slots: DOMRect[], x: number, y: number) => {
+      const first = slots[0], last = slots[slots.length - 1];
+      const horizontal = Math.abs(last.left - first.left) > Math.abs(last.top - first.top);
+      const within = horizontal
+        ? y >= Math.min(first.top, last.top) && y < Math.max(first.bottom, last.bottom)
+        : y >= first.top && y < last.bottom;
+      if (!within) return -1;
+      const inside = (r: DOMRect) => horizontal ? x >= r.left && x < r.right : y >= r.top && y < r.bottom;
+      const found = slots.findIndex(inside);
+      if (found >= 0) return found;
+      const gap = (r: DOMRect) => horizontal
+        ? Math.abs((r.left + r.right) / 2 - x) : Math.abs((r.top + r.bottom) / 2 - y);
+      return slots.reduce((best, r, i) => (gap(r) < gap(slots[best]) ? i : best), 0);
+    };
+
+    // A rooms track: eight slots across, all sharing one vertical band.
+    const across = Array.from({ length: 8 }, (_, i) => rect(i * 50, 100, 50, 64));
+    assert(resolve(across, 25, 130) === 0, "the first slot of a horizontal track resolves at its own left edge");
+    assert(resolve(across, 275, 130) === 5, "…and the sixth resolves where the sixth actually is");
+    assert(resolve(across, 375, 130) === 7, "…and the last at the far end");
+    // The exact defect: a y-only search would answer 0 for every one of these.
+    assert(new Set([25, 125, 225, 325].map(x => resolve(across, x, 130))).size === 4,
+      "four different points across the track give four different slots");
+    assert(resolve(across, 200, 400) === -1, "a pointer outside the track's band resolves to nothing");
+
+    // A week column: eight slots down, all sharing one horizontal band.
+    const down = Array.from({ length: 8 }, (_, i) => rect(200, i * 40, 120, 40));
+    assert(resolve(down, 260, 20) === 0, "a vertical column still resolves by height");
+    assert(resolve(down, 260, 220) === 5, "…at any depth");
+    assert(new Set([20, 100, 180, 260].map(y => resolve(down, 260, y))).size === 4,
+      "and four depths still give four different slots — the week is unchanged");
+  }
+
+  /* --- 21. نافذة الشبكة تتّسع لبياناتها ------------------------------------- */
+  originalLog("\n--- 21. Grid window ---");
+  {
+    /* The defect: the week grid was fixed at 08:00–20:00. A lecture outside it
+       was not filtered out — it was POSITIONED outside and clipped away, so it
+       existed, it counted in every total, it blocked its hall, and it was
+       invisible. Anyone searching for it would conclude it had been deleted. */
+    const windowFor = (rows: Array<[number, number]>) => {
+      let start = SCHEDULE_DAY_START, end = SCHEDULE_DAY_END;
+      for (const [from, to] of rows) { if (from < start) start = from; if (to > end) end = to; }
+      const down = (v: number) => Math.floor(v / 30) * 30;
+      const up = (v: number) => Math.ceil(v / 30) * 30;
+      return { start: Math.max(0, down(start)), end: Math.min(24 * 60, up(end)) };
+    };
+    const ordinary = windowFor([[8 * 60, 9 * 60], [13 * 60, 14 * 60]]);
+    assert(ordinary.start === SCHEDULE_DAY_START && ordinary.end === SCHEDULE_DAY_END,
+      "an ordinary week leaves the teaching day exactly as it was");
+    const early = windowFor([[7 * 60, 8 * 60]]);
+    assert(early.start === 7 * 60, "a lecture before eight pulls the grid open to reach it");
+    const late = windowFor([[20 * 60, 21 * 60 + 20]]);
+    assert(late.end === 21 * 60 + 30, "…and one after eight snaps outward to a whole slot");
+    const both = windowFor([[7 * 60 + 15, 8 * 60], [20 * 60, 21 * 60]]);
+    assert(both.start === 7 * 60 && both.end === 21 * 60,
+      "both ends move independently, and a ragged start snaps down not up");
+    assert(windowFor([]).start === SCHEDULE_DAY_START, "an empty week is still a teaching day");
+    // The ladder must have a rung for every position a card can take.
+    const rungs = (w: { start: number; end: number }) => Math.round((w.end - w.start) / 30);
+    assert(rungs(ordinary) === 24, "twelve hours is twenty-four half-hour rungs");
+    assert(rungs(both) === 28, "…and a widened window grows its ladder to match");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");
