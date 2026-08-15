@@ -597,48 +597,68 @@
    beside one large canvas showing only the scene chosen. The rail states what
    can be read; the canvas is where the reading happens. Nothing else competes. */
 .intel-insight-workspace{
-  grid-template-columns:minmax(238px,300px) minmax(0,1fr);
+  /* One column now: the tabs sit above their own panel. */
+  grid-template-columns:minmax(0,1fr);
   align-items:start;
 }
+/* ── التابات ────────────────────────────────────────────────────────────────
+ *
+ * This was a vertical rail beside the canvas, and it failed twice. It ate a
+ * third of the width on every screen, and below 900px it stacked ABOVE the
+ * canvas — so pressing a reading changed something the reader could not see
+ * without scrolling, which is why pressing it felt like nothing happened.
+ *
+ * A horizontal strip fixes both: the tabs are one line at the top, the panel
+ * is immediately beneath the finger that chose it, and the canvas gets the
+ * whole width back.
+ */
 .insight-preview-rail{
-  position:sticky;top:var(--s3);
-  display:flex;flex-direction:column;gap:var(--s3);
-  padding:var(--s5);
-  border:1px solid var(--line);border-radius:var(--r-xl);
+  position:sticky;top:0;z-index:12;
+  display:block;padding:0;margin-block-end:var(--s4);
+  border:0;border-block-end:1px solid var(--line);border-radius:0;
   background:var(--surface);
 }
-.insight-preview-head strong{display:block;margin-top:var(--s1);font-size:var(--t-h4);font-weight:600}
-.insight-preview-head small{display:block;margin-top:var(--s1);color:var(--muted);font-size:var(--t-xs);line-height:1.6}
-.insight-preview-list{display:flex;flex-direction:column;gap:2px}
+/* The heading was three lines explaining a control that explains itself. */
+.insight-preview-head{display:none}
+.insight-preview-list{
+  display:flex;flex-direction:row;gap:2px;
+  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
+  padding-block-end:1px;
+}
+.insight-preview-list::-webkit-scrollbar{display:none}
 .insight-preview{
-  display:grid;grid-template-columns:34px minmax(0,1fr) auto;
-  align-items:center;gap:var(--s3);
-  padding:var(--s3);
-  border:1px solid transparent;border-radius:var(--r-sm);
-  text-align:start;color:var(--ink);
-  transition:background .16s var(--ease),border-color .16s var(--ease);
+  flex:none;display:inline-flex;align-items:center;gap:var(--s2);
+  padding:var(--s3) var(--s4);
+  border:0;border-block-end:2px solid transparent;border-radius:0;
+  background:transparent;text-align:start;color:var(--muted);
+  white-space:nowrap;cursor:pointer;
+  transition:color .16s var(--ease),border-color .16s var(--ease);
 }
-.insight-preview:hover{background:var(--surface-2)}
+.insight-preview:hover{color:var(--ink);background:transparent}
 .insight-preview-icon{
-  width:34px;height:34px;display:grid;place-items:center;
-  border-radius:var(--r-xs);background:var(--surface-3);color:var(--muted);
+  width:auto;height:auto;display:inline-grid;place-items:center;
+  border-radius:0;background:transparent;color:currentColor;
 }
-.insight-preview-icon svg{width:16px;height:16px}
-.insight-preview-copy{min-width:0}
-.insight-preview-copy strong{display:block;font-size:var(--t-sm);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.insight-preview-copy small{display:block;margin-top:1px;color:var(--muted);font-size:var(--t-xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.insight-preview-icon svg{width:15px;height:15px}
+.insight-preview-copy{min-width:0;display:inline-flex}
+.insight-preview-copy strong{display:inline;font-size:var(--t-sm);font-weight:600;white-space:nowrap}
+/* The one-line description belonged to a rail with room for it. On a tab it is
+   noise, and the panel below says the same thing with space to say it. */
+.insight-preview-copy small{display:none}
 .insight-preview>b{
-  font-size:var(--t-h4);font-weight:600;letter-spacing:-.01em;
-  font-variant-numeric:tabular-nums lining-nums;color:var(--ink-2);
+  font-size:var(--t-xs);font-weight:650;letter-spacing:0;
+  font-variant-numeric:tabular-nums lining-nums;
+  direction:ltr;unicode-bidi:isolate;
+  padding:2px 7px;border-radius:999px;
+  background:var(--surface-3);color:var(--muted);
 }
-/* The chosen scene: a quiet accent ground, icon and number lit — the one that
-   owns the canvas, marked without a loud block. */
+/* The chosen reading: an underline, the way a tab has always said it. */
 .insight-preview.active{
-  background:var(--accent-softer);
-  border-color:color-mix(in srgb,var(--accent) 24%,var(--line));
+  background:transparent;color:var(--accent-strong,var(--accent));
+  border-block-end-color:var(--accent);
 }
-.insight-preview.active .insight-preview-icon{background:var(--accent-soft);color:var(--accent)}
-.insight-preview.active>b{color:var(--accent)}
+.insight-preview.active .insight-preview-icon{background:transparent;color:var(--accent)}
+.insight-preview.active>b{background:var(--accent-soft);color:var(--accent-strong,var(--accent))}
 .insight-canvas{min-width:0}
 .insight-scene-panel{margin:0}
 
@@ -661,9 +681,9 @@
 .insight-method{margin-top:var(--s3);color:var(--muted);font-size:var(--t-sm);line-height:1.75;max-width:64ch}
 
 @media screen and (max-width:900px){
-  .intel-insight-workspace{grid-template-columns:minmax(0,1fr)}
-  .insight-preview-rail{position:static}
-  .insight-preview-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}
+  /* The strip already scrolls sideways, so a narrow screen needs nothing but
+     slightly tighter tabs. */
+  .insight-preview{padding-inline:var(--s3)}
 }
 
 .quality-hero{
@@ -2016,3 +2036,15 @@
   color:var(--muted);font-size:var(--t-xs);padding-inline-start:var(--s3) !important;
 }
 .genesis-reading>small{color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+
+/* ── الأرقام الكبيرة ────────────────────────────────────────────────────────
+ * Two headline numbers were set at a size that broke their own containers —
+ * «مطابقة النمط 87%» wrapped onto four lines and the score fraction split in
+ * half. A figure is only large enough to be read at a glance; past that it
+ * stops being emphasis and becomes a layout problem. */
+.quality-orbit-score{font-size:var(--t-h1);font-weight:650;line-height:1;letter-spacing:-.02em}
+.spatial-score-value{font-size:var(--t-h2);font-weight:650;line-height:1;letter-spacing:-.01em}
+.spatial-metrics b,.twin-score-row strong{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+/* A number and the words describing it are two things, and need a gap. */
+.spatial-metrics article{display:flex;align-items:baseline;gap:var(--s2)}
+.spatial-metrics article span{min-width:0}

@@ -623,3 +623,8 @@
 }
 .master-avatar svg,.master-symbol svg,.record-card-icon svg,
 .result-icon svg,.rank-icon svg,.prof-avatar svg,.draft-source svg{width:17px;height:17px}
+
+/* A numeric run that decides its own direction. `<bdi>` already isolates it;
+   these two lines only make sure nothing inherits a reversal from an ancestor
+   and that a number never breaks across a line in the middle. */
+.num{direction:ltr;unicode-bidi:isolate;white-space:nowrap;font-variant-numeric:tabular-nums}

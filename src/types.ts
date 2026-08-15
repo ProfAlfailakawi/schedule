@@ -197,6 +197,42 @@ export interface ScheduleDraft {
   publishedAt?: string;
 }
 
+/**
+ * ── ما يحتاجه الطالب ────────────────────────────────────────────────────────
+ *
+ * A student's answer to «أي المقررات تحتاج؟», and deliberately the thinnest
+ * record this system holds.
+ *
+ * **There is no name and there is no civil ID here.** The civil ID is typed,
+ * checked against the Kuwaiti checksum so an invented number is refused, then
+ * hashed on the server and thrown away — what survives is a fingerprint that
+ * can tell two submissions apart and can never be turned back into a person.
+ * The name is asked for, shown back on the confirmation so the student knows
+ * their own answer landed, and never written anywhere.
+ *
+ * That is not caution for its own sake. A department needs counts and needs to
+ * know that forty answers came from forty people; it does not need to know who
+ * they are, and a table that says who wanted what is a thing that can be
+ * misused, subpoenaed, leaked, or simply read by someone it was not meant for.
+ * The cheapest way to protect it is not to have it.
+ *
+ * The fingerprint is still a JOIN key: the registrar's own civil IDs, hashed
+ * with the same secret, match these exactly — so the department keeps the
+ * ability to cross-check without ever holding an identity.
+ */
+export interface StudentNeed {
+  id: string;
+  /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
+  fingerprint: string;
+  AdCollegeId: number;
+  /** The section the LINK belongs to — never something the student picks. */
+  AdSectionId: number;
+  AdTermId: number;
+  /** Every course this student says they need. */
+  courseIds: number[];
+  createdAt: string;
+}
+
 export interface ScheduleComment {
   id: string;
   createdAt: string;
@@ -292,7 +328,13 @@ export interface ScheduleShareLink {
    * and returns only that one instructor's own card. Links created before this
    * field existed are department links.
    */
-  kind?: "department" | "staff";
+  /**
+   * "survey" is a door for students. It is scoped to ONE section, and that is
+   * load-bearing: sections here are already separated by gender, so the link
+   * decides which cohort is answering and nobody has to guess anything from a
+   * person's name. A boys' survey and a girls' survey are two links.
+   */
+  kind?: "department" | "staff" | "survey";
 }
 
 export interface SchedulePublication {

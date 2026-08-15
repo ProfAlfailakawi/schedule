@@ -40,6 +40,7 @@ import {
   GhostButton,
   MetaPill,
   Notice,
+  Num,
   PageTitle,
   PrimaryButton,
   RecordCard,
@@ -1277,8 +1278,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               style={{ "--score": `${overview.score}%` } as React.CSSProperties}
             >
               <div>
-                <strong>{overview.score}</strong>
-                <small>/ 100</small>
+                <Num value={overview.score} className="quality-orbit-score" />
+                <small>من 100</small>
               </div>
             </div>
             <div className="quality-copy">
@@ -1514,13 +1515,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
               <div className="spatial-score-row">
                 <div className={`spatial-score ${overview.spatialBurnout.highRisk ? "danger" : overview.spatialBurnout.guardedRisk ? "guarded" : "safe"}`}>
-                  <strong>{overview.spatialBurnout.score}</strong><span>/100</span>
+                  <Num value={overview.spatialBurnout.score} suffix=" / 100" className="spatial-score-value" />
                   <small>راحة الحركة</small>
                 </div>
                 <div className="spatial-metrics">
-                  <article><b>{overview.spatialBurnout.highRisk}</b><span>خطر إرهاق جسدي</span></article>
-                  <article><b>{overview.spatialBurnout.guardedRisk}</b><span>انتقال ضيق</span></article>
-                  <article><b>{overview.roomCastling?.length || 0}</b><span>تبديل شطرنجي آمن</span></article>
+                  <article><b><Num value={overview.spatialBurnout.highRisk} /></b><span>خطر إرهاق جسدي</span></article>
+                  <article><b><Num value={overview.spatialBurnout.guardedRisk} /></b><span>انتقال ضيق</span></article>
+                  <article><b><Num value={overview.roomCastling?.length || 0} /></b><span>تبديل شطرنجي آمن</span></article>
                 </div>
               </div>
               {overview.spatialBurnout.risks?.length ? (
@@ -2616,10 +2617,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <section className="twin-score-row">
                 <article>
                   <span>الجدول الحالي</span>
-                  <strong>
-                    {scenarioEval?.baseline?.score ?? overview?.score}
-                  </strong>
-                  <small>/100</small>
+                  <strong><Num value={scenarioEval?.baseline?.score ?? overview?.score} /></strong>
+                  <small>من 100</small>
                 </article>
                 <ArrowLeftRight />
                 <article
@@ -2631,13 +2630,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   }
                 >
                   <span>السيناريو</span>
-                  <strong>{scenarioEval?.scenario?.score ?? "—"}</strong>
-                  <small>/100</small>
+                  <strong><Num value={scenarioEval?.scenario?.score ?? "—"} /></strong>
+                  <small>من 100</small>
                 </article>
                 <div className="twin-delta">
                   <b>
                     {scenarioEval
-                      ? `${(scenarioEval.scenario.score || 0) - (scenarioEval.baseline.score || 0) >= 0 ? "+" : ""}${(scenarioEval.scenario.score || 0) - (scenarioEval.baseline.score || 0)}`
+                      ? <Num
+                          prefix={(scenarioEval.scenario.score || 0) - (scenarioEval.baseline.score || 0) >= 0 ? "+" : ""}
+                          value={(scenarioEval.scenario.score || 0) - (scenarioEval.baseline.score || 0)} />
                       : "—"}
                   </b>
                   <span>فرق الجودة</span>

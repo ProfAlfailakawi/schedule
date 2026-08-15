@@ -67,6 +67,8 @@ export interface DepartmentMemory {
   aboutInstructor(instructorId: number): Evidence | null;
   /** What history says about where this course has lived. */
   aboutCourse(courseId: number): Evidence | null;
+  /** What history says about the department as a whole. */
+  aboutDepartment(): Evidence[];
   /** The things nobody would have thought to ask. */
   surprises(): Evidence[];
 }
@@ -272,6 +274,109 @@ export function readDepartmentMemory(
     return null;
   };
 
+  /**
+   * Readings about the department itself rather than about one row.
+   *
+   * These are the questions a person cannot ask by pointing at something,
+   * because their subject is a pattern across years — so they have no natural
+   * home on the board, and are handed to whoever asks for them rather than
+   * pushed onto anybody.
+   */
+  const aboutDepartment = (): Evidence[] => {
+    if (!enough) return [];
+    const found: Evidence[] = [];
+    const recent = allTerms.slice(-Math.max(2, Math.floor(termCount / 3)));
+
+    /* ── المقرران اللذان يسيران معاً ────────────────────────────────────────
+     * Two courses scheduled back-to-back, term after term, are a cohort in
+     * everything but name — the same students walk from one to the other. The
+     * system has no student data and cannot know that, but it can see the
+     * decision a coordinator has made ten times without writing down why.  */
+    const adjacency = new Map<string, Set<number>>();
+    for (const term of allTerms) {
+      const inTerm = rows.filter(row => Number(row.AdTermId) === term);
+      for (const day of SCHEDULE_DAYS) {
+        const onDay = inTerm
+          .filter(row => Boolean((row as any)[day.key]))
+          .sort((a, b) => timeToMinutes(a.fstarttime) - timeToMinutes(b.fstarttime));
+        for (let i = 0; i + 1 < onDay.length; i += 1) {
+          const gap = timeToMinutes(onDay[i + 1].fstarttime) - timeToMinutes(onDay[i].fendtime);
+          if (gap < 0 || gap > 30) continue;
+          const a = onDay[i].AdCourseId, b = onDay[i + 1].AdCourseId;
+          if (!a || !b || a === b) continue;
+          const key = [a, b].sort((x, y) => x - y).join("|");
+          if (!adjacency.has(key)) adjacency.set(key, new Set());
+          adjacency.get(key)!.add(term);
+        }
+      }
+    }
+    for (const [key, terms] of adjacency) {
+      if (terms.size < Math.max(3, Math.ceil(termCount * 0.6))) continue;
+      const [a, b] = key.split("|").map(Number);
+      const nameA = courseById.get(a)?.CourseName || rows.find(r => r.AdCourseId === a)?.AdCourseName || "";
+      const nameB = courseById.get(b)?.CourseName || rows.find(r => r.AdCourseId === b)?.AdCourseName || "";
+      if (!nameA || !nameB) continue;
+      found.push({
+        text: `«${nameA}» و«${nameB}» متتاليان في ${countOf(terms.size, AR.term)} من ${countOf(termCount, AR.term)} — يبدو أنهما لدفعة واحدة.`,
+        strength: pct(terms.size, termCount), terms: termCount, surprising: true,
+      });
+    }
+
+    /* ── اليوم الذي يحمل أكثر من نصيبه ─────────────────────────────────────
+     * Chronic, not occasional. A day that has carried a third more than its
+     * share every single year is a decision nobody made, and it is the day
+     * everybody complains about without being able to name why.  */
+    const perDay = new Map<DayKey, number>();
+    for (const day of SCHEDULE_DAYS) perDay.set(day.key as DayKey,
+      rows.filter(row => Boolean((row as any)[day.key])).length);
+    const totalMeetings = [...perDay.values()].reduce((sum, n) => sum + n, 0);
+    const fairShare = totalMeetings / SCHEDULE_DAYS.length;
+    for (const [day, count] of perDay) {
+      if (!fairShare || count < fairShare * 1.35) continue;
+      found.push({
+        text: `${dayLabel(day)} يحمل ${countOf(count, AR.lecture)} من ${countOf(totalMeetings, AR.lecture)} — أثقل من نصيبه بنحو ${Math.round((count / fairShare - 1) * 100)}٪ عبر ${countOf(termCount, AR.term)}.`,
+        strength: Math.min(100, Math.round((count / fairShare) * 60)), terms: termCount, surprising: true,
+      });
+    }
+
+    /* ── المقرر الذي غاب ───────────────────────────────────────────────────
+     * Taught every term for years and then simply absent. Sometimes a
+     * curriculum decision, and sometimes nobody noticed.  */
+    for (const [courseId, mine] of courseRows) {
+      const theirs = termsOf(mine);
+      if (theirs.length < Math.max(3, Math.ceil(termCount * 0.5))) continue;
+      if (recent.some(term => theirs.includes(term))) continue;
+      const name = courseById.get(courseId)?.CourseName || mine[0]?.AdCourseName || "";
+      if (!name) continue;
+      found.push({
+        text: `«${name}» دُرِّس في ${countOf(theirs.length, AR.term)} ثم غاب — لا أثر له في آخر ${countOf(recent.length, AR.term)}.`,
+        strength: 94, terms: termCount, surprising: true,
+      });
+    }
+
+    /* ── الحمل الذي قفز ────────────────────────────────────────────────────
+     * An instructor measured against their OWN history, never against their
+     * colleagues: a light week is not a fault, but a week that doubled without
+     * anyone deciding it is worth a sentence.  */
+    const latest = allTerms[allTerms.length - 1];
+    for (const [instructorId, mine] of personRows) {
+      const before = mine.filter(row => Number(row.AdTermId) !== latest);
+      const beforeTerms = termsOf(before).length;
+      if (beforeTerms < MIN_TERMS) continue;
+      const now = mine.filter(row => Number(row.AdTermId) === latest).length;
+      const average = before.length / beforeTerms;
+      if (!average || now < average * 1.6 || now - average < 2) continue;
+      const name = personById.get(instructorId)?.AdInstructorName || "";
+      if (!name) continue;
+      found.push({
+        text: `${name} يحمل ${countOf(now, AR.appointment)} هذا الفصل، ومعدّله عبر ${countOf(beforeTerms, AR.term)} كان ${Math.round(average)}.`,
+        strength: Math.min(100, Math.round((now / average) * 50)), terms: beforeTerms, surprising: true,
+      });
+    }
+
+    return found.sort((a, b) => b.strength - a.strength);
+  };
+
   const surprises = (): Evidence[] => {
     if (!enough) return [];
     const found: Evidence[] = [];
@@ -293,8 +398,10 @@ export function readDepartmentMemory(
       const said = aboutCourse(courseId);
       if (said?.surprising) found.push(said);
     }
-    return found.sort((a, b) => b.strength - a.strength).slice(0, 12);
+    found.push(...aboutDepartment());
+    return found.sort((a, b) => b.strength - a.strength).slice(0, 16);
   };
 
-  return { terms: termCount, rows: rows.length, atSlot, aboutRoom, aboutInstructor, aboutCourse, surprises };
+  return { terms: termCount, rows: rows.length, atSlot, aboutRoom, aboutInstructor, aboutCourse,
+           aboutDepartment, surprises };
 }

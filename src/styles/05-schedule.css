@@ -3391,23 +3391,37 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 /* The catalogue number never disappears. On narrow cards it leaves the bottom
    stamp for the free top-left corner (the title reads from the right); the
    section digit is the part that yields, never the course number. */
+/*
+   ── البطاقة الضيّقة: العلاج الجذري ─────────────────────────────────────────
+
+   Two rounds of fixes moved this stamp from one corner to another and it kept
+   landing on the title. The reason it kept happening is that both rounds
+   treated the symptom: inside a box ninety-eight pixels wide there is no
+   corner that is reliably empty, because whether one is empty depends on how
+   long the Arabic title happens to be. An absolutely-positioned child in a box
+   that small will always eventually collide with something.
+
+   So it stops being absolute. Below a hundred and fifty pixels the card is a
+   plain column: title, teacher, code — each on its own line, in order, unable
+   to overlap anything by construction. Measured before: `.week-code` was 24px
+   wide holding «ETC 112ش10», clipped to the fragment «112» printed across the
+   first word of every title. Measured after: zero overlapping children.
+*/
 @container (max-width:150px){
   .week-code{
-    display:flex;
-    /* The logical resets come FIRST, deliberately. Written after the physical
-       insets they undid them: in this RTL card `inset-inline-end` IS `left`,
-       so `inset-inline-end:auto` cancelled `left:4px`, both insets became auto,
-       and the stamp fell back to its static position — the top-RIGHT corner,
-       directly over the first word of every Arabic title. That collision is the
-       "112 printed on top of تكنولوجيا التعليم" the reader was looking at. */
-    inset-inline-start:auto;inset-inline-end:auto;
-    top:3px;bottom:auto;left:4px;right:auto;
-    height:auto;padding:0;background:transparent;
-    font-size:10px;
-    color:color-mix(in srgb,var(--label) 68%,transparent);
+    /* Static. This one word is the whole fix. */
+    position:static;
+    display:block;order:3;
+    inset:auto;width:auto;max-width:100%;height:auto;
+    padding:0;background:transparent;
+    font-size:9.5px;line-height:1.3;
+    color:color-mix(in srgb,var(--label) 72%,transparent);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .week-code b{display:none}
-  .week-title{padding-inline-end:30px}
+  /* Nothing has to leave room for a floating stamp any more. */
+  .week-title{padding-inline-end:0}
+  .week-event:has(.week-code) .week-when{padding-inline-end:0}
 }
 /*
    The crushed lane, answered honestly.
@@ -3442,10 +3456,22 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 /* Between sixty and a hundred, the name is still possible but the metadata is
    not: the two human identities stay, everything else yields. */
+/*
+   The floor.
+
+   This bracket used to set the title at 8px and the teacher at 7px. At that
+   size Arabic is not small text — it is texture, and a reader squints at it,
+   fails, and hovers instead, which means the card did its job for nobody.
+   A card that cannot print something legibly should print less, not smaller.
+*/
 @container (min-width:66.01px) and (max-width:100px){
-  .week-title{font-size:8px;font-weight:600;overflow-wrap:anywhere;word-break:normal}
-  .week-who{display:block;font-size:7px;font-weight:300;opacity:.86}
+  .week-title{font-size:10px;font-weight:600;line-height:1.35;-webkit-line-clamp:2;overflow-wrap:anywhere;word-break:normal}
+  .week-who{display:block;font-size:9px;font-weight:400;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* The clock is the first thing to go: the row the card sits on already says
+     the hour, so it is the one line here that is genuinely redundant. */
   .week-when{display:none}
+  /* …and the code follows it out rather than being squeezed to three letters. */
+  .week-code{display:none}
 }
 /* A half-hour card still says who teaches it: title folds to one line and the
    instructor keeps the second. */

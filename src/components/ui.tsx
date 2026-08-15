@@ -283,6 +283,38 @@ export function ConsoleRail({ value, options, onChange, label }: {
     </nav>
   );
 }
+/**
+ * ── رقم داخل نصّ عربي ───────────────────────────────────────────────────────
+ *
+ * A number written in Latin digits inside an Arabic paragraph is a left-to-
+ * right run inside a right-to-left one, and the characters around it — a
+ * slash, a plus, a per-cent sign — are *neutral*. Neutrals take the direction
+ * of whatever surrounds them, so the browser moves them to the wrong end and
+ * the reader gets:
+ *
+ *     ‎58 / 100  →  «100/»          ‎+11  →  «11+»          ‎49%  →  «49٪» ← ok
+ *                                                          ‎%49  →  wrong
+ *
+ * None of that is a font problem or a spacing problem, and no amount of CSS
+ * on the parent fixes it: the fix is to isolate the numeric run so its own
+ * direction is decided independently of the sentence it sits in. That is
+ * exactly what `<bdi>` is for, and it is one element.
+ */
+export function Num({ value, prefix, suffix, className }: {
+  value: React.ReactNode;
+  /** Goes to the LEFT of the number, where a sign belongs: + − ≈ */
+  prefix?: string;
+  /** Goes to the RIGHT: /100 · % · ٪ */
+  suffix?: string;
+  className?: string;
+}) {
+  return (
+    <bdi dir="ltr" className={`num${className ? ` ${className}` : ""}`}>
+      {prefix}{value}{suffix}
+    </bdi>
+  );
+}
+
 export function Badge({ children, tone = "neutral" }: { children: React.ReactNode; tone?: "neutral"|"success"|"warning"|"danger"|"info" }) { return <span className={`badge badge-${tone}`}>{children}</span>; }
 
 export function EmptyState({ title="لا توجد بيانات", detail, action }: { title?:React.ReactNode; detail?:React.ReactNode; action?:React.ReactNode }) {
