@@ -129,7 +129,11 @@ type InsightScene =
   | "rooms"
   | "professors"
   | "health"
-  | "genome";
+  | "genome"
+  /* Carved out of the quality panel, which was the last reading still holding
+     two cards. One reading, one card, one screen — a panel that stacks two is
+     exactly the thing this strip exists to end. */
+  | "approval";
 type ChatItem = { prompt: string; answer: any };
 interface Props {
   user: any;
@@ -1010,6 +1014,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           icon: <Gauge />,
         },
         {
+          value: "approval",
+          label: "قبل الاعتماد",
+          detail: "ما يمنع النشر، ومتى نُشر آخر مرة",
+          metric: String(overview.blockers ?? overview.metrics?.criticalConflicts ?? 0),
+          icon: <ShieldCheck />,
+        },
+        {
           value: "attention",
           label: "الانتباه",
           detail: "المواضع التي تستحق قرارك أولاً",
@@ -1316,6 +1327,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </SecondaryButton>
             </div>
           </Surface>
+            </div>
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-approval"
+              role="tabpanel"
+              aria-labelledby="insight-tab-approval"
+              hidden={activeInsightKey !== "approval"}
+              tabIndex={activeInsightKey === "approval" ? 0 : -1}
+            >
           <Surface className="approval-center">
             <div className="surface-head">
               <div>
