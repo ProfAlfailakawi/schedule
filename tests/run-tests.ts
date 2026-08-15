@@ -10,6 +10,7 @@ import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
 import { describeRollover, readTermRollover } from "../src/utils/termRollover";
 import { buildCalendar, escapeText, foldLine } from "../src/utils/icalendar";
+import { createPresenceClient, createPresencePainter, type PresencePeer } from "../src/components/schedulePresence";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -422,6 +423,111 @@ async function runTests() {
       "SUMMARY:أصول الفقه الإسلامي وقواعده الكلية في كلية التربية", "unfolding restores the text exactly");
     assert(escapeText("12, F6") === "12\\, F6", "a comma in a room name is escaped, not read as a list");
     assert(!/\d{12}/.test(out), "no civil ID can reach the feed — it is never given one");
+  }
+
+  /* --- 11b. A term that knows its own dates -------------------------------- */
+  originalLog("\n--- 11b. The calendar stops inventing a semester ---");
+  {
+    const lecture = { id: 1, title: "x", start: "08:00", end: "09:00", days: [0] };
+    const startOf = (out: string) =>
+      out.slice(out.indexOf("END:VTIMEZONE")).split("\r\n").find(l => l.startsWith("DTSTART;"))!.split(":")[1];
+    const ruleOf = (out: string) =>
+      out.slice(out.indexOf("END:VTIMEZONE")).split("\r\n").find(l => l.startsWith("RRULE"))!;
+
+    // THE DEFECT: with no term start, the series anchors on "the next matching
+    // weekday from now" — and a subscription is re-fetched forever, so every
+    // fetch pushes the whole term forward again and the lectures never end.
+    const drifting = [ "2026-09-06", "2026-12-06", "2027-07-04" ].map(day =>
+      startOf(buildCalendar({ name: "t", weeks: 16, now: new Date(`${day}T00:00:00Z`), lectures: [lecture] })));
+    assert(new Set(drifting).size === 3, "without a term start the anchor really does move on every fetch");
+
+    // THE FIX: a recorded start is a fact, and re-reading it changes nothing.
+    const fixed = [ "2026-09-06", "2026-12-06", "2027-07-04" ].map(day =>
+      startOf(buildCalendar({ name: "t", weeks: 16, startDate: "2026-09-13",
+        now: new Date(`${day}T00:00:00Z`), lectures: [lecture] })));
+    assert(new Set(fixed).size === 1, "with a term start every fetch produces the same series");
+    assert(fixed[0] === "20260913T080000", "the series begins on the term's own first Sunday");
+
+    const bounded = buildCalendar({ name: "t", weeks: 16, startDate: "2026-09-13",
+      now: new Date("2026-09-01T00:00:00Z"), lectures: [lecture] });
+    assert(ruleOf(bounded).includes("UNTIL=20270102T235959Z"), "and it ends on a real last day, not after a count");
+    assert(!ruleOf(bounded).includes("COUNT="), "a dated term needs no occurrence count");
+    assert(ruleOf(buildCalendar({ name: "t", weeks: 16, lectures: [lecture] })).includes("COUNT=16"),
+      "an undated term still bounds itself, honestly, by count");
+  }
+
+  /* --- 12. Presence: who else is on this board ----------------------------- */
+  originalLog("\n--- 12. Live presence ---");
+  {
+    const peer = (over: Partial<PresencePeer>): PresencePeer =>
+      ({ connId: "x", userId: 2, name: "منى القلاف", cell: null, holding: null, editing: null, ...over });
+
+    const client = createPresenceClient();
+    client.setScope({ collegeId: 1, sectionId: 1, termId: 1 });
+
+    // A frame for another board must never paint on this one. The scope key is
+    // the only thing standing between a coordinator and a colleague's name from
+    // a department they are not in.
+    client.ingest({ scope: "1:2:1", peers: [peer({ connId: "other" })] });
+    assert(client.peers().length === 0, "a frame for another board is ignored entirely");
+
+    client.ingest({ scope: "1:1:1", peers: [peer({ connId: "muna" }), peer({ connId: client.connId, userId: 1 })] });
+    assert(client.peers().length === 1, "my own mark is not shown back to me");
+    assert(client.peers()[0].connId === "muna", "a colleague on this board is kept");
+
+    client.ingest({ scope: "1:1:1", peers: [peer({ connId: "muna", holding: { rowId: 7, rev: 2 } })] });
+    assert(client.claimant(7)?.name === "منى القلاف", "a held row names its holder");
+    assert(client.claimant(8) === null, "a row nobody holds has no claimant");
+    client.ingest({ scope: "1:1:1", peers: [peer({ connId: "muna", editing: { rowId: 9, rev: 1 } })] });
+    assert(client.claimant(9)?.name === "منى القلاف", "an open editor counts as a claim too");
+
+    // Walking to another department drops the old board's roster at once —
+    // otherwise a colleague's ring lingers over a lecture that is not theirs.
+    client.setScope({ collegeId: 1, sectionId: 2, termId: 1 });
+    assert(client.peers().length === 0, "changing board clears the roster immediately");
+    client.dispose();
+
+    /* The painter, against a stub DOM. The defect being pinned here is real: the
+       first version keyed a cell as `cell:${day}:${start}`, and a start time IS
+       "08:00" — splitting that key on ":" turned one cell into two wrong fields
+       and the mark landed nowhere. */
+    const written: Array<[string, string, string | null]> = [];
+    const node = (id: string) => ({
+      setAttribute: (attr: string, value: string) => written.push([id, attr, value]),
+      removeAttribute: (attr: string) => written.push([id, attr, null]),
+    });
+    const asked: string[] = [];
+    const realDocument = (globalThis as any).document;
+    const realRaf = (globalThis as any).requestAnimationFrame;
+    (globalThis as any).document = {
+      querySelectorAll: (selector: string) => { asked.push(selector); return [node(selector)]; },
+    };
+    (globalThis as any).requestAnimationFrame = (fn: () => void) => { fn(); return 1; };
+    (globalThis as any).cancelAnimationFrame = () => undefined;
+
+    const painter = createPresencePainter(() => 3);
+    painter.paint([peer({ connId: "muna", cell: { day: "fsunday", start: "08:00" } })]);
+    assert(asked.some(s => s.includes('[data-physics-day="fsunday"]') && s.includes('[data-physics-start="08:00"]')),
+      "a colon inside the start time does not break the cell selector");
+
+    asked.length = 0; written.length = 0;
+    painter.paint([peer({ connId: "muna", cell: { day: "fmonday", start: "11:00", room: "12|F6" } })]);
+    assert(asked.some(s => s.includes('[data-physics-room="12|F6"]')), "the rooms board keys on the hall as well");
+    assert(written.some(w => w[1] === "data-presence-cell" && w[2] === null),
+      "the mark left behind on the previous cell is erased");
+
+    asked.length = 0; written.length = 0;
+    painter.paint([peer({ connId: "muna", holding: { rowId: 42, rev: 1 } })]);
+    assert(asked.some(s => s === '[data-row-id="42"]'), "a held row is found by its DOM identity");
+    assert(written.some(w => w[1] === "data-presence-hold" && w[2] === "3"), "the holder's hue is written");
+
+    asked.length = 0; written.length = 0;
+    painter.paint([peer({ connId: "muna" })]);
+    assert(written.every(w => w[2] === null) && written.length > 0, "letting go erases every mark");
+
+    painter.clear();
+    (globalThis as any).document = realDocument;
+    (globalThis as any).requestAnimationFrame = realRaf;
   }
 
   if (!originalDb) {

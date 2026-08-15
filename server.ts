@@ -658,6 +658,72 @@ app.post("/api/auth/heartbeat", requireAuth, async (_req: AuthenticatedRequest, 
   res.json({ ok: true, idleTimeoutMs: SERVER_IDLE_SESSION_MS });
 });
 
+/**
+ * ── أين أنا الآن ────────────────────────────────────────────────────────────
+ *
+ * The upward half of the live channel. The stream carries news down; this one
+ * small POST carries a person's own position up, and the two together make a
+ * board where colleagues can see each other.
+ *
+ * It lives under /api/auth/ deliberately, twice over: the service worker leaves
+ * that prefix alone, so a presence beat can never be answered by a fabricated
+ * offline response; and the audit middleware skips it, so watching a colleague
+ * move a pointer does not write an audit row per second.
+ *
+ * It returns 204 and writes nothing anywhere. A beat that arrives after its own
+ * stream has closed is not an error — it is a browser tab that shut a moment
+ * before its last message landed.
+ */
+const PRESENCE_DAYS = new Set(["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"]);
+const cleanMarkPart = (value: unknown) => {
+  const row = Number((value as { rowId?: unknown })?.rowId || 0);
+  if (!Number.isInteger(row) || row <= 0) return null;
+  return { rowId: row, rev: Number((value as { rev?: unknown })?.rev || 0) };
+};
+
+app.post("/api/auth/presence", requireAuth, (req: AuthenticatedRequest, res: Response) => {
+  const body = (req.body || {}) as Record<string, unknown>;
+  const conn = String(body.conn || "").slice(0, 64);
+  const userId = Number(req.user?.SystemUserId || 0);
+  let record: ScheduleEventClient | undefined;
+  for (const client of scheduleEventClients.values())
+    // A session may address only its own stream. Without the userId check, one
+    // account could plant a colleague's name on a cell it never touched.
+    if (client.connId === conn && client.userId === userId) { record = client; break; }
+  if (!record) { res.status(204).end(); return; }
+
+  record.seenAt = Date.now();
+  const previousScope = record.scopeKey;
+
+  const scope = (body.scope || {}) as Record<string, unknown>;
+  const collegeId = Number(scope.collegeId || 0);
+  const sectionId = Number(scope.sectionId || 0);
+  const termId = Number(scope.termId || 0);
+  if (collegeId && isScopeAllowed(req, collegeId, sectionId)) {
+    record.collegeId = collegeId; record.sectionId = sectionId;
+    record.scopeKey = `${collegeId}:${sectionId}:${termId}`;
+  }
+
+  if (body.gone) {
+    Object.assign(record, emptyMark());
+    record.markAt = 0;
+  } else {
+    const cell = (body.cell || null) as { day?: unknown; start?: unknown; room?: unknown } | null;
+    const day = String(cell?.day || "");
+    const start = String(cell?.start || "");
+    record.cell = cell && PRESENCE_DAYS.has(day) && /^\d{1,2}:\d{2}$/.test(start)
+      ? { day, start, ...(cell.room ? { room: String(cell.room).slice(0, 32) } : {}) }
+      : null;
+    record.holding = cleanMarkPart(body.holding);
+    record.editing = cleanMarkPart(body.editing);
+    record.markAt = record.seenAt;
+  }
+
+  if (previousScope && previousScope !== record.scopeKey) markPresenceDirty(previousScope);
+  markPresenceDirty(record.scopeKey);
+  res.status(204).end();
+});
+
 app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   // Legacy Home/Index parity is intentionally preserved here, including the historical
   // Sunday/weekend day-name quirk and the difference between the displayed total and table rows.
@@ -1113,7 +1179,8 @@ app.post("/api/terms", requirePermission(5), async (req: Request, res: Response)
     res.status(400).json({ error: "اسم الفصل الدراسي مطلوب" });
     return;
   }
-  const newTerm = await Repository.createTerm(AdTermName);
+  const newTerm = await Repository.createTerm(AdTermName,
+    { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0 });
   res.status(201).json(newTerm);
 });
 
@@ -1125,7 +1192,8 @@ app.put("/api/terms/:id", requirePermission(5), async (req: Request, res: Respon
     return;
   }
   try {
-    const updated = await Repository.updateTerm(id, AdTermName);
+    const updated = await Repository.updateTerm(id, AdTermName,
+      { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0 });
     res.json(updated);
   } catch (e: any) {
     res.status(404).json({ error: e.message });
@@ -1603,17 +1671,141 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
  * A short debounce turns a burst of writes (a six-card drag, an import) into
  * one message, sent after the write has actually landed.
  */
-const scheduleEventClients = new Set<Response>();
+/**
+ * ── من غيري هنا ────────────────────────────────────────────────────────────
+ *
+ * A live connection used to be an anonymous socket: the registry held Response
+ * objects and nothing else, which was enough to say "something changed" and not
+ * enough to say anything about anyone. Presence needs the second thing, so the
+ * Set becomes a Map from the same Response to what is known about the person
+ * holding it — and stays keyed by the Response, so `.size` against the 400-cap
+ * and delete-on-write-failure both keep working exactly as they did.
+ *
+ * Nothing here is ever written to a database. A hover is true for a few seconds
+ * and then it is not; storing it would cost a document write per mouse move and
+ * would outlive the fact it describes.
+ */
+interface PresenceMark {
+  /** The cell under the pointer, when there is one. Touch has no hover. */
+  cell: { day: string; start: string; room?: string } | null;
+  /** A card in the air — by pointer or by keyboard, the two are the same news. */
+  holding: { rowId: number; rev: number } | null;
+  /** A row open in the editor. */
+  editing: { rowId: number; rev: number } | null;
+}
+
+interface ScheduleEventClient extends PresenceMark {
+  res: Response;
+  /** Names this exact stream, so a POST can address the connection it belongs to. */
+  connId: string;
+  userId: number;
+  name: string;
+  /** college:section:term — presence is scoped to a board, never to a person. */
+  scopeKey: string;
+  collegeId: number;
+  sectionId: number;
+  /** When the mark was last refreshed, and when the connection last spoke. */
+  markAt: number;
+  seenAt: number;
+}
+
+const scheduleEventClients = new Map<Response, ScheduleEventClient>();
 let scheduleEventTimer: ReturnType<typeof setTimeout> | null = null;
 let scheduleEventSerial = 0;
 /** Writes the event to every screen attached to THIS instance. */
 function broadcastScheduleChange() {
   scheduleEventSerial += 1;
   const payload = `id: ${scheduleEventSerial}\nevent: schedules\ndata: {"changedAt":${Date.now()}}\n\n`;
-  for (const client of scheduleEventClients) {
+  for (const client of scheduleEventClients.keys()) {
     try { client.write(payload); } catch { scheduleEventClients.delete(client); }
   }
 }
+
+/* A mark older than this is treated as stale — the person is still connected,
+   but wherever their pointer was, it is not news any more. A connection that
+   has not spoken at all for the longer window stops being listed: a stream is
+   authorised once at connect and never re-checked, so silence is the cheap
+   stand-in for asking again. */
+const PRESENCE_STALE_MS = 45_000;
+const PRESENCE_GONE_MS = 90_000;
+const presenceDirty = new Set<string>();
+let presenceFlushTimer: ReturnType<typeof setTimeout> | null = null;
+
+const emptyMark = (): PresenceMark => ({ cell: null, holding: null, editing: null });
+const hasMark = (mark: PresenceMark) => Boolean(mark.cell || mark.holding || mark.editing);
+
+/**
+ * Everyone on one board, as that board's own members would see them.
+ *
+ * Scope-symmetric on purpose: an administrator's wider reach lets them read any
+ * department's DATA, but presence is other people's names and movements, and
+ * there is no version of this feature where someone learns who is working in a
+ * college they are not in.
+ */
+function presenceRoster(scopeKey: string, now: number) {
+  const peers: Array<{ connId: string; userId: number; name: string } & PresenceMark> = [];
+  for (const client of scheduleEventClients.values()) {
+    if (client.scopeKey !== scopeKey) continue;
+    if (now - client.seenAt > PRESENCE_GONE_MS) continue;
+    const fresh = now - client.markAt <= PRESENCE_STALE_MS;
+    peers.push({
+      // Named field by field. `req.user` is the raw stored row and still carries
+      // the password hash and the login name; spreading it here would post both
+      // to every colleague on the board.
+      connId: client.connId, userId: client.userId, name: client.name,
+      cell: fresh ? client.cell : null,
+      holding: fresh ? client.holding : null,
+      editing: fresh ? client.editing : null,
+    });
+  }
+  return peers;
+}
+
+/** Writes the roster for one board to every connection watching that board. */
+function broadcastPresence(scopeKey: string) {
+  const now = Date.now();
+  const peers = presenceRoster(scopeKey, now);
+  // No `id:` line. The server never reads Last-Event-ID back, so a presence
+  // frame must not look resumable — every frame is a whole roster, and a
+  // reconnect is answered with a fresh one rather than a gap.
+  const payload = `event: presence\ndata: ${JSON.stringify({ scope: scopeKey, at: now, peers })}\n\n`;
+  for (const [res, client] of scheduleEventClients) {
+    if (client.scopeKey !== scopeKey) continue;
+    try { res.write(payload); } catch { scheduleEventClients.delete(res); }
+  }
+}
+
+function markPresenceDirty(scopeKey: string) {
+  if (!scopeKey) return;
+  presenceDirty.add(scopeKey);
+  if (presenceFlushTimer) return;
+  // A timer of its own. Sharing scheduleEventTimer would drop presence whenever
+  // a schedule write was already pending, and would drag a Firestore write into
+  // the path of a mouse move.
+  presenceFlushTimer = setTimeout(() => {
+    presenceFlushTimer = null;
+    const scopes = [...presenceDirty];
+    presenceDirty.clear();
+    for (const scope of scopes) broadcastPresence(scope);
+  }, 250);
+}
+
+/* A frozen tab, a closed laptop, or a session that quietly expired all look the
+   same from here: the marks stop arriving. This is what turns that silence back
+   into an empty chair. */
+setInterval(() => {
+  const now = Date.now();
+  for (const client of scheduleEventClients.values()) {
+    const stale = now - client.markAt > PRESENCE_STALE_MS;
+    const gone = now - client.seenAt > PRESENCE_GONE_MS;
+    if ((stale || gone) && hasMark(client)) {
+      Object.assign(client, emptyMark());
+      markPresenceDirty(client.scopeKey);
+    } else if (gone) {
+      markPresenceDirty(client.scopeKey);
+    }
+  }
+}, 10_000).unref?.();
 onSchedulesInvalidated(() => {
   if (scheduleEventTimer) return;
   scheduleEventTimer = setTimeout(() => {
@@ -1655,14 +1847,49 @@ app.get("/api/schedules/events", requirePermission(7), (req: AuthenticatedReques
   // capacity. Past it the screen simply falls back to reading on demand.
   if (scheduleEventClients.size >= 400) { res.end(); return; }
   res.write("retry: 4000\n\n");
-  scheduleEventClients.add(res);
+
+  const connId = String(req.query.conn || "").slice(0, 64);
+  const collegeId = Number(req.query.college || 0);
+  const sectionId = Number(req.query.section || 0);
+  const termId = Number(req.query.term || 0);
+  /* A stream may only claim a board its holder is allowed to be on — the same
+     wall every data route stands behind. A stream with no `conn` (the reports
+     screen opens one too) registers with an empty scope and therefore appears
+     in nobody's roster and receives nobody else's. */
+  const allowed = connId && collegeId && isScopeAllowed(req, collegeId, sectionId);
+  const now = Date.now();
+  scheduleEventClients.set(res, {
+    res, connId,
+    userId: Number(req.user?.SystemUserId || 0),
+    name: String(req.user?.Name || "").trim() || "زميل",
+    scopeKey: allowed ? `${collegeId}:${sectionId}:${termId}` : "",
+    collegeId, sectionId,
+    markAt: 0, seenAt: now,
+    ...emptyMark(),
+  });
+  // A reconnect must not have to wait for someone else to move: this stream is
+  // answered with the whole roster the moment it opens.
+  if (allowed) {
+    try {
+      res.write(`event: presence\ndata: ${JSON.stringify({
+        scope: `${collegeId}:${sectionId}:${termId}`, at: now,
+        peers: presenceRoster(`${collegeId}:${sectionId}:${termId}`, now),
+      })}\n\n`);
+    } catch { /* the close handler below does the cleanup */ }
+    markPresenceDirty(`${collegeId}:${sectionId}:${termId}`);
+  }
+
   // Proxies drop silent connections; a comment line every while keeps this one open.
   const heartbeat = setInterval(() => {
     try { res.write(": ping\n\n"); } catch { /* close event does the cleanup */ }
   }, 25_000);
   req.on("close", () => {
     clearInterval(heartbeat);
+    // The only cleanup path in the whole transport. Anything registered at
+    // connect and not removed here becomes a colleague who never leaves.
+    const gone = scheduleEventClients.get(res);
     scheduleEventClients.delete(res);
+    if (gone?.scopeKey) markPresenceDirty(gone.scopeKey);
   });
 });
 
@@ -3789,14 +4016,26 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
  * and nothing else — so the series has to be given a length, and the honest
  * thing is to name the number in one place rather than bury it in a string.
  */
+/* Used only when a term has no recorded length. Sixteen weeks is a common
+   Kuwaiti semester and it is still a guess — which is why the feed labels
+   itself when it is guessing. */
 const TERM_WEEKS = 16;
 
 /** Sends a calendar, with the headers that make a browser show a subscription. */
-function sendCalendar(res: Response, name: string, lectures: CalendarLecture[]) {
+async function sendCalendar(res: Response, name: string, termId: number, lectures: CalendarLecture[]) {
+  const term = (await Repository.getTerms()).find(row => row.AdTermId === termId);
+  const startDate = term?.AdTermStart;
+  const weeks = Number(term?.AdTermWeeks) || TERM_WEEKS;
   res.setHeader("Content-Type", "text/calendar; charset=utf-8");
   res.setHeader("Content-Disposition", `inline; filename="schedule.ics"`);
   res.setHeader("Cache-Control", "no-store");
-  res.send(buildCalendar({ name, weeks: TERM_WEEKS, lectures }));
+  res.send(buildCalendar({
+    // A calendar that had to guess its own term says so in the name it puts on
+    // the subscriber's phone, rather than presenting an invented semester as if
+    // it were the registrar's.
+    name: startDate ? name : `${name} (تواريخ الفصل غير مسجّلة)`,
+    weeks, startDate, lectures,
+  }));
 }
 
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
@@ -3805,7 +4044,7 @@ app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
-  sendCalendar(res, payload.label || "الجدول الدراسي", payload.rows.map(row => ({
+  await sendCalendar(res, payload.label || "الجدول الدراسي", resolved.link.AdTermId, payload.rows.map(row => ({
     id: row.id,
     title: [row.code, row.name].filter(Boolean).join(" · "),
     code: row.code, section: row.section, instructor: row.instructor,
@@ -3848,7 +4087,7 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
 
-  sendCalendar(res, `جدول ${person.AdInstructorName || "الأستاذ"}`, rows.map(row => {
+  await sendCalendar(res, `جدول ${person.AdInstructorName || "الأستاذ"}`, resolved.link.AdTermId, rows.map(row => {
     const course = courseById.get(row.AdCourseId);
     return {
       id: row.id,

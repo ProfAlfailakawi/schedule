@@ -115,6 +115,11 @@ import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
+import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
+/* The same six hues the stylesheet paints from, so a chip and the ring it
+   refers to are the same colour. Red is absent on purpose: it belongs to
+   conflicts, and a colleague is not one. */
+const PRESENCE_HUES = [200, 262, 38, 96, 288, 178];
 import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../utils/weekVisual";
 import {
   SCHEDULE_DAY_END,
@@ -936,6 +941,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const scopeRef = useRef({ collegeId: 0, sectionId: 0, termId: 0 });
   scopeRef.current = { collegeId: filterCollege, sectionId: filterSection, termId: filterTerm };
+  /**
+   * The channel that says who else is on this board.
+   *
+   * Both objects are created once and never replaced: the client owns a
+   * connection identity the server addresses by, and the painter owns the set
+   * of marks currently written onto the DOM. Rebuilding either on a render
+   * would orphan a live stream and leave its marks painted with nothing left
+   * to erase them.
+   */
+  const presence = useMemo(createPresenceClient, []);
+  const presencePaint = useMemo(() => createPresencePainter(), []);
+  const [peers, setPeers] = useState<PresencePeer[]>([]);
+  useEffect(() => () => presence.dispose(), [presence]);
   /** `silent` refreshes without the reading indicator — the live channel uses
    *  it so a colleague's change slides in without the screen looking busy. */
   const loadRows = async (opts?: { silent?: boolean }) => {
@@ -1309,10 +1327,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       const { id: _id, AdCourseName: name, ...values } = row;
       setForm(values);
       setCourseName(name || courseById.get(row.AdCourseId)?.CourseName || "");
+      // A row open in someone's form is the quietest way to lose a change: it
+      // looks untouched on every other screen right up until the save.
+      presence.send({ editing: { rowId: row.id, rev: Number((row as any).rev || 0) } });
       setEditor("edit");
     },
     back = () => {
       setEditor("index");
+      presence.send({ editing: null });
       setEditId(null);
       setError(null);
       setConflicts([]);
@@ -2508,6 +2530,32 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     return lines.join(" · ") || "هذا الموضع يسبب تعارضاً فلا يمكن حفظه.";
   };
 
+  /**
+   * The warning that arrives before the refusal.
+   *
+   * The guarantee against two people overwriting each other has not changed and
+   * does not live here: the row's revision travels with the write, the server
+   * compares it inside the transaction, and a stale one comes back as a
+   * conflict. That is correct, and it is also late — it fires after a person
+   * has already committed to a change.
+   *
+   * This says the same thing a second earlier, in words, and then gets out of
+   * the way. It never blocks a write, never locks a row, and is never the thing
+   * that decides. If presence is wrong — a colleague whose tab froze, a stream
+   * that dropped — the worst it can do is mention someone who has already left.
+   */
+  const warnIfHeldElsewhere = useCallback((ids: number[]) => {
+    for (const id of ids) {
+      const holder = presence.claimant(id);
+      if (!holder) continue;
+      setPhysicsNotice(holder.holding
+        ? `${holder.name} يحمل هذا الموعد الآن — إن تعارض التعديلان فسيُرفض الأحدث.`
+        : `${holder.name} يعدّل هذا الموعد الآن — إن تعارض التعديلان فسيُرفض الأحدث.`);
+      return true;
+    }
+    return false;
+  }, [presence]);
+
   const commitMove = async (request: SchedulePhysicsDropRequest) => {
     const { row, target } = request;
     const day = target.day as DayKey;
@@ -2515,6 +2563,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const party = multiSelect.has(row.id)
       ? rows.filter(item => multiSelect.has(item.id))
       : [row];
+    warnIfHeldElsewhere(party.map(item => item.id));
     const shift = mins(target.start) - mins(row.fstarttime);
     const sourceDay = (days.find(d => Boolean(row[d.key]))?.key || day) as DayKey;
     const dayChanged = sourceDay !== day;
@@ -2695,6 +2744,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const unchanged = row.fstarttime === start &&
       String(row.AdRoomCode || "") === building && String(row.AdRoomHall || "") === hall;
     if (unchanged) return;
+    warnIfHeldElsewhere([row.id]);
     const after: FSchedule = { ...row, fstarttime: start, fendtime: end, AdRoomCode: building, AdRoomHall: hall } as FSchedule;
     setSaving(true);
     setError(null);
@@ -3392,6 +3442,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         }}
         aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${r.fstarttime}–${r.fendtime}${place ? ` · قاعة ${place}` : ""}`}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
+        data-row-id={r.id}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
         style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
@@ -3709,10 +3760,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setPhysicsNotice("");
       setPhysicsField({});
       setError(null);
+      // Colleagues learn the card is in the air the moment it leaves the board,
+      // not when it lands — which is the only window in which knowing helps.
+      presence.send({ holding: { rowId: row.id, rev: Number((row as any).rev || 0) }, cell: null });
       beginRipple(row);
     },
     onDecision: (decision, target) => {
       if (!target || !decision) return;
+      // Fired on target change, never per pixel — so this cannot flood the beat.
+      presence.send({ cell: { day: target.day, start: target.start,
+        ...((target as any).room ? { room: `${(target as any).room.code}|${(target as any).room.hall}` } : {}) } });
       setPhysicsField((prev) => ({
         ...prev,
         [`${target.day}:${target.start}`]: decision.quality,
@@ -3742,6 +3799,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     onDropRequest: (request) => {
       clearRipple();
       setPhysicsField({});
+      presence.send({ holding: null, cell: null });
       const room = (request.target as any)?.room as { code: string; hall: string } | undefined;
       if (room) {
         // The rooms board: the square names a hall, so the landing carries one.
@@ -3757,11 +3815,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     onCancel: () => {
       clearRipple();
       setPhysicsField({});
+      presence.send({ holding: null, cell: null });
       setPhysicsNotice("تم إلغاء السحب دون حفظ أي تغيير.");
     },
     onInvalid: (decision) => {
       clearRipple();
       setPhysicsField({});
+      presence.send({ holding: null, cell: null });
       const details = (decision?.reasons || []).slice(0, 3).join(" — ");
       const reason = details || decision?.summary || "هذا الموضع غير متاح وفق قواعد الجدول.";
       setError(`تعذر النقل: ${reason}`);
@@ -3769,15 +3829,30 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     },
   });
   const physicsOrigin = physics.state.row;
+  /**
+   * Whether a card is in the air.
+   *
+   * This used to be read as `physics.state.active` — a field the drag state has
+   * never had (SchedulePhysics/types.ts declares `phase`, not `active`), and one
+   * the compiler could not catch because the hook's return type degrades to
+   * `any` at this call site. Every read was `undefined`, so the fan's Escape
+   * guard never saw a live drag and the edge-autoscroll effect below returned on
+   * its first line and never ran at all.
+   */
+  const physicsActive = Boolean(
+    physicsOrigin &&
+    physics.state.phase !== "idle" &&
+    physics.state.phase !== "armed",
+  );
   useEffect(() => {
     if (!fanned) return;
     const onKey = (event: KeyboardEvent) => {
       // Escape mid-drag belongs to the drag; the fan only closes when idle.
-      if (event.key === "Escape" && !physics.state.active) setFanned(null);
+      if (event.key === "Escape" && !physicsActive) setFanned(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fanned, physics.state.active]);
+  }, [fanned, physicsActive]);
   /**
    * The grid walks with the drag.
    *
@@ -3788,7 +3863,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * the week sideways; speed grows the deeper into the edge the pointer sits.
    */
   useEffect(() => {
-    if (!physics.state.active) return;
+    if (!physicsActive) return;
     let pointerX = -1, pointerY = -1, frame = 0;
     const surface = document.querySelector<HTMLElement>(".week-surface");
     const EDGE = 48, TOP_GUARD = 72, MAX_STEP = 24;
@@ -3818,12 +3893,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       window.removeEventListener("pointermove", follow);
       cancelAnimationFrame(frame);
     };
-  }, [physics.state.active]);
-  const physicsActive = Boolean(
-    physicsOrigin &&
-    physics.state.phase !== "idle" &&
-    physics.state.phase !== "armed",
-  );
+  }, [physicsActive]);
   /**
    * The watchdog over a drag that never ended.
    *
@@ -4144,29 +4214,36 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (viewMode !== "week") return;
     const day = (days.find(d => Boolean((row as any)[d.key]))?.key || "fsunday") as DayKey;
     setKeyMove({ rowId: row.id, day, start: row.fstarttime });
+    presence.send({ holding: { rowId: row.id, rev: Number((row as any).rev || 0) },
+      cell: { day, start: row.fstarttime } });
     const title = row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد";
     setKeyMoveSay(`تم التقاط ${title}. استخدم الأسهم للتحريك، Enter للتنفيذ، Esc للإلغاء.`);
-  }, [isPowerAdmin, saving, physics.state.phase, viewMode, courseById]);
+  }, [isPowerAdmin, saving, physics.state.phase, viewMode, courseById, presence]);
 
   const cancelKeyboardMove = useCallback(() => {
     setKeyMove(null);
+    presence.send({ holding: null, cell: null });
     setKeyMoveSay("أُلغي النقل؛ لم يتغير شيء.");
-  }, []);
+  }, [presence]);
 
   const stepKeyboardMove = useCallback((axis: "time" | "day", delta: number) => {
     setKeyMove(current => {
       if (!current) return current;
+      const announce = (next: { day: DayKey; start: string }) => {
+        presence.send({ cell: { day: next.day, start: next.start } });
+        return next;
+      };
       if (axis === "time") {
         const next = mins(current.start) + delta * SCHEDULE_SLOT_MINUTES;
         if (next < gridWindow.start || next > gridWindow.end - SCHEDULE_SLOT_MINUTES) return current;
-        return { ...current, start: timeFromMins(next) };
+        return announce({ ...current, start: timeFromMins(next) });
       }
       const index = days.findIndex(d => d.key === current.day);
       const target = index + delta;
       if (target < 0 || target >= days.length) return current;
-      return { ...current, day: days[target].key as DayKey };
+      return announce({ ...current, day: days[target].key as DayKey });
     });
-  }, [gridWindow]);
+  }, [gridWindow, presence]);
 
   const commitKeyboardMove = useCallback(() => {
     if (!keyMove || !keyMoveRow) return;
@@ -4177,6 +4254,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const sourceDay = (days.find(d => Boolean((keyMoveRow as any)[d.key]))?.key || keyMove.day) as DayKey;
     const label = days.find(d => d.key === keyMove.day)?.label || "";
     setKeyMove(null);
+    presence.send({ holding: null, cell: null });
     setKeyMoveSay(`تم نقل الموعد إلى ${label} ${keyMove.start}.`);
     // The same door as a drag: same checks, same undo, same broadcast.
     void commitMove({
@@ -4487,7 +4565,37 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   useEffect(() => {
     if (mode !== "schedule" || !workspaceReady || typeof EventSource === "undefined") return;
     let refreshTimer = 0;
-    const source = new EventSource("/api/schedules/events");
+    /* The scope goes on the URL so the server knows which board this stream is
+       watching from the first byte. It is read from the ref, not the filter
+       state, because the effect deliberately does not re-run when the scope
+       changes — the stream stays open and a beat announces the move instead. */
+    const at = scopeRef.current;
+    const source = new EventSource(
+      `/api/schedules/events?conn=${encodeURIComponent(presence.connId)}` +
+      `&college=${at.collegeId}&section=${at.sectionId}&term=${at.termId}`);
+    source.addEventListener("presence", event => {
+      try { presence.ingest(JSON.parse((event as MessageEvent).data)); } catch { /* a malformed frame is not news */ }
+    });
+    /* Hovered-cell presence comes from ONE delegated, passive listener. The
+       slot's own onPointerEnter belongs to the drag-to-paint quick-create
+       stroke, and adding to it risks arming a stroke nobody asked for. */
+    let lastCell = "";
+    const onOver = (event: PointerEvent) => {
+      // A pointer that is not a mouse has no hover — a finger only ever
+      // "hovers" the thing it is already pressing.
+      if (event.pointerType !== "mouse") return;
+      const slot = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-physics-slot="true"]');
+      const day = slot?.dataset.physicsDay || "";
+      const start = slot?.dataset.physicsStart || "";
+      const room = slot?.dataset.physicsRoom;
+      const key = `${day}|${start}|${room || ""}`;
+      if (key === lastCell) return;
+      lastCell = key;
+      presence.send({ cell: day && start ? { day, start, ...(room ? { room } : {}) } : null });
+    };
+    document.addEventListener("pointerover", onOver, { passive: true });
+    const onHide = () => presence.leave();
+    window.addEventListener("pagehide", onHide);
     const refreshQuietly = () => {
       if (liveBusy.current) {
         // Deferred, and deliberately re-armed: the companion effect below only
@@ -4510,10 +4618,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     source.onerror = () => setLiveFeed(false);
     return () => {
       window.clearTimeout(refreshTimer);
+      document.removeEventListener("pointerover", onOver);
+      window.removeEventListener("pagehide", onHide);
+      presence.leave();
+      presencePaint.clear();
       source.close();
       setLiveFeed(false);
     };
   }, [mode, workspaceReady]);
+  /* Who is here is the only part of presence allowed to be React state — it
+     changes when someone arrives or leaves, not when they move. */
+  useEffect(() => presence.onRoster(setPeers), [presence]);
+  useEffect(() => presence.onFrame(presencePaint.paint), [presence, presencePaint]);
+  /* Changing college, section or term is walking to a different board. */
+  useEffect(() => {
+    presence.setScope({ collegeId: filterCollege, sectionId: filterSection, termId: filterTerm });
+    presencePaint.clear();
+  }, [presence, presencePaint, filterCollege, filterSection, filterTerm]);
+  /* A remounted view has a fresh DOM with none of the marks on it. */
+  useEffect(() => { presencePaint.paint(presence.peers()); });
   // A refresh that arrived mid-work runs as soon as the work lets go.
   useEffect(() => {
     if (!liveRefreshPending.current) return;
@@ -5454,6 +5577,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             role="status"
             aria-label={liveFeed ? "البث المباشر متصل" : "البث المباشر غير متصل"}
           />
+          {/* Who else is on this board. It only ever names the people it can
+              see — it never claims you are alone, because a colleague served by
+              another instance is invisible from here, and being confidently
+              wrong about that is worse than saying nothing. */}
+          {peers.length ? (
+            <span className="presence-strip no-print" role="status"
+              aria-label={`${peers.length} زميلاً معك على هذا الجدول`}>
+              {peers.slice(0, 5).map(peer => (
+                <span key={peer.connId} className="presence-chip"
+                  data-busy={peer.holding || peer.editing ? "1" : "0"}
+                  style={{ ["--presence-hue" as string]: PRESENCE_HUES[presenceHue(peer.userId) - 1] }}
+                  title={peer.holding ? `${peer.name} — يحمل موعداً الآن`
+                       : peer.editing ? `${peer.name} — يعدّل موعداً الآن`
+                       : `${peer.name} — معك على هذا الجدول`}>
+                  {peer.name.replace(/^د\.\s*/, "").trim().charAt(0) || "؟"}
+                </span>
+              ))}
+              {peers.length > 5 ? <span className="presence-chip" title={`و${peers.length - 5} غيرهم`}>+{peers.length - 5}</span> : null}
+            </span>
+          ) : null}
           {liveClash.pairs ? (
             <button
               type="button"
@@ -5716,6 +5859,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   i = instructorById.get(s.AdInstructorId);
                 return (
                   <article
+                    data-row-id={s.id}
                     className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""}`}
                     key={s.id}
                     /* The course's own colour, carried into the list so a lecture
@@ -5897,6 +6041,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <article
                   {...trackGrip}
                   key={row.id}
+                  data-row-id={row.id}
                   className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""}`}
                   style={cardStyle}
                   draggable={!saving && !physics.supported}
@@ -6753,6 +6898,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   role="button"
                                   tabIndex={0}
                                   aria-label={`${bandTitle} · ${bandWho} · ${bandCode} · شعبة ${row.SCode || "—"} — اسحبها أو افتح المروحة`}
+                                  data-row-id={row.id}
                                   className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""} ${hueFocusClass(row)}`}
                                   style={(() => {
                                     const bandHue = hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName, placeOf(row));

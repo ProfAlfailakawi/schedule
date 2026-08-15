@@ -45,6 +45,19 @@ export interface CalendarDocument {
   name: string;
   /** Weeks the series runs for. Stated, never guessed silently. */
   weeks: number;
+  /**
+   * The day teaching begins, as YYYY-MM-DD.
+   *
+   * Without it this file has a defect that only shows up weeks later: the
+   * series is anchored to "the next matching weekday from now", and a
+   * subscription is re-fetched forever, so every fetch pushes the whole term
+   * forward again. A calendar subscribed to in September is still generating
+   * lectures the following July, and nobody ever sees the file that did it.
+   *
+   * With a start date the series is fixed: it begins where the term begins and
+   * ends where the term ends, and re-reading it a hundred times changes nothing.
+   */
+  startDate?: string;
   lectures: CalendarLecture[];
   /** The moment the file was produced, for DTSTAMP. */
   now?: Date;
@@ -91,6 +104,14 @@ const stampUTC = (date: Date) =>
   `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T` +
   `${pad(date.getUTCHours())}${pad(date.getUTCMinutes())}${pad(date.getUTCSeconds())}Z`;
 
+/** The last instant the series may produce: `weeks` after its first occurrence. */
+const untilStamp = (first: Date, weeks: number) => {
+  const end = new Date(first.getTime());
+  end.setUTCDate(end.getUTCDate() + Math.max(1, weeks) * 7 - 1);
+  end.setUTCHours(23, 59, 59, 0);
+  return stampUTC(end);
+};
+
 const localStamp = (date: Date, time: string) => {
   const [hour, minute] = String(time || "0:0").split(":").map(Number);
   return `${date.getUTCFullYear()}${pad(date.getUTCMonth() + 1)}${pad(date.getUTCDate())}T` +
@@ -112,6 +133,13 @@ function nextWeekday(from: Date, weekday: number): Date {
 export function buildCalendar(document: CalendarDocument): string {
   const now = document.now || new Date();
   const dtstamp = stampUTC(now);
+  /* The anchor. A recorded term start is a fact and never moves; the fallback
+     is today, which is the honest best available when nobody has told the
+     system when the term began — and which the feed says out loud below. */
+  const anchor = /^\d{4}-\d{2}-\d{2}$/.test(String(document.startDate || ""))
+    ? new Date(`${document.startDate}T00:00:00Z`)
+    : null;
+  const from = anchor && !Number.isNaN(anchor.getTime()) ? anchor : now;
   const lines: string[] = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
@@ -139,7 +167,7 @@ export function buildCalendar(document: CalendarDocument): string {
     if (!days.length || !lecture.start || !lecture.end) continue;
     // The series begins on the first of its own weekdays from today onward.
     const first = days
-      .map(day => nextWeekday(now, day))
+      .map(day => nextWeekday(from, day))
       .reduce((earliest, date) => (date < earliest ? date : earliest));
     const detail = [
       lecture.code ? `الرمز: ${lecture.code}` : "",
@@ -158,7 +186,12 @@ export function buildCalendar(document: CalendarDocument): string {
       `SEQUENCE:${Math.max(0, Number(lecture.revision || 0))}`,
       `DTSTART;TZID=${TZID}:${localStamp(first, lecture.start)}`,
       `DTEND;TZID=${TZID}:${localStamp(first, lecture.end)}`,
-      `RRULE:FREQ=WEEKLY;COUNT=${Math.max(1, document.weeks) * days.length};BYDAY=${days.map(day => ICAL_DAYS[day]).join(",")}`,
+      /* UNTIL when the term's end is known — a real last day, the same one on
+         every fetch. COUNT otherwise, which at least bounds the series even
+         though its start still drifts with the anchor. */
+      `RRULE:FREQ=WEEKLY;${anchor
+        ? `UNTIL=${untilStamp(first, document.weeks)}`
+        : `COUNT=${Math.max(1, document.weeks) * days.length}`};BYDAY=${days.map(day => ICAL_DAYS[day]).join(",")}`,
       `SUMMARY:${escapeText(lecture.title)}`,
       lecture.room ? `LOCATION:${escapeText(lecture.room)}` : "",
       detail ? `DESCRIPTION:${escapeText(detail)}` : "",

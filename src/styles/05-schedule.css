@@ -4296,3 +4296,79 @@ html.schedule-physics-active .rooms-slot.physics-impossible::before{
 .rooms-card.physics-source-lift{
   z-index:420;box-shadow:var(--shadow-lg);
 }
+
+/* ── الحضور: من غيري على هذا اللوح ─────────────────────────────────────────
+ *
+ * Everything a colleague is doing is painted as a pseudo-element driven by a
+ * data attribute, for one reason above all the others: the drag engine asks
+ * `document.elementFromPoint` where the pointer is on every single move, and
+ * anything hit-testable laid over the grid makes that question return the
+ * overlay instead of the slot. The card would then have no target, the heads-up
+ * display would vanish, and the drop would silently fly home. So none of this
+ * is ever an element, and every rule below is `pointer-events:none`.
+ *
+ * The hue is per person and deterministic. Six of them, and none is red — red
+ * on this board has meant a conflict since the first version, and a colleague
+ * standing somewhere is not a conflict.
+ */
+[data-presence-cell="1"],[data-presence-hold="1"],[data-presence-edit="1"]{--presence-hue:200}
+[data-presence-cell="2"],[data-presence-hold="2"],[data-presence-edit="2"]{--presence-hue:262}
+[data-presence-cell="3"],[data-presence-hold="3"],[data-presence-edit="3"]{--presence-hue:38}
+[data-presence-cell="4"],[data-presence-hold="4"],[data-presence-edit="4"]{--presence-hue:96}
+[data-presence-cell="5"],[data-presence-hold="5"],[data-presence-edit="5"]{--presence-hue:288}
+[data-presence-cell="6"],[data-presence-hold="6"],[data-presence-edit="6"]{--presence-hue:178}
+
+/* Where a colleague's pointer is resting. Deliberately the faintest mark on the
+   board — it is company, not information you must act on. z-index sits below
+   the keyboard-move target (7) so your own work always reads on top. */
+.week-slot[data-presence-cell],.rooms-slot[data-presence-cell]{position:relative}
+.week-slot[data-presence-cell]::after,.rooms-slot[data-presence-cell]::after{
+  content:"";position:absolute;inset:1px;border-radius:6px;pointer-events:none;z-index:5;
+  border:1px dashed hsl(var(--presence-hue) 46% 52% / .5);
+  background:hsl(var(--presence-hue) 46% 52% / .07);
+  animation:presence-arrive .18s ease-out both;
+}
+
+/* A card in someone's hand. This one is meant to stop you — it is the moment
+   before two people move the same lecture.
+ *
+ * Drawn as an OUTLINE, not as a positioned pseudo-element, and that is not a
+ * stylistic preference. A week card is absolutely positioned by the grid: the
+ * `position:relative` an ::after would need to anchor to tore one card 1104px
+ * down the page, measured. An outline is painted outside the border box, takes
+ * part in no layout, moves nothing, and is invisible to hit-testing — so the
+ * drag engine still finds exactly what it found before the ring appeared. */
+[data-presence-hold]{
+  outline:2px solid hsl(var(--presence-hue) 58% 46%);
+  outline-offset:1px;
+  animation:presence-held 1.8s ease-in-out infinite;
+}
+/* A row open in someone's editor — quieter, because it may sit open for
+   minutes and a pulsing ring for minutes is a nuisance, not a warning. */
+[data-presence-edit]:not([data-presence-hold]){
+  outline:1.5px dashed hsl(var(--presence-hue) 52% 52%);
+  outline-offset:1px;
+}
+@keyframes presence-arrive{from{opacity:0}to{opacity:1}}
+@keyframes presence-held{
+  0%,100%{outline-color:hsl(var(--presence-hue) 58% 46%)}
+  50%{outline-color:hsl(var(--presence-hue) 58% 46% / .38)}
+}
+
+/* Who is here. A row of initials beside the live indicator — it changes when
+   someone arrives or leaves, never as they move. */
+.presence-strip{display:inline-flex;align-items:center;gap:4px;vertical-align:middle}
+.presence-chip{
+  inline-size:22px;block-size:22px;border-radius:999px;display:grid;place-items:center;
+  font:700 10px/1 var(--font-ui);letter-spacing:0;
+  color:hsl(var(--presence-hue) 62% 26%);
+  background:hsl(var(--presence-hue) 52% 88%);
+  border:1px solid hsl(var(--presence-hue) 46% 70%);
+  animation:presence-arrive .22s ease-out both;
+}
+.presence-chip[data-busy="1"]{box-shadow:0 0 0 2px hsl(var(--presence-hue) 58% 46% / .28)}
+
+@media (prefers-reduced-motion:reduce){
+  .week-slot[data-presence-cell]::after,.rooms-slot[data-presence-cell]::after,
+  [data-presence-hold],.presence-chip{animation:none}
+}

@@ -32,6 +32,11 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     [loading, setLoading] = useState(false);
   // The list is sorted by descending id, so items[0] is the most recent term.
   const suggestedTerm = useMemo(() => suggestNextTermName(items[0]?.AdTermName), [items]);
+  /* When teaching begins, and for how long. Both optional — a decade of terms
+     exists with neither — but without them the subscribable calendar has to
+     guess its own semester, and a guess that is re-read forever drifts. */
+  const [start, setStart] = useState("");
+  const [weeks, setWeeks] = useState("");
   const load = async () => {
     setLoading(true);
     try {
@@ -61,12 +66,14 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
       setEditId(null);
       // Note 29: pre-fill the next term in sequence so the common case is one click.
       setName(suggestedTerm);
+      setStart(""); setWeeks("16");
       setMode("create");
       setError(null);
     },
     edit = (x: any) => {
       setEditId(x.AdTermId);
       setName(x.AdTermName);
+      setStart(x.AdTermStart || ""); setWeeks(String(x.AdTermWeeks || ""));
       setMode("edit");
       setError(null);
     };
@@ -81,7 +88,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
         {
           method: mode === "edit" ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ AdTermName: name.trim() }),
+          body: JSON.stringify({ AdTermName: name.trim(),
+            AdTermStart: start || undefined, AdTermWeeks: Number(weeks) || undefined }),
         },
       ),
       d = await r.json();
@@ -144,7 +152,31 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                   required
                 />
               </Field>
+              <Field label="بداية التدريس">
+                <input
+                  type="date"
+                  value={start}
+                  onChange={(e) => setStart(e.target.value)}
+                  aria-label="تاريخ بداية التدريس"
+                />
+              </Field>
+              <Field label="عدد الأسابيع">
+                <input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={weeks}
+                  onChange={(e) => setWeeks(e.target.value)}
+                  aria-label="عدد أسابيع الفصل"
+                  inputMode="numeric"
+                />
+              </Field>
             </div>
+            <p className="smart-term-hint">
+              {start
+                ? "التقويم المُشترَك سيبدأ وينتهي بهذين التاريخين بالضبط."
+                : "بدون تاريخ بداية، التقويم المُشترَك يقدّر الفصل — ويعلن ذلك للمشترك."}
+            </p>
             {mode === "create" && suggestedTerm && name === suggestedTerm ? (
               <p className="smart-term-hint">
                 <Sparkles aria-hidden="true" />

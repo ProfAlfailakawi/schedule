@@ -125,6 +125,16 @@ function simpleHash(password: string): string {
   return "hash_" + Math.abs(hash).toString(16);
 }
 
+/** A term's calendar, normalised — or nothing at all, which is also an answer. */
+function termCalendarFields(dates?: { start?: string; weeks?: number }): Partial<AdTerm> {
+  const out: Partial<AdTerm> = {};
+  const start = String(dates?.start || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(start) && !Number.isNaN(Date.parse(start))) out.AdTermStart = start;
+  const weeks = Number(dates?.weeks || 0);
+  if (Number.isInteger(weeks) && weeks >= 1 && weeks <= 30) out.AdTermWeeks = weeks;
+  return out;
+}
+
 function hashPassword(password: string): string {
   const salt = randomBytes(16);
   const derived = scryptSync(password, salt, 64);
@@ -1005,34 +1015,42 @@ export const Repository = {
     return db.terms.find(t => t.AdTermId === id);
   },
 
-  createTerm: async (name: string): Promise<AdTerm> => {
+  /* `dates` is optional so every existing name-only caller stays valid, and so
+     a term created without a calendar is still a term. Undefined fields are
+     stripped rather than written: Firestore rejects an explicit undefined. */
+  createTerm: async (name: string, dates?: { start?: string; weeks?: number }): Promise<AdTerm> => {
     invalidateReference(REFERENCE_KEYS.terms);
+    const calendar = termCalendarFields(dates);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("terms");
-      const newTerm = { AdTermId: nextId, AdTermName: name };
+      const newTerm = { AdTermId: nextId, AdTermName: name, ...calendar };
       await firestoreDb.collection("terms").doc(`term_${nextId}`).set(newTerm);
       return newTerm;
     }
     const nextId = db.terms.length > 0 ? Math.max(...db.terms.map(t => t.AdTermId)) + 1 : 1;
-    const newTerm = { AdTermId: nextId, AdTermName: name };
+    const newTerm = { AdTermId: nextId, AdTermName: name, ...calendar };
     db.terms.push(newTerm);
     saveDatabase();
     return newTerm;
   },
 
-  updateTerm: async (id: number, name: string): Promise<AdTerm> => {
+  updateTerm: async (id: number, name: string, dates?: { start?: string; weeks?: number }): Promise<AdTerm> => {
     invalidateReference(REFERENCE_KEYS.terms);
+    const calendar = termCalendarFields(dates);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("terms").doc(`term_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("الفصل الدراسي غير موجود");
-      const updated = { AdTermId: id, AdTermName: name };
+      const updated = { AdTermId: id, AdTermName: name, ...calendar };
       await docRef.set(updated);
       return updated;
     }
     const idx = db.terms.findIndex(t => t.AdTermId === id);
     if (idx === -1) throw new Error("الفصل الدراسي غير موجود");
     db.terms[idx].AdTermName = name;
+    Object.assign(db.terms[idx], calendar);
+    if (!calendar.AdTermStart) delete db.terms[idx].AdTermStart;
+    if (!calendar.AdTermWeeks) delete db.terms[idx].AdTermWeeks;
     saveDatabase();
     return db.terms[idx];
   },
@@ -2139,6 +2157,13 @@ export const Repository = {
   },
 
   replaceScheduleScope: async (collegeId:number, sectionId:number, termId:number, rows:FSchedule[]): Promise<FSchedule[]> => {
+    /* The widest write in the system — publishing a draft, restoring a version,
+       undoing a safety net — and the only one that used to change nothing as far
+       as anyone else could tell. Every other write path invalidates, which is
+       what wakes the live feed; this one rewrote the whole timetable in silence
+       while colleagues kept looking at the old one. */
+    invalidateSchedules();
+    invalidateReference(REFERENCE_KEYS.scheduleCount);
     const normalizedInput = rows.map(row => ({ ...row, AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId }));
     if (firestoreDb) {
       const current = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });

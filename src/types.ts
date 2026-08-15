@@ -33,6 +33,16 @@ export interface AdCollegeUserAssign {
 export interface AdTerm {
   AdTermId: number;
   AdTermName: string;
+  /**
+   * When teaching actually begins, as YYYY-MM-DD, and how many weeks it runs.
+   *
+   * Both optional, because ten years of terms exist with neither. Everything
+   * that reads them must still work when they are absent — but where they ARE
+   * present, a term stops being a name and becomes a period, which is what a
+   * calendar has needed all along.
+   */
+  AdTermStart?: string;
+  AdTermWeeks?: number;
 }
 
 export interface AdCollege {
