@@ -1653,15 +1653,25 @@ function describeScheduleChange(before: any, after: any, instructorName?: (id: n
  * that number is used and the learned one is not — a person who says something
  * out loud outranks a pattern the software inferred.
  */
-const rhythmCache=new Map<string,{serial:number;reading:RhythmReading;doorway:number;memory:DepartmentMemory}>();
+interface DepartmentStyle {
+  reading:RhythmReading|null;
+  doorway:number;
+  memory:DepartmentMemory|null;
+  /** Course pairs that share students, from whoever answered the survey. */
+  cohort:Set<string>;
+  cohortSize:(a:number,b:number)=>number;
+}
+const NO_COHORT:Pick<DepartmentStyle,"cohort"|"cohortSize">={cohort:new Set(),cohortSize:()=>0};
+const rhythmCache=new Map<string,{serial:number}&DepartmentStyle>();
 
-async function departmentStyle(row:any):Promise<{reading:RhythmReading|null;doorway:number;memory:DepartmentMemory|null}>{
+async function departmentStyle(row:any):Promise<DepartmentStyle>{
   const collegeId=Number(row?.AdCollegeId||0),sectionId=Number(row?.AdSectionId||0),termId=Number(row?.AdTermId||0);
-  if(!collegeId)return{reading:null,doorway:0,memory:null};
+  if(!collegeId)return{reading:null,doorway:0,memory:null,...NO_COHORT};
   const key=`${collegeId}:${sectionId}`;
   const cached=rhythmCache.get(key);
   if(cached&&cached.serial===driftSerial)
-    return{reading:cached.reading,doorway:cached.doorway,memory:cached.memory};
+    return{reading:cached.reading,doorway:cached.doorway,memory:cached.memory,
+           cohort:cached.cohort,cohortSize:cached.cohortSize};
   try{
     // Every term this department has ever run. History is the whole point:
     // a habit is what survives across years, and one term of it is chance.
@@ -1679,10 +1689,24 @@ async function departmentStyle(row:any):Promise<{reading:RhythmReading|null;door
        cannot invent a finding on the looser one. */
     const learned=Math.min(...reading.patterns.map(p=>p.breakMinutes||Infinity));
     const doorway=Math.max(0,Math.min(60,declared||(Number.isFinite(learned)?learned:0)));
-    rhythmCache.set(key,{serial:driftSerial,reading,doorway,memory});
+    /* What the students said, read on the same pass and cached against the
+       same beacon. A department that has never run a survey pays nothing and
+       sees exactly what it saw before. */
+    let cohort=new Set<string>(), cohortSize:(a:number,b:number)=>number=()=>0;
+    if(termId&&sectionId){
+      try{
+        const needs=await Repository.getStudentNeeds(collegeId,sectionId,termId);
+        if(needs.length){
+          const demand=readStudentDemand(needs,memCourses.filter(c=>Number(c.AdSectionId)===sectionId));
+          cohort=cohortPairs(demand);
+          cohortSize=(a,b)=>sharedBetween(demand,a,b);
+        }
+      }catch{ /* no survey is the ordinary case */ }
+    }
+    rhythmCache.set(key,{serial:driftSerial,reading,doorway,memory,cohort,cohortSize});
     if(rhythmCache.size>200)rhythmCache.clear();
-    return{reading,doorway,memory};
-  }catch{return{reading:null,doorway:0,memory:null};}
+    return{reading,doorway,memory,cohort,cohortSize};
+  }catch{return{reading:null,doorway:0,memory:null,...NO_COHORT};}
 }
 
 async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
@@ -1696,12 +1720,23 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   ]);
   const all=candidateRows.filter(item=>item.id!==excludeId);
   const style=await departmentStyle(candidate);
-  const raw=findConflicts([candidate],all,{doorwayMinutes:style.doorway});
+  const raw=findConflicts([candidate],all,{doorwayMinutes:style.doorway,
+    cohortPairs:style.cohort,cohortSize:style.cohortSize});
   const conflicts=raw.map((conflict:any)=>{
     /* The turnaround rule is advice, not a refusal. `soft` is what keeps it out
        of the blocked list in move-batch and out of the 409 on save — a
        department that deliberately runs back-to-back lectures must never be
        stopped from saying so. */
+    if(conflict.type==="cohort"){
+      const other=all.find(item=>item.id===conflict.otherId);
+      const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
+      /* Soft on purpose: it speaks for whoever answered the survey, not for the
+         registrar, and a partial answer must never be the thing that blocks a
+         department from saving its own schedule. */
+      return{...conflict,soft:true,severity:"medium",rowId:visible&&other?other.id:0,
+        message:"تعارض على الطلاب",
+        detail:visible?conflict.detail:"الموعد الآخر خارج نطاق العرض الحالي."};
+    }
     if(conflict.type==="doorway"){
       const other=all.find(item=>item.id===conflict.otherId);
       const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;

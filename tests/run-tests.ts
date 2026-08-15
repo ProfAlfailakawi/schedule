@@ -1024,6 +1024,54 @@ async function runTests() {
     assert(!isActive(null, "fsunday", "08:00", "7|S27"), "nothing carried means nothing lit");
   }
 
+  /* --- 24. تعارض الطالب: القيد الذي لم يكن مرئياً ---------------------------- */
+  originalLog("\n--- 24. Student clash ---");
+  {
+    /* The third kind of double booking. This engine has caught the teacher and
+       the hall since its first day and could never catch this one, because
+       nothing in ten years of schedules says which courses share students.
+       The survey is the only thing that can say it. */
+    const at = (id: number, courseId: number, from: string, to: string, instructor = 0, room = "12"): any => ({
+      id, AdTermId: 1, AdCollegeId: 1, AdSectionId: 1, AdCourseId: courseId,
+      AdInstructorId: instructor, SCode: String(id),
+      fsunday: true, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: from, fendtime: to, AdRoomCode: room, AdRoomHall: "F6", fdetail: "",
+    });
+    // Two lectures that overlap: different teachers, different halls. Nothing
+    // in the timetable is wrong — and the students cannot attend both.
+    const pair = [at(1, 10, "08:00", "09:30", 1, "12"), at(2, 20, "09:00", "10:00", 2, "14")];
+
+    assert(findConflicts(pair, pair).length === 0,
+      "without the survey this is invisible — no teacher, no hall, no finding");
+
+    const shared = new Set(["10|20"]);
+    const found = findConflicts(pair, pair, { cohortPairs: shared, cohortSize: () => 7 });
+    assert(found.length === 1 && found[0].type === "cohort", "with it, the student clash is caught");
+    assert(found[0].detail.includes("7"), "…and says how many students it speaks for");
+    assert(found[0].severity === "medium",
+      "…as a warning, never a refusal — it speaks for who answered, not the registrar");
+
+    // A pair that does not share students is not a clash.
+    assert(findConflicts(pair, pair, { cohortPairs: new Set(["10|99"]) }).length === 0,
+      "courses with no shared students still overlap freely");
+    // Nor is a shared pair that does not actually overlap.
+    const apart = [at(1, 10, "08:00", "09:00"), at(2, 20, "10:00", "11:00")];
+    assert(findConflicts(apart, apart, { cohortPairs: shared }).length === 0,
+      "sharing students says nothing about lectures that never meet");
+    // A department with no survey sees exactly what it saw before.
+    assert(findConflicts(pair, pair, { cohortPairs: new Set() }).length === 0,
+      "an empty graph changes nothing at all");
+
+    /* The timetable's OWN error outranks it: fixing a double-booked teacher may
+       resolve the student clash, so the teacher is named first. */
+    const both = [at(1, 10, "08:00", "09:30", 5, "12"), at(2, 20, "09:00", "10:00", 5, "14")];
+    const ranked = findConflicts(both, both, { cohortPairs: shared, cohortSize: () => 7 });
+    assert(ranked.length === 1 && ranked[0].type === "instructor",
+      "a double-booked teacher is named ahead of the cohort clash");
+    assert(ranked[0].reasons?.includes("cohort"),
+      "…without losing the fact that students are caught in it too");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");

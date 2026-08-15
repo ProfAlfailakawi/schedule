@@ -292,7 +292,8 @@
   .bar-rows>div{grid-template-columns:46px minmax(0,1fr) 30px}
 
   /* Catalog / master-detail */
-  .list-toolbar{flex-direction:column;align-items:stretch;gap:var(--s3);padding:var(--s4)}
+  /* Already a column at every width now; only the padding changes here. */
+  .list-toolbar{padding:var(--s4)}
   .list-search{max-width:none}
   .list-toolbar-side{justify-content:space-between}
   .record-card{padding:var(--s4);grid-template-columns:minmax(0,1fr) auto;align-items:center}

@@ -495,12 +495,24 @@
    CATALOG / MASTER-DETAIL
    ========================================================================== */
 
+/*
+   ── شريط الأدوات: سطران، لا عمود مضغوط ─────────────────────────────────────
+ *
+ * These sat on one line and shared it badly: the search took the width it
+ * wanted and the filters were squeezed into a narrow column beside it, each
+ * one truncated, stacked vertically, and reading as a broken sidebar rather
+ * than as controls. Two of them plus a record count cannot share a line with a
+ * search field at any width a person actually uses.
+ *
+ * So they are two rows. The search owns the first, whole. The filters own the
+ * second and sit side by side at full size, where every label reads.
+ */
 .list-toolbar{
-  min-height:64px;display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  min-height:64px;display:flex;flex-direction:column;align-items:stretch;gap:var(--s3);
   padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);
 }
 .list-search,.schedule-quick-search{
-  min-width:220px;max-width:480px;flex:1;
+  min-width:0;max-width:none;flex:1 1 auto;width:100%;
   display:flex;align-items:center;gap:var(--s2);
   min-height:42px;padding:0 var(--s3);
   border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);
@@ -524,11 +536,16 @@
 .list-search button,.schedule-quick-search button{color:var(--muted);padding:var(--s1);display:grid;place-items:center}
 .list-search button svg,.schedule-quick-search button svg{width:14px;height:14px}
 .list-search button:hover,.schedule-quick-search button:hover{color:var(--ink)}
-/* The search and everything beside it share one baseline. Two filters at 38px
-   and a search shell at 42 were never on the same line. */
-.list-toolbar-side{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+/* The second row: filters first because they are what a person reaches for,
+   and the record count pushed to the far end where a total belongs. */
+.list-toolbar-side{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;width:100%}
 .list-toolbar-side>*{min-height:42px}
-.list-toolbar .count-chip{display:inline-flex;align-items:center}
+/* 190px was a floor, not a basis: two of them plus a gap need 390 before they
+   will sit together, and the card they live in is narrower than that at the
+   width this screen is actually used. A basis of 130 lets them share a row
+   down to about 280px and stack only below it — measured, not guessed. */
+.list-toolbar-side .list-filter{flex:1 1 130px;min-width:0;max-width:none}
+.list-toolbar .count-chip{display:inline-flex;align-items:center;margin-inline-start:auto;flex:none}
 /* Compact per-screen filters that sit beside the search — quiet until used. */
 .list-filter{
   min-height:42px;max-width:190px;

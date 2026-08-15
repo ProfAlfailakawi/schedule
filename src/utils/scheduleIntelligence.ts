@@ -49,16 +49,37 @@ const duration=(row:Partial<FSchedule>)=>Math.max(0,timeToMinutes(String(row.fen
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 
 export interface ConflictInsight {
-  type:"room"|"instructor"|"duplicate"|"doorway";
+  type:"room"|"instructor"|"duplicate"|"doorway"|"cohort";
   severity:"high"|"medium"|"low";
   rowId:number;otherId:number;message:string;detail:string;
   /** Every reason this one pair collides, so a clash is never counted twice. */
-  reasons?:Array<"room"|"instructor"|"duplicate"|"doorway">;
+  reasons?:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">;
 }
 
 export interface ConflictOptions {
   /** Minutes a hall needs between two lectures. Zero means the rule is unset. */
   doorwayMinutes?:number;
+  /**
+   * ── تعارض الطالب ──────────────────────────────────────────────────────────
+   *
+   * The third kind of double booking, and the commonest complaint in any
+   * university: a student with two lectures at the same hour. This engine has
+   * caught the teacher and the hall since its first day and has never been able
+   * to catch this one — because nothing in ten years of schedules says which
+   * courses share students. A timetable knows where every teacher is; it has
+   * never known where anybody's week collides.
+   *
+   * The survey is the only thing that can say it. A student who answers «أحتاج
+   * ISL 210 و ARB 220» has stated a constraint no history could infer, and it
+   * arrives here as a set of `"courseA|courseB"` keys — course ids, ascending,
+   * so a pair is one pair however it was written.
+   *
+   * Empty by default. A department that has never run a survey sees exactly
+   * what it saw before.
+   */
+  cohortPairs?:Set<string>;
+  /** How many students a pair shares, so the finding can say why. */
+  cohortSize?:(a:number,b:number)=>number;
 }
 
 /**
@@ -117,25 +138,36 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
          one pair twice would double every count in the product. */
       const tight=doorway>0 && sameRoom && !clashing && roomsTouch(row,other,doorway);
       const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
+      /* Two overlapping lectures whose COURSES share students. Only meaningful
+         when they actually overlap — a survey says nothing about a gap. */
+      const cohort=clashing && row.AdCourseId!==other.AdCourseId && Boolean(options?.cohortPairs?.size) &&
+        options!.cohortPairs!.has(`${Math.min(row.AdCourseId,other.AdCourseId)}|${Math.max(row.AdCourseId,other.AdCourseId)}`);
       if(!clashing && !twin && !tight) continue;
 
       const pair=[row.id,other.id].sort((a,b)=>a-b).join(":");
       if(byPair.has(pair)) continue;
 
-      const reasons:Array<"room"|"instructor"|"duplicate"|"doorway">=[];
+      const reasons:Array<"room"|"instructor"|"duplicate"|"doorway"|"cohort">=[];
       if(clashing && row.AdInstructorId && row.AdInstructorId===other.AdInstructorId) reasons.push("instructor");
       if(clashing && sameRoom) reasons.push("room");
       if(twin) reasons.push("duplicate");
+      if(cohort) reasons.push("cohort");
       if(tight) reasons.push("doorway");
       if(!reasons.length) continue;
 
       // The pair is named after the most serious thing true about it.
+      /* A teacher or a hall booked twice is a fact about the timetable; a
+         cohort clash is a fact about people, reported by them. When both are
+         true the timetable's own error is named first, because fixing it may
+         resolve the other. */
       const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room"
-        :reasons.includes("duplicate")?"duplicate":"doorway";
+        :reasons.includes("duplicate")?"duplicate":reasons.includes("cohort")?"cohort":"doorway";
       const gap=Math.abs(timeToMinutes(String(other.fstarttime||""))-timeToMinutes(String(row.fendtime||"")));
+      const shared=cohort?(options?.cohortSize?.(row.AdCourseId,other.AdCourseId)||0):0;
       const message=type==="instructor"?"حجز مزدوج لأستاذ المقرر"
         :type==="room"?"حجز مزدوج للقاعة"
         :type==="duplicate"?"موعدان متطابقان لنفس الشعبة"
+        :type==="cohort"?"تعارض على الطلاب"
         :"مهلة الباب غير كافية";
       const detail=type==="instructor"
         ? `الموعدان ${row.fstarttime}-${row.fendtime} و ${other.fstarttime}-${other.fendtime} يتقاطعان في يوم مشترك.`
@@ -143,13 +175,18 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
           ? `القاعة ${row.AdRoomCode}/${row.AdRoomHall} مستخدمة في موعد متداخل.`
           : type==="duplicate"
             ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت."
-            : `القاعة ${row.AdRoomCode}/${row.AdRoomHall} تُخلى وتُملأ خلال ${gap} دقيقة، والقسم يحتاج ${doorway}.`;
+            : type==="cohort"
+              ? `${shared} من الطلاب الذين أجابوا يحتاجون المقررين معاً، والموعدان متقاطعان.`
+              : `القاعة ${row.AdRoomCode}/${row.AdRoomHall} تُخلى وتُملأ خلال ${gap} دقيقة، والقسم يحتاج ${doorway}.`;
       byPair.set(pair,{
         type,
         /* Never a save-blocker. A tight turnaround can be deliberate, and
            dressing it in the colour that also means a real double booking
            teaches people to stop reading that colour. */
-        severity:type==="doorway"?"low":type==="duplicate"?"medium":"high",
+        /* A cohort clash is real but it speaks for whoever answered a survey,
+           not for the registrar — so it is a strong warning and never a refusal
+           to save. The department decides what a partial answer is worth. */
+        severity:type==="doorway"?"low":type==="duplicate"||type==="cohort"?"medium":"high",
         rowId:row.id,otherId:other.id,message,detail,reasons,
       });
     }
