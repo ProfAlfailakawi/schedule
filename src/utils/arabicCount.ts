@@ -104,4 +104,5 @@ export const AR = {
   matter:      { one: "أمر", two: "أمران", few: "أمور", many: "أمراً" },
   student:     { one: "طالب", two: "طالبان", few: "طلاب", many: "طالباً" },
   pair:        { one: "زوج", two: "زوجان", few: "أزواج", many: "زوجاً" },
+  account:     { one: "حساب", two: "حسابان", few: "حسابات", many: "حساباً" },
 } as const satisfies Record<string, ArabicNoun>;

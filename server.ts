@@ -395,6 +395,9 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
 // Screens that are intentionally reserved for the main administrator.
 // The department scheduler keeps the operational schedule/search/report tools only.
 const powerOnlyFormIds = new Set([2, 3, 4, 5, 6, 11, 12, 15]);
+/* The schedule workspace and مركز القرار are the same permission — every
+   intelligence route is guarded by it, and every list route accepts it. */
+const DECISION_CENTRE_FORM_ID = 7;
 function isPowerUser(req: AuthenticatedRequest): boolean {
   return Boolean(req.user && (req.user.IsAdminUser || req.user.SystemUserId === 1));
 }
@@ -3675,7 +3678,43 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
     IsDeleted: false,
     AdInstructorId: Number(AdInstructorId) || 0
   });
+  /* A new department used to start with nothing at all: an account that logs in
+     to an empty rail and waits for somebody to remember to tick a box. Form 7
+     is the whole operational baseline — the schedule workspace and مركز القرار
+     — and every route a scheduler needs accepts it. So it is granted on
+     creation, and the account works the first time it signs in. Anything beyond
+     it is still a deliberate decision on the permissions screen. */
+  await Repository.createSecurity(newUser.SystemUserId, DECISION_CENTRE_FORM_ID);
   res.status(201).json({ ...safeSystemUser(newUser), HasPassword: true });
+});
+
+/**
+ * ── مركز القرار لكل الأقسام ─────────────────────────────────────────────────
+ *
+ * The screen has existed for a while; the permission behind it did not travel
+ * with it. Departments created before it — and any account an administrator set
+ * up field by field — can be missing form 7 entirely, so the rail simply never
+ * shows مركز القرار and nobody can tell whether the feature is absent or the
+ * permission is.
+ *
+ * This grants it to every account that should have it, once. It is idempotent
+ * by construction: an account that already holds the permission is counted and
+ * skipped, never duplicated. It touches nothing else — no other form id, no
+ * account that is deleted or deactivated — and it reports exactly what it did.
+ */
+app.post("/api/users/grant-decision-centre", requirePermission(11), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  const users = (await Repository.getUsers()).filter(user => !user.IsDeleted && user.IsActive !== false);
+  let granted = 0, alreadyHad = 0;
+  const names: string[] = [];
+  for (const user of users) {
+    const held = (await Repository.getSecurityByUser(user.SystemUserId)).map(row => Number(row.FormNameId));
+    if (held.includes(DECISION_CENTRE_FORM_ID)) { alreadyHad += 1; continue; }
+    await Repository.createSecurity(user.SystemUserId, DECISION_CENTRE_FORM_ID);
+    granted += 1;
+    if (names.length < 40) names.push(user.Name || user.SystemUserLogin || `#${user.SystemUserId}`);
+  }
+  res.locals.auditChanges = `منح مركز القرار: ${granted} حساب جديد، ${alreadyHad} كان لديه الصلاحية`;
+  res.json({ granted, alreadyHad, total: users.length, names });
 });
 
 app.put("/api/users/:id", requirePermission(11), async (req: Request, res: Response) => {

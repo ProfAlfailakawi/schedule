@@ -590,7 +590,16 @@
 .intel-context-fields select{min-height:42px;background-color:var(--surface-2)}
 .intel-loading{min-height:280px;display:grid;place-items:center;color:var(--muted)}
 
-.intel-command-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:var(--s4)}
+/* ── صفحة واحدة، لا عمودان ───────────────────────────────────────────────────
+   These three screens were two-column grids, and that was the second half of
+   the stacking problem. A grid places whatever it is given: the card you chose
+   went into column one and the cards you did not choose went into column two,
+   side by side and starting at different heights. With one card on screen at a
+   time there is nothing to place beside anything — so the layout is a single
+   column, and the dashboard's own tile grid supplies the columns. */
+.intel-command-grid,.twin-layout,.history-layout{
+  display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s4);align-items:start;
+}
 
 /* --- Decision reading: preview rail + one canvas ----------------------------
    A quiet column of scenes — each a label, a sentence and a single number —
@@ -662,8 +671,16 @@
 /* The reading, as a page. Closed, it does not exist at all. */
 .insight-canvas{display:none;min-width:0}
 .insight-canvas.open{display:block}
+/* ── الطريق إلى الخلف فوق كل شيء ─────────────────────────────────────────────
+   Two measured faults, both about where this bar ends up. It pinned at top:0,
+   which is underneath the scene tabs — they pin at 12px and are painted above
+   it, so the way back disappeared the moment you scrolled. And on a card too
+   short to scroll it sat 515px down the page, under a title and a filter panel
+   that say nothing you do not already know while a reading is open.
+   So it pins clear of the tabs, and while a page is open the chrome above it
+   stands down. What is left above the card is navigation, and nothing else. */
 .insight-page-head{
-  position:sticky;top:0;z-index:12;
+  position:sticky;top:84px;z-index:21;
   display:flex;align-items:center;gap:var(--s4);
   padding:var(--s3) 0 var(--s4);margin-block-end:var(--s4);
   border-block-end:1px solid var(--line);background:var(--bg,var(--surface));
@@ -678,6 +695,8 @@
 }
 .insight-back:hover{border-color:var(--accent);color:var(--accent-strong,var(--accent))}
 .insight-back svg{width:15px;height:15px}
+.intelligence-page:has(.insight-page-head)>.page-heading,
+.intelligence-page:has(.insight-page-head)>.intel-context{display:none}
 .insight-page-metric{
   flex:none;font-size:var(--t-h3);font-weight:650;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums;color:var(--muted);
@@ -1010,7 +1029,16 @@
 .copilot-compose button:hover:not(:disabled){background:var(--accent-strong);transform:scale(1.05)}
 .copilot-compose button:disabled{opacity:.45}
 .copilot-compose button svg{width:18px;height:18px}
-.copilot-context{height:max-content}
+/* ── حدود المعرفة وأوامر مفيدة ────────────────────────────────────────────
+   This holds two cards; the rule it used to share was written for an icon
+   beside a paragraph — `display:flex` in a row. Two cards in a 300px column
+   therefore got about 150px each, and «الحجوزات الخارجية محسوبة دون كشف
+   تفاصيلها» came out one word per line. It is a stack, and the cards inside
+   already carry their own frame, so the container carries none. */
+.copilot-context{
+  height:max-content;display:grid;gap:var(--s3);align-content:start;
+  padding:0;border:0;background:transparent;
+}
 .mini-command-list{display:grid;gap:var(--s2);margin-top:var(--s3)}
 /* The command chips are <span>s, so the old `button`-only rule left them entirely
    unstyled and cramped on mobile (Note 10). Style the actual elements and align
@@ -1024,7 +1052,6 @@
 .mini-command-list span:hover,.mini-command-list button:hover{border-color:var(--accent);background:var(--accent-softer)}
 
 /* Twin / innovation suite */
-.twin-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,340px);gap:var(--s4);align-items:start}
 .twin-hero{padding:var(--s6);border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface)}
 .innovation-suite{padding:var(--s5);border:1px solid var(--line);border-radius:var(--r-xl);background:var(--surface)}
 .innovation-suite-head{display:flex;align-items:center;justify-content:space-between;gap:var(--s3)}
@@ -1104,7 +1131,6 @@
 .twin-steps p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-xs);line-height:1.55}
 
 /* History / drafts */
-.history-layout{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:var(--s4);align-items:start}
 .drafts-card,.versions-card{padding:var(--s5)}
 .draft-list,.timeline-versions{display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s4)}
 .draft-list article,.timeline-versions article{
@@ -1885,13 +1911,13 @@
 
 /* --- Scenes: assistant, term start, memory, safety, minutes --------------- */
 .copilot-scene,.genesis-scene,.memory-scene,.safety-scene,.meeting-scene{display:grid;gap:var(--s5)}
-.copilot-orbit,.copilot-context,.meeting-command,.genesis-hero,.safety-intro{
+.copilot-orbit,.meeting-command,.genesis-hero,.safety-intro{
   display:flex;align-items:flex-start;gap:var(--s4);
   padding:var(--s5);
   border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
 }
-.copilot-context>div,.copilot-orbit>div,.meeting-command>div,.genesis-hero>div,.safety-intro>div{min-width:0}
-.copilot-orbit>svg,.genesis-hero>svg,.meeting-command>svg,.safety-intro>svg,.copilot-context>svg{
+.copilot-orbit>div,.meeting-command>div,.genesis-hero>div,.safety-intro>div{min-width:0}
+.copilot-orbit>svg,.genesis-hero>svg,.meeting-command>svg,.safety-intro>svg{
   width:44px;height:44px;flex:none;display:grid;place-items:center;
   border-radius:var(--r-md);background:var(--accent-softer);color:var(--accent);
 }
@@ -2184,7 +2210,3 @@
  *
  * It carries no metric badge: these are places, not measurements.
  */
-.card-strip{margin-block-end:var(--s4)}
-.card-strip .insight-preview{gap:var(--s2)}
-.card-strip .insight-preview-copy strong{font-size:var(--t-sm)}
-.card-strip .insight-preview-icon svg{width:14px;height:14px}

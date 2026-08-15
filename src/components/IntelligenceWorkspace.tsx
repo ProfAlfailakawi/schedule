@@ -134,11 +134,112 @@ type InsightScene =
      two cards. One reading, one card, one screen — a panel that stacks two is
      exactly the thing this strip exists to end. */
   | "approval";
+/* «جرّب» — every card it holds, including the three that used to appear on
+   their own the moment a scenario existed. */
+type TwinCard = "hero" | "lab" | "board" | "editor" | "ledger" | "steps";
+type ApproveCard = "compare" | "drafts" | "versions";
 type ChatItem = { prompt: string; answer: any };
 interface Props {
   user: any;
   scopes: any[];
 }
+/**
+ * ── بطاقة واحدة، صفحة واحدة ─────────────────────────────────────────────────
+ *
+ * Three screens here kept re-inventing the same thing badly. «افهم» got a
+ * dashboard of tiles that open as pages; «جرّب» and «اعتمد» got a strip of
+ * chips — and a strip only ever governed the cards it knew about. Everything
+ * else stayed stacked underneath it, so choosing «مختبر القرار» still left the
+ * board, the what-if editor and the change ledger sitting below, and the page
+ * did not move an inch when you pressed.
+ *
+ * One mechanism now, used by all three: a deck. Closed, it is a dashboard of
+ * small cards. Open, it is a single card as a full page, with the way back
+ * pinned above everything.
+ */
+interface DeckCard {
+  value: string;
+  label: string;
+  detail: string;
+  metric?: string;
+  icon?: React.ReactNode;
+}
+
+/**
+ * Put whatever just appeared at the top of the screen.
+ *
+ * Measured after paint, and only on an element that is actually on screen: a
+ * `display:none` element measures zero, which silently reads as "you are
+ * already there" and leaves the page exactly where it was. That was the whole
+ * bug — pressing a card changed the content a thousand pixels below the fold
+ * and never scrolled to it.
+ */
+const liftToTop = (instant: boolean) =>
+  requestAnimationFrame(() => {
+    const target = [
+      ...document.querySelectorAll<HTMLElement>(".insight-page-head, .insight-preview-rail"),
+    ].find(el => el.getClientRects().length > 0);
+    if (!target) return;
+    const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 8);
+    if (Math.abs(window.scrollY - top) < 8) return;
+    window.scrollTo({ top, behavior: instant ? "auto" : "smooth" });
+  });
+
+const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
+  cards: DeckCard[];
+  value: string | null;
+  onChange: (next: string | null) => void;
+  backLabel: string;
+  title: string;
+  hint: string;
+}) => {
+  const active = cards.find(card => card.value === value) || null;
+  if (active)
+    return (
+      <header className="insight-page-head">
+        <button type="button" className="insight-back" onClick={() => onChange(null)}>
+          <ChevronLeft aria-hidden="true" />
+          {backLabel}
+        </button>
+        <div>
+          <span className="surface-kicker">{active.detail}</span>
+          <strong>{active.label}</strong>
+        </div>
+        {active.metric ? <b className="insight-page-metric">{active.metric}</b> : null}
+      </header>
+    );
+  return (
+    <nav className="insight-preview-rail no-print" aria-label={title}>
+      <div className="insight-preview-head">
+        <span className="surface-kicker">{title}</span>
+        <strong>اختر بطاقة</strong>
+        <small>{hint}</small>
+      </div>
+      <div className="insight-preview-list" role="list">
+        {cards.map(card => (
+          <button
+            key={card.value}
+            type="button"
+            className="insight-preview"
+            role="listitem"
+            aria-label={`${card.label} — ${card.detail}`}
+            onClick={() => onChange(card.value)}
+          >
+            {card.icon ? (
+              <span className="insight-preview-icon" aria-hidden="true">{card.icon}</span>
+            ) : null}
+            <span className="insight-preview-copy">
+              <strong>{card.label}</strong>
+              <small>{card.detail}</small>
+            </span>
+            {card.metric ? <b>{card.metric}</b> : null}
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+};
+
 const smartMessage = (value: any) => {
   const text = String(value?.message || value || "حدث خطأ غير متوقع");
   if (/Failed to fetch|NetworkError/i.test(text))
@@ -205,45 +306,22 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
    * The same strip answers it. One card at a time, chosen by name — not a
    * second mechanism, the same one these readings already use.
    */
-  const [twinCard, setTwinCard] = useState<"hero" | "lab">("hero");
-  const [approveCard, setApproveCard] = useState<"compare" | "drafts" | "versions">("compare");
-
-  const CardStrip = ({ value, options, onChange }: {
-    value: string;
-    options: Array<{ value: string; label: string; icon?: React.ReactNode }>;
-    onChange: (next: string) => void;
-  }) => (
-    <nav className="insight-preview-rail card-strip no-print" aria-label="بطاقات هذا المشهد">
-      <div className="insight-preview-list" role="tablist">
-        {options.map(option => (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={value === option.value}
-            className={`insight-preview ${value === option.value ? "active" : ""}`}
-            onClick={() => onChange(option.value)}
-          >
-            {option.icon ? <span className="insight-preview-icon" aria-hidden="true">{option.icon}</span> : null}
-            <span className="insight-preview-copy"><strong>{option.label}</strong></span>
-          </button>
-        ))}
-      </div>
-    </nav>
-  );
+  /* null is the dashboard. Every card below — including the ones that used to
+     sit stacked under the strip with no way to choose them — is now a page. */
+  const [twinCard, setTwinCard] = useState<TwinCard | null>(null);
+  const [approveCard, setApproveCard] = useState<ApproveCard | null>(null);
 
   const showScene = (value: InsightScene | null) => {
     setInsightScene(value);
-    if (value === null) return;
-    requestAnimationFrame(() => {
-      const rail = document.querySelector<HTMLElement>(".insight-preview-rail");
-      const anchorEl = rail?.parentElement || rail;
-      if (!anchorEl) return;
-      const top = anchorEl.getBoundingClientRect().top + window.scrollY;
-      // Already there: pressing the tab you are on must not jolt the page.
-      if (Math.abs(window.scrollY - top) < 8) return;
-      window.scrollTo({ top: Math.max(0, top), behavior: reduceMotion.current ? "auto" : "smooth" });
-    });
+    liftToTop(reduceMotion.current);
+  };
+  const showTwinCard = (value: TwinCard | null) => {
+    setTwinCard(value);
+    liftToTop(reduceMotion.current);
+  };
+  const showApproveCard = (value: ApproveCard | null) => {
+    setApproveCard(value);
+    liftToTop(reduceMotion.current);
   };
 
   const [heatMode, setHeatMode] = useState("department"),
@@ -2067,12 +2145,25 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
       {tab === "twin" ? (
         <div className="twin-layout">
-          <CardStrip
+          <CardDeck
             value={twinCard}
-            onChange={(next) => setTwinCard(next as "hero" | "lab")}
-            options={[
-              { value: "hero", label: "النسخة التجريبية", icon: <Dna /> },
-              { value: "lab", label: "مختبر القرار", icon: <WandSparkles /> },
+            onChange={(next) => showTwinCard(next as TwinCard | null)}
+            backLabel="كل البطاقات"
+            title="بطاقات التجربة"
+            hint="كل بطاقة تفتح صفحتها وحدها — لا شيء تحت شيء."
+            cards={[
+              { value: "hero", label: "النسخة التجريبية", detail: "حالة النسخة وما غيّرته فيها", icon: <Dna />,
+                metric: scenario ? String(changedRows.length) : undefined },
+              ...(scenario
+                ? [
+                    { value: "board", label: "لوحة التجربة", detail: "حرّك الوقت وشاهد النتيجة لحظياً", icon: <CalendarClock />,
+                      metric: String(scenarioEval?.scenario?.score ?? overview?.score ?? "") },
+                    { value: "editor", label: "ماذا لو؟", detail: "عدّل موعداً داخل النسخة", icon: <Network /> },
+                    { value: "ledger", label: "سجل التغييرات", detail: "ما غيّرته، موعداً موعداً", icon: <FileClock />,
+                      metric: String(changedRows.length) },
+                  ]
+                : [{ value: "steps", label: "كيف تعمل", detail: "أربع خطوات من النسخة إلى الاعتماد", icon: <Play /> }]),
+              { value: "lab", label: "مختبر القرار", detail: "القواعد وغرفة الاجتماع والتحسين الآلي", icon: <WandSparkles /> },
             ]}
           />
           {twinCard === "hero" ? (
@@ -2636,7 +2727,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             ) : null}
           </Surface>
           ) : null}
-          {scenario ? (
+          {scenario && twinCard === "board" ? (
             <>
               <section className="twin-score-row">
                 <article>
@@ -2749,6 +2840,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </div>
                 </div>
               </Surface>
+            </>
+          ) : null}
+          {scenario && twinCard === "editor" ? (
               <div className="twin-workbench">
                 <Surface className="scenario-editor">
                   <div className="surface-head">
@@ -2838,6 +2932,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     «احفظ كمسودة» ثم «نشر» صراحة.
                   </p>
                 </Surface>
+              </div>
+          ) : null}
+          {scenario && twinCard === "ledger" ? (
+              <div className="twin-workbench">
                 <Surface className="change-ledger">
                   <div className="surface-head">
                     <div>
@@ -2879,8 +2977,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </div>
                 </Surface>
               </div>
-            </>
-          ) : (
+          ) : null}
+          {!scenario && twinCard === "steps" ? (
             <Surface className="twin-explainer">
               <div className="twin-steps">
                 <article>
@@ -2913,19 +3011,23 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </article>
               </div>
             </Surface>
-          )}
+          ) : null}
         </div>
       ) : null}
 
       {tab === "history" ? (
         <div className="history-layout">
-          <CardStrip
+          <CardDeck
             value={approveCard}
-            onChange={(next) => setApproveCard(next as "compare" | "drafts" | "versions")}
-            options={[
-              { value: "compare", label: "مقارنة الفصول", icon: <ArrowLeftRight /> },
-              { value: "drafts", label: "المسودات", icon: <FileClock /> },
-              { value: "versions", label: "سجل النسخ", icon: <History /> },
+            onChange={(next) => showApproveCard(next as ApproveCard | null)}
+            backLabel="كل البطاقات"
+            title="بطاقات الاعتماد"
+            hint="كل بطاقة تفتح صفحتها وحدها — لا شيء تحت شيء."
+            cards={[
+              { value: "compare", label: "مقارنة الفصول", detail: "ما تغيّر بين فصل وفصل", icon: <ArrowLeftRight /> },
+              { value: "drafts", label: "المسودات", detail: "ما لم يُنشر بعد", icon: <FileClock />,
+                metric: String(drafts.length || 0) },
+              { value: "versions", label: "سجل النسخ", detail: "كل نشرة سابقة ومن نشرها", icon: <History /> },
             ]}
           />
           {approveCard === "compare" ? (
