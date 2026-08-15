@@ -32,6 +32,9 @@ import {
   Upload,
   UsersRound,
   WandSparkles,
+  Link2,
+  QrCode,
+  Printer,
   X,
 } from "lucide-react";
 import {
@@ -58,7 +61,7 @@ import type {
   FSchedule,
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
-import { AR, countOf } from "../utils/arabicCount";
+import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName } from "../utils/sorting";
 import { parseNaturalQuery } from "../utils/naturalQuery";
@@ -133,7 +136,9 @@ type InsightScene =
   /* Carved out of the quality panel, which was the last reading still holding
      two cards. One reading, one card, one screen — a panel that stacks two is
      exactly the thing this strip exists to end. */
-  | "approval";
+  | "approval"
+  /* ما قاله الطلاب: الطلب، والتقاطع، والنقلة التي تُزيله. */
+  | "students";
 /* «جرّب» — every card it holds, including the three that used to appear on
    their own the moment a scenario existed. */
 type TwinCard = "hero" | "lab" | "board" | "editor" | "ledger" | "steps";
@@ -349,6 +354,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
+  /* ما قاله الطلاب — والنقلة التي تُصلحه.
+     Loaded with everything else, and empty is the ordinary state: a department
+     that has never opened the survey sees the door and nothing more. */
+  const [demand, setDemand] = useState<any>(null);
   const [genome, setGenome] = useState<any>(null),
     [constraints, setConstraints] = useState<any[]>([]),
     [innovationMode, setInnovationMode] = useState<
@@ -483,13 +492,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       /* The two readings everyone is allowed must arrive; the four that are
          the main administrator's alone degrade to empty rather than throwing
          the page away. Same reasoning as the mount above. */
-      const [o, r, d, v, g, cx] = await Promise.all([
+      const [o, r, d, v, g, cx, dm] = await Promise.all([
         fetchJson(`/api/intelligence/overview?${contextQuery}`),
         fetchJson(`/api/schedules?${contextQuery}`),
         fetchJson(`/api/intelligence/drafts?${contextQuery}`).catch(() => []),
         fetchJson(`/api/intelligence/versions?${contextQuery}`).catch(() => []),
         fetchJson(`/api/intelligence/genome?${contextQuery}`).catch(() => null),
         fetchJson(`/api/intelligence/constraints?${contextQuery}`).catch(() => []),
+        fetchJson(`/api/schedules/demand?${contextQuery}`).catch(() => null),
       ]);
       if (serial !== reloadSerial.current) return;
       setOverview(o);
@@ -498,6 +508,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setVersions(Array.isArray(v) ? v : []);
       setGenome(g);
       setConstraints(Array.isArray(cx) ? cx : []);
+      setDemand(dm);
       if (!scenario) setScenarioId(r[0]?.id || "");
     } catch (e: any) {
       if (serial === reloadSerial.current) setError(smartMessage(e));
@@ -744,6 +755,108 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setBusy(false);
     }
   };
+  /**
+   * Take a student-clash proposal into the trial copy — applied, not saved.
+   *
+   * The engine's answer stops at "this would work"; a person still decides. So
+   * the press lands where deciding is safe: a duplicate week with the move
+   * already made, the before/after score beside it, and publishing behind the
+   * two doors it has always been behind. The real schedule is untouched until
+   * somebody saves a draft and publishes it.
+   */
+  /* ── باب الطلاب ─────────────────────────────────────────────────────────
+     The survey could be answered but never issued — the public routes existed
+     and nothing anywhere could create their link. A door with no handle. The
+     handle belongs on the page that reads the answers, so collecting more of
+     them and reading them are one place, not two. */
+  const [surveyQr, setSurveyQr] = useState<{ id: string; svg: string } | null>(null);
+  const [surveyCopied, setSurveyCopied] = useState<string | null>(null);
+  const surveyUrl = (id: string) => `${window.location.origin}/q/${id}`;
+
+  const issueSurvey = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      /* Scoped to ONE section, which is what makes the cohort unambiguous: the
+         boys' link and the girls' link are two links on two sections, and no
+         gender is ever guessed from a name. */
+      await fetchJson("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId, kind: "survey", days: 30 }),
+      });
+      setMessage("صدر رابط الاستبيان لهذا القسم — صالح ثلاثين يوماً. انسخه أو اعرض رمز QR وعلّقه للطلاب.");
+      await reload();
+    } catch (e: any) {
+      setError(smartMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const showSurveyQr = async (id: string) => {
+    if (surveyQr?.id === id) { setSurveyQr(null); return; }
+    try {
+      // ~50KB, so it only ships when somebody actually asks for a code.
+      type QrFactory = (t: number, e: "L" | "M" | "Q" | "H") => {
+        addData(s: string): void; make(): void;
+        createSvgTag(o?: { cellSize?: number; margin?: number; scalable?: boolean }): string;
+      };
+      const factory = (await import("../utils/qrcodeGenerator")).default as unknown as QrFactory;
+      const code = factory(0, "M");
+      code.addData(surveyUrl(id));
+      code.make();
+      setSurveyQr({ id, svg: code.createSvgTag({ scalable: true, margin: 1 }) });
+    } catch { setError("تعذّر توليد رمز QR."); }
+  };
+
+  const copySurvey = async (id: string) => {
+    const url = surveyUrl(id);
+    try { await navigator.clipboard.writeText(url); }
+    catch {
+      const field = document.createElement("input");
+      field.value = url;
+      document.body.appendChild(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }
+    setSurveyCopied(id);
+    window.setTimeout(() => setSurveyCopied(current => (current === id ? null : current)), 1800);
+  };
+
+  const openRepair = async (fix: any) => {
+    const base = (scenario || rows).map(row => ({ ...row }));
+    const applied = base.map(row =>
+      row.id === fix.rowId
+        ? {
+            ...row,
+            fsunday: fix.to.day === "fsunday",
+            fmonday: fix.to.day === "fmonday",
+            ftuesday: fix.to.day === "ftuesday",
+            fwednesday: fix.to.day === "fwednesday",
+            fthursday: fix.to.day === "fthursday",
+            fstarttime: fix.to.start,
+            fendtime: fix.to.end,
+          }
+        : row,
+    );
+    setActiveDraftId(null);
+    setScenario(applied);
+    setScenarioId(fix.rowId);
+    setTab("twin");
+    showTwinCard("editor");
+    /* Said out loud because the number beside it will not say it: درجة الجودة
+       counts rooms, teachers, gaps and balance — it has never counted student
+       clashes, so a move that removes one can read «+0» and look pointless. */
+    setMessage(
+      `طُبِّقت النقلة داخل النسخة التجريبية فقط: «${fix.courseName}» ← ${fix.to.dayLabel} ${fix.to.start}. ` +
+      `يزول تقاطع ${countOf(fix.shared, AR.student)}. ` +
+      "درجة الجودة لا تحسب تقاطع الطلاب بعد، فقد تبقى كما هي — لا شيء منشور حتى تحفظها كمسودة وتنشرها.",
+    );
+    await evaluateScenario(applied);
+  };
+
   const patchScenario = (fields: Partial<FSchedule>) => {
     if (!scenario || !selectedScenario) return;
     setScenario(
@@ -1192,6 +1305,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             : String(overview.dataHealth?.invalidRows || 0),
           icon: <CheckCircle2 />,
         },
+        ...(demand && (demand.respondents || demand.survey?.length || isPowerAdmin)
+          ? [
+              {
+                value: "students" as const,
+                label: "طلبات الطلاب",
+                detail: "ما طلبوه، وما لا يجوز أن يتقاطع",
+                metric: String(demand.repairs?.length || demand.pairs?.length || 0),
+                icon: <UsersRound />,
+              },
+            ]
+          : []),
         ...(genome
           ? [
               {
@@ -1838,6 +1962,194 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </details>
           </Surface>
             </div>
+          {demand && (demand.respondents || demand.survey?.length || isPowerAdmin) ? (
+            <div
+              className="content-stack insight-scene-panel"
+              id="insight-panel-students"
+              role="tabpanel"
+              aria-labelledby="insight-tab-students"
+              hidden={activeInsightKey !== "students"}
+              tabIndex={activeInsightKey === "students" ? 0 : -1}
+            >
+            <Surface className="demand-reading">
+              <div className="surface-head">
+                <div>
+                  <span className="surface-kicker">ما قاله الطلاب</span>
+                  <h2>الطلب، والتقاطع، والنقلة التي تُزيله</h2>
+                </div>
+                <UsersRound />
+              </div>
+
+              {/* ── باب الطلاب ───────────────────────────────────────────
+                  الرابط ورمزه في نفس الصفحة التي تقرأ إجاباتهم. */}
+              <div className="demand-door">
+                {(demand.survey || []).length ? (
+                  (demand.survey || []).map((link: any) => (
+                    <article key={link.id} className="demand-door-card">
+                      <div className="demand-door-copy">
+                        <span className="surface-kicker">رابط الاستبيان</span>
+                        <strong>{link.label}</strong>
+                        <small>
+                          ينتهي {new Date(link.expiresAt).toLocaleDateString("ar-KW-u-nu-latn")} ·
+                          فُتح <Num value={link.views} /> {nounFor(link.views, AR.visit)}
+                        </small>
+                        <code dir="ltr" className="demand-door-url">{surveyUrl(link.id)}</code>
+                        <div className="demand-actions">
+                          <SecondaryButton onClick={() => copySurvey(link.id)}>
+                            <Link2 /> {surveyCopied === link.id ? "نُسخ" : "انسخ الرابط"}
+                          </SecondaryButton>
+                          <SecondaryButton onClick={() => showSurveyQr(link.id)}>
+                            <QrCode /> {surveyQr?.id === link.id ? "أخفِ الرمز" : "رمز QR"}
+                          </SecondaryButton>
+                          {surveyQr?.id === link.id ? (
+                            <GhostButton onClick={() => window.print()}>
+                              <Printer /> اطبع الرمز
+                            </GhostButton>
+                          ) : null}
+                        </div>
+                      </div>
+                      {surveyQr?.id === link.id ? (
+                        <figure
+                          className="demand-qr"
+                          dangerouslySetInnerHTML={{ __html: surveyQr.svg }}
+                          aria-label="رمز الاستبيان"
+                        />
+                      ) : null}
+                    </article>
+                  ))
+                ) : (
+                  <article className="demand-door-card empty">
+                    <div className="demand-door-copy">
+                      <span className="surface-kicker">باب الطلاب</span>
+                      <strong>لا يوجد رابط استبيان لهذا القسم بعد</strong>
+                      <small>
+                        الرابط مربوط بهذا القسم وحده، ولهذا يعرف مَن يجيب دون أن يُسأل أحد عن
+                        جنسه: قسم البنين رابط، وقسم البنات رابط آخر. لا تُحفظ الأسماء ولا الأرقام
+                        المدنية — يُتحقق من الرقم ثم يُشفَّر ويُنسى.
+                      </small>
+                      {isPowerAdmin ? (
+                        <div className="demand-actions">
+                          <PrimaryButton onClick={issueSurvey} disabled={busy}>
+                            <QrCode /> أصدر رابط الاستبيان
+                          </PrimaryButton>
+                        </div>
+                      ) : (
+                        <small>إصدار الرابط من صلاحية الإدارة الرئيسية.</small>
+                      )}
+                    </div>
+                  </article>
+                )}
+              </div>
+
+              {/* الرقم أولاً، ثم التفصيل — كبقية القراءات. */}
+              <div className="demand-figures">
+                <article>
+                  <span>أجاب</span>
+                  <strong><Num value={demand.respondents} /></strong>
+                  <small>{demand.respondents ? nounFor(demand.respondents, AR.student) : "لم يجب أحد بعد"}</small>
+                </article>
+                <article>
+                  <span>مقررات مطلوبة</span>
+                  <strong><Num value={demand.courses?.length || 0} /></strong>
+                  <small>من إجاباتهم</small>
+                </article>
+                <article className={demand.pairs?.length ? "warn" : ""}>
+                  <span>لا يجوز أن تتقاطع</span>
+                  <strong><Num value={demand.pairs?.length || 0} /></strong>
+                  <small>{nounFor(demand.pairs?.length || 0, AR.pair)}</small>
+                </article>
+                <article className={demand.repairs?.length ? "good" : ""}>
+                  <span>نقلات جاهزة</span>
+                  <strong><Num value={demand.repairs?.length || 0} /></strong>
+                  <small>بلا أثر جانبي</small>
+                </article>
+              </div>
+
+              {/* ── الاقتراح ─────────────────────────────────────────────────
+                  Each card is one move that was tried against the real week and
+                  produced nothing new. Pressing it opens the lecture; nothing
+                  moves until a person saves it. */}
+              {demand.repairs?.length ? (
+                <div className="demand-repairs">
+                  <p className="demand-headline">{demand.headline}</p>
+                  {demand.repairs.map((fix: any) => (
+                    <article key={`${fix.rowId}-${fix.to.day}-${fix.to.start}`} className="demand-repair">
+                      <header>
+                        <b>{fix.courseName}</b>
+                        <span>شعبة {fix.sectionCode}{fix.room ? ` · ${fix.room}` : ""}</span>
+                      </header>
+                      <div className="demand-move" dir="rtl">
+                        <span className="demand-from">
+                          <small>{fix.from.dayLabel}</small>
+                          <b dir="ltr">{fix.from.start}</b>
+                        </span>
+                        <ArrowLeftRight aria-hidden="true" />
+                        <span className="demand-to">
+                          <small>{fix.to.dayLabel}</small>
+                          <b dir="ltr">{fix.to.start}</b>
+                        </span>
+                      </div>
+                      <p className="demand-why">
+                        يزول تقاطعه مع <b>{fix.againstCourseName}</b> عند{" "}
+                        <b>{countOf(fix.shared, AR.student)}</b> — ولا ينشأ تعارض جديد.
+                      </p>
+                      <div className="demand-actions">
+                        <SecondaryButton onClick={() => openRepair(fix)}>
+                          <WandSparkles /> جرّبها في النسخة التجريبية
+                        </SecondaryButton>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : demand.unsolved?.length ? (
+                <p className="demand-headline">{demand.headline}</p>
+              ) : demand.pairs?.length ? (
+                <p className="demand-headline">
+                  لا يوجد تقاطع فعلي على الطلاب في هذا الفصل — الأزواج المشتركة كلها في أوقات مختلفة.
+                </p>
+              ) : null}
+
+              {/* المقررات الأكثر طلباً — شريط بسيط، بالقاعدة إلى جانب كل رقم. */}
+              {demand.courses?.length ? (
+                <div className="demand-bars">
+                  {demand.courses.slice(0, 8).map((course: any) => (
+                    <article key={course.courseId}>
+                      <span>{course.name}</span>
+                      <i><b style={{ width: `${Math.max(4, course.share)}%` }} /></i>
+                      <strong dir="ltr">{course.students}/{demand.respondents}</strong>
+                    </article>
+                  ))}
+                </div>
+              ) : null}
+
+              {demand.unsolved?.length ? (
+                <details className="insight-disclosure">
+                  <summary>تقاطعات بلا حلٍّ نظيف ({demand.unsolved.length})</summary>
+                  <ul className="demand-stuck">
+                    {demand.unsolved.map((item: any, index: number) => (
+                      <li key={index}>
+                        «{item.a}» و«{item.b}» — {countOf(item.shared, AR.student)}.
+                        كل نقلة مُتاحة تُنشئ تعارضاً آخر؛ الأمر يحتاج قراراً بشرياً.
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+
+              <details className="insight-disclosure">
+                <summary>كيف وصلنا إلى هذه النقلات؟</summary>
+                <p className="insight-method">
+                  كل نقلة جُرّبت فعلياً على أسبوع هذا الفصل: تُنقل المحاضرة إلى ساعات
+                  البداية التي يستخدمها قسمك أصلاً، ثم يُعاد فحص الأسبوع كاملاً. لا
+                  تُعرض النقلة إلا إذا أزالت تقاطعاً على الطلاب ولم تُنشئ شيئاً —
+                  لا تعارض أستاذ، ولا قاعة محجوزة، ولا فترة تبديل أقصر من المعتاد،
+                  ولا تقاطعاً جديداً مع مقرر ثالث. والأرقام كلها مبنية على من أجاب
+                  الاستبيان فقط، لا على بيانات التسجيل.
+                </p>
+              </details>
+            </Surface>
+            </div>
+          ) : null}
           {genome ? (
             <div
               className="content-stack insight-scene-panel"

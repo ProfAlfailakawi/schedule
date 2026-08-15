@@ -42,10 +42,19 @@ const ar = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
  * @param zero  what to say for none. Defaults to «لا …», which reads better
  *              than «٠ …» in every place this program counts something.
  */
+/**
+ * واحد or واحدة — the adjective agrees with the noun it follows.
+ *
+ * Half this dictionary is feminine (محاضرة، قاعة، دقيقة، حركة …) and every one
+ * of them was reading «محاضرة واحد». The ة is the marker, and it is the only
+ * one needed here: no noun in this program is feminine without it.
+ */
+const one = (noun: ArabicNoun) => (noun.one.endsWith("ة") ? "واحدة" : "واحد");
+
 export function countOf(value: number, noun: ArabicNoun, zero?: string): string {
   const n = Math.max(0, Math.round(Number(value) || 0));
   if (n === 0) return zero ?? `لا ${noun.few}`;
-  if (n === 1) return `${noun.one} واحد`;
+  if (n === 1) return `${noun.one} ${one(noun)}`;
   if (n === 2) return noun.two;
 
   const rest = n % 100;
@@ -105,4 +114,5 @@ export const AR = {
   student:     { one: "طالب", two: "طالبان", few: "طلاب", many: "طالباً" },
   pair:        { one: "زوج", two: "زوجان", few: "أزواج", many: "زوجاً" },
   account:     { one: "حساب", two: "حسابان", few: "حسابات", many: "حساباً" },
+  visit:       { one: "مرة", two: "مرتان", few: "مرات", many: "مرة" },
 } as const satisfies Record<string, ArabicNoun>;

@@ -2210,3 +2210,115 @@
  *
  * It carries no metric badge: these are places, not measurements.
  */
+
+/* ── طلبات الطلاب ────────────────────────────────────────────────────────────
+ *
+ * One reading holding three things that belong together: the door students walk
+ * through, what they said once they did, and the move that acts on it. They
+ * were never going to be three screens — a department that has to leave the
+ * page to find the QR will not send the QR.
+ *
+ * Every number here carries its base beside it. «7/12» is honest in a way «58%»
+ * is not, and this reading speaks only for whoever answered.
+ */
+.demand-reading{padding:var(--s5)}
+
+/* الباب: الرابط ورمزه. */
+.demand-door{margin-block-start:var(--s4)}
+.demand-door-card{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--s4);align-items:center;
+  padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);
+}
+.demand-door-card.empty{grid-template-columns:minmax(0,1fr)}
+.demand-door-copy{min-width:0;display:grid;gap:var(--s1)}
+.demand-door-copy strong{font-size:var(--t-body);font-weight:650;line-height:1.5}
+.demand-door-copy small{color:var(--muted);font-size:var(--t-xs);line-height:1.7}
+.demand-door-url{
+  display:block;margin-block-start:var(--s2);padding:var(--s2) var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);
+  font-family:var(--mono,ui-monospace,monospace);font-size:var(--t-xs);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  direction:ltr;unicode-bidi:isolate;
+}
+.demand-actions{display:flex;flex-wrap:wrap;gap:var(--s2);margin-block-start:var(--s3)}
+.demand-qr{
+  margin:0;width:170px;height:170px;display:grid;place-items:center;
+  padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:#fff;
+}
+.demand-qr svg{width:100%;height:100%;display:block}
+
+/* الأرقام: أربع خانات، كل واحدة برقمها وقاعدتها. */
+.demand-figures{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s3);
+  margin-block-start:var(--s4);
+}
+.demand-figures article{
+  padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
+}
+.demand-figures article.warn{border-color:color-mix(in srgb,var(--warn,#b8860b) 40%,var(--line))}
+.demand-figures article.good{border-color:color-mix(in srgb,var(--accent) 44%,var(--line))}
+.demand-figures span{display:block;color:var(--muted);font-size:var(--t-xs)}
+.demand-figures strong{
+  display:block;margin-block-start:var(--s1);
+  font-size:var(--t-h2);font-weight:650;letter-spacing:-.02em;line-height:1;
+  font-variant-numeric:tabular-nums lining-nums;direction:ltr;unicode-bidi:isolate;
+}
+.demand-figures small{display:block;margin-block-start:var(--s1);color:var(--muted);font-size:var(--t-xs)}
+
+.demand-headline{
+  margin-block-start:var(--s4);padding:var(--s3) var(--s4);
+  border-inline-start:3px solid var(--accent);border-radius:var(--r-sm);
+  background:var(--accent-softer);color:var(--ink);font-size:var(--t-sm);line-height:1.7;
+}
+
+/* النقلة: من ← إلى، بحجم يُقرأ من بعيد. */
+.demand-repairs{display:grid;gap:var(--s3);margin-block-start:var(--s3)}
+.demand-repair{
+  display:grid;gap:var(--s2);padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface);
+}
+.demand-repair header{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s2)}
+.demand-repair header b{font-size:var(--t-body);font-weight:650}
+.demand-repair header span{color:var(--muted);font-size:var(--t-xs)}
+.demand-move{
+  display:flex;align-items:center;gap:var(--s4);
+  padding:var(--s3) var(--s4);border-radius:var(--r-md);background:var(--surface-2);
+}
+.demand-move>svg{width:18px;height:18px;flex:none;color:var(--accent)}
+.demand-from,.demand-to{display:grid;gap:2px;min-width:0}
+.demand-from small,.demand-to small{color:var(--muted);font-size:var(--t-xs)}
+.demand-from b,.demand-to b{
+  font-size:var(--t-h4);font-weight:650;line-height:1.2;
+  font-variant-numeric:tabular-nums lining-nums;
+}
+.demand-from b{color:var(--muted);text-decoration:line-through;text-decoration-thickness:1px}
+.demand-to b{color:var(--accent-strong,var(--accent))}
+.demand-why{color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+.demand-why b{color:var(--ink);font-weight:650}
+
+/* المقررات الأكثر طلباً — شريط، والقاعدة إلى جانبه دائماً. */
+.demand-bars{display:grid;gap:var(--s2);margin-block-start:var(--s4)}
+.demand-bars article{
+  display:grid;grid-template-columns:minmax(0,1fr) minmax(90px,2fr) auto;
+  align-items:center;gap:var(--s3);
+}
+.demand-bars span{
+  min-width:0;font-size:var(--t-sm);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.demand-bars i{display:block;height:9px;border-radius:var(--r-full);background:var(--surface-3)}
+.demand-bars i b{display:block;height:100%;border-radius:var(--r-full);background:var(--accent)}
+.demand-bars strong{
+  font-size:var(--t-xs);font-weight:650;color:var(--muted);
+  font-variant-numeric:tabular-nums lining-nums;direction:ltr;unicode-bidi:isolate;
+}
+.demand-stuck{margin:var(--s2) 0 0;padding-inline-start:var(--s4);display:grid;gap:var(--s2)}
+.demand-stuck li{color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+
+@media (max-width:760px){
+  .demand-door-card{grid-template-columns:minmax(0,1fr)}
+  .demand-qr{width:100%;max-width:220px;height:auto;aspect-ratio:1}
+  .demand-bars article{grid-template-columns:minmax(0,1fr) auto}
+  .demand-bars i{grid-column:1 / -1}
+}

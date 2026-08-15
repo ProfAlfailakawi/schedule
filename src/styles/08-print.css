@@ -510,3 +510,18 @@
     font-family:"Plex Mono",ui-monospace,monospace !important;font-size:7.8pt !important;
   }
 }
+
+/* الرمز وحده على الورقة: قسمٌ يطبع رمز الاستبيان يريد رمزاً كبيراً وعنواناً،
+   لا لوحةَ قراراتٍ كاملة خلفه. */
+@media print{
+  .intelligence-page:has(.demand-qr) > *:not(.insight-canvas){display:none !important}
+  .insight-canvas:has(.demand-qr) .demand-figures,
+  .insight-canvas:has(.demand-qr) .demand-repairs,
+  .insight-canvas:has(.demand-qr) .demand-bars,
+  .insight-canvas:has(.demand-qr) .insight-disclosure,
+  .insight-canvas:has(.demand-qr) .demand-headline,
+  .insight-canvas:has(.demand-qr) .demand-actions{display:none !important}
+  .demand-door-card{border:0;background:transparent;justify-items:center;text-align:center}
+  .demand-qr{width:78mm;height:78mm;border:0}
+  .demand-door-url{font-size:11pt;white-space:normal;word-break:break-all}
+}

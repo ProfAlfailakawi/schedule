@@ -19,6 +19,7 @@ import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
 import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { readStudentDemand, cohortPairs, sharedBetween } from "./src/utils/studentDemand";
+import { readDemandRepairs } from "./src/utils/demandRepair";
 import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
@@ -4338,13 +4339,21 @@ app.post("/api/share", requirePermission(7), requirePowerAdmin, async (req: Auth
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const days = Math.min(SHARE_MAX_DAYS, Math.max(1, Number(req.body?.days || 30)));
-  const kind = req.body?.kind === "staff" ? "staff" : "department";
+  /* The survey door could be opened by the public routes but never issued by
+     anything, so no student link could exist. The section carries the cohort,
+     so the boys' link and the girls' link are simply two links on two
+     sections — no gender is ever inferred from a name. */
+  const kind = req.body?.kind === "staff" ? "staff"
+    : req.body?.kind === "survey" ? "survey"
+    : "department";
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
   const termName = terms.find(row => row.AdTermId === termId)?.AdTermName || "";
   const label = kind === "staff"
     ? `بطاقات الأساتذة · ${termName}`.trim()
-    : `${sectionName} · ${termName}`.trim();
+    : kind === "survey"
+      ? `استبيان المقررات · ${sectionName} · ${termName}`.trim()
+      : `${sectionName} · ${termName}`.trim();
   const link = await Repository.createShareLink({
     AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId,
     label,
@@ -4676,15 +4685,39 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const [needs, courses] = await Promise.all([
+  const [needs, courses, schedules, links] = await Promise.all([
     Repository.getStudentNeeds(collegeId, sectionId, termId),
     Repository.getCourses(),
+    Repository.getSchedules(),
+    Repository.getShareLinks(collegeId, sectionId, termId).catch(() => []),
   ]);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId);
   const reading = readStudentDemand(needs, mine);
+
+  /* The repair search, on the real week. It is skipped entirely when nobody has
+     answered — a department that has never run a survey pays nothing for a
+     feature it is not using. */
+  const week = schedules.filter(row =>
+    Number(row.AdSectionId) === sectionId && Number(row.AdTermId) === termId);
+  const style = reading.respondents
+    ? await departmentStyle({ AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId })
+    : null;
+  const repairs = reading.respondents
+    ? readDemandRepairs(week, reading, style?.reading || null, style?.doorway || 0)
+    : { repairs: [], unsolved: [], examined: 0, headline: "" };
+
+  /* The door itself, so the screen that shows the answers can also show the way
+     to collect more of them. Revoked and expired links are not doors. */
+  const now = Date.now();
+  const survey = (links as any[])
+    .filter(link => link.kind === "survey" && !link.revoked && Date.parse(link.expiresAt) > now)
+    .map(link => ({ id: link.id, label: link.label, expiresAt: link.expiresAt, views: link.views || 0 }));
+
   res.setHeader("Cache-Control", "no-store");
   res.json({
     ...reading,
+    ...repairs,
+    survey,
     // The limit travels with the answer: this speaks for whoever answered, and
     // is never the registrar's roll.
     limit: "مبنيّ على من أجاب الاستبيان فقط — ليس بيانات التسجيل.",
