@@ -96,6 +96,7 @@ import { byArabic, sortByName } from "../utils/sorting";
 import { previousYearSameTermName, sameTermName } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
+import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
 import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
@@ -390,14 +391,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const [paint, setPaint] = useState<{ day: DayKey; from: string; to: string } | null>(null);
   const paintRef = useRef<{ day: DayKey; anchor: number } | null>(null);
-  const paintOpen = useRef<((seed: { day: DayKey; start: string; end: string }) => void) | null>(null);
+  const paintOpen = useRef<((seed: { day: DayKey; start: string; end: string; x: number; y: number }) => void) | null>(null);
   useEffect(() => {
-    const finish = () => {
+    const finish = (event: PointerEvent) => {
       const stroke = paintRef.current;
       paintRef.current = null;
       if (!stroke) return;
       setPaint(current => {
-        if (current) paintOpen.current?.({ day: current.day, start: current.from, end: current.to });
+        if (current)
+          paintOpen.current?.({
+            day: current.day,
+            start: current.from,
+            end: current.to,
+            // Where the hand let go — the card opens there rather than at some
+            // fixed corner, so the answer appears where the question was asked.
+            x: event.clientX,
+            y: event.clientY,
+          });
         return null;
       });
     };
