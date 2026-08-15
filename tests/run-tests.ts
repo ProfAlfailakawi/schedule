@@ -986,6 +986,44 @@ async function runTests() {
       "…and one person alone never makes a pair");
   }
 
+  /* --- 23. إحساس النقل: هدف يعرف قاعته ------------------------------------- */
+  originalLog("\n--- 23. Drag target identity ---");
+  {
+    /* A square on the week grid is named by a day and an hour, and that pair is
+       unique. On the rooms board the SAME pair exists once per hall — measured
+       on the live board, «الأحد 08:00» belonged to ten squares in ten different
+       rooms. Matching on day+hour alone lit all ten at once, so the week
+       highlighted one square under the pointer and the rooms board lit a whole
+       column across halls the card was nowhere near. That was the whole
+       difference in how the two boards felt. */
+    const isActive = (
+      target: { day: string; start: string; room?: { code: string; hall: string } } | null,
+      day: string, start: string, room?: string,
+    ) => {
+      const targetRoom = target?.room ? `${target.room.code}|${target.room.hall}` : "";
+      return target?.day === day && target?.start === start && (room ? targetRoom === room : !targetRoom);
+    };
+
+    const onRooms = { day: "fsunday", start: "08:00", room: { code: "7", hall: "S27" } };
+    const halls = ["7|S27", "8|F09", "8|F17", "8|G20", "8|G21", "8|G22", "12|506", "14|201", "B05|11", "G23|17"];
+    const lit = halls.filter(hall => isActive(onRooms, "fsunday", "08:00", hall));
+    assert(lit.length === 1 && lit[0] === "7|S27",
+      `exactly the hall under the pointer lights, out of ten sharing the hour (lit ${lit.length})`);
+    assert(!isActive(onRooms, "fsunday", "08:30", "7|S27"), "…and only at its own half hour");
+    assert(!isActive(onRooms, "fmonday", "08:00", "7|S27"), "…on its own day");
+
+    // The week grid has no hall, and must be completely unaffected.
+    const onWeek = { day: "ftuesday", start: "09:30" };
+    assert(isActive(onWeek, "ftuesday", "09:30"), "a week square still lights with no hall in play");
+    assert(!isActive(onWeek, "ftuesday", "10:00"), "…and only its own");
+    // A week target must never light a rooms square, or the two boards bleed.
+    assert(!isActive(onWeek, "ftuesday", "09:30", "12|506"),
+      "a target with no hall never lights a square that has one");
+    assert(!isActive(onRooms, "fsunday", "08:00"),
+      "…and a target with a hall never lights a square that has none");
+    assert(!isActive(null, "fsunday", "08:00", "7|S27"), "nothing carried means nothing lit");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");

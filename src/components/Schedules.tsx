@@ -4348,7 +4348,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      better answer and this reading steps aside. */
   const decisionSlot = (day: DayKey, start: string) => decisionField.get(`${day}:${start}`) || null;
 
-  const physicsSlotClass = (day: DayKey, start: string) => {
+  /**
+   * @param room  "code|hall" on the rooms board, nothing on the week grid.
+   *
+   * The room is not optional decoration. A square on the week grid is named by
+   * a day and an hour, and that pair is unique. On the rooms board the SAME
+   * pair exists once per hall — measured on the live board, «الأحد 08:00»
+   * belongs to ten different squares — so a target matched on day and hour
+   * alone lit all ten at once. The week highlighted one square under the
+   * pointer; the rooms board lit a whole column across rooms the card was
+   * nowhere near, and that is the entire difference in how the two felt.
+   */
+  const physicsSlotClass = (day: DayKey, start: string, room?: string) => {
     const key = `${day}:${start}`;
     const rank = suggestionRank.get(key);
     // Lifting the card shades every square the local reading has ruled out, so
@@ -4357,9 +4368,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     // actually visited, that verdict wins — it knows rules this reading cannot.
     const sampled = physicsField[key] || (dragField.blocked.has(key) ? "impossible" : "");
     const shade = dragField.tier.get(key);
+    const target = physics.state.target;
+    const targetRoom = target?.room ? `${target.room.code}|${target.room.hall}` : "";
     const active =
-      physics.state.target?.day === day &&
-      physics.state.target?.start === start;
+      target?.day === day &&
+      target?.start === start &&
+      // Only when both sides agree about the hall — or neither has one.
+      (room ? targetRoom === room : !targetRoom);
     const quality = active
       ? physics.state.decision?.quality || sampled || "unknown"
       : sampled || "";
@@ -6392,7 +6407,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             {timeSlots.map(slot => (
                               <i
                                 key={`slot-${slot}`}
-                                className={`rooms-slot ${physicsSlotClass(firstDay as DayKey, slot)}`}
+                                className={`rooms-slot ${physicsSlotClass(firstDay as DayKey, slot, `${room.building}|${room.hall}`)}`}
                                 data-physics-slot="true"
                                 data-physics-day={firstDay}
                                 data-physics-start={slot}
@@ -6434,7 +6449,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   {timeSlots.map(slot => (
                                     <i
                                       key={`slot-${slot}`}
-                                      className={`rooms-slot ${physicsSlotClass(day.key as DayKey, slot)}`}
+                                      className={`rooms-slot ${physicsSlotClass(day.key as DayKey, slot, `${room.building}|${room.hall}`)}`}
                                       data-physics-slot="true"
                                       data-physics-day={day.key}
                                       data-physics-start={slot}

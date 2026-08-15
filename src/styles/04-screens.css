@@ -513,15 +513,25 @@
 .list-search input,.schedule-quick-search input{
   flex:1;min-width:0;border:0;outline:0;background:transparent;padding:0;
   font-size:var(--t-body);color:var(--ink);
+  /* The shell is 42px and the input inside it had no height of its own, so it
+     collapsed to its line box — measured at 23px on the live courses screen,
+     against 38px filters beside it. A control that is short by fifteen pixels
+     next to two that are not reads as broken alignment, and it is also below
+     any comfortable tap target. It fills its own shell now. */
+  align-self:stretch;height:auto;
 }
 .list-search input::placeholder,.schedule-quick-search input::placeholder{color:var(--muted-2)}
 .list-search button,.schedule-quick-search button{color:var(--muted);padding:var(--s1);display:grid;place-items:center}
 .list-search button svg,.schedule-quick-search button svg{width:14px;height:14px}
 .list-search button:hover,.schedule-quick-search button:hover{color:var(--ink)}
+/* The search and everything beside it share one baseline. Two filters at 38px
+   and a search shell at 42 were never on the same line. */
 .list-toolbar-side{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap}
+.list-toolbar-side>*{min-height:42px}
+.list-toolbar .count-chip{display:inline-flex;align-items:center}
 /* Compact per-screen filters that sit beside the search — quiet until used. */
 .list-filter{
-  min-height:38px;max-width:190px;
+  min-height:42px;max-width:190px;
   padding:0 var(--s3);
   border:1px solid var(--line);border-radius:var(--r-xs);
   background:var(--surface-2);color:var(--ink-2);

@@ -4387,9 +4387,47 @@ html.schedule-physics-active .rooms-slot.physics-impossible::before{
   background:color-mix(in srgb,var(--danger) 12%,transparent);
   box-shadow:none;
 }
-/* The lifted card here is the same lifted card. */
+/*
+   ── الرفع على لوح القاعات ──────────────────────────────────────────────────
+ *
+ * This claimed to be "the same lifted card" and was not. On the week grid a
+ * lifted card opens to 236px, so the thing in your hand is legible while you
+ * carry it — that is most of why the week feels considered. Here it stayed the
+ * sliver it was in the track, and a sliver in mid-air feels like a glitch
+ * rather than a lift.
+ *
+ * The same width, the same shadow, the same readable type while carried — and
+ * it releases them the moment it lands.
+ */
 .rooms-card.physics-source-lift{
-  z-index:420;box-shadow:var(--shadow-lg);
+  z-index:420;
+  box-shadow:var(--shadow-lg);
+  min-width:236px;
+  min-height:56px;
+  border-radius:10px;
+  padding:8px 10px;
+}
+/* A carried card is read, so it drops the track's compression entirely. */
+.rooms-card.physics-source-lift b{
+  min-height:0;font-size:13px;font-weight:640;line-height:1.4;
+  -webkit-line-clamp:2;white-space:normal;
+}
+.rooms-card.physics-source-lift span{
+  min-height:0;font-size:11px;font-weight:400;line-height:1.5;white-space:nowrap;
+}
+/* …and the code comes back, because at 236px there is room for all three. */
+.rooms-card.physics-source-lift em{
+  display:block;position:static;margin-block-start:2px;
+  font-size:10px;opacity:.7;direction:ltr;unicode-bidi:isolate;
+}
+.rooms-card.physics-source-lift::after{display:none}
+
+/* The square a card came FROM, marked while it is in the air — the week has
+   had this since the first version and the rooms board never did. */
+html.schedule-physics-active .rooms-slot.physics-origin::before{
+  content:"";position:absolute;inset:1px -1px;border-radius:5px;pointer-events:none;
+  border:1.5px dashed color-mix(in srgb,var(--label) 42%,transparent);
+  background:transparent;z-index:1;
 }
 
 /* ── الحضور: من غيري على هذا اللوح ─────────────────────────────────────────
