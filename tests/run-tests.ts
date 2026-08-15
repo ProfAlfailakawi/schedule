@@ -9,6 +9,7 @@ import { findConflicts } from "../src/utils/scheduleIntelligence";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
 import { describeRollover, readTermRollover } from "../src/utils/termRollover";
+import { buildCalendar, escapeText, foldLine } from "../src/utils/icalendar";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -367,6 +368,60 @@ async function runTests() {
     assert(reading.concerns.some(c => c.flags.includes("course-gone")), "a deleted course is a concern of its own kind");
     assert(describeRollover(reading).includes("يمكن نقلها بثقة"), "the sentence is built from the numbers");
     assert(describeRollover(readTermRollover([], catalogue, people, live)).includes("لا جدول"), "an empty previous term says so plainly");
+  }
+
+  /* --- 11. The calendar an instructor subscribes to ------------------------ */
+  originalLog("\n--- 11. Calendar feed (RFC 5545) ---");
+  {
+    /* A Wednesday, so "the coming Sunday" is a real jump forward and not today. */
+    const now = new Date(Date.UTC(2026, 7, 19, 6, 30, 0));
+    const out = buildCalendar({
+      name: "التربية الإسلامية بنات", weeks: 16, now,
+      lectures: [
+        { id: 501, title: "ISL 210 · أصول الفقه الإسلامي وقواعده الكلية",
+          code: "ISL 210", section: "12", instructor: "د. نورة العجمي",
+          room: "12 / F6", start: "08:00", end: "09:15", days: [0, 2], revision: 4 },
+        { id: 502, title: "ISL 305", start: "13:00", end: "14:30", days: [4] },
+      ],
+    });
+    const lines = out.split("\r\n");
+    /* VTIMEZONE carries a DTSTART of its own; the events are what is measured. */
+    const body = out.slice(out.indexOf("END:VTIMEZONE")).split("\r\n");
+    const ev = (prefix: string) => body.filter(line => line.startsWith(prefix));
+
+    // The defect this replaced: times were built in server-local hours and then
+    // written as a UTC instant, so on a UTC host every lecture in Kuwait landed
+    // three hours late. A wall-clock time paired with a TZID cannot drift.
+    assert(ev("DTSTART").every(line => line.includes("TZID=Asia/Kuwait") && !line.endsWith("Z")),
+      "start times are campus wall-clock, never a bare UTC instant");
+    assert(ev("DTSTART")[0].endsWith(":20260823T080000"), "08:00 stays 08:00, on the coming Sunday");
+    assert(ev("DTSTART")[1].endsWith(":20260820T130000"), "a Thursday lecture resolves to tomorrow");
+    assert(out.includes("BEGIN:VTIMEZONE") && out.includes("TZOFFSETTO:+0300"), "the file carries the zone it names");
+
+    assert(lines.filter(line => line === "BEGIN:VEVENT").length === 2, "a two-day lecture is one entry, not two");
+    assert(ev("RRULE")[0].includes("BYDAY=SU,TU") && ev("RRULE")[0].includes("COUNT=32"),
+      "both days sit in one weekly rule, 16 weeks deep");
+    assert(ev("RRULE")[1].includes("COUNT=16;BYDAY=TH"), "a single-day lecture repeats sixteen times");
+
+    assert(ev("UID:")[0] === "UID:schedule-501@schedule.app", "an appointment keeps one identity across edits");
+    assert(ev("SEQUENCE:")[0] === "SEQUENCE:4", "the row's revision becomes the calendar's version");
+    assert(ev("SEQUENCE:")[1] === "SEQUENCE:0", "an unversioned row is version zero");
+    assert(out.includes("REFRESH-INTERVAL"), "subscribers are told how often to re-read");
+
+    // Arabic is two bytes a letter, so a 75-OCTET limit is reached at roughly
+    // half the characters a naive character count would allow.
+    assert(lines.every(line => new TextEncoder().encode(line).length <= 75), "no line exceeds 75 octets");
+    const decoder = new TextDecoder("utf-8", { fatal: true }), encoder = new TextEncoder();
+    let intact = true;
+    for (let length = 1; length <= 200 && intact; length++)
+      for (const part of foldLine("SUMMARY:" + "مرحبا ".repeat(length).trim()).split("\r\n"))
+        try { decoder.decode(encoder.encode(part)); } catch { intact = false; }
+    assert(intact, "folding never cuts an Arabic letter in half");
+    assert(foldLine("SUMMARY:" + "أصول الفقه الإسلامي وقواعده الكلية في كلية التربية")
+      .split("\r\n").map((part, index) => (index ? part.slice(1) : part)).join("") ===
+      "SUMMARY:أصول الفقه الإسلامي وقواعده الكلية في كلية التربية", "unfolding restores the text exactly");
+    assert(escapeText("12, F6") === "12\\, F6", "a comma in a room name is escaped, not read as a list");
+    assert(!/\d{12}/.test(out), "no civil ID can reach the feed — it is never given one");
   }
 
   if (!originalDb) {

@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
-import { randomBytes } from "crypto";
+import { createHmac, randomBytes } from "crypto";
 import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } from "./src/db/repository";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
@@ -14,6 +14,7 @@ import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine,
 import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
+import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
 import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
@@ -3614,6 +3615,9 @@ async function buildSharePayload(link: ScheduleShareLink) {
         days: shareDayIndexes(row),
         room: row.AdRoomCode || "",
         hall: row.AdRoomHall || "",
+        // Carried for the calendar feed: a subscriber's copy of an appointment
+        // is only replaced when the version it holds is older than this one.
+        rev: Number(row.rev || 0),
         instructor: link.showInstructors !== false ? (instructorById.get(row.AdInstructorId)?.AdInstructorName || "") : ""
       }))
   };
@@ -3716,6 +3720,9 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     // Newest first, so the instructor can pin any semester from the card (Idea 2).
     availableTerms: [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).map(t => ({ id: t.AdTermId, name: t.AdTermName })),
     expiresAt: link.expiresAt,
+    // The subscription key. Handed out only here — after the card has already
+    // established who is holding it — so the civil ID never reaches a URL.
+    calendarKey: calendarKey(link.id, person.AdInstructorId),
     weeklyMinutes,
     lectureCount: shaped.length,
     dayCount: byDay.filter(day => day.rows.length).length,
@@ -3777,51 +3784,81 @@ app.get("/api/public/schedule/:token", async (req: Request, res: Response) => {
   res.json(await buildSharePayload(resolved.link));
 });
 
+/**
+ * A term's length is not recorded anywhere in this system — terms carry a name
+ * and nothing else — so the series has to be given a length, and the honest
+ * thing is to name the number in one place rather than bury it in a string.
+ */
+const TERM_WEEKS = 16;
+
+/** Sends a calendar, with the headers that make a browser show a subscription. */
+function sendCalendar(res: Response, name: string, lectures: CalendarLecture[]) {
+  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+  res.setHeader("Content-Disposition", `inline; filename="schedule.ics"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.send(buildCalendar({ name, weeks: TERM_WEEKS, lectures }));
+}
+
 app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
   if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  sendCalendar(res, payload.label || "الجدول الدراسي", payload.rows.map(row => ({
+    id: row.id,
+    title: [row.code, row.name].filter(Boolean).join(" · "),
+    code: row.code, section: row.section, instructor: row.instructor,
+    room: [row.room, row.hall].filter(Boolean).join(" / "),
+    start: row.start, end: row.end, days: row.days, revision: row.rev,
+  })));
+});
 
-  // Anchor the series on the coming week and repeat it for the rest of the term.
-  const anchor = new Date(); anchor.setHours(0, 0, 0, 0);
-  const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-  const escape = (value: string) => String(value || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
-  const lines: string[] = [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SCHEDULE//Academic Workspace//AR",
-    "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
-    `X-WR-CALNAME:${escape(payload.label || "الجدول الدراسي")}`,
-    "X-WR-TIMEZONE:Asia/Kuwait"
-  ];
-  for (const row of payload.rows) {
-    for (const dayIndex of row.days) {
-      const first = new Date(anchor);
-      first.setDate(first.getDate() + ((dayIndex - first.getDay() + 7) % 7));
-      const [sh, sm] = String(row.start || "08:00").split(":").map(Number);
-      const [eh, em] = String(row.end || "09:00").split(":").map(Number);
-      const startAt = new Date(first); startAt.setHours(sh || 0, sm || 0, 0, 0);
-      const endAt = new Date(first); endAt.setHours(eh || 0, em || 0, 0, 0);
-      if (endAt <= startAt) endAt.setTime(startAt.getTime() + 3600000);
-      lines.push(
-        "BEGIN:VEVENT",
-        `UID:${row.id}-${dayIndex}@schedule`,
-        `DTSTAMP:${stamp(new Date())}`,
-        `DTSTART:${stamp(startAt)}`,
-        `DTEND:${stamp(endAt)}`,
-        `RRULE:FREQ=WEEKLY;BYDAY=${SHARE_ICS_DAYS[dayIndex]};COUNT=16`,
-        `SUMMARY:${escape(`${row.code} · ${row.name}`)}`,
-        `LOCATION:${escape([row.room, row.hall].filter(Boolean).join(" / "))}`,
-        `DESCRIPTION:${escape([row.section && `شعبة ${row.section}`, row.instructor].filter(Boolean).join(" · "))}`,
-        "END:VEVENT"
-      );
-    }
-  }
-  lines.push("END:VCALENDAR");
-  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
-  res.setHeader("Content-Disposition", `inline; filename="schedule.ics"`);
-  res.setHeader("Cache-Control", "no-store");
-  res.send(lines.join("\r\n"));
+/**
+ * ── تقويم الأستاذ ───────────────────────────────────────────────────────────
+ *
+ * A calendar subscription is one URL fetched by a phone forever, with no way to
+ * send anything alongside it — no form, no header a person could fill in. So the
+ * civil ID cannot be the key: it would sit in the URL, in the phone's account
+ * settings, and in every server log that ever touches it.
+ *
+ * Instead the card — which has already proved who is holding it — hands out a
+ * derived key: an HMAC over the link and the instructor's row id. It reveals no
+ * civil ID, cannot be reversed into one, cannot be guessed without the server's
+ * secret, and dies the moment the link that produced it is revoked or expires.
+ */
+const CALENDAR_SECRET = process.env.CALENDAR_SECRET || randomBytes(32).toString("hex");
+
+const calendarKey = (token: string, instructorId: number) =>
+  createHmac("sha256", CALENDAR_SECRET).update(`${token}|${instructorId}`).digest("hex").slice(0, 32);
+
+app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
+  const token = String(req.params.token || "");
+  const resolved = await resolveShareToken(token);
+  if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
+
+  const [instructors, courses] = await Promise.all([Repository.getInstructors(), Repository.getCourses()]);
+  // The key names the instructor: whoever it verifies against is the owner.
+  const person = instructors.find(row => calendarKey(token, row.AdInstructorId) === String(req.params.key || ""));
+  if (!person) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
+
+  const rows = (await Repository.getSchedulesByScope({
+    collegeId: resolved.link.AdCollegeId, termId: resolved.link.AdTermId,
+  })).filter(row => row.AdInstructorId === person.AdInstructorId);
+  const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
+  void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+
+  sendCalendar(res, `جدول ${person.AdInstructorName || "الأستاذ"}`, rows.map(row => {
+    const course = courseById.get(row.AdCourseId);
+    return {
+      id: row.id,
+      title: [course?.CourseCode, row.AdCourseName || course?.CourseName].filter(Boolean).join(" · "),
+      code: course?.CourseCode || "", section: row.SCode || "",
+      room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),
+      start: row.fstarttime, end: row.fendtime,
+      days: shareDayIndexes(row), revision: Number(row.rev || 0),
+    };
+  }));
 });
 
 app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
@@ -3842,53 +3879,10 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
   res.json(card);
 });
 
-app.get("/api/public/staff-ics/:token", async (req: Request, res: Response) => {
-  const token = String(req.params.token || "");
-  const resolved = await resolveShareToken(token);
-  if ("error" in resolved) { res.status(resolved.status).type("text/plain; charset=utf-8").send(resolved.error); return; }
-  if (resolved.link.kind !== "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
-  if (!staffLookupAllowed(token, req.ip || "unknown")) { res.status(429).type("text/plain; charset=utf-8").send("Too many requests"); return; }
-  const card = await buildStaffCard(resolved.link, String(req.query.civil || ""));
-  if (!card) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
-
-  const anchor = new Date(); anchor.setHours(0, 0, 0, 0);
-  const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-  const escape = (value: string) => String(value || "").replace(/([,;\\])/g, "\\$1").replace(/\n/g, "\\n");
-  const lines: string[] = [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//SCHEDULE//Academic Workspace//AR",
-    "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
-    `X-WR-CALNAME:${escape(card.name || "جدولي")}`,
-    "X-WR-TIMEZONE:Asia/Kuwait"
-  ];
-  for (const row of card.rows) {
-    for (const dayIndex of row.days) {
-      const first = new Date(anchor);
-      first.setDate(first.getDate() + ((dayIndex - first.getDay() + 7) % 7));
-      const [sh, sm] = String(row.start || "08:00").split(":").map(Number);
-      const [eh, em] = String(row.end || "09:00").split(":").map(Number);
-      const startAt = new Date(first); startAt.setHours(sh || 0, sm || 0, 0, 0);
-      const endAt = new Date(first); endAt.setHours(eh || 0, em || 0, 0, 0);
-      if (endAt <= startAt) endAt.setTime(startAt.getTime() + 3600000);
-      lines.push(
-        "BEGIN:VEVENT",
-        `UID:staff-${row.id}-${dayIndex}@schedule`,
-        `DTSTAMP:${stamp(new Date())}`,
-        `DTSTART:${stamp(startAt)}`,
-        `DTEND:${stamp(endAt)}`,
-        `RRULE:FREQ=WEEKLY;BYDAY=${SHARE_ICS_DAYS[dayIndex]};COUNT=16`,
-        `SUMMARY:${escape(`${row.code} · ${row.name}`)}`,
-        `LOCATION:${escape([row.room, row.hall].filter(Boolean).join(" / "))}`,
-        `DESCRIPTION:${escape(row.section ? `شعبة ${row.section}` : "")}`,
-        "END:VEVENT"
-      );
-    }
-  }
-  lines.push("END:VCALENDAR");
-  res.setHeader("Content-Type", "text/calendar; charset=utf-8");
-  res.setHeader("Content-Disposition", `inline; filename="my-schedule.ics"`);
-  res.setHeader("Cache-Control", "no-store");
-  res.send(lines.join("\r\n"));
-});
+/* The old `staff-ics?civil=…` route is gone. A subscription URL is stored by
+   the phone and repeated in every server log for as long as it lives, and a
+   civil ID has no business being either. `/api/public/ics/:token/:key` above
+   carries a derived key instead and says the same thing. */
 
 /**
  * The instructor card page: one file, no bundle, no account.
@@ -3953,7 +3947,11 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
   border:1px solid var(--line);border-radius:12px;background:var(--card);color:inherit}
 .pub-empty{padding:32px 16px;text-align:center;color:var(--dim);font-size:15px;
   border:1px dashed var(--line);border-radius:16px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:10px;margin-bottom:22px}
+/* The card always shows exactly four figures. auto-fit chose three columns at
+   phone width and left the fourth stranded alone on its own row; two by two
+   is even at every width the card is read on. */
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px}
+@media (min-width:560px){.stats{grid-template-columns:repeat(4,1fr)}}
 .stat{padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card)}
 .stat b{display:block;font-size:26px;font-weight:600;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
 .stat span{display:block;margin-top:2px;color:var(--dim);font-size:12px}
@@ -3973,6 +3971,25 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
 .tools{display:flex;gap:10px;margin:22px 0 8px}
 .tools a{flex:1;height:48px;display:grid;place-items:center;border:1px solid var(--line);border-radius:14px;
   background:var(--card);color:var(--ink);font-size:14px;font-weight:600;text-decoration:none}
+/* The subscription panel. It stays closed until asked for, because most people
+   open this card to read their week, not to wire up a calendar. */
+/* Measured, not guessed: a negative top margin tucked the panel two pixels
+   under the button that opens it. It sits clear of it now. */
+.sub{margin:10px 0 8px;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--card);
+  display:grid;gap:9px;animation:sub-in .22s cubic-bezier(.2,.8,.3,1) both}
+@keyframes sub-in{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+.sub p{margin:0;font-size:13px;line-height:1.8;color:#8d9a94}
+.sub a,.sub button{min-height:44px;display:grid;place-items:center;border-radius:12px;font:600 14px/1.4 inherit;
+  text-decoration:none;cursor:pointer;padding:0 14px;text-align:center}
+/* This page's palette is jade/brass — it has no --accent, and a var() naming
+   nothing resolves to nothing, which painted a near-black label on a near-black
+   card. Measured invisible, then named correctly. */
+.sub a{background:var(--jade);border:1px solid var(--jade);color:#04100d}
+.sub button{background:transparent;border:1px solid var(--line);color:var(--ink)}
+/* When the clipboard is unavailable the address is shown instead; making it
+   select as one unit means a long-press picks up the whole URL, not a word. */
+.sub small{font-size:11.5px;color:#4d5a55;text-align:center;line-height:1.8;-webkit-user-select:all;user-select:all;word-break:break-all}
+@media (prefers-reduced-motion:reduce){.sub{animation:none}}
 .foot{margin-top:26px;color:#4d5a55;font-size:11.5px;text-align:center;line-height:1.9}
 /* The approved report table — the same five-column week the reports print,
    so the professor's shared card and the official sheet read as one family. */
@@ -4024,8 +4041,14 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
     <div id="changes"></div>
     <div id="days"></div>
     <div class="tools">
-      <a id="ics" href="#">إضافة إلى التقويم</a>
+      <a id="ics" href="#" role="button" aria-expanded="false" aria-controls="sub">إضافة إلى التقويم</a>
       <a href="#" id="print">طباعة</a>
+    </div>
+    <div class="sub" id="sub" hidden>
+      <p>اشتراك دائم — التقويم يتابع الجدول من نفسه، ولا يحتاج إعادة إضافة بعد كل تعديل.</p>
+      <a id="subNow" href="#">اشتراك الآن · آيفون · ماك · أوتلوك</a>
+      <button type="button" id="subCopy">نسخ الرابط لتقويم جوجل</button>
+      <small id="subNote">في تقويم جوجل: «تقويمات أخرى ← من رابط».</small>
     </div>
     <div class="foot" id="foot"></div>
   </div>
@@ -4171,8 +4194,30 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
     renderChanges(d,value);
 
-    document.getElementById("ics").setAttribute("href",
-      "/api/public/staff-ics/"+encodeURIComponent(TOKEN)+"?civil="+encodeURIComponent(value));
+    /* The subscription address. It carries a derived key, never the civil ID,
+       so it is safe to sit in a phone's calendar settings forever. */
+    var feed = "/api/public/ics/"+encodeURIComponent(TOKEN)+"/"+encodeURIComponent(d.calendarKey||"");
+    var https = location.origin + feed;
+    var ics = document.getElementById("ics"), panel = document.getElementById("sub");
+    /* webcal: is what tells a phone to SUBSCRIBE rather than to download one
+       frozen copy — the whole difference between a calendar that follows the
+       schedule and a snapshot that quietly goes stale. */
+    document.getElementById("subNow").setAttribute("href", "webcal://" + location.host + feed);
+    ics.onclick = function(e){
+      e.preventDefault();
+      var open = panel.hasAttribute("hidden");
+      if(open) panel.removeAttribute("hidden"); else panel.setAttribute("hidden","");
+      ics.setAttribute("aria-expanded", open ? "true" : "false");
+      if(open) panel.scrollIntoView({block:"nearest",behavior:"smooth"});
+    };
+    document.getElementById("subCopy").onclick = function(){
+      var note = document.getElementById("subNote"), said = "تم نسخ الرابط.";
+      var done = function(){ note.textContent = said; setTimeout(function(){
+        note.textContent = "في تقويم جوجل: «تقويمات أخرى ← من رابط»."; }, 4000); };
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(https).then(done, function(){ note.textContent = https; });
+      } else { note.textContent = https; }
+    };
     try{
       var until=new Intl.DateTimeFormat("ar-KW-u-nu-latn",{day:"numeric",month:"long",year:"numeric"}).format(new Date(d.expiresAt));
       document.getElementById("foot").textContent="هذا الرابط صالح حتى "+until+" · للقراءة فقط";
@@ -4316,7 +4361,13 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
   <h1>${esc(payload.section)}</h1>
   <p class="sub">${esc(payload.term)}</p>
   <div class="tools">
-    <a class="primary" href="${icsUrl}">إضافة إلى التقويم</a>
+    <!-- Rewritten to webcal: on load, so a phone subscribes to the department's
+         week instead of keeping one copy that stops being true after the first
+         change. The https address stays as the fallback for anything that does
+         not know the scheme. -->
+    <a class="primary" id="icsLink" href="${icsUrl}">إضافة إلى التقويم</a>
+    <script>(function(){var a=document.getElementById("icsLink");
+      if(a) a.href="webcal://"+location.host+"${icsUrl}";})();</script>
     <a href="javascript:window.print()">طباعة</a>
   </div>
   ${payload.rows.length ? `<table class="pub-week">
