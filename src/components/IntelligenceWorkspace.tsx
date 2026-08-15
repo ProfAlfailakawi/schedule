@@ -58,11 +58,10 @@ import type {
   FSchedule,
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
-import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { AR, countOf } from "../utils/arabicCount";
+import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName } from "../utils/sorting";
 import { parseNaturalQuery } from "../utils/naturalQuery";
-import { readCampusFlow } from "../utils/campusFlow";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
   intelligenceDayLabels as dayLabels,
@@ -130,7 +129,6 @@ type InsightScene =
   | "rooms"
   | "professors"
   | "health"
-  | "flow"
   | "genome";
 type ChatItem = { prompt: string; answer: any };
 interface Props {
@@ -174,6 +172,37 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
     [message, setMessage] = useState<string | null>(null);
+  /**
+   * ── الوصول إلى المشهد، لا تغييره فقط ────────────────────────────────────
+   *
+   * Choosing a reading changed which panel was rendered and left the page
+   * exactly where it stood. Measured on the live board: pressing «الأساتذة»
+   * from 5,886px down moved the page ZERO pixels, and the panel it had just
+   * opened began 1,273 pixels ABOVE the viewport — so what the reader saw was
+   * whatever happened to sit at that scroll height, which was a different
+   * reading entirely. The tab worked; the page never went there, and that is
+   * indistinguishable from a tab that does nothing.
+   *
+   * The destination is the STRIP, not the panel. Measuring the panel looked
+   * right and worked once in four: the measurement happens before React has
+   * hidden the previous panel, so the page is a different height by the time
+   * the scroll lands. Exactly one panel is ever visible and it always begins
+   * under the strip — so bringing the strip to the top of the window puts the
+   * chosen reading under it every time. A fixed anchor cannot go stale.
+   */
+  const showScene = (value: InsightScene) => {
+    setInsightScene(value);
+    requestAnimationFrame(() => {
+      const rail = document.querySelector<HTMLElement>(".insight-preview-rail");
+      const anchorEl = rail?.parentElement || rail;
+      if (!anchorEl) return;
+      const top = anchorEl.getBoundingClientRect().top + window.scrollY;
+      // Already there: pressing the tab you are on must not jolt the page.
+      if (Math.abs(window.scrollY - top) < 8) return;
+      window.scrollTo({ top: Math.max(0, top), behavior: reduceMotion.current ? "auto" : "smooth" });
+    });
+  };
+
   const [heatMode, setHeatMode] = useState("department"),
     [detail, setDetail] = useState<any>(null),
     [insightScene, setInsightScene] = useState<InsightScene>("quality");
@@ -526,27 +555,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setBusy(false);
     }
   };
-  /**
-   * Turning a proposal down.
-   *
-   * A proposal that can only be accepted is not a proposal, it is a queue — the
-   * reader is left to scroll past it and hope they remember it was never meant
-   * to happen. Refusal is therefore a stated act with its own record: the card
-   * says out loud that nothing was changed, and offers the proposal back for as
-   * long as the thread lives, because "no" is frequently "not yet".
-   */
-  const discardMove = (index: number) =>
-    setChat((p) =>
-      p.map((item, i) =>
-        i === index ? ({ ...item, move: { ...(item as any).move, discarded: true } } as any) : item,
-      ),
-    );
-  const restoreMove = (index: number) =>
-    setChat((p) =>
-      p.map((item, i) =>
-        i === index ? ({ ...item, move: { ...(item as any).move, discarded: false } } as any) : item,
-      ),
-    );
   // Applying a previewed natural-language move is a second, deliberate press —
   // the same atomic door as a drag, so the same conflict rules protect it.
   const applyMove = async (mv: any, index: number) => {
@@ -986,19 +994,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setTab(
       value === "understand" ? "command" : value === "try" ? "twin" : "history",
     );
-  /**
-   * The corridor this timetable creates.
-   *
-   * Derived entirely from the rows already loaded — no new request, no new
-   * field, and nothing claimed about how many students there are or how fast
-   * anyone walks. Two honest readings: the crowd that has to change building
-   * between two periods, and the walk a teacher could not physically make.
-   */
-  const campusFlow = useMemo(
-    () => readCampusFlow(rows, new Map(instructors.map(item => [item.AdInstructorId, item]))),
-    [rows, instructors],
-  );
-
   const insightScenes: Array<{
     value: InsightScene;
     label: string;
@@ -1067,13 +1062,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             : String(overview.dataHealth?.invalidRows || 0),
           icon: <CheckCircle2 />,
         },
-        {
-          value: "flow" as const,
-          label: "حركة الحرم",
-          detail: "الانتقال بين المباني بين الفترات",
-          metric: campusFlow.peak ? String(campusFlow.peak.crossing) : "—",
-          icon: <Network />,
-        },
         ...(genome
           ? [
               {
@@ -1109,7 +1097,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     event.preventDefault();
     const value = insightScenes[next]?.value;
     if (!value) return;
-    setInsightScene(value);
+    showScene(value);
     window.requestAnimationFrame(() =>
       document.getElementById(`insight-tab-${value}`)?.focus(),
     );
@@ -1155,17 +1143,16 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             },
           ]}
         />
-        {/* One strip, not two.
-            The stage switch and the reading switch were stacked as separate
-            rows with a caption between them — three lines of navigation above a
-            screen whose whole promise is calm. They are the same decision at two
-            depths, so they sit on one line, and the caption only appears for the
-            stage that has no second level to explain it. */}
-        {scene === "approve" ? (
-          <span className="scene-caption">مسودات · نشر · نسخ · تراجع</span>
-        ) : null}
+        <span className="scene-caption">
+          {scene === "understand"
+            ? "جودة · تنبيهات · قاعات · أساتذة"
+            : scene === "try"
+              ? "تجريبي · خارج الجدول الحقيقي"
+              : "مسودات · نشر · نسخ · تراجع"}
+        </span>
+      </nav>
       {scene === "understand" ? (
-        <span className="scene-subnav no-print" role="group" aria-label="أدوات الفهم">
+        <nav className="scene-subnav no-print" aria-label="أدوات الفهم">
           <button
             type="button"
             className={tab === "command" ? "active" : ""}
@@ -1182,9 +1169,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           >
             <BrainCircuit /> اسأل الجدول
           </button>
-        </span>
+        </nav>
       ) : scene === "try" ? (
-        <span className="scene-subnav no-print" role="group" aria-label="أدوات التجربة">
+        <nav className="scene-subnav no-print" aria-label="أدوات التجربة">
           <button
             type="button"
             className={tab === "twin" ? "active" : ""}
@@ -1201,9 +1188,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           >
             <FileSpreadsheet /> استيراد آمن
           </button>
-        </span>
+        </nav>
       ) : null}
-      </nav>
       {error ? <Notice>{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
       {loading && !overview ? (
@@ -1241,7 +1227,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     aria-selected={selected}
                     aria-controls={`insight-panel-${item.value}`}
                     tabIndex={selected ? 0 : -1}
-                    onClick={() => setInsightScene(item.value)}
+                    onClick={() => showScene(item.value)}
                     onKeyDown={(event) => moveInsightFocus(event, index)}
                   >
                     <span className="insight-preview-icon" aria-hidden="true">
@@ -1644,80 +1630,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </details>
           </Surface>
             </div>
-            {/* ── حركة الحرم ────────────────────────────────────────────
-                Where the schedule puts people at the change of period, and the
-                one walk it asks of a teacher that a teacher cannot make. Both
-                counted from the rows on screen; nothing here is estimated. */}
-            <div
-              className="content-stack insight-scene-panel"
-              id="insight-panel-flow"
-              role="tabpanel"
-              aria-labelledby="insight-tab-flow"
-              hidden={activeInsightKey !== "flow"}
-              tabIndex={activeInsightKey === "flow" ? 0 : -1}
-            >
-              <Surface className="campus-flow">
-                <div className="campus-flow-head">
-                  <span className="surface-kicker">حركة الحرم</span>
-                  <h2>من أين إلى أين، بين الفترتين</h2>
-                  <p>
-                    كل عمود فاصل بين فترتين: كم محاضرة تنتهي هنا وتبدأ في مبنى آخر.
-                    محسوب من المواعيد نفسها — بلا تقدير لأعداد الطلاب أو سرعة المشي.
-                  </p>
-                </div>
-                {campusFlow.bands.length ? (
-                  <>
-                    <div className="campus-flow-bars" role="img" aria-label="العبور بين المباني عند كل فاصل">
-                      {campusFlow.bands.map(band => (
-                        <div
-                          className={`campus-flow-bar ${campusFlow.peak?.at === band.at ? "is-peak" : ""}`}
-                          key={band.at}
-                          title={`${band.label} · ${band.crossing} انتقالاً بين المباني${band.busiestPath ? ` · الأثقل ${band.busiestPath}` : ""}`}
-                        >
-                          <i style={{ height: `${Math.max(6, (band.crossing / Math.max(1, campusFlow.peak?.crossing || 1)) * 100)}%` }} />
-                          <b className="num">{band.crossing}</b>
-                          <span dir="ltr">{band.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                    {campusFlow.peak ? (
-                      <p className="campus-flow-peak">
-                        الذروة عند <b dir="ltr">{campusFlow.peak.label}</b> —
-                        <b className="num"> {campusFlow.peak.crossing}</b> انتقالاً بين المباني
-                        {campusFlow.peak.busiestPath ? <> ، أثقل ممر <bdi>{campusFlow.peak.busiestPath}</bdi></> : null}.
-                      </p>
-                    ) : null}
-                  </>
-                ) : (
-                  <p className="campus-flow-empty">لا انتقال بين المباني في هذا النطاق — كل فترة تليها فترة في المبنى نفسه.</p>
-                )}
-
-                {campusFlow.impossible.length ? (
-                  <div className="campus-flow-walks">
-                    <strong>مشيات لا يمكن أداؤها</strong>
-                    <small>الوقت بين المحاضرتين أقل مما يحتاجه الانتقال. هذه ليست إحصاءً — هذه أخطاء.</small>
-                    {campusFlow.impossible.slice(0, 6).map((walk, index) => (
-                      <article key={index}>
-                        <span className="walk-who">{walk.instructor}</span>
-                        <span className="walk-path">
-                          <bdi>{walk.fromCourse}</bdi> <b dir="ltr">{walk.fromPlace}</b>
-                          {" ← "}
-                          <bdi>{walk.toCourse}</bdi> <b dir="ltr">{walk.toPlace}</b>
-                        </span>
-                        <span className="walk-cost">
-                          {walk.dayLabel} · متاح <b className="num">{walk.gap}</b> د · يحتاج <b className="num">{walk.needs}</b> د
-                        </span>
-                      </article>
-                    ))}
-                    {campusFlow.impossible.length > 6 ? (
-                      <small className="walk-more">و{campusFlow.impossible.length - 6} أخرى.</small>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="campus-flow-clear">لا مشية يتعذّر أداؤها في هذا النطاق.</p>
-                )}
-              </Surface>
-            </div>
             <div
               className="content-stack insight-scene-panel"
               id="insight-panel-health"
@@ -1890,13 +1802,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div>
                 <span className="surface-kicker">مساعد الجدول</span>
                 <h2>اسأل الجدول نفسه</h2>
-                {/* The old line said «بلا تعديل», which stopped being true the
-                    day an imperative could be understood. The honest guarantee
-                    is not that nothing changes — it is that nothing changes
-                    without a press. */}
-                <p>يجيب ويقترح · ولا ينفّذ قبل تأكيدك</p>
+                <p>تحليل فقط · بلا تعديل</p>
               </div>
-              <Badge tone="success">تأكيد قبل التنفيذ</Badge>
+              <Badge tone="success">تحليل فقط</Badge>
             </div>
             <div className="prompt-chips">
               {[
@@ -1929,13 +1837,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             const mv = (item as any).move;
                             return (
                               <>
-                                {/* The promise, said on the card rather than in a
-                                    settings page: this is a proposal, and a
-                                    proposal changes nothing by existing. */}
-                                <span className="nl-move-pledge">
-                                  <ShieldCheck aria-hidden="true" />
-                                  اقتراح — لا يُنفَّذ شيء قبل تأكيدك
-                                </span>
                                 <strong>{mv.preview.course}{mv.preview.section ? ` · شعبة ${mv.preview.section}` : ""}</strong>
                                 <div className="nl-move-change">
                                   <span className="nl-from"><i>من</i>{mv.preview.before.days} · <time dir="ltr">{mv.preview.before.start}–{mv.preview.before.end}</time></span>
@@ -1951,20 +1852,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                 ) : <p className="nl-move-clear">لا مانع ظاهر لهذا النقل.</p>}
                                 {mv.applied ? (
                                   <span className="nl-move-done"><CheckCircle2 aria-hidden="true" /> تم النقل بنجاح</span>
-                                ) : mv.discarded ? (
-                                  <span className="nl-move-dropped">
-                                    <X aria-hidden="true" /> تم تجاهل الاقتراح — لم يتغير شيء في الجدول
-                                    <button type="button" onClick={() => restoreMove(i)}>استرجاع</button>
-                                  </span>
                                 ) : mv.canApply ? (
-                                  <div className="nl-move-decide">
-                                    <button type="button" className="nl-move-drop" disabled={busy} onClick={() => discardMove(i)}>
-                                      <X aria-hidden="true" /> تجاهل
-                                    </button>
-                                    <button type="button" className="nl-move-apply" disabled={busy} onClick={() => applyMove(mv, i)}>
-                                      <WandSparkles aria-hidden="true" /> تأكيد النقل
-                                    </button>
-                                  </div>
+                                  <button type="button" className="nl-move-apply" disabled={busy} onClick={() => applyMove(mv, i)}><WandSparkles aria-hidden="true" /> طبّق النقل</button>
                                 ) : (
                                   <span className="nl-move-blocked"><ShieldAlert aria-hidden="true" /> {mv.blockedReason || "يوجد تعارض يمنع النقل"}</span>
                                 )}
@@ -1978,11 +1867,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         <div className="nl-answer">
                           <strong>{item.answer?.title}</strong>
 
-                          {/* ── الأرقام أولاً ──────────────────────────────
-                              The assistant already measured these; a paragraph
-                              is the slowest way to hand over a number. They are
-                              read at a glance, and the prose beneath explains
-                              them for whoever wants the reasoning. */}
+                          {/* The assistant already measured these; a paragraph
+                              is the slowest way to hand over a number. */}
                           {item.answer?.figures?.length ? (
                             <div className="nl-figures">
                               {item.answer.figures.map((f: any, j: number) => (
@@ -1995,8 +1881,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             </div>
                           ) : null}
 
-                          {/* A change is two numbers and an arrow between them.
-                              Nothing else says "this improves it" as fast. */}
+                          {/* A change is two numbers and an arrow between them. */}
                           {item.answer?.shift ? (
                             <div className={`nl-shift ${item.answer.shift.better ? "better" : "worse"}`}>
                               <span>{item.answer.shift.label}</span>
@@ -2006,8 +1891,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             </div>
                           ) : null}
 
-                          {/* Anything with a proportion is a bar. Six of them
-                              are read in the time one sentence takes. */}
+                          {/* Six bars are read in the time one sentence takes. */}
                           {item.answer?.bars?.length ? (
                             <div className="nl-bars">
                               {item.answer.bars.map((b: any, j: number) => (
@@ -2078,8 +1962,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <Surface>
               <span className="surface-kicker">أوامر مفيدة</span>
               {/* These were <span>s: they looked pressable and did nothing.
-                  Each now writes its own question into the box, so the shortest
-                  path to an answer is one press. */}
+                  Each now writes its own question into the box. */}
               <div className="mini-command-list">
                 {[
                   "أين الفراغات الطويلة عند الأساتذة؟",

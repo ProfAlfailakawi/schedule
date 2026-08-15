@@ -695,7 +695,13 @@
   box-shadow:var(--shadow-sm);
 }
 .quality-copy{min-width:0}
-.quality-copy h2{font-size:clamp(24px,2.4vw,32px);font-weight:600;letter-spacing:-.03em;line-height:1.25}
+/* A sentence is not a number.
+ *
+ * «يوجد ما يمنع الاعتماد» was set at 32px — display size, beside a score that
+ * is also 35px. Two things shouting at once means neither is the headline, and
+ * a full Arabic sentence at that size is what «الخطوط كبيرة» describes. The
+ * figure keeps the emphasis; the sentence explains it. */
+.quality-copy h2{font-size:clamp(18px,1.5vw,21px);font-weight:650;letter-spacing:-.01em;line-height:1.45}
 .quality-copy p{margin-top:var(--s3);max-width:52ch;color:var(--muted);font-size:var(--t-sm);line-height:1.75}
 
 .quality-orbit{
@@ -803,10 +809,30 @@
 .health-tiles article.hit b{color:var(--warning)}
 .health-tiles article.hit span{color:color-mix(in srgb,var(--warning) 80%,var(--ink-2))}
 .genome-core{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s5);margin-top:var(--s4)}
+/*
+   ── البصمة ─────────────────────────────────────────────────────────────────
+ *
+ * The root of the four-line wrap on this card: `font-size:30px` sat on the
+ * CONTAINER, so everything inside inherited it — the percentage, the words
+ * «مطابقة النمط», and the sentence «فصلان سابق في البصمة» alike. A whole
+ * sentence at thirty pixels inside a 180px box has nowhere to go but down,
+ * four lines at a time.
+ *
+ * The size belongs to the number alone. Everything else is told what it is.
+ */
 .genome-score{
-  display:grid;place-items:center;min-height:150px;
+  display:grid;place-items:center;gap:2px;min-height:150px;padding:var(--s4);
   border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
-  font-size:30px;font-weight:600;font-variant-numeric:tabular-nums;
+  font-size:var(--t-sm);font-weight:500;text-align:center;
+}
+.genome-score>strong,.genome-score>b{
+  font-size:34px;font-weight:650;line-height:1;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;
+}
+.genome-score>span{font-size:var(--t-xs);color:var(--muted);line-height:1.6}
+.genome-score>small{
+  font-size:var(--t-xs);font-weight:400;color:var(--muted);line-height:1.7;
+  max-width:22ch;
 }
 .genome-days,.genome-rooms,.genome-patterns,.genome-deviations{display:flex;flex-wrap:wrap;gap:var(--s2)}
 .genome-foot{margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
