@@ -1131,16 +1131,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             },
           ]}
         />
-        <span className="scene-caption">
-          {scene === "understand"
-            ? "جودة · تنبيهات · قاعات · أساتذة"
-            : scene === "try"
-              ? "تجريبي · خارج الجدول الحقيقي"
-              : "مسودات · نشر · نسخ · تراجع"}
-        </span>
-      </nav>
+        {/* One strip, not two.
+            The stage switch and the reading switch were stacked as separate
+            rows with a caption between them — three lines of navigation above a
+            screen whose whole promise is calm. They are the same decision at two
+            depths, so they sit on one line, and the caption only appears for the
+            stage that has no second level to explain it. */}
+        {scene === "approve" ? (
+          <span className="scene-caption">مسودات · نشر · نسخ · تراجع</span>
+        ) : null}
       {scene === "understand" ? (
-        <nav className="scene-subnav no-print" aria-label="أدوات الفهم">
+        <span className="scene-subnav no-print" role="group" aria-label="أدوات الفهم">
           <button
             type="button"
             className={tab === "command" ? "active" : ""}
@@ -1157,9 +1158,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           >
             <BrainCircuit /> اسأل الجدول
           </button>
-        </nav>
+        </span>
       ) : scene === "try" ? (
-        <nav className="scene-subnav no-print" aria-label="أدوات التجربة">
+        <span className="scene-subnav no-print" role="group" aria-label="أدوات التجربة">
           <button
             type="button"
             className={tab === "twin" ? "active" : ""}
@@ -1176,8 +1177,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           >
             <FileSpreadsheet /> استيراد آمن
           </button>
-        </nav>
+        </span>
       ) : null}
+      </nav>
       {error ? <Notice>{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
       {loading && !overview ? (

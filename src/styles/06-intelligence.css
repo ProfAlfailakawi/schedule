@@ -512,7 +512,10 @@
   border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
 }
 .fairness-score{display:flex;align-items:baseline;gap:var(--s1)}
-.fairness-score b{font-size:44px;line-height:1;font-weight:600;letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:var(--accent)}
+/* These three numbers were pinned at 44px and 36px regardless of the space they
+   were given, so on a narrow column they stopped being a reading and became the
+   page. They now scale with the room they are in and keep their floor. */
+.fairness-score b{font-size:clamp(28px,3.4vw,44px);line-height:1;font-weight:600;letter-spacing:-.04em;font-variant-numeric:tabular-nums;color:var(--accent)}
 .fairness-score small{color:var(--muted);font-size:var(--t-sm)}
 .fairness-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3)}
 .fairness-facts small{display:block;color:var(--muted);font-size:var(--t-xs)}
@@ -556,8 +559,16 @@
 }
 .intelligence-scenes button:hover{color:var(--ink)}
 .intelligence-scenes button.active{background:var(--ink);color:var(--surface);font-weight:600}
-.scene-caption{color:var(--muted);font-size:var(--t-sm);line-height:1.7}
-.scene-subnav{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.scene-caption{color:var(--muted);font-size:var(--t-sm);line-height:1.7;margin-inline-start:var(--s2)}
+/* The second level now rides on the same strip, behind a hairline that says
+   "these belong to the stage on the right" — one row of navigation instead of
+   two rows and a caption between them. */
+.scene-subnav{
+  display:flex;flex-wrap:nowrap;gap:var(--s1);
+  margin-inline-start:var(--s2);padding-inline-start:var(--s2);
+  border-inline-start:1px solid var(--line);
+}
+.intelligence-scenes .scene-subnav button{min-height:32px;padding:0 var(--s3)}
 .scene-subnav button{
   min-height:38px;padding:0 var(--s4);
   border:1px solid var(--line);border-radius:var(--r-xs);
@@ -683,7 +694,7 @@
 }
 .quality-orbit>div{position:relative;z-index:1;text-align:center;line-height:1}
 .quality-orbit strong{
-  display:block;font-size:44px;font-weight:600;
+  display:block;font-size:clamp(30px,3.6vw,44px);font-weight:600;
   font-variant-numeric:tabular-nums;letter-spacing:-.04em;
 }
 .quality-orbit small{
@@ -753,7 +764,7 @@
 .heat-cell[data-level="3"]{background:var(--warning-soft)}
 .heat-legend{display:flex;flex-wrap:wrap;gap:var(--s3);margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs)}
 
-.health-score{font-size:36px;font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
+.health-score{font-size:clamp(24px,3vw,36px);font-weight:600;color:var(--accent);font-variant-numeric:tabular-nums}
 /* Data health as an infographic: one verdict chip, then three counts as tiles. */
 .health-verdict{display:inline-flex;align-items:center;gap:var(--s2);margin-top:var(--s3);padding:var(--s2) var(--s4);border-radius:var(--r-full);font-weight:700;font-size:var(--t-sm)}
 .health-verdict svg{width:16px;height:16px}
