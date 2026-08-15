@@ -115,26 +115,6 @@
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .query-canvas-actions{display:flex;align-items:center;gap:var(--s2)}
-.print-menu{position:relative}
-.print-menu-pop{
-  position:absolute;top:calc(100% + 6px);inset-inline-end:0;z-index:40;
-  width:min(320px,calc(100vw - 32px));max-height:min(70vh,620px);overflow:auto;
-  padding:var(--s2);
-  border:1px solid var(--line);border-radius:var(--r-md);
-  background:var(--surface);box-shadow:var(--shadow-md);
-  animation:rise .18s var(--ease-out) both;
-}
-.print-menu-group{padding:var(--s1) 0}
-.print-menu-group+.print-menu-group{border-top:1px solid var(--line);margin-top:var(--s1);padding-top:var(--s2)}
-.print-menu-group>span{
-  display:block;padding:var(--s1) var(--s3);
-  color:var(--muted-2);font-size:10px;font-weight:650;letter-spacing:.01em;
-}
-.print-menu-pop button{
-  width:100%;min-height:38px;padding:0 var(--s3);
-  border-radius:var(--r-xs);color:var(--ink-2);text-align:start;font-size:var(--t-sm);
-}
-.print-menu-pop button:hover{background:var(--surface-2);color:var(--ink)}
 .query-empty{min-height:300px;display:grid;place-items:center;padding:var(--s7)}
 /* --- The result list, waiting ------------------------------------------------
    Placeholder rows in the shape of the answer, sharing the app's one shimmer
@@ -252,7 +232,7 @@
 .lens-week article>div{min-width:0}
 .lens-week article strong{
   display:block;font-size:var(--t-xs);font-weight:650;line-height:1.35;color:var(--ink);
-  overflow-wrap:break-word;
+  overflow-wrap:normal;word-break:normal;
 }
 .lens-week article>div span{
   display:block;margin-top:1px;color:var(--muted);font-size:10.5px;
@@ -2449,4 +2429,71 @@
 .replay-why em{
   display:block;margin-block-start:2px;
   color:var(--muted);font-style:normal;font-size:var(--t-xs);
+}
+
+/* ==========================================================================
+   INQUIRY CENTRE — PHONE
+   Wide analytical views remain fully usable on a phone, but they stop trying
+   to pretend that five days or fourteen hours are a 390px layout. The week is
+   a snap carousel; room grids keep their native width and scroll; a concise
+   note explains why desktop is the more complete reading surface.
+   ========================================================================== */
+.query-wide-mobile-note{display:none}
+.occupancy-loading{min-height:260px;border-top:1px solid var(--line)}
+
+@media screen and (max-width:760px){
+  .query-page{gap:var(--s3)}
+  .lens-strip{
+    margin-inline:calc(var(--page-pad,16px) * -1);
+    padding-inline:var(--page-pad,16px);
+    border-inline:0;border-radius:0;
+    scrollbar-width:none;scroll-snap-type:x proximity;
+  }
+  .lens-strip::-webkit-scrollbar{display:none}
+  .lens-strip button{scroll-snap-align:center;min-height:40px;padding-inline:var(--s3)}
+  .query-canvas{border-inline:0;border-radius:var(--r-lg)}
+  .query-canvas-head{padding:var(--s3) var(--s4);align-items:flex-start}
+  .query-count small{display:none}
+  .query-canvas-actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+  .query-canvas-actions>button{justify-content:center;min-width:0;padding-inline:var(--s2)}
+  .query-canvas-actions>button:last-child{grid-column:1/-1}
+
+  .query-wide-mobile-note{
+    display:flex;align-items:flex-start;gap:var(--s3);
+    margin:var(--s3) var(--s4) 0;padding:var(--s3) var(--s4);
+    border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));
+    border-radius:var(--r-md);background:var(--accent-softer);color:var(--muted);
+    font-size:var(--t-xs);line-height:1.65;
+  }
+  .query-wide-mobile-note strong{flex:none;color:var(--accent-ink);font-size:var(--t-xs)}
+
+  .lens-week{
+    display:flex;gap:var(--s3);overflow-x:auto;scroll-snap-type:x mandatory;
+    padding:var(--s3) var(--s4) var(--s4);background:transparent;border:0;border-radius:0;
+    scrollbar-width:none;
+  }
+  .lens-week::-webkit-scrollbar{display:none}
+  .lens-week>section{
+    flex:0 0:min(86vw,360px);scroll-snap-align:center;
+    border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-xs);
+  }
+
+  .occupancy-head{padding:var(--s3) var(--s4);align-items:flex-start}
+  .occupancy-days{overflow-x:auto;flex-wrap:nowrap;max-width:100%;padding-bottom:2px;scrollbar-width:none}
+  .occupancy-days::-webkit-scrollbar{display:none}
+  .occupancy-days button{flex:none}
+  .occupancy-legend{display:none}
+  .occupancy-grid{padding:var(--s3) var(--s4) var(--s5);--cell:25px;--gap:4px}
+  .occupancy-ruler,.occupancy-row{min-width:720px;grid-template-columns:104px repeat(var(--slots),var(--cell)) 48px}
+  .occupancy-name{position:sticky;inset-inline-start:0;z-index:3;background:var(--surface);padding-block:4px}
+  .occupancy-row.mine .occupancy-name{background:var(--surface)}
+  .occupancy-windows{grid-template-columns:1fr;padding-inline:var(--s4)}
+
+  .matrix-controls{margin:var(--s3) var(--s4) 0;padding:var(--s3);gap:var(--s2)}
+  .matrix-controls label{flex:1 1 140px}
+  .matrix-controls select,.matrix-controls input{width:100%;min-width:0}
+  .matrix-count{width:100%;margin:0;text-align:center}
+  .matrix-scroll{border-inline:0;border-radius:0;scroll-snap-type:x proximity}
+  .matrix-table{min-width:1040px}
+  .matrix-room{box-shadow:1px 0 0 var(--line)}
 }

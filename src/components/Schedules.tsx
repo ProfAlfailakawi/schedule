@@ -3246,19 +3246,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!window.matchMedia("(max-width:768px)").matches) return;
     setExpandedDay(current => current ?? todayKey ?? (days[0]?.key as DayKey));
   }, [viewMode, todayKey]);
-
-  /**
-   * The rooms timeline spans the whole teaching day, so shrinking it to the
-   * width of a phone would make the time scale and drag targets dishonest. On a
-   * small screen we open the same board on one day first — preserving every
-   * action — and leave «الأسبوع كامل» available to anyone who deliberately
-   * wants the wide comparison.
-   */
-  useEffect(() => {
-    if (viewMode !== "rooms" || typeof window === "undefined") return;
-    if (!window.matchMedia("(max-width:768px)").matches) return;
-    setMatrixDay(current => current === "week" ? (todayKey ?? (days[0]?.key as DayKey)) : current);
-  }, [viewMode, todayKey]);
   /** How many appointments each day actually carries — every day gets a count. */
   const dayCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -6285,13 +6272,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         </Surface>
       ) : viewMode === "rooms" ? (
         <Surface className="rooms-surface">
-          <div className="mobile-complex-view-note no-print" role="note">
-            <HelpCircle aria-hidden="true" />
-            <div>
-              <strong>عرض القاعات على الهاتف</strong>
-              <span>فتحنا يومًا واحدًا تلقائيًا ليبقى السحب والوقت مقروءين. المقارنة الأسبوعية الكاملة أدق وأسهل على الكمبيوتر، ويمكنك فتحها هنا متى شئت.</span>
-            </div>
-          </div>
           {(() => {
             /* --- The paper timetable, alive -----------------------------------
                The sheet this program replaces lists rooms as rows and the day
@@ -6569,13 +6549,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                «يقرأ الجدول…» status line in the filter strip. */
             className={`week-surface ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
           >
-            <div className="mobile-complex-view-note no-print" role="note">
-              <HelpCircle aria-hidden="true" />
-              <div>
-                <strong>عرض الأسبوع على الهاتف</strong>
-                <span>يعرض النظام يومًا واحدًا تلقائيًا حتى تبقى البطاقات والسحب واضحة. عرض الأيام الخمسة والتحريك بينها أسهل على شاشة الكمبيوتر.</span>
-              </div>
-            </div>
             {/* One question at a time, asked of the whole week. The controls
                 fold away; their answer remains visible on the toolbar button. */}
                 {/* The schedule lens UI was removed with its toolbar button; the
@@ -7755,7 +7728,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,
             sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName,
           ].filter(Boolean).join(" · ")}
-          collegeName={colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName}
           onClose={() => setReviewOpen(false)}
           onFocusRows={(ids) => {
             // Bring the flagged appointments to the surface using the lens the
@@ -7768,11 +7740,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       ) : null}
       {/* The week is a wide document; it is printed on a wide page, in the same
           hand as every other sheet the program produces. */}
-      <PrintPortal className="schedule-print">
-        <div className="print-report print-wide">
+      {!reviewOpen ? (
+        <PrintPortal>
+          <div className="schedule-print print-report print-wide">
         <PrintLetterhead
           title="الجدول الدراسي"
-          college={colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName}
           scope={[
             terms.find((t) => t.AdTermId === filterTerm)?.AdTermName,
             colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,
@@ -7828,8 +7800,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             ))}
           </tbody>
         </table>
-        </div>
-      </PrintPortal>
+          </div>
+        </PrintPortal>
+      ) : null}
       {contextLoading ? (
         <div className="context-loading">
           <span />

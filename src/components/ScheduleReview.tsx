@@ -27,7 +27,6 @@ interface Props {
   /** What each course has habitually been, learned from every term on record. */
   nature?: Map<number, CourseNature> | null;
   scopeLine: string;
-  collegeName?: string;
   meeting?: { day: DayKey; from: string; to: string } | null;
   onClose: () => void;
   onFocusRows?: (ids: number[]) => void;
@@ -81,7 +80,7 @@ function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSc
   );
 }
 
-export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, collegeName, meeting, onClose, onFocusRows }: Props) {
+export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, meeting, onClose, onFocusRows }: Props) {
   const findings = useMemo(
     () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
     [rows, courses, instructors, previousRows, meeting, nature]
@@ -236,9 +235,10 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       </section>
 
       {/* The signed sheet. */}
-      <PrintPortal className="print-sheet-modal">
+      <PrintPortal>
+        <div className="print-sheet-modal">
         <div className="print-report print-upright">
-          <PrintLetterhead title="تقرير مراجعة الجدول قبل الاعتماد" scope={scopeLine} college={collegeName} />
+          <PrintLetterhead title="تقرير مراجعة الجدول قبل الاعتماد" scope={scopeLine} />
           <div className="print-summary">
             <span>مؤشر المطابقة: <b>{score} / 100</b></span>
             <span>عدد المواعيد: <b>{rows.length}</b></span>
@@ -266,6 +266,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
             <div><span>رئيس القسم العلمي</span><i /></div>
             <div><span>التاريخ</span><i /></div>
           </div>
+        </div>
         </div>
       </PrintPortal>
     </div>

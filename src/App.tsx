@@ -913,12 +913,9 @@ export default function App() {
       } else if (e.altKey && e.key === "2" && allowed.schedule) {
         e.preventDefault();
         go("schedules");
-      } else if (e.altKey && e.key === "3" && smartSearchView) {
+      } else if (e.altKey && e.key === "3" && (smartSearchView || smartReportView)) {
         e.preventDefault();
-        go(smartSearchView);
-      } else if (e.altKey && e.key === "4" && smartReportView) {
-        e.preventDefault();
-        go(smartReportView);
+        go((smartSearchView || smartReportView) as View);
       } else if (
         e.altKey &&
         e.key.toLowerCase() === "i" &&
@@ -1220,7 +1217,7 @@ export default function App() {
     dashboard: "لوحة العمل",
     schedules: "إدارة الجدول",
     intelligence: "مركز الذكاء",
-    reportDepartment: "تقرير القسم",
+    reportDepartment: "الاستعلامات والتقارير",
     searchAdvanced: "البحث المتقدم",
     instructors: "أساتذة المقررات",
     courses: "المقررات الدراسية",
@@ -1435,14 +1432,6 @@ export default function App() {
       icon: <FileText />,
       run: () => runScheduleCommand("presentation"),
       show: allowed.schedule,
-    },
-    {
-      label: "تقرير القسم العلمي",
-      hint: "التقرير الرسمي",
-      keywords: "تقرير قسم طباعة",
-      icon: <FileText />,
-      run: () => go("reportDepartment"),
-      show: hasPerm(14),
     },
   ].filter(
     (x) =>
@@ -2102,9 +2091,7 @@ export default function App() {
                       <kbd>Alt 2</kbd>
                       <i>الجدول</i>
                       <kbd>Alt 3</kbd>
-                      <i>الاستعلامات</i>
-                      <kbd>Alt 4</kbd>
-                      <i>التقارير</i>
+                      <i>الاستعلامات والتقارير</i>
                       <kbd>Alt N</kbd>
                       <i>إضافة</i>
                     </div>

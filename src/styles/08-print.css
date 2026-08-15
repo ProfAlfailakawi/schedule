@@ -9,8 +9,6 @@
    into landscape explicitly with .print-wide.
    ========================================================================== */
 
-/* The body-level portal exists only to isolate pagination. It is invisible in
-   the interactive application and becomes the sole document tree on paper. */
 .print-portal-root{display:none}
 
 @page{size:A4 portrait;margin:14mm 12mm 18mm}
@@ -77,10 +75,6 @@
     width:100% !important;min-width:0 !important;height:auto !important;
     overflow:visible !important;background:#fff !important;
   }
-  /* Portal-backed sheets are physically outside the screen layout. This is the
-     definitive blank-page fix: the application is not merely invisible, it is
-     absent from print layout altogether. The older in-tree rules below remain
-     as a compatibility fallback for legacy print surfaces. */
   body.has-print-portal{visibility:visible !important}
   body.has-print-portal>#root{display:none !important}
   body.has-print-portal>#app-print-root{
@@ -269,6 +263,7 @@
   }
   /* The one place breaking anywhere is right: a Latin token with no spaces —
      a long room code or an id — which would otherwise push the column open. */
+  .print-report .print-break-any{overflow-wrap:anywhere !important}
   .print-report th{
     font-weight:700 !important;font-size:8.2pt !important;letter-spacing:.01em !important;
     background:#1f6b5c !important;color:#fff !important;
@@ -423,13 +418,6 @@
   .print-signatures span{display:block !important;font-size:9pt !important;color:#333 !important;margin-bottom:14mm !important}
   .print-signatures i{display:block !important;border-top:.8pt solid #333 !important}
 
-  /* --- department master sheet ------------------------------------------- */
-  .print-department th,.print-department td{padding-inline:1.25mm !important}
-  .print-department th{font-size:7.8pt !important}
-  .print-department td{font-size:8.35pt !important}
-  .print-department td.print-ltr{font-size:7.35pt !important}
-  .print-department td.print-wrap{line-height:1.38 !important}
-
   /* --- occupancy sheet ---------------------------------------------------- */
   /* The grid keeps its shape on paper: a filled square is a taken hour, an
      empty one is a free hour, so the sheet is readable in greyscale too. */
@@ -469,16 +457,16 @@
 
   /* --- halls x hours ------------------------------------------------------ */
   /* The sheet a department has kept on paper for years, printed as paper. */
-  .print-matrix table{table-layout:fixed !important}
+  .print-matrix table{table-layout:auto !important}
   .print-matrix th,.print-matrix td{
-    padding:1.35mm .9mm !important;vertical-align:top !important;font-size:7pt !important;
+    padding:1.4mm 1mm !important;vertical-align:top !important;font-size:6.6pt !important;
   }
-  .print-matrix thead th{font-size:6.7pt !important;text-align:center !important;white-space:nowrap !important}
+  .print-matrix thead th{font-size:6.4pt !important;text-align:center !important;white-space:nowrap !important}
   .print-matrix tbody th{
     background:#f2f6f4 !important;color:#111 !important;border-color:#cbd4d0 !important;
     /* Wrapping here also relieves the width pressure that squeezed the hour
        columns: a long hall name no longer has to fit on one line. */
-    white-space:normal !important;overflow-wrap:normal !important;word-break:normal !important;
+    white-space:normal !important;overflow-wrap:anywhere !important;
   }
   .print-matrix tbody th small{display:block !important;color:#555 !important;font-size:5.8pt !important}
   .print-matrix td span{
@@ -491,12 +479,12 @@
      and the catalogue numbers sit smallest — so a reader scanning a wall of
      halls finds the course first every time. */
   .print-matrix td b{
-    display:block !important;font-weight:700 !important;font-size:7.1pt !important;
+    display:block !important;font-weight:700 !important;font-size:6.8pt !important;
     color:#111 !important;line-height:1.25 !important;
   }
   .print-matrix td i{
     display:block !important;font-style:normal !important;font-weight:400 !important;
-    color:#3d4644 !important;font-size:6.5pt !important;line-height:1.25 !important;
+    color:#3d4644 !important;font-size:6.2pt !important;line-height:1.25 !important;
   }
   .print-matrix td u{
     display:block !important;text-decoration:none !important;color:#666 !important;
@@ -507,35 +495,17 @@
 
   .print-week{width:100% !important;border-collapse:collapse !important;table-layout:fixed !important}
   .print-week th{background:#e8efec !important;color:#0f4239 !important}
-  .print-week td{vertical-align:top !important;height:26mm !important;padding:1.6mm !important}
+  .print-week td{vertical-align:top !important;height:26mm !important}
   .print-week .slot{
-    display:block !important;margin-bottom:1.2mm !important;padding:1.4mm 1.5mm !important;
-    border-inline-start:1.2pt solid #1f6b5c !important;background:#f4f8f6 !important;
+    display:block !important;margin-bottom:1mm !important;padding:1mm 1.4mm !important;
+    border-inline-start:1.2pt solid #1f6b5c !important;background:#f2f6f4 !important;
     font-size:7.4pt !important;line-height:1.35 !important;break-inside:avoid !important;
   }
-  .print-week .slot:last-child{margin-bottom:0 !important}
-  .print-week .slot-course{display:block !important;min-width:0 !important}
-  .print-week .slot-course b{
-    display:block !important;font-weight:700 !important;font-size:7.7pt !important;line-height:1.35 !important;
-    white-space:normal !important;overflow-wrap:normal !important;word-break:normal !important;
+  .print-week .slot b{display:block !important;font-weight:700 !important}
+  .print-week .slot time{
+    display:block !important;direction:ltr !important;
+    font-family:"Plex Mono",ui-monospace,monospace !important;font-size:6.8pt !important;color:#444 !important;
   }
-  .print-week .slot-course i{
-    display:block !important;margin-top:.3mm !important;font-style:normal !important;color:#66716d !important;
-    font-family:"Plex Mono",ui-monospace,monospace !important;font-size:6.2pt !important;direction:ltr !important;
-  }
-  .print-week .slot-who{
-    display:block !important;margin-top:.6mm !important;color:#333 !important;font-size:6.9pt !important;
-    white-space:normal !important;overflow-wrap:normal !important;word-break:normal !important;
-  }
-  .print-week .slot-meta{
-    display:flex !important;align-items:center !important;justify-content:space-between !important;gap:1.2mm !important;
-    margin-top:.8mm !important;padding-top:.6mm !important;border-top:.35pt solid #d6ddda !important;
-  }
-  .print-week .slot-meta time,.print-week .slot-meta .print-ltr{
-    direction:ltr !important;unicode-bidi:isolate !important;white-space:nowrap !important;
-    font-family:"Plex Mono",ui-monospace,monospace !important;font-size:6.25pt !important;color:#4d5753 !important;
-  }
-  .print-week .slot-empty{display:block !important;padding:5mm 0 !important;text-align:center !important;color:#8a9390 !important;font-size:7pt !important}
 
   /* Legacy schedule sheet kept working while it shares the new letterhead. */
   .schedule-print{direction:rtl !important}
@@ -543,22 +513,17 @@
   .schedule-print thead{display:table-header-group !important}
   .schedule-print tr{break-inside:avoid !important}
   .schedule-print th,.schedule-print td{
-    padding:2.1mm 1.6mm !important;border:.45pt solid #cbd4d0 !important;
+    padding:2.1mm 1.6mm !important;border:.6pt solid #9aa3a0 !important;
     font-size:8.4pt !important;text-align:right !important;
-    overflow-wrap:normal !important;word-break:normal !important;hyphens:none !important;
+    white-space:normal !important;overflow-wrap:normal !important;word-break:normal !important;
   }
+  .schedule-print .print-wrap{white-space:normal !important;overflow-wrap:normal !important;word-break:normal !important}
+  .schedule-print .print-ltr{direction:ltr !important;unicode-bidi:isolate !important;white-space:nowrap !important;text-align:center !important;font-variant-numeric:tabular-nums !important}
   .schedule-print th{background:#e8efec !important;color:#0f4239 !important;font-weight:700 !important}
   .schedule-print tbody tr:nth-child(even) td{background:#f7f9f8 !important}
   .schedule-print td[dir="ltr"]{
     direction:ltr !important;text-align:center !important;white-space:nowrap !important;
     font-family:"Plex Mono",ui-monospace,monospace !important;font-size:7.8pt !important;
-  }
-  .schedule-print .print-wrap{white-space:normal !important;overflow-wrap:normal !important;word-break:normal !important}
-  .schedule-print .print-days{white-space:normal !important;word-break:keep-all !important}
-  .schedule-print .print-days bdi{white-space:nowrap !important}
-  .schedule-print .print-ltr{
-    direction:ltr !important;unicode-bidi:isolate !important;text-align:center !important;white-space:nowrap !important;
-    font-family:"Plex Mono",ui-monospace,monospace !important;font-size:7.7pt !important;font-variant-numeric:tabular-nums !important;
   }
 }
 
@@ -575,4 +540,86 @@
   .demand-door-card{border:0;background:transparent;justify-items:center;text-align:center}
   .demand-qr{width:78mm;height:78mm;border:0}
   .demand-door-url{font-size:11pt;white-space:normal;word-break:break-all}
+}
+
+/* ==========================================================================
+   INQUIRY CENTRE — CURRENT-LENS PRINTING
+   ========================================================================== */
+@media print{
+  .print-query-report{font-size:8.7pt !important}
+  .print-query-report table{margin-top:3mm !important}
+  .print-query-report .print-num{text-align:center !important;font-variant-numeric:tabular-nums !important}
+
+  .print-query-summaryline{display:flex !important;align-items:center !important;flex-wrap:wrap !important;gap:2.5mm !important;margin:0 0 3.5mm !important;break-inside:avoid !important}
+  .print-query-summaryline>span{display:inline-flex !important;align-items:baseline !important;gap:1.2mm !important;padding:1.2mm 2.6mm !important;border:.45pt solid #cbd4d0 !important;border-radius:2mm !important;background:#f6f9f8 !important;color:#4c5652 !important;font-size:8pt !important}
+  .print-query-summaryline b{font-size:9.4pt !important;color:#0f4239 !important}
+
+  .print-comprehensive-overview{display:grid !important;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) !important;gap:5mm !important;margin-bottom:4mm !important;break-inside:avoid !important}
+  .print-document-metrics{display:grid !important;grid-template-columns:repeat(5,minmax(0,1fr)) !important;border:.55pt solid #cbd4d0 !important;border-radius:2.2mm !important;overflow:hidden !important;background:#f7faf9 !important}
+  .print-document-metrics>div{min-width:0 !important;padding:2.2mm 1.4mm !important;text-align:center !important;border-inline-start:.4pt solid #d8dfdc !important}
+  .print-document-metrics>div:first-child{border-inline-start:0 !important}
+  .print-document-metrics strong{display:block !important;font-size:14pt !important;line-height:1 !important;font-weight:680 !important;color:#0f4239 !important;font-variant-numeric:tabular-nums !important}
+  .print-document-metrics span{display:block !important;margin-top:.9mm !important;color:#66716d !important;font-size:6.9pt !important}
+  .print-week-pulse{display:grid !important;gap:1.2mm !important;padding:2.4mm 3mm !important;border:.55pt solid #cbd4d0 !important;border-radius:2.2mm !important;background:#fff !important}
+  .print-week-pulse>div{display:grid !important;grid-template-columns:18mm minmax(0,1fr) 24mm !important;align-items:center !important;gap:2mm !important}
+  .print-week-pulse span{font-size:7.4pt !important;font-weight:650 !important}
+  .print-week-pulse i{display:block !important;height:2.2mm !important;border-radius:999px !important;background:#e8eeeb !important;overflow:hidden !important}
+  .print-week-pulse i b{display:block !important;height:100% !important;border-radius:inherit !important;background:#1f6b5c !important}
+  .print-week-pulse em{font-style:normal !important;text-align:left !important;color:#68726e !important;font-size:6.7pt !important;white-space:nowrap !important}
+  .print-comprehensive-table th,.print-comprehensive-table td{padding:2mm 1.5mm !important}
+  .print-comprehensive-table tbody tr:nth-child(even) td{background:#f8faf9 !important}
+  .print-course-block strong,.print-person-block strong{display:block !important;color:#111 !important;font-weight:680 !important;line-height:1.35 !important;white-space:normal !important;overflow-wrap:normal !important;word-break:normal !important}
+  .print-course-block>span{display:flex !important;align-items:center !important;gap:1.5mm !important;flex-wrap:wrap !important;margin-top:.7mm !important;color:#67716e !important;font-size:6.6pt !important}
+  .print-course-block>span i{font-style:normal !important;white-space:nowrap !important}
+  .print-person-block small{display:block !important;margin-top:.7mm !important;color:#737d79 !important;font-size:6.3pt !important}
+  .print-schedule-block{display:grid !important;gap:1mm !important}
+  .print-schedule-block time{justify-self:start !important}
+  .print-academic-facts{display:grid !important;grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:.7mm !important}
+  .print-academic-facts span{display:grid !important;place-items:center !important;gap:.4mm !important;padding:1mm .5mm !important;border:.4pt solid #d6ddda !important;border-radius:1.3mm !important;background:#f7f9f8 !important}
+  .print-academic-facts b{font-size:8.6pt !important;font-weight:700 !important;color:#1d4f45 !important;font-variant-numeric:tabular-nums !important}
+  .print-academic-facts small{font-size:5.8pt !important;color:#737d79 !important}
+
+  .print-query-list{border-block-start:.7pt solid #cbd4d0 !important}
+  .print-query-list>article{display:grid !important;grid-template-columns:8mm minmax(0,1.7fr) 30mm 27mm minmax(30mm,.85fr) !important;align-items:center !important;gap:3mm !important;padding:2.6mm 2mm !important;border-block-end:.45pt solid #d5dcda !important;break-inside:avoid !important}
+  .print-query-list>article:nth-child(even){background:#f8faf9 !important}
+  .print-list-index{color:#7a8581 !important;font-family:"Plex Mono",ui-monospace,monospace !important;font-size:7pt !important;text-align:center !important}
+  .print-list-core{min-width:0 !important}.print-list-core>strong{display:block !important;font-size:9pt !important;font-weight:670 !important;line-height:1.35 !important}
+  .print-list-core>span{display:flex !important;align-items:center !important;gap:1.6mm !important;flex-wrap:wrap !important;margin-top:.7mm !important;color:#68726e !important;font-size:6.7pt !important}
+  .print-list-core i,.print-list-core em{font-style:normal !important}.print-list-core em{color:#4d5854 !important}.print-list-room{font-size:7.2pt !important}.print-list-days{font-size:7pt !important}
+
+  .print-query-week{display:grid !important;grid-template-columns:repeat(5,minmax(0,1fr)) !important;gap:1mm !important;padding:1mm !important;border:.6pt solid #cbd4d0 !important;border-radius:1.5mm !important;background:#dfe5e2 !important}
+  .print-query-week>section{min-width:0 !important;padding:2mm !important;background:#fff !important}
+  .print-query-week h2{display:flex !important;align-items:center !important;justify-content:space-between !important;gap:1mm !important;margin:0 0 2mm !important;padding:0 0 1.5mm !important;border-block-end:.55pt solid #cbd4d0 !important;font-size:8.6pt !important;font-weight:700 !important}
+  .print-query-week h2 b{min-width:5mm;text-align:center !important;color:#53605b !important;font-size:7pt !important}
+  .print-query-week>section>div{display:grid !important;gap:1.2mm !important}
+  .print-query-week article{display:grid !important;grid-template-columns:16mm minmax(0,1fr) !important;gap:.8mm 1.5mm !important;padding:1.6mm !important;border-inline-start:1.4pt solid #1f6b5c !important;background:#f2f7f5 !important;break-inside:avoid !important}
+  .print-query-week article>time{grid-row:1 / span 2 !important;display:grid !important;align-content:start !important;gap:.5mm !important;text-align:start !important}
+  .print-query-week article>time b{font-size:6.6pt !important}.print-query-week article>time span{font-size:5.9pt !important;color:#707a76 !important}
+  .print-query-week article>div strong{display:block !important;font-size:7.2pt !important;font-weight:680 !important;line-height:1.28 !important}
+  .print-query-week article>div span{display:block !important;margin-top:.4mm !important;color:#5d6763 !important;font-size:6.1pt !important;line-height:1.25 !important}
+  .print-query-week article>small{grid-column:2 !important;display:flex !important;justify-content:space-between !important;gap:1mm !important;color:#6c7672 !important;font-size:5.7pt !important}
+  .print-query-week section p{margin:4mm 0 !important;text-align:center !important;color:#8a9390 !important;font-size:6.8pt !important}
+
+  .print-query-group{margin-top:4mm !important;break-inside:auto !important}.print-query-group:first-of-type{margin-top:0 !important}
+  .print-query-group>header{display:flex !important;align-items:center !important;gap:2.5mm !important;flex-wrap:wrap !important;margin-bottom:1.2mm !important;padding:1.7mm 2.2mm !important;border-inline-start:2pt solid #1f6b5c !important;background:#eef4f1 !important;break-after:avoid !important}
+  .print-query-group>header>div{min-width:0 !important;flex:1 !important;display:flex !important;align-items:baseline !important;gap:2mm !important;flex-wrap:wrap !important}
+  .print-query-group>header strong{font-size:9.5pt !important}.print-query-group>header small{font-size:6.6pt !important;color:#6d7773 !important}.print-query-group>header>span{font-size:7pt !important;color:#5c6662 !important}.print-query-group>header>span b{color:#0f4239 !important}
+  .print-query-group table{margin-top:0 !important}.print-query-group th,.print-query-group td{padding:1.7mm 1.4mm !important;font-size:7.5pt !important}
+
+  .print-occupancy-table th,.print-occupancy-table td{padding:1.25mm .8mm !important;text-align:center !important;font-size:6.6pt !important}
+  .print-occupancy-table tbody th{white-space:nowrap !important;font-family:"Plex Mono",ui-monospace,monospace !important}
+  .print-occupancy-table .print-heat{height:5.6mm !important;background:#fff !important;color:#0f4239 !important;font-weight:700 !important}
+  .print-occupancy-table .print-heat-1{background:#e3efeb !important}.print-occupancy-table .print-heat-2{background:#c3dcd4 !important}.print-occupancy-table .print-heat-3{background:#9fc9bc !important}.print-occupancy-table .print-heat-4{background:#6eaa98 !important;color:#0d3029 !important}.print-occupancy-table .print-heat-5{background:#2b7666 !important;color:#fff !important}
+  .print-free-windows,.print-room-directory{margin-top:5mm !important}.print-free-windows h2,.print-room-directory h2{margin:0 0 2mm !important;font-size:9pt !important;font-weight:700 !important;color:#163f37 !important}
+  .print-free-windows>div{display:grid !important;grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:1.5mm !important}.print-free-windows article{display:flex !important;align-items:center !important;gap:1.5mm !important;padding:1.4mm 1.8mm !important;border:.4pt solid #d6ddda !important;background:#f8faf9 !important;break-inside:avoid !important}.print-free-windows article>strong{width:22mm !important;flex:none !important;font-size:6.8pt !important}.print-free-windows article>span{display:flex !important;flex-wrap:wrap !important;gap:.8mm !important}.print-free-windows time{padding:.4mm 1mm !important;border-radius:1mm !important;background:#eef3f1 !important;font-size:5.9pt !important}
+  .print-room-directory{display:grid !important;grid-template-columns:repeat(4,minmax(0,1fr)) !important;gap:1mm !important}.print-room-directory h2{grid-column:1/-1 !important}.print-room-line{display:grid !important;grid-template-columns:minmax(0,1fr) auto auto !important;gap:1mm !important;padding:1.4mm !important;border:.4pt solid #d6ddda !important;background:#f8faf9 !important;break-inside:avoid !important}.print-room-line strong{font-size:6.6pt !important}.print-room-line span,.print-room-line em{font-size:6pt !important;font-style:normal !important;color:#67716e !important}
+
+  .print-matrix-new{table-layout:fixed !important}.print-matrix-new th,.print-matrix-new td{padding:1.1mm .65mm !important;vertical-align:top !important;font-size:6.2pt !important}.print-matrix-new thead th{text-align:center !important;font-size:5.9pt !important}.print-matrix-new thead th small{display:block !important;margin-top:.3mm !important;font-size:5pt !important;font-weight:500 !important;opacity:.8 !important}.print-matrix-new tbody th strong{display:block !important;font-size:6.8pt !important}.print-matrix-new tbody th small{display:block !important;color:#69736f !important;font-size:5.4pt !important}.print-matrix-new td.taken{background:#f0f6f3 !important}.print-matrix-slot{display:block !important;padding-inline-start:.9mm !important;border-inline-start:.8pt solid #1f6b5c !important}.print-matrix-slot+.print-matrix-slot{margin-top:1mm !important;padding-top:1mm !important;border-top:.35pt dashed #b8c2be !important}.print-matrix-slot b{display:block !important;font-size:6.1pt !important;line-height:1.2 !important}.print-matrix-slot em{display:block !important;font-style:normal !important;color:#55605c !important;font-size:5.5pt !important;line-height:1.2 !important}.print-matrix-slot i{display:block !important;margin-top:.25mm !important;font-style:normal !important;color:#77817d !important;font-size:5pt !important}
+
+  .print-time-list{display:grid !important;gap:1.4mm !important}.print-time-list>article{display:grid !important;grid-template-columns:28mm minmax(0,1fr) 10mm minmax(0,1.4fr) !important;align-items:center !important;gap:3mm !important;padding:2.2mm 2.5mm !important;border-block-end:.45pt solid #d6ddda !important;break-inside:avoid !important}.print-time-list>article:nth-child(even){background:#f8faf9 !important}.print-time-list>article>time{font-size:9pt !important;font-weight:700 !important;color:#143f36 !important}.print-time-list>article>i{height:2.4mm !important;border-radius:999px !important;background:#e7ecea !important;overflow:hidden !important}.print-time-list>article>i b{display:block !important;height:100% !important;background:#1f6b5c !important}.print-time-list>article>strong{text-align:center !important;font-size:8pt !important}.print-time-list>article>div{display:flex !important;gap:1mm !important;flex-wrap:wrap !important}.print-time-list>article>div span{padding:.5mm 1.2mm !important;border:.4pt solid #d4dcd8 !important;border-radius:1mm !important;background:#f4f7f6 !important;font-size:6pt !important}
+
+  .print-fairness-hero{display:grid !important;grid-template-columns:38mm minmax(0,1fr) !important;align-items:stretch !important;gap:4mm !important;margin-bottom:4mm !important;break-inside:avoid !important}.print-fairness-hero>div{display:grid !important;place-items:center !important;align-content:center !important;padding:3mm !important;border:1pt solid #1f6b5c !important;border-radius:2mm !important;background:#f2f7f5 !important}.print-fairness-hero>div strong{font-size:24pt !important;line-height:.9 !important;color:#0f4239 !important}.print-fairness-hero>div span{font-size:7pt !important;color:#6a7571 !important}.print-fairness-hero>div small{margin-top:1mm !important;font-size:7pt !important;font-weight:650 !important}.print-fairness-hero dl{display:grid !important;grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:1.5mm !important;margin:0 !important}.print-fairness-hero dl>div{display:grid !important;place-items:center !important;align-content:center !important;padding:2mm !important;border:.45pt solid #d2dad6 !important;background:#f8faf9 !important}.print-fairness-hero dt{font-size:6.5pt !important;color:#6a7571 !important}.print-fairness-hero dd{margin:.8mm 0 0 !important;font-size:10pt !important;font-weight:700 !important;color:#1a4038 !important}
+  .print-fairness-rows{display:grid !important;gap:.8mm !important}.print-fairness-rows>div{display:grid !important;grid-template-columns:minmax(0,1fr) minmax(35mm,1.2fr) 16mm 11mm !important;align-items:center !important;gap:2.5mm !important;padding:1.6mm 2mm !important;border-block-end:.4pt solid #d9dfdc !important;break-inside:avoid !important}.print-fairness-rows>div:nth-child(even){background:#f8faf9 !important}.print-fairness-rows span{font-size:7.6pt !important;font-weight:600 !important}.print-fairness-rows>div>i{height:2.5mm !important;border-radius:999px !important;background:#e8edeb !important;overflow:hidden !important}.print-fairness-rows>div>i b{display:block !important;height:100% !important;background:#1f6b5c !important}.print-fairness-rows em{font-style:normal !important;font-size:7pt !important;text-align:center !important}.print-fairness-rows small{font-size:6.5pt !important}
+
+  .print-balance-report table th,.print-balance-report table td{padding:1.9mm 1.5mm !important;font-size:7.5pt !important;text-align:center !important}.print-balance-report table td:first-child{text-align:right !important;color:#111 !important;font-size:7.6pt !important}.print-balance-report table td:first-child strong{display:block !important}.print-balance-report table td:first-child small{display:block !important;margin-top:.5mm !important;color:#6d7773 !important;font-size:6.2pt !important}
 }
