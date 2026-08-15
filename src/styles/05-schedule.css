@@ -2056,7 +2056,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    -------------------------------------------------------------------------- */
 .undo-log-open{
   position:fixed;z-index:150;
-  inset-inline-start:var(--s5);
+  /* The far side from the rail, where nothing else lives: it was sharing a
+     corner with the navigation and the two kept meeting. */
+  inset-inline-end:var(--s5);inset-inline-start:auto;
   bottom:calc(var(--s5) + env(safe-area-inset-bottom));
   display:flex;align-items:center;gap:var(--s2);
   min-height:32px;padding:0 var(--s3);
@@ -3264,7 +3266,23 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-compact-track{height:auto;border:0;border-radius:0;background:transparent}
 .rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line) 80%,transparent)}
 .rooms-hourline-terminal{border-inline-start-style:solid;border-inline-start-color:var(--line-strong)}
-.rooms-now{position:absolute;inset-block:0;width:0;border-inline-start:2px solid var(--brass);z-index:4}
+/* «الآن» — the same brass the week grid uses for the current hour, and for the
+   first time it says what it is. A line with no label is a line a reader has to
+   invent a meaning for. */
+.rooms-now{
+  position:absolute;inset-block:0;width:0;
+  border-inline-start:2px solid var(--brass);z-index:6;
+  pointer-events:none;
+}
+.rooms-now b{
+  position:absolute;inset-block-start:-9px;inset-inline-start:0;
+  transform:translateX(50%);
+  padding:1px 6px;border-radius:var(--r-full);
+  background:var(--brass);color:#fff;
+  font:700 9px/1.5 var(--font-mono);letter-spacing:-.2px;
+  white-space:nowrap;
+  box-shadow:0 1px 3px rgb(17 25 22 / .25);
+}
 .rooms-card{
   --tint:hsl(var(--hue,158) 34% 96%);
   --edge:hsl(var(--hue,158) 34% 44%);
@@ -3391,11 +3409,43 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   .week-code b{display:none}
   .week-title{padding-inline-end:30px}
 }
-/* In a crushed lane the two human identities remain; metadata yields first. */
-@container (max-width:64px){
-  .week-title{font-size:7.75px;font-weight:580;overflow-wrap:anywhere;word-break:normal}
+/*
+   The crushed lane, answered honestly.
+
+   Below about sixty pixels an Arabic course name cannot be printed — it can
+   only be broken into fragments that look like damage, which is what a reader
+   was seeing: one card among its neighbours rendered as a column of half
+   letters, "متقاطعة بروحها ومسكّرة على الكل".
+
+   So at that width the card stops attempting the name and prints the one thing
+   that IS legible in forty pixels — the catalogue number — set in the middle,
+   in the card's own colour. The name has not been lost: it is in the hover
+   card, in the accessible label, in the tooltip, and it returns in full the
+   instant the card is lifted (`.physics-source-lift` widens to 236px) or the
+   day is expanded. A short true label beats a long broken one.
+*/
+@container (max-width:66px){
+  .week-title,.week-who,.week-when{display:none}
+  .week-code{
+    display:flex !important;
+    position:static !important;
+    inset:auto !important;
+    align-items:center;justify-content:center;
+    width:100%;height:100%;max-width:none;
+    padding:0;background:transparent;
+    font:700 10px/1.1 var(--font-mono) !important;
+    color:var(--label) !important;
+    letter-spacing:-.3px;
+  }
+  .week-code b{display:none}
+  .week-event{padding:2px 1px;justify-content:center}
+}
+/* Between sixty and a hundred, the name is still possible but the metadata is
+   not: the two human identities stay, everything else yields. */
+@container (min-width:66.01px) and (max-width:100px){
+  .week-title{font-size:8px;font-weight:600;overflow-wrap:anywhere;word-break:normal}
   .week-who{display:block;font-size:7px;font-weight:300;opacity:.86}
-  .week-code,.week-when{display:none}
+  .week-when{display:none}
 }
 /* A half-hour card still says who teaches it: title folds to one line and the
    instructor keeps the second. */

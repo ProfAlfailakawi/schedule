@@ -701,6 +701,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [undoBusy, setUndoBusy] = useState<string | null>(null);
   const [undoBarId, setUndoBarId] = useState<string | null>(null);
   const [undoLogOpen, setUndoLogOpen] = useState(false);
+
   useEffect(() => {
     try { localStorage.setItem(undoKey, JSON.stringify(undoLog.slice(0, UNDO_LOG_LIMIT))); } catch {}
   }, [undoLog, undoKey]);
@@ -717,6 +718,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     return () => window.clearTimeout(timer);
   }, [undoBarId]);
   const pendingUndo = useMemo(() => undoLog.filter(item => !item.usedAt), [undoLog]);
+  /**
+   * The day's log introduces itself once, then gets out of the way.
+   *
+   * A permanent labelled chip in the corner is a label a reader learns in the
+   * first minute and then reads for the rest of the year. It says its name the
+   * first time it appears on this browser, and afterwards it is the icon and the
+   * count — the same target, a third of the ink.
+   */
+  const [logNamed, setLogNamed] = useState<boolean>(() => {
+    try { return localStorage.getItem("schedule-log-named") === "1"; } catch { return false; }
+  });
+  useEffect(() => {
+    if (logNamed || !pendingUndo.length) return;
+    const timer = window.setTimeout(() => {
+      setLogNamed(true);
+      try { localStorage.setItem("schedule-log-named", "1"); } catch {}
+    }, 6000);
+    return () => window.clearTimeout(timer);
+  }, [logNamed, pendingUndo.length]);
   const undoAction = useMemo(
     () => (undoBarId ? undoLog.find(item => item.id === undoBarId && !item.usedAt) || null : null),
     [undoBarId, undoLog],
@@ -2640,7 +2660,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     } catch (e: any) {
       // A refusal to overwrite is a decision to hand back, not a message to show.
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
-      else setError(friendlyError(e));
+      else {
+        setError(friendlyError(e));
+        /*
+         * A refusal that only says "no" leaves the reader exactly where they
+         * were, holding the same card and the same problem. The engine that
+         * can answer "then where?" already exists, so a blocked drop asks it
+         * immediately and offers the chain — the refusal and its way out arrive
+         * together rather than one of them never arriving at all.
+         */
+        window.setTimeout(() => {
+          try {
+            const chain = findRepairChain(row, rows);
+            if (chain) { setRepairReason("تعذّر هذا الموضع — إليك أقرب بديل"); setRepair(chain); }
+          } catch { /* a suggestion is a courtesy; never a second failure */ }
+        }, 0);
+      }
       void loadRows({ silent: true });
     } finally {
       setSaving(false);
@@ -2738,7 +2773,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     } catch (e: any) {
       // A refusal to overwrite is a decision to hand back, not a message to show.
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
-      else setError(friendlyError(e));
+      else {
+        setError(friendlyError(e));
+        /*
+         * A refusal that only says "no" leaves the reader exactly where they
+         * were, holding the same card and the same problem. The engine that
+         * can answer "then where?" already exists, so a blocked drop asks it
+         * immediately and offers the chain — the refusal and its way out arrive
+         * together rather than one of them never arriving at all.
+         */
+        window.setTimeout(() => {
+          try {
+            const chain = findRepairChain(row, rows);
+            if (chain) { setRepairReason("تعذّر هذا الموضع — إليك أقرب بديل"); setRepair(chain); }
+          } catch { /* a suggestion is a courtesy; never a second failure */ }
+        }, 0);
+      }
       void loadRows({ silent: true });
     } finally {
       setSaving(false);
@@ -4194,6 +4244,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * plain numbers and waits.
    */
   const [repair, setRepair] = useState<RepairChain | null>(null);
+  const [repairReason, setRepairReason] = useState<string>("");
   const [repairing, setRepairing] = useState(false);
 
   const proposeRepair = useCallback(() => {
@@ -4206,7 +4257,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       try {
         const chain = findRepairChain(first, rows);
         if (!chain) setMessage("لم أجد سلسلة إصلاح لا تُنشئ تعارضاً جديداً. جرّب تحرير قاعة أو ساعة أولاً.");
-        else setRepair(chain);
+        else { setRepairReason("سلسلة إصلاح مقترحة"); setRepair(chain); }
       } finally {
         setRepairing(false);
       }
@@ -5933,7 +5984,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             onDrop={trackDrop(room.building, room.hall, firstDay)}
                           >
                             {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
-                            {nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} /> : null}
+                            {nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
                             {compact.items.map(item => renderTrackCard(item.row, item))}
                           </div>
                         </div>
@@ -5952,7 +6003,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 <small className="rooms-day-label">{day.label}</small>
                                 <div className="rooms-track" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}>
                                   {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
-                                  {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} /> : null}
+                                  {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
                                   {inRoom.map(row => renderTrackCard(row))}
                                 </div>
                               </div>
@@ -6914,7 +6965,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <div className="views-dialog-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) setRepair(null); }}>
           <div className="views-dialog repair-sheet" role="dialog" aria-modal="true" aria-label="سلسلة إصلاح مقترحة">
             <header>
-              <strong>سلسلة إصلاح مقترحة</strong>
+              <strong>{repairReason || "سلسلة إصلاح مقترحة"}</strong>
               <button type="button" onClick={() => setRepair(null)} aria-label="إغلاق"><X aria-hidden="true" /></button>
             </header>
             <div className="repair-cost">
@@ -7077,7 +7128,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           title="سجل تغييرات اليوم"
         >
           <History aria-hidden="true" />
-          <span>سجل اليوم</span>
+          {logNamed ? null : <span>سجل اليوم</span>}
           <b>{pendingUndo.length}</b>
         </button>
       ) : null}

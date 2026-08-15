@@ -50,15 +50,25 @@ export function Notice({ type = "error", children, inline = false, onDismiss, ac
   action?: React.ReactNode;
 }) {
   const [visible, setVisible] = React.useState(true);
-  const transient = type === "success" || type === "info";
   const assertive = type === "block" || type === "error";
+  /**
+   * Every message leaves on its own, and the heavier it is the longer it stays.
+   *
+   * Only receipts used to expire; a refusal — "the hall is booked at this hour"
+   * — stayed on the screen until something else replaced it, so a reader who
+   * had already understood it and moved on was still being told off by a red
+   * bar minutes later. The message is not the state: the state is the schedule,
+   * and it will say the same thing again the moment it is asked again. A
+   * warning is given time to be read, not time to accumulate.
+   */
+  const life = type === "success" || type === "info" ? 4200 : type === "warning" ? 8000 : 12000;
 
   React.useEffect(() => { setVisible(true); }, [children, type]);
   React.useEffect(() => {
-    if (inline || !transient || !visible) return;
-    const timer = window.setTimeout(() => { setVisible(false); onDismiss?.(); }, 4200);
+    if (inline || !visible) return;
+    const timer = window.setTimeout(() => { setVisible(false); onDismiss?.(); }, life);
     return () => window.clearTimeout(timer);
-  }, [inline, transient, visible, children, onDismiss]);
+  }, [inline, visible, children, onDismiss, life]);
 
   if (!visible) return null;
   const Icon = NOTICE_ICON[type] || ShieldAlert;
