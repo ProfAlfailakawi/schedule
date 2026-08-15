@@ -14,6 +14,7 @@ interface Props {
   online: boolean;
   lockCollege?: boolean;
   lockSection?: boolean;
+  hideSection?: boolean;
   onCollegeChange: (collegeId: number, firstSectionId: number) => void;
   onSectionChange: (sectionId: number) => void;
   onTermChange: (termId: number) => void;
@@ -30,6 +31,7 @@ export default function IntelligenceContextBar({
   online,
   lockCollege = false,
   lockSection = false,
+  hideSection = false,
   onCollegeChange,
   onSectionChange,
   onTermChange,
@@ -44,9 +46,9 @@ export default function IntelligenceContextBar({
         </div>
       </div>
       <div className="intel-context-fields">
-        {lockCollege && lockSection ? <div className="intel-fixed-scope"><small>نطاقك</small><strong>{colleges.find(c=>c.AdCollegeId===collegeId)?.AdCollegeName}</strong><span>{sections.find(s=>s.AdSectionId===sectionId)?.AdSectionName}</span></div> : null}
+        {lockCollege ? <div className="intel-fixed-scope"><small>نطاقك</small><strong>{colleges.find(c=>c.AdCollegeId===collegeId)?.AdCollegeName}</strong>{!hideSection ? <span>{sections.find(s=>s.AdSectionId===sectionId)?.AdSectionName}</span> : null}</div> : null}
         {!lockCollege ? <Field label="الكلية"><select value={collegeId || ""} onChange={(event)=>{const id=Number(event.target.value)||0;const first=sections.find(section=>section.AdCollegeId===id);onCollegeChange(id,first?.AdSectionId||0)}}>{colleges.map(college=><option key={college.AdCollegeId} value={college.AdCollegeId}>{college.AdCollegeName}</option>)}</select></Field> : null}
-        {!lockSection ? <Field label="القسم"><select value={sectionId || ""} onChange={(event)=>onSectionChange(Number(event.target.value)||0)}>{availableSections.map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select></Field> : null}
+        {!hideSection && !lockSection ? <Field label="القسم"><select value={sectionId || ""} onChange={(event)=>onSectionChange(Number(event.target.value)||0)}>{availableSections.map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select></Field> : null}
         <Field label="الفصل">
           <select value={termId || ""} onChange={(event) => onTermChange(Number(event.target.value) || 0)}>
             {[...terms].sort((a, b) => b.AdTermId - a.AdTermId).map((term) => (

@@ -182,6 +182,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [roomPick, setRoomPick] = useState<{ room: string; point: number | null } | null>(null);
   const [ask, setAsk] = useState("");
   const [askNote, setAskNote] = useState<string | null>(null);
+  const [mobileWideNotice, setMobileWideNotice] = useState<Lens | null>(null);
 
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
 
@@ -661,11 +662,23 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [roomPick]);
 
-  const selectLens = (next: Lens) => runVisualTransition(() => {
-    setLens(next);
-    setOpenGroup(null);
-    setRoomPick(null);
-  });
+  const selectLens = (next: Lens) => {
+    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+    if (phone && (next === "week" || next === "room" || next === "matrix")) {
+      setMobileWideNotice(next);
+      return;
+    }
+    runVisualTransition(() => {
+      setLens(next);
+      setOpenGroup(null);
+      setRoomPick(null);
+    });
+  };
+
+  useEffect(() => {
+    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+    if (phone && (lens === "week" || lens === "room" || lens === "matrix")) setLens("list");
+  }, []);
 
   const moveLensFocus = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = shownLenses.length - 1;
@@ -862,6 +875,16 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         ))}
       </nav>
 
+      {mobileWideNotice ? (
+        <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="هذا العرض يحتاج كمبيوتر">
+          <div className="mobile-desktop-gate-card">
+            <span className="mobile-desktop-gate-icon"><Table2 aria-hidden="true" /></span>
+            <div><strong>{mobileWideNotice === "week" ? "عرض الأسبوع" : mobileWideNotice === "room" ? "إشغال القاعات" : "القاعات × الأوقات"}</strong><p>هذا العرض يعتمد على مساحة أفقية كبيرة. على الهاتف ثبّتناه بدل أن نضغطه أو نجعلك تطارد أعمدة صغيرة. افتحه من الكمبيوتر لتظهر البيانات كاملة وبوضوح.</p></div>
+            <button type="button" onClick={() => setMobileWideNotice(null)}>حسنًا</button>
+          </div>
+        </div>
+      ) : null}
+
       <section
         className="query-canvas"
         id="query-lens-panel"
@@ -886,12 +909,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           </div>
         </header>
 
-        {lens === "week" || lens === "room" || lens === "matrix" ? (
-          <div className="query-wide-mobile-note no-print" role="note">
-            <strong>عرض واسع</strong>
-            <span>يعمل على الهاتف بالسحب الأفقي، لكن القراءة الكاملة أدق وأريح على الكمبيوتر.</span>
-          </div>
-        ) : null}
 
         {loading || pending ? (
           <QuerySkeleton />

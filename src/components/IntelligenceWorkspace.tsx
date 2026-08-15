@@ -207,11 +207,10 @@ const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
           <ChevronLeft aria-hidden="true" />
           {backLabel}
         </button>
-        <div>
+        <div className="insight-page-title">
           <span className="surface-kicker">{active.detail}</span>
-          <strong>{active.label}</strong>
+          <span className="insight-title-line"><strong>{active.label}</strong>{active.metric ? <b className="insight-page-metric">{active.metric}</b> : null}</span>
         </div>
-        {active.metric ? <b className="insight-page-metric">{active.metric}</b> : null}
       </header>
     );
   return (
@@ -355,6 +354,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
+  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("intel-onboarding-seen") !== "1");
   /* ما قاله الطلاب — والنقلة التي تُصلحه.
      Loaded with everything else, and empty is the ordinary state: a department
      that has never opened the survey sees the door and nothing more. */
@@ -443,8 +443,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         setColleges(sortByName(c, (row:any)=>row.AdCollegeName));
         setSections(sortByName(s, (row:any)=>row.AdSectionName));
         setTerms(t);
-        setCourses(sortByName(lookups.courses || [], (row:any)=>row.CourseName));
-        setInstructors(sortByName(lookups.instructors || [], (row:any)=>row.AdInstructorName));
+        setCourses(sortByName(lookups?.courses || [], (row:any)=>row.CourseName));
+        setInstructors(sortByName(lookups?.instructors || [], (row:any)=>row.AdInstructorName));
         const latest = [...t].sort((a: any, b: any) => b.AdTermId - a.AdTermId)[0]?.AdTermId || 0;
         const scoped = resolveScopeSelection(scopes, 0, isPowerAdmin);
         const defaultCollege = isPowerAdmin
@@ -734,6 +734,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setScenario(copy);
     setScenarioId(copy[0]?.id || "");
     await evaluateScenario(copy);
+    setTwinCard("board");
   };
   const autoSchedule = async () => {
     setBusy(true);
@@ -750,6 +751,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setScenarioId(d.rows[0]?.id || "");
       setMessage(d.summary);
       setTab("twin");
+      setTwinCard("board");
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -1231,6 +1233,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setScenarioId(option.rows[0]?.id || "");
     setInnovationMode("constraints");
     await evaluateScenario(option.rows);
+    setTwinCard("board");
   };
   const saveOptionAsDraft = async (option: any, label: string) => {
     const d = await saveDraft(
@@ -1242,6 +1245,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setMessage(
         `${label} أصبح مسودة فقط. لم يُنشر أي تغيير على الجدول الحقيقي.`,
       );
+  };
+
+  const openScheduleWorkspace = (message?: string) => {
+    if (message) sessionStorage.setItem("schedule-return-note", message);
+    sessionStorage.setItem("schedule-command", "focus");
+    window.location.assign("/FSchedule/Index");
   };
 
   const ContextBar = () => (
@@ -1256,6 +1265,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       online={online}
       lockCollege={resolveScopeSelection(scopes, collegeId, isPowerAdmin).lockCollege}
       lockSection={resolveScopeSelection(scopes, collegeId, isPowerAdmin).lockSection}
+      hideSection={!isPowerAdmin}
       onCollegeChange={(nextCollegeId, firstSectionId) => {
         setCollegeId(nextCollegeId);
         setSectionId(resolveScopeSelection(scopes, nextCollegeId, isPowerAdmin).defaultSectionId || firstSectionId);
@@ -1507,6 +1517,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
       {tab === "command" && overview ? (
         <div className="intel-command-grid intel-insight-workspace">
+          {showOnboarding && !insightScene ? (
+            <aside className="intel-onboarding" role="note">
+              <div><Sparkles aria-hidden="true" /><span><strong>ابدأ من قراءة واحدة</strong><small>كل بطاقة تجيب سؤالاً واحداً. افتحها، اقرأ الرقم أولاً، ثم التفاصيل عند الحاجة.</small></span></div>
+              <button type="button" onClick={() => { localStorage.setItem("intel-onboarding-seen", "1"); setShowOnboarding(false); }}>فهمت</button>
+            </aside>
+          ) : null}
           <nav
             className="insight-preview-rail no-print"
             aria-label="مشاهد قراءة القرار"
@@ -1560,13 +1576,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <header className="insight-page-head">
                 <button type="button" className="insight-back" onClick={() => showScene(null)}>
                   <ChevronLeft aria-hidden="true" />
-                  كل القراءات
+                  العودة إلى مركز القراءات
                 </button>
-                <div>
+                <div className="insight-page-title">
                   <span className="surface-kicker">{activeInsight.detail}</span>
-                  <strong>{activeInsight.label}</strong>
+                  <span className="insight-title-line"><strong>{activeInsight.label}</strong><b className="insight-page-metric"><Num value={activeInsight.metric} /></b></span>
                 </div>
-                <b className="insight-page-metric"><Num value={activeInsight.metric} /></b>
               </header>
             ) : null}
             <p className="sr-only" role="status" aria-live="polite">
@@ -1860,7 +1875,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     <button key={`${proposal.rowId}-${index}`} type="button" onClick={() => {
                       const changes = new Map((proposal.changes || []).map((c: any) => [Number(c.id), c]));
                       const next = rows.map(row => { const change: any = changes.get(Number(row.id)); return change ? { ...row, AdRoomCode: change.AdRoomCode, AdRoomHall: change.AdRoomHall } : row; });
-                      setScenario(next); setScenarioEval(null); setTab("twin"); setMessage(`تم فتح «${proposal.title}» كتجربة فقط — لا شيء محفوظ.`);
+                      setScenario(next); setScenarioEval(null); setTab("twin"); setTwinCard("board"); setMessage(`تم فتح «${proposal.title}» كتجربة فقط — لا شيء محفوظ.`);
                     }}>
                       <span>{proposal.kind === "swap" ? "تبديل شطرنجي" : "تقريب القاعة"}</span>
                       <strong>{proposal.instructorName}</strong>
@@ -2632,7 +2647,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           <CardDeck
             value={twinCard}
             onChange={(next) => showTwinCard(next as TwinCard | null)}
-            backLabel="كل البطاقات"
+            backLabel="العودة إلى بطاقات التجربة"
             title="بطاقات التجربة"
             hint="كل بطاقة تفتح صفحتها وحدها — لا شيء تحت شيء."
             cards={[
@@ -2686,11 +2701,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     <RefreshCw /> أعد التقييم
                   </SecondaryButton>
                   <PrimaryButton
-                    onClick={() => saveDraft("what-if")}
+                    onClick={async () => {
+                      const draft = await saveDraft("what-if");
+                      if (draft) openScheduleWorkspace(`تم حفظ «${draft.name}» كمسودة. أنت الآن في الجدول الحقيقي؛ المسودة لم تُنشر بعد.`);
+                    }}
                     disabled={busy || !changedRows.length}
                   >
                     <Save /> احفظ كمسودة
                   </PrimaryButton>
+                  <GhostButton onClick={() => openScheduleWorkspace("عدت إلى الجدول الحقيقي. النسخة التجريبية لم تغيّر أي موعد منشور.")}>
+                    <CalendarClock /> افتح الجدول الحقيقي
+                  </GhostButton>
                   <GhostButton
                     onClick={() => {
                       setScenario(null);
@@ -3189,9 +3210,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               افتح السيناريو
                             </SecondaryButton>
                             <PrimaryButton
-                              onClick={() =>
-                                saveOptionAsDraft(o, `خطة تلقائية ${o.rank}`)
-                              }
+                              onClick={async () => {
+                                await saveOptionAsDraft(o, `خطة تلقائية ${o.rank}`);
+                                openScheduleWorkspace("حُفظت الخطة التلقائية كمسودة فقط. أنت الآن في الجدول الحقيقي للمراجعة.");
+                              }}
                             >
                               <Save /> احفظ كمسودة
                             </PrimaryButton>
@@ -3504,7 +3526,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           <CardDeck
             value={approveCard}
             onChange={(next) => showApproveCard(next as ApproveCard | null)}
-            backLabel="كل البطاقات"
+            backLabel="العودة إلى بطاقات الاعتماد"
             title="بطاقات الاعتماد"
             hint="كل بطاقة تفتح صفحتها وحدها — لا شيء تحت شيء."
             cards={[

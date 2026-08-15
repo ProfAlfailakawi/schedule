@@ -2474,7 +2474,7 @@
   }
   .lens-week::-webkit-scrollbar{display:none}
   .lens-week>section{
-    flex:0 0:min(86vw,360px);scroll-snap-align:center;
+    flex:0 0 min(86vw,360px);scroll-snap-align:center;
     border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-xs);
   }
 
@@ -2496,4 +2496,96 @@
   .matrix-scroll{border-inline:0;border-radius:0;scroll-snap-type:x proximity}
   .matrix-table{min-width:1040px}
   .matrix-room{box-shadow:1px 0 0 var(--line)}
+}
+
+
+/* ==========================================================================
+   FINAL POLISH — DECISION CENTRE + MOBILE GATES
+   ========================================================================== */
+.intel-onboarding{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s4);
+  padding:var(--s4) var(--s5);border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));
+  border-radius:var(--r-lg);background:linear-gradient(135deg,var(--accent-softer),var(--surface));
+}
+.intel-onboarding>div{display:flex;align-items:center;gap:var(--s3);min-width:0}
+.intel-onboarding svg{width:22px;height:22px;color:var(--accent);flex:none}
+.intel-onboarding span{display:grid;gap:2px}.intel-onboarding strong{font-size:var(--t-sm);font-weight:700}.intel-onboarding small{color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.intel-onboarding button{flex:none;border:0;border-radius:999px;padding:8px 14px;background:var(--accent);color:var(--accent-contrast);font:600 var(--t-xs)/1 var(--font);cursor:pointer}
+
+.insight-page-head{align-items:center}
+.insight-page-title{min-width:0;flex:1;display:grid;gap:3px}
+.insight-title-line{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.insight-title-line>strong{font-size:var(--t-h4);font-weight:650}
+.insight-page-metric{display:inline-flex;align-items:center;min-height:30px;padding:4px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:var(--t-sm);font-weight:750;color:var(--accent-strong,var(--accent));direction:ltr;unicode-bidi:isolate}
+
+/* Give analytical cards a denser editorial rhythm instead of a tall empty sheet. */
+.room-intelligence .intel-rank-list,.professor-intelligence .professor-load-list,.spatial-risk-list{
+  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3);margin-top:var(--s4)
+}
+.intel-rank-list button,.professor-load-list button,.spatial-risk-list article{min-height:86px}
+.intel-rank-list button,.professor-load-list button{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--s3);padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);text-align:start;color:var(--ink)}
+.intel-rank-list button:hover,.professor-load-list button:hover{border-color:color-mix(in srgb,var(--accent) 36%,var(--line));background:var(--accent-softer)}
+.intel-rank-list i{display:block;height:6px;margin-top:8px;border-radius:999px;background:var(--surface-3);overflow:hidden}.intel-rank-list i b{display:block;height:100%;border-radius:inherit;background:var(--accent)}
+.professor-load-list .prof-avatar{width:36px;height:36px;display:grid;place-items:center;border-radius:12px;background:var(--surface-3);color:var(--accent);font-weight:750}
+.professor-load-list button>span:last-of-type{font-size:var(--t-xs);color:var(--muted);max-width:15ch}
+
+.spatial-score-row{display:grid;grid-template-columns:minmax(150px,.65fr) minmax(0,1.35fr);gap:var(--s4);align-items:stretch;margin-top:var(--s4)}
+.spatial-score{display:grid;place-items:center;align-content:center;min-height:150px;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);text-align:center}
+.spatial-score-value{font-size:34px;font-weight:750;line-height:1;direction:ltr;unicode-bidi:isolate}.spatial-score small{margin-top:6px;color:var(--muted);font-size:var(--t-xs)}
+.spatial-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3)}
+.spatial-metrics article{display:flex;flex-direction:column;justify-content:center;gap:4px;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}
+.spatial-metrics b{font-size:26px;line-height:1;font-variant-numeric:tabular-nums}.spatial-metrics span{color:var(--muted);font-size:var(--t-xs)}
+
+/* Heat map: the intensity must actually be visible, not just a number floating in an empty grid. */
+.heat-cell{position:relative;overflow:hidden;isolation:isolate;background:var(--surface-2)}
+.heat-cell>i{position:absolute;inset:3px;border-radius:6px;background:var(--accent);opacity:calc(.04 + (var(--heat,0) * .76));z-index:-1}
+.heat-cell>b{position:relative;z-index:1;font-size:var(--t-xs);font-weight:750;color:var(--ink)}
+.schedule-heatmap>strong{display:grid;place-items:center;min-height:44px;border-bottom:1px solid var(--line);font-size:var(--t-sm)}
+.heat-legend{align-items:center}.heat-legend i{width:26px;height:8px;border-radius:999px;background:var(--accent)}.heat-legend i:nth-of-type(1){opacity:.15}.heat-legend i:nth-of-type(2){opacity:.35}.heat-legend i:nth-of-type(3){opacity:.58}.heat-legend i:nth-of-type(4){opacity:.82}
+
+.schedule-genome .genome-core{grid-template-columns:minmax(180px,.62fr) minmax(0,1.38fr);align-items:start;gap:var(--s4)}
+.genome-days{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
+.genome-days article{display:grid;grid-template-columns:72px minmax(0,1fr) auto;align-items:center;gap:var(--s2);padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.genome-days article i{height:6px;border-radius:999px;background:var(--surface-3);overflow:hidden}.genome-days article i b{display:block;height:100%;background:var(--accent)}
+.genome-days article strong{font-size:var(--t-xs);direction:ltr}.genome-rooms{grid-column:2;align-items:center;padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)}
+.genome-rooms>span{color:var(--muted);font-size:var(--t-xs)}.genome-rooms>b{padding:5px 8px;border-radius:999px;background:var(--surface);font-size:var(--t-xs)}
+
+/* Copilot side rail becomes two compact utility cards instead of a dense column. */
+.copilot-context{display:grid;gap:var(--s3);align-self:start}.copilot-context>.surface{padding:var(--s4);box-shadow:none}
+.copilot-context h3{margin:4px 0 0;font-size:var(--t-h4)}.copilot-context p{margin:5px 0 0;color:var(--muted);font-size:var(--t-xs);line-height:1.65}
+.mini-command-list{display:grid;grid-template-columns:1fr;gap:var(--s2)}
+.mini-command-list button{justify-content:flex-start;border-radius:var(--r-sm);background:var(--surface-2)}
+
+/* What-if editor: ordinary controls, not giant native blue checkboxes. */
+.scenario-fields{grid-template-columns:repeat(4,minmax(0,1fr));align-items:end}
+.scenario-days{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--s2);padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.scenario-days label{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:var(--t-xs);cursor:pointer}
+.scenario-days input{appearance:none;width:16px;height:16px;margin:0;border:1.5px solid var(--line-strong);border-radius:5px;background:var(--surface);display:grid;place-items:center}
+.scenario-days input:checked{border-color:var(--accent);background:var(--accent)}.scenario-days input:checked::after{content:"✓";font-size:11px;line-height:1;color:var(--accent-contrast);font-weight:900}
+
+.twin-score-row,.version-diff{grid-template-columns:repeat(3,minmax(0,1fr))}.twin-score-row>article,.version-diff>article{text-align:center}
+.term-compare .compare-controls,.versions-card .version-compare{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.term-compare .compare-result{grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--s3)}
+.term-compare .compare-result>article,.term-compare .compare-result>div{padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);text-align:center}.term-compare .compare-result strong{display:block;font-size:var(--t-h4);font-weight:750;direction:ltr}.term-compare .compare-result span{display:block;margin-top:4px;color:var(--muted);font-size:var(--t-xs)}
+.compare-diff{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3);margin-top:var(--s4)}.compare-column{border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}.compare-column>h3{display:flex;justify-content:space-between;align-items:center;margin:0;padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);font-size:var(--t-sm)}.compare-rows{max-height:440px;overflow:auto}
+
+/* Range on an RTL page was mirrored by the browser. Canvas math is left-based, so the range is LTR too. */
+.time-travel-slider{direction:ltr}.time-travel-stage{direction:ltr}.time-travel-caption{direction:ltr}.time-travel-meta{direction:rtl}
+
+/* Shared phone gate: wide analytical canvases are intentionally desktop-only. */
+.mobile-desktop-gate{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:color-mix(in srgb,#06110e 54%,transparent);backdrop-filter:blur(8px)}
+.mobile-desktop-gate-card{width:min(92vw,440px);display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s3);align-items:start;padding:22px;border:1px solid color-mix(in srgb,var(--accent) 32%,var(--line));border-radius:24px;background:var(--surface);box-shadow:0 24px 80px rgba(0,0,0,.24)}
+.mobile-desktop-gate-icon{width:46px;height:46px;display:grid;place-items:center;border-radius:14px;background:var(--accent-softer);color:var(--accent)}.mobile-desktop-gate-icon svg{width:22px;height:22px}
+.mobile-desktop-gate-card strong{display:block;font-size:18px}.mobile-desktop-gate-card p{margin:6px 0 0;color:var(--muted);font-size:13px;line-height:1.75}.mobile-desktop-gate-card>button{grid-column:1/-1;min-height:44px;border:0;border-radius:12px;background:var(--accent);color:var(--accent-contrast);font:700 14px/1 var(--font);cursor:pointer}
+
+@media screen and (max-width:900px){
+  .room-intelligence .intel-rank-list,.professor-intelligence .professor-load-list,.spatial-risk-list{grid-template-columns:1fr}
+  .spatial-score-row,.schedule-genome .genome-core{grid-template-columns:1fr}.spatial-metrics{grid-template-columns:repeat(3,1fr)}.genome-rooms{grid-column:auto}.scenario-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .term-compare .compare-result,.compare-diff{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media screen and (max-width:640px){
+  .intel-onboarding{align-items:flex-start}.intel-onboarding>div{align-items:flex-start}.intel-onboarding button{align-self:center}
+  .insight-page-head{top:68px;gap:var(--s2)}.insight-back{max-width:42%;white-space:normal;line-height:1.35}.insight-title-line{gap:var(--s2)}
+  .spatial-metrics{grid-template-columns:1fr}.genome-days{grid-template-columns:1fr}.scenario-fields{grid-template-columns:1fr}.scenario-days{display:grid;grid-template-columns:repeat(2,1fr)}
+  .term-compare .compare-result,.compare-diff,.twin-score-row,.version-diff{grid-template-columns:1fr}
 }

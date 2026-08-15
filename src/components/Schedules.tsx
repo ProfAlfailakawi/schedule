@@ -355,6 +355,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      the toolbar even after its fields are folded away. */
   const [lensOpen, setLensOpen] = useState(false);
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
+  const [mobileViewGate, setMobileViewGate] = useState<"week" | "rooms" | null>(null);
+  const [returnNote] = useState(() => {
+    const note = sessionStorage.getItem("schedule-return-note") || "";
+    sessionStorage.removeItem("schedule-return-note");
+    return note;
+  });
   const [contextRelatedOpen, setContextRelatedOpen] = useState(false);
   const [contextCommentsOpen, setContextCommentsOpen] = useState(false);
   const rippleTimer = useRef<number | undefined>(undefined),
@@ -1266,7 +1272,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     ),
     selectedInstructor = instructorById.get(form.AdInstructorId);
   const changeView = useCallback((value: string) => {
-    startTransition(() => setViewMode(value === "week" ? "week" : value === "rooms" ? "rooms" : "list"));
+    const next = value === "week" ? "week" : value === "rooms" ? "rooms" : "list";
+    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+    if (phone && next !== "list") {
+      setMobileViewGate(next);
+      return;
+    }
+    startTransition(() => setViewMode(next));
+  }, []);
+  useEffect(() => {
+    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
+    if (phone && viewMode !== "list") setViewMode("list");
   }, []);
   const filterScope = resolveScopeSelection(scopes, filterCollege, isPowerAdmin);
   const formScope = resolveScopeSelection(scopes, form.AdCollegeId, isPowerAdmin);
@@ -5020,7 +5036,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   if (mode === "copy")
     return (
       <div className="content-stack copy-page">
-        <PageTitle
+<PageTitle
           eyebrow="أداة إدارية ذكية"
           subtitle="معاينة كاملة قبل التنفيذ"
         >
@@ -5742,6 +5758,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       >
         الجدول الدراسي
       </PageTitle>
+      {mobileViewGate ? (
+        <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="هذا العرض يحتاج كمبيوتر">
+          <div className="mobile-desktop-gate-card">
+            <span className="mobile-desktop-gate-icon">{mobileViewGate === "week" ? <CalendarDays /> : <MapPin />}</span>
+            <div><strong>{mobileViewGate === "week" ? "عرض الأسبوع" : "عرض القاعات"}</strong><p>على الهاتف نحافظ على الجدول ثابتًا وقابلًا للقراءة. هذا العرض يحتاج شاشة كمبيوتر حتى تظهر الأعمدة والحركة بدقة ومن دون قص أو التفاف.</p></div>
+            <button type="button" onClick={() => setMobileViewGate(null)}>حسنًا</button>
+          </div>
+        </div>
+      ) : null}
+      {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
       {physicsNotice || undoPoint ? (

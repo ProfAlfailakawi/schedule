@@ -4634,8 +4634,8 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
   if (resolved.link.kind !== "survey") { res.status(404).json({ error: "هذا الرابط ليس استبياناً" }); return; }
 
-  const [courses, history, sections, terms] = await Promise.all([
-    Repository.getCourses(), Repository.getSchedules(), Repository.getSections(), Repository.getTerms(),
+  const [courses, history, sections, terms, colleges] = await Promise.all([
+    Repository.getCourses(), Repository.getSchedules(), Repository.getSections(), Repository.getTerms(), Repository.getColleges(),
   ]);
   /* The courses offered are the ones this section has ACTUALLY taught — read
      from its own history, newest first. A catalogue entry nobody has taught in
@@ -4654,6 +4654,7 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   res.setHeader("Cache-Control", "no-store");
   res.json({
     section: sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "",
+    college: colleges.find(row => row.AdCollegeId === resolved.link.AdCollegeId)?.AdCollegeName || "",
     term: terms.find(row => row.AdTermId === resolved.link.AdTermId)?.AdTermName || "",
     label: resolved.link.label, expiresAt: resolved.link.expiresAt,
     courses: offered,
@@ -5489,6 +5490,9 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .fold .grid{display:none;padding:0 10px 12px}
 .fold.open .grid{display:grid}
 .fold[hidden]{display:none}
+.cohort-badge{display:inline-flex;align-items:center;gap:8px;margin:0 0 16px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(110,204,180,.08);color:var(--dim);font-size:13px}
+.cohort-badge b{color:var(--mint);font-weight:700}.cohort-badge i{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 4px rgba(110,204,180,.09)}
+.gender-note{margin:-4px 0 16px;color:var(--dim);font-size:12px;line-height:1.7}
 
 .count{
   position:sticky;inset-block-end:0;z-index:3;
@@ -5553,8 +5557,12 @@ function arCourses(n){
        a dozen courses folding them away only hides them; with sixty it is the
        difference between a page and a wall. One group is never folded — a
        grouping of one is not a grouping. */
-    var openAll = groups.length<2 || d.courses.length<=14;
+    var openAll = groups.length < 2;
+    var scopeText=(d.college||"")+" "+(d.section||"");
+    var cohort=/بنات/.test(scopeText)?"طالبات":/بنين/.test(scopeText)?"طلاب":"طلبة";
     body.innerHTML=
+      '<div class="cohort-badge"><i></i><span>الفئة: <b>'+cohort+'</b></span></div>'+
+      '<p class="gender-note">الفئة محددة من رابط القسم نفسه حتى لا تختلط إجابات البنات والبنين.</p>'+
       '<div class="step"><b>1</b> أي المقررات تحتاجها؟</div>'+
       '<div class="seek"><input id="seek" type="search" inputmode="search" '+
         'placeholder="ابحث باسم المقرر أو رمزه…" autocomplete="off" enterkeyhint="search">'+
@@ -5661,7 +5669,7 @@ function arCourses(n){
       fetch("/api/public/survey/"+encodeURIComponent(TOKEN),{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({name:document.getElementById("nm").value.trim(),
-          civil:document.getElementById("cv").value,courseIds:[].slice.call(picked)})
+          civil:document.getElementById("cv").value,courseIds:Array.from(picked)})
       }).then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});})
         .then(function(x){
           if(!x.ok){ document.getElementById("err").innerHTML='<div class="err">'+esc(x.d.error)+'</div>';
