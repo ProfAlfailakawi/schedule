@@ -1108,6 +1108,37 @@ async function runTests() {
       "grouping loses no lecture; it only stops drawing them on top of each other");
   }
 
+  /* --- 26. ملاحظة بلا تاريخ ------------------------------------------------- */
+  originalLog("\n--- 26. A note without a date ---");
+  {
+    /* The failure an instructor actually saw: choosing «أحتاج تعديلاً» and
+       sending. There is no date on that kind of request, so the field arrived
+       as `undefined` — and Firestore rejects undefined outright, as an error
+       and not as a null. The whole write failed and the person was told the
+       system was broken. */
+    const written = await Repository.createScheduleComment({
+      SystemUserId: 0, userName: "د. نورة", scheduleId: 1,
+      AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+      text: "طلب تعديل — تعارض مع اجتماع القسم",
+      source: "staff-card", fromInstructorId: 7, kind: "change",
+      fromDate: undefined, toDate: undefined,
+    } as any);
+    assert(!("fromDate" in written), "an absent date is absent, not undefined");
+    assert(!("toDate" in written), "…and so is its pair");
+    assert(written.kind === "change" && written.source === "staff-card",
+      "everything the note DOES carry survives untouched");
+    assert(Object.values(written).every(value => value !== undefined),
+      "no field of a stored note is ever undefined");
+
+    const dated = await Repository.createScheduleComment({
+      SystemUserId: 0, userName: "د. نورة", scheduleId: 2,
+      AdCollegeId: 1, AdSectionId: 1, AdTermId: 1,
+      text: "اعتذار", source: "staff-card", fromInstructorId: 7,
+      kind: "apology", fromDate: "2026-11-08",
+    } as any);
+    assert(dated.fromDate === "2026-11-08", "a date that IS given is kept");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");

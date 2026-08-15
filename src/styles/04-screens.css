@@ -239,9 +239,12 @@
   border-radius:var(--r-xs);
   background:var(--accent);
   color:var(--accent-contrast);
-  /* A real gap, not an inset line: `clip-path` takes 1px off each end so two
-     adjacent blocks never touch, whatever their computed widths. */
-  clip-path:inset(0 1px 0 1px round 4px);
+  /* A real gap, not an inset line — but made with a MARGIN, not a clip.
+     `clip-path` did separate the blocks and then went on cutting whatever was
+     under the cut: the «×» of «×11» sat within that first pixel and was sliced
+     off, so a grouped block read as «:11». A clip cannot tell a border from a
+     glyph; a margin never touches the text. */
+  margin-inline:1px;
   overflow:hidden;
   container-type:inline-size;
   transition:transform .16s var(--ease),box-shadow .16s var(--ease);
@@ -286,13 +289,19 @@
   font:600 9.5px/1.5 var(--font-mono);letter-spacing:0;
   white-space:nowrap;direction:ltr;unicode-bidi:isolate;
 }
-/* Concurrent lectures collapse into one block; it says how many rather than
-   printing several course codes over each other. */
+/* Concurrent lectures collapse into one block that says how many.
+ *
+ * It stays the board's own green — a washed-out tint read as "disabled", which
+ * is the opposite of what a busy hour is. What separates it from a single
+ * lecture is a ring, not a lighter colour. */
 .daybar-block[data-many="true"]{
-  background:color-mix(in srgb,var(--accent) 24%,var(--surface-2));
-  border:1px solid color-mix(in srgb,var(--accent) 34%,transparent);
+  background:var(--accent);
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,#fff 45%,transparent);
 }
-.daybar-block[data-many="true"] b{font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
+.daybar-block[data-many="true"] b{
+  font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;
+  font-weight:700;letter-spacing:.02em;
+}
 .daybar-scale{position:relative;height:18px;margin-top:var(--s2)}
 .daybar-scale span{
   position:absolute;top:0;transform:translateX(50%);

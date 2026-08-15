@@ -1954,6 +1954,12 @@ export const Repository = {
 
   createScheduleComment: async (entry: Omit<ScheduleComment, "id" | "createdAt" | "resolved"> & { resolved?: boolean }): Promise<ScheduleComment> => {
     const row: ScheduleComment = { ...entry, id: randomUUID(), createdAt: new Date().toISOString(), resolved: Boolean(entry.resolved) };
+    /* Firestore refuses `undefined` outright — not as a null, as an error — so a
+       note with no date («أحتاج تعديلاً» without one) failed the whole write and
+       the instructor was told the system was broken. An absent field is absent,
+       not undefined. */
+    for (const key of Object.keys(row) as Array<keyof ScheduleComment>)
+      if (row[key] === undefined) delete row[key];
     if (firestoreDb) {
       await firestoreDb.collection("scheduleComments").doc(row.id).set(row);
       return row;

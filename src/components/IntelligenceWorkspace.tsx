@@ -194,6 +194,44 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
    * under the strip — so bringing the strip to the top of the window puts the
    * chosen reading under it every time. A fixed anchor cannot go stale.
    */
+  /**
+   * ── شريط داخل المشهد ────────────────────────────────────────────────────
+   *
+   * The reading tabs solved stacking for «افهم» and left the other two scenes
+   * exactly as they were: «جرّب» stacks three cards and «اعتمد» three more,
+   * each one a full screen tall, with nothing to say which is which until you
+   * have scrolled past the previous one.
+   *
+   * The same strip answers it. One card at a time, chosen by name — not a
+   * second mechanism, the same one these readings already use.
+   */
+  const [twinCard, setTwinCard] = useState<"hero" | "lab">("hero");
+  const [approveCard, setApproveCard] = useState<"compare" | "drafts" | "versions">("compare");
+
+  const CardStrip = ({ value, options, onChange }: {
+    value: string;
+    options: Array<{ value: string; label: string; icon?: React.ReactNode }>;
+    onChange: (next: string) => void;
+  }) => (
+    <nav className="insight-preview-rail card-strip no-print" aria-label="بطاقات هذا المشهد">
+      <div className="insight-preview-list" role="tablist">
+        {options.map(option => (
+          <button
+            key={option.value}
+            type="button"
+            role="tab"
+            aria-selected={value === option.value}
+            className={`insight-preview ${value === option.value ? "active" : ""}`}
+            onClick={() => onChange(option.value)}
+          >
+            {option.icon ? <span className="insight-preview-icon" aria-hidden="true">{option.icon}</span> : null}
+            <span className="insight-preview-copy"><strong>{option.label}</strong></span>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+
   const showScene = (value: InsightScene) => {
     setInsightScene(value);
     requestAnimationFrame(() => {
@@ -2003,6 +2041,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
       {tab === "twin" ? (
         <div className="twin-layout">
+          <CardStrip
+            value={twinCard}
+            onChange={(next) => setTwinCard(next as "hero" | "lab")}
+            options={[
+              { value: "hero", label: "النسخة التجريبية", icon: <Dna /> },
+              { value: "lab", label: "مختبر القرار", icon: <WandSparkles /> },
+            ]}
+          />
+          {twinCard === "hero" ? (
           <Surface className="twin-hero">
             <div>
               <span className="surface-kicker">نسخة الجدول التجريبية</span>
@@ -2056,6 +2103,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               )}
             </div>
           </Surface>
+          ) : null}
+          {twinCard === "lab" ? (
           <Surface className="innovation-suite">
             <div className="innovation-suite-head">
               <div>
@@ -2560,6 +2609,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
             ) : null}
           </Surface>
+          ) : null}
           {scenario ? (
             <>
               <section className="twin-score-row">
@@ -2843,6 +2893,16 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
       {tab === "history" ? (
         <div className="history-layout">
+          <CardStrip
+            value={approveCard}
+            onChange={(next) => setApproveCard(next as "compare" | "drafts" | "versions")}
+            options={[
+              { value: "compare", label: "مقارنة الفصول", icon: <ArrowLeftRight /> },
+              { value: "drafts", label: "المسودات", icon: <FileClock /> },
+              { value: "versions", label: "سجل النسخ", icon: <History /> },
+            ]}
+          />
+          {approveCard === "compare" ? (
           <Surface className="term-compare">
             <div className="surface-head">
               <div>
@@ -2962,7 +3022,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
             ) : null}
           </Surface>
-
+          ) : null}
+          {approveCard === "drafts" ? (
           <Surface className="drafts-card">
             <div className="surface-head">
               <div>
@@ -3022,6 +3083,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               )}
             </div>
           </Surface>
+          ) : null}
+          {approveCard === "versions" ? (
           <Surface className="versions-card">
             <div className="surface-head">
               <div>
@@ -3162,6 +3225,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               )}
             </div>
           </Surface>
+          ) : null}
         </div>
       ) : null}
 

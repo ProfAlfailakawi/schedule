@@ -2148,3 +2148,17 @@
      column takes the width and the rail sits under it. */
   .copilot-layout{grid-template-columns:minmax(0,1fr)}
 }
+
+/* ── شريط البطاقات داخل المشهد ─────────────────────────────────────────────
+ *
+ * «جرّب» stacked two full-height cards and «اعتمد» stacked three, with nothing
+ * to say which was which until you had scrolled past the one before it. They
+ * borrow the reading strip rather than inventing a second control — one card at
+ * a time, chosen by name, everywhere in this workspace.
+ *
+ * It carries no metric badge: these are places, not measurements.
+ */
+.card-strip{margin-block-end:var(--s4)}
+.card-strip .insight-preview{gap:var(--s2)}
+.card-strip .insight-preview-copy strong{font-size:var(--t-sm)}
+.card-strip .insight-preview-icon svg{width:14px;height:14px}

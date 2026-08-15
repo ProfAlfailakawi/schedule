@@ -772,8 +772,20 @@ button.schedule-radar:hover{filter:brightness(.96)}
 .week-when time{font-variant-numeric:tabular-nums;font-family:var(--font-mono);font-size:clamp(8px,calc(6.3px + 1.3cqw),12px);flex:none;letter-spacing:-.3px}
 .week-when i{font-style:normal;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* The catalogue number identifies the card without competing with its name. */
+/*
+   ── الختم والعنوان على الجانب نفسه ─────────────────────────────────────────
+ *
+ * The last collision, and the simplest: the title reserves its gutter with
+ * `padding-inline-END`, and the stamp sat at `inset-inline-START`. In an Arabic
+ * card those are OPPOSITE edges — the title kept a space clear on the left and
+ * the stamp stood on the right, which is exactly where the first word of every
+ * Arabic title begins. Two rules, each correct alone, reserving and occupying
+ * different sides of the same card.
+ *
+ * They agree now: the gutter is at the end, and so is the stamp.
+ */
 .week-code{
-  position:absolute;inset-block-start:3px;inset-inline-start:4px;
+  position:absolute;inset-block-start:3px;inset-inline-end:4px;
   display:inline-flex;align-items:center;gap:2px;
   /* Capped to the gutter reserved for it above, and told to shorten itself
      rather than grow over the name it sits beside. */

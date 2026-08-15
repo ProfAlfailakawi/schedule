@@ -4267,6 +4267,12 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     termId: displayTermId,
     // Newest first, so the instructor can pin any semester from the card (Idea 2).
     availableTerms: [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).map(t => ({ id: t.AdTermId, name: t.AdTermName })),
+    /* Only the newest term is LIVE. An older one is a record: reporting an
+       apology against a semester that has ended asks the department to act on
+       something already past, and subscribing a phone to it fills a calendar
+       with lectures that will never happen again. Both are offered on the
+       current term alone. */
+    liveTermId: [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId))[0]?.AdTermId || 0,
     expiresAt: link.expiresAt,
     // The subscription key. Handed out only here — after the card has already
     // established who is holding it — so the civil ID never reaches a URL.
@@ -4852,6 +4858,11 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
 .saydone span{color:var(--dim);font-weight:400}
 @media (prefers-reduced-motion:reduce){.sayform{animation:none}}
 @media print{button.say,.sayform{display:none !important}}
+.pastnote{
+  margin-block-end:14px;padding:11px 13px;border-radius:12px;
+  border:1px solid var(--line);background:color-mix(in srgb,var(--brass) 9%,transparent);
+  color:var(--dim);font-size:12.5px;line-height:1.8;
+}
 .foot{margin-top:26px;color:#4d5a55;font-size:11.5px;text-align:center;line-height:1.9}
 /* The approved report table — the same five-column week the reports print,
    so the professor's shared card and the official sheet read as one family. */
@@ -5054,17 +5065,26 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         return lead+'<div class="slot" data-lecture="'+row.id+'"><strong>'+esc(row.name||row.code)+'</strong>'+
                '<time>'+esc(row.start)+'–'+esc(row.end)+'</time>'+
                '<small>'+[row.code,row.section&&("شعبة "+row.section),(row.room||row.hall)&&(esc(row.room)+"/"+esc(row.hall))].filter(Boolean).join(" · ")+'</small>'+
-               '<button type="button" class="say" data-say="'+row.id+'" aria-expanded="false">أبلغ القسم</button>'+
+               (live ? '<button type="button" class="say" data-say="'+row.id+'" aria-expanded="false">أبلغ القسم</button>' : '')+
                '<div class="sayform" hidden></div></div>';
       }).join("");
       return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.from+"–"+day.span.to:"")+'</em></h2>'+body+'</section>';
     }).join("");
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
+    /* Absence needs a reason. A missing button reads as a fault; one sentence
+       says the term is closed and points at the one that is not. */
+    else if(!live) document.getElementById("days").insertAdjacentHTML("afterbegin",
+      '<div class="pastnote">فصل سابق — للاطلاع فقط. الإبلاغ وإضافة التقويم متاحان في الفصل الحالي.</div>');
     renderChanges(d,value);
     wireNotes(value);
 
     /* The subscription address. It carries a derived key, never the civil ID,
        so it is safe to sit in a phone's calendar settings forever. */
+    /* A past term is read, not acted on: no reporting, no subscription. */
+    var live = !d.liveTermId || Number(d.termId) === Number(d.liveTermId);
+    document.getElementById("ics").style.display = live ? "" : "none";
+    if(!live) document.getElementById("sub").setAttribute("hidden","");
+
     var base = "/api/public/ics/"+encodeURIComponent(TOKEN)+"/"+encodeURIComponent(d.calendarKey||"");
     /* The reminder is the subscriber's own choice and travels inside their own
        subscription — a department cannot decide to make four hundred phones
@@ -5114,13 +5134,26 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
             '<label><input type="radio" name="k'+slot.dataset.lecture+'" value="apology" checked> أعتذر عن هذه المحاضرة</label>'+
             '<label><input type="radio" name="k'+slot.dataset.lecture+'" value="change"> أحتاج تعديلاً</label>'+
           '</div>'+
-          '<input type="date" class="sayfrom" aria-label="التاريخ المعني">'+
+          /* The date belongs to an apology — «أعتذر عن محاضرة يوم كذا» — and
+             to nothing else. On «أحتاج تعديلاً» it asked for a day the request
+             does not have, so it appears only with the answer that needs it. */
+          '<input type="date" class="sayfrom" aria-label="تاريخ المحاضرة" hidden>'+
           '<textarea class="saytext" rows="2" maxlength="400" placeholder="سطر واحد يوضّح المطلوب (اختياري للاعتذار)"></textarea>'+
           '<button type="button" class="saysend">إرسال إلى القسم</button>'+
           '<p class="saynote">يصل إلى منسّق القسم مرفقاً بهذه المحاضرة. لا يغيّر الجدول بنفسه.</p>';
         form.removeAttribute("hidden");
         trigger.setAttribute("aria-expanded","true");
         open = form;
+        /* The date follows the choice: shown for an apology, gone otherwise. */
+        var when = form.querySelector(".sayfrom");
+        form.querySelectorAll("input[type=radio]").forEach(function(radio){
+          radio.onchange = function(){
+            if(form.querySelector("input[type=radio]:checked").value === "apology") when.removeAttribute("hidden");
+            else { when.setAttribute("hidden",""); when.value = ""; }
+          };
+        });
+        if(form.querySelector("input[type=radio]:checked").value === "apology") when.removeAttribute("hidden");
+
         form.querySelector(".saysend").onclick = function(){
           var send = form.querySelector(".saysend"), note = form.querySelector(".saynote");
           send.disabled = true; note.textContent = "جارٍ الإرسال…";
