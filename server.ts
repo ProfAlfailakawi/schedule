@@ -3913,6 +3913,20 @@ body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
   font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
   -webkit-font-smoothing:antialiased;padding:max(20px,env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom))}
 .wrap{max-width:760px;margin:0 auto}
+/* ما تغيّر منذ آخر زيارة — سطر واحد بدل قراءة الأسبوع كله بالعين. */
+.since{margin:18px 0 6px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+.since>strong{display:block;font-size:14px;font-weight:600;color:var(--brass);margin-bottom:8px}
+.since ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.since li{display:flex;gap:8px;align-items:baseline;font-size:13px;line-height:1.7;color:var(--ink)}
+.since li b{flex:none;min-width:52px;color:var(--dim);font-size:12px;font-weight:600}
+.since li.t-gone span{color:#e0a3a0}
+.since li.t-add span{color:var(--jade)}
+.since li.t-more{color:var(--dim);font-size:12px}
+.since button{
+  margin-top:12px;padding:8px 16px;border:1px solid var(--line);border-radius:999px;
+  background:transparent;color:var(--ink);font:inherit;font-size:13px;cursor:pointer;
+}
+.since button:hover{border-color:var(--jade);color:var(--jade)}
 .mark{font:600 12px/1 ui-monospace,monospace;letter-spacing:.26em;color:var(--brass)}
 .gate{margin-top:22vh;text-align:center;animation:rise .4s ease both}
 .gate h1{margin:18px 0 6px;font-size:26px;font-weight:600;letter-spacing:-.02em}
@@ -4007,6 +4021,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
       <select id="termPick" aria-label="اختر الفصل الدراسي"></select>
     </div>
     <div class="stats" id="stats"></div>
+    <div id="changes"></div>
     <div id="days"></div>
     <div class="tools">
       <a id="ics" href="#">إضافة إلى التقويم</a>
@@ -4053,6 +4068,59 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
       .then(function(res){if(pick)pick.disabled=false;if(res.ok)render(res.data,currentCivil);else if(pick)note.textContent=res.data&&res.data.error?res.data.error:"";})
       .catch(function(){if(pick)pick.disabled=false});
   }
+  /**
+   * ما الذي تغيّر منذ آخر زيارة.
+   *
+   * The card already shows a whole week; what an instructor actually wants to
+   * know when they open it again is the one line that changed. Comparing needs
+   * no server and no account: the browser remembers the shape of the week it
+   * last showed THIS person, and the difference is computed here. It is their
+   * own device remembering their own card — nothing is stored about them
+   * anywhere else, and clearing the browser simply means the next visit is a
+   * first visit.
+   */
+  function memoryKey(d,value){return "schedule-card-seen-"+value+"-"+(d.termId||0)}
+  function shapeOf(d){
+    var map={};
+    (d.byDay||[]).forEach(function(day,index){
+      (day.rows||[]).forEach(function(row){
+        map[row.id+"|"+index]={n:row.name,s:row.start,e:row.end,r:(row.room||"")+"/"+(row.hall||""),d:day.name};
+      });
+    });
+    return map;
+  }
+  function diffSince(previous,current){
+    var out=[];
+    Object.keys(current).forEach(function(key){
+      var now=current[key],was=previous[key];
+      if(!was){out.push({tone:"add",day:now.d,text:now.n+" أُضيفت "+now.s+"–"+now.e+" · "+now.r});return}
+      if(was.s!==now.s||was.e!==now.e) out.push({tone:"move",day:now.d,text:now.n+" انتقلت "+was.s+" ← "+now.s});
+      if(was.r!==now.r) out.push({tone:"room",day:now.d,text:now.n+" تغيّرت القاعة "+was.r+" ← "+now.r});
+    });
+    Object.keys(previous).forEach(function(key){
+      if(!current[key]) out.push({tone:"gone",day:previous[key].d,text:previous[key].n+" لم تعد في جدولك"});
+    });
+    return out;
+  }
+  function renderChanges(d,value){
+    var host=document.getElementById("changes");
+    if(!host) return;
+    var key=memoryKey(d,value),current=shapeOf(d),previous=null;
+    try{previous=JSON.parse(localStorage.getItem(key)||"null")}catch(e){previous=null}
+    var remember=function(){try{localStorage.setItem(key,JSON.stringify(current))}catch(e){}};
+    if(!previous){host.innerHTML="";remember();return}
+    var changes=diffSince(previous,current);
+    if(!changes.length){host.innerHTML="";remember();return}
+    host.innerHTML='<div class="since"><strong>تغيّر جدولك منذ آخر زيارة</strong><ul>'+
+      changes.slice(0,8).map(function(c){
+        return '<li class="t-'+c.tone+'"><b>'+esc(c.day)+'</b><span>'+esc(c.text)+'</span></li>';
+      }).join("")+
+      (changes.length>8?'<li class="t-more">و'+ar(changes.length-8)+' تغييراً آخر.</li>':'')+
+      '</ul><button type="button" id="seen">فهمت التغييرات</button></div>';
+    var seen=document.getElementById("seen");
+    if(seen) seen.onclick=function(){remember();host.innerHTML=""};
+  }
+
   function render(d,value){
     currentCivil=value;
     document.getElementById("name").textContent=d.name;
@@ -4101,6 +4169,7 @@ button[disabled]{filter:grayscale(.5);opacity:.6;cursor:default}
       return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.from+"–"+day.span.to:"")+'</em></h2>'+body+'</section>';
     }).join("");
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
+    renderChanges(d,value);
 
     document.getElementById("ics").setAttribute("href",
       "/api/public/staff-ics/"+encodeURIComponent(TOKEN)+"?civil="+encodeURIComponent(value));
