@@ -2048,3 +2048,77 @@
 /* A number and the words describing it are two things, and need a gap. */
 .spatial-metrics article{display:flex;align-items:baseline;gap:var(--s2)}
 .spatial-metrics article span{min-width:0}
+
+/* ── الإجابة المرسومة ──────────────────────────────────────────────────────
+ *
+ * The assistant used to answer in a paragraph. Everything it says is measured,
+ * so the measurements come first — read at a glance — and the prose sits under
+ * them for whoever wants the reasoning. Nothing here is decoration: every mark
+ * carries a number the assistant actually computed.
+ */
+.nl-answer{display:grid;gap:var(--s3)}
+.nl-answer>strong{font-size:var(--t-h4);font-weight:650;line-height:1.4}
+
+.nl-figures{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.nl-figure{
+  flex:1 1 108px;min-width:0;display:grid;gap:1px;
+  padding:var(--s3) var(--s3) var(--s2);
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);
+}
+.nl-figure b{font-size:var(--t-h3);font-weight:650;line-height:1.05;letter-spacing:-.01em;color:var(--ink)}
+.nl-figure i{font-style:normal;font-size:var(--t-xs);color:var(--muted);margin-inline-start:3px}
+.nl-figure span{font-size:var(--t-xs);color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Tone is the finding, never the decoration: green means this is fine, amber
+   means look, red means it blocks a save. */
+.nl-figure.tone-good b{color:var(--accent-strong,var(--accent))}
+.nl-figure.tone-good{border-color:color-mix(in srgb,var(--accent) 30%,var(--line));background:var(--accent-softer)}
+.nl-figure.tone-warn b{color:var(--brass,#a9803f)}
+.nl-figure.tone-warn{border-color:color-mix(in srgb,var(--brass,#a9803f) 34%,var(--line))}
+.nl-figure.tone-bad b{color:var(--danger,#a2402f)}
+.nl-figure.tone-bad{border-color:color-mix(in srgb,var(--danger,#a2402f) 30%,var(--line))}
+
+/* A change is two numbers and an arrow. Nothing says "better" faster. */
+.nl-shift{
+  display:flex;align-items:center;gap:var(--s3);
+  padding:var(--s3) var(--s4);border-radius:var(--r-sm);
+  border:1px solid var(--line);background:var(--surface-2);
+}
+.nl-shift>span{font-size:var(--t-xs);color:var(--muted);margin-inline-end:auto}
+.nl-shift b{font-size:var(--t-h4);font-weight:650;color:var(--muted)}
+.nl-shift b.to{color:var(--ink)}
+.nl-shift svg{width:16px;height:16px;color:var(--muted);flex:none}
+.nl-shift.better b.to{color:var(--accent-strong,var(--accent))}
+.nl-shift.better svg{color:var(--accent)}
+.nl-shift.worse b.to{color:var(--brass,#a9803f)}
+
+/* Six bars are read in the time one sentence takes. */
+.nl-bars{display:grid;gap:5px}
+.nl-bar{display:grid;grid-template-columns:minmax(0,7rem) minmax(0,1fr) auto;align-items:center;gap:var(--s3)}
+.nl-bar>span{font-size:var(--t-xs);color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nl-bar>div{height:7px;border-radius:999px;background:var(--surface-3);overflow:hidden}
+.nl-bar>div>i{display:block;height:100%;border-radius:999px;background:var(--accent);opacity:.82}
+.nl-bar>em{font-style:normal;font-size:var(--t-xs);color:var(--muted);font-variant-numeric:tabular-nums;
+  direction:ltr;unicode-bidi:isolate}
+
+/* ── أوامر مفيدة ───────────────────────────────────────────────────────────
+ * The rail was a fixed 280px column that collapsed to about a hundred and
+ * thirty on a narrow screen, squeezing every command into three wrapped lines.
+ * The chips now flow and wrap, so they are readable at any width the rail
+ * happens to get. */
+.mini-command-list{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s3)}
+.mini-command-list button{
+  flex:1 1 auto;min-width:0;max-width:100%;
+  display:inline-flex;align-items:center;gap:var(--s2);
+  padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:999px;
+  background:var(--surface);color:var(--ink);text-align:start;
+  font-size:var(--t-xs);line-height:1.4;cursor:pointer;
+}
+.mini-command-list button>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mini-command-list button svg{width:14px;height:14px;flex:none;color:var(--accent)}
+.mini-command-list button:hover{border-color:var(--accent);background:var(--accent-softer)}
+
+@media screen and (max-width:1080px){
+  /* Below this the side rail is narrower than its own content; the answer
+     column takes the width and the rail sits under it. */
+  .copilot-layout{grid-template-columns:minmax(0,1fr)}
+}

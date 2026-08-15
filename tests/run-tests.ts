@@ -843,6 +843,25 @@ async function runTests() {
     assert(surprises[0].strength >= surprises[surprises.length - 1].strength, "strongest first");
   }
 
+  /* --- 19. الأرقام داخل نصّ عربي ------------------------------------------- */
+  originalLog("\n--- 19. Bidirectional numerals ---");
+  {
+    /* The defect these guard: a Latin number inside an Arabic sentence is an
+       LTR run inside an RTL one, and the characters around it are NEUTRAL —
+       they take the direction of whatever surrounds them. So «58 / 100» is
+       rendered «100/», «+11» becomes «11+», and a label glues to its figure.
+       No CSS on the parent fixes it; the run has to be isolated. */
+    const isolated = (value: string) => /^[\u0660-\u0669\d\s+\-–/%٪.,:]+$/.test(value);
+    assert(isolated("58 / 100"), "a fraction is a pure numeric run and must be isolated whole");
+    assert(isolated("+11") && isolated("-4"), "a sign belongs to the run, not to the sentence");
+    assert(!isolated("58 من 100"), "…and Arabic words are NOT part of it — they stay in the sentence");
+
+    // The counting rule and the isolation rule must not fight: a counted
+    // phrase carries Arabic, so it is never wrapped as a numeric run.
+    assert(!isolated(countOf(3, AR.room)), "a counted phrase is prose, not a numeral");
+    assert(countOf(3, AR.room) === "3 قاعات", "and it still counts correctly");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");

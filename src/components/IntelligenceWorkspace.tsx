@@ -1975,8 +1975,51 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           )}
                         </div>
                       ) : (
-                        <div>
+                        <div className="nl-answer">
                           <strong>{item.answer?.title}</strong>
+
+                          {/* ── الأرقام أولاً ──────────────────────────────
+                              The assistant already measured these; a paragraph
+                              is the slowest way to hand over a number. They are
+                              read at a glance, and the prose beneath explains
+                              them for whoever wants the reasoning. */}
+                          {item.answer?.figures?.length ? (
+                            <div className="nl-figures">
+                              {item.answer.figures.map((f: any, j: number) => (
+                                <article key={j} className={`nl-figure tone-${f.tone || "plain"}`}>
+                                  <b><Num value={f.value} /></b>
+                                  {f.hint ? <i>{f.hint}</i> : null}
+                                  <span>{f.label}</span>
+                                </article>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          {/* A change is two numbers and an arrow between them.
+                              Nothing else says "this improves it" as fast. */}
+                          {item.answer?.shift ? (
+                            <div className={`nl-shift ${item.answer.shift.better ? "better" : "worse"}`}>
+                              <span>{item.answer.shift.label}</span>
+                              <b><Num value={item.answer.shift.before} /></b>
+                              <ArrowLeft aria-hidden="true" />
+                              <b className="to"><Num value={item.answer.shift.after} /></b>
+                            </div>
+                          ) : null}
+
+                          {/* Anything with a proportion is a bar. Six of them
+                              are read in the time one sentence takes. */}
+                          {item.answer?.bars?.length ? (
+                            <div className="nl-bars">
+                              {item.answer.bars.map((b: any, j: number) => (
+                                <div key={j} className="nl-bar">
+                                  <span>{b.label}</span>
+                                  <div><i style={{ width: `${Math.max(2, Math.min(100, (b.value / (b.max || 1)) * 100))}%` }} /></div>
+                                  <em><Num value={b.caption ?? b.value} /></em>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
+
                           <p>{item.answer?.summary}</p>
                           {item.answer?.bullets?.length ? (
                             <ul>
@@ -2034,19 +2077,21 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </Surface>
             <Surface>
               <span className="surface-kicker">أوامر مفيدة</span>
+              {/* These were <span>s: they looked pressable and did nothing.
+                  Each now writes its own question into the box, so the shortest
+                  path to an answer is one press. */}
               <div className="mini-command-list">
-                <span>
-                  <Command /> حلل الفراغات
-                </span>
-                <span>
-                  <Command /> اختبر نقل مقرر
-                </span>
-                <span>
-                  <Command /> اقترح توزيعاً
-                </span>
-                <span>
-                  <Command /> اقرأ القاعات
-                </span>
+                {[
+                  "أين الفراغات الطويلة عند الأساتذة؟",
+                  "إذا نقلت 101 إلى الساعة 11 شنو يتأثر؟",
+                  "اقترح أفضل توزيع يقلل الفراغ",
+                  "اقرأ القاعات وأقلها استخداماً",
+                ].map(text => (
+                  <button key={text} type="button" onClick={() => setPrompt(text)}>
+                    <Command aria-hidden="true" />
+                    <span>{text}</span>
+                  </button>
+                ))}
               </div>
             </Surface>
           </aside>

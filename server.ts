@@ -3072,7 +3072,27 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   if(prompt.length<2){res.status(400).json({error:"اكتب سؤالك للمساعد"});return;}
   const [scheduleData,courses,instructors,sections]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getSections()]);
   const {rows:target,universe}=scheduleData;
-  const analysis=analyzeSchedule(target,universe,courses,instructors); const bullets:string[]=[]; let title="قراءة ذكية للجدول"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${analysis.metrics.criticalConflicts} موضعاً يحتاج تحقق و${analysis.metrics.avgInstructorGap} دقيقة كمتوسط فراغ للأساتذة.`;
+  const analysis=analyzeSchedule(target,universe,courses,instructors); const bullets:string[]=[]; let title="قراءة ذكية للجدول";
+  /**
+   * ── الإجابة المرسومة ──────────────────────────────────────────────────────
+   *
+   * Every branch below already computes real figures — a score, a count of
+   * blockers, minutes of idle time, a utilisation per hall — and then dissolves
+   * all of them into one Arabic sentence. The sentence is worth keeping; the
+   * figures were being thrown away, and a paragraph is the slowest possible way
+   * to deliver a number.
+   *
+   * So each branch now also hands back what it measured, in a shape the screen
+   * can draw: figures for the headline, bars for anything with a proportion,
+   * and a before/after pair when the answer is about a change. The prose stays
+   * underneath for whoever wants the reasoning.
+   */
+  type Figure = { label: string; value: string; tone?: "good"|"warn"|"bad"|"plain"; hint?: string };
+  type Bar = { label: string; value: number; max: number; caption?: string };
+  const figures: Figure[] = [];
+  const bars: Bar[] = [];
+  let shift: { label: string; before: number|string; after: number|string; better?: boolean } | null = null;
+  let shape: "reading"|"alert"|"gaps"|"crowd"|"move"|"plan"|"rooms" = "reading"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${analysis.metrics.criticalConflicts} موضعاً يحتاج تحقق و${analysis.metrics.avgInstructorGap} دقيقة كمتوسط فراغ للأساتذة.`;
   const normalized=prompt.replace(/[؟?]/g,"").toLowerCase();
   const dayMatch=SCHEDULE_DAYS.find(day=>normalized.includes(day.label));
   const hourMatch=normalized.match(/(?:إلى|الى|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?/);
@@ -3081,30 +3101,73 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const requestedInstructor=instructors.find(i=>normalized.includes(String(i.AdInstructorName||"").toLowerCase())||(profHint&&String(i.AdInstructorName||"").toLowerCase().includes(profHint)));
   if(normalized.includes("المشكلة الأكبر")||normalized.includes("اكبر مشكلة")||normalized.includes("أكبر مشكلة")||normalized.includes("وين المشكلة")){
     const topAlert=analysis.alerts?.[0],topFactor=[...(analysis.factors||[])].sort((a:any,b:any)=>b.penalty-a.penalty)[0];title="أكبر نقطة تحتاج تدخلك الآن";summary=topAlert?`${topAlert.title}: ${topAlert.detail}`:topFactor&&topFactor.penalty>0?`أكبر خصم من جودة الجدول حالياً هو ${topFactor.label} (-${topFactor.penalty}).`:`لا تظهر مشكلة حرجة حالياً؛ جودة الجدول ${analysis.score}/100.`;analysis.alerts.slice(1,5).forEach((a:any)=>bullets.push(`${a.title}: ${a.detail}`));
-  } else if(normalized.includes("فراغ")){
+    shape="alert";
+    figures.push({label:"جودة الجدول",value:`${analysis.score}`,tone:analysis.score>=75?"good":analysis.score>=55?"warn":"bad",hint:"من 100"},
+      {label:"موانع الحفظ",value:`${analysis.metrics.criticalConflicts}`,tone:analysis.metrics.criticalConflicts?"bad":"good"},
+      {label:"مواضع تحتاج نظرة",value:`${analysis.alerts?.length||0}`,tone:(analysis.alerts?.length||0)>3?"warn":"plain"});
+    (analysis.factors||[]).filter((f:any)=>f.penalty>0).sort((a:any,b:any)=>b.penalty-a.penalty).slice(0,5)
+      .forEach((f:any)=>bars.push({label:f.label,value:f.penalty,
+        max:Math.max(...(analysis.factors||[]).map((x:any)=>x.penalty||0),1),caption:`−${f.penalty}`}));
+  } else if(/فراغ|فراغات/.test(normalized)){
     title=requestedInstructor?`فراغات ${requestedInstructor.AdInstructorName}`:"تحليل فراغات الأساتذة";
     if(requestedInstructor){const profRows=target.filter(r=>r.AdInstructorId===requestedInstructor.AdInstructorId);if(dayMatch){const items=profRows.filter(r=>Boolean((r as any)[dayMatch.key])).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));const gaps:any[]=[];for(let i=1;i<items.length;i++){const gap=timeToMinutes(items[i].fstarttime)-timeToMinutes(items[i-1].fendtime);if(gap>0)gaps.push({from:items[i-1].fendtime,to:items[i].fstarttime,mins:gap});}summary=items.length?gaps.length?`في ${dayMatch.label} لدى ${requestedInstructor.AdInstructorName} ${gaps.length} فترة فراغ بين المحاضرات، بإجمالي ${gaps.reduce((n,g)=>n+g.mins,0)} دقيقة.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;gaps.slice(0,6).forEach(g=>bullets.push(`${g.from}–${g.to}: ${Math.floor(g.mins/60)}س ${g.mins%60}د.`));}else{const load=analysis.professorLoads.find((x:any)=>x.id===requestedInstructor.AdInstructorId);summary=load?`أكبر فراغ لـ ${requestedInstructor.AdInstructorName} هو ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، والحمل الأسبوعي ${load.weeklyHours} ساعة.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;}}
-    else{const threshold=(Number(normalized.match(/(\d+)\s*ساع/)?.[1]||3))*60; const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);summary=long.length?`وجدت ${long.length} أستاذاً لديهم فراغ يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات في يوم واحد.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";long.slice(0,6).forEach((x:any)=>bullets.push(`${x.name}: أكبر فراغ ${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د، والحمل الأسبوعي ${x.weeklyHours} ساعة.`));}
-  } else if(dayMatch && normalized.includes("مزدحم")){
+    else{const threshold=(Number(normalized.match(/(\d+)\s*ساع/)?.[1]||3))*60; const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);summary=long.length?`وجدت ${long.length} أستاذاً لديهم فراغ يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات في يوم واحد.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";long.slice(0,6).forEach((x:any)=>bullets.push(`${x.name}: أكبر فراغ ${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د، والحمل الأسبوعي ${x.weeklyHours} ساعة.`));
+      shape="gaps";
+      figures.push({label:"أساتذة بفراغ طويل",value:`${long.length}`,tone:long.length?"warn":"good"},
+        {label:"متوسط الفراغ",value:`${analysis.metrics.avgInstructorGap}`,hint:"دقيقة"});
+      const worst=Math.max(1,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
+      [...analysis.professorLoads].sort((a:any,b:any)=>b.maxGap-a.maxGap).slice(0,6)
+        .forEach((x:any)=>bars.push({label:x.name,value:x.maxGap,max:worst,
+          caption:`${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د`}));}
+  } else if(dayMatch && /مزدحم|ازدحام|زحمة/.test(normalized)){
     title=`لماذا ${dayMatch.label} مزدحم؟`; const day=analysis.dayLoad.find((x:any)=>x.key===dayMatch.key); const peaks=analysis.heatmap.filter((x:any)=>x.day===dayMatch.key).sort((a:any,b:any)=>b.count-a.count).slice(0,3);
     summary=`في ${dayMatch.label} يوجد ${countOf(day?.count||0, AR.appointment)}؛ أعلى تزامن ظاهر يصل إلى ${countOf(peaks[0]?.count||0, AR.lecture)} في نصف ساعة واحدة.`;
     peaks.forEach((x:any)=>bullets.push(`${x.time}: ${x.count} محاضرات متزامنة.`));
+    shape="crowd";
+    figures.push({label:dayMatch.label,value:`${day?.count||0}`,hint:"موعداً",tone:"plain"},
+      {label:"أعلى تزامن",value:`${peaks[0]?.count||0}`,tone:(peaks[0]?.count||0)>6?"warn":"plain",hint:"في نصف ساعة"});
+    const busiest=Math.max(1,...analysis.dayLoad.map((x:any)=>x.count||0));
+    analysis.dayLoad.forEach((x:any)=>bars.push({label:x.label||x.key,value:x.count,max:busiest,caption:`${x.count}`}));
   } else if(normalized.includes("إذا نقلت")||normalized.includes("اذا نقلت")){
     title="محاكاة نقل موعد"; const code=courses.find(c=>normalized.includes(String(c.CourseCode).toLowerCase())); const row=code?target.find(r=>r.AdCourseId===code.AdCourseId):target[0];
-    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const before=findConflicts([row],universe).length,after=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate)).length;summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${candidate.fstarttime}–${candidate.fendtime}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");}
+    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const before=findConflicts([row],universe).length,after=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate)).length;summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${candidate.fstarttime}–${candidate.fendtime}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
+      shape="move";
+      shift={label:"موانع الحفظ",before,after,better:after<=before};
+      figures.push({label:"الوقت المقترح",value:`${candidate.fstarttime}`,hint:`حتى ${candidate.fendtime}`,tone:after===0?"good":"bad"});}
     else summary="حدد رمز المقرر والساعة في السؤال، مثال: إذا نقلت 101 إلى الساعة 11 شنو يتأثر؟";
   } else if(normalized.includes("أفضل توزيع")||normalized.includes("افضل توزيع")||normalized.includes("قلل الفراغ")||normalized.includes("تقليل الفراغ")){
     title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
     summary=safer&&proposal.changed?`يمكن إنشاء سيناريو يغيّر وقت ${proposal.changed} موعداً: موانع الحفظ ${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts} والجودة ${analysis.score}/100 ← ${after.score}/100، دون تغيير المقرر أو الأستاذ أو أيام اللقاء أو القاعة.`:"حللت التوزيع الحالي ولم أجد نقلاً تلقائياً آمناً أفضل ضمن القيود نفسها؛ الأفضل تجربة «ماذا لو؟» يدوياً أو تحديد قيد إضافي للمساعد.";
     if(dayMatch)bullets.push(`ذكرت ${dayMatch.label}. سأتعامل معه كأولوية تحليل، لكن لن أغيّر نمط أيام المقرر تلقائياً لأن ذلك قد يكون قيداً أكاديمياً.`);
     bullets.push("افتح «المحاكاة» لمراجعة كل تغيير قبل اعتماده.");
-  } else if(normalized.includes("قاعة")){
+    shape="plan";
+    if(safer&&proposal.changed){
+      shift={label:"جودة الجدول",before:analysis.score,after:after.score,better:after.score>=analysis.score};
+      figures.push({label:"مواعيد ستتحرك",value:`${proposal.changed}`,tone:"plain"},
+        {label:"موانع الحفظ",value:`${analysis.metrics.criticalConflicts} ← ${after.metrics.criticalConflicts}`,
+         tone:after.metrics.criticalConflicts<analysis.metrics.criticalConflicts?"good":"plain"});
+    } else figures.push({label:"لا تحسين آمن",value:"—",tone:"plain",hint:"ضمن القيود نفسها"});
+  /* «قاعة» alone missed «القاعات», which is how anyone actually asks — and how
+     the suggested command on screen is worded. Arabic inflects; a matcher that
+     only knows the singular answers the wrong question. */
+  } else if(/قاع(ة|ات)/.test(normalized)){
     title="ذكاء القاعات"; const low=[...analysis.rooms].sort((a:any,b:any)=>a.utilization-b.utilization).slice(0,5); summary=`أقل القاعات استخداماً داخل نطاق القسم حالياً تظهر أدناه. التوفر الفعلي لأي موعد يُفحص أيضاً مقابل حجوزات الأقسام الأخرى.`; low.forEach((r:any)=>bullets.push(`${r.code}/${r.hall}: استخدام تقريبي ${r.utilization}% (${r.sessions} مواعيد).`));
+    shape="rooms";
+    figures.push({label:"قاعات في النطاق",value:`${analysis.rooms.length}`,tone:"plain"},
+      {label:"أقلّها استخداماً",value:`${low[0]?.utilization??0}`,hint:"٪",tone:(low[0]?.utilization??0)<25?"warn":"plain"});
+    [...analysis.rooms].sort((a:any,b:any)=>b.utilization-a.utilization).slice(0,8)
+      .forEach((r:any)=>bars.push({label:`${r.code}/${r.hall}`,value:r.utilization,max:100,caption:`${r.utilization}٪`}));
   } else {
     analysis.alerts.slice(0,5).forEach((a:any)=>bullets.push(`${a.title}: ${a.detail}`));
     const sectionName=sections.find(s=>s.AdSectionId===sectionId)?.AdSectionName||"القسم"; summary=`قرأت جدول ${sectionName} فقط ضمن صلاحياتك. ${summary}`;
+    figures.push({label:"جودة الجدول",value:`${analysis.score}`,tone:analysis.score>=75?"good":analysis.score>=55?"warn":"bad",hint:"من 100"},
+      {label:"موانع الحفظ",value:`${analysis.metrics.criticalConflicts}`,tone:analysis.metrics.criticalConflicts?"bad":"good"},
+      {label:"متوسط الفراغ",value:`${analysis.metrics.avgInstructorGap}`,hint:"دقيقة"});
+    const busiestDay=Math.max(1,...analysis.dayLoad.map((x:any)=>x.count||0));
+    analysis.dayLoad.forEach((x:any)=>bars.push({label:x.label||x.key,value:x.count,max:busiestDay,caption:`${x.count}`}));
   }
-  res.json({title,summary,bullets,guardrail:"المساعد يحلل ويقترح فقط. لا يكتب أي تغيير على الجدول الحقيقي."});
+  res.json({title,summary,bullets,shape,figures,bars,shift,
+    guardrail:"المساعد يحلل ويقترح فقط. لا يكتب أي تغيير على الجدول الحقيقي."});
 });
 
 app.get("/api/intelligence/context/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
