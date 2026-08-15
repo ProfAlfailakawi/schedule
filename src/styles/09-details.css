@@ -1374,3 +1374,30 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   font-variant-numeric:tabular-nums;
 }
 .repair-note{margin:0;font-size:var(--t-xs);color:var(--muted);line-height:1.7}
+
+/* ── ذاكرة القسم في بطاقة الموعد ──────────────────────────────────────────
+ *
+ * Deliberately the quietest block on the panel. It is background knowledge,
+ * not a decision — a coordinator glances at it, and most of the time it is not
+ * there at all because history had nothing to say about this appointment. */
+.context-memory{
+  margin-block-start:14px;padding:12px 13px;border-radius:14px;
+  border:1px solid var(--line);background:color-mix(in srgb,var(--line) 15%,transparent);
+}
+.context-memory-head{display:flex;align-items:center;gap:8px;margin-block-end:8px}
+.context-memory-head svg{inline-size:15px;block-size:15px;color:var(--ink-2);opacity:.75}
+.context-memory-head span{font:650 12.5px/1 var(--font-ui);color:var(--ink)}
+.context-memory-head small{margin-inline-start:auto;font-size:11px;color:var(--ink-2);opacity:.8}
+.context-memory ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.context-memory li{
+  position:relative;padding-inline-start:13px;font-size:12.5px;line-height:1.85;color:var(--ink-2);
+}
+.context-memory li::before{
+  content:"";position:absolute;inset-inline-start:0;inset-block-start:.72em;
+  inline-size:5px;block-size:5px;border-radius:50%;background:var(--line-strong);
+}
+/* The half nobody would have thought to ask for. Brass, because on this board
+   brass has always meant «recorded», never «wrong». */
+.context-memory li.memory-surprise{color:var(--ink);font-weight:550}
+.context-memory li.memory-surprise::before{background:var(--brass,#a9803f)}
+@media print{.context-memory{display:none !important}}

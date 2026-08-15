@@ -1,4 +1,5 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
+import { AR, countOf } from "../utils/arabicCount";
 
 /**
  * ── ما الذي ينتقل من الفصل الماضي، وما الذي يحتاج قراراً ────────────────────
@@ -135,11 +136,11 @@ export function readTermRollover(
 export function describeRollover(reading: RolloverReading): string {
   const ar = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
   if (!reading.sourceRows) return "لا جدول في الفصل السابق لهذا القسم.";
-  const parts = [`${ar(reading.confident)} موعداً يمكن نقلها بثقة`];
-  if (reading.newCourses.length) parts.push(`${ar(reading.newCourses.length)} مقرراً جديداً`);
-  if (reading.unavailableInstructors.length) parts.push(`${ar(reading.unavailableInstructors.length)} أستاذاً غير متاح`);
-  if (reading.changedCourses.length) parts.push(`${ar(reading.changedCourses.length)} مقرراً تغيّرت بياناته`);
-  if (reading.retiredRooms.length) parts.push(`${ar(reading.retiredRooms.length)} قاعة لم تعد مستخدمة`);
-  if (reading.concerns.length) parts.push(`${ar(reading.concerns.length)} قراراً يستحق المراجعة`);
+  const parts = [`${countOf(reading.confident, AR.appointment)} يمكن نقلها بثقة`];
+  if (reading.newCourses.length) parts.push(`${countOf(reading.newCourses.length, AR.course)} جديد`);
+  if (reading.unavailableInstructors.length) parts.push(`${countOf(reading.unavailableInstructors.length, AR.instructor)} غير متاح`);
+  if (reading.changedCourses.length) parts.push(`${countOf(reading.changedCourses.length, AR.course)} تغيّرت بياناته`);
+  if (reading.retiredRooms.length) parts.push(`${countOf(reading.retiredRooms.length, AR.room)} لم تعد مستخدمة`);
+  if (reading.concerns.length) parts.push(`${countOf(reading.concerns.length, AR.decision)} يستحق المراجعة`);
   return parts.join(" · ");
 }

@@ -2,6 +2,7 @@ import React, { useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, Check, Copy, Download, Plus, Upload, UserMinus, UserPlus, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
+import { AR, countOf } from "../utils/arabicCount";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -350,7 +351,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <p className="transfer-done"><Check /> حُفظت مسودة الاستيراد. راجعها وانشرها من <b>مركز القرار → الاستيراد</b> — النشر يحل محل جدول القسم لهذا الفصل بعد نقطة أمان تلقائية.</p>
                   ) : xlsxPreview.valid ? (
                     <PrimaryButton type="button" onClick={() => void saveExcelDraft()} disabled={busy}>
-                      {busy ? "يحفظ…" : `احفظ ${Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")} موعداً كمسودة للنشر`}
+                      {busy ? "يحفظ…" : `احفظ ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} كمسودة للنشر`}
                     </PrimaryButton>
                   ) : (
                     <p className="muted">صحّح الملاحظات في الملف ثم ارفعه مجدداً — لا يُحفظ استيراد فيه أخطاء.</p>

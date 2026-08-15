@@ -1,4 +1,5 @@
 import type { FSchedule } from "../types";
+import { AR, countOf } from "../utils/arabicCount";
 import { SCHEDULE_DAYS, timeToMinutes, type DayKey } from "./scheduleIntelligence";
 import { patternForDay } from "./weekVisual";
 
@@ -219,7 +220,7 @@ export function offRhythm(
   const [low, high] = rhythm.durationRange;
   if (rhythm.durationMinutes && length > 0 && (length < low || length > high)) {
     const span = low === high ? `${low} دقيقة` : `${clock(low)}–${clock(high)}`;
-    return `مدة محاضرات ${label} في قسمك ${span}، ومدة هذا الموعد ${length} دقيقة.`;
+    return `مدة محاضرات ${label} في قسمك ${span}، ومدة هذا الموعد ${countOf(length, AR.minute)}.`;
   }
   return "";
 }
@@ -234,16 +235,14 @@ export function describeRhythm(reading: RhythmReading): string {
         .map(day => SCHEDULE_DAYS.find(item => item.key === day)?.label || "")
         .filter(Boolean).join("/");
       const parts: string[] = [];
-      if (pattern.durationMinutes) parts.push(`${ar(pattern.durationMinutes)} دقيقة`);
-      if (pattern.breakMinutes) parts.push(`وبينها ${ar(pattern.breakMinutes)} دقائق`);
+      if (pattern.durationMinutes) parts.push(countOf(pattern.durationMinutes, AR.minute));
+      if (pattern.breakMinutes) parts.push(`وبينها ${countOf(pattern.breakMinutes, AR.minute)}`);
       return `${days}: ${parts.join(" ")}`;
     });
   if (!said.length) return "";
   /* Arabic counts three ways and getting it wrong reads as machine output.
      Two is a dual, three to ten take a plural, eleven and up take a singular
      accusative — «١٠ فصول» and «١١ فصلاً», never «١٠ فصلاً». */
-  const terms = reading.learnedFrom.terms;
-  const counted = terms === 1 ? "فصل واحد" : terms === 2 ? "فصلين"
-    : terms <= 10 ? `${ar(terms)} فصول` : `${ar(terms)} فصلاً`;
-  return `${said.join(" · ")} — مقروءة من ${ar(reading.learnedFrom.rows)} موعداً في ${counted}.`;
+  return `${said.join(" · ")} — مقروءة من ${countOf(reading.learnedFrom.rows, AR.appointment)} ` +
+    `في ${countOf(reading.learnedFrom.terms, AR.term)}.`;
 }

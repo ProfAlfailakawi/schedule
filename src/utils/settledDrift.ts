@@ -1,4 +1,5 @@
 import type { AdTerm, FSchedule } from "../types";
+import { AR, countOf } from "../utils/arabicCount";
 import { findConflicts, type ConflictInsight } from "./scheduleIntelligence";
 
 /**
@@ -129,8 +130,8 @@ export function describeDrift(total: number, foreign: number, term: AdTerm | nul
   if (!term || !total) return "";
   const where = term.AdTermName ? `«${term.AdTermName}»` : "الفصل المعتمد";
   if (foreign && foreign === total)
-    return `${where}: ${ar(foreign)} موعداً صار متعارضاً بسبب جدولة من خارج القسم.`;
+    return `${where}: ${countOf(foreign, AR.appointment)} صار متعارضاً بسبب جدولة من خارج القسم.`;
   if (foreign)
-    return `${where}: ${ar(total)} تعارضاً ظهر بعد الاعتماد، ${ar(foreign)} منها من خارج القسم.`;
-  return `${where}: ${ar(total)} تعارضاً ظهر بعد الاعتماد.`;
+    return `${where}: ${countOf(total, AR.conflict)} ظهر بعد الاعتماد، ${ar(foreign)} منها من خارج القسم.`;
+  return `${where}: ${countOf(total, AR.conflict)} ظهر بعد الاعتماد.`;
 }

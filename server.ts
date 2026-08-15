@@ -14,8 +14,10 @@ import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine,
 import type { FSchedule, ScheduleShareLink } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
+import { AR, countOf } from "./src/utils/arabicCount";
 import { readSettledDrift, settledTerm } from "./src/utils/settledDrift";
 import { learnRhythm, offRhythm, describeRhythm, type RhythmReading } from "./src/utils/departmentRhythm";
+import { readDepartmentMemory, type DepartmentMemory } from "./src/utils/departmentMemory";
 import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
@@ -1650,21 +1652,25 @@ function describeScheduleChange(before: any, after: any, instructorName?: (id: n
  * that number is used and the learned one is not — a person who says something
  * out loud outranks a pattern the software inferred.
  */
-const rhythmCache=new Map<string,{serial:number;reading:RhythmReading;doorway:number}>();
+const rhythmCache=new Map<string,{serial:number;reading:RhythmReading;doorway:number;memory:DepartmentMemory}>();
 
-async function departmentStyle(row:any):Promise<{reading:RhythmReading|null;doorway:number}>{
+async function departmentStyle(row:any):Promise<{reading:RhythmReading|null;doorway:number;memory:DepartmentMemory|null}>{
   const collegeId=Number(row?.AdCollegeId||0),sectionId=Number(row?.AdSectionId||0),termId=Number(row?.AdTermId||0);
-  if(!collegeId)return{reading:null,doorway:0};
+  if(!collegeId)return{reading:null,doorway:0,memory:null};
   const key=`${collegeId}:${sectionId}`;
   const cached=rhythmCache.get(key);
   if(cached&&cached.serial===driftSerial)
-    return{reading:cached.reading,doorway:cached.doorway};
+    return{reading:cached.reading,doorway:cached.doorway,memory:cached.memory};
   try{
     // Every term this department has ever run. History is the whole point:
     // a habit is what survives across years, and one term of it is chance.
     const history=(await Repository.getSchedules()).filter(item=>
       Number(item.AdCollegeId)===collegeId&&(!sectionId||Number(item.AdSectionId)===sectionId));
     const reading=learnRhythm(history);
+    /* The same pass answers the memory's questions too — one read of history
+       serves both, and neither is computed again until something is written. */
+    const [memCourses,memPeople]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);
+    const memory=readDepartmentMemory(history,memCourses,memPeople);
     const rules=termId?await Repository.getScheduleConstraints(collegeId,sectionId,termId).catch(()=>[]):[];
     const declared=Number(rules.find(item=>item.type==="room_doorway"&&item.enabled!==false)?.maxMinutes||0);
     /* The learned break is per pattern; the sweep takes one number, so it takes
@@ -1672,10 +1678,10 @@ async function departmentStyle(row:any):Promise<{reading:RhythmReading|null;door
        cannot invent a finding on the looser one. */
     const learned=Math.min(...reading.patterns.map(p=>p.breakMinutes||Infinity));
     const doorway=Math.max(0,Math.min(60,declared||(Number.isFinite(learned)?learned:0)));
-    rhythmCache.set(key,{serial:driftSerial,reading,doorway});
+    rhythmCache.set(key,{serial:driftSerial,reading,doorway,memory});
     if(rhythmCache.size>200)rhythmCache.clear();
-    return{reading,doorway};
-  }catch{return{reading:null,doorway:0};}
+    return{reading,doorway,memory};
+  }catch{return{reading:null,doorway:0,memory:null};}
 }
 
 async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
@@ -1721,7 +1727,31 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     ? [{ type: "rhythm", severity: "low", soft: true, rowId: 0, otherId: 0,
          message: "خارج إيقاع القسم المعتاد", detail: habit }]
     : [];
-  return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel, ...rhythmNote];
+
+  /* ── ذاكرة عشر سنوات، عند لحظة القرار وحدها ─────────────────────────────
+   *
+   * Not a dashboard and not a strip: the question «what does history say about
+   * HERE» is only worth answering while somebody's card is actually over here.
+   * At every other moment it is noise, so at every other moment it is not
+   * computed and not sent.
+   *
+   * At most one sentence about the place and one about the hall. A person
+   * mid-drag can read one line; five lines are a wall they will learn to skip.
+   */
+  const memoryNotes: any[] = [];
+  if (style.memory) {
+    const day = SCHEDULE_DAY_KEYS.find(key => Boolean(candidate[key]));
+    const slot = day ? style.memory.atSlot(day as any, String(candidate.fstarttime || "")) : null;
+    if (slot) memoryNotes.push({ type: "memory", severity: "low", soft: true, rowId: 0, otherId: 0,
+      message: slot.surprising ? "شيء لم ينتبه له أحد" : "من ذاكرة القسم", detail: slot.text });
+    const hall = style.memory.aboutRoom(String(candidate.AdRoomCode || ""), String(candidate.AdRoomHall || ""));
+    // Only the surprising half about a hall: «هذه قاعتك المعتادة» is true and
+    // tells a coordinator nothing they have not known for years.
+    if (hall?.surprising) memoryNotes.push({ type: "memory", severity: "low", soft: true, rowId: 0, otherId: 0,
+      message: "شيء لم ينتبه له أحد", detail: hall.text });
+  }
+
+  return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel, ...rhythmNote, ...memoryNotes];
 }
 
 /**
@@ -2175,7 +2205,7 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
   if (blocked.length) {
     const first = blocked[0];
     res.status(409).json({
-      error: `لم يُنقل: ${first?.message || "تعارض يمنع الحفظ"}${blocked.length > 1 ? ` (+${blocked.length - 1} أخرى)` : ""}`,
+      error: `لم يُنقل: ${first?.message || "تعارض يمنع الحفظ"}${blocked.length > 1 ? ` (+${countOf(blocked.length - 1, AR.blocker)} أخرى)` : ""}`,
       conflicts: blocked,
     });
     return;
@@ -2618,7 +2648,7 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
       const perDay = dayKeys.length;
       const score = Math.round(Math.max(0, 100 - (idle / perDay) / 3 - (walk / perDay) / 2 - (spread / perDay) / 6));
       if (idle === 0) reasons.push("لا يترك فراغاً للأستاذ");
-      else reasons.push(`فراغ ${Math.round(idle / perDay)} دقيقة`);
+      else reasons.push(`فراغ ${countOf(Math.round(idle / perDay), AR.minute)}`);
       if (walk === 0) reasons.push("بلا انتقال بين المباني");
       else reasons.push(`انتقال ${Math.round(walk / perDay)} دقيقة`);
       if (spread === 0) reasons.push("داخل يوم القسم الحالي");
@@ -3057,7 +3087,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     else{const threshold=(Number(normalized.match(/(\d+)\s*ساع/)?.[1]||3))*60; const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);summary=long.length?`وجدت ${long.length} أستاذاً لديهم فراغ يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات في يوم واحد.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";long.slice(0,6).forEach((x:any)=>bullets.push(`${x.name}: أكبر فراغ ${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د، والحمل الأسبوعي ${x.weeklyHours} ساعة.`));}
   } else if(dayMatch && normalized.includes("مزدحم")){
     title=`لماذا ${dayMatch.label} مزدحم؟`; const day=analysis.dayLoad.find((x:any)=>x.key===dayMatch.key); const peaks=analysis.heatmap.filter((x:any)=>x.day===dayMatch.key).sort((a:any,b:any)=>b.count-a.count).slice(0,3);
-    summary=`في ${dayMatch.label} يوجد ${day?.count||0} موعداً؛ أعلى تزامن ظاهر يصل إلى ${peaks[0]?.count||0} محاضرات في نصف ساعة واحدة.`;
+    summary=`في ${dayMatch.label} يوجد ${countOf(day?.count||0, AR.appointment)}؛ أعلى تزامن ظاهر يصل إلى ${countOf(peaks[0]?.count||0, AR.lecture)} في نصف ساعة واحدة.`;
     peaks.forEach((x:any)=>bullets.push(`${x.time}: ${x.count} محاضرات متزامنة.`));
   } else if(normalized.includes("إذا نقلت")||normalized.includes("اذا نقلت")){
     title="محاكاة نقل موعد"; const code=courses.find(c=>normalized.includes(String(c.CourseCode).toLowerCase())); const row=code?target.find(r=>r.AdCourseId===code.AdCourseId):target[0];
@@ -3088,7 +3118,22 @@ app.get("/api/intelligence/context/:id", requirePermission(7), async (req: Authe
     room:termVisible.filter(r=>r.AdRoomCode===selected.AdRoomCode&&r.AdRoomHall===selected.AdRoomHall).sort((a,b)=>a.fstarttime.localeCompare(b.fstarttime))
   };
   const externalConflicts=findConflicts([selected],termRows).map(c=>({...c,otherId:visible.some(v=>v.id===c.otherId)?c.otherId:0}));
-  res.json({selected,course:courses.find(c=>c.AdCourseId===selected.AdCourseId)||null,instructor:instructors.find(i=>i.AdInstructorId===selected.AdInstructorId)||null,related,conflicts:externalConflicts,comments});
+  /* ── ما تقوله عشر سنوات عن هذا الموعد بالذات ─────────────────────────────
+   *
+   * Three questions, each about a thing already named on this panel — the
+   * course, the person, the hall — so nothing new appears on screen unless
+   * history actually had something to say about one of them. Silence is the
+   * ordinary case and costs nothing. */
+  const style=await departmentStyle(selected);
+  const day=SCHEDULE_DAY_KEYS.find(key=>Boolean((selected as any)[key]));
+  const memory=style.memory?[
+    style.memory.aboutCourse(selected.AdCourseId),
+    selected.AdInstructorId?style.memory.aboutInstructor(selected.AdInstructorId):null,
+    style.memory.aboutRoom(String(selected.AdRoomCode||""),String(selected.AdRoomHall||"")),
+    day?style.memory.atSlot(day as any,String(selected.fstarttime||"")):null,
+  ].filter(Boolean):[];
+  res.json({selected,course:courses.find(c=>c.AdCourseId===selected.AdCourseId)||null,instructor:instructors.find(i=>i.AdInstructorId===selected.AdInstructorId)||null,related,conflicts:externalConflicts,comments,
+    memory,memoryTerms:style.memory?.terms||0});
 });
 
 app.get("/api/intelligence/replay/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {

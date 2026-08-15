@@ -4459,29 +4459,4 @@ html.schedule-physics-active .rooms-slot.physics-impossible::before{
 .inbox-actions button:hover{border-color:var(--accent);color:var(--accent-strong,var(--accent))}
 .inbox-actions .inbox-done{background:transparent;color:var(--ink-2)}
 
-/* ── إيقاع القسم ───────────────────────────────────────────────────────────
- * An offer, not a warning. It reads something back to the department that the
- * department already knew, so it wears the quietest weight on the board and
- * leaves nothing behind once answered either way. */
-.rhythm-offer{
-  display:flex;align-items:center;gap:11px;flex-wrap:wrap;
-  margin:0 0 10px;padding:11px 14px;border-radius:14px;
-  border:1px solid color-mix(in srgb,var(--accent) 26%,transparent);
-  background:color-mix(in srgb,var(--accent) 6%,transparent);
-  animation:rhythm-in .22s cubic-bezier(.2,.8,.3,1) both;
-}
-.rhythm-offer > svg{inline-size:17px;block-size:17px;flex:none;color:var(--accent);opacity:.85}
-.rhythm-offer p{margin:0;flex:1 1 260px;min-width:0;font-size:13px;line-height:1.85;color:var(--ink)}
-.rhythm-offer em{display:block;font-style:normal;font-size:11.5px;color:var(--ink-2);opacity:.9}
-.rhythm-actions{display:flex;gap:7px;flex:none}
-.rhythm-actions button{
-  min-height:34px;padding:0 13px;border-radius:10px;cursor:pointer;
-  border:1px solid var(--line);background:transparent;color:var(--ink-2);
-  font:600 12.5px/1 var(--font-ui);
-}
-.rhythm-actions .rhythm-yes{
-  background:var(--accent);border-color:var(--accent);color:#fff;
-}
-@keyframes rhythm-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-@media (prefers-reduced-motion:reduce){.rhythm-offer{animation:none}}
-@media print{.rhythm-offer{display:none !important}}
+

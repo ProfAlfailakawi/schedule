@@ -14,6 +14,8 @@ import { createPresenceClient, createPresencePainter, type PresencePeer } from "
 import { readSettledDrift, settledTerm } from "../src/utils/settledDrift";
 import { reachAboutCard, unreachable, whatsappNumber } from "../src/utils/reachInstructor";
 import { learnRhythm, offRhythm, describeRhythm } from "../src/utils/departmentRhythm";
+import { AR, countOf, nounFor } from "../src/utils/arabicCount";
+import { readDepartmentMemory } from "../src/utils/departmentMemory";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -716,6 +718,129 @@ async function runTests() {
     const caught = findConflicts(tooTight, tooTight, { doorwayMinutes: 10 })[0];
     assert(caught?.type === "doorway" && caught.severity === "low",
       "five minutes where the department keeps ten is remarked on, softly");
+  }
+
+  /* --- 17. العدد والمعدود -------------------------------------------------- */
+  originalLog("\n--- 17. Arabic number agreement ---");
+  {
+    const n = AR.appointment;
+    // The five rules, and the four wrong forms this replaced.
+    assert(countOf(0, n) === "لا مواعيد", "zero is a negation, not a numeral");
+    assert(countOf(1, n) === "موعد واحد", "one puts the noun first and the number after");
+    assert(countOf(2, n) === "موعدان", "two is a dual and writes no numeral at all");
+    assert(countOf(3, n) === "3 مواعيد" && countOf(10, n) === "10 مواعيد", "three to ten take a broken plural");
+    assert(countOf(11, n) === "11 موعداً" && countOf(99, n) === "99 موعداً", "eleven to ninety-nine take the accusative singular");
+    assert(countOf(100, n) === "100 موعد", "a hundred takes the singular");
+
+    // Compounds follow their LAST part — the rule software always misses.
+    assert(countOf(103, n) === "103 مواعيد", "103 follows its last part into the plural");
+    assert(countOf(111, n) === "111 موعداً", "111 follows its last part into the accusative");
+    assert(countOf(200, n) === "200 موعد", "200 stays singular");
+    assert(countOf(1000, n) === "1,000 موعد", "a thousand stays singular and keeps its separator");
+
+    // Feminine nouns inflect differently, and every noun is declared once.
+    assert(countOf(2, AR.room) === "قاعتان" && countOf(3, AR.room) === "3 قاعات", "a feminine noun keeps its own dual and plural");
+    assert(countOf(2, AR.term) === "فصلان" && countOf(10, AR.term) === "10 فصول" && countOf(11, AR.term) === "11 فصلاً",
+      "terms count through all three forms");
+    assert(countOf(1, AR.colleague) === "زميل واحد" && countOf(5, AR.colleague) === "5 زملاء", "and so do colleagues");
+    assert(nounFor(2, AR.lecture) === "محاضرتان" && nounFor(7, AR.lecture) === "محاضرات",
+      "the noun alone can be asked for, when the number is shown separately");
+    assert(countOf(0, n, "لا شيء") === "لا شيء", "the zero wording can be replaced where a place needs its own");
+    assert(countOf(-4, n) === "لا مواعيد" && countOf(NaN as any, n) === "لا مواعيد", "nonsense counts as none");
+
+    // The forms are complete: nothing may fall through to an empty string.
+    for (const [name, noun] of Object.entries(AR))
+      for (const value of [0, 1, 2, 3, 10, 11, 99, 100, 103, 111])
+        assert(/[؀-ۿ]/.test(countOf(value, noun as any)), `${name} has a form for ${value}`);
+  }
+
+  /* --- 18. ذاكرة القسم: المتوقَّع والمفاجئ --------------------------------- */
+  originalLog("\n--- 18. Department memory ---");
+  {
+    let seed = 500;
+    const at = (term: number, day: string, from: string, to: string, over: any = {}): any => ({
+      id: seed++, AdTermId: term, AdCollegeId: 1, AdSectionId: 1,
+      AdCourseId: over.AdCourseId ?? 1, AdInstructorId: over.AdInstructorId ?? 1, SCode: "1",
+      fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      [day]: true, fstarttime: from, fendtime: to,
+      AdRoomCode: over.AdRoomCode ?? "12", AdRoomHall: over.AdRoomHall ?? "F6",
+      AdCourseName: over.AdCourseName ?? "أصول الفقه", fdetail: "",
+    });
+
+    const history: any[] = [];
+    for (let term = 1; term <= 10; term += 1) {
+      // A course that has never moved in ten years.
+      history.push(at(term, "fsunday", "08:00", "09:00"));
+      // An hour used for six terms, then silently abandoned.
+      if (term <= 6) history.push(at(term, "ftuesday", "12:00", "13:00", { AdCourseId: 2, AdCourseName: "مقرر مهجور" }));
+      // A hall used all along, but only ever in the morning.
+      history.push(at(term, "fmonday", "09:00", "10:30", { AdRoomCode: "14", AdRoomHall: "201", AdCourseId: 3 }));
+      // A teacher who has never once taught before ten.
+      history.push(at(term, "fwednesday", "10:00", "11:00", { AdInstructorId: 7, AdCourseId: 4 }));
+    }
+    const people: any[] = [
+      { AdInstructorId: 1, AdInstructorName: "د. نورة", AdInstructorCivil: "1", AdInstructorMobile: "" },
+      { AdInstructorId: 7, AdInstructorName: "د. سلطان", AdInstructorCivil: "7", AdInstructorMobile: "" },
+    ];
+    const memory = readDepartmentMemory(history, [], people);
+    assert(memory.terms === 10, "the memory states how much history it holds");
+
+    // ── المتوقَّع: the empty hour ────────────────────────────────────────────
+    const never = memory.atSlot("fthursday" as any, "08:00");
+    assert(Boolean(never) && never!.text.includes("لم يدرّس"), `an hour never used is named (got "${never?.text}")`);
+    assert(never!.text.includes("10 فصول"), "and the claim is quoted against its base");
+
+    // ── المفاجئ: the abandoned hour ────────────────────────────────────────
+    const abandoned = memory.atSlot("ftuesday" as any, "12:00");
+    assert(abandoned?.surprising === true, `an hour used then dropped is marked surprising (got "${abandoned?.text}")`);
+    assert(abandoned!.text.includes("توقّف"), "and says plainly that it stopped");
+
+    // ── المفاجئ: the hall that is only ever used in one part of the day ────
+    const room = memory.aboutRoom("14", "201");
+    assert(room?.surprising === true, `a hall used only in a narrow band is surprising (got "${room?.text}")`);
+    assert(room!.text.includes("09:00"), "and names the hours it is confined to");
+
+    // ── المفاجئ: a preference nobody ever declared ─────────────────────────
+    const person = memory.aboutInstructor(7);
+    assert(person?.surprising === true, `a teacher who never starts early is surprising (got "${person?.text}")`);
+    assert(person!.text.includes("د. سلطان") && person!.text.includes("10:00"), "and is named with the hour");
+
+    // ── المتوقَّع: a course that has never moved ────────────────────────────
+    const course = memory.aboutCourse(1);
+    assert(Boolean(course) && !course!.surprising, "a course that never moved is stated plainly, not as a surprise");
+    assert(course!.text.includes("الأحد") && course!.text.includes("08:00"), "and names where it has lived");
+
+    // ── ما ترفض قوله ───────────────────────────────────────────────────────
+    /* Instructor 1 in this fixture teaches 08:00–09:00 and 12:00–13:00 and
+       nothing else, so «لم يدرّس بعد 13:00» is TRUE of them — the assertion
+       that first stood here was wrong about the data, not about the code.
+       The real question is whether someone who spans the whole day produces
+       no invented pattern, so that is what is asked. */
+    const spread = readDepartmentMemory([
+      ...Array.from({ length: 10 }, (_, term) => at(term + 1, "fsunday", "08:00", "09:00", { AdInstructorId: 9 })),
+      ...Array.from({ length: 10 }, (_, term) => at(term + 1, "fthursday", "16:00", "17:00", { AdInstructorId: 9 })),
+      ...Array.from({ length: 10 }, (_, term) => at(term + 1, "fmonday", "11:00", "12:00", { AdInstructorId: 9 })),
+      ...Array.from({ length: 10 }, (_, term) => at(term + 1, "ftuesday", "13:00", "14:00", { AdInstructorId: 9 })),
+      ...Array.from({ length: 10 }, (_, term) => at(term + 1, "fwednesday", "09:00", "10:00", { AdInstructorId: 9 })),
+    ], [], [{ AdInstructorId: 9, AdInstructorName: "د. فيصل", AdInstructorCivil: "9", AdInstructorMobile: "" } as any]);
+    assert(spread.aboutInstructor(9) === null,
+      "a teacher who uses the whole week and the whole day produces no invented pattern");
+    const thin = readDepartmentMemory(history.filter(row => row.AdTermId <= 2), [], people);
+    assert(thin.atSlot("fthursday" as any, "08:00") === null, "two terms is anecdote, and states nothing at all");
+    assert(readDepartmentMemory([], [], []).surprises().length === 0, "an empty history surprises nobody");
+
+    /* The bar, enforced: history earns a sentence by warning or surprising.
+       Being merely correct about an ordinary hour is noise, and noise on a
+       board is what teaches people to stop reading it. */
+    assert(memory.atSlot("fsunday" as any, "08:00") === null,
+      "an hour the department has always used says nothing — it is not news");
+    assert(memory.aboutRoom("12", "F6")?.surprising !== false,
+      "and a hall says something only when it is a warning or a surprise");
+
+    const surprises = memory.surprises();
+    assert(surprises.length >= 3, `the unexpected can be asked for as a set (got ${surprises.length})`);
+    assert(surprises.every(item => item.surprising), "and contains only things nobody would have asked");
+    assert(surprises[0].strength >= surprises[surprises.length - 1].strength, "strongest first");
   }
 
   if (!originalDb) {

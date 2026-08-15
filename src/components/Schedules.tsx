@@ -117,6 +117,7 @@ import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
+import { AR, countOf } from "../utils/arabicCount";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
 /* The same six hues the stylesheet paints from, so a chip and the ring it
    refers to are the same colour. Red is absent on purpose: it belongs to
@@ -2398,7 +2399,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           toTermId: copyToTerm,
         }),
       });
-      setMessage(`تم نسخ ${data.count ?? 0} سجل بنجاح`);
+      setMessage(`تم نسخ ${countOf(data.count ?? 0, AR.record)} بنجاح`);
       setCopyUndoPoint(data.undoVersion || null);
       setCopyPreview(null);
     } catch (e: any) {
@@ -2656,7 +2657,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       const movedIds = moves.map(m => m.before.id);
       const undoId = offerUndo(
         moves.length > 1
-          ? `نُقل ${moves.length} مواعيد إلى ${label} ${target.start}`
+          ? `نُقل ${countOf(moves.length, AR.appointment)} إلى ${label} ${target.start}`
           : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${target.start}`,
         moves.map(move => restoreStep(move.before)),
       );
@@ -4346,16 +4347,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const [drift, setDrift] = useState<any>(null);
   const [driftOpen, setDriftOpen] = useState(false);
-  /**
-   * The break the department already keeps.
-   *
-   * Nobody should be asked to type a number the schedule has been stating for
-   * years. The server reads it back out of the rows and offers it here, once,
-   * as a sentence with one button — and once it is declared or waved away the
-   * offer is gone for good.
-   */
-  const [habit, setHabit] = useState<any>(null);
-  const habitDismissed = useRef(false);
+  /* The department's learned rhythm is deliberately NOT shown. It is working
+     knowledge, not a headline: the engine already obeys it, and a person who
+     breaks it is told at the moment they break it. Reading the habit back at
+     someone who has kept it for ten years tells them nothing they do not know
+     and costs a permanent strip on their board. */
   /** What the department's own instructors have said, and not yet been answered. */
   const [inbox, setInbox] = useState<any[]>([]);
   const [inboxOpen, setInboxOpen] = useState(false);
@@ -4368,9 +4364,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       .then(data => {
         if (!alive) return;
         setDrift(data?.watching && data.total ? data : null);
-        // Offered once. A department that declines it, or declares the rule,
-        // never sees this line again.
-        setHabit(data?.habit && !habitDismissed.current ? data.habit : null);
       })
       .catch(() => undefined);
     return () => { alive = false; };
@@ -4457,11 +4450,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           AdRoomCode: move.roomCode, AdRoomHall: move.roomHall } as FSchedule,
       })));
       offerUndo(
-        `إصلاح بسلسلة ${repair.moves.length.toLocaleString("ar-KW-u-nu-latn")} حركات`,
+        `إصلاح بسلسلة ${countOf(repair.moves.length, AR.move)}`,
         repair.moves.map(move => restoreStep(move.before)),
       );
       setRepair(null);
-      setMessage(`نُفِّذت السلسلة — ${repair.moves.length} حركات، والتداخل ${repair.before} ← ${repair.after}.`);
+      setMessage(`نُفِّذت السلسلة — ${countOf(repair.moves.length, AR.move)}، والتداخل ${repair.before} ← ${repair.after}.`);
     } catch (e: any) {
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
       else setError(friendlyError(e));
@@ -4765,7 +4758,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <header>
           <div>
             <p className="drift-eyebrow">وصلت من بطاقات الأساتذة</p>
-            <h2>{inbox.length.toLocaleString("ar-KW-u-nu-latn")} رسالة تنتظر</h2>
+            <h2>{countOf(inbox.length, AR.message)} تنتظر</h2>
           </div>
           <button type="button" onClick={() => setInboxOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
         </header>
@@ -5286,7 +5279,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       <small>
                         من {courseNature.terms.toLocaleString("ar-KW-u-nu-latn")} فصلاً
                         · {courseNature.observations.toLocaleString("ar-KW-u-nu-latn")} شعبة
-                        {courseNature.sectionsPerTerm > 1 ? ` · عادةً ${courseNature.sectionsPerTerm.toLocaleString("ar-KW-u-nu-latn")} شعب في الفصل` : ""}
+                        {courseNature.sectionsPerTerm > 1 ? ` · عادةً ${countOf(courseNature.sectionsPerTerm, AR.section)} في الفصل` : ""}
                       </small>
                     </div>
                     {courseNature.suggestion ? (
@@ -5525,7 +5518,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     {checking
                       ? "جاري الفحص"
                       : conflicts.length
-                        ? `${conflicts.length} ملاحظة`
+                        ? countOf(conflicts.length, AR.note)
                         : "جاهز"}
                   </Badge>
                 </div>
@@ -5748,7 +5741,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               wrong about that is worse than saying nothing. */}
           {peers.length ? (
             <span className="presence-strip no-print" role="status"
-              aria-label={`${peers.length} زميلاً معك على هذا الجدول`}>
+              aria-label={`${countOf(peers.length, AR.colleague)} معك على هذا الجدول`}>
               {peers.slice(0, 5).map(peer => (
                 <span key={peer.connId} className="presence-chip"
                   data-busy={peer.holding || peer.editing ? "1" : "0"}
@@ -5759,7 +5752,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   {peer.name.replace(/^د\.\s*/, "").trim().charAt(0) || "؟"}
                 </span>
               ))}
-              {peers.length > 5 ? <span className="presence-chip" title={`و${peers.length - 5} غيرهم`}>+{peers.length - 5}</span> : null}
+              {peers.length > 5 ? <span className="presence-chip" title={`و${countOf(peers.length - 5, AR.colleague)} غيرهم`}>+{peers.length - 5}</span> : null}
             </span>
           ) : null}
           {liveClash.pairs ? (
@@ -5777,7 +5770,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   existing OVERLAP (usually inherited from legacy data), which is
                   what the honest word describes. */}
               <AlertTriangle aria-hidden="true" />
-              {liveClash.pairs.toLocaleString("ar-KW-u-nu-latn")} تداخل
+              {countOf(liveClash.pairs, AR.clash)}
             </button>
           ) : null}
           {liveNotes.length ? (
@@ -5788,7 +5781,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               title="ملاحظات اللائحة على النطاق المفتوح — اضغط لفتح مراجعة الاعتماد"
             >
               <ClipboardCheck aria-hidden="true" />
-              {liveNotes.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة
+              {countOf(liveNotes.length, AR.note)}
             </button>
           ) : null}
           {/* What arrived from the department's own instructors. It is the only
@@ -5799,7 +5792,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               type="button"
               className="schedule-radar radar-inbox"
               onClick={() => setInboxOpen(true)}
-              title={`${inbox.length.toLocaleString("ar-KW-u-nu-latn")} رسالة من أساتذة القسم — اضغط للقراءة`}
+              title={`${countOf(inbox.length, AR.message)} من أساتذة القسم — اضغط للقراءة`}
             >
               <Inbox aria-hidden="true" />
               {inbox.length.toLocaleString("ar-KW-u-nu-latn")} من الأساتذة
@@ -6292,7 +6285,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
                       <div><MapPin /><strong>القاعات المعروضة</strong></div>
-                      <small>{matrixRooms.size ? `اخترت ${matrixRooms.size} من ${allRooms.length} قاعات — اضغط لإضافة قاعة أو إزالتها.` : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
+                      <small>{matrixRooms.size ? `اخترت ${matrixRooms.size} من ${countOf(allRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.` : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
                     </div>
                     <div className="rooms-picker" role="group" aria-label="اختيار قاعة واحدة أو عدة قاعات">
                     <button
@@ -6465,25 +6458,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 {/* The schedule lens UI was removed with its toolbar button; the
                     lens state remains inert (lensActive stays false) so week
                     cards render without any dimming. */}
-            {/* What the program has worked out about this department, from its
-                whole history. It is not an offer and there is nothing to press:
-                the conflict engine already obeys it. This only lets a person
-                see what it believes, and correct it by scheduling differently. */}
-            {habit ? (
-              <div className="rhythm-offer" role="note">
-                <Timer aria-hidden="true" />
-                <p>
-                  {habit.sentence}
-                  <em>يُطبَّق تلقائياً كتنبيه لطيف — لا يمنع أي حفظ.</em>
-                </p>
-                <button
-                  type="button"
-                  className="rhythm-hide"
-                  onClick={() => { setHabit(null); habitDismissed.current = true; }}
-                  aria-label="إخفاء"
-                ><X aria-hidden="true" /></button>
-              </div>
-            ) : null}
             <div
               className={`week-note ${physicsActive ? "gravity-note-active" : ""}`}
             >
@@ -6509,7 +6483,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               >
                 <Layers aria-hidden="true" />
                 {picking
-                  ? (multiSelect.size ? `${multiSelect.size} موعدًا مختارًا · اسحب الآن` : "اختر المواعيد من الجدول")
+                  ? (multiSelect.size ? `${countOf(multiSelect.size, AR.appointment)} مختار · اسحب الآن` : "اختر المواعيد من الجدول")
                   : "نقل جماعي"}
               </button> : null}
               {/*
@@ -6611,7 +6585,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
                           aria-pressed={hueFocus.has(item.key)}
                           disabled={folded}
-                          title={`${item.label} — ${item.count} موعداً · اضغط لإبراز حصصه، واضغط غيره لتقارن الاثنين`}
+                          title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لإبراز حصصه، واضغط غيره لتقارن الاثنين`}
                           onClick={() => toggleHueFocus(item.key)}
                         >
                           <i aria-hidden="true" />
@@ -6640,7 +6614,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     type="button"
                     className="week-legend-clear is-folded-clear"
                     onClick={() => setHueHidden(new Set())}
-                    title={`${hueHidden.size} طبقة مطوية — أعدها إلى الشبكة`}
+                    title={`${countOf(hueHidden.size, AR.layer)} مطوية — أعدها إلى الشبكة`}
                   >
                     <EyeOff aria-hidden="true" />أعد المطوي
                     <b className="num">{hueHidden.size.toLocaleString("ar-KW-u-nu-latn")}</b>
@@ -7063,7 +7037,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           key={bundle.key}
                           style={{ top: bundle.top, height: bundle.height }}
                           role="group"
-                          aria-label={`${bundle.rows.length} محاضرات متزامنة${flaggedHere.length ? ` · ${flaggedHere.length} مميّزة` : ""}`}
+                          aria-label={`${countOf(bundle.rows.length, AR.lecture)} متزامنة${flaggedHere.length ? ` · ${flaggedHere.length} مميّزة` : ""}`}
                         >
                           <button
                             type="button"
@@ -7970,6 +7944,28 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   اختيار البديل يفتح نموذج التعديل معبأً فقط؛ لن يُحفظ شيء قبل
                   ضغط «موافق».
                 </p>
+              </div>
+            ) : null}
+            {/* ── ذاكرة القسم ────────────────────────────────────────────
+                What ten years say about this particular appointment — its
+                course, its teacher, its hall, its hour. The block does not
+                exist unless history had something worth saying, which for most
+                appointments it does not. The surprising ones are marked; the
+                merely-true ones never reach here at all. */}
+            {context.memory?.length ? (
+              <div className="context-memory">
+                <div className="context-memory-head">
+                  <History aria-hidden="true" />
+                  <span>ذاكرة القسم</span>
+                  <small>{countOf(context.memoryTerms || 0, AR.term)}</small>
+                </div>
+                <ul>
+                  {context.memory.map((item: any, index: number) => (
+                    <li key={index} className={item.surprising ? "memory-surprise" : ""}>
+                      {item.text}
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : null}
             <div className="context-comments">

@@ -58,6 +58,7 @@ import type {
 } from "../types";
 import IntelligenceContextBar from "./IntelligenceContextBar";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
+import { AR, countOf } from "../utils/arabicCount";
 import { sortByName } from "../utils/sorting";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { readCampusFlow } from "../utils/campusFlow";
@@ -1469,7 +1470,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         className="heat-cell"
                         style={{ "--heat": ratio } as React.CSSProperties}
                         role="img"
-                        aria-label={`${dayLabels[day]}، الساعة ${time}، ${cell?.count || 0} مواعيد`}
+                        aria-label={`${dayLabels[day]}، الساعة ${time}، ${countOf(cell?.count || 0, AR.appointment)}`}
                         title={`${dayLabels[day]} ${time}: ${cell?.count || 0}`}
                       >
                         <i aria-hidden="true" />
@@ -1789,7 +1790,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </strong>
                   <small>
                     {genome.available
-                      ? `${genome.history.length} فصول سابقة في البصمة`
+                      ? `${countOf(genome.history.length, AR.term)} سابق في البصمة`
                       : "البصمة تبدأ من هذا الفصل"}
                   </small>
                 </div>
@@ -2065,7 +2066,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </h2>
               <p>
                 {scenario
-                  ? `غيّرت ${changedRows.length} موعداً داخل السيناريو حتى الآن. لا شيء منها منشور.`
+                  ? `غيّرت ${countOf(changedRows.length, AR.appointment)} داخل السيناريو حتى الآن. لا شيء منها منشور.`
                   : "انسخ الجدول إلى مساحة تجريبية، حرّك الأوقات والقاعات، قارن النتيجة، وبعدها فقط احفظه كمسودة أو انشره."}
               </p>
             </div>
@@ -2331,7 +2332,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         }
                       >
                         {scenarioEval.constraints.scenario.total
-                          ? `${scenarioEval.constraints.scenario.total} مخالفة في السيناريو`
+                          ? `${countOf(scenarioEval.constraints.scenario.total, AR.breach)} في السيناريو`
                           : "السيناريو يحترمها كلها"}
                       </Badge>
                     ) : null}
@@ -3254,7 +3255,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <Badge tone={importPreview.valid ? "success" : "danger"}>
                   {importPreview.valid
                     ? "جاهز كمسودة"
-                    : `${importPreview.issues.length} ملاحظة`}
+                    : countOf(importPreview.issues.length, AR.note)}
                 </Badge>
               </div>
               {importPreview.issues.length ? (

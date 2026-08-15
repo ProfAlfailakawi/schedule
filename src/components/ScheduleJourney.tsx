@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
+import { AR, countOf } from "../utils/arabicCount";
 
 /**
  * ── رحلة SCHEDULE ─────────────────────────────────────────────────────────
@@ -80,15 +81,15 @@ function readingSentence(terms: number, schedules: number | null): string {
   if (terms < 10) return "رحلة ما زالت في بدايتها.";
   if (terms < 25) return "سنوات من الجداول والقرارات الأكاديمية.";
   if (terms < 50) return "أكثر من عقد من الذاكرة الأكاديمية.";
-  return `${ar(terms)} فصلاً من القرارات والجداول والذاكرة.`;
+  return `${countOf(terms, AR.term)} من القرارات والجداول والذاكرة.`;
 }
 
 /** An institutional milestone, said once and quietly — never a badge. */
 function milestone(terms: number, schedules: number | null): string | null {
-  if (schedules && schedules >= 50_000) return `أكثر من ${ar(50_000)} موعد أكاديمي مرّ من هنا.`;
+  if (schedules && schedules >= 50_000) return `أكثر من ${countOf(50_000, AR.appointment)} أكاديمي مرّ من هنا.`;
   if (schedules && schedules >= 25_000) return `أكثر من ${ar(25_000)} موعد أكاديمي مرّ من هنا.`;
   if (schedules && schedules >= 10_000) return `أكثر من ${ar(10_000)} موعد أكاديمي مرّ من هنا.`;
-  if (terms >= 100) return `${ar(100)} فصل أصبحت جزءاً من ذاكرة SCHEDULE.`;
+  if (terms >= 100) return `${countOf(100, AR.term)} أصبح جزءاً من ذاكرة SCHEDULE.`;
   if (terms >= 50) return `${ar(50)} فصلاً أصبحت جزءاً من ذاكرة SCHEDULE.`;
   if (terms >= 25) return `${ar(25)} فصلاً أصبحت جزءاً من ذاكرة SCHEDULE.`;
   return null;

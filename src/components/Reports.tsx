@@ -10,6 +10,7 @@ import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { byArabic, sortByName } from "../utils/sorting";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
+import { AR, countOf } from "../utils/arabicCount";
 
 /**
  * One question, seven lenses.
@@ -781,7 +782,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             onClick={() => setMoreOpen(v => !v)}
             aria-expanded={moreOpen}
             aria-controls="query-more-filters"
-            aria-label={`مرشحات إضافية${chips.length ? `، ${chips.length} نشطة` : ""}`}
+            aria-label={`مرشحات إضافية${chips.length ? `، ${countOf(chips.length, AR.filter)} نشط` : ""}`}
             title="مرشحات إضافية"
           >
             <SlidersHorizontal aria-hidden="true" />

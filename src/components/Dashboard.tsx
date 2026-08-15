@@ -3,6 +3,7 @@ import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,Chev
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
 import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START}from"../utils/scheduleTime";
+import { AR, countOf } from "../utils/arabicCount";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
 interface DashboardData{history?:Array<{termId:number;termName:string;schedules:number;rooms:number;instructors:number}>;previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;weekend?:boolean;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
@@ -143,7 +144,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
      <strong id="dashboard-primary-decision">{decisionTitle(primaryDecision)||"الجدول سليم"}</strong>
      <small>{primaryDecision?decisionDetail(primaryDecision):"لا توجد أمور تتطلب قراراً في القراءة الحالية."}</small>
     </div>
-    {decisions.length>1?<span className="deck-decision-count" aria-label={`${num(decisions.length)} أمور تستحق الانتباه`}>{num(decisions.length)}</span>:null}
+    {decisions.length>1?<span className="deck-decision-count" aria-label={`${countOf(decisions.length, AR.matter)} تستحق الانتباه`}>{num(decisions.length)}</span>:null}
     {primaryDecision&&canManageSchedule?<button type="button" aria-label={`معالجة: ${decisionTitle(primaryDecision)}`} onClick={()=>onNavigate?.("schedules")}><ArrowLeft aria-hidden="true"/></button>:null}
    </section>
 
@@ -174,7 +175,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    <section className="deck-today" aria-labelledby="dashboard-today-title">
     <h2 className="sr-only" id="dashboard-today-title">مسار محاضرات اليوم</h2>
     <div className="deck-today-lead">
-     <b aria-label={`${num(today.length)} محاضرة اليوم`}>{num(today.length)}</b>
+     <b aria-label={`${countOf(today.length, AR.lecture)} اليوم`}>{num(today.length)}</b>
      <span>اليوم</span>
      {nextUp?<em dir="ltr" title={currentLecture?`المحاضرة الجارية حتى ${nextUp.endTime}`:`المحاضرة التالية تبدأ ${nextUp.startTime}`} aria-label={currentLecture?`المحاضرة الجارية حتى ${nextUp.endTime}`:`المحاضرة التالية تبدأ ${nextUp.startTime}`}>{currentLecture?nextUp.endTime:nextUp.startTime}</em>:null}
     </div>
@@ -261,7 +262,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     <article className="deck-chart dashboard-week-preview" aria-labelledby="dashboard-week-title">
      <header><CalendarClock aria-hidden="true"/><span id="dashboard-week-title">حمل الأسبوع</span></header>
      <div className="bar-columns" role="list" aria-label="عدد المواعيد في كل يوم">
-      {ws.weekdayLoad.map(day=><div key={day.key} role="listitem" aria-label={`${day.label}: ${num(day.count)} موعد`} title={`${day.label}: ${num(day.count)}`}>
+      {ws.weekdayLoad.map(day=><div key={day.key} role="listitem" aria-label={`${day.label}: ${countOf(day.count, AR.appointment)}`} title={`${day.label}: ${num(day.count)}`}>
        <i style={{height:day.count?`${Math.max(6,Math.round(day.count/maxDay*100))}%`:"0%"}} aria-hidden="true"/>
        <b aria-hidden="true">{num(day.count)}</b>
        <span aria-hidden="true">{dayMark(day.label)}</span>

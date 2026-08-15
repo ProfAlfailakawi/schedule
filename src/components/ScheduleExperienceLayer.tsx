@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import { Notice } from "./ui";
+import { AR, countOf } from "../utils/arabicCount";
 
 type DayKey = "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
 const dayKeys: DayKey[] = [
@@ -736,7 +737,7 @@ export default function ScheduleExperienceLayer({
                 <h2>هذه هي بصمة القسم، لا مجرد إحصائية.</h2>
                 <p>
                   {genome?.available
-                    ? `الفصل الحالي متوافق مع بصمة القسم بنسبة ${genome.compatibility}/100، محسوبة من ${genome.history?.length || 0} فصول سابقة.`
+                    ? `الفصل الحالي متوافق مع بصمة القسم بنسبة ${genome.compatibility}/100، محسوبة من ${countOf(genome.history?.length || 0, AR.term)} سابق.`
                     : "يبدأ النظام ببناء بصمة القسم من هذا الفصل وسيزداد دقة مع تراكم الفصول."}
                 </p>
               </div>
