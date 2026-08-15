@@ -2419,3 +2419,27 @@
 @media (max-width:640px){
   .opening-slot button{margin-inline-start:0;width:100%;justify-content:center}
 }
+
+/* ── «ليش انتقل؟» ────────────────────────────────────────────────────────────
+ *
+ * The line the whole replay existed to produce and never could. It sits inside
+ * the event it explains rather than beside it, because a reason detached from
+ * its change is just another sentence on a timeline.
+ *
+ * It also names its own provenance, in smaller type: this is deduced from the
+ * snapshot of that day, not typed by a person. A reader must never mistake the
+ * program's reconstruction for somebody's testimony — the two carry different
+ * weight in a disagreement, and the interface has to say which one it is.
+ */
+.replay-why{
+  display:flex;align-items:flex-start;gap:var(--s2);
+  margin-block-start:var(--s2);padding:var(--s2) var(--s3);
+  border-inline-start:2px solid var(--accent);border-radius:var(--r-sm);
+  background:var(--accent-softer);
+  color:var(--ink);font-size:var(--t-sm);line-height:1.7;
+}
+.replay-why>svg{width:15px;height:15px;flex:none;margin-block-start:3px;color:var(--accent)}
+.replay-why em{
+  display:block;margin-block-start:2px;
+  color:var(--muted);font-style:normal;font-size:var(--t-xs);
+}

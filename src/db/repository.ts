@@ -1822,6 +1822,34 @@ export const Repository = {
     return (db.scheduleVersions || []).filter(row => row.scopeKey === scopeKey).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,safeLimit);
   },
 
+  /**
+   * The last few publications **with their snapshots attached**.
+   *
+   * The list read above strips `rows` on purpose — a version embeds a complete
+   * copy of the term, and sixty of them is megabytes to draw sixty labels. One
+   * question needs the snapshots: what happened to a single appointment over
+   * time. It is answered from a deliberately short tail, because a lecture's
+   * story is told by its recent publications and not by every one since 2016.
+   */
+  getScheduleVersionsWithRows: async (
+    collegeId: number, sectionId: number, termId: number, limit = 12,
+  ): Promise<ScheduleVersion[]> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    const safeLimit = Math.max(1, Math.min(24, Number(limit) || 12));
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("scheduleVersions")
+        .where("scopeKey", "==", scopeKey)
+        .orderBy("createdAt", "desc")
+        .limit(safeLimit)
+        .get();
+      return snap.docs.map(doc => doc.data() as ScheduleVersion);
+    }
+    return (db.scheduleVersions || [])
+      .filter(row => row.scopeKey === scopeKey)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, safeLimit);
+  },
+
   getScheduleVersionById: async (id: string): Promise<ScheduleVersion | undefined> => {
     if (firestoreDb) {
       const doc = await firestoreDb.collection("scheduleVersions").doc(id).get();

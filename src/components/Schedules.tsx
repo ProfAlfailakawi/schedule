@@ -19,6 +19,7 @@ import {
   Focus,
   GripVertical,
   History,
+  HelpCircle,
   Inbox,
   Timer,
   Hourglass,
@@ -7910,6 +7911,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         <div className="replay-body">
                           <strong>{event.title}</strong>
                           <p>{event.detail}</p>
+                          {/* ليش انتقل — مُستخرج من نسخة ذلك اليوم، لا مكتوب بيد أحد.
+                              ولهذا يحمل مصدره: القارئ يجب أن يعرف أن هذا استنتاج
+                              مُثبَت من الأرشيف، لا جملة كتبها موظف. */}
+                          {event.why ? (
+                            <p className="replay-why">
+                              <HelpCircle aria-hidden="true" />
+                              <span>
+                                {event.why}
+                                {event.whySource ? <em>{event.whySource}</em> : null}
+                              </span>
+                            </p>
+                          ) : null}
                           <div className="replay-meta">
                             <time dateTime={event.timestamp}>
                               {new Date(event.timestamp).toLocaleDateString("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" })}
