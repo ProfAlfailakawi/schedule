@@ -35,7 +35,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           body: JSON.stringify({ username: username.trim(), password }),
         }),
         data = await res.json();
-      if (!res.ok) throw new Error(data.error || "خطأ في تسجيل الدخول");
+      // A reference the reader can quote; the reason itself stays in the log.
+      if (!res.ok) throw new Error(data.ref ? `${data.error} (مرجع: ${data.ref})` : (data.error || "خطأ في تسجيل الدخول"));
       onLoginSuccess(data);
     } catch (err: any) {
       setError(err.message || "خطأ في تسجيل الدخول");

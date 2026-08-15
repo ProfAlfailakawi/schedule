@@ -274,7 +274,17 @@ export function useScheduleExperience({
   }, [isPowerAdmin, collegeId, sectionId, termId, rows]);
 
   const toggleGhost = async () => {
-    if (!isPowerAdmin || !collegeId || !sectionId || !termId) return;
+    /*
+     * The scope needed here is the term, and only the term.
+     *
+     * The guard also demanded a college and a department, and both are honestly
+     * zero whenever the reader has chosen «الكل» — so on the widest, most
+     * common view the press returned here in silence: no fetch, no error, no
+     * label change, nothing to tell anyone why. The read itself never needed
+     * them; `/api/schedules` treats a missing college or section as a wide read,
+     * exactly as the board's own loader does.
+     */
+    if (!isPowerAdmin || !termId) return;
     if (ghostEnabled) {
       setGhostEnabled(false);
       return;
@@ -286,11 +296,9 @@ export function useScheduleExperience({
     setGhostBusy(true);
     setGhostError("");
     try {
-      const p = new URLSearchParams({
-        collegeId: String(collegeId),
-        sectionId: String(sectionId),
-        termId: String(previousTerm.AdTermId),
-      });
+      const p = new URLSearchParams({ termId: String(previousTerm.AdTermId) });
+      if (collegeId) p.set("collegeId", String(collegeId));
+      if (sectionId) p.set("sectionId", String(sectionId));
       const data = await fetchJson(`/api/schedules?${p}`);
       setGhostRows(Array.isArray(data) ? data : []);
       setGhostEnabled(true);

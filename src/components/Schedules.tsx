@@ -3298,10 +3298,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           void openContext(r);
         }}
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") { void openContext(r); return; }
+          // Space lifts the lecture into the keyboard's hands. Enter keeps the
+          // meaning it always had, so nothing a reader already knows changes.
+          if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); pickUpWithKeyboard(r); }
+        }}
         aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${r.fstarttime}–${r.fendtime}${place ? ` · قاعة ${place}` : ""}`}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
-        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${hueFocusClass(r)}`}
+        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
         style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
         onPointerLeave={() => setPeek(current => (current?.row.id === r.id ? null : current))}
@@ -3597,13 +3602,21 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       blockers[0] ? `${blockers[0].message} — ${blockers[0].detail}` : "",
     );
   };
+  /* Declared ahead of the drag layer because the drag layer reads it: while the
+     keyboard holds a lecture, the pointer layer is off. */
+  type KeyboardMove = { rowId: number; day: DayKey; start: string };
+  const [keyMove, setKeyMove] = useState<KeyboardMove | null>(null);
   const physics = useSchedulePhysics({
     disabled:
       mode !== "schedule" ||
       editor !== "index" ||
       viewMode !== "week" ||
       saving ||
-      presentationMode,
+      presentationMode ||
+      // One card, one hand: while the keyboard is carrying a lecture the
+      // pointer layer is switched off entirely, so a stray press cannot pick up
+      // a second copy of the same thing.
+      Boolean(keyMove),
     previewTarget: previewPhysicsTarget,
     evaluateTarget: evaluatePhysicsTarget,
     onStart: (row) => {
@@ -3913,73 +3926,186 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * themselves, adds no control, and disappears the moment the panel closes or
    * a real drag begins, when the live evaluation takes over.
    */
+  type PlacementReading = { tier: "excellent" | "good" | "fair" | "blocked"; why: string };
+  /**
+   * One reading of one placement — the single source of truth for "how good
+   * would this lecture be here?".
+   *
+   * Both surfaces that ask the question ahead of time go through this: the
+   * decision field that paints the whole week when a lecture is opened, and the
+   * keyboard move that reports each step as the arrows walk it around. Neither
+   * owns a copy of the reasoning, so the two can never disagree — and neither
+   * competes with the live drag, which asks the server and therefore knows more.
+   */
+  const readPlacement = useCallback((row: FSchedule, day: DayKey, slot: string): PlacementReading => {
+    const span = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
+    const from = mins(slot);
+    const to = from + span;
+    const nameOf = (item: FSchedule) =>
+      item.AdCourseName || courseById.get(item.AdCourseId)?.CourseName || "موعد آخر";
+    if (to > gridWindow.end)
+      return { tier: "blocked", why: "المحاضرة أطول من الوقت المتبقي في هذا اليوم" };
+    const clash = (test: (item: FSchedule) => boolean) =>
+      weekRows.find(item =>
+        item.id !== row.id && test(item) && (item as any)[day] &&
+        mins(item.fstarttime) < to && mins(item.fendtime) > from);
+    const busyInstructor = row.AdInstructorId
+      ? clash(item => item.AdInstructorId === row.AdInstructorId) : undefined;
+    if (busyInstructor)
+      return { tier: "blocked", why: `الأستاذ مرتبط بـ${nameOf(busyInstructor)} ${busyInstructor.fstarttime}` };
+    const busyHall = row.AdRoomCode
+      ? clash(item => item.AdRoomCode === row.AdRoomCode && item.AdRoomHall === row.AdRoomHall) : undefined;
+    if (busyHall)
+      return { tier: "blocked", why: `القاعة محجوزة لـ${nameOf(busyHall)} ${busyHall.fstarttime}` };
+
+    /* Same scoring the drag uses, in the same order of importance. */
+    let score = 100;
+    const reasons: string[] = [];
+    const sameDay = weekRows
+      .filter(item => item.id !== row.id && row.AdInstructorId && item.AdInstructorId === row.AdInstructorId && (item as any)[day])
+      .map(item => ({ from: mins(item.fstarttime), to: mins(item.fendtime) }));
+    if (sameDay.length) {
+      const nearest = Math.min(...sameDay.map(other =>
+        other.to <= from ? from - other.to : other.from >= to ? other.from - to : 0));
+      score -= Math.min(40, Math.round(nearest / 15) * 4);
+      reasons.push(nearest === 0 ? "ملاصق لمحاضرة أخرى للأستاذ" : `فراغ ${nearest} دقيقة عن أقرب محاضرة للأستاذ`);
+    } else {
+      score -= 12;
+      reasons.push("يوم جديد للأستاذ — يكلّف انتقالاً");
+    }
+    const label = days.find(d => d.key === day)?.label || "";
+    const expected = day === "fmonday" || day === "fwednesday" ? 90 : 60;
+    if (span !== expected) { score -= 18; reasons.push(`طول غير معتاد ليوم ${label}`); }
+    if (from < 8 * 60 || from >= 14 * 60) { score -= 8; reasons.push("خارج ذروة اليوم الدراسي"); }
+    const tier = score >= 88 ? "excellent" : score >= 70 ? "good" : "fair";
+    return {
+      tier,
+      why: `${tier === "excellent" ? "ممتاز" : tier === "good" ? "جيد" : "ممكن بتنازل"} — ${reasons.join(" · ")}`,
+    };
+  }, [weekRows, gridWindow, courseById]);
+
   const decisionField = useMemo(() => {
-    const field = new Map<string, { tier: "excellent" | "good" | "fair" | "blocked"; why: string }>();
+    const field = new Map<string, PlacementReading>();
     const row: FSchedule | null =
       viewMode === "week" && !physicsActive && !saving && context?.selected
         ? rows.find(item => item.id === context.selected.id) || null
         : null;
     if (!row || !row.fstarttime || !row.fendtime) return field;
-    const span = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
     const carriedDays = days.filter(d => Boolean((row as any)[d.key])).map(d => d.key as DayKey);
-    const instructorRows = weekRows.filter(item => item.id !== row.id && row.AdInstructorId && item.AdInstructorId === row.AdInstructorId);
-    const hallRows = weekRows.filter(item =>
-      item.id !== row.id && row.AdRoomCode &&
-      item.AdRoomCode === row.AdRoomCode && item.AdRoomHall === row.AdRoomHall);
-    const nameOf = (item: FSchedule) =>
-      item.AdCourseName || courseById.get(item.AdCourseId)?.CourseName || "موعد آخر";
-
     for (const day of days) {
       for (const slot of timeSlots) {
-        const key = `${day.key}:${slot}`;
-        const from = mins(slot);
-        const to = from + span;
-        if (carriedDays.includes(day.key as DayKey) && slot === row.fstarttime) continue; // where it already is
-        if (to > gridWindow.end) {
-          field.set(key, { tier: "blocked", why: "المحاضرة أطول من الوقت المتبقي في هذا اليوم" });
-          continue;
-        }
-        const clash = (list: FSchedule[]) =>
-          list.find(item => (item as any)[day.key] && mins(item.fstarttime) < to && mins(item.fendtime) > from);
-        const busyInstructor = clash(instructorRows);
-        if (busyInstructor) {
-          field.set(key, { tier: "blocked", why: `الأستاذ مرتبط بـ${nameOf(busyInstructor)} ${busyInstructor.fstarttime}` });
-          continue;
-        }
-        const busyHall = clash(hallRows);
-        if (busyHall) {
-          field.set(key, { tier: "blocked", why: `القاعة محجوزة لـ${nameOf(busyHall)} ${busyHall.fstarttime}` });
-          continue;
-        }
-        /* Same scoring the drag uses, in the same order of importance. */
-        let score = 100;
-        const reasons: string[] = [];
-        const sameDay = instructorRows
-          .filter(item => (item as any)[day.key])
-          .map(item => ({ from: mins(item.fstarttime), to: mins(item.fendtime) }));
-        if (sameDay.length) {
-          const nearest = Math.min(...sameDay.map(other =>
-            other.to <= from ? from - other.to : other.from >= to ? other.from - to : 0));
-          score -= Math.min(40, Math.round(nearest / 15) * 4);
-          reasons.push(nearest === 0
-            ? "ملاصق لمحاضرة أخرى للأستاذ"
-            : `فراغ ${nearest} دقيقة عن أقرب محاضرة للأستاذ`);
-        } else {
-          score -= 12;
-          reasons.push("يوم جديد للأستاذ — يكلّف انتقالاً");
-        }
-        const expected = day.key === "fmonday" || day.key === "fwednesday" ? 90 : 60;
-        if (span !== expected) { score -= 18; reasons.push(`طول غير معتاد ليوم ${day.label}`); }
-        if (from < 8 * 60 || from >= 14 * 60) { score -= 8; reasons.push("خارج ذروة اليوم الدراسي"); }
-        const tier = score >= 88 ? "excellent" : score >= 70 ? "good" : "fair";
-        field.set(key, {
-          tier,
-          why: `${tier === "excellent" ? "ممتاز" : tier === "good" ? "جيد" : "ممكن بتنازل"} — ${reasons.join(" · ")}`,
-        });
+        if (carriedDays.includes(day.key as DayKey) && slot === row.fstarttime) continue;
+        field.set(`${day.key}:${slot}`, readPlacement(row, day.key as DayKey, slot));
       }
     }
     return field;
-  }, [viewMode, physicsActive, saving, context?.selected?.id, rows, weekRows, timeSlots, gridWindow, courseById]);
+  }, [viewMode, physicsActive, saving, context?.selected?.id, rows, timeSlots, readPlacement]);
+
+  /**
+   * ── Keyboard move ─────────────────────────────────────────────────────────
+   *
+   * A second road to the same place, never a second engine. Space picks a
+   * focused lecture up, the arrows walk it, Enter puts it down through
+   * `commitMove` — the identical function the pointer uses, so the conflict
+   * rules, the optimistic paint, the undo entry and the live broadcast are all
+   * literally the same code.
+   *
+   * The two roads are mutually exclusive on purpose. While a lecture is held by
+   * the keyboard the drag layer is switched off, so a stray pointer cannot pick
+   * up a second copy of the same card; and a lecture already in the air under a
+   * pointer cannot be picked up by Space. One card, one hand, always.
+   */
+  const keyMoveRow = useMemo(
+    () => (keyMove ? rows.find(row => row.id === keyMove.rowId) || null : null),
+    [keyMove, rows],
+  );
+  const keyMoveReading = useMemo(
+    () => (keyMove && keyMoveRow ? readPlacement(keyMoveRow, keyMove.day, keyMove.start) : null),
+    [keyMove, keyMoveRow, readPlacement],
+  );
+  /* What a screen reader is told, and the only announcement this mode makes. */
+  const [keyMoveSay, setKeyMoveSay] = useState("");
+
+  const pickUpWithKeyboard = useCallback((row: FSchedule) => {
+    if (!isPowerAdmin || saving) return;
+    if (physics.state.phase !== "idle") return;      // a pointer already holds something
+    if (viewMode !== "week") return;
+    const day = (days.find(d => Boolean((row as any)[d.key]))?.key || "fsunday") as DayKey;
+    setKeyMove({ rowId: row.id, day, start: row.fstarttime });
+    const title = row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد";
+    setKeyMoveSay(`تم التقاط ${title}. استخدم الأسهم للتحريك، Enter للتنفيذ، Esc للإلغاء.`);
+  }, [isPowerAdmin, saving, physics.state.phase, viewMode, courseById]);
+
+  const cancelKeyboardMove = useCallback(() => {
+    setKeyMove(null);
+    setKeyMoveSay("أُلغي النقل؛ لم يتغير شيء.");
+  }, []);
+
+  const stepKeyboardMove = useCallback((axis: "time" | "day", delta: number) => {
+    setKeyMove(current => {
+      if (!current) return current;
+      if (axis === "time") {
+        const next = mins(current.start) + delta * SCHEDULE_SLOT_MINUTES;
+        if (next < gridWindow.start || next > gridWindow.end - SCHEDULE_SLOT_MINUTES) return current;
+        return { ...current, start: timeFromMins(next) };
+      }
+      const index = days.findIndex(d => d.key === current.day);
+      const target = index + delta;
+      if (target < 0 || target >= days.length) return current;
+      return { ...current, day: days[target].key as DayKey };
+    });
+  }, [gridWindow]);
+
+  const commitKeyboardMove = useCallback(() => {
+    if (!keyMove || !keyMoveRow) return;
+    if (keyMoveReading?.tier === "blocked") {
+      setKeyMoveSay(`غير متاح — ${keyMoveReading.why}`);
+      return;
+    }
+    const sourceDay = (days.find(d => Boolean((keyMoveRow as any)[d.key]))?.key || keyMove.day) as DayKey;
+    const label = days.find(d => d.key === keyMove.day)?.label || "";
+    setKeyMove(null);
+    setKeyMoveSay(`تم نقل الموعد إلى ${label} ${keyMove.start}.`);
+    // The same door as a drag: same checks, same undo, same broadcast.
+    void commitMove({
+      row: keyMoveRow,
+      sourceDay: sourceDay as any,
+      target: { day: keyMove.day as any, start: keyMove.start, label },
+      decision: null,
+    } as any);
+  }, [keyMove, keyMoveRow, keyMoveReading]);
+
+  /* The arrows belong to the held card and to nothing else while it is held. */
+  useEffect(() => {
+    if (!keyMove) return;
+    const rtl = document.documentElement.dir !== "ltr";
+    const onKey = (event: KeyboardEvent) => {
+      const element = document.activeElement as HTMLElement | null;
+      if (element && (element.tagName === "INPUT" || element.tagName === "TEXTAREA" || element.isContentEditable)) return;
+      switch (event.key) {
+        case "ArrowUp": event.preventDefault(); stepKeyboardMove("time", -1); return;
+        case "ArrowDown": event.preventDefault(); stepKeyboardMove("time", 1); return;
+        // The columns are read in the page's own direction: in Arabic the day
+        // to the visual left is the LATER day, so the arrows follow the grid
+        // rather than an assumption about which way "next" points.
+        case "ArrowLeft": event.preventDefault(); stepKeyboardMove("day", rtl ? 1 : -1); return;
+        case "ArrowRight": event.preventDefault(); stepKeyboardMove("day", rtl ? -1 : 1); return;
+        case "Enter": event.preventDefault(); commitKeyboardMove(); return;
+        case "Escape": event.preventDefault(); event.stopPropagation(); cancelKeyboardMove(); return;
+        case " ": case "Spacebar": event.preventDefault(); cancelKeyboardMove(); return;
+        default: return;
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [keyMove, stepKeyboardMove, commitKeyboardMove, cancelKeyboardMove]);
+
+  /* A held card announces where it now points, once per step. */
+  useEffect(() => {
+    if (!keyMove || !keyMoveReading) return;
+    const label = days.find(d => d.key === keyMove.day)?.label || "";
+    setKeyMoveSay(`${label} ${keyMove.start} — ${keyMoveReading.why}`);
+  }, [keyMove?.day, keyMove?.start, keyMoveReading?.why]);
 
   const slotBlockReason = (day: DayKey, start: string) => dragField.blocked.get(`${day}:${start}`) || "";
   /* The field's own class and sentence for a square. A live drag always wins:
@@ -6169,6 +6295,24 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         }}
                       />
                     ))}
+                    {/* Where the keyboard is pointing: a ghost in the target
+                        square, carrying the same verdict the drag would show. */}
+                    {keyMove && keyMove.day === d.key && keyMoveRow ? (
+                      <div
+                        className={`week-keymove-target tier-${keyMoveReading?.tier || "fair"}`}
+                        style={{
+                          top: ((mins(keyMove.start) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
+                          height: Math.max(
+                            SLOT_H - 4,
+                            ((mins(keyMoveRow.fendtime) - mins(keyMoveRow.fstarttime)) / SCHEDULE_SLOT_MINUTES) * SLOT_H - 3,
+                          ),
+                        }}
+                        aria-hidden="true"
+                      >
+                        <b dir="ltr">{keyMove.start}</b>
+                        <span>{keyMoveReading?.tier === "blocked" ? "غير متاح" : keyMoveReading?.tier === "excellent" ? "ممتاز" : keyMoveReading?.tier === "good" ? "جيد" : "ممكن بتنازل"}</span>
+                      </div>
+                    ) : null}
                     {paint && paint.day === d.key ? (
                       <div
                         className="week-paint"
@@ -6617,6 +6761,18 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             title="إضافة موعد جديد"
           ><Plus aria-hidden="true" /><span>موعد</span></button>
         </nav>
+      ) : null}
+      {/* The keyboard move's only voice: a polite live region, and a single
+          quiet strip while a lecture is held. Nothing permanent is added to the
+          screen for a mode that is not running. */}
+      <span className="sr-only" role="status" aria-live="polite">{keyMoveSay}</span>
+      {keyMove && keyMoveRow ? (
+        <div className={`keymove-bar no-print tier-${keyMoveReading?.tier || "fair"}`} role="status">
+          <strong>{keyMoveRow.AdCourseName || courseById.get(keyMoveRow.AdCourseId)?.CourseName || "الموعد"}</strong>
+          <span dir="ltr">{days.find(d => d.key === keyMove.day)?.label} · {keyMove.start}</span>
+          <em>{keyMoveReading?.why || ""}</em>
+          <span className="keymove-keys"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> تحريك · <kbd>Enter</kbd> تنفيذ · <kbd>Esc</kbd> إلغاء</span>
+        </div>
       ) : null}
       {paletteOpen ? (
         <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />

@@ -501,16 +501,68 @@ export default function App() {
       document.removeEventListener("visibilitychange", visibility);
     };
   }, [user?.SystemUserId]);
+  /**
+   * ── What «متصل» is allowed to mean ────────────────────────────────────────
+   *
+   * `navigator.onLine` reports whether the machine has a network interface, and
+   * reports it generously: a laptop on a captive café wifi with no route out
+   * still says yes. The screen was turning that into «متصل وآمن للحفظ» — a
+   * promise about a server it had never spoken to.
+   *
+   * There are four honest states, not two, and only the server can tell them
+   * apart. The browser's own signal is kept as the fast path — when the
+   * interface drops there is no point asking — and the heartbeat decides the
+   * rest, quietly, and only while the tab is being looked at.
+   */
+  const [health, setHealth] = useState<"online" | "reconnecting" | "offline" | "database-down">(
+    () => (navigator.onLine ? "online" : "offline"),
+  );
   useEffect(() => {
-    const up = () => setOnline(true),
-      down = () => setOnline(false);
-    window.addEventListener("online", up);
+    let alive = true;
+    let timer = 0;
+    const beat = async () => {
+      if (!alive) return;
+      if (!navigator.onLine) { setHealth("offline"); return; }
+      try {
+        const response = await fetch("/api/health", { cache: "no-store" });
+        const data = await response.json().catch(() => null);
+        if (!alive) return;
+        if (!response.ok) setHealth("reconnecting");
+        else if (data && data.ok === false) setHealth("database-down");
+        else setHealth("online");
+      } catch {
+        // The interface says yes and the server did not answer: that is exactly
+        // the state the old reading could never see.
+        if (alive) setHealth("reconnecting");
+      }
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      // A tab nobody is looking at asks nothing.
+      if (document.visibilityState !== "visible") return;
+      timer = window.setTimeout(async () => { await beat(); schedule(); }, 30_000);
+    };
+    const wake = () => { void beat(); schedule(); };
+    const down = () => setHealth("offline");
+    void beat();
+    schedule();
+    window.addEventListener("online", wake);
     window.addEventListener("offline", down);
+    document.addEventListener("visibilitychange", wake);
     return () => {
-      window.removeEventListener("online", up);
+      alive = false;
+      window.clearTimeout(timer);
+      window.removeEventListener("online", wake);
       window.removeEventListener("offline", down);
+      document.removeEventListener("visibilitychange", wake);
     };
   }, []);
+  useEffect(() => { setOnline(health === "online"); }, [health]);
+  const healthLabel =
+    health === "online" ? "متصل بالخادم · الحفظ متاح"
+      : health === "reconnecting" ? "يحاول الاتصال بالخادم · لا تحفظ الآن"
+        : health === "database-down" ? "قاعدة البيانات غير متاحة · القراءة فقط"
+          : "دون إنترنت · القراءة فقط";
   useEffect(() => {
     (async () => {
       try {
@@ -1693,8 +1745,8 @@ export default function App() {
         <div className="sidebar-footer">
           <div className="user-card">
             <div
-              className={`user-avatar ${online ? "online" : "offline"}`}
-              title={online ? "متصل وآمن للحفظ" : "دون اتصال · قراءة فقط"}
+              className={`user-avatar health-${health}`}
+              title={healthLabel}
             >
               {user.Name.trim().charAt(0) || "م"}
               <i aria-hidden="true" />
@@ -1705,9 +1757,7 @@ export default function App() {
                 {isPowerAdmin ? "إدارة كاملة" : "مسؤول الجدول · قسمك فقط"}
               </small>
             </div>
-            <span className="sr-only" role="status">
-              {online ? "متصل وآمن للحفظ" : "دون اتصال · القراءة فقط"}
-            </span>
+            <span className="sr-only" role="status">{healthLabel}</span>
             <div className="user-card-tools">
               <button
                 type="button"

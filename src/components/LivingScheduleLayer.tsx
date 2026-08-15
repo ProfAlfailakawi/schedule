@@ -557,7 +557,12 @@ export default function LivingScheduleLayer({
             </nav>
             {experience ? (
               <section className="living-experience-tools" aria-label="أدوات القرار المتقدمة">
-                <button type="button" className={experience.ghostEnabled ? "active" : ""} onClick={() => { onEnsureWeek?.(); void experience.toggleGhost(); }} disabled={experience.ghostBusy || !experience.previousTerm}>
+                {/* The comparison paints itself onto the week grid — which is
+                    behind this drawer. Both of its neighbours dismiss the drawer
+                    before acting for exactly that reason; this one did not, so
+                    it worked perfectly and invisibly, under a full-screen tint.
+                    It now leaves the room it drew in. */}
+                <button type="button" className={experience.ghostEnabled ? "active" : ""} onClick={() => { onEnsureWeek?.(); setScene(null); void experience.toggleGhost(); }} disabled={experience.ghostBusy || !experience.previousTerm}>
                   <Dna /><span>{experience.ghostEnabled ? "إخفاء مقارنة الفصل" : "مقارنة الفصل السابق"}</span>
                 </button>
                 <button type="button" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>

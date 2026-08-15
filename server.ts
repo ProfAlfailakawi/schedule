@@ -258,11 +258,43 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
  * trace. The interface itself is untouched — it loads and shows this reason.
  */
 let databaseDown: string | null = null;
+/**
+ * The reason stays here; the browser gets a receipt.
+ *
+ * The failure text is a database driver's own words — hostnames, project ids,
+ * credential paths, stack frames. It was being handed to whoever happened to be
+ * looking at the login screen. What that reader actually needs is something they
+ * can quote down a telephone; what the operator needs is the full sentence, and
+ * the log is where the operator already looks. Same incident, one short id, two
+ * audiences.
+ */
+let databaseDownRef: string | null = null;
+/**
+ * Is the schedule actually reachable?
+ *
+ * The browser's own `navigator.onLine` answers a much smaller question — is
+ * there a network interface — and answers it optimistically: a laptop on a
+ * café's wifi with no route out still reports itself online, and the screen was
+ * telling that reader their work was «آمن للحفظ». This says the thing the
+ * sentence claims: the process is up, and the database answered.
+ *
+ * Deliberately unauthenticated and deliberately tiny: it is polled, it must not
+ * cost a session lookup, and it must keep answering while everything else 503s
+ * so the interface can tell «الخادم واقف» from «قاعدة البيانات واقفة».
+ */
+app.get("/api/health", (_req, res) => {
+  res.type("application/json; charset=utf-8").send(JSON.stringify({
+    ok: !databaseDown,
+    database: databaseDown ? "down" : "up",
+    ref: databaseDown ? databaseDownRef : undefined,
+  }));
+});
+
 app.use("/api", (_req, res, next) => {
   if (!databaseDown) { next(); return; }
   res.status(503).type("application/json; charset=utf-8").send(JSON.stringify({
     error: "الخدمة متوقفة: تعذر الاتصال بقاعدة البيانات الحقيقية.",
-    detail: databaseDown
+    ref: databaseDownRef,
   }));
 });
 
@@ -4139,7 +4171,8 @@ async function startServer() {
     await initDatabase();
   } catch (error) {
     databaseFailure = error instanceof Error ? error.message : String(error);
-    console.error("تعذر تهيئة قاعدة البيانات:\n" + databaseFailure);
+    databaseDownRef = randomBytes(4).toString("hex");
+    console.error(`تعذر تهيئة قاعدة البيانات [${databaseDownRef}]:\n` + databaseFailure);
     if (isServingBuild) {
       console.error("لن يبدأ الخادم على بيانات بديلة. تبقى النسخة السابقة العاملة كما هي.");
       process.exit(1);

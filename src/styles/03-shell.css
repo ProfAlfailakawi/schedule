@@ -242,7 +242,17 @@
   border:2px solid var(--nav-2);
   background:#6cb08c;
 }
+/* Four states, four colours — because there were always four, and the dot was
+   only ever able to say two of them. Green is the only one that means the
+   sentence beside it: the server answered and the database is up. */
+.user-avatar.health-online i{background:#6cb08c}
+.user-avatar.health-reconnecting i{background:#d9a071;animation:pulse 1.4s ease-in-out infinite}
+.user-avatar.health-database-down i{background:#c98b86}
+.user-avatar.health-offline i{background:#8b969a}
 .user-avatar.offline i{background:#d9a071}
+@media (prefers-reduced-motion:reduce){
+  .user-avatar.health-reconnecting i{animation:none}
+}
 .user-card strong,.user-card small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .user-card strong{font-size:var(--t-sm);font-weight:600}
 .user-card small{margin-top:1px;color:var(--nav-muted);font-size:var(--t-xs)}

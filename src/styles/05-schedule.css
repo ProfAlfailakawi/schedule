@@ -4004,3 +4004,114 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 @media (prefers-reduced-motion:reduce){
   .views-menu,.views-dialog,.views-dialog-backdrop{animation:none}
 }
+
+/* ==========================================================================
+   KEYBOARD MOVE
+   A second road to the same place. It appears only while a lecture is actually
+   held: no permanent strip, no badge on a card, nothing at all for a reader who
+   never presses Space. And while it is running the pointer layer is off, so the
+   two can never be carrying the same card at once.
+   ========================================================================== */
+
+.week-event.week-keymove-source{
+  outline:2px dashed var(--accent);outline-offset:2px;
+  opacity:.55;
+}
+.week-keymove-target{
+  position:absolute;inset-inline:4px;z-index:7;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  border-radius:var(--r-sm);
+  border:2px solid var(--accent);
+  background:color-mix(in srgb,var(--accent) 14%,transparent);
+  color:var(--accent-ink);
+  pointer-events:none;
+  font-size:var(--t-xs);
+}
+.week-keymove-target b{font:700 var(--t-sm)/1 var(--font-mono);font-variant-numeric:tabular-nums}
+.week-keymove-target.tier-excellent{border-color:var(--success);background:color-mix(in srgb,var(--success) 16%,transparent);color:var(--success)}
+.week-keymove-target.tier-good{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent)}
+.week-keymove-target.tier-fair{border-color:var(--warning);background:color-mix(in srgb,var(--warning) 14%,transparent);color:var(--warning)}
+.week-keymove-target.tier-blocked{
+  border-color:var(--danger);color:var(--danger);
+  background:color-mix(in srgb,var(--danger) 10%,transparent);
+  background-image:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--danger) 18%,transparent) 0 3px,transparent 3px 8px);
+}
+
+.keymove-bar{
+  position:fixed;z-index:145;
+  left:50%;transform:translateX(-50%);
+  bottom:calc(var(--s4) + 52px + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
+  max-width:min(720px,calc(100vw - 32px));
+  padding:var(--s2) var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);box-shadow:var(--shadow-md);
+  font-size:var(--t-xs);
+  animation:rise .16s var(--ease-out) both;
+}
+.keymove-bar strong{font-size:var(--t-sm);color:var(--ink);font-weight:650}
+.keymove-bar>span[dir="ltr"]{
+  font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--accent-ink);
+  padding:2px 8px;border-radius:var(--r-full);background:var(--accent-softer);
+}
+.keymove-bar em{font-style:normal;color:var(--muted);flex:1;min-width:0}
+.keymove-bar.tier-blocked em{color:var(--danger)}
+.keymove-bar.tier-excellent>span[dir="ltr"]{background:var(--success-soft);color:var(--success)}
+.keymove-bar.tier-blocked>span[dir="ltr"]{background:var(--danger-soft);color:var(--danger)}
+.keymove-keys{display:inline-flex;align-items:center;gap:4px;color:var(--muted-2,var(--muted));flex:none}
+.keymove-keys kbd{
+  padding:1px 5px;border-radius:var(--r-xs);
+  border:1px solid var(--line);background:var(--surface-2);
+  font:600 9.5px/1.6 var(--font-mono);color:var(--muted);
+}
+@media (max-width:768px){
+  /* A phone has no arrow keys worth speaking of; the strip would be furniture. */
+  .keymove-bar{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .keymove-bar{animation:none}
+}
+
+/* ==========================================================================
+   THE PREVIOUS TERM, LAID UNDER THIS ONE
+   The comparison already sorted every ghost into three meanings — gone, kept,
+   changed — and then had no way to say which was which: the three classes were
+   written onto the cards and no rule ever read them, so all three printed as
+   the same grey. A comparison whose whole answer is invisible is a comparison
+   that did not happen.
+   ========================================================================== */
+
+.week-event.ghost-semester-event{
+  /* Never mistaken for a live lecture: dashed, hollow, and out of reach. */
+  border-style:dashed !important;
+  pointer-events:none;
+  z-index:2;
+}
+.week-event.ghost-removed{
+  border-color:color-mix(in srgb,var(--danger) 55%,transparent) !important;
+  background:color-mix(in srgb,var(--danger) 7%,transparent) !important;
+}
+.week-event.ghost-same{
+  border-color:color-mix(in srgb,var(--muted) 45%,transparent) !important;
+  background:color-mix(in srgb,var(--muted) 5%,transparent) !important;
+}
+.week-event.ghost-changed{
+  border-color:color-mix(in srgb,var(--brass) 60%,transparent) !important;
+  background:color-mix(in srgb,var(--brass) 9%,transparent) !important;
+}
+/* Colour is not the only channel: each meaning carries a mark of its own. */
+.week-event.ghost-removed::before{content:"حُذف";}
+.week-event.ghost-same::before{content:"كما هو";}
+.week-event.ghost-changed::before{content:"تغيّر";}
+.week-event.ghost-removed::before,
+.week-event.ghost-same::before,
+.week-event.ghost-changed::before{
+  position:absolute;inset-block-start:2px;inset-inline-end:4px;
+  padding:0 5px;border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink-2);
+  font-size:8px;font-weight:700;letter-spacing:-.2px;
+  border:1px solid currentColor;
+}
+.week-event.ghost-removed::before{color:var(--danger)}
+.week-event.ghost-changed::before{color:var(--brass)}
+.week-event.ghost-same::before{color:var(--muted)}
