@@ -182,48 +182,46 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
      {nextUp?<em dir="ltr" title={currentLecture?`المحاضرة الجارية حتى ${nextUp.endTime}`:`المحاضرة التالية تبدأ ${nextUp.startTime}`} aria-label={currentLecture?`المحاضرة الجارية حتى ${nextUp.endTime}`:`المحاضرة التالية تبدأ ${nextUp.startTime}`}>{currentLecture?nextUp.endTime:nextUp.startTime}</em>:null}
     </div>
     <div className="daybar">
-     <div className="daybar-track" role="group" aria-label="المحاضرات موزعة على ساعات اليوم">
-      {[8,10,12,14,16,18,20].map(hour=><i key={hour} className="daybar-grid" style={{insetInlineStart:spot(hour*60)}} aria-hidden="true"/>)}
+     <div className="daybar-track" role="img" aria-label={`ضغط اليوم على ساعاته: ${
+       Array.from({length:12},(_,k)=>8+k).map(h=>`${h} ${
+         today.filter(r=>minutesOf(r.startTime)<(h+1)*60 && Math.max(minutesOf(r.startTime)+30,minutesOf(r.endTime))>h*60).length
+       }`).join("، ")}`}>
       {/*
-        ── الكتل المتزامنة ─────────────────────────────────────────────────
-        Every lecture used to be drawn on its own, so the ones sharing an hour
-        landed on the same pixel and stacked. Measured on the live board: 382
-        overlapping pairs, several blocks at the identical offset, their codes
-        printed over one another into strings like «114344» that are not any
-        course. A strip this size cannot show ten lectures side by side, and
-        pretending otherwise produced noise rather than a schedule.
+        ── شكل اليوم، لا مواضعه ──────────────────────────────────────────────
+        Drawing every lecture as its own block is the wrong shape for this
+        strip, and no amount of fixing changes that. Measured on the live
+        board: 74 lectures, 73 of them landing on a pixel another block already
+        occupied, the worst stack fourteen deep, codes printed over one another
+        into strings that are not any course. Grouping them helped and still
+        left slivers fighting for width.
 
-        So lectures that start together become ONE block that says how many.
-        The strip is an overview; the count is the information, and every code
-        is still in the tooltip and the accessible label.
+        A five-hundred-pixel strip cannot show seventy-four positions. It can
+        show a SHAPE — how heavy each hour is — and that is the question this
+        strip is on the dashboard to answer: where is today busy. Twelve
+        columns, one per teaching hour, each as tall as the hour is full.
+        Nothing can overlap, because nothing shares a column.
       */}
-      {Array.from(today.reduce((groups,row)=>{
-        const start=minutesOf(row.startTime);
-        const bucket=groups.get(start);
-        if(bucket) bucket.push(row); else groups.set(start,[row]);
-        return groups;
-      },new Map<number,typeof today>()).entries()).map(([start,group])=>{
-       const end=Math.max(start+30,...group.map(r=>minutesOf(r.endTime)));
-       const description=group.length===1
-        ? `${group[0].courseCode}، ${group[0].courseName}، من ${group[0].startTime} إلى ${group[0].endTime}، قاعة ${group[0].roomCode}/${group[0].roomHall}، ${group[0].instructorName}`
-        : `${countOf(group.length, AR.lecture)} تبدأ ${group[0].startTime} — ${group.map(r=>r.courseCode).join("، ")}`;
+      {Array.from({length:12},(_,k)=>8+k).map(hour=>{
+       const from=hour*60,to=from+60;
+       const count=today.filter(row=>{
+        const s=minutesOf(row.startTime),e=Math.max(s+30,minutesOf(row.endTime));
+        return s<to && e>from;
+       }).length;
+       const peak=Math.max(1,...Array.from({length:12},(_,j)=>today.filter(row=>{
+        const s=minutesOf(row.startTime),e=Math.max(s+30,minutesOf(row.endTime));
+        return s<(8+j+1)*60 && e>(8+j)*60;
+       }).length));
+       const live=nowVisible && nowMinutes>=from && nowMinutes<to;
        return <button
-        key={start}
+        key={hour}
         type="button"
-        className="daybar-block"
-        data-many={group.length>1?"true":undefined}
-        style={{insetInlineStart:spot(start),width:laneWidth(start,end)}}
-        title={description}
-        aria-label={description}
+        className={`daybar-hour${live?" now":""}${count?"":" empty"}`}
+        style={{["--fill" as any]:`${Math.round((count/peak)*100)}%`}}
+        title={count?`${clockOf(from)} — ${countOf(count, AR.lecture)}`:`${clockOf(from)} — لا محاضرات`}
+        aria-label={count?`${clockOf(from)} — ${countOf(count, AR.lecture)}`:`${clockOf(from)} — لا محاضرات`}
         onClick={()=>onNavigate?.("schedules")}
-       ><b>{group.length===1?group[0].courseCode:`×${group.length}`}</b></button>;
+       ><i aria-hidden="true"/><b>{count||""}</b></button>;
       })}
-      {/* The gold line is «now». It was a bare 2px rule with aria-hidden and no
-          label, so it read as decoration — a stripe on a chart that says
-          nothing. It carries its own hour now, the way the week grid's does. */}
-      {nowVisible?<span className="daybar-now" style={{insetInlineStart:spot(nowMinutes)}}
-        role="img" aria-label={`الآن · ${clockOf(nowMinutes)}`}
-        title={`الآن · ${clockOf(nowMinutes)}`}><b dir="ltr">{clockOf(nowMinutes)}</b></span>:null}
      </div>
      <div className="daybar-scale" aria-hidden="true">
       {[8,11,14,17,20].map(hour=><span key={hour} style={{insetInlineStart:spot(hour*60)}} dir="ltr">{String(hour).padStart(2,"0")}</span>)}

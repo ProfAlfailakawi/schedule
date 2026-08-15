@@ -1072,6 +1072,49 @@ async function runTests() {
       "…without losing the fact that students are caught in it too");
   }
 
+  /* --- 25b. شريط اليوم: شكل لا مواضع ---------------------------------------- */
+  originalLog("\n--- 25b. Day shape ---");
+  {
+    /* Grouping concurrent lectures helped and was still the wrong shape. A
+       500px strip cannot show 74 positions; it can show how heavy each hour is,
+       which is the question the dashboard asks. Twelve columns, one per hour —
+       nothing can overlap because nothing shares a column. */
+    const mins = (t: string) => { const [h, m] = t.split(":").map(Number); return h * 60 + (m || 0); };
+    const density = (rows: Array<{ startTime: string; endTime: string }>) =>
+      Array.from({ length: 12 }, (_, k) => {
+        const from = (8 + k) * 60, to = from + 60;
+        return rows.filter(r => {
+          const s = mins(r.startTime), e = Math.max(s + 30, mins(r.endTime));
+          return s < to && e > from;
+        }).length;
+      });
+
+    const day = [
+      { startTime: "08:00", endTime: "09:15" }, { startTime: "08:00", endTime: "09:15" },
+      { startTime: "08:00", endTime: "09:15" }, { startTime: "11:00", endTime: "12:15" },
+      { startTime: "13:00", endTime: "16:00" },   // one lecture spanning three hours
+    ];
+    const shape = density(day);
+    assert(shape.length === 12, "the day is always twelve columns, whatever it holds");
+    assert(shape[0] === 3, "three lectures at eight make the eight o'clock column three high");
+    /* They run until 09:15, so they genuinely occupy part of the nine o'clock
+       hour and the column counts them. The first version of this assertion
+       expected zero and was wrong about the data, not about the code: an hour
+       is busy if a lecture is in the room during it, whatever minute it began. */
+    assert(shape[1] === 3, "…and nine still counts them, because they run into it");
+    assert(shape[2] === 0, "the first genuinely free hour is ten");
+    assert(shape[3] === 1, "an ordinary hour counts its one lecture");
+    // A long lecture is present in every hour it actually occupies.
+    assert(shape[5] === 1 && shape[6] === 1 && shape[7] === 1,
+      "a three-hour lecture stands in all three of its columns");
+    assert(density([]).every(n => n === 0), "an empty day is twelve empty columns, not an error");
+    // The tallest column sets the scale, so a quiet day still has a shape.
+    const peak = Math.max(1, ...shape);
+    assert(peak === 3 && Math.round((shape[0] / peak) * 100) === 100,
+      "the busiest hour is full height and everything else is measured against it");
+    assert(Math.round((shape[3] / peak) * 100) === 33, "…so one against three reads as a third");
+  }
+
   /* --- 25. شريط اليوم: المتزامنات كتلة واحدة -------------------------------- */
   originalLog("\n--- 25. Day strip grouping ---");
   {

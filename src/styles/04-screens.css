@@ -197,111 +197,58 @@
 }
 
 .daybar{min-width:0}
-.daybar-track{
-  position:relative;
-  height:56px;
-  border-radius:var(--r-sm);
-  background:var(--surface-2);
-  overflow:hidden;
-}
-.daybar-grid{
-  position:absolute;top:0;bottom:0;width:1px;
-  background:color-mix(in srgb,var(--line-strong) 70%,transparent);
-}
 /*
-  A pill is as wide as its lecture is long, and nothing measures the word inside
-  it. An hour is 8% of the teaching day — about 54px on a laptop, 38px of it
-  left after padding, which is five characters of a course code. So «ELE 112»
-  arrived as a smear of half-glyphs, and two of them side by side read as one
-  unbroken number. The pill now asks itself whether it can hold a word: above
-  the measured threshold it prints the code, below it stays a clean bar and the
-  code lives where it already lived — in the tooltip and the accessible name.
-*/
-/*
-   ── كتل اليوم ──────────────────────────────────────────────────────────────
+   ── شكل اليوم ──────────────────────────────────────────────────────────────
  *
- * Two things made this strip read as damage rather than as a day. Lectures
- * sharing an hour were drawn at the same offset and stacked, printing their
- * codes over one another; that is fixed where the blocks are built, by
- * grouping them into one that says how many.
+ * Twelve columns, one per teaching hour, each as tall as the hour is full.
+ * Nothing here can overlap another thing, because nothing shares a column —
+ * which is the whole point: the previous strip drew a block per lecture and,
+ * measured on the live board, put seventy-three of seventy-four on a pixel
+ * another block already held.
  *
- * The second is here: neighbours were separated by an INSET hairline, which is
- * painted inside the block and so leaves no actual space between two of them.
- * Seventy-four lectures across twelve hours produced a solid green bar with
- * faint seams. A real gap costs two pixels and turns the bar back into
- * distinguishable blocks.
+ * It answers the question the dashboard actually asks — where is today heavy —
+ * and it answers it at a glance instead of demanding a reading.
  */
-.daybar-block{
-  position:absolute;top:8px;bottom:8px;
-  min-width:10px;
-  display:flex;align-items:center;justify-content:center;
-  padding:0 3px;
-  border-radius:var(--r-xs);
-  background:var(--accent);
-  color:var(--accent-contrast);
-  /* A real gap, not an inset line — but made with a MARGIN, not a clip.
-     `clip-path` did separate the blocks and then went on cutting whatever was
-     under the cut: the «×» of «×11» sat within that first pixel and was sliced
-     off, so a grouped block read as «:11». A clip cannot tell a border from a
-     glyph; a margin never touches the text. */
-  margin-inline:1px;
-  overflow:hidden;
-  container-type:inline-size;
-  transition:transform .16s var(--ease),box-shadow .16s var(--ease);
+.daybar-track{
+  position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
+  /* `align-items:end` shrank every column to its own content — 22px instead of
+     72 — so a bar asking for "100%" got 100% of twenty-two pixels and the whole
+     shape read as a row of hairlines. Stretch gives each column the track's
+     full height, which is what a percentage of it is supposed to mean. */
+  gap:3px;align-items:stretch;height:78px;padding:0;
+  border-radius:var(--r-sm);background:var(--surface-2);
 }
-.daybar-block b{
-  display:none;
-  /* A flex item refuses to shrink below its own content unless it is told it
-     may: without `min-width:0` the label kept its full width, overflowed the
-     pill, and the pill's `overflow:hidden` cut it — which is the half-code the
-     reader was still seeing after the pill itself had been made wide enough.
-     With the floor removed, `text-overflow` can finally do its job. */
-  min-width:0;max-width:100%;
-  font:600 var(--t-xs)/1 var(--font-mono);
-  direction:ltr;unicode-bidi:isolate;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+.daybar-hour{
+  position:relative;display:flex;flex-direction:column;justify-content:flex-end;
+  gap:3px;padding:6px 0 4px;min-width:0;height:100%;
+  background:transparent;border:0;cursor:pointer;
 }
-/* A number is shown whole or not at all.
- *
- * `text-overflow: ellipsis` was doing its job and the job was wrong: half a
- * course code with a dot after it is not information, and «1464» printed over
- * «164» is what the reader was actually looking at. Below the width that fits
- * the label, the block carries no text — its identity is in the tooltip and the
- * accessible label, and the block itself still marks the hour. */
-.daybar-block b{text-overflow:clip}
-/* 62px: eight characters at the mono advance of --t-xs, plus the 6px padding. */
-@container (min-width:62px){
-  .daybar-block b{display:block}
+.daybar-hour>i{
+  display:block;width:100%;min-height:4px;
+  /* Grows from the floor of the column, which is now the floor of the strip. */
+  flex:0 0 var(--fill,0%);
+  border-radius:4px 4px 2px 2px;
+  background:var(--accent);opacity:.9;
+  transition:height .24s var(--ease),opacity .16s var(--ease);
 }
-.daybar-block:hover{transform:translateY(-2px);box-shadow:inset 0 0 0 1px var(--surface-2),var(--shadow-sm);z-index:2}
-/* «الآن» — a line that says which moment it marks. A gold rule with no label
-   is a decoration, and a reader is entitled to ask what it means. */
-.daybar-now{
-  position:absolute;top:0;bottom:0;width:2px;z-index:3;
-  background:var(--brass);
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--brass) 18%,transparent);
-}
-.daybar-now>b{
-  position:absolute;inset-block-start:-17px;inset-inline-start:50%;
-  transform:translateX(50%);
-  padding:1px 5px;border-radius:var(--r-full);
-  background:var(--brass);color:#fff;
-  font:600 9.5px/1.5 var(--font-mono);letter-spacing:0;
-  white-space:nowrap;direction:ltr;unicode-bidi:isolate;
-}
-/* Concurrent lectures collapse into one block that says how many.
- *
- * It stays the board's own green — a washed-out tint read as "disabled", which
- * is the opposite of what a busy hour is. What separates it from a single
- * lecture is a ring, not a lighter colour. */
-.daybar-block[data-many="true"]{
-  background:var(--accent);
-  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,#fff 45%,transparent);
-}
-.daybar-block[data-many="true"] b{
+.daybar-hour>b{
+  font:600 10px/1.2 var(--font-mono);color:var(--muted);
   font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;
-  font-weight:700;letter-spacing:.02em;
+  min-height:12px;
 }
+.daybar-hour.empty>i{background:var(--line);opacity:.6}
+.daybar-hour:hover>i{opacity:1}
+.daybar-hour:hover>b{color:var(--ink)}
+/* «الآن» — the hour being taught right now, marked on the column itself
+   rather than as a floating rule that had to explain what it was. */
+.daybar-hour.now>i{background:var(--brass)}
+.daybar-hour.now>b{color:var(--brass);font-weight:700}
+.daybar-hour.now::after{
+  content:"";position:absolute;inset-block-end:-3px;inset-inline:20%;
+  height:2px;border-radius:2px;background:var(--brass);
+}
+@media (prefers-reduced-motion:reduce){.daybar-hour>i{transition:none}}
+
 .daybar-scale{position:relative;height:18px;margin-top:var(--s2)}
 .daybar-scale span{
   position:absolute;top:0;transform:translateX(50%);
