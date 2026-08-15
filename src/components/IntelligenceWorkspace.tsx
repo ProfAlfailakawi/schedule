@@ -232,8 +232,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     </nav>
   );
 
-  const showScene = (value: InsightScene) => {
+  const showScene = (value: InsightScene | null) => {
     setInsightScene(value);
+    if (value === null) return;
     requestAnimationFrame(() => {
       const rail = document.querySelector<HTMLElement>(".insight-preview-rail");
       const anchorEl = rail?.parentElement || rail;
@@ -247,7 +248,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const [heatMode, setHeatMode] = useState("department"),
     [detail, setDetail] = useState<any>(null),
-    [insightScene, setInsightScene] = useState<InsightScene>("quality");
+    /* null = the dashboard itself. A reading is a page that opens ON TOP of it
+       and closes back to it — not a section further down the same scroll. */
+    [insightScene, setInsightScene] = useState<InsightScene | null>(null);
   const [prompt, setPrompt] = useState(""),
     [chat, setChat] = useState<ChatItem[]>([]),
     chatEnd = useRef<HTMLDivElement | null>(null);
@@ -1127,10 +1130,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           : []),
       ]
     : [];
-  const activeInsight =
-    insightScenes.find((item) => item.value === insightScene) ||
-    insightScenes[0];
-  const activeInsightKey = activeInsight?.value || "quality";
+  /* Escape closes an open reading, exactly as it closes every other overlay
+     on this workspace. */
+  useEffect(() => {
+    if (!insightScene) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setInsightScene(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [insightScene]);
+
+  const activeInsight = insightScenes.find((item) => item.value === insightScene) || null;
+  const activeInsightKey = activeInsight?.value || "";
   const moveInsightFocus = (
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
@@ -1256,14 +1266,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           >
             <div className="insight-preview-head">
               <span className="surface-kicker">مشاهد الذكاء</span>
-              <strong>اختر قراءة واحدة</strong>
-              <small>رقم واحد، ثم التفاصيل عند اختيارك.</small>
+              <strong>اختر قراءة</strong>
+              <small>كل قراءة تفتح صفحتها — رقم واحد أولاً، ثم التفاصيل.</small>
             </div>
-            <div
-              className="insight-preview-list"
-              role="tablist"
-              aria-orientation="vertical"
-            >
+            <div className="insight-preview-list" role="list">
               {insightScenes.map((item, index) => {
                 const selected = activeInsightKey === item.value;
                 return (
@@ -1272,10 +1278,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     key={item.value}
                     id={`insight-tab-${item.value}`}
                     className={`insight-preview ${selected ? "active" : ""}`}
-                    role="tab"
-                    aria-selected={selected}
-                    aria-controls={`insight-panel-${item.value}`}
-                    tabIndex={selected ? 0 : -1}
+                    role="listitem"
+                    aria-label={`${item.label} — ${item.detail}`}
                     onClick={() => showScene(item.value)}
                     onKeyDown={(event) => moveInsightFocus(event, index)}
                   >
@@ -1292,10 +1296,32 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               })}
             </div>
           </nav>
+          {/*
+            ── القراءة صفحة، لا قسم أسفل الصفحة ──────────────────────────────
+            Tabs were not enough, and the reason is simple: a panel is a
+            thousand pixels tall, so switching between them still felt like
+            scrolling one long page. A reading opens as its own page over the
+            dashboard now, with a way back — the dashboard stays one place, and
+            nothing is ever under anything else.
+          */}
           <section
-            className="insight-canvas"
+            className={`insight-canvas${activeInsight ? " open" : ""}`}
             aria-label={activeInsight?.label || "قراءة القرار"}
+            aria-hidden={activeInsight ? undefined : true}
           >
+            {activeInsight ? (
+              <header className="insight-page-head">
+                <button type="button" className="insight-back" onClick={() => showScene(null)}>
+                  <ChevronLeft aria-hidden="true" />
+                  كل القراءات
+                </button>
+                <div>
+                  <span className="surface-kicker">{activeInsight.detail}</span>
+                  <strong>{activeInsight.label}</strong>
+                </div>
+                <b className="insight-page-metric"><Num value={activeInsight.metric} /></b>
+              </header>
+            ) : null}
             <p className="sr-only" role="status" aria-live="polite">
               المشهد الحالي: {activeInsight?.label}. {activeInsight?.detail}
             </p>

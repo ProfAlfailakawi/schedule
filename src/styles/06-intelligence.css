@@ -601,65 +601,91 @@
   grid-template-columns:minmax(0,1fr);
   align-items:start;
 }
-/* ── التابات ────────────────────────────────────────────────────────────────
+/*
+   ── داشٌ واحد، وقراءةٌ تفتح فوقه ──────────────────────────────────────────
  *
- * This was a vertical rail beside the canvas, and it failed twice. It ate a
- * third of the width on every screen, and below 900px it stacked ABOVE the
- * canvas — so pressing a reading changed something the reader could not see
- * without scrolling, which is why pressing it felt like nothing happened.
+ * This began as a vertical rail, then became a horizontal tab strip, and both
+ * failed the same way: a reading is a thousand pixels tall, so whichever
+ * control chose it, moving between readings still felt like scrolling one long
+ * page with things stacked under other things.
  *
- * A horizontal strip fixes both: the tabs are one line at the top, the panel
- * is immediately beneath the finger that chose it, and the canvas gets the
- * whole width back.
+ * So a reading stops being a section. The workspace is ONE dashboard — every
+ * reading as a small card with its own number — and choosing one opens it as a
+ * full page over the top, with a way back. Nothing is ever beneath anything
+ * else, because only one thing is ever on screen.
  */
 .insight-preview-rail{
-  position:sticky;top:0;z-index:12;
-  display:block;padding:0;margin-block-end:var(--s4);
-  border:0;border-block-end:1px solid var(--line);border-radius:0;
-  background:var(--surface);
+  position:static;display:block;padding:0;margin:0;border:0;border-radius:0;background:transparent;
 }
-/* The heading was three lines explaining a control that explains itself. */
-.insight-preview-head{display:none}
+.insight-preview-head{margin-block-end:var(--s4)}
+.insight-preview-head strong{display:block;margin-top:var(--s1);font-size:var(--t-h4);font-weight:650}
+.insight-preview-head small{display:block;margin-top:var(--s1);color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+
+/* The dashboard: one card per reading, each showing the single number that
+   reading exists to produce. */
 .insight-preview-list{
-  display:flex;flex-direction:row;gap:2px;
-  overflow-x:auto;overflow-y:hidden;scrollbar-width:none;
-  padding-block-end:1px;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(216px,1fr));gap:var(--s3);
 }
-.insight-preview-list::-webkit-scrollbar{display:none}
 .insight-preview{
-  flex:none;display:inline-flex;align-items:center;gap:var(--s2);
-  padding:var(--s3) var(--s4);
-  border:0;border-block-end:2px solid transparent;border-radius:0;
-  background:transparent;text-align:start;color:var(--muted);
-  white-space:nowrap;cursor:pointer;
-  transition:color .16s var(--ease),border-color .16s var(--ease);
+  display:grid;grid-template-columns:38px minmax(0,1fr);grid-template-rows:auto auto;
+  align-items:center;gap:2px var(--s3);
+  padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);text-align:start;color:var(--ink);cursor:pointer;
+  transition:border-color .16s var(--ease),transform .14s var(--ease),box-shadow .16s var(--ease);
 }
-.insight-preview:hover{color:var(--ink);background:transparent}
+.insight-preview:hover{
+  border-color:color-mix(in srgb,var(--accent) 42%,var(--line));
+  transform:translateY(-2px);box-shadow:var(--shadow-sm);
+}
 .insight-preview-icon{
-  width:auto;height:auto;display:inline-grid;place-items:center;
-  border-radius:0;background:transparent;color:currentColor;
+  grid-row:1 / span 2;
+  width:38px;height:38px;display:grid;place-items:center;
+  border-radius:var(--r-sm);background:var(--surface-3);color:var(--muted);
 }
-.insight-preview-icon svg{width:15px;height:15px}
-.insight-preview-copy{min-width:0;display:inline-flex}
-.insight-preview-copy strong{display:inline;font-size:var(--t-sm);font-weight:600;white-space:nowrap}
-/* The one-line description belonged to a rail with room for it. On a tab it is
-   noise, and the panel below says the same thing with space to say it. */
-.insight-preview-copy small{display:none}
+.insight-preview-icon svg{width:17px;height:17px}
+.insight-preview-copy{min-width:0;display:grid;gap:1px}
+.insight-preview-copy strong{font-size:var(--t-sm);font-weight:650;line-height:1.4}
+.insight-preview-copy small{
+  color:var(--muted);font-size:var(--t-xs);line-height:1.5;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+}
 .insight-preview>b{
-  font-size:var(--t-xs);font-weight:650;letter-spacing:0;
+  grid-column:2;justify-self:start;margin-block-start:var(--s2);
+  font-size:var(--t-h3);font-weight:650;letter-spacing:-.02em;line-height:1;
   font-variant-numeric:tabular-nums lining-nums;
-  direction:ltr;unicode-bidi:isolate;
-  padding:2px 7px;border-radius:999px;
-  background:var(--surface-3);color:var(--muted);
+  direction:ltr;unicode-bidi:isolate;color:var(--ink);
 }
-/* The chosen reading: an underline, the way a tab has always said it. */
-.insight-preview.active{
-  background:transparent;color:var(--accent-strong,var(--accent));
-  border-block-end-color:var(--accent);
+.insight-preview.active{border-color:color-mix(in srgb,var(--accent) 46%,var(--line))}
+.insight-preview.active .insight-preview-icon{background:var(--accent-soft);color:var(--accent)}
+
+/* The reading, as a page. Closed, it does not exist at all. */
+.insight-canvas{display:none;min-width:0}
+.insight-canvas.open{display:block}
+.insight-page-head{
+  position:sticky;top:0;z-index:12;
+  display:flex;align-items:center;gap:var(--s4);
+  padding:var(--s3) 0 var(--s4);margin-block-end:var(--s4);
+  border-block-end:1px solid var(--line);background:var(--bg,var(--surface));
 }
-.insight-preview.active .insight-preview-icon{background:transparent;color:var(--accent)}
-.insight-preview.active>b{background:var(--accent-soft);color:var(--accent-strong,var(--accent))}
-.insight-canvas{min-width:0}
+.insight-page-head>div{min-width:0;flex:1}
+.insight-page-head strong{display:block;font-size:var(--t-h4);font-weight:650;line-height:1.4}
+.insight-back{
+  flex:none;display:inline-flex;align-items:center;gap:var(--s2);
+  min-height:38px;padding:0 var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink);font-size:var(--t-xs);font-weight:600;cursor:pointer;
+}
+.insight-back:hover{border-color:var(--accent);color:var(--accent-strong,var(--accent))}
+.insight-back svg{width:15px;height:15px}
+.insight-page-metric{
+  flex:none;font-size:var(--t-h3);font-weight:650;letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;color:var(--muted);
+}
+/* The dashboard steps aside while a reading is open — one thing on screen. */
+.intel-insight-workspace:has(.insight-canvas.open) .insight-preview-rail{display:none}
+
+
 .insight-scene-panel{margin:0}
 
 /* "كيف وصلنا لهذه النتيجة؟" — the method behind a reading, folded away until
