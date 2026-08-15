@@ -891,9 +891,14 @@ button.schedule-radar:hover{filter:brightness(.96)}
    column. It stops trying to be a full card and becomes a legible label: the
    name, and the time, and nothing that would only arrive as a fragment. */
 .week-event[data-narrow="true"]{padding-inline:4px;gap:1px}
-.week-event[data-narrow="true"] .week-who{display:block;font-size:7.5px;font-weight:300;line-height:1.08;opacity:.86;letter-spacing:-.3px}
+/* An hour can hold fifteen lectures, and then every card is a sliver. Two
+   things hold at every width, because they are the two things a coordinator
+   reads this board by: the course and the teacher. What gives way is the
+   number, then the clock — never a name. And nothing here goes below the size
+   at which Arabic stops being text and becomes texture. */
+.week-event[data-narrow="true"] .week-who{display:block;font-size:8.5px;font-weight:400;line-height:1.25;opacity:.9;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .week-event[data-narrow="true"] .week-when i{display:none}
-.week-event[data-narrow="true"] .week-title{font-size:8.25px;font-weight:580;-webkit-line-clamp:3;padding-inline-end:0;letter-spacing:-.3px;overflow-wrap:anywhere;word-break:normal}
+.week-event[data-narrow="true"] .week-title{font-size:9.5px;font-weight:620;line-height:1.3;-webkit-line-clamp:3;padding-inline-end:0;letter-spacing:0;overflow-wrap:anywhere;word-break:normal}
 .week-event[data-narrow="true"] .week-code{display:none}
 
 /* --- The move echo ---------------------------------------------------------
@@ -3438,21 +3443,35 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    instant the card is lifted (`.physics-source-lift` widens to 236px) or the
    day is expanded. A short true label beats a long broken one.
 */
+/*
+   ── ترتيب الأهمية على البطاقة ───────────────────────────────────────────────
+ *
+ * This bracket used to do the exact opposite of what the department needs: at
+ * the narrowest widths it hid the course name and the teacher, and printed the
+ * catalogue number across the middle of the card. The reasoning was that a
+ * number is the only thing that fits — but a coordinator reads this board by
+ * course and by teacher, and a grid of catalogue numbers is a grid of things
+ * nobody recognises.
+ *
+ * The order of importance is now the one that was asked for, and it holds at
+ * every width: **the course name, then the teacher, and the number last and
+ * smallest.** When the card runs out of room the number leaves first, then the
+ * clock — never the two names.
+ */
 @container (max-width:66px){
-  .week-title,.week-who,.week-when{display:none}
-  .week-code{
-    display:flex !important;
-    position:static !important;
-    inset:auto !important;
-    align-items:center;justify-content:center;
-    width:100%;height:100%;max-width:none;
-    padding:0;background:transparent;
-    font:700 10px/1.1 var(--font-mono) !important;
-    color:var(--label) !important;
-    letter-spacing:-.3px;
+  .week-when{display:none}
+  /* Last in, first out: the number is the least of the three. */
+  .week-code{display:none !important}
+  .week-title{
+    display:-webkit-box !important;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+    font-size:9.5px;font-weight:600;line-height:1.3;
+    overflow:hidden;overflow-wrap:anywhere;word-break:normal;
   }
-  .week-code b{display:none}
-  .week-event{padding:2px 1px;justify-content:center}
+  .week-who{
+    display:block !important;font-size:8.5px;font-weight:400;opacity:.9;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .week-event{padding:3px 3px;justify-content:flex-start}
 }
 /* Between sixty and a hundred, the name is still possible but the metadata is
    not: the two human identities stay, everything else yields. */
@@ -3467,11 +3486,11 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 @container (min-width:66.01px) and (max-width:100px){
   .week-title{font-size:10px;font-weight:600;line-height:1.35;-webkit-line-clamp:2;overflow-wrap:anywhere;word-break:normal}
   .week-who{display:block;font-size:9px;font-weight:400;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  /* The clock is the first thing to go: the row the card sits on already says
-     the hour, so it is the one line here that is genuinely redundant. */
+  /* The clock goes first: the row this card sits on already states the hour,
+     so it is the only genuinely redundant line here. */
   .week-when{display:none}
-  /* …and the code follows it out rather than being squeezed to three letters. */
-  .week-code{display:none}
+  /* The number stays, very small, under the two names — third in the order. */
+  .week-code{font-size:8.5px;opacity:.72}
 }
 /* A half-hour card still says who teaches it: title folds to one line and the
    instructor keeps the second. */

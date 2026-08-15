@@ -32,6 +32,7 @@ import type { ReportMode } from "./components/Reports";
 import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
+import { warmStart } from "./utils/warmStart";
 
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
@@ -56,6 +57,36 @@ const loadReports = () => import("./components/Reports");
 const loadAdminUsers = () => import("./components/AdminUsers");
 const loadAbout = () => import("./components/About");
 const loadIntelligence = () => import("./components/IntelligenceWorkspace");
+/**
+ * The board's own preference key, which carries the reader's id. Duplicated
+ * here on purpose: the warm start must run before any component exists, so it
+ * cannot ask the board what it calls its own shelf.
+ */
+function scheduleScopeQuery(userId: number): string {
+  const query = new URLSearchParams();
+  try {
+    const pref = JSON.parse(localStorage.getItem(`schedule-workspace-prefs-${userId}`) || "{}");
+    if (Number(pref.filterCollege)) query.set("collegeId", String(Number(pref.filterCollege)));
+    if (Number(pref.filterSection)) query.set("sectionId", String(Number(pref.filterSection)));
+  } catch { /* an unreadable shelf just means an unscoped warm start */ }
+  query.set("resolve", "1");
+  return query.toString();
+}
+
+/** The id of whoever was last signed in here — enough to name the shelf. */
+function lastUserId(): number {
+  try { return Number(JSON.parse(localStorage.getItem("schedule-last-user") || "0")) || 0; }
+  catch { return 0; }
+}
+
+/* A cold load that lands directly on the board: the question goes out here, at
+   module scope, which on the measured timeline is roughly seven hundred
+   milliseconds before the board could have asked it. */
+if (typeof window !== "undefined" && /\/fschedule\/index/i.test(window.location.pathname)) {
+  void loadSchedules();
+  void warmStart(`/api/schedules/workspace?${scheduleScopeQuery(lastUserId())}`).catch(() => undefined);
+}
+
 const AcademicConsole = safeLazy(loadAcademicConsole);
 const Schedules = safeLazy(loadSchedules);
 const Reports = safeLazy(loadReports);
@@ -163,8 +194,19 @@ const viewByPath = new Map(
 /** The pointer reaches a destination before the click. Use that small lead to
  * fetch its code chunk; dynamic imports are cached, so this never downloads a
  * screen twice and makes every navigation icon feel immediate. */
+/**
+ * The schedule board's own first question, asked before the board exists.
+ *
+ * The scope comes from the same preference the board itself reads, so the
+ * request is the one it would have made — and when it mounts it finds the
+ * answer waiting instead of starting the wait.
+ */
+export function warmScheduleWorkspace(userId: number) {
+  void warmStart(`/api/schedules/workspace?${scheduleScopeQuery(userId)}`).catch(() => undefined);
+}
+
 function prefetchView(view: View) {
-  if (view === "schedules" || view === "scheduleCopy") void loadSchedules();
+  if (view === "schedules" || view === "scheduleCopy") { void loadSchedules(); warmScheduleWorkspace(lastUserId()); }
   else if (view === "intelligence") void loadIntelligence();
   else if (academicViews.includes(view as AcademicTab)) void loadAcademicConsole();
   else if (searchViews.includes(view as ReportMode) || reportViews.includes(view as ReportMode)) void loadReports();
@@ -577,6 +619,7 @@ export default function App() {
           data = await res.json();
         if (res.ok && data.user) {
           setUser(data.user);
+    try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
           setPermissions(
             Array.isArray(data.permissions) ? data.permissions : [],
           );
@@ -836,6 +879,7 @@ export default function App() {
     data?: { mode: string; real: boolean };
   }) => {
     setUser(data.user);
+    try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
     setPermissions(data.permissions || []);
     setScopes(data.scopes || []);
     setDataMode(data.data || null);

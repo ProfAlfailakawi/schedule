@@ -119,6 +119,7 @@ import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
 import { AR, countOf } from "../utils/arabicCount";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
+import { claimWarmStart } from "../utils/warmStart";
 /* The same six hues the stylesheet paints from, so a chip and the ring it
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
@@ -1068,7 +1069,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         apply(snapshot);
       });
       try {
-        const data = await fetchJson(url, { signal: controller.signal });
+        /* If this exact question was already asked before the board existed,
+           its answer is either here or on its way — so take that instead of
+           asking it a second time. */
+        const warmed = claimWarmStart<any>(url);
+        const data = warmed
+          ? await warmed.catch(() => fetchJson(url, { signal: controller.signal }))
+          : await fetchJson(url, { signal: controller.signal });
         networkSettled = true;
         return apply(data);
       } catch (workspaceError: any) {
