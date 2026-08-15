@@ -2098,7 +2098,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .undo-log-panel{
   position:relative;
   margin:var(--s5);margin-bottom:calc(var(--s5) + env(safe-area-inset-bottom));
-  width:min(360px,calc(100vw - var(--s5) * 2));
+  width:min(420px,calc(100vw - var(--s5) * 2));
   max-height:min(60vh,520px);
   display:flex;flex-direction:column;
   border:1px solid var(--line);border-radius:var(--r-lg);
@@ -2118,36 +2118,56 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .undo-log-panel>header .undo-dismiss svg{width:13px;height:13px}
 .undo-log-panel>header .undo-dismiss:hover{color:var(--ink)}
 .undo-log-panel>ul{overflow-y:auto;padding:var(--s2) 0;margin:0;list-style:none}
+/*
+   ── سطر واحد لكل تغيير ─────────────────────────────────────────────────────
+ *
+ * Two columns, and only two: what happened, and the one thing you can do about
+ * it. Everything about the change — the sentence, the clock, the teacher — is
+ * one block on the right; the button is the whole of the left.
+ *
+ * The label used to be `nowrap` with an ellipsis inside a 360px panel, so
+ * «نُقل ورشة انتاج وسائل تعليمية خاصة إ…» was cut mid-word and two different
+ * lectures read as the same entry. A log exists to be recognised; it is
+ * allowed a second line.
+ */
 .undo-log-panel>ul>li{
-  display:flex;align-items:center;gap:var(--s3);
-  padding:var(--s2) var(--s4);
+  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;
+  gap:var(--s3);padding:var(--s3) var(--s4);
 }
 .undo-log-panel>ul>li+li{border-top:1px solid color-mix(in srgb,var(--line) 60%,transparent)}
 .undo-log-panel>ul>li.used{opacity:.55}
-.undo-log-line{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.undo-log-line{min-width:0;display:grid;gap:3px}
 .undo-log-label{
-  font-size:var(--t-sm);
+  font-size:var(--t-sm);line-height:1.55;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;
+  overflow:hidden;overflow-wrap:anywhere;word-break:normal;
+}
+/* Clock and teacher on one quiet line beneath, separated by a dot — the two
+   facts a reader needs to tell one entry from the next. */
+.undo-log-when{
+  display:flex;align-items:baseline;gap:var(--s2);min-width:0;
+  font-size:var(--t-xs);color:var(--muted);
+}
+.undo-log-when>time{flex:none;font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
+.undo-log-when>em{
+  min-width:0;font-style:normal;
+  color:color-mix(in srgb,var(--muted-2) 82%,transparent);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
-.undo-log-line>time{font-size:var(--t-xs);color:var(--muted);font-variant-numeric:tabular-nums}
-/* The course and teacher behind the change, as light as the font allows: the
-   family ships 400/600, so "very thin" is carried by a faint colour, a small
-   size and open letter-spacing rather than a weight the font does not have. */
-.undo-log-meta{
-  display:block;margin-top:2px;
-  font-weight:300;font-size:var(--t-xs);
-  color:color-mix(in srgb,var(--muted-2) 78%,transparent);
-  letter-spacing:.15px;line-height:1.5;
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-}
+.undo-log-when>em::before{content:"·";margin-inline-end:var(--s2);opacity:.7}
 .undo-log-panel>ul>li>button{
-  flex:none;min-height:28px;padding:0 var(--s3);
+  flex:none;align-self:center;min-height:34px;padding:0 var(--s4);
   border-radius:var(--r-full);
   background:var(--accent);color:var(--accent-contrast);
-  font-size:var(--t-xs);font-weight:600;
+  font-size:var(--t-xs);font-weight:600;white-space:nowrap;
 }
 .undo-log-panel>ul>li>button:disabled{opacity:.6}
-.undo-log-done{flex:none;font-size:var(--t-xs);color:var(--muted)}
+/* An entry already taken back keeps its place — the log is a record, not a
+   queue — but says so plainly instead of offering a second undo. */
+.undo-log-done{
+  flex:none;align-self:center;font-size:var(--t-xs);color:var(--muted);
+  white-space:nowrap;text-align:end;
+}
 .undo-log-empty{padding:var(--s5) var(--s4);margin:0;text-align:center;color:var(--muted);font-size:var(--t-sm)}
 .undo-log-panel>footer{
   padding:var(--s2) var(--s4);border-top:1px solid var(--line);

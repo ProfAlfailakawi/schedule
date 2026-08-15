@@ -1072,6 +1072,42 @@ async function runTests() {
       "…without losing the fact that students are caught in it too");
   }
 
+  /* --- 25. شريط اليوم: المتزامنات كتلة واحدة -------------------------------- */
+  originalLog("\n--- 25. Day strip grouping ---");
+  {
+    /* Measured on the live dashboard: 74 lectures today, 73 of them drawn at an
+       offset another block already occupied, the worst stack fourteen deep.
+       Their codes printed over one another into strings like «1464» that are
+       not any course — which is what the reader was actually looking at. */
+    const lecture = (code: string, start: string, end: string) => ({ courseCode: code, startTime: start, endTime: end });
+    const group = (rows: Array<{ startTime: string }>) =>
+      Array.from(rows.reduce((map, row) => {
+        const bucket = map.get(row.startTime);
+        if (bucket) bucket.push(row); else map.set(row.startTime, [row]);
+        return map;
+      }, new Map<string, typeof rows>()).entries());
+
+    const crowded = [
+      lecture("ETC 112", "08:00", "09:15"), lecture("ETC 113", "08:00", "09:15"),
+      lecture("ETC 210", "08:00", "09:15"), lecture("ETC 305", "08:00", "09:15"),
+      lecture("ETC 320", "11:00", "12:15"), lecture("ETC 401", "13:30", "14:45"),
+    ];
+    const grouped = group(crowded);
+    assert(grouped.length === 3, `six lectures at three start times become three blocks (got ${grouped.length})`);
+    assert(grouped[0][1].length === 4, "…and the crowded one knows it holds four");
+    // One lecture keeps its own code; a group says how many.
+    const labelFor = (g: any[]) => (g.length === 1 ? g[0].courseCode : `×${g.length}`);
+    assert(labelFor(grouped[0][1]) === "×4", "a group is labelled by its count, not by one member's code");
+    assert(labelFor(grouped[1][1]) === "ETC 320", "a lone lecture still shows its own code");
+    // The end of a group is the latest end within it, so the block covers them all.
+    const endOf = (g: any[]) => g.map(r => r.endTime).sort().pop();
+    assert(endOf(grouped[0][1]) === "09:15", "the block spans until the last of its lectures ends");
+    assert(group([]).length === 0, "an empty day draws nothing");
+    // Every lecture is still represented — nothing is silently dropped.
+    assert(grouped.reduce((n, [, g]) => n + g.length, 0) === crowded.length,
+      "grouping loses no lecture; it only stops drawing them on top of each other");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");

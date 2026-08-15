@@ -7619,10 +7619,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   const whoName = instructorById.get(instrId)?.AdInstructorName || "";
                   return (
                   <li key={entry.id} className={entry.usedAt ? "used" : ""}>
+                    {/* One column of words, one column of action. The teacher's
+                        name belongs INSIDE this block, under the label it
+                        describes — as a sibling it became a third column and
+                        sat beside the sentence instead of beneath it. */}
                     <div className="undo-log-line">
                       <span className="undo-log-label">{entry.label}</span>
-                      <time dateTime={new Date(entry.at).toISOString()}>{undoClock(entry.at)}</time>
-                    </div>
                     {/*
                        The label already names the course — «نُقل ورشة انتاج
                        وسائل تعليمية خاصة» — so repeating it underneath said the
@@ -7631,7 +7633,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                        is for what the label does NOT say: who teaches it. If
                        that is unknown, there is nothing to add and no line.
                     */}
-                    {whoName ? <span className="undo-log-meta">{whoName}</span> : null}
+                      <span className="undo-log-when">
+                        <time dateTime={new Date(entry.at).toISOString()}>{undoClock(entry.at)}</time>
+                        {whoName ? <em>{whoName}</em> : null}
+                      </span>
+                    </div>
                     {entry.usedAt ? (
                       <span className="undo-log-done">تُراجع عنه {undoClock(entry.usedAt)}</span>
                     ) : (

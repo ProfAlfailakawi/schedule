@@ -9,6 +9,8 @@ interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavi
 interface DashboardData{history?:Array<{termId:number;termName:string;schedules:number;rooms:number;instructors:number}>;previous?:{termId:number;termName:string;schedules:number;rooms:number;instructors:number}|null;metrics:{courses:number;schedules:number;terms:number;instructors:number};latestTermName:string;dayName:string;weekend?:boolean;dashboardTotal:number;today:Array<{id:number;instructorName:string;courseCode:string;courseName:string;startTime:string;endTime:string;roomCode:string;roomHall:string}>;workspace?:{mode:"admin"|"personal"|"scope";activeSchedules:number;uniqueRooms:number;uniqueInstructors:number;roomOccupancyPeak:number;peakOccupiedRooms:number;weekdayLoad:Array<{key:string;label:string;count:number}>;busiestHours:Array<{hour:string;count:number}>;busiestRooms:Array<{room:string;count:number}>;scopeCount:number;linkedInstructorName:string;personalToday:any[]}}
 interface DecisionItem{severity?:string;level?:string;title?:string;label?:string;detail?:string;description?:string;message?:string}
 
+/** Minutes past midnight, as a clock a person reads. */
+const clockOf=(minutes:number)=>`${String(Math.floor(minutes/60)).padStart(2,"0")}:${String(Math.floor(minutes%60)).padStart(2,"0")}`;
 const num=(value:number|undefined)=>Number(value||0).toLocaleString("ar-KW-u-nu-latn");
 const minutesOf=(value:string)=>{const[h,m]=String(value||"0:0").split(":").map(Number);return(h||0)*60+(m||0)};
 const spot=(minutes:number)=>`${Math.min(100,Math.max(0,((minutes-SCHEDULE_DAY_START)/SCHEDULE_DAY_SPAN)*100))}%`;
@@ -182,20 +184,46 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     <div className="daybar">
      <div className="daybar-track" role="group" aria-label="المحاضرات موزعة على ساعات اليوم">
       {[8,10,12,14,16,18,20].map(hour=><i key={hour} className="daybar-grid" style={{insetInlineStart:spot(hour*60)}} aria-hidden="true"/>)}
-      {today.map(row=>{
-       const start=minutesOf(row.startTime),end=Math.max(start+30,minutesOf(row.endTime));
-       const description=`${row.courseCode}، ${row.courseName}، من ${row.startTime} إلى ${row.endTime}، قاعة ${row.roomCode}/${row.roomHall}، ${row.instructorName}`;
+      {/*
+        ── الكتل المتزامنة ─────────────────────────────────────────────────
+        Every lecture used to be drawn on its own, so the ones sharing an hour
+        landed on the same pixel and stacked. Measured on the live board: 382
+        overlapping pairs, several blocks at the identical offset, their codes
+        printed over one another into strings like «114344» that are not any
+        course. A strip this size cannot show ten lectures side by side, and
+        pretending otherwise produced noise rather than a schedule.
+
+        So lectures that start together become ONE block that says how many.
+        The strip is an overview; the count is the information, and every code
+        is still in the tooltip and the accessible label.
+      */}
+      {Array.from(today.reduce((groups,row)=>{
+        const start=minutesOf(row.startTime);
+        const bucket=groups.get(start);
+        if(bucket) bucket.push(row); else groups.set(start,[row]);
+        return groups;
+      },new Map<number,typeof today>()).entries()).map(([start,group])=>{
+       const end=Math.max(start+30,...group.map(r=>minutesOf(r.endTime)));
+       const description=group.length===1
+        ? `${group[0].courseCode}، ${group[0].courseName}، من ${group[0].startTime} إلى ${group[0].endTime}، قاعة ${group[0].roomCode}/${group[0].roomHall}، ${group[0].instructorName}`
+        : `${countOf(group.length, AR.lecture)} تبدأ ${group[0].startTime} — ${group.map(r=>r.courseCode).join("، ")}`;
        return <button
-        key={row.id}
+        key={start}
         type="button"
         className="daybar-block"
+        data-many={group.length>1?"true":undefined}
         style={{insetInlineStart:spot(start),width:laneWidth(start,end)}}
         title={description}
         aria-label={description}
         onClick={()=>onNavigate?.("schedules")}
-       ><b>{row.courseCode}</b></button>;
+       ><b>{group.length===1?group[0].courseCode:`×${group.length}`}</b></button>;
       })}
-      {nowVisible?<span className="daybar-now" style={{insetInlineStart:spot(nowMinutes)}} aria-hidden="true"/>:null}
+      {/* The gold line is «now». It was a bare 2px rule with aria-hidden and no
+          label, so it read as decoration — a stripe on a chart that says
+          nothing. It carries its own hour now, the way the week grid's does. */}
+      {nowVisible?<span className="daybar-now" style={{insetInlineStart:spot(nowMinutes)}}
+        role="img" aria-label={`الآن · ${clockOf(nowMinutes)}`}
+        title={`الآن · ${clockOf(nowMinutes)}`}><b dir="ltr">{clockOf(nowMinutes)}</b></span>:null}
      </div>
      <div className="daybar-scale" aria-hidden="true">
       {[8,11,14,17,20].map(hour=><span key={hour} style={{insetInlineStart:spot(hour*60)}} dir="ltr">{String(hour).padStart(2,"0")}</span>)}
