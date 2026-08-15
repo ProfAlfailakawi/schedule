@@ -321,6 +321,59 @@
     break-inside:avoid !important;
   }
 
+  /* ==========================================================================
+     GROUPED SHEETS
+     A report about rooms is organised by room; about hours, by hour; about a
+     teacher, by teacher. The heading states it once and the rows below carry
+     only what varies — which is what stops six different reports from printing
+     as the same twelve columns.
+     ========================================================================== */
+
+  .print-groups{display:block !important}
+  .print-group{
+    margin-top:5mm !important;
+    /* Never a heading stranded at the foot of a page: the group's opening rows
+       are pulled along with it, but a long group is still free to split. */
+    break-inside:auto !important;
+  }
+  .print-group:first-child{margin-top:2mm !important}
+  .print-group-head{
+    display:flex !important;align-items:baseline !important;gap:4mm !important;flex-wrap:wrap !important;
+    padding:1.6mm 2mm !important;margin-bottom:1.2mm !important;
+    background:#eef3f1 !important;
+    border:.6pt solid #cbd4d0 !important;border-inline-start:2pt solid #1f6b5c !important;
+    break-after:avoid !important;page-break-after:avoid !important;
+    print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
+  }
+  .print-group-head strong{font-size:10pt !important;font-weight:700 !important;color:#0f4239 !important}
+  .print-group-head span{
+    display:inline-flex !important;gap:1mm !important;
+    font-size:8pt !important;color:#444 !important;
+  }
+  .print-group-head b{font-weight:700 !important;color:#111 !important;font-variant-numeric:tabular-nums !important}
+  .print-group>table{margin:0 !important}
+  /* The first rows keep the heading company. */
+  .print-group>table thead{break-after:avoid !important}
+  .print-group>table tbody tr:first-child{break-before:avoid !important}
+
+  /* --- the identity block on a single-subject sheet ----------------------- */
+  .print-identity{
+    display:grid !important;grid-template-columns:repeat(3,minmax(0,1fr)) !important;
+    gap:2mm 4mm !important;margin:0 0 4mm !important;padding:3mm !important;
+    border:.6pt solid #cbd4d0 !important;
+    background:#f7faf9 !important;
+    break-inside:avoid !important;
+    print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
+  }
+  .print-identity>div{display:grid !important;gap:.6mm !important}
+  .print-identity span{font-size:7.6pt !important;color:#5c6663 !important}
+  .print-identity strong{font-size:10pt !important;font-weight:700 !important;color:#111 !important}
+  .print-identity .print-ltr{direction:ltr !important;unicode-bidi:isolate !important;text-align:right !important}
+
+  /* A per-instructor form is a document of its own. */
+  .print-form{break-inside:auto !important}
+  .print-form+.print-form{break-before:page !important;page-break-before:always !important}
+
   /* --- summary, signatures ------------------------------------------------ */
 
   .print-scope{margin:0 0 4mm !important;font-size:9pt !important;color:#333 !important;text-align:right !important}
