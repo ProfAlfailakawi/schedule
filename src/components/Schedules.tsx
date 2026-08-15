@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeftRight,
+  Bookmark,
   BrainCircuit,
   Building2,
   CalendarDays,
@@ -99,6 +100,15 @@ import { previousYearSameTermName, sameTermName } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
+import CommandPalette, { type ScheduleCommand } from "./CommandPalette";
+import ScheduleViewsMenu, { SaveViewDialog } from "./ScheduleViewsMenu";
+import {
+  createLocalViewsStore,
+  describeStaleScope,
+  sameView,
+  type ScheduleSavedView,
+  type ScheduleViewDraft,
+} from "../utils/scheduleViews";
 import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
@@ -408,7 +418,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      dismissed. Saving from here is a deliberate press like any other; nothing
      is written by the gesture itself. */
   const [quick, setQuick] = useState<QuickSeed | null>(null);
-  /* The dock's search button has nothing of its own to search with — it brings
+  /**
+   * ── The invisible power layer ─────────────────────────────────────────────
+   *
+   * Everything below adds capability without adding furniture. A reader who
+   * never presses a key sees the screen exactly as it was: no new toolbar, no
+   * new panel, no badge on a lecture card. A reader who knows the keys reaches
+   * the same functions the buttons reach — the same `changeView`, the same
+   * `commitMove`, the same undo — because a second implementation of anything
+   * here would be a second thing to keep true.
+   */
+  const viewsStore = useMemo(() => createLocalViewsStore(`schedule-views-${user?.SystemUserId || 0}`), [user?.SystemUserId]);
+  const [savedViews, setSavedViews] = useState<ScheduleSavedView[]>(() => {
+    try { return viewsStore.list(); } catch { return []; }
+  });
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [viewDialog, setViewDialog] = useState<{ mode: "create" | "rename"; view?: ScheduleSavedView } | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+    /* The dock's search button has nothing of its own to search with — it brings
      the reader to the one field that already exists, rather than owning a
      second one that could disagree with it. */
   const searchRef = useRef<HTMLInputElement | null>(null);
@@ -2908,6 +2936,75 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [gridWindow],
   );
   const [expandedDay, setExpandedDay] = useState<DayKey | null>(null);
+
+  /**
+   * The board's own description of itself.
+   *
+   * Only what a reader would expect to find again: the scope, which board is
+   * showing, what the colours mean, which layers are folded, what the search
+   * box holds. Deliberately not: the lecture under the pointer, a half-made
+   * selection, an open dialog, the undo log, the scroll offset. A view is where
+   * you were standing, not what you happened to be doing.
+   */
+  const captureView = useCallback((name: string): ScheduleViewDraft => ({
+    name,
+    scope: { collegeId: filterCollege, sectionId: filterSection, termId: filterTerm },
+    display: {
+      viewMode: viewMode as any,
+      hueBy,
+      colorBlind,
+      expandedDay: expandedDay || null,
+      matrixDay: String(matrixDay),
+    },
+    filters: {
+      quickSearch,
+      hueFocus: [...hueFocus],
+      hueHidden: [...hueHidden],
+      matrixRooms: [...matrixRooms],
+    },
+  }), [filterCollege, filterSection, filterTerm, viewMode, hueBy, colorBlind, expandedDay, matrixDay, quickSearch, hueFocus, hueHidden, matrixRooms]);
+
+  const activeView = useMemo(
+    () => savedViews.find(view => view.id === activeViewId) || null,
+    [savedViews, activeViewId],
+  );
+  /* The dot's whole meaning: the board no longer matches what was saved. */
+  const viewDirty = useMemo(
+    () => Boolean(activeView) && !sameView(captureView(activeView!.name), activeView!),
+    [activeView, captureView],
+  );
+
+  const applyView = useCallback((view: ScheduleSavedView) => {
+    const stale = describeStaleScope(view, {
+      colleges: colleges.map(item => item.AdCollegeId),
+      sections: sections.map(item => item.AdSectionId),
+      terms: terms.map(item => Number(item.AdTermId)),
+    });
+    // A scope that has since been archived is said out loud, and whatever is
+    // still reachable is opened anyway — never a silent empty board.
+    if (view.scope.collegeId) setFilterCollege(view.scope.collegeId);
+    if (view.scope.sectionId) setFilterSection(view.scope.sectionId);
+    if (view.scope.termId) setFilterTerm(view.scope.termId);
+    startTransition(() => setViewMode(view.display.viewMode));
+    setHueBy(view.display.hueBy);
+    setColorBlind(view.display.colorBlind);
+    setExpandedDay((view.display.expandedDay as DayKey) || null);
+    setMatrixDay((view.display.matrixDay as any) || "week");
+    setQuickSearch(view.filters.quickSearch);
+    setHueFocus(new Set(view.filters.hueFocus));
+    setHueHidden(new Set(view.filters.hueHidden));
+    setMatrixRooms(new Set(view.filters.matrixRooms));
+    setActiveViewId(view.id);
+    setMessage(stale ? stale : `فُتح العرض: ${view.name}`);
+  }, [colleges, sections, terms]);
+
+  const saveCurrentView = useCallback((name: string) => {
+    const created = viewsStore.create(captureView(name));
+    setSavedViews(viewsStore.list());
+    setActiveViewId(created.id);
+    setMessage(`حُفظ العرض: ${created.name}`);
+  }, [viewsStore, captureView]);
+
   /**
    * A phone is given one day, not five.
    *
@@ -3916,6 +4013,131 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * The colliding cards themselves wear the ring in every view.
    */
   const liveClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+
+  /**
+   * ── The command registry ──────────────────────────────────────────────────
+   *
+   * One list, one place. Every entry names a function that already exists on
+   * this screen and calls it — nothing here re-implements a behaviour, so a
+   * command can never drift from the button that does the same thing. A command
+   * that is not possible right now says so by being dimmed; one that makes no
+   * sense at all is simply absent.
+   */
+  const commands = useMemo<ScheduleCommand[]>(() => {
+    const inWeek = viewMode === "week";
+    const list: ScheduleCommand[] = [
+      { id: "view.list", group: "التنقل", label: "عرض القائمة", keywords: ["list", "قائمة"], icon: <LayoutList />, execute: () => changeView("list") },
+      { id: "view.week", group: "التنقل", label: "عرض الأسبوع", keywords: ["week", "اسبوع", "شبكة"], icon: <CalendarDays />, execute: () => changeView("week") },
+      { id: "view.rooms", group: "التنقل", label: "عرض القاعات", keywords: ["rooms", "قاعات", "مبنى"], icon: <MapPin />, execute: () => changeView("rooms") },
+      {
+        id: "view.today", group: "التنقل", label: "افتح يوم اليوم وحده",
+        keywords: ["today", "اليوم"], icon: <Focus />, enabled: Boolean(todayKey),
+        execute: () => { if (!inWeek) changeView("week"); setExpandedDay(current => (current === todayKey ? null : todayKey)); },
+      },
+      { id: "search.focus", group: "التنقل", label: "البحث في الجدول", keywords: ["search", "بحث"], shortcut: "/", icon: <Search />, execute: () => { searchRef.current?.scrollIntoView({ block: "center" }); searchRef.current?.focus(); } },
+      { id: "schedule.create", group: "الجدول", label: "إضافة موعد", keywords: ["add", "new", "اضافة", "جديد"], icon: <Plus />, execute: () => openCreate() },
+      {
+        id: "schedule.pick", group: "الجدول", label: picking ? "إنهاء النقل الجماعي" : "نقل جماعي",
+        keywords: ["multi", "جماعي", "تحديد"], icon: <Layers />, enabled: inWeek,
+        execute: () => { setPicking(value => !value); setMultiSelect(new Set()); },
+      },
+      {
+        id: "schedule.undo", group: "الجدول", label: "التراجع عن آخر تغيير",
+        keywords: ["undo", "تراجع"], shortcut: "Ctrl+Z", icon: <Undo2 />,
+        enabled: pendingUndo.length > 0,
+        execute: () => { const entry = pendingUndo[0]; if (entry) void runUndoEntry(entry); },
+      },
+      { id: "schedule.log", group: "الجدول", label: "سجل تغييرات اليوم", keywords: ["history", "سجل"], icon: <History />, enabled: pendingUndo.length > 0, execute: () => setUndoLogOpen(true) },
+      {
+        id: "schedule.clash", group: "الجدول", label: "الانتقال إلى التداخل",
+        keywords: ["conflict", "تعارض", "تداخل"], icon: <AlertTriangle />, enabled: liveClash.pairs > 0,
+        execute: () => { changeView("week"); setReviewFocus(new Set([...liveClash.ids])); },
+      },
+      { id: "schedule.review", group: "الجدول", label: "مراجعة الاعتماد", keywords: ["review", "اعتماد", "مراجعة"], icon: <ClipboardCheck />, execute: () => setReviewOpen(true) },
+      { id: "schedule.focus", group: "العرض", label: focusMode ? "إنهاء التركيز" : "وضع التركيز", keywords: ["focus", "تركيز"], icon: <Focus />, execute: () => { setFocusMode(!focusMode); setPresentationMode(false); if (!focusMode) changeView("week"); } },
+      { id: "schedule.present", group: "العرض", label: presentationMode ? "إنهاء العرض" : "وضع العرض", keywords: ["present", "عرض", "شاشة"], icon: <Expand />, execute: () => { setPresentationMode(!presentationMode); setFocusMode(false); if (!presentationMode) changeView("week"); } },
+      { id: "hue.course", group: "العرض", label: "التلوين حسب المقرر", keywords: ["colour", "color", "لون", "مقرر"], icon: <Palette />, enabled: hueBy !== "course", execute: () => setHueBy("course") },
+      { id: "hue.instructor", group: "العرض", label: "التلوين حسب الأستاذ", keywords: ["colour", "color", "لون", "استاذ"], icon: <Palette />, enabled: hueBy !== "instructor", execute: () => setHueBy("instructor") },
+      { id: "hue.room", group: "العرض", label: "التلوين حسب القاعة", keywords: ["colour", "color", "لون", "قاعة"], icon: <Palette />, enabled: hueBy !== "room", execute: () => setHueBy("room") },
+      { id: "hue.reset", group: "العرض", label: "إظهار كل الطبقات", keywords: ["reset", "اظهار", "طبقات"], icon: <Eye />, enabled: hueHidden.size > 0 || hueFocus.size > 0, execute: () => { setHueHidden(new Set()); setHueFocus(new Set()); } },
+      { id: "views.save", group: "العروض المحفوظة", label: "حفظ العرض الحالي", keywords: ["save", "view", "حفظ", "عرض"], icon: <Bookmark />, execute: () => setViewDialog({ mode: "create" }) },
+    ];
+    if (activeView) {
+      list.push(
+        { id: "views.update", group: "العروض المحفوظة", label: `تحديث «${activeView.name}»`, keywords: ["update", "تحديث"], icon: <Bookmark />, enabled: viewDirty, execute: () => { viewsStore.update(activeView.id, captureView(activeView.name)); setSavedViews(viewsStore.list()); setMessage("حُدِّث العرض"); } },
+        { id: "views.restore", group: "العروض المحفوظة", label: `العودة إلى «${activeView.name}»`, keywords: ["restore", "استرجاع"], icon: <Undo2 />, enabled: viewDirty, execute: () => applyView(activeView) },
+      );
+    }
+    savedViews.forEach(view => {
+      list.push({
+        id: `views.open.${view.id}`,
+        group: "العروض المحفوظة",
+        label: `فتح: ${view.name}`,
+        keywords: ["view", "عرض", view.name],
+        icon: view.favorite ? <Sparkles /> : <Bookmark />,
+        execute: () => applyView(view),
+      });
+    });
+    // Read-only accounts keep every reading command and lose only the writing
+    // ones — the palette must never offer a door the account cannot open.
+    const writes = new Set(["schedule.create", "schedule.pick", "schedule.undo", "schedule.clash"]);
+    return list.map(command => (isPowerAdmin || !writes.has(command.id) ? command : { ...command, visible: false }));
+  }, [viewMode, todayKey, picking, pendingUndo, liveClash, focusMode, presentationMode, hueBy, hueHidden, hueFocus, savedViews, activeView, viewDirty, isPowerAdmin, changeView, applyView, captureView, viewsStore]);
+
+  /**
+   * ── One keyboard, one place ───────────────────────────────────────────────
+   *
+   * Every shortcut on this screen is decided here, in one listener, with one
+   * order of precedence — so a key can never mean two things at once and a new
+   * one cannot be added by scattering another listener somewhere else.
+   *
+   * It never steals a keystroke from a field, a dialog, or a drag in flight.
+   */
+  const shortcutsBlocked = useCallback(() => {
+    const element = document.activeElement as HTMLElement | null;
+    if (element) {
+      const tag = element.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || element.isContentEditable) return true;
+    }
+    if (editor !== "index") return true;
+    if (physics.state.phase !== "idle") return true;
+    if (viewDialog || reviewOpen || transferOpen || undoLogOpen) return true;
+    return false;
+  }, [editor, physics.state.phase, viewDialog, reviewOpen, transferOpen, undoLogOpen]);
+
+  useEffect(() => {
+    if (mode !== "schedule") return;
+    const onKey = (event: KeyboardEvent) => {
+      const meta = event.metaKey || event.ctrlKey;
+      // The palette's own key works even from inside a field: it is the way out.
+      if (meta && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen(value => !value);
+        return;
+      }
+      if (paletteOpen) return;
+      if (meta && event.key.toLowerCase() === "z" && !event.shiftKey) {
+        if (editor !== "index" || !pendingUndo.length) return;
+        event.preventDefault();
+        void runUndoEntry(pendingUndo[0]);
+        return;
+      }
+      if (shortcutsBlocked()) return;
+      if (event.key === "/") {
+        event.preventDefault();
+        searchRef.current?.scrollIntoView({ block: "center" });
+        searchRef.current?.focus();
+        return;
+      }
+      if (event.key === "?") {
+        event.preventDefault();
+        setShortcutsOpen(value => !value);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode, paletteOpen, editor, pendingUndo, shortcutsBlocked]);
+
   const conflictIds = liveClash.ids;
   /**
    * The living board: a colleague saves, your screen already knows.
@@ -4867,6 +5089,31 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               <MapPin aria-hidden="true" /> القاعات
             </button>
           </div>
+          {/* A way of looking at the board, remembered by name. Absent entirely
+              until the reader has saved one — no empty menu on behalf of a
+              feature nobody has used. */}
+          <ScheduleViewsMenu
+            views={savedViews}
+            activeId={activeViewId}
+            dirty={viewDirty}
+            onOpenView={applyView}
+            onUpdateActive={() => {
+              if (!activeView) return;
+              viewsStore.update(activeView.id, captureView(activeView.name));
+              setSavedViews(viewsStore.list());
+              setMessage("حُدِّث العرض");
+            }}
+            onRestoreActive={() => { if (activeView) applyView(activeView); }}
+            onSaveAs={() => setViewDialog({ mode: "create" })}
+            onRename={view => setViewDialog({ mode: "rename", view })}
+            onDelete={view => {
+              if (!window.confirm(`حذف العرض «${view.name}»؟`)) return;
+              viewsStore.remove(view.id);
+              setSavedViews(viewsStore.list());
+              if (activeViewId === view.id) setActiveViewId(null);
+            }}
+            onToggleFavorite={view => { viewsStore.toggleFavorite(view.id); setSavedViews(viewsStore.list()); }}
+          />
           {/* The live radar: what the board knows about itself, always visible.
               Counted locally on every change, so the number never waits for a
               request — pressing it takes you to the offending cards. */}
@@ -4957,6 +5204,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               aria-pressed={presentationMode}
             >
               <Expand /> {presentationMode ? "إنهاء العرض" : "عرض"}
+            </GhostButton> : null}
+            {workspaceToolsOpen ? <GhostButton
+              type="button"
+              onClick={() => setViewDialog({ mode: "create" })}
+              title="احفظ الكلية والقسم والفصل وطريقة العرض والتلوين والطبقات باسم تعود إليه"
+            >
+              <Bookmark aria-hidden="true" /> حفظ العرض الحالي
             </GhostButton> : null}
             {workspaceToolsOpen ? <GhostButton type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
               <ClipboardCheck /> مراجعة الاعتماد
@@ -6363,6 +6617,44 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             title="إضافة موعد جديد"
           ><Plus aria-hidden="true" /><span>موعد</span></button>
         </nav>
+      ) : null}
+      {paletteOpen ? (
+        <CommandPalette commands={commands} onClose={() => setPaletteOpen(false)} />
+      ) : null}
+      {viewDialog ? (
+        <SaveViewDialog
+          title={viewDialog.mode === "rename" ? "إعادة تسمية العرض" : "حفظ العرض الحالي"}
+          initial={viewDialog.view?.name || ""}
+          onCancel={() => setViewDialog(null)}
+          onSave={name => {
+            if (viewDialog.mode === "rename" && viewDialog.view) {
+              viewsStore.rename(viewDialog.view.id, name);
+              setSavedViews(viewsStore.list());
+            } else {
+              saveCurrentView(name);
+            }
+            setViewDialog(null);
+          }}
+        />
+      ) : null}
+      {/* The keys, listed only when asked for — and only the ones that exist. */}
+      {shortcutsOpen ? (
+        <div className="views-dialog-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) setShortcutsOpen(false); }}>
+          <div className="views-dialog shortcuts-sheet" role="dialog" aria-modal="true" aria-label="اختصارات لوحة المفاتيح">
+            <header>
+              <strong>اختصارات لوحة المفاتيح</strong>
+              <button type="button" onClick={() => setShortcutsOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+            </header>
+            <dl className="shortcuts-list">
+              <div><dt><kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>لوحة الأوامر</dd></div>
+              <div><dt><kbd>/</kbd></dt><dd>البحث السريع</dd></div>
+              <div><dt><kbd>Ctrl</kbd><kbd>Z</kbd></dt><dd>التراجع عن آخر تغيير</dd></div>
+              <div><dt><kbd>Esc</kbd></dt><dd>إغلاق ما هو مفتوح</dd></div>
+              <div><dt><kbd>?</kbd></dt><dd>هذه القائمة</dd></div>
+            </dl>
+            <p className="shortcuts-note">تعمل الاختصارات خارج حقول الكتابة فقط، ولا تعمل أثناء السحب.</p>
+          </div>
+        </div>
       ) : null}
       {undoAction ? (
         <div className="undo-bar no-print" role="status">

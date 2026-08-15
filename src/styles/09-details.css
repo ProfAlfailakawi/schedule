@@ -1035,3 +1035,98 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .roster-list span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm)}
 .roster-list small{color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono)}
 .roster-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
+
+/* ==========================================================================
+   COMMAND PALETTE
+   An institutional tool's palette: a plain sheet, a list, and a keyboard. No
+   glass, no glow, no gradient — the reader is here to get somewhere, not to
+   admire the window they passed through.
+   ========================================================================== */
+
+.cmdk-backdrop{
+  position:fixed;inset:0;z-index:600;
+  display:flex;align-items:flex-start;justify-content:center;
+  padding:12vh var(--s4) var(--s4);
+  background:color-mix(in srgb,var(--nav) 42%,transparent);
+  animation:fade .12s var(--ease-out) both;
+}
+.cmdk{
+  width:min(600px,100%);max-height:70vh;
+  display:flex;flex-direction:column;min-height:0;
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);box-shadow:var(--shadow-lg);
+  overflow:hidden;
+  animation:rise .14s var(--ease-out) both;
+}
+.cmdk-field{
+  flex:none;display:flex;align-items:center;gap:var(--s2);
+  padding:var(--s3) var(--s4);
+  border-bottom:1px solid var(--line);
+}
+.cmdk-field>svg{width:16px;height:16px;color:var(--muted);flex:none}
+.cmdk-field input{
+  flex:1;min-width:0;border:0;background:none;padding:0;
+  color:var(--ink);font-family:inherit;font-size:var(--t-h4);
+}
+.cmdk-field input:focus{outline:none}
+.cmdk-field input::placeholder{color:var(--muted-2,var(--muted));font-size:var(--t-body)}
+.cmdk kbd{
+  flex:none;
+  padding:1px 6px;border-radius:var(--r-xs);
+  border:1px solid var(--line);background:var(--surface-2);
+  color:var(--muted);font:600 10px/1.6 var(--font-mono);
+}
+.cmdk kbd svg{width:10px;height:10px;vertical-align:-1px}
+.cmdk-results{
+  flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
+  padding:var(--s2);
+}
+.cmdk-group+.cmdk-group{margin-top:var(--s2)}
+.cmdk-group-name{
+  display:block;padding:var(--s1) var(--s2);
+  font-size:var(--t-eyebrow);font-weight:600;color:var(--muted);letter-spacing:.04em;
+}
+.cmdk-row{
+  width:100%;display:flex;align-items:center;gap:var(--s2);
+  min-height:36px;padding:0 var(--s2);
+  border:0;border-radius:var(--r-sm);
+  background:none;color:var(--ink);text-align:start;
+  font-family:inherit;font-size:var(--t-body);
+}
+.cmdk-row[data-active="true"]{background:var(--accent-softer);color:var(--accent-ink)}
+.cmdk-row.is-off{opacity:.42;cursor:not-allowed}
+.cmdk-icon{flex:none;width:16px;height:16px;display:grid;place-items:center;color:var(--muted)}
+.cmdk-row[data-active="true"] .cmdk-icon{color:var(--accent)}
+.cmdk-icon svg{width:15px;height:15px}
+.cmdk-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmdk-shortcut{margin-inline-start:auto}
+.cmdk-empty{margin:0;padding:var(--s5);text-align:center;color:var(--muted);font-size:var(--t-sm)}
+.cmdk-foot{
+  flex:none;display:flex;align-items:center;gap:var(--s4);
+  padding:var(--s2) var(--s4);
+  border-top:1px solid var(--line);background:var(--surface-2);
+  font-size:var(--t-xs);color:var(--muted);
+}
+.cmdk-foot span{display:inline-flex;align-items:center;gap:4px}
+
+@media (max-width:600px){
+  .cmdk-backdrop{padding:6vh var(--s3) var(--s3)}
+  .cmdk{max-height:80vh}
+  .cmdk-foot{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .cmdk-backdrop,.cmdk{animation:none}
+}
+
+/* The shortcut sheet: the keys that exist, and nothing invented to fill a list. */
+.shortcuts-sheet{width:min(420px,100%)}
+.shortcuts-list{display:grid;gap:var(--s2);margin:0}
+.shortcuts-list>div{display:flex;align-items:center;gap:var(--s3)}
+.shortcuts-list dt{flex:none;display:inline-flex;gap:3px;min-width:96px}
+.shortcuts-list dd{margin:0;font-size:var(--t-sm);color:var(--ink-2)}
+.shortcuts-sheet kbd{
+  padding:2px 7px;border-radius:var(--r-xs);
+  border:1px solid var(--line);background:var(--surface-2);
+  color:var(--muted);font:600 10.5px/1.6 var(--font-mono);
+}
+.shortcuts-note{margin:0;font-size:var(--t-xs);color:var(--muted);line-height:1.6}
