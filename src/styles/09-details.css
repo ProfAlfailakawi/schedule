@@ -1130,3 +1130,24 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   color:var(--muted);font:600 10.5px/1.6 var(--font-mono);
 }
 .shortcuts-note{margin:0;font-size:var(--t-xs);color:var(--muted);line-height:1.6}
+
+/* Two versions, side by side, and no default choice — the whole point of the
+   refusal is that the program stops deciding for people at this moment. */
+.clash-sheet{width:min(560px,100%)}
+.clash-note{margin:0;font-size:var(--t-sm);color:var(--ink-2);line-height:1.7}
+.clash-sides{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}
+.clash-sides section{
+  display:grid;gap:3px;padding:var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
+}
+.clash-sides .clash-yours{border-color:var(--accent);background:var(--accent-softer)}
+.clash-sides span{font-size:var(--t-eyebrow);color:var(--muted);font-weight:600;letter-spacing:.04em}
+.clash-sides strong{font-size:var(--t-sm);color:var(--ink);font-weight:650;line-height:1.4}
+.clash-sides em{font-style:normal;font-size:var(--t-xs);color:var(--ink-2)}
+.clash-sides b,.clash-sides i{
+  font-style:normal;font:600 var(--t-xs)/1.6 var(--font-mono);
+  color:var(--muted);font-variant-numeric:tabular-nums;
+}
+@media (max-width:560px){
+  .clash-sides{grid-template-columns:minmax(0,1fr)}
+}

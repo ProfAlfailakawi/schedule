@@ -642,6 +642,19 @@ const identityListeners = new Set<() => void>();
 /** Fired whenever an account, its permissions or its scopes change. */
 function announceIdentityChange() { for (const listener of identityListeners) listener(); }
 
+/**
+ * Raised when a write was based on a revision that is no longer current.
+ *
+ * It carries the row as it actually stands, so the screen above can show the
+ * reader what changed and who has to decide — rather than a bare failure.
+ */
+export class ScheduleRevisionConflict extends Error {
+  constructor(public current: FSchedule) {
+    super("تغيّر هذا الموعد أثناء عملك.");
+    this.name = "ScheduleRevisionConflict";
+  }
+}
+
 export const Repository = {
   /** Lets the server drop any cached identity the moment accounts change. */
   onIdentityChanged: (listener: () => void) => { identityListeners.add(listener); },
@@ -1587,31 +1600,50 @@ export const Repository = {
     invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb) {
       const nextId = await reserveFirestoreIds("schedules");
-      const newSched = { ...schedule, id: nextId };
+      const newSched = { ...schedule, id: nextId, rev: 1 };
       await firestoreDb.collection("schedules").doc(`schedule_${nextId}`).set(newSched);
       return newSched;
     }
     const nextId = db.schedules.length > 0 ? Math.max(...db.schedules.map(s => s.id)) + 1 : 1;
-    const newSched = { ...schedule, id: nextId };
+    const newSched = { ...schedule, id: nextId, rev: 1 };
     db.schedules.push(newSched);
     saveDatabase();
     return newSched;
   },
 
-  updateSchedule: async (id: number, fields: Partial<FSchedule>): Promise<FSchedule> => {
+  /**
+   * `expectedRev` is the revision the editor was looking at.
+   *
+   * Passing it turns the write into a comparison: if the row has moved on since
+   * that number, nothing is written and the current row comes back inside a
+   * ScheduleRevisionConflict. Omitting it keeps the old unconditional behaviour,
+   * which is what the internal callers (undo replay, imports, repairs) want —
+   * they are restoring a known state rather than editing a seen one.
+   *
+   * The read and the write happen inside one Firestore transaction, so the
+   * comparison cannot be overtaken between them.
+   */
+  updateSchedule: async (id: number, fields: Partial<FSchedule>, expectedRev?: number): Promise<FSchedule> => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb) {
       const docRef = firestoreDb.collection("schedules").doc(`schedule_${id}`);
-      const doc = await docRef.get();
-      if (!doc.exists) throw new Error("الجدول غير موجود");
-      const updated = { ...(doc.data() as FSchedule), ...fields };
-      await docRef.set(updated);
-      return updated;
+      return await firestoreDb.runTransaction(async transaction => {
+        const doc = await transaction.get(docRef);
+        if (!doc.exists) throw new Error("الجدول غير موجود");
+        const current = doc.data() as FSchedule;
+        if (expectedRev !== undefined && Number(current.rev || 0) !== expectedRev)
+          throw new ScheduleRevisionConflict(current);
+        const updated = { ...current, ...fields, rev: Number(current.rev || 0) + 1 };
+        transaction.set(docRef, updated);
+        return updated;
+      });
     }
     const idx = db.schedules.findIndex(s => s.id === id);
     if (idx === -1) throw new Error("الجدول غير موجود");
-    db.schedules[idx] = { ...db.schedules[idx], ...fields };
+    if (expectedRev !== undefined && Number(db.schedules[idx].rev || 0) !== expectedRev)
+      throw new ScheduleRevisionConflict(db.schedules[idx]);
+    db.schedules[idx] = { ...db.schedules[idx], ...fields, rev: Number(db.schedules[idx].rev || 0) + 1 };
     saveDatabase();
     return db.schedules[idx];
   },
@@ -1624,31 +1656,43 @@ export const Repository = {
    * whole party is validated first, then written as ONE Firestore batch (or
    * one snapshot save in demo mode): either every card lands or none do.
    */
-  moveSchedulesBatch: async (moves: Array<{ id: number; fields: Partial<FSchedule> }>): Promise<FSchedule[]> => {
+  moveSchedulesBatch: async (
+    moves: Array<{ id: number; fields: Partial<FSchedule>; expectedRev?: number }>,
+  ): Promise<FSchedule[]> => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
     if (firestoreDb) {
       const refs = moves.map(m => firestoreDb!.collection("schedules").doc(`schedule_${m.id}`));
-      const docs = await firestoreDb.getAll(...refs);
-      const updated: FSchedule[] = [];
-      const batch = firestoreDb.batch();
-      docs.forEach((doc, i) => {
-        if (!doc.exists) throw new Error("الجدول غير موجود");
-        const next = { ...(doc.data() as FSchedule), ...moves[i].fields };
-        updated.push(next);
-        batch.set(refs[i], next);
+      // A WriteBatch cannot carry a precondition, so the party moves inside a
+      // transaction instead: every revision is compared against the same read
+      // that the write is committed with, and the all-or-none promise is kept.
+      return await firestoreDb.runTransaction(async transaction => {
+        const docs = await transaction.getAll(...refs);
+        const updated: FSchedule[] = [];
+        docs.forEach((doc, index) => {
+          if (!doc.exists) throw new Error("الجدول غير موجود");
+          const current = doc.data() as FSchedule;
+          const expected = moves[index].expectedRev;
+          if (expected !== undefined && Number(current.rev || 0) !== expected)
+            throw new ScheduleRevisionConflict(current);
+          updated.push({ ...current, ...moves[index].fields, rev: Number(current.rev || 0) + 1 });
+        });
+        updated.forEach((next, index) => transaction.set(refs[index], next));
+        return updated;
       });
-      await batch.commit();
-      return updated;
     }
-    // Demo mode: verify everything exists before touching anything, then one save.
+    // Demo mode: verify everything — existence AND revision — before touching
+    // anything, then one save.
     for (const move of moves) {
-      if (db.schedules.findIndex(s => s.id === move.id) === -1) throw new Error("الجدول غير موجود");
+      const idx = db.schedules.findIndex(s => s.id === move.id);
+      if (idx === -1) throw new Error("الجدول غير موجود");
+      if (move.expectedRev !== undefined && Number(db.schedules[idx].rev || 0) !== move.expectedRev)
+        throw new ScheduleRevisionConflict(db.schedules[idx]);
     }
     const updated: FSchedule[] = [];
     for (const move of moves) {
       const idx = db.schedules.findIndex(s => s.id === move.id);
-      db.schedules[idx] = { ...db.schedules[idx], ...move.fields };
+      db.schedules[idx] = { ...db.schedules[idx], ...move.fields, rev: Number(db.schedules[idx].rev || 0) + 1 };
       updated.push(db.schedules[idx]);
     }
     saveDatabase();

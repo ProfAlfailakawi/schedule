@@ -3,7 +3,7 @@ import compression from "compression";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { randomBytes } from "crypto";
-import { activeDataMode, initDatabase, Repository } from "./src/db/repository";
+import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } from "./src/db/repository";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
@@ -1820,7 +1820,26 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
     });
     return;
   }
-  const updated = await Repository.moveSchedulesBatch(candidates.map(c => ({ id: c.row.id, fields: c.fields })));
+  let updated: FSchedule[];
+  try {
+    updated = await Repository.moveSchedulesBatch(candidates.map((c, index) => ({
+      id: c.row.id,
+      fields: c.fields,
+      expectedRev: rawMoves[index]?.rev === undefined || rawMoves[index]?.rev === null
+        ? undefined
+        : Number(rawMoves[index].rev),
+    })));
+  } catch (error: any) {
+    if (error instanceof ScheduleRevisionConflict) {
+      res.status(409).json({
+        error: "تغيّر أحد هذه المواعيد أثناء عملك؛ لم يُنقل شيء.",
+        conflict: "revision",
+        current: error.current,
+      });
+      return;
+    }
+    throw error;
+  }
   // The drag is the most common change in the product, so it is the one the
   // log most needs to describe: what moved, from where, to where.
   const originalById = new Map(originals.map(row => [row.id, row]));
@@ -2411,11 +2430,31 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
       AdRoomCode: AdRoomCode || "",
       AdRoomHall: AdRoomHall || "",
       fdetail: legacyFDetail({ fsunday, fmonday, ftuesday, fwednesday, fthursday })
-    });
+    },
+    // The revision the editor was looking at, when they sent one. An older
+    // client that sends nothing keeps the previous behaviour exactly.
+    req.body?.rev === undefined || req.body?.rev === null ? undefined : Number(req.body.rev));
     // Hand the audit trail the sentence describing what actually moved.
     res.locals.auditChanges = describeScheduleChange(existing, updated) || undefined;
     res.json(updated);
   } catch (e: any) {
+    if (e instanceof ScheduleRevisionConflict) {
+      /* Not a failure to write — a refusal to overwrite. Both versions go back
+         so the interface can show the reader what changed and let them decide,
+         instead of silently discarding one person's work. */
+      res.status(409).json({
+        error: "تغيّر هذا الموعد أثناء عملك.",
+        conflict: "revision",
+        current: e.current,
+        yours: {
+          AdCourseId: courseId, SCode, AdInstructorId: instructorId,
+          fsunday: !!fsunday, fmonday: !!fmonday, ftuesday: !!ftuesday,
+          fwednesday: !!fwednesday, fthursday: !!fthursday,
+          fstarttime, fendtime, AdRoomCode: AdRoomCode || "", AdRoomHall: AdRoomHall || "",
+        },
+      });
+      return;
+    }
     res.status(404).json({ error: e.message });
   }
 });

@@ -91,6 +91,20 @@ export interface FSchedule {
   AdRoomCode: string;
   AdRoomHall: string;
   fdetail?: string;
+  /**
+   * How many times this appointment has been written.
+   *
+   * Two coordinators can open the same lecture, and until now the second save
+   * simply won: the first person's change vanished with nothing said to either
+   * of them. The versions log could show what had happened afterwards; it could
+   * not stop it happening. This number is what makes the stop possible — a save
+   * carries the revision it was based on, and the store refuses to write over a
+   * newer one.
+   *
+   * Optional and treated as 0 when absent, so every row already in the database
+   * is valid as it stands and takes its first number on its next write.
+   */
+  rev?: number;
 }
 
 export interface AdRoom {

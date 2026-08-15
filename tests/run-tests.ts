@@ -7,7 +7,7 @@ import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId"
 import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../src/utils/weekVisual";
 import { findConflicts } from "../src/utils/scheduleIntelligence";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
-import { Repository, initDatabase } from "../src/db/repository";
+import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
 const originalLog = console.log;
 const originalError = console.error;
@@ -37,8 +37,13 @@ const dbPath = path.join(testPrivateDir, "db.json");
 if (originalDb) {
   fs.writeFileSync(dbPath, originalDb, { mode: 0o600 });
 } else {
-  // Provide empty DB so the process doesn't fail if initialized elsewhere
-  fs.writeFileSync(dbPath, JSON.stringify({}), { mode: 0o600 });
+  // Provide an empty but WELL-SHAPED database, so cases that do not need the
+  // legacy snapshot can still exercise the write path. `{}` was enough to keep
+  // the process alive and not enough to write a single row into.
+  fs.writeFileSync(dbPath, JSON.stringify({
+    schedules: [], colleges: [], sections: [], terms: [], courses: [], instructors: [],
+    systemUsers: [], formSecurity: [], adCollegeUserAssigns: [], formNames: [], sessions: [],
+  }), { mode: 0o600 });
 }
 function cleanupTestState() { fs.rmSync(testPrivateDir, { recursive: true, force: true }); }
 
@@ -166,6 +171,56 @@ async function runTests() {
     assert(peakConcurrency([]) === 0 && peakConcurrency([{start:600,end:600}]) === 0, "empty and zero-length spans peak at zero");
   }
 
+  await initDatabase();
+  /* --- 7. A save may not overwrite a change it never saw -------------------
+     The versions log could always say what had happened afterwards; it could
+     never stop it happening, and the coordinator whose work was overwritten was
+     never told. These assertions are the stop. */
+  originalLog("\n--- 7. Optimistic concurrency on schedule writes ---");
+  {
+    // Built from constants, not from the catalogue: this section is about the
+    // write path and must hold in an empty installation too.
+    const shape = {
+      AdCollegeId: 1, AdSectionId: 1, AdTermId: 1, AdCourseId: 1, AdCourseName: "مقرر اختبار",
+      SCode: "900", AdInstructorId: 1,
+      fsunday: true, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+    };
+    const born = await Repository.createSchedule({ ...shape, SCode: "REV1" } as any);
+    assert(Number(born.rev) === 1, "a new appointment starts at revision 1");
+
+    const first = await Repository.updateSchedule(born.id, { fstarttime: "10:00" }, born.rev);
+    assert(Number(first.rev) === 2 && first.fstarttime === "10:00", "a save on the current revision writes and bumps it");
+
+    let refused = false, carried: any = null;
+    try { await Repository.updateSchedule(born.id, { fstarttime: "12:00" }, born.rev); }
+    catch (error: any) { refused = error instanceof ScheduleRevisionConflict; carried = error?.current; }
+    assert(refused, "a save based on a stale revision is refused");
+    assert(carried?.fstarttime === "10:00", "the refusal carries the row as it now stands");
+    assert((await Repository.getScheduleById(born.id))?.fstarttime === "10:00", "and nothing was overwritten");
+
+    const rebased = await Repository.updateSchedule(born.id, { fstarttime: "12:00" }, first.rev);
+    assert(rebased.fstarttime === "12:00", "re-basing on the current revision writes");
+
+    const blind = await Repository.updateSchedule(born.id, { fendtime: "13:30" });
+    assert(blind.fendtime === "13:30", "an internal caller with no revision still writes (undo and import paths)");
+
+    const second = await Repository.createSchedule({ ...shape, SCode: "REV2", fstarttime: "14:00", fendtime: "15:00" } as any);
+    let partyRefused = false;
+    try {
+      await Repository.moveSchedulesBatch([
+        { id: born.id, fields: { fstarttime: "16:00" }, expectedRev: blind.rev },
+        { id: second.id, fields: { fstarttime: "17:00" }, expectedRev: 9999 },
+      ]);
+    } catch (error: any) { partyRefused = error instanceof ScheduleRevisionConflict; }
+    assert(partyRefused, "a party move with one stale member is refused");
+    assert((await Repository.getScheduleById(born.id))?.fstarttime === "12:00", "and no member of the party was written");
+
+    await Repository.deleteSchedule(born.id);
+    await Repository.deleteSchedule(second.id);
+  }
+
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");
@@ -176,8 +231,6 @@ async function runTests() {
     if (failed) process.exitCode = 1;
     return;
   }
-
-  await initDatabase();
 
   originalLog("\n--- 2. Real migrated authentication snapshot ---");
   const admin = await Repository.getUserByLogin("admin");

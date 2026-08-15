@@ -441,6 +441,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      second one that could disagree with it. */
   const searchRef = useRef<HTMLInputElement | null>(null);
   const [quickError, setQuickError] = useState<string | null>(null);
+  /**
+   * Someone else changed this row while it was open.
+   *
+   * The versions log could always say what had happened; it could never stop it
+   * happening, and the person whose work was overwritten was never told. The
+   * write is now refused and both versions are put in front of the reader —
+   * theirs, and the one actually in the database — with two plain choices and
+   * no default, because choosing for them is exactly the thing that went wrong.
+   */
+  const [clash, setClash] = useState<{ current: FSchedule; yours: any } | null>(null);
   const paintOpen = useRef<((seed: { day: DayKey; start: string; end: string; x: number; y: number }) => void) | null>(null);
   useEffect(() => {
     const finish = (event: PointerEvent) => {
@@ -512,7 +522,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         );
       }
     }
-    if (!res.ok) throw new Error(data.error || `تعذر إتمام العملية (${res.status}).`);
+    if (!res.ok) {
+      /**
+       * A refusal to overwrite is not an error to be flattened into a sentence.
+       *
+       * When the server answers 409 because the row moved on under the editor,
+       * the reply carries both versions — and the screen has to be able to show
+       * them and let a person choose. Wrapping it in a plain Error would throw
+       * that away, so the two sides travel on the thrown object.
+       */
+      const failure: any = new Error(data.error || `تعذر إتمام العملية (${res.status}).`);
+      if (res.status === 409 && data?.conflict === "revision") {
+        failure.revisionConflict = true;
+        failure.current = data.current;
+        failure.yours = data.yours;
+      }
+      throw failure;
+    }
     return data;
   };
   /**
@@ -2034,7 +2060,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       const saved = await fetchJson(url, {
         method: editor === "edit" ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form }),
+        // The revision this editor opened. The server compares it and refuses
+        // rather than overwriting a change someone else made meanwhile.
+        body: JSON.stringify({ ...form, rev: editor === "edit" ? rows.find(row => row.id === editId)?.rev : undefined }),
       });
       if (editor === "edit" && before) {
         const { id: _id, AdCourseName: _name, ...previousValues } = before as any;
@@ -2082,6 +2110,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setMessage(editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد");
       back();
     } catch (e: any) {
+      // The row moved on under this editor: hand back both versions instead of
+      // flattening the refusal into a sentence.
+      if (e?.revisionConflict) { setClash({ current: e.current, yours: e.yours }); return; }
       setError(friendlyError(e));
     } finally {
       setSaving(false);
@@ -2577,7 +2608,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             strict: strictNoConflict,
-            moves: moves.map(move => ({ id: move.before.id, fields: moveFields(move.after) })),
+            moves: moves.map(move => ({ id: move.before.id, fields: moveFields(move.after), rev: move.before.rev })),
           }),
         });
         // The confirmation already carries the written rows — settle them in
@@ -2606,7 +2637,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         throw refusal;
       }
     } catch (e: any) {
-      setError(friendlyError(e));
+      // A refusal to overwrite is a decision to hand back, not a message to show.
+      if (e?.revisionConflict) setClash({ current: e.current, yours: null });
+      else setError(friendlyError(e));
       void loadRows({ silent: true });
     } finally {
       setSaving(false);
@@ -2702,7 +2735,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         throw refusal;
       }
     } catch (e: any) {
-      setError(friendlyError(e));
+      // A refusal to overwrite is a decision to hand back, not a message to show.
+      if (e?.revisionConflict) setClash({ current: e.current, yours: null });
+      else setError(friendlyError(e));
       void loadRows({ silent: true });
     } finally {
       setSaving(false);
@@ -6772,6 +6807,76 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           <span dir="ltr">{days.find(d => d.key === keyMove.day)?.label} · {keyMove.start}</span>
           <em>{keyMoveReading?.why || ""}</em>
           <span className="keymove-keys"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> تحريك · <kbd>Enter</kbd> تنفيذ · <kbd>Esc</kbd> إلغاء</span>
+        </div>
+      ) : null}
+      {/*
+        Two versions, one decision, no default.
+
+        Overwriting silently is what this exists to prevent, so the sheet never
+        picks for the reader: it shows the row as it now stands in the database
+        beside what they were about to write, and offers to keep theirs (which
+        re-sends on top of the current revision) or to take the newer one.
+      */}
+      {clash ? (
+        <div className="views-dialog-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) setClash(null); }}>
+          <div className="views-dialog clash-sheet" role="dialog" aria-modal="true" aria-label="تغيّر هذا الموعد أثناء عملك">
+            <header>
+              <strong>تغيّر هذا الموعد أثناء عملك</strong>
+              <button type="button" onClick={() => setClash(null)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+            </header>
+            <p className="clash-note">
+              حفظ زميل تعديلاً على هذا الموعد بعد أن فتحته. لم يُكتب شيء فوق عمله — اختر ما يبقى.
+            </p>
+            <div className="clash-sides">
+              <section>
+                <span>النسخة الحالية في الجدول</span>
+                <strong>{clash.current.AdCourseName || courseById.get(clash.current.AdCourseId)?.CourseName || "الموعد"}</strong>
+                <em>{arabicDays(clash.current) || "بلا أيام"}</em>
+                <b dir="ltr">{clash.current.fstarttime}–{clash.current.fendtime}</b>
+                <i dir="ltr">{[clash.current.AdRoomCode, clash.current.AdRoomHall].filter(Boolean).join("/") || "—"}</i>
+              </section>
+              {clash.yours ? (
+                <section className="clash-yours">
+                  <span>نسختك</span>
+                  <strong>{courseById.get(clash.yours.AdCourseId)?.CourseName || "الموعد"}</strong>
+                  <em>{arabicDays(clash.yours) || "بلا أيام"}</em>
+                  <b dir="ltr">{clash.yours.fstarttime}–{clash.yours.fendtime}</b>
+                  <i dir="ltr">{[clash.yours.AdRoomCode, clash.yours.AdRoomHall].filter(Boolean).join("/") || "—"}</i>
+                </section>
+              ) : null}
+            </div>
+            <footer>
+              <button
+                type="button"
+                className="views-dialog-cancel"
+                onClick={() => {
+                  // Take the newer one: put it on the board and open it, so the
+                  // reader sees what they are now editing.
+                  setRows(current => current.map(row => (row.id === clash.current.id ? clash.current : row)));
+                  setClash(null);
+                  openEdit(clash.current);
+                }}
+              >
+                خذ النسخة الأحدث
+              </button>
+              {clash.yours ? (
+                <button
+                  type="button"
+                  className="views-dialog-save"
+                  onClick={() => {
+                    // Keep mine: the form re-opens on top of the current
+                    // revision, so the next save is a deliberate overwrite.
+                    setRows(current => current.map(row => (row.id === clash.current.id ? clash.current : row)));
+                    setClash(null);
+                    setForm(prev => ({ ...prev, ...clash.yours, rev: clash.current.rev } as any));
+                    setMessage("أُبقيت نسختك — راجعها ثم احفظ مرة أخرى.");
+                  }}
+                >
+                  أبقِ نسختي
+                </button>
+              ) : null}
+            </footer>
+          </div>
         </div>
       ) : null}
       {paletteOpen ? (
