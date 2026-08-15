@@ -3868,7 +3868,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    * folded rail and the full rail each state their own.
    */
   --dock-rail:var(--sidebar-w);
-  left:calc(50% - (var(--dock-rail) / 2));transform:translateX(-50%);
+  inset-inline-start:var(--dock-rail);
+  inset-inline-end:0;
+  margin-inline:auto;
+  width:max-content;
   bottom:calc(var(--s4) + env(safe-area-inset-bottom));
   display:flex;align-items:center;gap:var(--s2);
   padding:6px;
@@ -3889,8 +3892,8 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   animation:dock-rise .24s var(--ease-out) both;
 }
 @keyframes dock-rise{
-  from{opacity:0;transform:translateX(-50%) translateY(10px)}
-  to{opacity:1;transform:translateX(-50%)}
+  from{opacity:0;transform:translateY(10px)}
+  to{opacity:1;transform:translateY(0)}
 }
 .schedule-dock button{
   display:inline-flex;align-items:center;justify-content:center;gap:5px;
@@ -4244,7 +4247,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 
 .keymove-bar{
   position:fixed;z-index:145;
-  left:50%;transform:translateX(-50%);
+  inset-inline:0;margin-inline:auto;width:max-content;
   bottom:calc(var(--s4) + 52px + env(safe-area-inset-bottom));
   display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
   max-width:min(720px,calc(100vw - 32px));
