@@ -7231,9 +7231,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       <span className="undo-log-label">{entry.label}</span>
                       <time dateTime={new Date(entry.at).toISOString()}>{undoClock(entry.at)}</time>
                     </div>
-                    {courseName || whoName ? (
-                      <span className="undo-log-meta">{[courseName, whoName].filter(Boolean).join(" · ")}</span>
-                    ) : null}
+                    {/*
+                       The label already names the course — «نُقل ورشة انتاج
+                       وسائل تعليمية خاصة» — so repeating it underneath said the
+                       same words twice, and the truncated label made the pair
+                       look like two different lectures. The quiet line beneath
+                       is for what the label does NOT say: who teaches it. If
+                       that is unknown, there is nothing to add and no line.
+                    */}
+                    {whoName ? <span className="undo-log-meta">{whoName}</span> : null}
                     {entry.usedAt ? (
                       <span className="undo-log-done">تُراجع عنه {undoClock(entry.usedAt)}</span>
                     ) : (

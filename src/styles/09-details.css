@@ -1207,10 +1207,13 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .rail-identity:hover .rail-identity-name{color:var(--nav-ink)}
 .rail-identity:hover .rail-identity-line{opacity:1}
 .rail-identity:hover .rail-identity-go{opacity:.85;transform:translateY(-50%) translateX(-3px)}
-/* Folded to the spine: the name alone, still the way in. */
-html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{text-align:center;padding-inline:0}
-html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-line,
-html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity-go{display:none}
+/* Folded to the spine, the identity steps out of the way entirely.
+   Seventy-two pixels cannot hold "SCHEDULE" at this letter-spacing, so what the
+   reader actually saw was "CHEDULE" — a word cut in half is worse than no word,
+   and the door is one hover away in any case. */
+html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
+  display:none;
+}
 
 .journey-backdrop{
   position:fixed;inset:0;z-index:620;

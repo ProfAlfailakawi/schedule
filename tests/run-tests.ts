@@ -7,6 +7,7 @@ import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId"
 import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../src/utils/weekVisual";
 import { findConflicts } from "../src/utils/scheduleIntelligence";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
+import { readCampusFlow } from "../src/utils/campusFlow";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
@@ -275,6 +276,53 @@ async function runTests() {
     assert(rescue!.moves.length === closed.length, "every lecture in the closed hall is moved");
     assert(rescue!.moves.every(move => move.roomHall !== "F6"), "and none of them stays in the hall that closed");
     assert(rescue!.after <= rescue!.before, "the rescue leaves no new conflict behind");
+  }
+
+  /* --- 9. Campus flow: the corridor the timetable creates ------------------ */
+  originalLog("\n--- 9. Campus movement between periods ---");
+  {
+    let seed = 1;
+    const card = (over: any): any => ({
+      id: seed++, AdCollegeId: 1, AdSectionId: 1, AdTermId: 27, AdCourseId: 1, AdCourseName: "مقرر",
+      SCode: "101", AdInstructorId: 1,
+      fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
+      fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+      ...over,
+    });
+    const who = new Map<number, any>([
+      [1, { AdInstructorId: 1, AdInstructorName: "د. سلطان" }],
+      [2, { AdInstructorId: 2, AdInstructorName: "د. منى" }],
+    ]);
+
+    const crowd = [
+      card({ fsunday: true, AdRoomCode: "12", AdInstructorId: 1 }),
+      card({ fsunday: true, AdRoomCode: "12", AdInstructorId: 2 }),
+      card({ fsunday: true, fstarttime: "09:00", fendtime: "10:00", AdRoomCode: "14", AdInstructorId: 2 }),
+      card({ fsunday: true, fstarttime: "09:00", fendtime: "10:00", AdRoomCode: "14", AdInstructorId: 2 }),
+    ];
+    const flow = readCampusFlow(crowd, who, { day: "fsunday" });
+    assert(flow.buildings.join(",") === "12,14", "the buildings in use are read from the rows themselves");
+    assert(flow.peak?.label === "09:00", "the busiest crossing is the 09:00 break");
+    assert(flow.peak?.crossing === 4, "and it counts every lecture that changes building across it");
+    assert(flow.peak?.busiestPath === "12 → 14", "the heaviest corridor is named");
+
+    const tight = [
+      card({ fsunday: true, AdInstructorId: 1, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12", AdCourseName: "أ" }),
+      card({ fsunday: true, AdInstructorId: 1, fstarttime: "09:02", fendtime: "10:00", AdRoomCode: "14", AdCourseName: "ب" }),
+    ];
+    const walk = readCampusFlow(tight, who, { day: "fsunday" });
+    assert(walk.impossible.length === 1, "a walk nobody could make is found");
+    assert(walk.impossible[0].gap === 2 && walk.impossible[0].needs === 5, "with the minutes available and the minutes needed");
+    assert(walk.impossible[0].instructor === "د. سلطان", "and the teacher who would have to make it is named");
+
+    const same = [
+      card({ fsunday: true, AdInstructorId: 1, fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12" }),
+      card({ fsunday: true, AdInstructorId: 1, fstarttime: "09:03", fendtime: "10:00", AdRoomCode: "12" }),
+    ];
+    assert(readCampusFlow(same, who, { day: "fsunday" }).impossible.length === 0, "a three-minute move inside one building is not flagged");
+
+    const nothing = readCampusFlow([], who, { day: "week" });
+    assert(nothing.bands.length === 0 && nothing.peak === null, "an empty scope reads as empty, not as a crash");
   }
 
   if (!originalDb) {
