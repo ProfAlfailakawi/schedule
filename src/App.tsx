@@ -61,6 +61,8 @@ const Schedules = safeLazy(loadSchedules);
 const Reports = safeLazy(loadReports);
 const AdminUsers = safeLazy(loadAdminUsers);
 const About = safeLazy(loadAbout);
+const loadJourney = () => import("./components/ScheduleJourney");
+const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
 import { PrimaryButton } from "./components/ui";
 
@@ -379,6 +381,11 @@ export default function App() {
   // (decision tools, reference & administration) stay folded until asked for,
   // which is what the reader wanted when the admin group used to spring open.
   const [navGroups, setNavGroups] = useState<Record<string, boolean>>({ core: true });
+  /* «عن البرنامج» is no longer a destination in the menu. What it was about —
+     what this system has become — now lives behind the identity line at the
+     foot of the rail, where it belongs: a thing you glance at, not a place you
+     navigate to. */
+  const [journeyOpen, setJourneyOpen] = useState(false);
   /* The rail starts present on a desk and folded on a phone; after that its
      state is the reader's, on every width alike. */
   const [sidebarOpen, setSidebarOpen] = useState(
@@ -1697,7 +1704,6 @@ export default function App() {
                   label="نسخ فصل"
                 />
               ) : null}
-              <NavButton activeView={activeView} onGo={go} view="about" icon={<Info />} label="عن البرنامج" />
             </NavSection>
           ) : isPowerAdmin && allowed.admin ? (
             <NavSection
@@ -1735,14 +1741,30 @@ export default function App() {
                   label="نسخ فصل"
                 />
               ) : null}
-              <NavButton activeView={activeView} onGo={go} view="about" icon={<Info />} label="عن البرنامج" />
             </NavSection>
           ) : null}
         </nav>
         {/* One card carries who you are, whether saving is safe, the theme and
             the way out — three sentences of chrome reduced to a dot and two
             glyphs, which also keeps the rail inside a 720px-tall laptop. */}
+        {journeyOpen ? (
+          <Suspense fallback={null}>
+            <ScheduleJourney onClose={() => setJourneyOpen(false)} />
+          </Suspense>
+        ) : null}
         <div className="sidebar-footer">
+          {/* The system's own identity, and the quietest possible door into its
+              memory. Not a button — a line that answers when it is pressed. */}
+          <button
+            type="button"
+            className="rail-identity"
+            onClick={() => setJourneyOpen(true)}
+            title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات"
+          >
+            <span className="rail-identity-name">SCHEDULE</span>
+            <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
+            <span className="rail-identity-go" aria-hidden="true">←</span>
+          </button>
           <div className="user-card">
             <div
               className={`user-avatar health-${health}`}

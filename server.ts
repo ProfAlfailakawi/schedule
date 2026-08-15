@@ -842,6 +842,70 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   });
 });
 
+/**
+ * ── What SCHEDULE has become ──────────────────────────────────────────────
+ *
+ * Every number here is counted from the database at the moment it is asked for.
+ * None of them is written down anywhere: add a term and the term count is one
+ * higher on the next request, without a line of code changing. That property is
+ * the whole point of the screen it feeds — a system claiming a decade of memory
+ * cannot have its memory typed in by hand.
+ *
+ * The counts reuse exactly what /api/dashboard already reads, so the two can
+ * never disagree about how many terms exist or which one is current. The
+ * lifetime row count comes from `countSchedules()`, which is a server-side
+ * count — the aggregate never pulls fifteen thousand rows into memory to
+ * measure them.
+ *
+ * The reading is honest about scope: an administrator is shown the institution,
+ * and a department coordinator is shown the same shape narrowed to what they
+ * are allowed to see, with `scoped: true` saying which of the two it is.
+ */
+app.get("/api/journey", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const terms = await Repository.getTerms();
+  const currentTermId = terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+  const currentTerm = terms.find(term => Number(term.AdTermId) === currentTermId) || null;
+  const [courses, instructors, sections, colleges, lifetimeRows, termRows] = await Promise.all([
+    Repository.getCourses(),
+    Repository.getInstructors(),
+    Repository.getSections(),
+    Repository.getColleges(),
+    Repository.countSchedules(),
+    Repository.getSchedulesByScope({ termId: currentTermId }),
+  ]);
+  const admin = Boolean(req.user.IsAdminUser);
+  const visibleTermRows = admin ? termRows : filterByScope(req, termRows);
+  const visibleSections = admin ? sections : filterByScope(req, sections);
+  const visibleColleges = admin
+    ? colleges
+    : colleges.filter(college => (req.scopes || []).some(scope => Number(scope.AdCollegeId) === college.AdCollegeId));
+
+  /* Unique, not summed: the same course taught in ten terms is one course that
+     the system has carried, and the label above the number says exactly that. */
+  const unique = (values: Array<number | string>) => new Set(values.filter(Boolean)).size;
+
+  res.json({
+    scoped: !admin,
+    lifetime: {
+      terms: terms.length,
+      schedules: admin ? lifetimeRows : null,
+      courses: courses.length,
+      instructors: instructors.length,
+      sections: visibleSections.length,
+      colleges: visibleColleges.length,
+    },
+    current: {
+      termId: currentTermId || null,
+      termName: currentTerm?.AdTermName || null,
+      schedules: visibleTermRows.length,
+      courses: unique(visibleTermRows.map(row => row.AdCourseId)),
+      instructors: unique(visibleTermRows.map(row => row.AdInstructorId)),
+      rooms: unique(visibleTermRows.map(row => `${row.AdRoomCode}|${row.AdRoomHall}`.trim())),
+      sections: unique(visibleTermRows.map(row => row.AdSectionId)),
+    },
+  });
+});
+
 // One search entry point for the entire academic workspace. It respects the current user's
 // academic scope and only returns entities related to schedules visible to that user.
 app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: AuthenticatedRequest, res: Response) => {
