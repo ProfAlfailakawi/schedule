@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Activity, AlertTriangle, CheckCircle2, Gauge, GripVertical, Orbit, Radio, ShieldCheck, Waypoints } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../../types";
 import type { SchedulePhysicsDragState } from "./types";
+import { formatScheduleTimeRange } from "../../utils/scheduleTime";
 
 interface Props {
   state: SchedulePhysicsDragState;
@@ -78,7 +79,7 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
         <span>{row.AdCourseName || course?.CourseName}</span>
         <small>{instructor?.AdInstructorName || ""}</small>
       </div>
-      <div className="physics-float-meta"><b dir="ltr">{row.fstarttime}–{row.fendtime}</b><small>{row.AdRoomCode}/{row.AdRoomHall}</small></div>
+      <div className="physics-float-meta"><b dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</b><small>{row.AdRoomCode}/{row.AdRoomHall}</small></div>
     </div>
 
     {target ? <aside ref={hudRef} className={`schedule-physics-hud quality-${decision?.quality || "unknown"} ${compact ? "compact" : "detailed"}`} style={hudStyle} aria-live="polite">

@@ -10,7 +10,7 @@ import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule } from 
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { byArabic, sortByName } from "../utils/sorting";
-import { SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
+import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 
 /**
@@ -87,8 +87,8 @@ const GRID_END = SCHEDULE_DAY_END;
 const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
-const COMPREHENSIVE_FIRST_PAGE_ROWS = 16;
-const COMPREHENSIVE_NEXT_PAGE_ROWS = 16;
+const COMPREHENSIVE_FIRST_PAGE_ROWS = 22;
+const COMPREHENSIVE_NEXT_PAGE_ROWS = 22;
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const duration = (row: FSchedule) => Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
 /**
@@ -457,7 +457,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   if (filters.courseCode) chips.push({ key: "course-code", label: `الرقم الأكاديمي: ${filters.courseCode}`, clear: () => set("courseCode", "") });
   if (filters.startTime && filters.endTime) chips.push({
     key: "time",
-    label: `الفترة: ${filters.startTime}–${filters.endTime}`,
+    label: `الفترة: ${formatScheduleTimeRange(filters.startTime, filters.endTime)}`,
     clear: () => setFilters(prev => ({ ...prev, startTime: "", endTime: "" }))
   });
   DAYS.filter(day => filters[day.key]).forEach(day => chips.push({
@@ -1025,7 +1025,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       <span><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}</span>
                     </div>
                   </div>
-                  <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                  <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                   <span className="lens-room"><Building2 aria-hidden="true" />{row.AdRoomCode || "—"}/{row.AdRoomHall || "—"}</span>
                   <span className="lens-days">
                     {dayFlags(row).length
@@ -1063,7 +1063,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                     <strong>{pickedInstructor?.AdInstructorName || "بدون أستاذ"}</strong>
                     <span>{sectionById.get(selectedResult.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
                     <em>{dayText(selectedResult) || "بلا أيام"}</em>
-                    <time dir="ltr">{selectedResult.fstarttime}–{selectedResult.fendtime}</time>
+                    <time dir="ltr">{formatScheduleTimeRange(selectedResult.fstarttime, selectedResult.fendtime)}</time>
                   </article>
                   <article>
                     <strong>{pickedCourse?.CourseCode || "بدون رمز"}</strong>
@@ -1091,7 +1091,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <div>
                   {day.rows.length ? day.rows.map(row => (
                     <article key={`${day.key}-${row.id}`}>
-                      <time dir="ltr">{row.fstarttime}<i>{row.fendtime}</i></time>
+                      <time dir="ltr">{scheduleClockForDisplay(row.fendtime)}<i>{scheduleClockForDisplay(row.fstarttime)}</i></time>
                       <div>
                         <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
                         <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
@@ -1257,7 +1257,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                           <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
                           <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
                           <em>{dayText(row)}</em>
-                          <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                          <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                         </article>
                       ))}
                     </div>
@@ -1302,7 +1302,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       <strong>{room.name}</strong>
                       <div>
                         {room.windows.map((window: any, index: number) => (
-                          <time key={index} dir="ltr">{clock(window.from)}–{clock(window.to)}</time>
+                          <time key={index} dir="ltr">{formatScheduleTimeRange(clock(window.from), clock(window.to))}</time>
                         ))}
                       </div>
                     </article>
@@ -1333,7 +1333,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       <div key={row.id}>
                         <span className="code-chip">{courseById.get(row.AdCourseId)?.CourseCode || "—"}</span>
                         <span>{row.AdCourseName}</span>
-                        <time dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                        <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                         <small>{dayText(row)}</small>
                       </div>
                     ))}
@@ -1674,7 +1674,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                           <div role="cell" className="num print-course-units">{course ? course.CourseCredit : "—"}</div>
                           <div role="cell" className="num print-course-hours">{course ? course.CourseHours : "—"}</div>
                           <div role="cell" className="num print-course-capacity">{course ? course.MaxStudent : "—"}</div>
-                          <div role="cell" className="print-ltr print-nowrap print-course-time">{row.fstarttime && row.fendtime ? `${row.fstarttime} – ${row.fendtime}` : "—"}</div>
+                          <div role="cell" className="print-ltr print-nowrap print-course-time">{row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—"}</div>
                           <div role="cell" className="print-ltr">{dayCodeCell(row)}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</div>
@@ -1692,11 +1692,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <div><span>توقيع رئيس القسم العلمي</span><i /></div>
                     <div><span>توقيع العميد</span><i /></div>
                   </div>
-                  <div className="print-comprehensive-page-meta">
+                  <div className="print-comprehensive-legend-stack">
+                    <div className="print-comprehensive-legend">
+                      {legendItems.map(item => <span key={item}>{item}</span>)}
+                    </div>
                     <div className="print-comprehensive-page-number"><bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi></div>
-                  </div>
-                  <div className="print-comprehensive-legend">
-                    {legendItems.map(item => <span key={item}>{item}</span>)}
                   </div>
                 </footer>
               </section>
@@ -1730,7 +1730,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                       <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
                       <span><bdi className="print-ltr">{course?.CourseCode || "—"}</bdi><i>شعبة {row.SCode || "—"}</i><em>{instructor?.AdInstructorName || "بدون أستاذ"}</em></span>
                     </div>
-                    <time className="print-ltr">{row.fstarttime}–{row.fendtime}</time>
+                    <time className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                     <span className="print-ltr print-list-room">{placeOfRow(row)}</span>
                     <span className="print-days print-list-days">{dayCell(row)}</span>
                   </article>
@@ -1764,7 +1764,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <div>
                       {dayRows.length ? dayRows.map(row => (
                         <article key={`${day.key}-${row.id}`}>
-                          <time className="print-ltr"><b>{row.fstarttime}</b><span>{row.fendtime}</span></time>
+                          <time className="print-ltr"><b>{scheduleClockForDisplay(row.fendtime)}</b><span>{scheduleClockForDisplay(row.fstarttime)}</span></time>
                           <div><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span>{instructorOf(row)?.AdInstructorName || "بدون أستاذ"}</span></div>
                           <small><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</bdi><bdi className="print-ltr">{placeOfRow(row)}</bdi></small>
                         </article>
@@ -1804,7 +1804,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                   <tbody>{page.rows.map(row => <tr key={row.id}>
                     <td className="print-course-block"><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"}</bdi></span></td>
                     <td className="print-days">{dayCell(row)}</td>
-                    <td className="print-ltr">{row.fstarttime}–{row.fendtime}</td>
+                    <td className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</td>
                     <td className="print-ltr">{placeOfRow(row)}</td>
                     <td className="print-ltr">{row.SCode || "—"}</td>
                   </tr>)}</tbody>
@@ -1866,7 +1866,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                   <section className="print-free-windows">
                     <h2>الفترات المتاحة</h2>
                     <div>{pageRooms.map((room: any) => (
-                      <article key={room.key}><strong className="print-ltr">{room.name}</strong><span>{room.windows.map((window: any, index: number) => <time className="print-ltr" key={index}>{clock(window.from)}–{clock(window.to)}</time>)}</span></article>
+                      <article key={room.key}><strong className="print-ltr">{room.name}</strong><span>{room.windows.map((window: any, index: number) => <time className="print-ltr" key={index}>{formatScheduleTimeRange(clock(window.from), clock(window.to))}</time>)}</span></article>
                     ))}</div>
                   </section>
                   <PrintPageMeta page={pageNumber} total={totalPages} college={collegeName} date={issueDate} />

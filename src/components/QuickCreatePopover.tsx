@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Clock3, Maximize2, X } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
 import type { DayKey } from "./scheduleWorkspace";
 import {
+  formatScheduleTimeRange,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_START,
 } from "../utils/scheduleTime";
@@ -232,7 +233,7 @@ export default function QuickCreatePopover({
         <span className="qc-mark" aria-hidden="true"><Clock3 /></span>
         <div>
           <strong>موعد جديد</strong>
-          <small>{seed.dayLabel} · <time dir="ltr">{draft.start}–{draft.end}</time></small>
+          <small>{seed.dayLabel} · <time dir="ltr">{formatScheduleTimeRange(draft.start, draft.end)}</time></small>
         </div>
         <button type="button" className="qc-close" onClick={onCancel} aria-label="إغلاق بدون حفظ">
           <X aria-hidden="true" />

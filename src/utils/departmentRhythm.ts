@@ -1,3 +1,4 @@
+import { formatScheduleTimeRange } from "./scheduleTime";
 import type { FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
 import { SCHEDULE_DAYS, timeToMinutes, type DayKey } from "./scheduleIntelligence";
@@ -219,7 +220,7 @@ export function offRhythm(
   const length = end - start;
   const [low, high] = rhythm.durationRange;
   if (rhythm.durationMinutes && length > 0 && (length < low || length > high)) {
-    const span = low === high ? `${low} دقيقة` : `${clock(low)}–${clock(high)}`;
+    const span = low === high ? `${low} دقيقة` : formatScheduleTimeRange(clock(low), clock(high));
     return `مدة محاضرات ${label} في قسمك ${span}، ومدة هذا الموعد ${countOf(length, AR.minute)}.`;
   }
   return "";

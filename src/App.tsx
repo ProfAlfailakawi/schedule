@@ -33,6 +33,7 @@ import type { AdminMode } from "./components/AdminUsers";
 import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 import { warmStart } from "./utils/warmStart";
+import { formatScheduleTimeRange } from "./utils/scheduleTime";
 
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
@@ -1980,7 +1981,7 @@ export default function App() {
                       {naturalAnswer.gaps.slice(0, 12).map((gap: any, index: number) => (
                         <div key={index}>
                           <span>{gap.day}</span>
-                          <time dir="ltr">{gap.from}–{gap.to}</time>
+                          <time dir="ltr">{formatScheduleTimeRange(gap.from, gap.to)}</time>
                           <b>{gap.minutes}د</b>
                         </div>
                       ))}
@@ -1992,7 +1993,7 @@ export default function App() {
                         <div key={row.id}>
                           <span className="code-chip">{row.code || "—"}</span>
                           <strong>{row.name}</strong>
-                          <time dir="ltr">{row.start}–{row.end}</time>
+                          <time dir="ltr">{formatScheduleTimeRange(row.start, row.end)}</time>
                           <small>{row.room}/{row.hall}</small>
                         </div>
                       ))}

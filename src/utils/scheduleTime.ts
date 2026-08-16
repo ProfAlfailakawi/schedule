@@ -15,3 +15,25 @@ export function withinScheduleDay(start: number, end: number): boolean {
     start >= SCHEDULE_DAY_START && end <= SCHEDULE_DAY_END && end > start;
 }
 
+
+export function scheduleClockForDisplay(value: string | null | undefined): string {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  return raw.replace(/^0(?=\d:)/, "");
+}
+
+/**
+ * Institutional time ranges are read right-to-left as end → start.
+ * Keep that convention identical everywhere the schedule is displayed.
+ */
+export function formatScheduleTimeRange(
+  start: string | null | undefined,
+  end: string | null | undefined,
+): string {
+  const from = scheduleClockForDisplay(start);
+  const to = scheduleClockForDisplay(end);
+  if (from === "—" && to === "—") return "—";
+  if (to === "—") return from;
+  if (from === "—") return to;
+  return `${to} - ${from}`;
+}

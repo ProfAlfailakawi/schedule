@@ -7,6 +7,7 @@ import {
   type DayKey, type RegulationFinding
 } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 /**
  * The last read before a schedule is adopted.
@@ -70,7 +71,7 @@ function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSc
                 <div className="rrc-main">
                   <small>شعبة {row.SCode} · {days || "بلا أيام"}</small>
                 </div>
-                <time className="rrc-time" dir="ltr">{row.fstarttime}–{row.fendtime}</time>
+                <time className="rrc-time" dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
               </article>
             );
           })}
@@ -122,7 +123,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     const days = DAY_KEYS.filter(key => (row as any)[key]).map(key => DAY_NAMES[DAY_KEYS.indexOf(key)]).join("، ");
     const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "";
     const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
-    return `${code} · شعبة ${row.SCode} · ${who} · ${days || "بلا أيام"} · ${row.fstarttime}–${row.fendtime}`;
+    return `${code} · شعبة ${row.SCode} · ${who} · ${days || "بلا أيام"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`;
   };
 
   return (

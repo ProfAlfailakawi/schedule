@@ -1,6 +1,6 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { departsFromNature, type CourseNature } from "./courseNature";
-import { SCHEDULE_DAY_END } from "./scheduleTime";
+import { SCHEDULE_DAY_END , formatScheduleTimeRange } from "./scheduleTime";
 
 /**
  * The timetable rules of PAAET decision 1912/2016, written as code.
@@ -564,7 +564,7 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
         article: "قرار القسم",
         severity: "medium",
         title: `${arabicNumber(inside.length)} موعد داخل وقت اجتماع القسم`,
-        detail: `${DAY_NAMES[DAY_KEYS.indexOf(day)]} ${from}–${to} محجوز لاجتماع القسم.`,
+        detail: `${DAY_NAMES[DAY_KEYS.indexOf(day)]} ${formatScheduleTimeRange(from, to)} محجوز لاجتماع القسم.`,
         rowIds: inside.map(row => row.id)
       });
     }

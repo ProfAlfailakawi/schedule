@@ -1,5 +1,5 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
-import { SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
+import { formatScheduleTimeRange, SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
 export type DayKey = "fsunday"|"fmonday"|"ftuesday"|"fwednesday"|"fthursday";
 export const SCHEDULE_DAYS: Array<{key:DayKey;label:string}> = [
@@ -170,7 +170,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
         :type==="cohort"?"تعارض على الطلاب"
         :"مهلة الباب غير كافية";
       const detail=type==="instructor"
-        ? `الموعدان ${row.fstarttime}-${row.fendtime} و ${other.fstarttime}-${other.fendtime} يتقاطعان في يوم مشترك.`
+        ? `الموعدان ${formatScheduleTimeRange(row.fstarttime, row.fendtime)} و ${formatScheduleTimeRange(other.fstarttime, other.fendtime)} يتقاطعان في يوم مشترك.`
         : type==="room"
           ? `القاعة ${row.AdRoomCode}/${row.AdRoomHall} مستخدمة في موعد متداخل.`
           : type==="duplicate"
@@ -447,7 +447,7 @@ export function compareTerms(a:FSchedule[],b:FSchedule[]){
   const dayLabel=(r:FSchedule)=>SCHEDULE_DAYS.filter(day=>Boolean((r as any)[day.key])).map(day=>day.label).join("، ");
   const shape=(r:FSchedule)=>({
     days:dayLabel(r),
-    time:`${r.fstarttime}–${r.fendtime}`,
+    time:formatScheduleTimeRange(r.fstarttime, r.fendtime),
     room:roomKey(r),
     instructorId:Number(r.AdInstructorId||0)
   });

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import {
   Activity,
   AlertTriangle,
@@ -709,8 +710,7 @@ export default function LivingScheduleLayer({
                           {selected.AdCourseName} · شعبة {selected.SCode}
                         </strong>
                         <small>
-                          {dayLabel(selected)} · {selected.fstarttime}–
-                          {selected.fendtime} · {selected.AdRoomCode}/
+                          {dayLabel(selected)} · {formatScheduleTimeRange(selected.fstarttime, selected.fendtime)} · {selected.AdRoomCode}/
                           {selected.AdRoomHall}
                         </small>
                       </div>
@@ -912,7 +912,7 @@ export default function LivingScheduleLayer({
                                     <td><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode || "—"}</small></td>
                                     <td dir="ltr">{row.section || "—"}</td>
                                     <td>{row.days || "—"}</td>
-                                    <td dir="ltr">{row.start}–{row.end}</td>
+                                    <td dir="ltr">{formatScheduleTimeRange(row.start, row.end)}</td>
                                     <td dir="ltr">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
                                     <td>{row.instructor || "—"}</td>
                                   </tr>

@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, ArrowLeft, CheckCircle2, Gauge, History, Rotat
 import type { AdCourse, AdInstructor, FSchedule } from "../../types";
 import { buildMoveCandidate, PHYSICS_DAYS } from "./physics";
 import type { SchedulePhysicsDropRequest } from "./types";
+import { formatScheduleTimeRange } from "../../utils/scheduleTime";
 
 interface Props {
   request: SchedulePhysicsDropRequest;
@@ -34,9 +35,9 @@ export default function ScheduleDecisionPreview({ request, course, instructor, b
     </div>
 
     <div className="decision-route">
-      <section><small>من</small><b>{dayText(row)}</b><strong dir="ltr">{row.fstarttime}–{row.fendtime}</strong><span>{row.AdRoomCode}/{row.AdRoomHall}</span></section>
+      <section><small>من</small><b>{dayText(row)}</b><strong dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</strong><span>{row.AdRoomCode}/{row.AdRoomHall}</span></section>
       <i><ArrowLeft/></i>
-      <section><small>إلى</small><b>{dayText(candidate)}</b><strong dir="ltr">{candidate.fstarttime}–{candidate.fendtime}</strong><span>{candidate.AdRoomCode}/{candidate.AdRoomHall}</span></section>
+      <section><small>إلى</small><b>{dayText(candidate)}</b><strong dir="ltr">{formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}</strong><span>{candidate.AdRoomCode}/{candidate.AdRoomHall}</span></section>
     </div>
 
     <div className="decision-impact">

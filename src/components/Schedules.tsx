@@ -129,6 +129,8 @@ import { claimWarmStart } from "../utils/warmStart";
 const PRESENCE_HUES = [200, 262, 38, 96, 288, 178];
 import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../utils/weekVisual";
 import {
+  formatScheduleTimeRange,
+  scheduleClockForDisplay,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
   SCHEDULE_DAY_START,
@@ -216,7 +218,7 @@ function WeekPeek({ anchor, title, who, code, section, days: dayText, from, to, 
       <dl>
         <dt>الشعبة</dt><dd dir="ltr">{section} · {code}</dd>
         <dt>الأيام</dt><dd>{dayText || "بدون أيام"}</dd>
-        <dt>الوقت</dt><dd dir="ltr">{from} – {to}</dd>
+        <dt>الوقت</dt><dd dir="ltr">{formatScheduleTimeRange(from, to)}</dd>
         <dt>القاعة</dt><dd dir="ltr">{room || "—"}</dd>
       </dl>
     </div>
@@ -1457,7 +1459,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const quickConflict = (draft: QuickDraft, day: DayKey): string | null => {
     const from = mins(draft.start), to = mins(draft.end);
     if (to <= from) return "وقت النهاية يجب أن يكون بعد وقت البداية.";
-    if (!withinScheduleDay(from, to)) return "الوقت خارج اليوم الدراسي (08:00–20:00).";
+    if (!withinScheduleDay(from, to)) return "الوقت خارج اليوم الدراسي (20:00 - 8:00).";
     const room = draft.room.trim(), hall = draft.hall.trim();
     const busy = rows.find(r =>
       Boolean((r as any)[day]) &&
@@ -1467,7 +1469,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!busy) return null;
     const what = busy.AdCourseName || courseById.get(busy.AdCourseId)?.CourseName || "موعد آخر";
     const why = draft.instructorId && busy.AdInstructorId === draft.instructorId ? "الأستاذ مرتبط بـ" : "القاعة محجوزة لـ";
-    return `${why}${what} ${busy.fstarttime}–${busy.fendtime}`;
+    return `${why}${what} ${formatScheduleTimeRange(busy.fstarttime, busy.fendtime)}`;
   };
   const selectedFormDays = days.filter(d=>Boolean(form[d.key]));
   // A brand-new form should not open already scolding. The validation strip
@@ -3613,7 +3615,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           // meaning it always had, so nothing a reader already knows changes.
           if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); pickUpWithKeyboard(r); }
         }}
-        aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${r.fstarttime}–${r.fendtime}${place ? ` · قاعة ${place}` : ""}`}
+        aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${formatScheduleTimeRange(r.fstarttime, r.fendtime)}${place ? ` · قاعة ${place}` : ""}`}
         data-narrow={widthShare <= 0.34 ? "true" : undefined}
         data-row-id={r.id}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
@@ -3635,7 +3637,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         </button>
         <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
         <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
-        <small className="week-when"><time dir="ltr">{r.fstarttime}–{r.fendtime}</time>{place ? <i>{place}</i> : null}</small>
+        <small className="week-when"><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>{place ? <i>{place}</i> : null}</small>
         {/* «112 · ش520»: the course number and the section stop looking like
             one ambiguous pair of numerals. */}
         <em className="week-code" dir="ltr">{code}<b dir="rtl">ش{r.SCode}</b></em>
@@ -3881,7 +3883,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         type: instructorBusy ? "instructor" : "room",
         severity: "high",
         message: instructorBusy ? "الأستاذ مرتبط بموعد آخر" : "القاعة محجوزة في هذا الوقت",
-        detail: `${other.AdCourseName || courseById.get(other.AdCourseId)?.CourseName || "موعد آخر"} · ${other.fstarttime}–${other.fendtime}`,
+        detail: `${other.AdCourseName || courseById.get(other.AdCourseId)?.CourseName || "موعد آخر"} · ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`,
       }];
     });
     const before = blockersFor(row).length;
@@ -4109,8 +4111,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const place = [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بلا قاعة";
     const partyCount = multiSelect.has(row.id) ? multiSelect.size : 1;
     return {
-      before: `${arabicDays(row) || "بلا يوم"} · ${row.fstarttime}–${row.fendtime}`,
-      after: `${arabicDays(candidate) || target.label} · ${candidate.fstarttime}–${candidate.fendtime}`,
+      before: `${arabicDays(row) || "بلا يوم"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
+      after: `${arabicDays(candidate) || target.label} · ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}`,
       place,
       partyCount,
     };
@@ -5080,7 +5082,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         }
                       >
                         <time dir="ltr">
-                          <b>{r.fstarttime}</b><span>–</span><small>{r.fendtime}</small>
+                          <b>{scheduleClockForDisplay(r.fendtime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fstarttime)}</small>
                         </time>
                         <i />
                         <div>
@@ -5639,7 +5641,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             <button type="button" key={`${slot.start}-${slot.room}-${slot.hall}`} onClick={() => takeSlot(slot)}>
                               <b className="slot-rank">{index + 1}</b>
                               <span className="slot-when">
-                                <time dir="ltr">{slot.start}–{slot.end}</time>
+                                <time dir="ltr">{formatScheduleTimeRange(slot.start, slot.end)}</time>
                                 <small>{slot.room}/{slot.hall}</small>
                               </span>
                               <span className="slot-why">
@@ -5679,7 +5681,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     label="الوقت"
                     value={
                       form.fstarttime && form.fendtime
-                        ? `${form.fstarttime}–${form.fendtime}`
+                        ? formatScheduleTimeRange(form.fstarttime, form.fendtime)
                         : "—"
                     }
                     dir="ltr"
@@ -5799,7 +5801,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         <span className="solver-rank">{x.rank}</span>
                         <div>
                           <strong dir="ltr">
-                            {x.start}–{x.end}
+                            {formatScheduleTimeRange(x.start, x.end)}
                           </strong>
                           <small>
                             مبنى {x.roomCode} · قاعة {x.roomHall}
@@ -6326,7 +6328,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     <div className="agenda-time" title="الوقت">
                       <Clock3 aria-hidden="true" />
                       <strong dir="ltr">
-                        {s.fstarttime}–{s.fendtime}
+                        {formatScheduleTimeRange(s.fstarttime, s.fendtime)}
                       </strong>
                     </div>
                     <div className="agenda-place" title="المكان">
@@ -6471,8 +6473,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     e.dataTransfer.setData("text/schedule-id", String(row.id));
                     e.dataTransfer.effectAllowed = "move";
                   }}
-                  title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${row.fstarttime}–${row.fendtime}`}
-                  aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${row.fstarttime}–${row.fendtime}`}
+                  title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
+                  aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   onClick={() => void openContext(row)}
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter") void openContext(row); }}
@@ -6972,7 +6974,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     <small>
                       {ripple.candidate.targetDayLabel} ·{" "}
                       <b dir="ltr">
-                        {ripple.candidate.start}–{ripple.candidate.end}
+                        {formatScheduleTimeRange(ripple.candidate.start, ripple.candidate.end)}
                       </b>{" "}
                       · {ripple.candidate.roomCode}/{ripple.candidate.roomHall}
                     </small>
@@ -7071,13 +7073,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             key={`hall-barter-${reservation.id}-${d.key}`}
                             className={`week-hall-barter ${borrowing ? "borrowed" : "lent"}`}
                             style={{ top, height }}
-                            title={`${borrowing ? "نافذة قاعة مستعارة لقسمك" : "نافذة قاعة معارة"} · ${reservation.roomCode}/${reservation.roomHall} · ${reservation.startTime}–${reservation.endTime}`}
-                            aria-label={`${borrowing ? "قاعة مستعارة" : "قاعة معارة"} ${reservation.roomCode}/${reservation.roomHall} من ${reservation.startTime} إلى ${reservation.endTime}`}
+                            title={`${borrowing ? "نافذة قاعة مستعارة لقسمك" : "نافذة قاعة معارة"} · ${reservation.roomCode}/${reservation.roomHall} · ${formatScheduleTimeRange(reservation.startTime, reservation.endTime)}`}
+                            aria-label={`${borrowing ? "قاعة مستعارة" : "قاعة معارة"} ${reservation.roomCode}/${reservation.roomHall} · ${formatScheduleTimeRange(reservation.startTime, reservation.endTime)}`}
                           >
                             <ArrowLeftRight aria-hidden="true" />
                             <strong>{borrowing ? "مستعارة" : "معارة"}</strong>
                             <span dir="ltr">{reservation.roomCode}/{reservation.roomHall}</span>
-                            <time dir="ltr">{reservation.startTime}–{reservation.endTime}</time>
+                            <time dir="ltr">{formatScheduleTimeRange(reservation.startTime, reservation.endTime)}</time>
                           </div>
                         );
                       })}
@@ -7163,7 +7165,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         }}
                         aria-hidden="true"
                       >
-                        <b dir="ltr">{paint.from}–{paint.to}</b>
+                        <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b>
                         <span>موعد جديد</span>
                       </div>
                     ) : null}
@@ -7215,7 +7217,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 </strong>
                                 <span>{r.AdCourseName || c?.CourseName}</span>
                                 <small dir="ltr">
-                                  {r.fstarttime}-{r.fendtime}
+                                  {formatScheduleTimeRange(r.fstarttime, r.fendtime)}
                                 </small>
                                 <small>
                                   {i?.AdInstructorName} · {r.AdRoomCode}/
@@ -7324,7 +7326,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             {lensActive && hits > 0 && hits < bundle.rows.length ? (
                               <i className="week-bundle-hits">{hits} مطابقة</i>
                             ) : null}
-                            <time dir="ltr">{bundle.from}–{bundle.to}</time>
+                            <time dir="ltr">{formatScheduleTimeRange(bundle.from, bundle.to)}</time>
                             <Expand aria-hidden="true" />
                           </button>
                           <div
@@ -7442,7 +7444,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 >
                   <header>
                     <b>{bundle.rows.length} محاضرات معاً · {day.label}</b>
-                    <time dir="ltr">{bundle.from}–{bundle.to}</time>
+                    <time dir="ltr">{formatScheduleTimeRange(bundle.from, bundle.to)}</time>
                     <button type="button" onClick={() => setFanned(null)} aria-label="إغلاق المروحة"><X aria-hidden="true" /></button>
                   </header>
                   {crowd.length > 1 ? (
@@ -7690,7 +7692,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <span>النسخة الحالية في الجدول</span>
                 <strong>{clash.current.AdCourseName || courseById.get(clash.current.AdCourseId)?.CourseName || "الموعد"}</strong>
                 <em>{arabicDays(clash.current) || "بلا أيام"}</em>
-                <b dir="ltr">{clash.current.fstarttime}–{clash.current.fendtime}</b>
+                <b dir="ltr">{formatScheduleTimeRange(clash.current.fstarttime, clash.current.fendtime)}</b>
                 <i dir="ltr">{[clash.current.AdRoomCode, clash.current.AdRoomHall].filter(Boolean).join("/") || "—"}</i>
               </section>
               {clash.yours ? (
@@ -7698,7 +7700,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   <span>نسختك</span>
                   <strong>{courseById.get(clash.yours.AdCourseId)?.CourseName || "الموعد"}</strong>
                   <em>{arabicDays(clash.yours) || "بلا أيام"}</em>
-                  <b dir="ltr">{clash.yours.fstarttime}–{clash.yours.fendtime}</b>
+                  <b dir="ltr">{formatScheduleTimeRange(clash.yours.fstarttime, clash.yours.fendtime)}</b>
                   <i dir="ltr">{[clash.yours.AdRoomCode, clash.yours.AdRoomHall].filter(Boolean).join("/") || "—"}</i>
                 </section>
               ) : null}
@@ -7956,7 +7958,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   ))}
                 </td>
                 <td className="print-ltr">
-                  {s.fstarttime} - {s.fendtime}
+                  {formatScheduleTimeRange(s.fstarttime, s.fendtime)}
                 </td>
                 <td className="print-ltr">
                   {s.AdRoomCode}/{s.AdRoomHall}
@@ -8194,7 +8196,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   </strong>
                   <span>{arabicDays(r)}</span>
                   <small dir="ltr">
-                    {r.fstarttime}–{r.fendtime}
+                    {formatScheduleTimeRange(r.fstarttime, r.fendtime)}
                   </small>
                 </article>
               ))}
@@ -8222,7 +8224,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       <span className="solver-rank">{x.rank}</span>
                       <div>
                         <strong dir="ltr">
-                          {x.start}–{x.end}
+                          {formatScheduleTimeRange(x.start, x.end)}
                         </strong>
                         <small>
                           مبنى {x.roomCode} · قاعة {x.roomHall}

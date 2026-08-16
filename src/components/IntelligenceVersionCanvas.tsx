@@ -1,5 +1,6 @@
 import React from "react";
 import type { FSchedule } from "../types";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 export const intelligenceDayLabels: Record<string, string> = {
   fsunday: "الأحد",
@@ -41,7 +42,7 @@ export function IntelligenceVersionCanvas({
                 {dayRows.length ? (
                   dayRows.map((row) => (
                     <article key={`${key}-${row.id}`} className="time-travel-card">
-                      <time dir="ltr">{row.fstarttime}–{row.fendtime || ""}</time>
+                      <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                       <strong>{row.AdCourseName || "مقرر"}</strong>
                       <small>{row.SCode} · {row.AdRoomCode ? `قاعة ${row.AdRoomCode}/${row.AdRoomHall}` : "بلا قاعة"}</small>
                       {(row as any).AdInstructorName ? <span>{(row as any).AdInstructorName}</span> : null}
@@ -76,7 +77,7 @@ const versionRowWhen = (row?: FSchedule) => {
     .filter(([key]) => Boolean((row as any)[key]))
     .map(([, label]) => label)
     .join(" · ") || "بلا يوم";
-  return `${days} · ${row.fstarttime || "—"}–${row.fendtime || "—"}`;
+  return `${days} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`;
 };
 const versionRowRoom = (row?: FSchedule) => row
   ? [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بلا قاعة"

@@ -1458,3 +1458,36 @@
     padding:.65mm 1.1mm !important;
   }
 }
+
+/* ========================================================================== 
+   FINAL — 20-row comprehensive rhythm + page number directly under day key.
+   ========================================================================== */
+@media print{
+  .print-comprehensive-page-footer{
+    grid-template-columns:minmax(0,1.65fr) minmax(52mm,.85fr) !important;
+    align-items:end !important;
+    gap:4mm !important;
+  }
+  .print-comprehensive-legend-stack{
+    display:grid !important;
+    justify-items:center !important;
+    align-content:end !important;
+    gap:1.4mm !important;
+    min-width:0 !important;
+  }
+  .print-comprehensive-legend-stack .print-comprehensive-legend{
+    justify-content:center !important;
+    width:100% !important;
+  }
+  .print-comprehensive-legend-stack .print-comprehensive-page-number{
+    width:100% !important;
+    text-align:center !important;
+    font-size:8.5pt !important;
+    line-height:1 !important;
+  }
+  /* Twenty rows make better use of the landscape sheet while preserving the
+     signatures as one unsplit block. */
+  .print-comprehensive-grid-body .print-comprehensive-grid-row{
+    min-height:5.45mm !important;
+  }
+}

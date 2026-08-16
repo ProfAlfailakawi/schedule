@@ -1,7 +1,7 @@
 import type { AdCourse, AdInstructor, FSchedule, ScheduleConstraint, ScheduleDecisionMemory } from "../types";
 import { activeDays, analyzeSchedule, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { evaluateScheduleConstraints } from "./scheduleInnovation";
-import { SCHEDULE_DAY_END, SCHEDULE_DAY_START } from "./scheduleTime";
+import { formatScheduleTimeRange, SCHEDULE_DAY_END, SCHEDULE_DAY_START } from "./scheduleTime";
 
 const DAY_LABEL = new Map(SCHEDULE_DAYS.map(day => [day.key, day.label]));
 const clamp = (value:number,min:number,max:number)=>Math.max(min,Math.min(max,value));
@@ -39,7 +39,7 @@ function computeConflictTopology(rows:FSchedule[], universe:FSchedule[], courses
     addNode(section,"section",`شعبة ${row.SCode}`,row.AdCourseName,row.id);
     addNode(room,"room",`${row.AdRoomCode}/${row.AdRoomHall}`,"قاعة",row.id);
     addEdge(instructor,course,row); addEdge(course,section,row); addEdge(section,room,row);
-    activeDays(row).forEach(day=>{const time=`time:${day}:${row.fstarttime}`;addNode(time,"time",`${DAY_LABEL.get(day)||day} ${row.fstarttime}`,`${row.fstarttime}–${row.fendtime}`,row.id);addEdge(section,time,row)});
+    activeDays(row).forEach(day=>{const time=`time:${day}:${row.fstarttime}`;addNode(time,"time",`${DAY_LABEL.get(day)||day} ${row.fstarttime}`,formatScheduleTimeRange(row.fstarttime, row.fendtime),row.id);addEdge(section,time,row)});
   });
   const ranked=[...nodes.values()].map(node=>({...node,centrality:node.weight+node.issues*2})).sort((a,b)=>b.centrality-a.centrality);
   return {nodes:ranked.slice(0,90),edges:edges.filter(edge=>ranked.slice(0,90).some(n=>n.id===edge.source)&&ranked.slice(0,90).some(n=>n.id===edge.target)).slice(0,220),hotspots:ranked.slice(0,8),conflicts:conflicts.length};

@@ -1,11 +1,12 @@
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleConstraint } from "../types";
 import { activeDays, analyzeSchedule, autoScheduleProposal, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
-import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
+import { formatScheduleTimeRange, SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
 const cloneRows=(rows:FSchedule[])=>rows.map(row=>({...row}));
 const roomKey=(row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${String(row.AdRoomHall||"").trim()}`;
 const replaceById=(rows:FSchedule[],next:FSchedule)=>rows.map(row=>row.id===next.id?next:row);
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
+const displayTimeBucket=(key:string)=>{const match=/^(\d{2})-(\d{2})$/.exec(key);return match?formatScheduleTimeRange(`${match[1]}:00`,`${match[2]}:00`):key.replace(/^0/,"")};
 
 function dayGapRows(rows:FSchedule[], instructorId:number, day:keyof Pick<FSchedule,"fsunday"|"fmonday"|"ftuesday"|"fwednesday"|"fthursday">){
   const list=rows.filter(row=>row.AdInstructorId===instructorId&&Boolean(row[day])).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));
@@ -74,7 +75,7 @@ export function buildScheduleGenome(allSectionRows:FSchedule[],terms:AdTerm[],cu
   const deviations:Array<any>=[];
   let distance=0;
   for(const day of SCHEDULE_DAYS){const cur=Number(current.dayShares[day.key]||0),base=Number(dnaDays[day.key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.9;if(Math.abs(delta)>=8)deviations.push({kind:"day",severity:Math.abs(delta)>=15?"warning":"info",title:`${day.label}: ${delta>0?"ضغط أعلى":"حضور أقل"} من بصمة القسم`,detail:`الحالي ${cur}% مقابل متوسط تاريخي ${base}% (${delta>0?"+":""}${delta} نقطة).`})}
-  for(const key of bucketKeys){const cur=Number(current.timeShares[key]||0),base=Number(dnaTimes[key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.55;if(Math.abs(delta)>=10)deviations.push({kind:"time",severity:"info",title:`نافذة ${key} تغيّرت`,detail:`الحالي ${cur}% مقابل ${base}% تاريخياً.`})}
+  for(const key of bucketKeys){const cur=Number(current.timeShares[key]||0),base=Number(dnaTimes[key]||0),delta=Math.round((cur-base)*10)/10;distance+=Math.abs(delta)*0.55;if(Math.abs(delta)>=10)deviations.push({kind:"time",severity:"info",title:`نافذة ${displayTimeBucket(key)} تغيّرت`,detail:`الحالي ${cur}% مقابل ${base}% تاريخياً.`})}
   const gapDelta=current.avgGap-dnaGap;distance+=Math.min(30,Math.abs(gapDelta)/6);if(Math.abs(gapDelta)>=45)deviations.push({kind:"gap",severity:gapDelta>0?"warning":"success",title:gapDelta>0?"الفراغات أطول من المعتاد":"الفراغات أفضل من المعتاد",detail:`متوسط الفراغ الحالي ${current.avgGap} دقيقة مقابل البصمة التاريخية ${dnaGap} دقيقة.`});
   const historicalRoomSet=new Set(dnaRooms.map(r=>r.key));const newTop=current.rooms.slice(0,4).filter((r:any)=>!historicalRoomSet.has(r.key));if(newTop.length)deviations.push({kind:"room",severity:"info",title:"تغيّر في القاعات المعتادة",detail:`${newTop.map((r:any)=>r.key.replace("|","/")).join("، ")} دخلت ضمن القاعات الأكثر استخداماً هذا الفصل.`});
   const compatibility=Math.round(clamp(100-distance/2.25,0,100));

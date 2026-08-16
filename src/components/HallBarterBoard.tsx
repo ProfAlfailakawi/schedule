@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 type Opportunity = {
   id: string;
@@ -161,7 +162,7 @@ export default function HallBarterBoard({
   const cancel = (requestId: string) => act(requestId, () => readJson(`/api/hall-barter/requests/${encodeURIComponent(requestId)}/cancel`, { method: "POST" }));
 
   const windowLine = (row: Pick<HallBarterReservationView, "dayLabel" | "startTime" | "endTime" | "roomCode" | "roomHall">) => (
-    <span className="hall-barter-window"><Clock3 aria-hidden="true" /><b>{row.dayLabel}</b><time dir="ltr">{row.startTime}–{row.endTime}</time><em dir="ltr">{row.roomCode}/{row.roomHall}</em></span>
+    <span className="hall-barter-window"><Clock3 aria-hidden="true" /><b>{row.dayLabel}</b><time dir="ltr">{formatScheduleTimeRange(row.startTime, row.endTime)}</time><em dir="ltr">{row.roomCode}/{row.roomHall}</em></span>
   );
 
   return (
@@ -244,7 +245,7 @@ export default function HallBarterBoard({
                 {board.opportunities.map(opportunity => (
                   <article key={opportunity.id}>
                     <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{opportunity.ownerSectionName}</small><em>{opportunity.ownerCollegeName}</em></div>
-                    <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{opportunity.startTime}–{opportunity.endTime}</time><small>{Math.round(opportunity.durationMinutes / 30) * 30} دقيقة متصلة</small></div>
+                    <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>{Math.round(opportunity.durationMinutes / 30) * 30} دقيقة متصلة</small></div>
                     <div className="hall-barter-confidence"><b>{opportunity.confidence}%</b><span>ثبات الفراغ</span><small>{opportunity.historyTerms} فصول · ملكية تاريخية {opportunity.ownerShare}%</small></div>
                     <PrimaryButton type="button" disabled={busyId === opportunity.id} onClick={() => void request(opportunity)}><ArrowLeftRight />اطلب استعارة النطاق</PrimaryButton>
                   </article>

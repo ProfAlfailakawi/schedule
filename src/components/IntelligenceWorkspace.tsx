@@ -72,7 +72,7 @@ import {
   intelligenceDayLabels as dayLabels,
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
-import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
+import { formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -1954,7 +1954,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </div>
             <details className="insight-disclosure">
               <summary>كيف وصلنا لهذه النتيجة؟</summary>
-              <p className="insight-method">الاستخدام التقديري لكل قاعة = ساعات إشغالها ÷ ساعات اليوم الرسمية (08:00–20:00) على مدى أيام النطاق، والترتيب حسب عدد المواعيد.</p>
+              <p className="insight-method">الاستخدام التقديري لكل قاعة = ساعات إشغالها ÷ ساعات اليوم الرسمية (20:00 - 8:00) على مدى أيام النطاق، والترتيب حسب عدد المواعيد.</p>
             </details>
           </Surface>
             </div>
@@ -2229,7 +2229,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           {item.placements.map((slot: any) => (
                             <div key={slot.index} className="opening-slot">
                               <span className="opening-slot-day">{slot.dayLabel}</span>
-                              <b dir="ltr">{slot.start}–{slot.end}</b>
+                              <b dir="ltr">{formatScheduleTimeRange(slot.start, slot.end)}</b>
                               <span className="opening-slot-room">
                                 {slot.roomCode}{slot.roomHall ? `/${slot.roomHall}` : ""}
                               </span>
@@ -2431,7 +2431,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     {Object.entries(genome.dna?.timeShares || {}).map(
                       ([key, value]: any) => (
                         <b key={key}>
-                          <small>{key}</small>
+                          <small>{/^(\d{2})-(\d{2})$/.test(key) ? formatScheduleTimeRange(`${key.slice(0, 2)}:00`, `${key.slice(3, 5)}:00`) : key.replace(/^0/, "")}</small>
                           <strong>{value}%</strong>
                         </b>
                       ),
@@ -2530,9 +2530,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               <>
                                 <strong>{mv.preview.course}{mv.preview.section ? ` · شعبة ${mv.preview.section}` : ""}</strong>
                                 <div className="nl-move-change">
-                                  <span className="nl-from"><i>من</i>{mv.preview.before.days} · <time dir="ltr">{mv.preview.before.start}–{mv.preview.before.end}</time></span>
+                                  <span className="nl-from"><i>من</i>{mv.preview.before.days} · <time dir="ltr">{formatScheduleTimeRange(mv.preview.before.start, mv.preview.before.end)}</time></span>
                                   <ArrowLeft aria-hidden="true" />
-                                  <span className="nl-to"><i>إلى</i>{mv.preview.after.days} · <time dir="ltr">{mv.preview.after.start}–{mv.preview.after.end}</time></span>
+                                  <span className="nl-to"><i>إلى</i>{mv.preview.after.days} · <time dir="ltr">{formatScheduleTimeRange(mv.preview.after.start, mv.preview.after.end)}</time></span>
                                 </div>
                                 {mv.conflicts?.length ? (
                                   <ul className="nl-move-conflicts">
@@ -3489,8 +3489,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                 {r.AdCourseName} · {r.SCode}
                               </strong>
                               <span>
-                                {o?.fstarttime}-{o?.fendtime} ← {r.fstarttime}-
-                                {r.fendtime}
+                                {formatScheduleTimeRange(o?.fstarttime, o?.fendtime)} ← {formatScheduleTimeRange(r.fstarttime, r.fendtime)}
                               </span>
                             </div>
                             {o?.AdRoomCode !== r.AdRoomCode ||
@@ -3964,7 +3963,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <>
                         <MetaPill
                           label="الوقت"
-                          value={`${r.fstarttime || "—"}–${r.fendtime || "—"}`}
+                          value={formatScheduleTimeRange(r.fstarttime, r.fendtime)}
                           dir="ltr"
                         />
                         <MetaPill
@@ -4054,7 +4053,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span key={i}>
                         <b>{x.day}</b>
                         <i dir="ltr">
-                          {x.start}–{x.end}
+                          {formatScheduleTimeRange(x.start, x.end)}
                         </i>
                       </span>
                     ))}
@@ -4145,7 +4144,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           .join(" - ")}
                       </span>
                       <small dir="ltr">
-                        {r.fstarttime}–{r.fendtime}
+                        {formatScheduleTimeRange(r.fstarttime, r.fendtime)}
                       </small>
                     </article>
                   ))}

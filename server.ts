@@ -28,6 +28,7 @@ import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
 import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
 import {
+  formatScheduleTimeRange,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
   SCHEDULE_DAY_START,
@@ -1041,7 +1042,7 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   const visibleCourseIds = new Set(schedules.map(row => row.AdCourseId));
   const scheduleResults = (canSchedule || canAdvanced || canTime) ? matchedSchedules.slice(0, 12).map(row => ({
     id: row.id, kind: "schedule", title: courseById.get(row.AdCourseId)?.CourseName || row.AdCourseName || "مقرر دراسي",
-    subtitle: `${canInstructor || canSchedule || canAdvanced ? instructorById.get(row.AdInstructorId)?.AdInstructorName || "" : ""}${canRoom || canSchedule || canAdvanced ? ` — ${row.AdRoomCode}/${row.AdRoomHall}` : ""} — ${row.fstarttime}-${row.fendtime}`,
+    subtitle: `${canInstructor || canSchedule || canAdvanced ? instructorById.get(row.AdInstructorId)?.AdInstructorName || "" : ""}${canRoom || canSchedule || canAdvanced ? ` — ${row.AdRoomCode}/${row.AdRoomHall}` : ""} — ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
     meta: `${courseById.get(row.AdCourseId)?.CourseCode || ""} / شعبة ${row.SCode}`
   })) : [];
   const instructorResults = (canInstructor || canSchedule || canAdvanced) ? instructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || matches(item.AdInstructorCivil))).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
@@ -1832,7 +1833,7 @@ function describeScheduleChange(before: any, after: any, instructorName?: (id: n
   const beforeDays = dayText(before), afterDays = dayText(after);
   if (beforeDays !== afterDays) parts.push(`الأيام ${beforeDays} ← ${afterDays}`);
   if (before?.fstarttime !== after?.fstarttime || before?.fendtime !== after?.fendtime)
-    parts.push(`الوقت ${before?.fstarttime}-${before?.fendtime} ← ${after?.fstarttime}-${after?.fendtime}`);
+    parts.push(`الوقت ${formatScheduleTimeRange(before?.fstarttime, before?.fendtime)} ← ${formatScheduleTimeRange(after?.fstarttime, after?.fendtime)}`);
   const beforeRoom = `${before?.AdRoomCode || ""}/${before?.AdRoomHall || ""}`;
   const afterRoom = `${after?.AdRoomCode || ""}/${after?.AdRoomHall || ""}`;
   if (beforeRoom !== afterRoom) parts.push(`القاعة ${beforeRoom} ← ${afterRoom}`);
@@ -1952,12 +1953,12 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     }
     const other=all.find(item=>item.id===conflict.otherId);
     const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
-    if(conflict.type==="instructor"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`الأستاذ ${instructor?.AdInstructorName||""} لديه محاضرة متداخلة`,detail:visible?`${other.AdCourseName||"مقرر"} — ${other.fstarttime}-${other.fendtime}`:`يوجد له موعد متداخل خارج نطاق القسم — ${other.fstarttime}-${other.fendtime}`};
-    if(conflict.type==="room"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`القاعة ${other.AdRoomCode}/${other.AdRoomHall} مشغولة في نفس الوقت`,detail:visible?`${other.AdCourseName||"مقرر"} — ${other.fstarttime}-${other.fendtime}`:`يوجد حجز متداخل خارج نطاق العرض الحالي`};
+    if(conflict.type==="instructor"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`الأستاذ ${instructor?.AdInstructorName||""} لديه محاضرة متداخلة`,detail:visible?`${other.AdCourseName||"مقرر"} — ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`:`يوجد له موعد متداخل خارج نطاق القسم — ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`};
+    if(conflict.type==="room"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`القاعة ${other.AdRoomCode}/${other.AdRoomHall} مشغولة في نفس الوقت`,detail:visible?`${other.AdCourseName||"مقرر"} — ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`:`يوجد حجز متداخل خارج نطاق العرض الحالي`};
     // A repeated course and section is only a duplicate when it is the very same
     // placement; a lecture on Sunday and its laboratory on Tuesday share a
     // section number by design and must not be refused.
-    return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",detail:visible&&other?`نفس الأيام ونفس الوقت ${other.fstarttime}-${other.fendtime}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
+    return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",detail:visible&&other?`نفس الأيام ونفس الوقت ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
   });
   const sameBarterRoom=(request:any)=>
     String(request.roomCode||"").trim().toLocaleLowerCase()===String(candidate.AdRoomCode||"").trim().toLocaleLowerCase()&&
@@ -1978,7 +1979,7 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   if(barterReservation)barterNotes.push({
     type:"hallBarter",severity:"high",soft:false,rowId:0,otherId:0,
     message:`القاعة ${candidate.AdRoomCode}/${candidate.AdRoomHall} محجوزة رقمياً عبر بورصة القاعات`,
-    detail:`نافذة الاستعارة المعتمدة ${HALL_BARTER_DAY_LABEL.get(barterReservation.day)||""} ${barterReservation.startTime}–${barterReservation.endTime}.`
+    detail:`نافذة الاستعارة المعتمدة ${HALL_BARTER_DAY_LABEL.get(barterReservation.day)||""} ${formatScheduleTimeRange(barterReservation.startTime, barterReservation.endTime)}.`
   });
   if(borrowerWindowViolation)barterNotes.push({
     type:"hallBarterWindow",severity:"high",soft:false,rowId:0,otherId:0,
@@ -3217,7 +3218,7 @@ app.delete("/api/schedules/:id", requirePermission(7), async (req: Authenticated
   if (sched) {
     await captureScopeVersion(req, sched.AdCollegeId, sched.AdSectionId, sched.AdTermId, "قبل حذف موعد دراسي", "manual");
     // A deletion has no "after", so the record keeps what was standing there.
-    res.locals.auditChanges = `حُذف: ${sched.AdCourseName || "موعد"} · شعبة ${sched.SCode} · ${sched.fstarttime}-${sched.fendtime} · ${sched.AdRoomCode}/${sched.AdRoomHall}`;
+    res.locals.auditChanges = `حُذف: ${sched.AdCourseName || "موعد"} · شعبة ${sched.SCode} · ${formatScheduleTimeRange(sched.fstarttime, sched.fendtime)} · ${sched.AdRoomCode}/${sched.AdRoomHall}`;
   }
   await Repository.deleteSchedule(id);
   res.json({ success: true });
@@ -3235,7 +3236,7 @@ app.get("/api/schedules/copy-preview", requireAuth, requirePowerAdmin, async (re
   ]);
   const sourceIssues=[...new Set(source.flatMap((row:any)=>schedulePayloadIssues(row)))];
   const courseById=new Map(courses.map(item=>[item.AdCourseId,item])); const instructorById=new Map(instructors.map(item=>[item.AdInstructorId,item]));
-  res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:courseById.get(row.AdCourseId)?.CourseCode||"",courseName:courseById.get(row.AdCourseId)?.CourseName||row.AdCourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:`${row.fstarttime} - ${row.fendtime}`,room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
+  res.json({sourceCount:source.length,targetCount:target.length,sourceIssues,canCopy:source.length>0&&target.length===0&&!sourceIssues.length,preview:source.slice(0,12).map(row=>({id:row.id,courseCode:courseById.get(row.AdCourseId)?.CourseCode||"",courseName:courseById.get(row.AdCourseId)?.CourseName||row.AdCourseName||"",sectionCode:row.SCode,instructorName:instructorById.get(row.AdInstructorId)?.AdInstructorName||"",time:formatScheduleTimeRange(row.fstarttime, row.fendtime),room:`${row.AdRoomCode}/${row.AdRoomHall}`}))});
 });
 
 app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -3468,7 +3469,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
         max:Math.max(...(analysis.factors||[]).map((x:any)=>x.penalty||0),1),caption:`−${f.penalty}`}));
   } else if(/فراغ|فراغات/.test(normalized)){
     title=requestedInstructor?`فراغات ${requestedInstructor.AdInstructorName}`:"تحليل فراغات الأساتذة";
-    if(requestedInstructor){const profRows=target.filter(r=>r.AdInstructorId===requestedInstructor.AdInstructorId);if(dayMatch){const items=profRows.filter(r=>Boolean((r as any)[dayMatch.key])).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));const gaps:any[]=[];for(let i=1;i<items.length;i++){const gap=timeToMinutes(items[i].fstarttime)-timeToMinutes(items[i-1].fendtime);if(gap>0)gaps.push({from:items[i-1].fendtime,to:items[i].fstarttime,mins:gap});}summary=items.length?gaps.length?`في ${dayMatch.label} لدى ${requestedInstructor.AdInstructorName} ${gaps.length} فترة فراغ بين المحاضرات، بإجمالي ${gaps.reduce((n,g)=>n+g.mins,0)} دقيقة.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;gaps.slice(0,6).forEach(g=>bullets.push(`${g.from}–${g.to}: ${Math.floor(g.mins/60)}س ${g.mins%60}د.`));}else{const load=analysis.professorLoads.find((x:any)=>x.id===requestedInstructor.AdInstructorId);summary=load?`أكبر فراغ لـ ${requestedInstructor.AdInstructorName} هو ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، والحمل الأسبوعي ${load.weeklyHours} ساعة.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;}}
+    if(requestedInstructor){const profRows=target.filter(r=>r.AdInstructorId===requestedInstructor.AdInstructorId);if(dayMatch){const items=profRows.filter(r=>Boolean((r as any)[dayMatch.key])).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));const gaps:any[]=[];for(let i=1;i<items.length;i++){const gap=timeToMinutes(items[i].fstarttime)-timeToMinutes(items[i-1].fendtime);if(gap>0)gaps.push({from:items[i-1].fendtime,to:items[i].fstarttime,mins:gap});}summary=items.length?gaps.length?`في ${dayMatch.label} لدى ${requestedInstructor.AdInstructorName} ${gaps.length} فترة فراغ بين المحاضرات، بإجمالي ${gaps.reduce((n,g)=>n+g.mins,0)} دقيقة.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;gaps.slice(0,6).forEach(g=>bullets.push(`${formatScheduleTimeRange(g.from, g.to)}: ${Math.floor(g.mins/60)}س ${g.mins%60}د.`));}else{const load=analysis.professorLoads.find((x:any)=>x.id===requestedInstructor.AdInstructorId);summary=load?`أكبر فراغ لـ ${requestedInstructor.AdInstructorName} هو ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، والحمل الأسبوعي ${load.weeklyHours} ساعة.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;}}
     else{const threshold=(Number(normalized.match(/(\d+)\s*ساع/)?.[1]||3))*60; const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);summary=long.length?`وجدت ${long.length} أستاذاً لديهم فراغ يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات في يوم واحد.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";long.slice(0,6).forEach((x:any)=>bullets.push(`${x.name}: أكبر فراغ ${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د، والحمل الأسبوعي ${x.weeklyHours} ساعة.`));
       shape="gaps";
       figures.push({label:"أساتذة بفراغ طويل",value:`${long.length}`,tone:long.length?"warn":"good"},
@@ -3488,10 +3489,10 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     analysis.dayLoad.forEach((x:any)=>bars.push({label:x.label||x.key,value:x.count,max:busiest,caption:`${x.count}`}));
   } else if(normalized.includes("إذا نقلت")||normalized.includes("اذا نقلت")){
     title="محاكاة نقل موعد"; const code=courses.find(c=>normalized.includes(String(c.CourseCode).toLowerCase())); const row=code?target.find(r=>r.AdCourseId===code.AdCourseId):target[0];
-    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const before=findConflicts([row],universe).length,after=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate)).length;summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${candidate.fstarttime}–${candidate.fendtime}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
+    if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const before=findConflicts([row],universe).length,after=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate)).length;summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
       shape="move";
       shift={label:"موانع الحفظ",before,after,better:after<=before};
-      figures.push({label:"الوقت المقترح",value:`${candidate.fstarttime}`,hint:`حتى ${candidate.fendtime}`,tone:after===0?"good":"bad"});}
+      figures.push({label:"الوقت المقترح",value:formatScheduleTimeRange(candidate.fstarttime,candidate.fendtime),hint:"",tone:after===0?"good":"bad"});}
     else summary="حدد رمز المقرر والساعة في السؤال، مثال: إذا نقلت 101 إلى الساعة 11 شنو يتأثر؟";
   } else if(normalized.includes("أفضل توزيع")||normalized.includes("افضل توزيع")||normalized.includes("قلل الفراغ")||normalized.includes("تقليل الفراغ")){
     title="اقتراح تحسين التوزيع"; const proposal=autoScheduleProposal(target,universe); const external=universe.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)); const after=analyzeSchedule(proposal.rows,[...external,...proposal.rows],courses,instructors); const safer=after.metrics.criticalConflicts<analysis.metrics.criticalConflicts||(after.metrics.criticalConflicts===analysis.metrics.criticalConflicts&&after.score>=analysis.score);
@@ -3560,7 +3561,7 @@ app.get("/api/intelligence/context/:id", requirePermission(7), async (req: Authe
 app.get("/api/intelligence/replay/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const id=Number(req.params.id||0),selected=await Repository.getScheduleById(id);if(!selected){res.status(404).json({error:"الموعد غير موجود"});return;}if(!isScopeAllowed(req,selected.AdCollegeId,selected.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [versions,drafts,comments,publication,audits]=await Promise.all([Repository.getScheduleVersionsWithRows(selected.AdCollegeId,selected.AdSectionId,selected.AdTermId,16),Repository.getScheduleDrafts(selected.AdCollegeId,selected.AdSectionId,selected.AdTermId),Repository.getScheduleComments(id),Repository.getSchedulePublication(selected.AdCollegeId,selected.AdSectionId,selected.AdTermId),Repository.getAuditLogs(2000)]);
-  const same=(r:any)=>r&&Number(r.AdCourseId)===selected.AdCourseId&&String(r.SCode)===String(selected.SCode);const state=(r:any)=>({time:`${r.fstarttime}–${r.fendtime}`,start:r.fstarttime,end:r.fendtime,room:`${r.AdRoomCode}/${r.AdRoomHall}`,instructorId:r.AdInstructorId,days:activeDays(r)});const stateKey=(r:any)=>r?`${r.AdInstructorId}|${activeDays(r).join(",")}|${r.fstarttime}|${r.fendtime}|${r.AdRoomCode}|${r.AdRoomHall}`:"missing";
+  const same=(r:any)=>r&&Number(r.AdCourseId)===selected.AdCourseId&&String(r.SCode)===String(selected.SCode);const state=(r:any)=>({time:formatScheduleTimeRange(r.fstarttime, r.fendtime),start:r.fstarttime,end:r.fendtime,room:`${r.AdRoomCode}/${r.AdRoomHall}`,instructorId:r.AdInstructorId,days:activeDays(r)});const stateKey=(r:any)=>r?`${r.AdInstructorId}|${activeDays(r).join(",")}|${r.fstarttime}|${r.fendtime}|${r.AdRoomCode}|${r.AdRoomHall}`:"missing";
   const ordered=[...versions].sort((a,b)=>a.createdAt.localeCompare(b.createdAt));const snapshots:any[]=[];for(const v of ordered){const r=v.rows.find(same);if(!r)continue;const conflicts=findConflicts([r],v.rows).length;const last=snapshots[snapshots.length-1];if(!last||last.key!==stateKey(r))snapshots.push({key:stateKey(r),timestamp:v.createdAt,userName:v.userName,label:v.label,source:v.source,row:r,state:state(r),conflicts})}
   const currentKey=stateKey(selected);if(!snapshots.length||snapshots[snapshots.length-1].key!==currentKey)snapshots.push({key:currentKey,timestamp:new Date().toISOString(),userName:"الوضع الحالي",label:"الوضع الحالي",source:"current",row:selected,state:state(selected),conflicts:findConflicts([selected],await Repository.getSchedulesByScope({termId:selected.AdTermId})).length});
   const events:any[]=[];if(snapshots.length)events.push({timestamp:snapshots[0].timestamp,type:"origin",title:"أقدم أثر متاح للموعد",detail:`${snapshots[0].state.time} · ${snapshots[0].state.room}`,actor:snapshots[0].userName,tone:"neutral"});
@@ -3584,7 +3585,7 @@ app.get("/api/intelligence/replay/:id", requirePermission(7), async (req: Authen
       Number(style?.doorway||0),
     ):null;
     if(changes.length)events.push({timestamp:b.timestamp,type:"move",title:"تغيّر قرار الموعد",detail:changes.join(" · "),actor:b.userName,tone:b.conflicts<a.conflicts?"good":b.conflicts>a.conflicts?"warn":"neutral",why:why?.text,whyAgainst:why?.against,whySource:why?"مُستنتَج من نسخة ذلك اليوم":undefined});if(a.conflicts===0&&b.conflicts>0)events.push({timestamp:b.timestamp,type:"conflict",title:"ظهر تعارض في هذه المرحلة",detail:`النسخة تحمل ${b.conflicts} علاقة تعارض لهذا الموعد.`,actor:b.userName,tone:"warn"});if(a.conflicts>0&&b.conflicts===0)events.push({timestamp:b.timestamp,type:"resolved",title:"اختفى التعارض الظاهر",detail:"النسخة التالية لم تعد تحمل التعارض السابق لهذا الموعد.",actor:b.userName,tone:"good"})}
-  drafts.filter(d=>d.rows.some(same)).slice(0,20).forEach(d=>{const r=d.rows.find(same)!;events.push({timestamp:d.updatedAt,type:"draft",title:d.status==="published"?"مرّ عبر مسودة منشورة":"جُرّب بديل داخل المحاكاة",detail:`${d.name} · ${r.fstarttime}–${r.fendtime} · ${r.AdRoomCode}/${r.AdRoomHall}`,actor:d.userName,tone:d.status==="published"?"good":"info"})});
+  drafts.filter(d=>d.rows.some(same)).slice(0,20).forEach(d=>{const r=d.rows.find(same)!;events.push({timestamp:d.updatedAt,type:"draft",title:d.status==="published"?"مرّ عبر مسودة منشورة":"جُرّب بديل داخل المحاكاة",detail:`${d.name} · ${formatScheduleTimeRange(r.fstarttime, r.fendtime)} · ${r.AdRoomCode}/${r.AdRoomHall}`,actor:d.userName,tone:d.status==="published"?"good":"info"})});
   comments.forEach(c=>events.push({timestamp:c.createdAt,type:"comment",title:c.resolved?"ملاحظة أُغلقت":"ملاحظة قرار",detail:c.text,actor:c.userName,tone:c.resolved?"good":"info"}));if(publication)events.push({timestamp:publication.publishedAt,type:"publish",title:"تم اعتماد جدول هذا النطاق",detail:publication.draftId?`الاعتماد مرتبط بالمسودة ${publication.draftId}`:"اعتماد مباشر",actor:publication.userName,tone:"good"});
   audits.filter(a=>a.path===`/schedules/${id}`||a.path===`/api/schedules/${id}`||a.path.endsWith(`/schedules/${id}`)).slice(0,30).forEach(a=>events.push({timestamp:a.timestamp,type:"audit",title:`${a.action} مباشر على الموعد`,detail:`${a.method} ${a.path}`,actor:a.userName,tone:"neutral"}));events.sort((a,b)=>String(a.timestamp).localeCompare(String(b.timestamp)));
   res.json({schedule:{id:selected.id,courseName:selected.AdCourseName,sectionCode:selected.SCode,current:state(selected)},events,coverage:{versions:versions.length,drafts:drafts.filter(d=>d.rows.some(same)).length,comments:comments.length,note:"سجل القرار يعيد بناء القصة من النسخ الزمنية والمسودات والملاحظات والسجل التشغيلي المتاح منذ تفعيل هذه الطبقات؛ لا يخترع أحداثاً أقدم غير مسجلة."}});
@@ -3677,7 +3678,7 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), requirePowerAdm
     code:courseById.get(row.AdCourseId)?.CourseCode||"",
     name:row.AdCourseName||courseById.get(row.AdCourseId)?.CourseName||"",
     section:row.SCode||"",
-    time:`${row.fstarttime}–${row.fendtime}`,
+    time:formatScheduleTimeRange(row.fstarttime, row.fendtime),
     room:[row.AdRoomCode,row.AdRoomHall].filter(Boolean).join("/"),
     instructor:instructorName(Number(row.AdInstructorId||0))
   });
@@ -3699,7 +3700,7 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), requirePowerAdm
 
 app.post("/api/intelligence/import-preview", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const raw=Array.isArray(req.body?.rows)?req.body.rows:[]; if(!raw.length){res.status(400).json({error:"الملف لا يحتوي صفوفاً قابلة للقراءة"});return;} if(raw.length>450){res.status(400).json({error:"الملف أكبر من الحد الآمن للاستيراد"});return;} const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]); const sectionCourses=courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId); const byCode=new Map(sectionCourses.map(c=>[String(c.CourseCode).trim().toLowerCase(),c])); const byCivil=new Map(instructors.map(i=>[String(i.AdInstructorCivil).trim(),i])); const byName=new Map(instructors.map(i=>[String(i.AdInstructorName).trim().toLowerCase(),i])); const issues:string[]=[]; const rows:any[]=[];
-  raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=String(item.fstarttime??item.startTime??parts[0]??"").trim().slice(0,5),end=String(item.fendtime??item.endTime??parts[1]??"").trim().slice(0,5);const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
+  raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5),end=String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5);const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
 });
 
 function rowSignatureServer(row:any){return `${row.AdCourseId||0}:${row.SCode||""}:${row.AdInstructorId||0}:${activeDays(row).join(",")}:${row.fstarttime||""}:${row.fendtime||""}:${row.AdRoomCode||""}|${row.AdRoomHall||""}`}
@@ -3786,10 +3787,10 @@ app.post("/api/intelligence/context-copilot", requirePermission(7), async (req: 
     const key=String(req.body?.value||req.body?.contextId||""); const intel=buildRoomResilience(rows,universe); const room=intel.rooms.find(r=>r.key===key)||intel.rooms[0]; if(!room){res.status(404).json({error:"لا توجد بيانات قاعات"});return;} res.json({title:`مساعد القرار · القاعة ${room.code}/${room.hall}`,summary:room.singlePoint?`هذه القاعة نقطة اعتماد حساسة: ${room.sessions} مواعيد و${room.recoverabilityPct}% فقط قابلة للنقل إلى قاعات بديلة بنفس الوقت.`:`اعتماد القسم على هذه القاعة تحت السيطرة؛ نسبة الاسترداد التقديرية ${room.recoverabilityPct}%.`,context:{type:"room",key:room.key},options:intel.rooms.filter(r=>r.key!==room.key&&r.risk<room.risk).slice(0,3).map(r=>({title:`${r.code}/${r.hall}`,detail:`مخاطرة ${r.risk}/100 · استخدام ${r.sessions} مواعيد`})),guardrail:"هذه قراءة تشغيلية؛ التوفر النهائي يُفحص عند نقل كل موعد."});return;
   }
   if(contextType==="instructor"){
-    const id=Number(req.body?.value||req.body?.contextId||0); const fairness=buildFairnessEngine(rows,instructors); const prof=fairness.profiles.find(p=>p.id===id)||fairness.profiles[0]; if(!prof){res.status(404).json({error:"لا توجد بيانات أستاذ"});return;} const own=rows.filter(r=>r.AdInstructorId===prof.id); const suggestions=own.map(row=>{const best=conflictSolutions(row,universe,2)[0];return best?{rowId:row.id,course:row.AdCourseName,current:`${row.fstarttime}–${row.fendtime}`,candidate:`${best.start}–${best.end}`,room:`${best.roomCode}/${best.roomHall}`,conflicts:best.conflicts}:null}).filter(Boolean).slice(0,4); res.json({title:`مساعد القرار · ${prof.name}`,summary:`حمله ${prof.weeklyHours} ساعة على ${prof.days} أيام، وإجمالي الفراغ ${prof.gapMinutes} دقيقة. ${prof.deltaFromAverage>0?`أعلى من متوسط القسم بـ${Math.round(prof.deltaFromAverage)} نقطة.`:"ضمن متوسط القسم تقريباً."}`,context:{type:"instructor",id:prof.id},options:suggestions,guardrail:"ضغط أيام الأستاذ يحتاج مراجعة أكاديمية؛ الاقتراحات لا تطبق تلقائياً."});return;
+    const id=Number(req.body?.value||req.body?.contextId||0); const fairness=buildFairnessEngine(rows,instructors); const prof=fairness.profiles.find(p=>p.id===id)||fairness.profiles[0]; if(!prof){res.status(404).json({error:"لا توجد بيانات أستاذ"});return;} const own=rows.filter(r=>r.AdInstructorId===prof.id); const suggestions=own.map(row=>{const best=conflictSolutions(row,universe,2)[0];return best?{rowId:row.id,course:row.AdCourseName,current:formatScheduleTimeRange(row.fstarttime, row.fendtime),candidate:formatScheduleTimeRange(best.start, best.end),room:`${best.roomCode}/${best.roomHall}`,conflicts:best.conflicts}:null}).filter(Boolean).slice(0,4); res.json({title:`مساعد القرار · ${prof.name}`,summary:`حمله ${prof.weeklyHours} ساعة على ${prof.days} أيام، وإجمالي الفراغ ${prof.gapMinutes} دقيقة. ${prof.deltaFromAverage>0?`أعلى من متوسط القسم بـ${Math.round(prof.deltaFromAverage)} نقطة.`:"ضمن متوسط القسم تقريباً."}`,context:{type:"instructor",id:prof.id},options:suggestions,guardrail:"ضغط أيام الأستاذ يحتاج مراجعة أكاديمية؛ الاقتراحات لا تطبق تلقائياً."});return;
   }
   if(contextType==="day"){
-    const day=String(req.body?.value||req.body?.contextId||""); if(!SCHEDULE_DAYS.some(d=>d.key===day)){res.status(400).json({error:"اليوم غير صالح"});return;} const plans=createEmergencyPlans("day",day,rows,universe,courses,instructors,constraints).plans; const best=[...plans].sort((a,b)=>b.score-a.score||a.changed-b.changed)[0]; const count=rows.filter(r=>Boolean((r as any)[day])).length; res.json({title:`مساعد القرار · ${SCHEDULE_DAYS.find(d=>d.key===day)?.label}`,summary:`اليوم يحمل ${count} موعداً. أفضل سيناريو تخفيف يغيّر ${best?.changed||0} مواعيد مع جودة ${best?.score||0}/100.`,context:{type:"day",day},options:best?best.rows.filter(r=>{const base=rows.find(x=>x.id===r.id);return base&&rowSignatureServer(base)!==rowSignatureServer(r)}).slice(0,5).map(r=>({rowId:r.id,course:r.AdCourseName,time:`${r.fstarttime}–${r.fendtime}`,days:activeDays(r).map(k=>SCHEDULE_DAYS.find(d=>d.key===k)?.label).join("، ")})):[],guardrail:"تخفيف اليوم معروض كسيناريو فقط ولا يغيّر الجدول الحقيقي."});return;
+    const day=String(req.body?.value||req.body?.contextId||""); if(!SCHEDULE_DAYS.some(d=>d.key===day)){res.status(400).json({error:"اليوم غير صالح"});return;} const plans=createEmergencyPlans("day",day,rows,universe,courses,instructors,constraints).plans; const best=[...plans].sort((a,b)=>b.score-a.score||a.changed-b.changed)[0]; const count=rows.filter(r=>Boolean((r as any)[day])).length; res.json({title:`مساعد القرار · ${SCHEDULE_DAYS.find(d=>d.key===day)?.label}`,summary:`اليوم يحمل ${count} موعداً. أفضل سيناريو تخفيف يغيّر ${best?.changed||0} مواعيد مع جودة ${best?.score||0}/100.`,context:{type:"day",day},options:best?best.rows.filter(r=>{const base=rows.find(x=>x.id===r.id);return base&&rowSignatureServer(base)!==rowSignatureServer(r)}).slice(0,5).map(r=>({rowId:r.id,course:r.AdCourseName,time:formatScheduleTimeRange(r.fstarttime, r.fendtime),days:activeDays(r).map(k=>SCHEDULE_DAYS.find(d=>d.key===k)?.label).join("، ")})):[],guardrail:"تخفيف اليوم معروض كسيناريو فقط ولا يغيّر الجدول الحقيقي."});return;
   }
   res.status(400).json({error:"سياق مساعد القرار غير معروف"});
 });
@@ -3910,7 +3911,7 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
       name: nameOf(item.row),
       otherName: item.other ? nameOf(item.other) : "",
       day: SCHEDULE_DAY_KEYS.find(key => Boolean((item.row as any)[key])) || "",
-      time: `${item.row.fstarttime}-${item.row.fendtime}`,
+      time: formatScheduleTimeRange(item.row.fstarttime, item.row.fendtime),
       room: [item.row.AdRoomCode, item.row.AdRoomHall].filter(Boolean).join("/"),
       type: item.type, message: item.message, detail: item.detail, foreign: item.foreign,
     })),
@@ -4317,7 +4318,7 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
       "الساعات": course?.CourseHours || 0,
       "أستاذ المقرر": inst?.AdInstructorName || "",
       "الرقم المدني": inst?.AdInstructorCivil || "",
-      "الوقت": `${s.fstarttime} - ${s.fendtime}`,
+      "الوقت": formatScheduleTimeRange(s.fstarttime, s.fendtime),
       "الأيام": days,
       "المبنى": s.AdRoomCode || "",
       "القاعة": s.AdRoomHall || ""
@@ -5248,7 +5249,7 @@ app.get("/api/schedules/staff-inbox", requirePermission(7), async (req: Authenti
       kind: note.kind || "change", text: note.text,
       scheduleId: note.scheduleId,
       course: row?.AdCourseName || courses.find(c => c.AdCourseId === row?.AdCourseId)?.CourseName || "",
-      time: row ? `${row.fstarttime}-${row.fendtime}` : "",
+      time: row ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "",
       day: row ? (SCHEDULE_DAY_KEYS.find(key => Boolean(row[key])) || "") : "",
       room: row ? [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") : "",
     };
@@ -5565,7 +5566,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     var out=[];
     Object.keys(current).forEach(function(key){
       var now=current[key],was=previous[key];
-      if(!was){out.push({tone:"add",day:now.d,text:now.n+" أُضيفت "+now.s+"–"+now.e+" · "+now.r});return}
+      if(!was){out.push({tone:"add",day:now.d,text:now.n+" أُضيفت "+now.e+" - "+now.s+" · "+now.r});return}
       if(was.s!==now.s||was.e!==now.e) out.push({tone:"move",day:now.d,text:now.n+" انتقلت "+was.s+" ← "+now.s});
       if(was.r!==now.r) out.push({tone:"room",day:now.d,text:now.n+" تغيّرت القاعة "+was.r+" ← "+now.r});
     });
@@ -5619,7 +5620,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         return '<tr><th class="t" dir="ltr">'+esc(start)+'</th>'+d.byDay.map(function(day){
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
-              '<time>–'+esc(row.end)+'</time>'+
+              '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
               '<small>'+[row.code,(row.room||row.hall)&&(esc(row.room||"")+"/"+esc(row.hall||""))].filter(Boolean).join(" · ")+'</small></span>';
           }).join("")+'</td>';
         }).join("")+'</tr>';
@@ -5631,19 +5632,19 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         if(i>0){
           var before=day.gaps.filter(function(g){return g.to===row.start});
           if(before.length){
-            lead='<div class="gap"><i></i>فراغ <time>'+esc(before[0].from)+'–'+esc(before[0].to)+'</time> · '+ar(before[0].minutes)+' دقيقة</div>';
+            lead='<div class="gap"><i></i>فراغ <time>'+esc(before[0].to)+' - '+esc(before[0].from)+'</time> · '+ar(before[0].minutes)+' دقيقة</div>';
           }
         }
         /* The slot gains one quiet affordance and nothing else. It is a
            button that opens a form, not a form — a card opened to read a week
            must not become a wall of inputs. */
         return lead+'<div class="slot" data-lecture="'+row.id+'"><strong>'+esc(row.name||row.code)+'</strong>'+
-               '<time>'+esc(row.start)+'–'+esc(row.end)+'</time>'+
+               '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
                '<small>'+[row.code,row.section&&("شعبة "+row.section),(row.room||row.hall)&&(esc(row.room)+"/"+esc(row.hall))].filter(Boolean).join(" · ")+'</small>'+
                (live ? '<button type="button" class="say" data-say="'+row.id+'" aria-expanded="false">أبلغ القسم</button>' : '')+
                '<div class="sayform" hidden></div></div>';
       }).join("");
-      return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.from+"–"+day.span.to:"")+'</em></h2>'+body+'</section>';
+      return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.to+" - "+day.span.from:"")+'</em></h2>'+body+'</section>';
     }).join("");
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
     /* Absence needs a reason. A missing button reads as a fault; one sentence
@@ -6186,7 +6187,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   const slotHtml = (row: typeof payload.rows[number]) => `<span class="slot">
       <b>${esc(row.name)}</b>
       ${row.code || row.section ? `<small dir="ltr">${esc(row.code || "")}${row.section ? ` · ${esc(row.section)}` : ""}</small>` : ""}
-      <time dir="ltr">–${esc(row.end)}</time>
+      <time dir="ltr">${esc(row.end)} - ${esc(row.start)}</time>
       ${row.room || row.hall ? `<time dir="ltr">${esc([row.room, row.hall].filter(Boolean).join("/"))}</time>` : ""}
       ${row.instructor ? `<i>${esc(firstLast(row.instructor))}</i>` : ""}
     </span>`;
