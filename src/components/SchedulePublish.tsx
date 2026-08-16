@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
+import { ArrowUpLeft, CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
@@ -77,9 +77,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     [error, setError] = useState<string | null>(null),
     [step, setStep] = useState<PublishStep>("kind"),
     [createdId, setCreatedId] = useState<string | null>(null),
-    [qr, setQr] = useState<{ id: string; svg: string } | null>(null),
-    [surveyBusy, setSurveyBusy] = useState(false),
-    [surveyNotice, setSurveyNotice] = useState<string | null>(null);
+    [qr, setQr] = useState<{ id: string; svg: string } | null>(null);
 
   const scoped = Boolean(collegeId && sectionId && termId);
 
@@ -186,46 +184,20 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
   };
 
   const publicationLinks = links.filter(link => link.kind !== "survey");
-  const surveyLinks = links.filter(link => link.kind === "survey");
   const active = publicationLinks.filter(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now());
-  const activeSurvey = surveyLinks.find(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now()) || null;
-  const surveyUrl = (id: string) => `${window.location.origin}/q/${id}`;
-  const copySurvey = async (id: string) => {
-    const url = surveyUrl(id);
+
+  /**
+   * Student survey is managed in Decision Center. Publishing only carries a
+   * signpost to that exact scene, so there is one source of truth for issuing,
+   * copying and QR management. The current scope is handed over as well.
+   */
+  const openStudentSurveyWorkspace = () => {
     try {
-      await navigator.clipboard.writeText(url);
-    } catch {
-      const field = document.createElement("input");
-      field.value = url;
-      document.body.appendChild(field);
-      field.select();
-      document.execCommand("copy");
-      field.remove();
-    }
-    setSurveyNotice("تم نسخ رابط استبيان الطلبة");
-    window.setTimeout(() => setSurveyNotice(null), 2200);
-  };
-  const issueSurvey = async () => {
-    if (!scoped || surveyBusy) return;
-    if (activeSurvey) { await copySurvey(activeSurvey.id); return; }
-    setSurveyBusy(true);
-    setSurveyNotice(null);
-    setError(null);
-    try {
-      const response = await fetch("/api/share", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, kind: "survey", days: 30 })
-      });
-      const data = await readReply(response, "تعذر إنشاء رابط الاستبيان");
-      setLinks(current => [data, ...current]);
-      await copySurvey(data.id);
-      setSurveyNotice("أُصدر استبيان الطلبة ونسخ رابطه — صالح 30 يوماً");
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setSurveyBusy(false);
-    }
+      sessionStorage.setItem("schedule-intelligence-tab", "command");
+      sessionStorage.setItem("schedule-intelligence-insight", "students");
+      sessionStorage.setItem("schedule-intelligence-scope", JSON.stringify({ collegeId, sectionId, termId }));
+    } catch {}
+    window.location.assign("/Schedule/Intelligence");
   };
   const currentStep = PUBLISH_STEPS.findIndex(item => item.id === step);
   const openDialog = () => {
@@ -278,17 +250,20 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               </div>
             </header>
 
-            <div className="share-survey-shortcut" aria-label="استبيان الطلبة">
+            <button
+              type="button"
+              className="share-survey-shortcut"
+              aria-label="افتح استبيان الطلبة في مركز القرار"
+              onClick={openStudentSurveyWorkspace}
+              disabled={!scoped}
+            >
               <span className="share-survey-shortcut-icon" aria-hidden="true"><ClipboardList /></span>
-              <div>
+              <span className="share-survey-shortcut-copy">
                 <strong>استبيان الطلبة</strong>
-                <small>{activeSurvey ? "الرابط فعال — اضغط لنسخه" : "أصدر رابطاً مستقلاً للطلبة من نفس مكان النشر"}</small>
-              </div>
-              <button type="button" onClick={() => void issueSurvey()} disabled={!scoped || surveyBusy}>
-                {surveyBusy ? "يصدر…" : activeSurvey ? "نسخ الرابط" : "إصدار الرابط"}
-              </button>
-            </div>
-            {surveyNotice ? <p className="share-survey-notice" role="status"><Check /> {surveyNotice}</p> : null}
+                <small>اختصار إلى مكانه في مركز القرار</small>
+              </span>
+              <ArrowUpLeft className="share-survey-shortcut-arrow" aria-hidden="true" />
+            </button>
 
             {error ? <p className="share-error" role="alert">{error}</p> : null}
 

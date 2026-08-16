@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   Moon,
+  RefreshCw,
   Search,
   ShieldCheck,
   SlidersHorizontal,
@@ -567,6 +568,7 @@ export default function App() {
   const [health, setHealth] = useState<"online" | "reconnecting" | "offline" | "database-down">(
     () => (navigator.onLine ? "online" : "offline"),
   );
+  const [healthProbe, setHealthProbe] = useState(0);
   useEffect(() => {
     let alive = true;
     let timer = 0;
@@ -606,13 +608,13 @@ export default function App() {
       window.removeEventListener("offline", down);
       document.removeEventListener("visibilitychange", wake);
     };
-  }, []);
+  }, [healthProbe]);
   useEffect(() => { setOnline(health === "online"); }, [health]);
   const healthLabel =
     health === "online" ? "متصل بالخادم · الحفظ متاح"
-      : health === "reconnecting" ? "يحاول الاتصال بالخادم · لا تحفظ الآن"
-        : health === "database-down" ? "قاعدة البيانات غير متاحة · القراءة فقط"
-          : "دون إنترنت · القراءة فقط";
+      : health === "reconnecting" ? "تعذر الوصول إلى الخادم · متوقف مؤقتاً"
+        : health === "database-down" ? "الخدمة غير متاحة · متوقفة مؤقتاً"
+          : "لا يوجد اتصال بالإنترنت";
   useEffect(() => {
     (async () => {
       try {
@@ -628,6 +630,7 @@ export default function App() {
           setDataMode(data.data || null);
         }
       } catch {
+        setHealth(navigator.onLine ? "reconnecting" : "offline");
       } finally {
         setLoading(false);
       }
@@ -933,13 +936,48 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [user, allowed.schedule, smartSearchView, smartReportView, isPowerAdmin]);
-  if (loading)
+  const connectionGate = (standalone = false) => {
+    const copy = health === "offline"
+      ? { title: "لا يوجد اتصال بالإنترنت", detail: "تحقق من الاتصال ثم أعد المحاولة." }
+      : health === "database-down"
+        ? { title: "الخدمة غير متاحة الآن", detail: "حاول مرة أخرى بعد قليل." }
+        : { title: "تعذر الوصول إلى البرنامج", detail: "نتحقق من الاتصال بالخادم." };
+    return (
+      <div className={`connection-gate no-print ${standalone ? "standalone" : ""}`} role="alertdialog" aria-modal="true" aria-live="assertive">
+        <div className="connection-gate-card">
+          <span className="connection-gate-icon" aria-hidden="true"><WifiOff /></span>
+          <div>
+            <strong>{copy.title}</strong>
+            <span>{copy.detail}</span>
+          </div>
+          <button
+            type="button"
+            className="connection-gate-retry"
+            onClick={() => {
+              setHealth(navigator.onLine ? "reconnecting" : "offline");
+              setHealthProbe(value => value + 1);
+            }}
+          >
+            <RefreshCw aria-hidden="true" />
+            إعادة المحاولة
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  if (loading) {
+    if (health !== "online") return connectionGate(true);
     return (
       <div className="app-loading">
         <span />
       </div>
     );
-  if (!user) return <Login onLoginSuccess={login} />;
+  }
+  if (!user) {
+    if (health !== "online") return connectionGate(true);
+    return <Login onLoginSuccess={login} />;
+  }
 
   const unauthorized = () => (
     <Dashboard
@@ -1470,7 +1508,7 @@ export default function App() {
           icon: <WifiOff />,
           eyebrow: "حماية إضافية",
           title: "إذا انقطع الإنترنت، الحفظ يتوقف",
-          copy: "تظل آخر البيانات متاحة للقراءة، بينما النشر والتغييرات الحساسة تتوقف حتى يعود الاتصال.",
+          copy: "يتوقف البرنامج مؤقتاً لحماية العمل، ويعود تلقائياً عندما يرجع الاتصال.",
         },
       ]
     : [
@@ -1496,7 +1534,7 @@ export default function App() {
           icon: <WifiOff />,
           eyebrow: "حماية الحفظ",
           title: "لا كتابة أثناء انقطاع الاتصال",
-          copy: "يمكنك القراءة من آخر نسخة متاحة، وتعود عمليات الحفظ تلقائياً عندما يعود الاتصال.",
+          copy: "يتوقف البرنامج مؤقتاً عند انقطاع الاتصال، ويعود تلقائياً عندما يرجع الإنترنت.",
         },
       ];
   const taskFamily =
@@ -1814,9 +1852,6 @@ export default function App() {
                   {isPowerAdmin ? "إدارة كاملة" : (scopes[0]?.AdSectionName || "القسم العلمي")}
                 </small>
               ) : null}
-              {isPowerAdmin ? (
-                <small className="user-card-college">جميع الأقسام المخوّلة</small>
-              ) : null}
             </div>
             <span className="sr-only" role="status">{healthLabel}</span>
             <div className="user-card-tools">
@@ -1850,6 +1885,7 @@ export default function App() {
           aria-label="إغلاق القائمة"
         />
       ) : null}
+      {health !== "online" ? connectionGate() : null}
       {dataMode && !dataMode.real ? (
         <div className="fake-data-banner no-print" role="alert">
           <strong>بيانات تجريبية</strong>

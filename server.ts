@@ -780,15 +780,19 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const weekday = new Date().getDay();
   const weekend = weekday === 5 || weekday === 6;
   let dayKey: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday" = "fsunday";
-  let dayName = weekday === 0 ? "الأحد" : "";
+  let dayName = weekday === 0 ? "الأحد" : weekday === 5 ? "الجمعة" : weekday === 6 ? "السبت" : "";
   if (weekday === 1) { dayKey = "fmonday"; dayName = "الاثنين"; }
   if (weekday === 2) { dayKey = "ftuesday"; dayName = "الثلاثاء"; }
   if (weekday === 3) { dayKey = "fwednesday"; dayName = "الأربعاء"; }
   if (weekday === 4) { dayKey = "fthursday"; dayName = "الخميس"; }
 
-  const daySchedules = latestTermSchedules
-    .filter(row => Boolean(row[dayKey]))
-    .sort((a, b) => String(a.fstarttime).localeCompare(String(b.fstarttime)));
+  // Friday and Saturday are institutional holidays. Do not quietly substitute
+  // Sunday's lectures into the dashboard; the holiday state must be literal.
+  const daySchedules = weekend
+    ? []
+    : latestTermSchedules
+        .filter(row => Boolean(row[dayKey]))
+        .sort((a, b) => String(a.fstarttime).localeCompare(String(b.fstarttime)));
 
   /**
    * The administrator sees the university; everyone else sees their department.

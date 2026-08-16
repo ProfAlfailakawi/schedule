@@ -230,7 +230,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     {/* On a weekend the row below is Sunday's schedule, not today's — saying
      which day is being shown costs one line and prevents a reader from
      planning a Friday around Sunday's lectures. */}
-    {data?.weekend?<p className="deck-clear deck-weekend"><CalendarDays aria-hidden="true"/>عطلة نهاية الأسبوع — المعروض جدول الأحد</p>
+    {data?.weekend?<p className="deck-clear deck-weekend"><CalendarDays aria-hidden="true"/>الجمعة والسبت عطلة — لا توجد محاضرات اليوم</p>
      :today.length?null:<p className="deck-clear"><CheckCircle2 aria-hidden="true"/>لا محاضرات</p>}
     <div className="deck-today-actions">
      {canManageSchedule?<PrimaryButton onClick={()=>onNavigate?.("schedules")}><CalendarDays aria-hidden="true"/>الجدول</PrimaryButton>:null}

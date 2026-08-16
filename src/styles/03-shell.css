@@ -619,3 +619,57 @@ html[data-schedule-workspace="focus"] .schedule-control{
   line-height:1.55 !important;
   color:color-mix(in srgb,var(--nav-ink) 82%,var(--nav-muted)) !important;
 }
+
+/* --- Connection gate ------------------------------------------------------
+   Losing the network is a hard stop, not a degraded workspace. Keep the current
+   React state alive behind an opaque sheet so nothing is lost, but do not let a
+   stale schedule look editable until the server is reachable again. */
+.connection-gate{
+  position:fixed;
+  inset:0;
+  z-index:140;
+  display:grid;
+  place-items:center;
+  padding:24px;
+  background:var(--canvas);
+}
+.connection-gate-card{
+  width:min(420px,100%);
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  align-items:center;
+  gap:16px 14px;
+  padding:22px;
+  border:1px solid var(--line);
+  border-radius:var(--r-xl);
+  background:var(--surface);
+  box-shadow:var(--shadow-lg);
+}
+.connection-gate-icon{
+  width:46px;height:46px;
+  display:grid;place-items:center;
+  border-radius:14px;
+  background:var(--surface-2);
+  color:var(--muted);
+}
+.connection-gate-icon svg{width:21px;height:21px}
+.connection-gate-card>div{min-width:0}
+.connection-gate-card strong{display:block;font-size:16px;font-weight:700;color:var(--ink)}
+.connection-gate-card span:not(.connection-gate-icon){display:block;margin-top:4px;font-size:13px;line-height:1.65;color:var(--muted)}
+.connection-gate-retry{
+  grid-column:1/-1;
+  min-height:42px;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  padding:0 16px;
+  border:1px solid var(--line-strong);
+  border-radius:var(--r-md);
+  color:var(--accent-ink);
+  background:var(--surface-2);
+  font-size:13px;font-weight:650;
+}
+.connection-gate-retry:hover{border-color:var(--accent);background:var(--accent-softer)}
+.connection-gate-retry svg{width:16px;height:16px}
+@media screen and (max-width:560px){
+  .connection-gate{padding:18px}
+  .connection-gate-card{padding:18px;border-radius:20px}
+}

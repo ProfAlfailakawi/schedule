@@ -334,8 +334,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [heatMode, setHeatMode] = useState("department"),
     [detail, setDetail] = useState<any>(null),
     /* null = the dashboard itself. A reading is a page that opens ON TOP of it
-       and closes back to it — not a section further down the same scroll. */
-    [insightScene, setInsightScene] = useState<InsightScene | null>(null);
+       and closes back to it — not a section further down the same scroll.
+       Publishing can hand off directly to the students reading; consume that
+       one-shot request here so the shortcut lands on the exact destination. */
+    [insightScene, setInsightScene] = useState<InsightScene | null>(() => {
+      try {
+        const requested = sessionStorage.getItem("schedule-intelligence-insight") as InsightScene | null;
+        sessionStorage.removeItem("schedule-intelligence-insight");
+        return requested && ["quality", "approval", "attention", "density", "spatial", "rooms", "professors", "health", "students", "genome"].includes(requested)
+          ? requested
+          : null;
+      } catch { return null; }
+    });
   const [prompt, setPrompt] = useState(""),
     [chat, setChat] = useState<ChatItem[]>([]),
     chatEnd = useRef<HTMLDivElement | null>(null);
@@ -448,17 +458,33 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         setCourses(sortByName(lookups?.courses || [], (row:any)=>row.CourseName));
         setInstructors(sortByName(lookups?.instructors || [], (row:any)=>row.AdInstructorName));
         const latest = [...t].sort((a: any, b: any) => b.AdTermId - a.AdTermId)[0]?.AdTermId || 0;
-        const scoped = resolveScopeSelection(scopes, 0, isPowerAdmin);
-        const defaultCollege = isPowerAdmin
+        let handoff: { collegeId?: number; sectionId?: number; termId?: number } | null = null;
+        try {
+          const raw = sessionStorage.getItem("schedule-intelligence-scope");
+          sessionStorage.removeItem("schedule-intelligence-scope");
+          handoff = raw ? JSON.parse(raw) : null;
+        } catch { handoff = null; }
+        const requestedCollege = Number(handoff?.collegeId || 0);
+        const requestedSection = Number(handoff?.sectionId || 0);
+        const requestedTerm = Number(handoff?.termId || 0);
+        const scoped = resolveScopeSelection(scopes, requestedCollege, isPowerAdmin);
+        const fallbackCollege = isPowerAdmin
           ? (c[0]?.AdCollegeId || s[0]?.AdCollegeId || 0)
           : scoped.defaultCollegeId;
+        const defaultCollege = c.some((item:any)=>Number(item.AdCollegeId)===requestedCollege)
+          ? requestedCollege
+          : fallbackCollege;
         const scopedForCollege = resolveScopeSelection(scopes, defaultCollege, isPowerAdmin);
-        const defaultSection = isPowerAdmin
-          ? (s.find((item:any)=>item.AdCollegeId===defaultCollege)?.AdSectionId || 0)
-          : scopedForCollege.defaultSectionId;
+        const allowedSection = s.find((item:any)=>Number(item.AdSectionId)===requestedSection && Number(item.AdCollegeId)===defaultCollege);
+        const defaultSection = allowedSection
+          ? requestedSection
+          : isPowerAdmin
+            ? (s.find((item:any)=>item.AdCollegeId===defaultCollege)?.AdSectionId || 0)
+            : scopedForCollege.defaultSectionId;
+        const defaultTerm = t.some((item:any)=>Number(item.AdTermId)===requestedTerm) ? requestedTerm : latest;
         setCollegeId(defaultCollege);
         setSectionId(defaultSection);
-        setTermId(latest);
+        setTermId(defaultTerm);
         const sorted = [...t].sort((a: any, b: any) => b.AdTermId - a.AdTermId);
         setCompareTo(sorted[0]?.AdTermId || 0);
         setCompareFrom(sorted[1]?.AdTermId || sorted[0]?.AdTermId || 0);
@@ -1360,7 +1386,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 value: "students" as const,
                 label: "طلبات الطلاب",
                 detail: "كم شعبة نفتح، وأين نضعها",
-                metric: String(demand.openings?.proposals?.reduce((sum: number, item: any) => sum + item.needed, 0)
+                metric: String(demand.respondents
+                  || demand.openings?.proposals?.reduce((sum: number, item: any) => sum + item.needed, 0)
                   || demand.repairs?.length || demand.pairs?.length || demand.prediction?.pairs?.length || 0),
                 icon: <UsersRound />,
               },
@@ -2141,7 +2168,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <div className="demand-bars">
                     {demand.prediction.courses.slice(0, 8).map((course: any) => (
                       <article key={course.courseId}>
-                        <span title={course.because}>{course.name}</span>
+                        <span className="demand-course-label" title={course.because}>
+                          <b>{course.name}</b>
+                          <small dir="ltr">{course.code || course.courseId}</small>
+                        </span>
                         <i><b style={{ width: `${Math.min(100, Math.max(6, Math.round((course.expected / demand.prediction.from) * 100)))}%` }} /></i>
                         <strong dir="ltr">~{course.expected}/{demand.prediction.from}</strong>
                       </article>
@@ -2309,7 +2339,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <div className="demand-bars">
                   {demand.courses.slice(0, 8).map((course: any) => (
                     <article key={course.courseId}>
-                      <span>{course.name}</span>
+                      <span className="demand-course-label">
+                        <b>{course.name}</b>
+                        <small dir="ltr">{course.code || course.courseId}</small>
+                      </span>
                       <i><b style={{ width: `${Math.max(4, course.share)}%` }} /></i>
                       <strong dir="ltr">{course.students}/{demand.respondents}</strong>
                     </article>

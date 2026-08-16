@@ -5872,7 +5872,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     mobileViewGate
   );
   return (
-    <div className="content-stack schedule-page">
+    <div className={`content-stack schedule-page ${phoneReadOnly ? "schedule-phone" : ""}`.trim()}>
       <PageTitle
         eyebrow="مركز الجدول"
         subtitle="نطاق · مراجعة · نشر"

@@ -5013,3 +5013,39 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   }
   .schedule-control-barter .hall-barter-board:not(.is-open){max-width:100% !important;margin:0 !important}
 }
+
+/* ── Compact publishing on phones ──────────────────────────────────────────
+   The market never owned the publish button; the previous mobile rule enlarged
+   publishing to a full-width hero merely to escape an overlap. Keep both in
+   normal document flow instead: a compact publish action among the tools and a
+   tiny market utility on its own line underneath. */
+.schedule-phone .schedule-publish-slot{
+  grid-column:auto !important;
+  order:initial !important;
+  width:auto !important;
+  min-width:0 !important;
+}
+.schedule-phone .schedule-publish-slot>.btn{
+  width:auto !important;
+  min-height:38px !important;
+  padding-inline:12px !important;
+  border-color:var(--line) !important;
+  background:var(--surface) !important;
+  color:var(--ink-2) !important;
+  font-weight:600 !important;
+}
+.schedule-phone .schedule-control-barter{
+  position:static !important;
+  z-index:auto !important;
+  width:100% !important;
+  margin-top:2px !important;
+  padding-top:10px !important;
+  border-top:1px solid var(--line) !important;
+  justify-content:flex-start !important;
+  clear:both;
+}
+.schedule-phone .schedule-control-barter .hall-barter-board:not(.is-open){
+  width:max-content !important;
+  max-width:100% !important;
+  margin:0 !important;
+}
