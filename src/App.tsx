@@ -1811,14 +1811,9 @@ export default function App() {
               <small className="user-card-section">
                 {isPowerAdmin ? "إدارة كاملة" : (scopes[0]?.AdSectionName || "القسم العلمي")}
               </small>
-              <small className="user-card-college">
-                {isPowerAdmin
-                  ? "جميع الأقسام المخوّلة"
-                  : [
-                      scopes[0]?.AdCollegeName,
-                      scopes.length > 1 ? `+ ${scopes.length - 1} أقسام أخرى` : "",
-                    ].filter(Boolean).join(" · ")}
-              </small>
+              {isPowerAdmin ? (
+                <small className="user-card-college">جميع الأقسام المخوّلة</small>
+              ) : null}
             </div>
             <span className="sr-only" role="status">{healthLabel}</span>
             <div className="user-card-tools">

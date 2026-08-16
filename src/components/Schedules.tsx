@@ -71,6 +71,7 @@ import {
   FSchedule,
 } from "../types";
 import LivingScheduleLayer from "./LivingScheduleLayer";
+import HallBarterBoard, { type HallBarterReservationView } from "./HallBarterBoard";
 import SchedulePublish from "./SchedulePublish";
 import ScheduleExperienceLayer, {
   useScheduleExperience,
@@ -3194,6 +3195,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [gridWindow],
   );
   const [expandedDay, setExpandedDay] = useState<DayKey | null>(null);
+  const [hallBarterReservations, setHallBarterReservations] = useState<HallBarterReservationView[]>([]);
+  useEffect(() => { setHallBarterReservations([]); }, [filterCollege, filterSection, filterTerm]);
 
   /**
    * The board's own description of itself.
@@ -3264,23 +3267,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   }, [viewsStore, captureView]);
 
   /**
-   * A phone is given one day, not five.
+   * Week means week on first entry — on every screen size.
    *
-   * Five readable lanes need about 1148px, so on a narrow screen the week has
-   * always been a sideways scroll — the grid was wider than the device and the
-   * reader dragged it past the window to find Wednesday. The fold the column
-   * header already performs is the answer; this only makes it the opening
-   * position on a small screen.
-   *
-   * It settles the question on entering the week and not again, and it fills
-   * only an empty choice, so a reader who deliberately unfolds all five days is
-   * never argued with.
+   * A previous phone optimisation auto-opened today's column, which made the
+   * «الأسبوع» view arrive already filtered to one day. Day focus now happens
+   * only after an explicit press on a day header or the «اليوم» control.
    */
-  useEffect(() => {
-    if (viewMode !== "week" || typeof window === "undefined") return;
-    if (!window.matchMedia("(max-width:768px)").matches) return;
-    setExpandedDay(current => current ?? todayKey ?? (days[0]?.key as DayKey));
-  }, [viewMode, todayKey]);
 
   /*
    * Phone = observation, never editing.
@@ -6251,6 +6243,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onEnsureWeek={() => setViewMode("week")}
         onPanelOpenChange={setLivingPanelOpen}
       />
+      {mode === "schedule" && workspaceReady && filterCollege && filterSection && filterTerm ? (
+        <HallBarterBoard
+          collegeId={filterCollege}
+          sectionId={filterSection}
+          termId={filterTerm}
+          liveSerial={liveFeedSerial}
+          onReservationsChange={setHallBarterReservations}
+        />
+      ) : null}
       {rowsLoading && !rows.length ? (
         <Surface className="sched-skeleton-surface">
           <ScheduleSkeleton viewMode={viewMode} />
@@ -7050,6 +7051,29 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     data-today={todayKey === d.key ? "true" : undefined}
                     key={d.key}
                   >
+                    {hallBarterReservations
+                      .filter((reservation) => reservation.status === "approved" && reservation.day === d.key)
+                      .map((reservation) => {
+                        const start = mins(reservation.startTime), end = mins(reservation.endTime);
+                        if (end <= gridWindow.start || start >= gridWindow.end) return null;
+                        const borrowing = reservation.requesterCollegeId === filterCollege && reservation.requesterSectionId === filterSection;
+                        const top = ((Math.max(start, gridWindow.start) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H;
+                        const height = Math.max(SLOT_H - 4, ((Math.min(end, gridWindow.end) - Math.max(start, gridWindow.start)) / SCHEDULE_SLOT_MINUTES) * SLOT_H - 3);
+                        return (
+                          <div
+                            key={`hall-barter-${reservation.id}-${d.key}`}
+                            className={`week-hall-barter ${borrowing ? "borrowed" : "lent"}`}
+                            style={{ top, height }}
+                            title={`${borrowing ? "نافذة قاعة مستعارة لقسمك" : "نافذة قاعة معارة"} · ${reservation.roomCode}/${reservation.roomHall} · ${reservation.startTime}–${reservation.endTime}`}
+                            aria-label={`${borrowing ? "قاعة مستعارة" : "قاعة معارة"} ${reservation.roomCode}/${reservation.roomHall} من ${reservation.startTime} إلى ${reservation.endTime}`}
+                          >
+                            <ArrowLeftRight aria-hidden="true" />
+                            <strong>{borrowing ? "مستعارة" : "معارة"}</strong>
+                            <span dir="ltr">{reservation.roomCode}/{reservation.roomHall}</span>
+                            <time dir="ltr">{reservation.startTime}–{reservation.endTime}</time>
+                          </div>
+                        );
+                      })}
                     {timeSlots.map((t) => (
                       <div
                         data-physics-slot="true"

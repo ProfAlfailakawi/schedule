@@ -11,7 +11,7 @@ import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, confli
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
-import type { FSchedule, ScheduleShareLink } from "./src/types";
+import type { FSchedule, ScheduleShareLink, HallBarterRequest } from "./src/types";
 import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./src/utils/naturalQuery";
 import { coerceScopeValues } from "./src/utils/scopeContext";
 import { AR, countOf } from "./src/utils/arabicCount";
@@ -1518,6 +1518,159 @@ async function roomScopeNotice(row:any){
   if(!owner)return null;
   return{type:"roomScope",severity:"warning",rowId:0,message:`تنبيه نطاق القاعة: ${owner.room}/${owner.hall} مرتبطة تاريخياً بـ ${owner.owner}`,detail:`استُخدمت القاعة في ${owner.ownerSamples} من ${owner.samples} موعداً مسجلاً لهذا النطاق التاريخي. يمكن المتابعة إذا كان الاختيار مقصوداً؛ هذا تنبيه تنظيمي وليس تعارضاً زمنياً.`};
 }
+
+/**
+ * ── بورصة القاعات الساكنة بين الكليات ──────────────────────────────────────
+ *
+ * No room is declared "owned" in the legacy schema. Ownership is therefore a
+ * reading of ten years of behaviour: the section that used a room most often,
+ * with a clear majority, is treated as its historical steward. A free window
+ * is offered only when it has repeatedly stayed free across terms AND is free
+ * right now. Approval creates a digital reservation, never a fake lecture.
+ */
+const HALL_BARTER_MIN_HISTORY_TERMS = 3;
+const HALL_BARTER_MIN_FREE_SHARE = 0.72;
+const HALL_BARTER_MAX_OPPORTUNITIES = 30;
+const HALL_BARTER_DAY_LABEL = new Map(SCHEDULE_DAY_KEYS.map((key,index)=>[key,DAY_LABELS[index]]));
+let hallBarterSerial = 0;
+const hallBarterBoardCache = new Map<string,{ scheduleSerial:number; barterSerial:number; expiresAt:number; body:any }>();
+
+function academicStartYear(name: unknown): number | null {
+  const match=String(name||"").match(/(?:19|20)\d{2}/);
+  return match?Number(match[0]):null;
+}
+function recentTenYearTermIds(terms:any[]): Set<number> {
+  const withYear=terms.map(term=>({id:Number(term.AdTermId||0),year:academicStartYear(term.AdTermName)})).filter(item=>item.id);
+  const years=withYear.map(item=>item.year).filter((year):year is number=>Number.isFinite(year));
+  if(years.length){
+    const newest=Math.max(...years),cutoff=newest-9;
+    return new Set(withYear.filter(item=>item.year!=null&&item.year>=cutoff).map(item=>item.id));
+  }
+  return new Set([...withYear].sort((a,b)=>b.id-a.id).slice(0,30).map(item=>item.id));
+}
+function dominantHistoricalHallOwner(history:FSchedule[]){
+  const counts=new Map<string,{collegeId:number;sectionId:number;count:number}>();
+  for(const row of history){
+    const collegeId=Number(row.AdCollegeId||0),sectionId=Number(row.AdSectionId||0);
+    if(!collegeId||!sectionId)continue;
+    const key=`${collegeId}:${sectionId}`,current=counts.get(key)||{collegeId,sectionId,count:0};
+    current.count++;counts.set(key,current);
+  }
+  const ranked=[...counts.values()].sort((a,b)=>b.count-a.count);
+  const top=ranked[0],total=history.length;
+  if(!top||top.count<3||!total||top.count/total<0.55)return null;
+  return{...top,share:Math.round(top.count/total*100),total};
+}
+function rowOccupiesWindow(row:any,day:string,start:string,end:string){
+  return Boolean(row?.[day])&&scheduleOverlap(String(row.fstarttime||""),String(row.fendtime||""),start,end);
+}
+function barterRequestOverlaps(request:HallBarterRequest,roomCode:string,roomHall:string,day:string,start:string,end:string){
+  return request.status==="approved"&&
+    String(request.roomCode||"").trim().toLocaleLowerCase()===roomCode.trim().toLocaleLowerCase()&&
+    String(request.roomHall||"").trim().toLocaleLowerCase()===roomHall.trim().toLocaleLowerCase()&&
+    request.day===day&&scheduleOverlap(request.startTime,request.endTime,start,end);
+}
+function hallBarterRequestShape(request:HallBarterRequest,sections:any[],colleges:any[]){
+  const requesterSection=sections.find(section=>Number(section.AdSectionId)===Number(request.requesterSectionId));
+  const ownerSection=sections.find(section=>Number(section.AdSectionId)===Number(request.ownerSectionId));
+  const requesterCollege=colleges.find(college=>Number(college.AdCollegeId)===Number(request.requesterCollegeId));
+  const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===Number(request.ownerCollegeId));
+  return{
+    ...request,
+    dayLabel:HALL_BARTER_DAY_LABEL.get(request.day)||request.day,
+    requesterSectionName:requesterSection?.AdSectionName||"قسم طالب",
+    requesterCollegeName:requesterCollege?.AdCollegeName||"كلية طالبة",
+    ownerSectionName:ownerSection?.AdSectionName||"القسم المضيف",
+    ownerCollegeName:ownerCollege?.AdCollegeName||"الكلية المضيفة",
+  };
+}
+
+async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,sectionId:number,termId:number){
+  const cacheKey=`${collegeId}:${sectionId}:${termId}`;
+  const cached=hallBarterBoardCache.get(cacheKey);
+  if(cached&&cached.scheduleSerial===driftSerial&&cached.barterSerial===hallBarterSerial&&cached.expiresAt>Date.now())return cached.body;
+  const [allSchedules,termRows,terms,sections,colleges,requests]=await Promise.all([
+    Repository.getSchedules(),
+    Repository.getSchedulesByScope({termId}),
+    Repository.getTerms(),Repository.getSections(),Repository.getColleges(),Repository.getHallBarterRequests(termId),
+  ]);
+  const recentIds=recentTenYearTermIds(terms);
+  // The target term is checked separately as “free now”; counting it as history
+  // would make an unfinished current timetable look artificially stable.
+  const history=allSchedules.filter(row=>recentIds.has(Number(row.AdTermId||0))&&Number(row.AdTermId)!==termId);
+  const mineCurrent=termRows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId);
+  const mineHistory=history.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId);
+  const preferredBuildings=new Set((mineCurrent.length?mineCurrent:mineHistory)
+    .map(row=>String(row.AdRoomCode||"").trim()).filter(Boolean));
+  const roomGroups=new Map<string,FSchedule[]>();
+  for(const row of history){
+    const building=String(row.AdRoomCode||"").trim(),hall=String(row.AdRoomHall||"").trim();
+    if(!building||!hall||!preferredBuildings.has(building))continue;
+    const key=`${building.toLocaleLowerCase()}|${hall.toLocaleLowerCase()}`;
+    const group=roomGroups.get(key);if(group)group.push(row);else roomGroups.set(key,[row]);
+  }
+  const activeReservations=requests.filter(request=>request.status==="approved");
+  const currentRoomBusy=(roomCode:string,roomHall:string,day:string,start:string,end:string)=>termRows.some(row=>
+    String(row.AdRoomCode||"").trim().toLocaleLowerCase()===roomCode.toLocaleLowerCase()&&
+    String(row.AdRoomHall||"").trim().toLocaleLowerCase()===roomHall.toLocaleLowerCase()&&rowOccupiesWindow(row,day,start,end));
+  const opportunities:any[]=[];
+  for(const roomHistory of roomGroups.values()){
+    const owner=dominantHistoricalHallOwner(roomHistory);if(!owner||owner.collegeId===collegeId)continue;
+    const ownerSection=sections.find(section=>Number(section.AdSectionId)===owner.sectionId);
+    const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===owner.collegeId);
+    if(!ownerSection||!ownerCollege)continue;
+    const roomCode=String(roomHistory[0].AdRoomCode||"").trim(),roomHall=String(roomHistory[0].AdRoomHall||"").trim();
+    const roomTerms=[...new Set(roomHistory.map(row=>Number(row.AdTermId||0)).filter(Boolean))];
+    if(roomTerms.length<HALL_BARTER_MIN_HISTORY_TERMS)continue;
+    for(const day of SCHEDULE_DAY_KEYS){
+      let runStart:number|null=null,runEnd=0,runConfidence=100;
+      const flush=()=>{
+        if(runStart==null)return;
+        const duration=runEnd-runStart;
+        if(duration>=SCHEDULE_SLOT_MINUTES){
+          const start=minutesToTime(runStart),end=minutesToTime(runEnd);
+          const pendingSame=requests.some(request=>request.status==="pending"&&request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId&&
+            String(request.roomCode).toLocaleLowerCase()===roomCode.toLocaleLowerCase()&&String(request.roomHall).toLocaleLowerCase()===roomHall.toLocaleLowerCase()&&
+            request.day===day&&scheduleOverlap(request.startTime,request.endTime,start,end));
+          if(!pendingSame){
+            const rawId=`${roomCode}|${roomHall}|${day}|${start}|${end}|${owner.sectionId}`;
+            opportunities.push({
+              id:Buffer.from(rawId,"utf8").toString("base64url"),roomCode,roomHall,building:roomCode,
+              day,dayLabel:HALL_BARTER_DAY_LABEL.get(day)||day,startTime:start,endTime:end,durationMinutes:duration,
+              confidence:runConfidence,historyTerms:roomTerms.length,ownerShare:owner.share,
+              ownerCollegeId:owner.collegeId,ownerSectionId:owner.sectionId,
+              ownerCollegeName:ownerCollege.AdCollegeName,ownerSectionName:ownerSection.AdSectionName,
+            });
+          }
+        }
+        runStart=null;runEnd=0;runConfidence=100;
+      };
+      for(let minute=SCHEDULE_DAY_START;minute<SCHEDULE_DAY_END;minute+=SCHEDULE_SLOT_MINUTES){
+        const start=minutesToTime(minute),end=minutesToTime(Math.min(SCHEDULE_DAY_END,minute+SCHEDULE_SLOT_MINUTES));
+        const freeTerms=roomTerms.filter(historyTerm=>!roomHistory.some(row=>Number(row.AdTermId)===historyTerm&&rowOccupiesWindow(row,day,start,end))).length;
+        const freeShare=freeTerms/roomTerms.length;
+        const freeNow=!currentRoomBusy(roomCode,roomHall,day,start,end)&&!activeReservations.some(request=>barterRequestOverlaps(request,roomCode,roomHall,day,start,end));
+        if(freeShare>=HALL_BARTER_MIN_FREE_SHARE&&freeNow){
+          if(runStart==null)runStart=minute;
+          runEnd=Math.min(SCHEDULE_DAY_END,minute+SCHEDULE_SLOT_MINUTES);
+          runConfidence=Math.min(runConfidence,Math.round(freeShare*100));
+        }else flush();
+      }
+      flush();
+    }
+  }
+  opportunities.sort((a,b)=>b.confidence-a.confidence||b.durationMinutes-a.durationMinutes||a.roomCode.localeCompare(b.roomCode,"ar"));
+  const shaped=requests.map(request=>hallBarterRequestShape(request,sections,colleges));
+  const body={
+    opportunities:opportunities.slice(0,HALL_BARTER_MAX_OPPORTUNITIES),
+    incoming:shaped.filter(request=>request.ownerCollegeId===collegeId&&request.ownerSectionId===sectionId),
+    outgoing:shaped.filter(request=>request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId),
+    memory:{terms:new Set(history.map(row=>Number(row.AdTermId||0)).filter(Boolean)).size,years:10,buildings:[...preferredBuildings]},
+  };
+  hallBarterBoardCache.set(cacheKey,{scheduleSerial:driftSerial,barterSerial:hallBarterSerial,expiresAt:Date.now()+2*60*1000,body});
+  if(hallBarterBoardCache.size>120)hallBarterBoardCache.clear();
+  return body;
+}
 function normalizedBuilding(value: unknown){return String(value||"").trim();}
 function travelPairKey(a:string,b:string){const x=normalizedBuilding(a).toLocaleLowerCase(),y=normalizedBuilding(b).toLocaleLowerCase();return [x,y].sort().join("|");}
 function travelMinutesFor(profile:any,fromBuilding:string,toBuilding:string,fromCampus?:Campus,toCampus?:Campus){
@@ -1741,10 +1894,11 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const termId=Number(row?.AdTermId||0);
   if(!termId||!row?.fstarttime||!row?.fendtime||!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))return[];
   const candidate:any={...row,id:excludeId||Number(row?.id||-900000),AdTermId:termId};
-  const [candidateRows, instructor, roomNotice]=await Promise.all([
+  const [candidateRows, instructor, roomNotice, hallBarterRequests]=await Promise.all([
     Repository.getScheduleConflictCandidates(candidate),
     Number(candidate.AdInstructorId||0) ? Repository.getInstructorById(Number(candidate.AdInstructorId)) : Promise.resolve(null),
     roomScopeNotice(candidate),
+    Repository.getHallBarterRequests(termId),
   ]);
   const all=candidateRows.filter(item=>item.id!==excludeId);
   const style=await departmentStyle(candidate);
@@ -1781,6 +1935,32 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     // section number by design and must not be refused.
     return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",detail:visible&&other?`نفس الأيام ونفس الوقت ${other.fstarttime}-${other.fendtime}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
   });
+  const sameBarterRoom=(request:any)=>
+    String(request.roomCode||"").trim().toLocaleLowerCase()===String(candidate.AdRoomCode||"").trim().toLocaleLowerCase()&&
+    String(request.roomHall||"").trim().toLocaleLowerCase()===String(candidate.AdRoomHall||"").trim().toLocaleLowerCase();
+  const barterReservation = hallBarterRequests.find((request:any) => {
+    if(request.status!=="approved"||!sameBarterRoom(request))return false;
+    if(Number(request.requesterCollegeId)===Number(candidate.AdCollegeId)&&Number(request.requesterSectionId)===Number(candidate.AdSectionId))return false;
+    return SCHEDULE_DAY_KEYS.some(day=>Boolean(candidate[day])&&request.day===day&&
+      scheduleOverlap(String(candidate.fstarttime||""),String(candidate.fendtime||""),String(request.startTime||""),String(request.endTime||"")));
+  });
+  const myApprovedWindows=hallBarterRequests.filter((request:any)=>request.status==="approved"&&sameBarterRoom(request)&&
+    Number(request.requesterCollegeId)===Number(candidate.AdCollegeId)&&Number(request.requesterSectionId)===Number(candidate.AdSectionId));
+  const selectedBarterDays=SCHEDULE_DAY_KEYS.filter(day=>Boolean(candidate[day]));
+  const borrowerWindowViolation=myApprovedWindows.length>0&&selectedBarterDays.some(day=>!myApprovedWindows.some((request:any)=>
+    request.day===day&&timeToMinutes(String(candidate.fstarttime||""))>=timeToMinutes(String(request.startTime||""))&&
+    timeToMinutes(String(candidate.fendtime||""))<=timeToMinutes(String(request.endTime||""))));
+  const barterNotes:any[] = [];
+  if(barterReservation)barterNotes.push({
+    type:"hallBarter",severity:"high",soft:false,rowId:0,otherId:0,
+    message:`القاعة ${candidate.AdRoomCode}/${candidate.AdRoomHall} محجوزة رقمياً عبر بورصة القاعات`,
+    detail:`نافذة الاستعارة المعتمدة ${HALL_BARTER_DAY_LABEL.get(barterReservation.day)||""} ${barterReservation.startTime}–${barterReservation.endTime}.`
+  });
+  if(borrowerWindowViolation)barterNotes.push({
+    type:"hallBarterWindow",severity:"high",soft:false,rowId:0,otherId:0,
+    message:"الموعد يتجاوز نافذة الاستعارة المعتمدة",
+    detail:"استخدم القاعة داخل اليوم والوقت المعتمدين فقط، أو اطلب نافذة إضافية من بورصة القاعات قبل الحفظ."
+  });
   const softTravel = await interCampusWarnings(candidate, all);
   /* The department's own habit, broken. Not an error — a lecture beginning at
      08:55 where every other lecture on that day has begun at 08:50 for ten
@@ -1815,7 +1995,7 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
       message: "شيء لم ينتبه له أحد", detail: hall.text });
   }
 
-  return [...conflicts, ...(roomNotice ? [roomNotice] : []), ...softTravel, ...rhythmNote, ...memoryNotes];
+  return [...conflicts, ...barterNotes, ...(roomNotice ? [roomNotice] : []), ...softTravel, ...rhythmNote, ...memoryNotes];
 }
 
 /**
@@ -1993,6 +2173,8 @@ function listenForScheduleChangesAcrossInstances() {
     // quietly, because announcing a change we did not make would send the
     // beacon straight back out and the two instances would echo forever.
     clearScheduleCacheQuietly();
+    hallBarterSerial += 1;
+    hallBarterBoardCache.clear();
     broadcastScheduleChange();
   });
 }
@@ -2174,6 +2356,83 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
   if (requestedDays.length) list = list.filter(s => requestedDays.some(day => Boolean(s[day])));
 
   res.json(list);
+});
+
+// ============================================================================
+// INTER-COLLEGE PASSIVE HALL BARTER
+// ============================================================================
+
+app.get("/api/hall-barter", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
+  if(!collegeId||!sectionId||!termId){res.status(400).json({error:"حدد الكلية والقسم والفصل أولاً"});return;}
+  if(!isScopeAllowed(req,collegeId,sectionId)&&!req.user.IsAdminUser){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  res.json(await buildHallBarterBoard(req,collegeId,sectionId,termId));
+});
+
+app.post("/api/hall-barter/requests", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
+  const opportunityId=String(req.body?.opportunityId||"").trim();
+  if(!collegeId||!sectionId||!termId||!opportunityId){res.status(400).json({error:"طلب الاستعارة ناقص البيانات"});return;}
+  if(!isScopeAllowed(req,collegeId,sectionId)&&!req.user.IsAdminUser){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const board=await buildHallBarterBoard(req,collegeId,sectionId,termId);
+  const opportunity=board.opportunities.find((item:any)=>item.id===opportunityId);
+  if(!opportunity){res.status(409).json({error:"هذه النافذة لم تعد متاحة كما كانت. حدّث البورصة واختر نافذة أخرى."});return;}
+  const request=await Repository.createHallBarterRequest({
+    AdTermId:termId,roomCode:opportunity.roomCode,roomHall:opportunity.roomHall,day:opportunity.day,
+    startTime:opportunity.startTime,endTime:opportunity.endTime,
+    requesterCollegeId:collegeId,requesterSectionId:sectionId,requesterUserId:Number(req.user.SystemUserId||0),requesterName:String(req.user.Name||""),
+    ownerCollegeId:Number(opportunity.ownerCollegeId),ownerSectionId:Number(opportunity.ownerSectionId),
+    confidence:Number(opportunity.confidence||0),historyTerms:Number(opportunity.historyTerms||0),
+  });
+  hallBarterSerial++;hallBarterBoardCache.clear();
+  broadcastScheduleChange();void Repository.markSchedulesChanged();
+  res.status(201).json({request,message:"أُرسل طلب الاستعارة رقمياً إلى القسم المضيف. لم يتغير أي موعد دراسي بعد."});
+});
+
+app.post("/api/hall-barter/requests/:id/respond", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const request=await Repository.getHallBarterRequestById(String(req.params.id||""));
+  if(!request){res.status(404).json({error:"طلب الاستعارة غير موجود"});return;}
+  if(request.status!=="pending"){res.status(409).json({error:"تمت معالجة هذا الطلب مسبقاً"});return;}
+  if(!isScopeAllowed(req,request.ownerCollegeId,request.ownerSectionId)&&!req.user.IsAdminUser){res.status(403).json({error:"الموافقة تخص القسم المضيف فقط"});return;}
+  const decision=String(req.body?.decision||"");
+  if(decision!=="approve"&&decision!=="reject"){res.status(400).json({error:"حدد الموافقة أو الرفض"});return;}
+  if(decision==="approve"){
+    const [termRows,allRequests]=await Promise.all([Repository.getSchedulesByScope({termId:request.AdTermId}),Repository.getHallBarterRequests(request.AdTermId)]);
+    const roomBusy=termRows.some(row=>
+      String(row.AdRoomCode||"").trim().toLocaleLowerCase()===String(request.roomCode).trim().toLocaleLowerCase()&&
+      String(row.AdRoomHall||"").trim().toLocaleLowerCase()===String(request.roomHall).trim().toLocaleLowerCase()&&
+      rowOccupiesWindow(row,request.day,request.startTime,request.endTime));
+    if(roomBusy){res.status(409).json({error:"القاعة أصبحت مشغولة في هذه النافذة؛ لم تتم الموافقة حتى لا ينشأ تضارب."});return;}
+    const reserved=allRequests.some(other=>other.id!==request.id&&barterRequestOverlaps(other,request.roomCode,request.roomHall,request.day,request.startTime,request.endTime));
+    if(reserved){res.status(409).json({error:"تم اعتماد استعارة أخرى متداخلة لهذه القاعة. اختر نافذة مختلفة."});return;}
+  }
+  const now=new Date().toISOString();
+  const updated=await Repository.updateHallBarterRequest(request.id,{
+    status:decision==="approve"?"approved":"rejected",respondedAt:now,
+    responderUserId:Number(req.user.SystemUserId||0),responderName:String(req.user.Name||""),
+  });
+  hallBarterSerial++;hallBarterBoardCache.clear();
+  broadcastScheduleChange();void Repository.markSchedulesChanged();
+  res.json({request:updated,message:decision==="approve"?"تم اعتماد الاستعارة. أصبحت النافذة محجوزة رقمياً للقسم الطالب وتظهر للطرفين.":"تم رفض الطلب دون أي تغيير على الجدول."});
+});
+
+app.post("/api/hall-barter/requests/:id/cancel", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const request=await Repository.getHallBarterRequestById(String(req.params.id||""));
+  if(!request){res.status(404).json({error:"طلب الاستعارة غير موجود"});return;}
+  if(!isScopeAllowed(req,request.requesterCollegeId,request.requesterSectionId)&&!req.user.IsAdminUser){res.status(403).json({error:"إلغاء الطلب متاح للقسم الطالب فقط"});return;}
+  if(!["pending","approved"].includes(request.status)){res.status(409).json({error:"لا يمكن إلغاء هذا الطلب في حالته الحالية"});return;}
+  if(request.status==="approved"){
+    const rows=await Repository.getSchedulesByScope({collegeId:request.requesterCollegeId,sectionId:request.requesterSectionId,termId:request.AdTermId});
+    const inUse=rows.some(row=>
+      String(row.AdRoomCode||"").trim().toLocaleLowerCase()===String(request.roomCode).trim().toLocaleLowerCase()&&
+      String(row.AdRoomHall||"").trim().toLocaleLowerCase()===String(request.roomHall).trim().toLocaleLowerCase()&&
+      rowOccupiesWindow(row,request.day,request.startTime,request.endTime));
+    if(inUse){res.status(409).json({error:"لا يمكن إلغاء الاستعارة لأن جدول قسمك يستخدم القاعة فعلياً في هذه النافذة. انقل الموعد أولاً."});return;}
+  }
+  const updated=await Repository.updateHallBarterRequest(request.id,{status:"cancelled"});
+  hallBarterSerial++;hallBarterBoardCache.clear();
+  broadcastScheduleChange();void Repository.markSchedulesChanged();
+  res.json({request:updated,message:"تم إلغاء طلب الاستعارة وتحرير النافذة."});
 });
 
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });
@@ -3103,7 +3362,7 @@ app.post("/api/intelligence/autopilot", requirePermission(7), requirePowerAdmin,
   res.json(runScheduleAutopilot(base,universe,courses,instructors,constraints,goal,240));
 });
 
-app.post("/api/intelligence/evaluate", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/evaluate", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const errors=await validateSmartRows(rows,collegeId,sectionId);
@@ -3650,7 +3909,15 @@ app.post("/api/intelligence/genesis", requirePermission(7), requirePowerAdmin, a
   const rows=safeDraftRows(candidateRows,collegeId,sectionId,targetTermId);
   const issues=await validateSmartRows(rows,collegeId,sectionId);
   const universe=targetUniverse.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)).concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
-  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length},reviewRequired:issues.length,issues:issues.slice(0,24),guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة فقط؛ الجدول الحقيقي لم يتغير."});
+  const courseById=new Map(courses.map(course=>[Number(course.AdCourseId),course]));
+  const instructorById=new Map(instructors.map(instructor=>[Number(instructor.AdInstructorId),instructor]));
+  const previewRows=draft.rows.map((row,index)=>({
+    index:index+1,id:row.id,courseCode:courseById.get(Number(row.AdCourseId))?.CourseCode||"",courseName:row.AdCourseName||courseById.get(Number(row.AdCourseId))?.CourseName||"مقرر",
+    section:row.SCode||"",instructor:instructorById.get(Number(row.AdInstructorId))?.AdInstructorName||"بدون أستاذ",
+    days:SCHEDULE_DAY_KEYS.map((key,i)=>row[key]?DAY_LABELS[i]:null).filter(Boolean).join(" · "),start:row.fstarttime,end:row.fendtime,
+    building:row.AdRoomCode||"",hall:row.AdRoomHall||"",
+  }));
+  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length},reviewRequired:issues.length,issues:issues.slice(0,24),previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -5631,11 +5898,10 @@ function arCourses(n){
 
   function render(d){
     var groups=groupsOf(d.courses);
-    /* Folded is the default the moment the list stops fitting on a phone. With
-       a dozen courses folding them away only hides them; with sixty it is the
-       difference between a page and a wall. One group is never folded — a
-       grouping of one is not a grouping. */
-    var openAll = groups.length < 2;
+    /* Every course group starts folded, even when all courses happen to fall
+       under one label such as «أخرى». The student asked for an accordion, not
+       a wall of cards; search still opens only the group that contains a hit. */
+    var openAll = false;
     var cohort=d.cohortLabel||"طلبة القسم";
     body.innerHTML=
       '<div class="cohort-badge"><i></i><span>الفئة: <b>'+esc(cohort)+'</b></span></div>'+

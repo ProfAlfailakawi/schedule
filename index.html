@@ -24,9 +24,9 @@
           radial-gradient(circle at 50% 38%,rgba(47,133,116,.16),transparent 34%),
           linear-gradient(145deg,#07100e,#0a0f0e 56%,#11100c);
         color:#edf2ee;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;
-        opacity:1;transition:opacity .26s ease,filter .26s ease;
+        opacity:1;transform:scale(1);transition:opacity .42s ease,filter .42s ease,transform .42s ease;
       }
-      #boot.leaving{opacity:0;filter:blur(4px);pointer-events:none}
+      #boot.leaving{opacity:0;filter:blur(6px);transform:scale(1.012);pointer-events:none}
       #boot-splash{display:grid;place-items:center;text-align:center;gap:11px;animation:boot-rise .52s cubic-bezier(.2,.8,.2,1) both}
       #boot-mark{
         position:relative;width:82px;height:82px;border:1px solid rgba(255,255,255,.14);
@@ -120,12 +120,12 @@
           booted = true;
           clear();
           if (!boot || !boot.parentNode) return;
-          var wait = Math.max(0, 760 - (Date.now() - bootStarted));
+          var wait = Math.max(0, 1900 - (Date.now() - bootStarted));
           setTimeout(function () {
             boot.classList.add("leaving");
             setTimeout(function () {
               if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
-            }, 280);
+            }, 420);
           }, wait);
         }
 

@@ -821,19 +821,53 @@ export default function LivingScheduleLayer({
                     </PrimaryButton>
                   </div>
                   {genesis ? (
-                    <div className="genesis-result">
-                      <CheckCircle2 />
-                      <div>
-                        <strong>{genesis.draft?.name}</strong>
-                        <p>
-                          تم نسخ {genesis.coverage?.copiedRows} موعدًا إلى المسودة الجديدة
-                          · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
-                          {genesis.analysis?.conflicts}
-                          {genesis.reviewRequired ? ` · ${genesis.reviewRequired} ملاحظة للمراجعة` : ""}
-                        </p>
-                        <small>{genesis.guardrail}</small>
+                    <>
+                      <div className="genesis-result">
+                        <CheckCircle2 />
+                        <div>
+                          <strong>{genesis.draft?.name}</strong>
+                          <p>
+                            تم نسخ {genesis.coverage?.copiedRows} موعدًا إلى المسودة الجديدة
+                            · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
+                            {genesis.analysis?.conflicts}
+                            {genesis.reviewRequired ? ` · ${genesis.reviewRequired} ملاحظة للمراجعة` : ""}
+                          </p>
+                          <small>{genesis.guardrail}</small>
+                        </div>
                       </div>
-                    </div>
+                      {Array.isArray(genesis.previewRows) && genesis.previewRows.length ? (
+                        <section className="genesis-preview" aria-label="الجدول المنسوخ داخل المسودة">
+                          <header>
+                            <div>
+                              <small>النسخة التي تم إنشاؤها فعليًا</small>
+                              <strong>الجدول المنسوخ داخل المسودة</strong>
+                            </div>
+                            <b>{genesis.previewRows.length}</b>
+                          </header>
+                          <div className="genesis-preview-scroll">
+                            <table>
+                              <thead>
+                                <tr><th>م</th><th>المقرر</th><th>الشعبة</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الأستاذ</th></tr>
+                              </thead>
+                              <tbody>
+                                {genesis.previewRows.map((row: any) => (
+                                  <tr key={`${row.id}-${row.index}`}>
+                                    <td>{row.index}</td>
+                                    <td><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode || "—"}</small></td>
+                                    <td dir="ltr">{row.section || "—"}</td>
+                                    <td>{row.days || "—"}</td>
+                                    <td dir="ltr">{row.start}–{row.end}</td>
+                                    <td dir="ltr">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
+                                    <td>{row.instructor || "—"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p>المعروض هنا هو محتوى المسودة المحفوظة نفسها؛ لا يتم نشره على الجدول الرسمي إلا من بوابة النشر.</p>
+                        </section>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               ) : null}

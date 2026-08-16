@@ -233,6 +233,42 @@ export interface StudentNeed {
   createdAt: string;
 }
 
+/**
+ * A digitally approved right to use another college's historically-owned hall
+ * for one recurring weekly window in one term.
+ *
+ * The request is intentionally separate from FSchedule: approving access must
+ * never invent a course, instructor or lecture. Once approved it behaves as a
+ * reservation guard around the room, while the borrowing department still
+ * creates its real lecture through the normal schedule editor and therefore
+ * passes every existing conflict check.
+ */
+export interface HallBarterRequest {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  AdTermId: number;
+  roomCode: string;
+  roomHall: string;
+  day: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
+  startTime: string;
+  endTime: string;
+  requesterCollegeId: number;
+  requesterSectionId: number;
+  requesterUserId: number;
+  requesterName: string;
+  ownerCollegeId: number;
+  ownerSectionId: number;
+  /** Percentage of historical terms in which the window was free. */
+  confidence: number;
+  /** Number of historical terms used to compute confidence. */
+  historyTerms: number;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  respondedAt?: string;
+  responderUserId?: number;
+  responderName?: string;
+}
+
 export interface ScheduleComment {
   id: string;
   createdAt: string;

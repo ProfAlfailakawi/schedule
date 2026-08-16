@@ -603,3 +603,19 @@ html[data-schedule-workspace="focus"] .schedule-control{
 .user-card-section{margin-top:2px !important;color:var(--nav-ink) !important;line-height:1.45;font-weight:600}
 .user-card-college{margin-top:2px !important;line-height:1.45;color:var(--nav-muted) !important}
 .user-card-tools{align-self:center}
+
+/* Department identity: one quiet academic name only. The college / gender /
+   “+ N sections” metadata was useful in an admin list, not in a personal rail. */
+.user-card-identity>strong{
+  font-size:12.5px;
+  font-weight:520;
+  line-height:1.5;
+  letter-spacing:-.01em;
+}
+.user-card-section{
+  margin-top:1px !important;
+  font-size:11.5px !important;
+  font-weight:480 !important;
+  line-height:1.55 !important;
+  color:color-mix(in srgb,var(--nav-ink) 82%,var(--nav-muted)) !important;
+}

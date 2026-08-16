@@ -29,6 +29,7 @@ import {
   ScheduleShareLink,
   VisitingRoster,
   StudentNeed,
+  HallBarterRequest,
 } from "../types";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 
@@ -177,6 +178,7 @@ interface DBState {
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
   scheduleShareLinks?: ScheduleShareLink[];
+  hallBarterRequests?: HallBarterRequest[];
 }
 
 interface LegacySnapshot extends DBState {
@@ -206,7 +208,8 @@ let db: DBState = {
   visitingRosters: [],
   scheduleDecisionMemories: [],
   campusMobilityProfiles: [],
-  scheduleShareLinks: []
+  scheduleShareLinks: [],
+  hallBarterRequests: []
 };
 
 let firestoreDb: Firestore | null = null;
@@ -1914,6 +1917,62 @@ export const Repository = {
       return doc.exists ? doc.data() as ScheduleDraft : undefined;
     }
     return (db.scheduleDrafts || []).find(row => row.id === id);
+  },
+
+  // --- Inter-college passive hall barter ------------------------------------
+
+  createHallBarterRequest: async (entry: Omit<HallBarterRequest, "id" | "createdAt" | "updatedAt" | "status">): Promise<HallBarterRequest> => {
+    const now = new Date().toISOString();
+    const row: HallBarterRequest = { ...entry, id: randomUUID(), createdAt: now, updatedAt: now, status: "pending" };
+    if (firestoreDb) {
+      await firestoreDb.collection("hallBarterRequests").doc(row.id).set(row);
+      return row;
+    }
+    if (!Array.isArray(db.hallBarterRequests)) db.hallBarterRequests = [];
+    db.hallBarterRequests.unshift(row);
+    if (db.hallBarterRequests.length > 4000) db.hallBarterRequests.length = 4000;
+    saveDatabase();
+    return row;
+  },
+
+  getHallBarterRequestById: async (id: string): Promise<HallBarterRequest | undefined> => {
+    if (firestoreDb) {
+      const doc = await firestoreDb.collection("hallBarterRequests").doc(id).get();
+      return doc.exists ? doc.data() as HallBarterRequest : undefined;
+    }
+    return (db.hallBarterRequests || []).find(row => row.id === id);
+  },
+
+  getHallBarterRequests: async (termId: number): Promise<HallBarterRequest[]> => {
+    const keep = (row: HallBarterRequest) => !termId || Number(row.AdTermId) === Number(termId);
+    if (firestoreDb) {
+      const query = termId
+        ? firestoreDb.collection("hallBarterRequests").where("AdTermId", "==", termId)
+        : firestoreDb.collection("hallBarterRequests");
+      const snap = await query.limit(1000).get();
+      return snap.docs.map(doc => doc.data() as HallBarterRequest).filter(keep)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    }
+    return (db.hallBarterRequests || []).filter(keep).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  },
+
+  updateHallBarterRequest: async (id: string, fields: Partial<Pick<HallBarterRequest, "status" | "respondedAt" | "responderUserId" | "responderName">>): Promise<HallBarterRequest> => {
+    const updatedAt = new Date().toISOString();
+    if (firestoreDb) {
+      const ref = firestoreDb.collection("hallBarterRequests").doc(id);
+      const doc = await ref.get();
+      if (!doc.exists) throw new Error("طلب استعارة القاعة غير موجود");
+      const current = doc.data() as HallBarterRequest;
+      const next = { ...current, ...fields, updatedAt } as HallBarterRequest;
+      await ref.set(next, { merge: false });
+      return next;
+    }
+    if (!Array.isArray(db.hallBarterRequests)) db.hallBarterRequests = [];
+    const index = db.hallBarterRequests.findIndex(row => row.id === id);
+    if (index < 0) throw new Error("طلب استعارة القاعة غير موجود");
+    db.hallBarterRequests[index] = { ...db.hallBarterRequests[index], ...fields, updatedAt };
+    saveDatabase();
+    return db.hallBarterRequests[index];
   },
 
   // --- Read-only share links -------------------------------------------------

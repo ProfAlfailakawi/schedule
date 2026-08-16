@@ -2844,3 +2844,58 @@
   .versions-card .version-compare{grid-template-columns:1fr !important}
   .versions-card .version-compare>svg{transform:rotate(90deg)}
 }
+
+/* Scenario score sentence: fix every piece to one named lane so RTL can never
+   move the exchange glyph or the outcome cards to the wrong side. */
+.twin-score-row{
+  grid-template-areas:"baseline bridge scenario delta constraints" !important;
+  grid-template-columns:minmax(150px,1fr) 44px minmax(150px,1fr) minmax(112px,.72fr) minmax(112px,.72fr) !important;
+  direction:rtl;
+}
+.twin-score-card.baseline{grid-area:baseline}
+.twin-score-arrow{grid-area:bridge;direction:ltr;align-self:center;justify-self:center}
+.twin-score-card.scenario{grid-area:scenario}
+.twin-delta{grid-area:delta}
+.twin-constraint-score{grid-area:constraints}
+@media screen and (max-width:1180px) and (min-width:901px){
+  .twin-score-row{
+    grid-template-areas:"baseline bridge scenario delta constraints" !important;
+    grid-template-columns:minmax(130px,1fr) 40px minmax(130px,1fr) minmax(100px,.7fr) minmax(100px,.7fr) !important;
+  }
+}
+@media screen and (max-width:900px){
+  .twin-score-row{
+    grid-template-areas:"baseline" "bridge" "scenario" "delta" "constraints" !important;
+    grid-template-columns:1fr !important;
+  }
+  .twin-score-arrow{transform:rotate(90deg)}
+}
+
+/* The wipe is a picture; the rows below are the audit-friendly answer. */
+.version-detail-table{margin-top:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+.version-detail-table>header{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:var(--s4);border-bottom:1px solid var(--line);background:var(--surface-2)}
+.version-detail-table>header>div{display:grid;gap:2px}.version-detail-table>header span{color:var(--muted);font-size:var(--t-xs)}.version-detail-table>header strong{font-size:var(--t-sm)}
+.version-detail-table>header>b{min-width:34px;height:34px;display:grid;place-items:center;border-radius:999px;background:var(--accent-softer);color:var(--accent);font-variant-numeric:tabular-nums}
+.version-detail-scroll{overflow:auto;max-height:420px}
+.version-detail-table table{width:100%;border-collapse:collapse;min-width:820px}
+.version-detail-table th,.version-detail-table td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:start;vertical-align:top;font-size:12px}
+.version-detail-table th{position:sticky;top:0;z-index:1;background:var(--surface);color:var(--muted);font-weight:650}
+.version-detail-table td strong{font-size:12.5px}.version-detail-table td small{display:block;margin-top:4px;color:var(--muted)}
+.version-state{display:inline-flex;align-items:center;min-height:24px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:700}
+.version-state.added{background:color-mix(in srgb,var(--success) 12%,var(--surface));color:var(--success)}
+.version-state.removed{background:color-mix(in srgb,var(--danger) 10%,var(--surface));color:var(--danger)}
+.version-state.changed{background:color-mix(in srgb,var(--warning) 12%,var(--surface));color:var(--warning)}
+.version-detail-table>p{margin:0;padding:22px;text-align:center;color:var(--muted);font-size:var(--t-sm)}
+
+/* Beginning-of-term copy: never stop at a success sentence. Show the exact
+   draft rows that were written, immediately underneath the result. */
+.genesis-preview{margin-top:var(--s4);border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+.genesis-preview>header{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:var(--s4);background:color-mix(in srgb,var(--accent) 5%,var(--surface-2));border-bottom:1px solid var(--line)}
+.genesis-preview>header>div{display:grid;gap:3px}.genesis-preview>header small{color:var(--muted);font-size:var(--t-xs)}.genesis-preview>header strong{font-size:var(--t-sm)}
+.genesis-preview>header>b{min-width:36px;height:36px;display:grid;place-items:center;border-radius:999px;background:var(--accent);color:var(--accent-contrast);font-variant-numeric:tabular-nums}
+.genesis-preview-scroll{max-height:430px;overflow:auto}
+.genesis-preview table{width:100%;border-collapse:collapse;min-width:860px}
+.genesis-preview th,.genesis-preview td{padding:10px 11px;border-bottom:1px solid var(--line);text-align:start;vertical-align:top;font-size:11.5px}
+.genesis-preview th{position:sticky;top:0;z-index:1;background:var(--surface);color:var(--muted);font-weight:650}
+.genesis-preview td strong{display:block;font-size:12px}.genesis-preview td small{display:block;margin-top:3px;color:var(--muted)}
+.genesis-preview>p{margin:0;padding:12px 14px;color:var(--muted);font-size:11px;line-height:1.7;background:var(--surface-2)}

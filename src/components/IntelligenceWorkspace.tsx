@@ -68,6 +68,7 @@ import { sortByName } from "../utils/sorting";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
+  IntelligenceVersionDiffTable,
   intelligenceDayLabels as dayLabels,
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
@@ -573,7 +574,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       }
     }, 650);
     return () => window.clearTimeout(timer);
-  }, [scenario]);
+  }, [scenario, collegeId, sectionId, termId]);
   const heatData =
     heatMode === "university"
       ? overview?.universityHeatmap || []
@@ -3823,6 +3824,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     <b>{timeTravel}%</b>
                     <span>100% · النسخة الثانية</span>
                   </div>
+                  <IntelligenceVersionDiffTable comparison={versionCompare} />
                 </div>
               </>
             ) : null}
