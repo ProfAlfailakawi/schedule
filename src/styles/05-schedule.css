@@ -3476,26 +3476,11 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   .rooms-card:not(.rooms-card-compact) em{display:block;font-size:8.5px;opacity:.68}
 }
 @container (max-width:44px){
-  .rooms-card:not(.rooms-card-compact){padding:4px 2px;justify-content:flex-start;gap:1px}
-  .rooms-card:not(.rooms-card-compact) b{font-size:6.9px;font-weight:550;line-height:1.12;letter-spacing:-.1px;display:block;white-space:nowrap;text-overflow:ellipsis}
-  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:5.8px;font-weight:290;line-height:1.12;letter-spacing:-.1px;white-space:nowrap;text-overflow:ellipsis}
-  .rooms-card:not(.rooms-card-compact) span i{display:inline;font:inherit}
-  .rooms-card:not(.rooms-card-compact) em{display:block;position:static;margin-top:1px;font-size:4.7px;font-weight:320;line-height:1.08;opacity:.62}
+  .rooms-card:not(.rooms-card-compact){padding-inline:2px}
+  .rooms-card:not(.rooms-card-compact) b{font-size:8.5px;letter-spacing:-.4px}
+  .rooms-card:not(.rooms-card-compact) span{font-size:8.5px;letter-spacing:-.45px}
+  .rooms-card:not(.rooms-card-compact) em{display:none}
 }
-
-@container (max-width:72px){
-  .rooms-card.rooms-card-compact{padding:3px 3px 9px;gap:0}
-  .rooms-card.rooms-card-compact b{font-size:6.9px;font-weight:540;line-height:1.1}
-  .rooms-card.rooms-card-compact span{font-size:5.7px;font-weight:285;line-height:1.1}
-  .rooms-card.rooms-card-compact em{display:block;left:3px;bottom:2px;font-size:4.4px;font-weight:300;line-height:1}
-}
-@container (max-width:46px){
-  .rooms-card.rooms-card-compact{padding:3px 2px 8px}
-  .rooms-card.rooms-card-compact b{font-size:6.2px;line-height:1.08}
-  .rooms-card.rooms-card-compact span{font-size:5.15px;line-height:1.08}
-  .rooms-card.rooms-card-compact em{font-size:4px;left:2px;bottom:2px}
-}
-
 .rooms-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
 .rooms-card .week-moved-pill{top:2px;inset-inline-end:2px}
 
@@ -3594,29 +3579,18 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
  */
 @container (max-width:66px){
   .week-when{display:none}
-  .week-event{padding:3px 3px;justify-content:flex-start;gap:1px}
+  /* Last in, first out: the number is the least of the three. */
+  .week-code{display:none !important}
   .week-title{
-    display:block !important;
-    font-size:7.6px;font-weight:560;line-height:1.12;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-    overflow-wrap:normal;word-break:normal;
+    display:-webkit-box !important;-webkit-box-orient:vertical;-webkit-line-clamp:3;
+    font-size:9.5px;font-weight:600;line-height:1.3;
+    overflow:hidden;overflow-wrap:anywhere;word-break:normal;
   }
   .week-who{
-    display:block !important;font-size:6.4px;font-weight:300;line-height:1.15;opacity:.84;
+    display:block !important;font-size:8.5px;font-weight:400;opacity:.9;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
-  .week-code{
-    display:block !important;position:static;order:3;
-    padding:0;background:transparent;
-    font-size:5.3px;line-height:1.1;font-weight:350;opacity:.62;
-    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  }
-}
-@container (max-width:44px){
-  .week-event{padding:3px 2px;gap:1px}
-  .week-title{font-size:6.9px;font-weight:550;line-height:1.12}
-  .week-who{font-size:5.8px;font-weight:290;line-height:1.12}
-  .week-code{display:block !important;font-size:4.7px;font-weight:320;line-height:1.08}
+  .week-event{padding:3px 3px;justify-content:flex-start}
 }
 /* Between sixty and a hundred, the name is still possible but the metadata is
    not: the two human identities stay, everything else yields. */
