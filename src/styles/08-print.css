@@ -11,9 +11,9 @@
 
 .print-portal-root{display:none}
 
-@page{size:A4 portrait;margin:14mm 12mm 18mm}
+@page{size:297mm 210mm;margin:10mm 8mm 14mm}
 /* Named page for the genuinely wide sheets — the week grid and the matrices. */
-@page wide{size:A4 landscape;margin:14mm 10mm 18mm}
+@page wide{size:297mm 210mm;margin:10mm 8mm 14mm}
 /* Kept so existing sheets that already asked for portrait stay correct. */
 @page upright{size:A4 portrait;margin:14mm 12mm 18mm}
 
@@ -77,14 +77,20 @@
   }
   body.has-print-portal{visibility:visible !important}
   body.has-print-portal>#root{display:none !important}
-  body.has-print-portal>#app-print-root{
+  body.has-print-portal>#app-print-root,
+  #app-print-root,
+  .print-portal-root{
     display:block !important;visibility:visible !important;position:static !important;
     width:100% !important;height:auto !important;margin:0 !important;padding:0 !important;
     overflow:visible !important;background:#fff !important;
+    transform:none !important;
   }
-  body.has-print-portal>#app-print-root .print-only{
+  body.has-print-portal>#app-print-root .print-only,
+  #app-print-root .print-only,
+  .print-only{
     display:block !important;visibility:visible !important;position:static !important;
     inset:auto !important;width:100% !important;margin:0 !important;padding:0 !important;
+    transform:none !important;
   }
   body{
     margin:0 !important;color:#111 !important;
@@ -1216,5 +1222,239 @@
   .print-comprehensive-side bdi{
     direction:ltr !important;unicode-bidi:isolate !important;white-space:nowrap !important;
     font-variant-numeric:tabular-nums !important;
+  }
+}
+
+@media print{
+  /* Comprehensive report rebuilt as a physical landscape grid rather than an
+     HTML table. This avoids Safari's table-column compression and makes the
+     three course metrics impossible to drift into the time column. */
+  .print-comprehensive-book{
+    page:wide !important;
+    width:277mm !important;
+    max-width:277mm !important;
+  }
+  .print-comprehensive-page{
+    page:wide !important;
+    box-sizing:border-box !important;
+    width:277mm !important;
+    min-width:277mm !important;
+    max-width:277mm !important;
+    height:186mm !important;
+    min-height:186mm !important;
+    max-height:186mm !important;
+    margin:0 !important;
+    overflow:hidden !important;
+  }
+  .print-comprehensive-grid{
+    width:100% !important;
+    min-width:0 !important;
+    border:1pt solid #1f6b5c !important;
+    background:#fff !important;
+  }
+  .print-comprehensive-grid-row{
+    display:grid !important;
+    grid-template-columns:
+      9mm 19mm 12mm minmax(42mm,1fr)
+      10mm 10mm 12mm 25mm 16mm 12mm 15mm 35mm 27mm !important;
+    width:100% !important;
+    min-width:0 !important;
+    direction:rtl !important;
+  }
+  .print-comprehensive-grid-row>[role="cell"],
+  .print-comprehensive-grid-row>[role="columnheader"]{
+    box-sizing:border-box !important;
+    min-width:0 !important;
+    display:flex !important;
+    align-items:center !important;
+    justify-content:center !important;
+    padding:1.15mm .72mm !important;
+    border-inline-start:.4pt solid #cbd4d0 !important;
+    border-block-end:.4pt solid #cbd4d0 !important;
+    color:#111 !important;
+    font-size:6.15pt !important;
+    line-height:1.18 !important;
+    text-align:center !important;
+    overflow:hidden !important;
+  }
+  .print-comprehensive-grid-row>[role="cell"]:last-child,
+  .print-comprehensive-grid-row>[role="columnheader"]:last-child{border-inline-start:0 !important}
+  .print-comprehensive-grid-head>[role="columnheader"]{
+    min-height:9.5mm !important;
+    background:#eef4f1 !important;
+    color:#153f37 !important;
+    font-size:5.8pt !important;
+    font-weight:800 !important;
+    white-space:normal !important;
+    overflow:visible !important;
+  }
+  .print-comprehensive-grid-body .print-comprehensive-grid-row{
+    min-height:5.8mm !important;
+  }
+  .print-comprehensive-grid-body .print-comprehensive-grid-row:nth-child(even)>[role="cell"]{
+    background:#f8faf9 !important;
+  }
+  .print-comprehensive-grid .print-course-name,
+  .print-comprehensive-grid .print-instructor-name{
+    justify-content:flex-start !important;
+    text-align:right !important;
+    white-space:normal !important;
+    overflow-wrap:normal !important;
+    word-break:normal !important;
+  }
+  .print-comprehensive-grid .print-course-id,
+  .print-comprehensive-grid .print-course-units,
+  .print-comprehensive-grid .print-course-hours,
+  .print-comprehensive-grid .print-course-capacity,
+  .print-comprehensive-grid .print-course-time,
+  .print-comprehensive-grid .print-civil{
+    direction:ltr !important;
+    unicode-bidi:isolate !important;
+    white-space:nowrap !important;
+    font-family:"Plex Mono",ui-monospace,monospace !important;
+    font-variant-numeric:tabular-nums !important;
+  }
+  /* Explicit semantic separation: units/hours/capacity are numeric course
+     facts. Only the dedicated time cell may render a clock range. */
+  .print-comprehensive-grid .print-course-units,
+  .print-comprehensive-grid .print-course-hours,
+  .print-comprehensive-grid .print-course-capacity{
+    font-weight:750 !important;
+  }
+  .print-comprehensive-grid .print-course-time{
+    font-size:5.9pt !important;
+  }
+  .print-comprehensive-page-footer{
+    margin-top:auto !important;
+    padding-top:2mm !important;
+  }
+}
+
+
+/* ========================================================================== 
+   FINAL — comprehensive sheet pagination + Safari print geometry
+   The comprehensive design is intentionally preserved. The previous rules
+   gave every logical page a hard 178/186mm height and hid overflow; when a
+   browser kept a portrait page box this produced the huge white lower half.
+   A logical page now owns only its content. @page owns the physical paper.
+   ========================================================================== */
+@media print{
+  html[data-print-kind="comprehensive"],
+  html[data-print-kind="comprehensive"] body,
+  html[data-print-kind="comprehensive"] #app-print-root,
+  html[data-print-kind="comprehensive"] .print-only{
+    width:auto !important;
+    min-width:0 !important;
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    overflow:visible !important;
+  }
+
+  .print-comprehensive-book,
+  .print-comprehensive-pages,
+  .print-comprehensive-page{
+    page:wide !important;
+    box-sizing:border-box !important;
+    width:100% !important;
+    min-width:0 !important;
+    max-width:none !important;
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    overflow:visible !important;
+    transform:none !important;
+  }
+
+  .print-comprehensive-page{
+    display:block !important;
+    margin:0 !important;
+    break-inside:avoid-page !important;
+    page-break-inside:avoid !important;
+  }
+  .print-comprehensive-page + .print-comprehensive-page{
+    break-before:page !important;
+    page-break-before:always !important;
+  }
+
+  /* Footer follows the actual last row; it no longer reserves the bottom of a
+     fake fixed-height sheet. With 19 rows per logical page this uses the real
+     A4 landscape content box instead of leaving a portrait-sized void. */
+  .print-comprehensive-page-footer{
+    margin-top:3mm !important;
+    flex:none !important;
+  }
+
+  /* Explicit physical landscape dimensions are more deterministic than the
+     A4 keyword in WebKit print paths, while remaining exactly A4 landscape. */
+  .print-comprehensive-book{
+    inline-size:100% !important;
+  }
+}
+
+/* ========================================================================== 
+   FINAL — comprehensive print closes the last remaining paper artefacts.
+   Zero @page margin suppresses browser-generated URL/date/page furniture in
+   engines that honour CSS page geometry. The document carries its own safe
+   inset, so the design keeps the same visual margins without browser chrome.
+   ========================================================================== */
+@page comprehensive{
+  size:297mm 210mm;
+  margin:0;
+}
+
+@media print{
+  .print-comprehensive-book,
+  .print-comprehensive-pages,
+  .print-comprehensive-page{
+    page:comprehensive !important;
+  }
+
+  .print-comprehensive-page{
+    box-sizing:border-box !important;
+    width:297mm !important;
+    max-width:297mm !important;
+    min-width:297mm !important;
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    padding:10mm 10mm 9mm !important;
+    margin:0 !important;
+    overflow:visible !important;
+    break-inside:avoid-page !important;
+    page-break-inside:avoid !important;
+  }
+
+  .print-comprehensive-page + .print-comprehensive-page{
+    break-before:page !important;
+    page-break-before:always !important;
+  }
+
+  /* With the college/department caption removed, the footer is deliberately
+     shallow. It fits on the same physical sheet as sixteen data rows instead
+     of being pushed into a nearly empty page. */
+  .print-comprehensive-page-footer{
+    grid-template-columns:minmax(0,1.55fr) 22mm minmax(0,.82fr) !important;
+    gap:2.5mm !important;
+    margin-top:2.4mm !important;
+    padding-top:1.8mm !important;
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+  }
+  .print-comprehensive-page-meta{
+    display:grid !important;
+    place-items:center !important;
+    gap:0 !important;
+  }
+  .print-comprehensive-page-context{display:none !important}
+  .print-comprehensive-page .print-comprehensive-signatures>div{
+    min-height:11.5mm !important;
+    gap:3.8mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-legend{
+    gap:.8mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-legend span{
+    padding:.65mm 1.1mm !important;
   }
 }

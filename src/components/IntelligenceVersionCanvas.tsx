@@ -14,28 +14,46 @@ export const intelligenceMinutes = (value: string) => {
   return (hour || 0) * 60 + (minute || 0);
 };
 
-export function IntelligenceVersionCanvas({ rows, label }: { rows: FSchedule[]; label: string }) {
+export function IntelligenceVersionCanvas({
+  rows,
+  label,
+  isAfter,
+}: {
+  rows: FSchedule[];
+  label: string;
+  isAfter?: boolean;
+}) {
   return (
-    <div className="time-travel-canvas">
+    <div className={`time-travel-canvas ${isAfter ? "canvas-after" : "canvas-before"}`}>
       <div className="time-travel-label">{label}</div>
       <div className="time-travel-days">
-        {Object.entries(intelligenceDayLabels).map(([key, day]) => (
-          <section key={key}>
-            <header>{day}</header>
-            <div className="time-travel-track">
-              {rows
-                .filter((row) => Boolean((row as any)[key]))
-                .sort((a, b) => intelligenceMinutes(a.fstarttime) - intelligenceMinutes(b.fstarttime))
-                .map((row) => (
-                  <article key={`${key}-${row.id}`}>
-                    <time dir="ltr">{row.fstarttime}</time>
-                    <strong>{row.AdCourseName || "مقرر"}</strong>
-                    <small>{row.SCode} · {row.AdRoomCode}/{row.AdRoomHall}</small>
-                  </article>
-                ))}
-            </div>
-          </section>
-        ))}
+        {Object.entries(intelligenceDayLabels).map(([key, day]) => {
+          const dayRows = rows
+            .filter((row) => Boolean((row as any)[key]))
+            .sort((a, b) => intelligenceMinutes(a.fstarttime) - intelligenceMinutes(b.fstarttime));
+          return (
+            <section key={key}>
+              <header>
+                <span>{day}</span>
+                <small>{dayRows.length}</small>
+              </header>
+              <div className="time-travel-track">
+                {dayRows.length ? (
+                  dayRows.map((row) => (
+                    <article key={`${key}-${row.id}`} className="time-travel-card">
+                      <time dir="ltr">{row.fstarttime}–{row.fendtime || ""}</time>
+                      <strong>{row.AdCourseName || "مقرر"}</strong>
+                      <small>{row.SCode} · {row.AdRoomCode ? `قاعة ${row.AdRoomCode}/${row.AdRoomHall}` : "بلا قاعة"}</small>
+                      {(row as any).AdInstructorName ? <span>{(row as any).AdInstructorName}</span> : null}
+                    </article>
+                  ))
+                ) : (
+                  <div className="time-travel-empty-day">لا توجد محاضرات</div>
+                )}
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );

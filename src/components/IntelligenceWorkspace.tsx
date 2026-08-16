@@ -1114,10 +1114,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   };
 
   const scopedCourses = useMemo(
-    () =>
-      courses.filter(
-        (c) => c.AdCollegeId === collegeId && c.AdSectionId === sectionId,
-      ),
+    () => sortByName(
+      courses.filter((c) => c.AdCollegeId === collegeId && c.AdSectionId === sectionId),
+      (c: any) => c.CourseName,
+    ),
     [courses, collegeId, sectionId],
   );
   const reloadConstraints = async () =>
@@ -1393,19 +1393,34 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const activeInsight = insightScenes.find((item) => item.value === insightScene) || null;
   const activeInsightKey = activeInsight?.value || "";
-  const versionCanvasHeight = useMemo(() => {
-    if (!versionCompare) return 420;
-    const fromRows: FSchedule[] = Array.isArray(versionCompare?.from?.rows) ? versionCompare.from.rows : [];
-    const toRows: FSchedule[] = Array.isArray(versionCompare?.to?.rows) ? versionCompare.to.rows : [];
-    const dayCount = (items: FSchedule[], day: string) => items.filter(row => Boolean((row as any)[day])).length;
-    const maxRows = Math.max(
-      1,
-      ...Object.keys(dayLabels).map(day => Math.max(dayCount(fromRows, day), dayCount(toRows, day))),
-    );
-    // The two versions are overlaid, not stacked. Counting both sets together
-    // doubled the required height and produced a huge blank tail on phones.
-    return Math.max(300, 72 + maxRows * 56);
-  }, [versionCompare]);
+
+  const handleDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const stage = e.currentTarget.parentElement;
+    if (!stage) return;
+
+    const updatePosition = (clientX: number) => {
+      const rect = stage.getBoundingClientRect();
+      if (rect.width <= 0) return;
+      const offset = clientX - rect.left;
+      const pct = Math.max(0, Math.min(100, Math.round((offset / rect.width) * 100)));
+      setTimeTravel(pct);
+    };
+
+    const handlePointerMove = (ev: PointerEvent) => {
+      updatePosition(ev.clientX);
+    };
+
+    const handlePointerUp = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  };
   const moveInsightFocus = (
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
@@ -3754,49 +3769,86 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span className="surface-kicker">
                         مقارنة النسخ الزمنية
                       </span>
-                      <h3>اسحب الخط بين النسختين</h3>
+                      <h3>مقارنة بصرية بين النسختين</h3>
                     </div>
                     <div className="time-travel-meta">
-                      <span>{versionCompare.from.label}</span>
+                      <span>{versionCompare.from.label || "نسخة البداية"}</span>
                       <ArrowLeftRight />
-                      <span>{versionCompare.to.label}</span>
+                      <span>{versionCompare.to.label || "نسخة المقارنة"}</span>
                     </div>
                   </div>
-                  <div className="time-travel-stage" style={{ height: `${versionCanvasHeight}px` }}>
-                    <VersionCanvas
-                      rows={versionCompare.from.rows || []}
-                      label="قبل"
-                    />
-                    <div
-                      className="time-travel-after"
-                      style={{ clipPath: `inset(0 ${100 - timeTravel}% 0 0)` }}
-                    >
-                      <VersionCanvas
-                        rows={versionCompare.to.rows || []}
-                        label="بعد"
+
+                  <div className="time-travel-control-bar">
+                    <div className="time-travel-control-presets">
+                      <button
+                        type="button"
+                        className={`time-preset-btn ${timeTravel === 0 ? "active" : ""}`}
+                        onClick={() => setTimeTravel(0)}
+                      >
+                        النسخة الأولى (0%)
+                      </button>
+                      <button
+                        type="button"
+                        className={`time-preset-btn ${timeTravel === 50 ? "active" : ""}`}
+                        onClick={() => setTimeTravel(50)}
+                      >
+                        مقارنة بالمنتصف (50%)
+                      </button>
+                      <button
+                        type="button"
+                        className={`time-preset-btn ${timeTravel === 100 ? "active" : ""}`}
+                        onClick={() => setTimeTravel(100)}
+                      >
+                        النسخة الثانية (100%)
+                      </button>
+                    </div>
+
+                    <div className="time-travel-slider-wrapper">
+                      <input
+                        className="time-travel-range-input"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={timeTravel}
+                        onChange={(e) => setTimeTravel(Number(e.target.value))}
+                        aria-label="مقارنة النسختين"
                       />
+                      <span className="time-travel-slider-badge">{timeTravel}%</span>
                     </div>
-                    <div
-                      className="time-travel-divider"
-                      style={{ left: `${timeTravel}%` }}
-                    >
-                      <i><ArrowLeftRight aria-hidden="true" /></i>
+                  </div>
+
+                  <div className="time-travel-scroll-container">
+                    <div className="time-travel-stage">
+                      <div className="time-travel-before">
+                        <VersionCanvas
+                          rows={versionCompare.from.rows || []}
+                          label={versionCompare.from.label ? `النسخة السابقة (${versionCompare.from.label})` : "قبل"}
+                          isAfter={false}
+                        />
+                      </div>
+                      <div
+                        className="time-travel-after"
+                        style={{ clipPath: `inset(0 ${100 - timeTravel}% 0 0)` }}
+                      >
+                        <VersionCanvas
+                          rows={versionCompare.to.rows || []}
+                          label={versionCompare.to.label ? `النسخة المحدثة (${versionCompare.to.label})` : "بعد"}
+                          isAfter={true}
+                        />
+                      </div>
+                      <div
+                        className="time-travel-divider"
+                        style={{ left: `${timeTravel}%` }}
+                        onPointerDown={handleDividerPointerDown}
+                        title="اسحب لمقارنة النسختين"
+                      >
+                        <span className="time-travel-handle">
+                          <ArrowLeftRight aria-hidden="true" />
+                        </span>
+                      </div>
                     </div>
-                    <input
-                      className="time-travel-slider"
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={timeTravel}
-                      onChange={(e) => setTimeTravel(Number(e.target.value))}
-                      aria-label="مقارنة النسختين"
-                    />
                   </div>
-                  <div className="time-travel-caption">
-                    <span>0% · النسخة الأولى</span>
-                    <b>{timeTravel}%</b>
-                    <span>100% · النسخة الثانية</span>
-                  </div>
+
                   <IntelligenceVersionDiffTable comparison={versionCompare} />
                 </div>
               </>

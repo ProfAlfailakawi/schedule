@@ -6,6 +6,7 @@ import {
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_START,
 } from "../utils/scheduleTime";
+import { sortByName } from "../utils/sorting";
 
 /**
  * The appointment written where it was drawn.
@@ -215,6 +216,8 @@ export default function QuickCreatePopover({
   const digitsOk = /^\d*$/.test(draft.scode);
   const clash = ready && digitsOk ? conflictOf(draft, seed.day) : null;
 
+  const orderedCourses = useMemo(() => sortByName(courses, (course: AdCourse) => course.CourseName), [courses]);
+
   return (
     <div
       className="quick-create"
@@ -276,7 +279,7 @@ export default function QuickCreatePopover({
             onChange={(e) => patch({ courseId: Number(e.target.value) || 0 })}
           >
             <option value="">اختر المقرر…</option>
-            {courses.map((c) => (
+            {orderedCourses.map((c) => (
               <option key={c.AdCourseId} value={c.AdCourseId}>
                 {c.CourseCode} · {c.CourseName}
               </option>

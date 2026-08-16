@@ -1045,7 +1045,7 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
     meta: `${courseById.get(row.AdCourseId)?.CourseCode || ""} / شعبة ${row.SCode}`
   })) : [];
   const instructorResults = (canInstructor || canSchedule || canAdvanced) ? instructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || matches(item.AdInstructorCivil))).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
-  const courseResults = (canSchedule || canAdvanced) ? courses.filter(item => visibleCourseIds.has(item.AdCourseId) && (matches(item.CourseName) || matches(item.CourseCode))).slice(0, 8).map(item => ({ id: item.AdCourseId, kind: "course", title: item.CourseName, subtitle: item.CourseCode, meta: sectionById.get(item.AdSectionId)?.AdSectionName || "" })) : [];
+  const courseResults = (canSchedule || canAdvanced) ? sortCoursesByName(courses.filter(item => visibleCourseIds.has(item.AdCourseId) && (matches(item.CourseName) || matches(item.CourseCode)))).slice(0, 8).map(item => ({ id: item.AdCourseId, kind: "course", title: item.CourseName, subtitle: item.CourseCode, meta: sectionById.get(item.AdSectionId)?.AdSectionName || "" })) : [];
   const roomMap = new Map<string, {building:string;hall:string;count:number}>();
   schedules.forEach(row => { const key=`${row.AdRoomCode}|${row.AdRoomHall}`; const prev=roomMap.get(key); roomMap.set(key,{building:row.AdRoomCode,hall:row.AdRoomHall,count:(prev?.count||0)+1}); });
   const roomResults = (canRoom || canSchedule || canAdvanced) ? Array.from(roomMap.values()).filter(item => matches(item.building) || matches(item.hall)).slice(0, 8).map((item,index) => ({ id: `${item.building}|${item.hall}`, kind: "room", title: `مبنى ${item.building} — قاعة ${item.hall}`, subtitle: `${item.count} موعد في الجداول`, meta: "قاعة", building:item.building, hall:item.hall })) : [];
@@ -1347,6 +1347,10 @@ app.delete("/api/instructors/:id", requirePermission(3), async (req: Request, re
 
 // --- COURSES API ---
 
+const courseNameCollator = new Intl.Collator("ar", { numeric: true, sensitivity: "base", ignorePunctuation: true });
+const sortCoursesByName = <T extends { CourseName?: unknown }>(rows: T[]): T[] =>
+  [...rows].sort((a, b) => courseNameCollator.compare(String(a.CourseName || "").trim(), String(b.CourseName || "").trim()));
+
 /**
  * The course catalogue.
  *
@@ -1360,7 +1364,7 @@ app.get("/api/courses", requireAnyPermission([6, 7, 8, 9, 10, 14, 16, 17]), asyn
   const sectionId = req.query.sectionId ? parseInt(req.query.sectionId as string) : undefined;
   let courses = sectionId ? await Repository.getCoursesBySection(sectionId) : await Repository.getCourses();
   courses = filterByScope(req, courses);
-  res.json(courses);
+  res.json(sortCoursesByName(courses));
 });
 
 app.post("/api/courses", requirePermission(6), async (req: AuthenticatedRequest, res: Response) => {
@@ -4281,6 +4285,13 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
   // These two read through a relation, so they wait for the maps above.
   if (courseCode) schedules = schedules.filter(s => (courseById.get(s.AdCourseId)?.CourseCode || "") === String(courseCode).trim());
   if (civil) schedules = schedules.filter(s => String(instructorById.get(s.AdInstructorId)?.AdInstructorCivil || "").includes(String(civil).trim()));
+
+  schedules.sort((a, b) =>
+    courseNameCollator.compare(
+      String(courseById.get(a.AdCourseId)?.CourseName || a.AdCourseName || ""),
+      String(courseById.get(b.AdCourseId)?.CourseName || b.AdCourseName || ""),
+    ) || String(a.SCode || "").localeCompare(String(b.SCode || ""), "ar", { numeric: true }) || String(a.fstarttime || "").localeCompare(String(b.fstarttime || ""))
+  );
 
   const reportData = schedules.map(s => {
     const coll = collegeById.get(s.AdCollegeId);

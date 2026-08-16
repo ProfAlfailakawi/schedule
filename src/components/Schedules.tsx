@@ -1251,7 +1251,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       [sections, form.AdCollegeId],
     ),
     formCourses = useMemo(
-      () => courses.filter((c) => c.AdSectionId === form.AdSectionId),
+      () => sortByName(courses.filter((c) => c.AdSectionId === form.AdSectionId), (c: AdCourse) => c.CourseName),
       [courses, form.AdSectionId],
     ),
     courseNames = useMemo(
@@ -1592,7 +1592,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      behind. Deferring the query keeps typing at the keyboard's speed instead of
      the layout's — React drops the stale in-between renders entirely. */
   const deferredSearch = useDeferredValue(quickSearch);
-  const filteredRows=useMemo(()=>{const q=deferredSearch.trim().toLowerCase();if(!q)return rows;return rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)})},[rows,deferredSearch,courseById,instructorById]);
+  const filteredRows=useMemo(()=>{
+    const q=deferredSearch.trim().toLowerCase();
+    const visible=q?rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)}):[...rows];
+    return visible.sort((a,b)=>
+      byArabic(a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName||"",b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName||"")||
+      byArabic(a.SCode,b.SCode)||mins(a.fstarttime)-mins(b.fstarttime)||Number(a.id)-Number(b.id)
+    );
+  },[rows,deferredSearch,courseById,instructorById]);
   /**
    * The inspector's reading order.
    *

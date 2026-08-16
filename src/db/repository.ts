@@ -32,6 +32,7 @@ import {
   HallBarterRequest,
 } from "../types";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
+import { sortByName } from "../utils/sorting";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -1303,12 +1304,12 @@ export const Repository = {
         firestoreDb.collection("courses").orderBy("AdCourseId", "asc").get(),
         firestoreDb.collection("sections").get()
       ]);
-      return hydrateCourses(
+      return sortByName(hydrateCourses(
         courseSnap.docs.map(doc => doc.data() as AdCourse),
         sectionSnap.docs.map(doc => doc.data() as AdSection)
-      );
+      ), course => course.CourseName);
     }
-    return hydrateCourses(db.courses, db.sections);
+    return sortByName(hydrateCourses(db.courses, db.sections), course => course.CourseName);
   }),
 
   getCourseById: async (id: number): Promise<AdCourse | undefined> => {
@@ -1329,12 +1330,12 @@ export const Repository = {
         firestoreDb.collection("courses").where("AdSectionId", "==", sectionId).get(),
         firestoreDb.collection("sections").doc(`section_${sectionId}`).get()
       ]);
-      return hydrateCourses(
+      return sortByName(hydrateCourses(
         snap.docs.map(doc => doc.data() as AdCourse),
         sectionDoc.exists ? [sectionDoc.data() as AdSection] : []
-      );
+      ), course => course.CourseName);
     }
-    return hydrateCourses(db.courses.filter(c => c.AdSectionId === sectionId), db.sections);
+    return sortByName(hydrateCourses(db.courses.filter(c => c.AdSectionId === sectionId), db.sections), course => course.CourseName);
   }),
 
   createCourse: async (

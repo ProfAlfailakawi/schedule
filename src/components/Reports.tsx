@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, Clock3, LayoutList,
@@ -87,8 +87,8 @@ const GRID_END = SCHEDULE_DAY_END;
 const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
-const COMPREHENSIVE_FIRST_PAGE_ROWS = 15;
-const COMPREHENSIVE_NEXT_PAGE_ROWS = 17;
+const COMPREHENSIVE_FIRST_PAGE_ROWS = 16;
+const COMPREHENSIVE_NEXT_PAGE_ROWS = 16;
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const duration = (row: FSchedule) => Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
 /**
@@ -172,7 +172,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [all, setAll] = useState<FSchedule[]>([]);
   const [filters, setFilters] = useState<Filters>(() => ({ ...fresh(), ...(saved.filters || {}) }));
   const [moreOpen, setMoreOpen] = useState(false);
-  const [printKind, setPrintKind] = useState<PrintKind>(null);
+  const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [visibleLimit, setVisibleLimit] = useState(150);
@@ -189,7 +189,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
 
-  useEffect(() => { setLens(LENS_FOR_MODE[mode] || "list"); }, [mode]);
+  useEffect(() => {
+    const nextLens = LENS_FOR_MODE[mode] || "list";
+    setLens(nextLens);
+    setPrintKind(nextLens);
+  }, [mode]);
   useEffect(() => {
     // Persist the whole filter set, not just scope — every active chip
     // (instructor, course, civil id, time window, days) survives a reload and a
@@ -249,6 +253,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
    */
   const [pending, setPending] = useState(false);
   const [liveNudge, setLiveNudge] = useState(false);
+  const reportEventsRef = useRef<EventSource | null>(null);
   /**
    * ميزان الأقسام — every department of the term on one line each.
    *
@@ -313,13 +318,26 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     return () => controller.abort();
   }, [lens, isPowerAdmin, filters.termId, liveNudge]);
 
-  useEffect(() => {
-    if (typeof EventSource === "undefined") return;
+  const closeReportEvents = useCallback(() => {
+    const source = reportEventsRef.current;
+    if (!source) return;
+    source.close();
+    reportEventsRef.current = null;
+  }, []);
+  const openReportEvents = useCallback(() => {
+    if (typeof EventSource === "undefined" || reportEventsRef.current) return;
     const source = new EventSource("/api/schedules/events");
     const onChange = () => setLiveNudge(true);
     source.addEventListener("schedules", onChange);
-    return () => { source.removeEventListener("schedules", onChange); source.close(); };
+    source.addEventListener("error", () => {
+      if (source.readyState === EventSource.CLOSED && reportEventsRef.current === source) reportEventsRef.current = null;
+    });
+    reportEventsRef.current = source;
   }, []);
+  useEffect(() => {
+    openReportEvents();
+    return closeReportEvents;
+  }, [openReportEvents, closeReportEvents]);
 
   useEffect(() => {
     if (!sections.length || isPowerAdmin) return;
@@ -364,7 +382,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     if (filters.courseCode.trim()) rows = rows.filter(s => (courseById.get(s.AdCourseId)?.CourseCode || "") === filters.courseCode.trim());
     const chosenDays = DAYS.filter(day => filters[day.key]);
     if (chosenDays.length) rows = rows.filter(s => chosenDays.some(day => (s as any)[day.flag]));
-    return rows.sort((a, b) => String(a.fstarttime).localeCompare(String(b.fstarttime)) || byArabic(a.AdCourseName, b.AdCourseName));
+    return rows.sort((a, b) =>
+      byArabic(courseById.get(a.AdCourseId)?.CourseName || a.AdCourseName, courseById.get(b.AdCourseId)?.CourseName || b.AdCourseName) ||
+      byArabic(a.SCode, b.SCode) ||
+      String(a.fstarttime).localeCompare(String(b.fstarttime)) ||
+      Number(a.id) - Number(b.id)
+    );
   }, [all, filters, instructorById, courseById]);
 
   const set = (key: keyof Filters, value: any) => setFilters(prev => ({ ...prev, [key]: value }));
@@ -638,35 +661,50 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     DAYS.forEach(day => { if (filters[day.key]) params.set(day.key, "true"); });
     return params.toString();
   };
-  const print = (kind: Exclude<PrintKind, null>) => {
-    /* Safari/iOS only opens the print sheet reliably while the call is still
-       inside the original tap/click. Rendering the portal through two animation
-       frames loses that user gesture. Flush the sheet synchronously, force one
-       layout read, then print immediately. Named @page rules are also unreliable
-       in Safari, so inject the active orientation as the unnamed @page for this
-       print only. */
-    const wide = ["list", "week", "instructor", "room", "matrix", "balance", "comprehensive"].includes(kind);
-    document.getElementById("schedule-print-page-size")?.remove();
-    const pageStyle = document.createElement("style");
-    pageStyle.id = "schedule-print-page-size";
-    pageStyle.textContent = wide
-      ? "@page{size:A4 landscape;margin:12mm 10mm 18mm}@page wide{size:A4 landscape;margin:12mm 10mm 18mm}"
-      : "@page{size:A4 portrait;margin:14mm 12mm 18mm}@page upright{size:A4 portrait;margin:14mm 12mm 18mm}";
-    document.head.appendChild(pageStyle);
-    flushSync(() => setPrintKind(kind));
-    void document.body.offsetHeight;
-    window.print();
-  };
-  const printCurrent = () => print(lens);
+  const printReport = (kind: Exclude<PrintKind, null> = lens) => {
+    /* Safari/WebKit has a long-standing failure mode where an active EventSource
+       can make window.print() silently do nothing. Pause the live schedule stream
+       synchronously inside the same tap, commit the requested sheet synchronously,
+       then invoke the browser print command without RAF/timers/await. */
+    closeReportEvents();
+    if (printKind !== kind) {
+      flushSync(() => {
+        setPrintKind(kind);
+      });
+    }
 
-  useEffect(() => {
-    const clearPrintedSheet = () => {
-      setPrintKind(null);
-      document.getElementById("schedule-print-page-size")?.remove();
+    const root = document.documentElement;
+    root.dataset.printKind = kind;
+    let leftForPrint = false;
+    let resumed = false;
+    const resume = () => {
+      if (resumed) return;
+      resumed = true;
+      window.removeEventListener("afterprint", resume);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      delete root.dataset.printKind;
+      openReportEvents();
     };
-    window.addEventListener("afterprint", clearPrintedSheet);
-    return () => window.removeEventListener("afterprint", clearPrintedSheet);
-  }, []);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") leftForPrint = true;
+      else if (leftForPrint) resume();
+    };
+    window.addEventListener("afterprint", resume, { once: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    const ua = navigator.userAgent || "";
+    const isWebKitSafari = /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(ua);
+    let invoked = false;
+    if (isWebKitSafari && typeof document.execCommand === "function") {
+      try { invoked = document.execCommand("print"); } catch { invoked = false; }
+    }
+    if (!invoked) window.print();
+
+    /* If a browser no-ops the print command, don't leave live updates paused.
+       This runs only after the direct print invocation and therefore cannot
+       consume Safari's user activation. */
+    window.setTimeout(() => { if (!leftForPrint) resume(); }, 2500);
+  };
 
   const groups = lens === "instructor" ? byInstructor : [];
   const maxLoad = Math.max(1, ...byInstructor.map(group => group.load));
@@ -698,6 +736,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     }
     runVisualTransition(() => {
       setLens(next);
+      setPrintKind(next);
       setOpenGroup(null);
       setRoomPick(null);
     });
@@ -705,7 +744,10 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   useEffect(() => {
     const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
-    if (phone && (lens === "week" || lens === "room" || lens === "matrix")) setLens("list");
+    if (phone && (lens === "week" || lens === "room" || lens === "matrix")) {
+      setLens("list");
+      setPrintKind("list");
+    }
   }, []);
 
   const moveLensFocus = (event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
@@ -930,13 +972,13 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <button
               type="button"
               className="query-print-icon"
-              onClick={printCurrent}
+              onClick={() => printReport(lens)}
               aria-label="طباعة هذا العرض"
               title="طباعة هذا العرض"
             >
               <Printer aria-hidden="true" />
             </button>
-            <SecondaryButton type="button" onClick={() => print("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
+            <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
               <Table2 aria-hidden="true" />التقرير الشامل
             </SecondaryButton>
           </div>
@@ -1346,26 +1388,24 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         )}
       </section>
 
-      {printKind ? (
-        <PrintPortal>
-          <PrintSheet
-            kind={printKind}
-            rows={results}
-            fairness={fairness}
-            matrix={matrix}
-            roomLoad={roomLoad}
-            roomDay={roomDay}
-            balance={balance}
-            scopeLine={scopeLine}
-            collegeName={collegeName}
-            termName={termName}
-            sectionName={sectionName}
-            sectionCode={sectionCode}
-            courseById={courseById}
-            instructorById={instructorById}
-          />
-        </PrintPortal>
-      ) : null}
+      <PrintPortal>
+        <PrintSheet
+          kind={printKind}
+          rows={results}
+          fairness={fairness}
+          matrix={matrix}
+          roomLoad={roomLoad}
+          roomDay={roomDay}
+          balance={balance}
+          scopeLine={scopeLine}
+          collegeName={collegeName}
+          termName={termName}
+          sectionName={sectionName}
+          sectionCode={sectionCode}
+          courseById={courseById}
+          instructorById={instructorById}
+        />
+      </PrintPortal>
     </div>
   );
 }
@@ -1568,7 +1608,13 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).join(",") || "—";
 
   if (kind === "comprehensive") {
-    const pages = paginateComprehensiveRows(rows);
+    const comprehensiveRows = [...rows].sort((a, b) =>
+      byArabic(courseOf(a)?.CourseName || a.AdCourseName, courseOf(b)?.CourseName || b.AdCourseName) ||
+      byArabic(a.SCode, b.SCode) ||
+      String(a.fstarttime).localeCompare(String(b.fstarttime)) ||
+      Number(a.id) - Number(b.id)
+    );
+    const pages = paginateComprehensiveRows(comprehensiveRows);
     const legendItems = DAYS.map((day, index) => `${index + 1}=${day.label}`);
 
     return (
@@ -1594,42 +1640,25 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                   </div>
                 </header>
 
-                <table className="print-comprehensive-table print-comprehensive-modern-table">
-                  <colgroup>
-                    <col style={{ width: "10mm" }} />
-                    <col style={{ width: "19mm" }} />
-                    <col style={{ width: "12mm" }} />
-                    <col style={{ width: "49mm" }} />
-                    <col style={{ width: "9mm" }} />
-                    <col style={{ width: "9mm" }} />
-                    <col style={{ width: "11mm" }} />
-                    <col style={{ width: "25mm" }} />
-                    <col style={{ width: "18mm" }} />
-                    <col style={{ width: "12mm" }} />
-                    <col style={{ width: "15mm" }} />
-                    <col style={{ width: "39mm" }} />
-                    <col style={{ width: "28mm" }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      {[
-                        "م",
-                        "رمز المقرر الدراسي",
-                        "الشعبة",
-                        "المقرر الدراسي",
-                        "الوحدات",
-                        "الساعات",
-                        "السعة",
-                        "الوقت",
-                        "الأيام",
-                        "المبنى",
-                        "القاعة",
-                        "أستاذ المقرر",
-                        "الرقم المدني",
-                      ].map(head => <th key={head}>{head}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
+                <div className="print-comprehensive-grid" role="table" aria-label="تفاصيل المقررات والجدول">
+                  <div className="print-comprehensive-grid-row print-comprehensive-grid-head" role="row">
+                    {[
+                      "م",
+                      "رمز المقرر",
+                      "الشعبة",
+                      "المقرر الدراسي",
+                      "الوحدات",
+                      "الساعات",
+                      "السعة",
+                      "الوقت",
+                      "الأيام",
+                      "المبنى",
+                      "القاعة",
+                      "أستاذ المقرر",
+                      "الرقم المدني",
+                    ].map(head => <div role="columnheader" key={head}>{head}</div>)}
+                  </div>
+                  <div className="print-comprehensive-grid-body" role="rowgroup">
                     {pageRows.map((row, index) => {
                       const course = courseOf(row);
                       const instructor = instructorOf(row);
@@ -1637,25 +1666,25 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                         ? index + 1
                         : COMPREHENSIVE_FIRST_PAGE_ROWS + ((pageIndex - 1) * COMPREHENSIVE_NEXT_PAGE_ROWS) + index + 1;
                       return (
-                        <tr key={row.id}>
-                          <td className="print-num">{serial}</td>
-                          <td className="print-ltr">{row.AdCourseId || "—"}</td>
-                          <td className="print-ltr">{row.SCode || "—"}</td>
-                          <td className="print-wrap">{course?.CourseName || row.AdCourseName || "—"}</td>
-                          <td className="num">{course?.CourseCredit ?? "—"}</td>
-                          <td className="num">{course?.CourseHours ?? "—"}</td>
-                          <td className="num">{course?.MaxStudent ?? "—"}</td>
-                          <td className="print-ltr print-nowrap">{row.fendtime && row.fstarttime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</td>
-                          <td className="print-ltr">{dayCodeCell(row)}</td>
-                          <td className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</td>
-                          <td className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</td>
-                          <td className="print-wrap">{instructor?.AdInstructorName || "بدون أستاذ"}</td>
-                          <td className="print-ltr">{instructor?.AdInstructorCivil || "—"}</td>
-                        </tr>
+                        <div className="print-comprehensive-grid-row" role="row" key={row.id}>
+                          <div role="cell" className="print-num">{serial}</div>
+                          <div role="cell" className="print-ltr print-course-id">{row.AdCourseId || "—"}</div>
+                          <div role="cell" className="print-ltr">{row.SCode || "—"}</div>
+                          <div role="cell" className="print-wrap print-course-name">{course?.CourseName || row.AdCourseName || "—"}</div>
+                          <div role="cell" className="num print-course-units">{course ? course.CourseCredit : "—"}</div>
+                          <div role="cell" className="num print-course-hours">{course ? course.CourseHours : "—"}</div>
+                          <div role="cell" className="num print-course-capacity">{course ? course.MaxStudent : "—"}</div>
+                          <div role="cell" className="print-ltr print-nowrap print-course-time">{row.fstarttime && row.fendtime ? `${row.fstarttime} – ${row.fendtime}` : "—"}</div>
+                          <div role="cell" className="print-ltr">{dayCodeCell(row)}</div>
+                          <div role="cell" className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</div>
+                          <div role="cell" className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</div>
+                          <div role="cell" className="print-wrap print-instructor-name">{instructor?.AdInstructorName || "بدون أستاذ"}</div>
+                          <div role="cell" className="print-ltr print-civil">{instructor?.AdInstructorCivil || "—"}</div>
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
 
                 <footer className="print-comprehensive-page-footer">
                   <div className="print-comprehensive-signatures">
@@ -1665,10 +1694,6 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                   </div>
                   <div className="print-comprehensive-page-meta">
                     <div className="print-comprehensive-page-number"><bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi></div>
-                    <div className="print-comprehensive-page-context">
-                      <span>الكلية: {collegeName || "—"}</span>
-                      <span>القسم: {sectionName || "—"}</span>
-                    </div>
                   </div>
                   <div className="print-comprehensive-legend">
                     {legendItems.map(item => <span key={item}>{item}</span>)}
