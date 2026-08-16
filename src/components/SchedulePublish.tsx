@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { CalendarPlus, Check, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
+import { CalendarPlus, Check, ClipboardList, Copy, IdCard, Link2, QrCode, Send, Trash2, Users, X } from "lucide-react";
 import { reachAboutCard, unreachable, whatsappNumber } from "../utils/reachInstructor";
 import type { AdInstructor } from "../types";
 import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
@@ -13,7 +13,7 @@ interface ShareLink {
   revoked?: boolean;
   views: number;
   showInstructors: boolean;
-  kind?: "department" | "staff";
+  kind?: "department" | "staff" | "survey";
 }
 
 type Kind = "department" | "staff";
@@ -77,7 +77,9 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     [error, setError] = useState<string | null>(null),
     [step, setStep] = useState<PublishStep>("kind"),
     [createdId, setCreatedId] = useState<string | null>(null),
-    [qr, setQr] = useState<{ id: string; svg: string } | null>(null);
+    [qr, setQr] = useState<{ id: string; svg: string } | null>(null),
+    [surveyBusy, setSurveyBusy] = useState(false),
+    [surveyNotice, setSurveyNotice] = useState<string | null>(null);
 
   const scoped = Boolean(collegeId && sectionId && termId);
 
@@ -183,7 +185,48 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
     window.setTimeout(() => setCopied(current => (current === id ? null : current)), 1800);
   };
 
-  const active = links.filter(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now());
+  const publicationLinks = links.filter(link => link.kind !== "survey");
+  const surveyLinks = links.filter(link => link.kind === "survey");
+  const active = publicationLinks.filter(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now());
+  const activeSurvey = surveyLinks.find(link => !link.revoked && new Date(link.expiresAt).getTime() > Date.now()) || null;
+  const surveyUrl = (id: string) => `${window.location.origin}/q/${id}`;
+  const copySurvey = async (id: string) => {
+    const url = surveyUrl(id);
+    try {
+      await navigator.clipboard.writeText(url);
+    } catch {
+      const field = document.createElement("input");
+      field.value = url;
+      document.body.appendChild(field);
+      field.select();
+      document.execCommand("copy");
+      field.remove();
+    }
+    setSurveyNotice("تم نسخ رابط استبيان الطلبة");
+    window.setTimeout(() => setSurveyNotice(null), 2200);
+  };
+  const issueSurvey = async () => {
+    if (!scoped || surveyBusy) return;
+    if (activeSurvey) { await copySurvey(activeSurvey.id); return; }
+    setSurveyBusy(true);
+    setSurveyNotice(null);
+    setError(null);
+    try {
+      const response = await fetch("/api/share", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId, kind: "survey", days: 30 })
+      });
+      const data = await readReply(response, "تعذر إنشاء رابط الاستبيان");
+      setLinks(current => [data, ...current]);
+      await copySurvey(data.id);
+      setSurveyNotice("أُصدر استبيان الطلبة ونسخ رابطه — صالح 30 يوماً");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSurveyBusy(false);
+    }
+  };
   const currentStep = PUBLISH_STEPS.findIndex(item => item.id === step);
   const openDialog = () => {
     setStep("kind");
@@ -234,6 +277,18 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                 <h2 id="schedule-publish-title">{scopeLabel || "نشر الجدول"}</h2>
               </div>
             </header>
+
+            <div className="share-survey-shortcut" aria-label="استبيان الطلبة">
+              <span className="share-survey-shortcut-icon" aria-hidden="true"><ClipboardList /></span>
+              <div>
+                <strong>استبيان الطلبة</strong>
+                <small>{activeSurvey ? "الرابط فعال — اضغط لنسخه" : "أصدر رابطاً مستقلاً للطلبة من نفس مكان النشر"}</small>
+              </div>
+              <button type="button" onClick={() => void issueSurvey()} disabled={!scoped || surveyBusy}>
+                {surveyBusy ? "يصدر…" : activeSurvey ? "نسخ الرابط" : "إصدار الرابط"}
+              </button>
+            </div>
+            {surveyNotice ? <p className="share-survey-notice" role="status"><Check /> {surveyNotice}</p> : null}
 
             {error ? <p className="share-error" role="alert">{error}</p> : null}
 
@@ -367,8 +422,8 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                 </p>
               ) : null}
               <div className="share-list" role="list" aria-live="polite">
-                {links.length ? (
-                  links.map(link => {
+                {publicationLinks.length ? (
+                  publicationLinks.map(link => {
                     const expired = new Date(link.expiresAt).getTime() <= Date.now();
                     const dead = expired || Boolean(link.revoked);
                     const status = link.revoked ? "ملغي" : expired ? "منتهٍ" : "فعال";

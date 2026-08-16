@@ -268,6 +268,18 @@ function ScheduleSkeleton({ viewMode }: { viewMode: "week" | "list" | "rooms" })
   );
 }
 
+/** A phone stays a phone after rotation. Width-only media queries turn an
+ * iPhone landscape into a desktop, so use the device short edge plus touch/
+ * mobile capability instead. Tablets keep the full workspace. */
+function isPhoneDevice() {
+  if (typeof window === "undefined" || typeof navigator === "undefined") return false;
+  const nav = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
+  const mobileUa = Boolean(nav.userAgentData?.mobile) || /iPhone|iPod|Android.+Mobile|Mobile/i.test(nav.userAgent || "");
+  const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+  const shortEdge = Math.min(Number(window.screen?.width || window.innerWidth), Number(window.screen?.height || window.innerHeight));
+  return shortEdge <= 600 && (mobileUa || coarse);
+}
+
 export default function Schedules({ mode, user, scopes = [] }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
@@ -335,7 +347,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [matrixDay, setMatrixDay] = useState<DayKey | "week">("week"),
     [matrixRooms, setMatrixRooms] = useState<Set<string>>(new Set()),
     [viewMode, setViewMode] = useState(
-      savedPrefs.viewMode === "week" ? "week" : savedPrefs.viewMode === "rooms" ? "rooms" : "list",
+      isPhoneDevice() ? "list" : savedPrefs.viewMode === "week" ? "week" : savedPrefs.viewMode === "rooms" ? "rooms" : "list",
     ),
     [conflicts, setConflicts] = useState<any[]>([]),
     [checking, setChecking] = useState(false),
@@ -359,9 +371,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [lensOpen, setLensOpen] = useState(false);
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
   const [mobileViewGate, setMobileViewGate] = useState<"list" | "week" | "rooms" | null>(null);
-  const [phoneReadOnly, setPhoneReadOnly] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches,
-  );
+  const [phoneReadOnly, setPhoneReadOnly] = useState(() => isPhoneDevice());
   const [livingPanelOpen, setLivingPanelOpen] = useState(false);
   const [returnNote] = useState(() => {
     const note = sessionStorage.getItem("schedule-return-note") || "";
@@ -375,11 +385,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const query = window.matchMedia("(max-width: 760px)");
-    const sync = () => setPhoneReadOnly(query.matches);
+    const pointer = window.matchMedia("(pointer: coarse)");
+    const sync = () => setPhoneReadOnly(isPhoneDevice());
     sync();
-    query.addEventListener?.("change", sync);
-    return () => query.removeEventListener?.("change", sync);
+    window.addEventListener("resize", sync, { passive: true });
+    window.addEventListener("orientationchange", sync);
+    pointer.addEventListener?.("change", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.removeEventListener("orientationchange", sync);
+      pointer.removeEventListener?.("change", sync);
+    };
   }, []);
   const [filterCollege, setFilterCollege] = useState(
       Number(savedPrefs.filterCollege) || 0,
@@ -1288,15 +1304,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     ),
     selectedInstructor = instructorById.get(form.AdInstructorId);
   const changeView = useCallback((value: string) => {
-    const next = value === "week" ? "week" : value === "rooms" ? "rooms" : "list";
+    const requested = value === "week" ? "week" : value === "rooms" ? "rooms" : "list";
+    const next = phoneReadOnly ? "list" : requested;
     startTransition(() => setViewMode(next));
-    if (phoneReadOnly && next !== "list") setMobileViewGate(next);
-    else setMobileViewGate(null);
+    setMobileViewGate(null);
   }, [phoneReadOnly]);
   const showMobileReadOnlyGate = useCallback(() => {
     if (!phoneReadOnly || viewMode === "list") return false;
     setMobileViewGate(viewMode === "week" ? "week" : "rooms");
     return true;
+  }, [phoneReadOnly, viewMode]);
+  useEffect(() => {
+    if (!phoneReadOnly) return;
+    if (viewMode !== "list") startTransition(() => setViewMode("list"));
+    setMobileViewGate(null);
+    setFocusMode(false);
+    setPresentationMode(false);
+    setExpandedDay(null);
   }, [phoneReadOnly, viewMode]);
   const filterScope = resolveScopeSelection(scopes, filterCollege, isPowerAdmin);
   const formScope = resolveScopeSelection(scopes, form.AdCollegeId, isPowerAdmin);
@@ -4722,9 +4746,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     // Read-only accounts keep every reading command and lose only the writing
     // ones — the palette must never offer a door the account cannot open.
     const writes = new Set(["schedule.create", "schedule.pick", "schedule.undo", "schedule.clash"]);
-    const phoneWrites = new Set(["schedule.create", "schedule.pick", "schedule.undo", "schedule.keymove", "schedule.repair"]);
+    const phoneWrites = new Set(["schedule.pick", "schedule.keymove", "schedule.repair"]);
+    const phoneHiddenViews = new Set(["view.week", "view.rooms", "view.today", "schedule.clash", "schedule.focus", "schedule.present"]);
     return list.map(command => {
-      if (phoneReadOnly && phoneWrites.has(command.id)) return { ...command, visible: false };
+      if (phoneReadOnly && (phoneWrites.has(command.id) || phoneHiddenViews.has(command.id))) return { ...command, visible: false };
       return isPowerAdmin || !writes.has(command.id) ? command : { ...command, visible: false };
     });
   }, [viewMode, todayKey, picking, pendingUndo, liveClash, focusMode, presentationMode, hueBy, hueHidden, hueFocus, savedViews, activeView, viewDirty, isPowerAdmin, phoneReadOnly, changeView, applyView, captureView, viewsStore]);
@@ -5920,12 +5945,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             <button type="button" className={viewMode === "list" ? "active" : ""} aria-pressed={viewMode === "list"} onClick={() => changeView("list")}>
               <LayoutList aria-hidden="true" /> قائمة
             </button>
-            <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => changeView("week")}>
-              <CalendarDays aria-hidden="true" /> أسبوع
-            </button>
-            <button type="button" className={viewMode === "rooms" ? "active" : ""} aria-pressed={viewMode === "rooms"} onClick={() => changeView("rooms")}>
-              <MapPin aria-hidden="true" /> القاعات
-            </button>
+            {!phoneReadOnly ? (<>
+              <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => changeView("week")}>
+                <CalendarDays aria-hidden="true" /> أسبوع
+              </button>
+              <button type="button" className={viewMode === "rooms" ? "active" : ""} aria-pressed={viewMode === "rooms"} onClick={() => changeView("rooms")}>
+                <MapPin aria-hidden="true" /> القاعات
+              </button>
+            </>) : null}
           </div>
           {/* A way of looking at the board, remembered by name. Absent entirely
               until the reader has saved one — no empty menu on behalf of a
@@ -5986,6 +6013,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               type="button"
               className="schedule-radar radar-clash"
               onClick={() => {
+                if (phoneReadOnly) {
+                  setReviewOpen(true);
+                  return;
+                }
                 setViewMode("week");
                 setReviewFocus(new Set([...liveClash.ids]));
               }}
@@ -6069,7 +6100,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             >
               <Layers aria-hidden="true" /> {workspaceToolsOpen ? "أدوات أقل" : "المزيد"}
             </GhostButton>
-            {(workspaceToolsOpen || focusMode) ? <GhostButton
+            {!phoneReadOnly && (workspaceToolsOpen || focusMode) ? <GhostButton
               type="button"
               onClick={() => {
                 setFocusMode(!focusMode);
@@ -6080,7 +6111,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             >
               <Focus /> {focusMode ? "إنهاء التركيز" : "تركيز"}
             </GhostButton> : null}
-            {(workspaceToolsOpen || presentationMode) ? <GhostButton
+            {!phoneReadOnly && (workspaceToolsOpen || presentationMode) ? <GhostButton
               type="button"
               onClick={() => {
                 setPresentationMode(!presentationMode);
@@ -6108,13 +6139,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             >
               <ArrowLeftRight /> {isPowerAdmin ? "أدوات البيانات" : "المنتدبون"}
             </GhostButton> : null}
-            {workspaceToolsOpen && isPowerAdmin && !phoneReadOnly ? (
-              <SchedulePublish
-                collegeId={filterCollege}
-                sectionId={filterSection}
-                termId={filterTerm}
-                scopeLabel={sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName}
-              />
+            {workspaceToolsOpen && isPowerAdmin ? (
+              <div className="schedule-publish-slot">
+                <SchedulePublish
+                  collegeId={filterCollege}
+                  sectionId={filterSection}
+                  termId={filterTerm}
+                  scopeLabel={sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName}
+                />
+              </div>
             ) : null}
           </div>
         </div>
@@ -7576,14 +7609,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               type="button" className={viewMode === "list" ? "on" : ""} aria-pressed={viewMode === "list"}
               onClick={() => changeView("list")} title="عرض القائمة" aria-label="عرض القائمة"
             ><LayoutList aria-hidden="true" /></button>
-            <button
-              type="button" className={viewMode === "week" ? "on" : ""} aria-pressed={viewMode === "week"}
-              onClick={() => changeView("week")} title="عرض الأسبوع" aria-label="عرض الأسبوع"
-            ><CalendarDays aria-hidden="true" /></button>
-            <button
-              type="button" className={viewMode === "rooms" ? "on" : ""} aria-pressed={viewMode === "rooms"}
-              onClick={() => changeView("rooms")} title="عرض القاعات" aria-label="عرض القاعات"
-            ><MapPin aria-hidden="true" /></button>
+            {!phoneReadOnly ? (<>
+              <button
+                type="button" className={viewMode === "week" ? "on" : ""} aria-pressed={viewMode === "week"}
+                onClick={() => changeView("week")} title="عرض الأسبوع" aria-label="عرض الأسبوع"
+              ><CalendarDays aria-hidden="true" /></button>
+              <button
+                type="button" className={viewMode === "rooms" ? "on" : ""} aria-pressed={viewMode === "rooms"}
+                onClick={() => changeView("rooms")} title="عرض القاعات" aria-label="عرض القاعات"
+              ><MapPin aria-hidden="true" /></button>
+            </>) : null}
           </div>
           <span className="dock-split" aria-hidden="true" />
           <button
@@ -7596,17 +7631,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             title="بحث سريع في المواعيد"
             aria-label="بحث سريع في المواعيد"
           ><Search aria-hidden="true" /></button>
-          <button
-            type="button"
-            className={`dock-act ${expandedDay && expandedDay === todayKey ? "on" : ""}`}
-            onClick={() => {
-              if (viewMode !== "week") changeView("week");
-              setExpandedDay(current => (current === todayKey ? null : (todayKey as DayKey)));
-            }}
-            title={todayKey ? "اعرض يوم اليوم وحده" : "اليوم خارج أيام الدراسة"}
-            aria-label="اليوم"
-            disabled={!todayKey}
-          ><Focus aria-hidden="true" /></button>
+          {!phoneReadOnly ? (
+            <button
+              type="button"
+              className={`dock-act ${expandedDay && expandedDay === todayKey ? "on" : ""}`}
+              onClick={() => {
+                if (viewMode !== "week") changeView("week");
+                setExpandedDay(current => (current === todayKey ? null : (todayKey as DayKey)));
+              }}
+              title={todayKey ? "اعرض يوم اليوم وحده" : "اليوم خارج أيام الدراسة"}
+              aria-label="اليوم"
+              disabled={!todayKey}
+            ><Focus aria-hidden="true" /></button>
+          ) : null}
           <button
             type="button"
             className="dock-add"

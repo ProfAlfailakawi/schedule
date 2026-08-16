@@ -704,3 +704,29 @@
   .one-decision-mode header h2{font-size:20px;line-height:1.35}
   .signature-deviations{padding-inline:var(--s5)}
 }
+
+/* ── Dashboard identity on a phone ──────────────────────────────────────────
+   The greeting, term, date and install affordance are one compact identity
+   card. Stacking them deliberately removes the loose floating-dot composition
+   visible on narrow iPhones. */
+@media screen and (max-width:760px){
+  .dashboard-page .deck-bar{
+    display:grid;grid-template-columns:46px minmax(0,1fr) 42px;
+    gap:10px 12px;padding:14px;border-radius:24px;align-items:center;
+  }
+  .dashboard-page .deck-avatar{grid-column:1;grid-row:1;width:46px;height:46px}
+  .dashboard-page .deck-identity{grid-column:2;grid-row:1;margin:0;align-self:center}
+  .dashboard-page .deck-identity strong{font-size:18px}
+  .dashboard-page .deck-identity small{margin-top:3px;font-size:12px}
+  .dashboard-page .install-dashboard{grid-column:3;grid-row:1;justify-self:end}
+  .dashboard-page .install-dashboard .install-trigger{width:42px;height:42px}
+  .dashboard-page> .deck-bar > span.deck-chip{
+    grid-column:1/-1;grid-row:2;width:100%;min-height:40px;justify-content:flex-start;
+    padding-inline:14px;font-size:13px;
+  }
+  .dashboard-page> .deck-bar > time.deck-chip{
+    grid-column:1/3;grid-row:3;width:100%;min-height:38px;justify-content:flex-start;
+    padding-inline:14px;font-size:12px;
+  }
+  .dashboard-page .deck-live{grid-column:3;grid-row:3;justify-self:center;width:38px;height:38px;border-radius:999px;background:var(--surface-2)}
+}

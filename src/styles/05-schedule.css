@@ -4992,3 +4992,24 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   .schedule-control-barter{justify-content:flex-start}
   .schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary{min-height:28px !important;padding:2px 8px 2px 4px !important}
 }
+
+/* ── Phone control order ────────────────────────────────────────────────────
+   Publishing used to disappear on phones entirely while the tiny hall-market
+   chip remained, which made the latter look as if it had covered the former.
+   Keep publishing as a full, obvious row and demote barter beneath it. The
+   second media arm catches a rotated phone whose width is desktop-like. */
+.schedule-publish-slot{min-width:0}
+.schedule-publish-slot>.btn{width:100%}
+@media screen and (max-width:760px), screen and (max-height:500px) and (pointer:coarse){
+  .schedule-publish-slot{grid-column:1/-1;order:-1;width:100%}
+  .schedule-publish-slot>.btn{
+    min-height:46px !important;width:100% !important;
+    border-color:color-mix(in srgb,var(--accent) 30%,var(--line));
+    background:var(--accent-softer);color:var(--accent-ink);font-weight:700;
+  }
+  .schedule-control-barter{
+    position:static !important;z-index:auto !important;width:100%;justify-content:flex-end !important;
+    margin-top:0;padding-top:9px;border-top:1px solid var(--line);
+  }
+  .schedule-control-barter .hall-barter-board:not(.is-open){max-width:100% !important;margin:0 !important}
+}
