@@ -4960,3 +4960,35 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   .hall-barter-board:not(.is-open) .hall-barter-summary{width:auto !important;grid-template-columns:22px auto auto 12px !important;padding:3px 6px 3px 4px !important}
   .hall-barter-board:not(.is-open) .hall-barter-summary-stats{grid-column:auto !important;padding:0 !important}
 }
+
+/* The hall market is secondary navigation, so when closed it lives as a tiny
+   chip inside the schedule controls. Opening it restores the full operational
+   surface. */
+.schedule-control-barter{display:flex;align-items:center;justify-content:flex-start;margin-top:2px;min-width:0}
+.schedule-control-barter .hall-barter-board:not(.is-open){
+  width:max-content !important;max-width:100% !important;margin:0 !important;
+  border-radius:999px !important;box-shadow:none !important;background:var(--surface) !important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary{
+  width:auto !important;min-height:30px !important;display:grid !important;
+  grid-template-columns:20px auto !important;gap:6px !important;padding:3px 9px 3px 5px !important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-mark{
+  width:20px !important;height:20px !important;border:0 !important;border-radius:6px !important;
+  background:transparent !important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-mark>svg:first-child{width:15px !important;height:15px !important}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-mark>svg:last-child{display:none !important}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-copy{display:block !important}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-copy small,
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-copy em,
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-stats,
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-chevron{display:none !important}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-copy strong{
+  display:block !important;font-size:11px !important;line-height:1 !important;font-weight:720 !important;white-space:nowrap !important;
+}
+.schedule-control-barter .hall-barter-board.is-open{width:100% !important;margin:6px 0 0 !important}
+@media(max-width:760px){
+  .schedule-control-barter{justify-content:flex-start}
+  .schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary{min-height:28px !important;padding:2px 8px 2px 4px !important}
+}

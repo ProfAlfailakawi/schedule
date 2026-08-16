@@ -1395,14 +1395,16 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const activeInsightKey = activeInsight?.value || "";
   const versionCanvasHeight = useMemo(() => {
     if (!versionCompare) return 420;
-    const all: FSchedule[] = [
-      ...(Array.isArray(versionCompare?.from?.rows) ? versionCompare.from.rows : []),
-      ...(Array.isArray(versionCompare?.to?.rows) ? versionCompare.to.rows : []),
-    ];
-    const maxRows = Math.max(1, ...Object.keys(dayLabels).map(day => all.filter(row => Boolean((row as any)[day])).length));
-    // Page-scroll instead of a hidden inner scroll: on phones the reader can
-    // simply continue down to every card in the week.
-    return Math.max(420, 88 + maxRows * 82);
+    const fromRows: FSchedule[] = Array.isArray(versionCompare?.from?.rows) ? versionCompare.from.rows : [];
+    const toRows: FSchedule[] = Array.isArray(versionCompare?.to?.rows) ? versionCompare.to.rows : [];
+    const dayCount = (items: FSchedule[], day: string) => items.filter(row => Boolean((row as any)[day])).length;
+    const maxRows = Math.max(
+      1,
+      ...Object.keys(dayLabels).map(day => Math.max(dayCount(fromRows, day), dayCount(toRows, day))),
+    );
+    // The two versions are overlaid, not stacked. Counting both sets together
+    // doubled the required height and produced a huge blank tail on phones.
+    return Math.max(300, 72 + maxRows * 56);
   }, [versionCompare]);
   const moveInsightFocus = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -3255,22 +3257,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <span className="twin-score-arrow" aria-hidden="true"><ArrowLeftRight /></span>
                 <button
                   type="button"
-                  className={`twin-score-card scenario twin-score-action ${
-                    (scenarioEval?.scenario?.score || 0) >=
-                    (scenarioEval?.baseline?.score || overview?.score || 0)
-                      ? "better"
-                      : ""
-                  }`}
-                  onClick={() => showTwinCard("editor")}
-                  aria-label="فتح محرر السيناريو"
-                  title="فتح محرر السيناريو"
-                >
-                  <span>السيناريو</span>
-                  <strong><Num value={scenarioEval?.scenario?.score ?? "—"} /></strong>
-                  <small>اضغط للتعديل</small>
-                </button>
-                <button
-                  type="button"
                   className="twin-delta twin-score-action"
                   onClick={() => void evaluateScenario()}
                   disabled={busy}
@@ -3301,9 +3287,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     <span className="surface-kicker">المساحة البصرية التجريبية</span>
                     <h2>حرّك الوقت… وشاهد النتيجة لحظياً</h2>
                   </div>
-                  <span className="twin-live">
-                    <i /> تقييم تلقائي
-                  </span>
+                  <div className="twin-board-head-actions">
+                    <button type="button" className="twin-editor-link" onClick={() => showTwinCard("editor")}>
+                      تعديل السيناريو
+                    </button>
+                    <span className="twin-live">
+                      <i /> تقييم تلقائي
+                    </span>
+                  </div>
                 </div>
                 <p className="soft-copy">
                   اسحب أي موعد إلى نصف ساعة أخرى. أيام اللقاء تبقى كما هي

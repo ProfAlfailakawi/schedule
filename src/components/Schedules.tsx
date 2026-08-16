@@ -1288,11 +1288,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const changeView = useCallback((value: string) => {
     const next = value === "week" ? "week" : value === "rooms" ? "rooms" : "list";
     startTransition(() => setViewMode(next));
-    if (phoneReadOnly) setMobileViewGate(next);
+    if (phoneReadOnly && next !== "list") setMobileViewGate(next);
+    else setMobileViewGate(null);
   }, [phoneReadOnly]);
   const showMobileReadOnlyGate = useCallback(() => {
-    if (!phoneReadOnly) return false;
-    setMobileViewGate(viewMode === "week" ? "week" : viewMode === "rooms" ? "rooms" : "list");
+    if (!phoneReadOnly || viewMode === "list") return false;
+    setMobileViewGate(viewMode === "week" ? "week" : "rooms");
     return true;
   }, [phoneReadOnly, viewMode]);
   const filterScope = resolveScopeSelection(scopes, filterCollege, isPowerAdmin);
@@ -3275,14 +3276,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
 
   /*
-   * Phone = observation, never editing.
+   * Phone keeps the dense boards safe.
    *
-   * The timetable itself is still rendered — list, week and rooms can all be
-   * inspected — but an interaction that lands inside the timetable canvas is
-   * intercepted in the capture phase before a card, slot or drag engine sees
-   * it.  Pointer-down is stopped without preventDefault so normal vertical page
-   * scrolling keeps working; the resulting tap is then turned into one clear
-   * explanation instead of an accidental edit.
+   * The list view is now editable on the phone, so only the week canvas and the
+   * room matrix stay behind the explanatory gate. Their gestures still mean
+   * drag, move and spatial comparison, which are easy to trigger by mistake on
+   * a touch screen.
    */
   useEffect(() => {
     if (!phoneReadOnly || mode !== "schedule" || typeof document === "undefined") return;
@@ -3290,7 +3289,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!root) return;
     const insideCanvas = (event: Event) => {
       const target = event.target as HTMLElement | null;
-      return Boolean(target?.closest(".schedule-agenda-surface, .rooms-surface, .week-surface"));
+      return Boolean(target?.closest(".rooms-surface, .week-surface"));
     };
     const stopStart = (event: Event) => {
       if (!insideCanvas(event)) return;
@@ -5848,16 +5847,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         الجدول الدراسي
       </PageTitle>
       {mobileViewGate ? (
-        <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="الجدول على الهاتف للقراءة فقط">
+        <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="بعض عروض الجدول للقراءة فقط على الهاتف">
           <div className="mobile-desktop-gate-card">
             <span className="mobile-desktop-gate-icon">
-              {mobileViewGate === "week" ? <CalendarDays /> : mobileViewGate === "rooms" ? <MapPin /> : <LayoutList />}
+              {mobileViewGate === "week" ? <CalendarDays /> : <MapPin />}
             </span>
             <div>
-              <strong>هذا العرض للقراءة فقط على الهاتف</strong>
+              <strong>{mobileViewGate === "week" ? "عرض الأسبوع" : "عرض القاعات"} للقراءة فقط على الهاتف</strong>
               <p>
-                يمكنك تصفّح {mobileViewGate === "week" ? "عرض الأسبوع" : mobileViewGate === "rooms" ? "عرض القاعات" : "قائمة المواعيد"} هنا بوضوح كامل،
-                لكن النقل والتعديل والسحب والإفلات وإنشاء المواعيد تعمل من الكمبيوتر فقط. أي لمس أو ضغط داخل اللوحة سيشرح لك ذلك بدل أن ينفّذ تغييراً بالخطأ.
+                يمكنك تصفّح هذا العرض بوضوح كامل، لكن السحب والنقل المباشر داخله يعملان من الكمبيوتر فقط. إذا أردت التعديل أو إضافة موعد من الهاتف، استخدم «قائمة» فهي متاحة للتحرير والإنشاء.
               </p>
             </div>
             <button type="button" onClick={() => setMobileViewGate(null)}>فهمت · متابعة العرض</button>
@@ -6111,6 +6109,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             ) : null}
           </div>
         </div>
+        {mode === "schedule" && workspaceReady && filterCollege && filterSection && filterTerm ? (
+          <div className="schedule-control-barter">
+            <HallBarterBoard
+              collegeId={filterCollege}
+              sectionId={filterSection}
+              termId={filterTerm}
+              liveSerial={liveFeedSerial}
+              onReservationsChange={setHallBarterReservations}
+            />
+          </div>
+        ) : null}
       </Surface>
       {xraySelected ? (
         <section className="academic-xray no-print">
@@ -6243,15 +6252,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onEnsureWeek={() => setViewMode("week")}
         onPanelOpenChange={setLivingPanelOpen}
       />
-      {mode === "schedule" && workspaceReady && filterCollege && filterSection && filterTerm ? (
-        <HallBarterBoard
-          collegeId={filterCollege}
-          sectionId={filterSection}
-          termId={filterTerm}
-          liveSerial={liveFeedSerial}
-          onReservationsChange={setHallBarterReservations}
-        />
-      ) : null}
       {rowsLoading && !rows.length ? (
         <Surface className="sched-skeleton-surface">
           <ScheduleSkeleton viewMode={viewMode} />
@@ -6700,7 +6700,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 {physicsActive && dragComparison
                   ? `قبل: ${dragComparison.before} ← بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
                   : phoneReadOnly
-                    ? "على الهاتف هذا الجدول للقراءة فقط. المس أي جزء من الجدول لتعرف كيف تكمل النقل أو التعديل على الكمبيوتر."
+                    ? "على الهاتف يمكنك التعديل والإضافة من «قائمة»، أما عرض الأسبوع فيبقى للقراءة فقط حتى لا يتحول اللمس إلى نقلٍ غير مقصود."
                   : picking
                     ? "النقل الجماعي: اختر المواعيد المطلوبة، ثم اسحب أي واحد منها — تنتقل المجموعة معاً بعد فحص الموانع."
                     : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · أو انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}

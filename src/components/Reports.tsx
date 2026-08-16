@@ -431,7 +431,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   if (filters.building) chips.push({ key: "building", label: `المبنى: ${filters.building}`, clear: () => setFilters(prev => ({ ...prev, building: "", hall: "" })) });
   if (filters.hall) chips.push({ key: "hall", label: `القاعة: ${filters.hall}`, clear: () => set("hall", "") });
   if (selectedCourse) chips.push({ key: "course", label: `المقرر: ${selectedCourse.CourseName}`, clear: () => set("courseId", 0) });
-  if (filters.courseCode) chips.push({ key: "course-code", label: `رمز المقرر: ${filters.courseCode}`, clear: () => set("courseCode", "") });
+  if (filters.courseCode) chips.push({ key: "course-code", label: `الرقم الأكاديمي: ${filters.courseCode}`, clear: () => set("courseCode", "") });
   if (filters.startTime && filters.endTime) chips.push({
     key: "time",
     label: `الفترة: ${filters.startTime}–${filters.endTime}`,
@@ -650,8 +650,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const pageStyle = document.createElement("style");
     pageStyle.id = "schedule-print-page-size";
     pageStyle.textContent = wide
-      ? "@page{size:A4 landscape;margin:12mm 10mm 18mm}"
-      : "@page{size:A4 portrait;margin:14mm 12mm 18mm}";
+      ? "@page{size:A4 landscape;margin:12mm 10mm 18mm}@page wide{size:A4 landscape;margin:12mm 10mm 18mm}"
+      : "@page{size:A4 portrait;margin:14mm 12mm 18mm}@page upright{size:A4 portrait;margin:14mm 12mm 18mm}";
     document.head.appendChild(pageStyle);
     flushSync(() => setPrintKind(kind));
     void document.body.offsetHeight;
@@ -1589,7 +1589,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     </div>
                     <div className="print-comprehensive-side print-comprehensive-side-left">
                       <div><span>الفصل الدراسي</span><strong>{termName || scopeLine || "—"}</strong></div>
-                      <div><span>تاريخ الإصدار</span><strong dir="ltr">{issueDate}</strong></div>
+                      <div><span>تاريخ الإصدار</span><strong><bdi dir="ltr">{issueDate}</bdi></strong></div>
                     </div>
                   </div>
                 </header>
@@ -1639,7 +1639,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                       return (
                         <tr key={row.id}>
                           <td className="print-num">{serial}</td>
-                          <td className="print-ltr">{course?.CourseCode || "—"}</td>
+                          <td className="print-ltr">{row.AdCourseId || "—"}</td>
                           <td className="print-ltr">{row.SCode || "—"}</td>
                           <td className="print-wrap">{course?.CourseName || row.AdCourseName || "—"}</td>
                           <td className="num">{course?.CourseCredit ?? "—"}</td>

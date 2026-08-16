@@ -225,9 +225,8 @@ export function PrintPortal({ children, className = "" }: { children: React.Reac
 }
 
 export function PrintLetterhead({ title, scope, college, footer = true }: { title: React.ReactNode; scope?: React.ReactNode; college?: React.ReactNode; footer?: boolean }) {
-  const stamp = new Date().toLocaleString("ar-KW-u-nu-latn", {
-    year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit"
-  });
+  const now = new Date();
+  const stamp = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} · ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
   return (
     <>
       <header className="print-head">
@@ -255,7 +254,7 @@ export function PrintLetterhead({ title, scope, college, footer = true }: { titl
         <footer className="print-foot">
           <span>{college || title}</span>
           <span className="print-page-number" aria-hidden="true" />
-          <span>{stamp}</span>
+          <bdi dir="ltr">{stamp}</bdi>
         </footer>
       ) : null}
     </>

@@ -170,7 +170,7 @@ export default function HallBarterBoard({
         <span className="hall-barter-mark"><Building2 aria-hidden="true" /><ArrowLeftRight aria-hidden="true" /></span>
         <span className="hall-barter-summary-copy">
           <small>بين الكليات · موافقة رقمية</small>
-          <strong>بورصة القاعات الساكنة</strong>
+          <strong>{open ? "بورصة القاعات الساكنة" : "بورصة"}</strong>
           <em>تتعلم من آخر عشر سنوات، ولا تعرض إلا نافذة متكررة الفراغ ومجانية الآن.</em>
         </span>
         <span className="hall-barter-summary-stats">

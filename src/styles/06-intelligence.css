@@ -3012,3 +3012,35 @@ button.twin-delta{width:100%}
   color:var(--ink-2);font-size:11px;line-height:1.65;
 }
 .genesis-publish-issues li+li{margin-top:3px}
+
+/* Final field-test cleanup: the scenario remains fully editable, but it no
+   longer occupies a large score card. The row now reads current score → quality
+   delta → constraint result, while a compact action in the board header opens
+   the editor. */
+.twin-score-row{
+  grid-template-areas:"baseline bridge delta constraints" !important;
+  grid-template-columns:minmax(150px,1fr) 40px minmax(118px,.78fr) minmax(118px,.78fr) !important;
+}
+.twin-score-card.baseline{grid-area:baseline}
+.twin-score-arrow{grid-area:bridge}
+.twin-delta{grid-area:delta}
+.twin-constraint-score{grid-area:constraints}
+.twin-board-head-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.twin-editor-link{
+  min-height:32px;padding:0 11px;border:1px solid var(--line);border-radius:999px;
+  background:var(--surface);color:var(--ink-2);font:650 var(--t-xs)/1 var(--font-ui);cursor:pointer;
+}
+.twin-editor-link:hover{border-color:var(--accent);color:var(--accent)}
+@media screen and (max-width:900px){
+  .twin-score-row{
+    grid-template-areas:"baseline" "bridge" "delta" "constraints" !important;
+    grid-template-columns:1fr !important;
+  }
+  .twin-board-head-actions{width:100%;justify-content:space-between}
+}
+
+/* The comparison's height is based on the busier single version/day. Do not
+   impose the old 420px floor or a second vertical scroller: on touch devices
+   that floor was visible as a large empty white tail. */
+.time-travel-stage{min-height:300px !important;max-height:none !important}
+.version-detail-scroll{max-height:none !important;overflow-x:auto !important;overflow-y:visible !important}

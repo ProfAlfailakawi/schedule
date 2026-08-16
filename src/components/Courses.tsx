@@ -144,7 +144,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       ) {
         // The typed value stays. Erasing the field on a duplicate warning made
         // the reader retype a code they could no longer see to compare.
-        setError("تم تسجيل رمز المقرر الدراسي هذا من قبل");
+        setError("تم تسجيل الرقم الأكاديمي للمقرر هذا من قبل");
       }
     };
   const submit = async (e: React.FormEvent) => {
@@ -295,13 +295,13 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   ))}
                 </select>
               </Field>
-              <Field label="رمز المقرر الدراسي" required>
+              <Field label="الرقم الأكاديمي للمقرر" required>
                 <input
                   inputMode="numeric"
                   value={code}
                   onChange={(e) => numeric(e.target.value, setCode)}
                   onBlur={validateCourseCode}
-                  aria-label="رمز المقرر الدراسي"
+                  aria-label="الرقم الأكاديمي للمقرر"
                   autoComplete="off"
                   required
                 />
@@ -379,7 +379,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             value={query}
             onChange={setQuery}
             count={filtered.length}
-            placeholder="رمز المقرر، اسمه، الكلية أو القسم"
+            placeholder="الرقم الأكاديمي، اسم المقرر، الكلية أو القسم"
           >
             <select
               className="list-filter"
@@ -427,7 +427,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   }
                   meta={
                     <>
-                      <MetaPill label="الرمز" value={x.CourseCode} />
+                      <MetaPill label="الرقم الأكاديمي" value={x.CourseCode} />
                       <MetaPill label="الوحدات" value={x.CourseCredit} />
                       <MetaPill label="الساعات" value={x.CourseHours} />
                     </>
@@ -463,7 +463,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
               </p>
               <div className="inspector-facts">
                 <article>
-                  <span>رمز المقرر</span>
+                  <span>الرقم الأكاديمي للمقرر</span>
                   <b>{selected.CourseCode}</b>
                 </article>
                 <article>
@@ -479,7 +479,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   <b>{selected.MaxStudent || 0}</b>
                 </article>
                 <article>
-                  <span>المعرّف</span>
+                  <span>رمز المقرر</span>
                   <b>{selected.AdCourseId}</b>
                 </article>
               </div>

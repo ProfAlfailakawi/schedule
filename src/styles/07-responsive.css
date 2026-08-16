@@ -668,13 +668,11 @@
   .schedule-page>.schedule-agenda-surface,
   .schedule-page>.rooms-surface,
   .schedule-page>.sched-skeleton-surface{order:-1}
-  /* On a phone the timetable is a viewport, never an editor. Keep vertical
-     reading natural, but remove the sideways pan/drag canvas that previously
-     made a finger gesture look like a move. The React capture guard supplies
-     the explanatory sheet on a tap. */
+  /* On a phone the dense spatial boards still behave like viewports, but the
+     list returns to being a real editor. Keep the gesture guard only where a
+     swipe could be mistaken for moving a lecture: week and rooms. */
   .schedule-page>.week-surface,
-  .schedule-page>.rooms-surface,
-  .schedule-page>.schedule-agenda-surface{
+  .schedule-page>.rooms-surface{
     touch-action:pan-y;
     overscroll-behavior-x:none;
     -webkit-user-select:none;
@@ -686,7 +684,7 @@
     scroll-snap-type:none !important;
     -webkit-overflow-scrolling:auto;
   }
-  .schedule-page>.schedule-agenda-surface .agenda-actions{display:none}
+  .schedule-page>.schedule-agenda-surface .agenda-actions{display:flex}
   /* The scope line still has to come first among what is left, because a board
      read against the wrong term is worse than a board found late. */
   .schedule-page>.schedule-control{order:0}

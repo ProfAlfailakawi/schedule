@@ -1207,3 +1207,14 @@
     flex:none !important;
   }
 }
+
+@media print{
+  .print-foot bdi{
+    white-space:nowrap !important;direction:ltr !important;unicode-bidi:isolate !important;
+    font-variant-numeric:tabular-nums !important;
+  }
+  .print-comprehensive-side bdi{
+    direction:ltr !important;unicode-bidi:isolate !important;white-space:nowrap !important;
+    font-variant-numeric:tabular-nums !important;
+  }
+}
