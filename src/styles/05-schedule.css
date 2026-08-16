@@ -171,7 +171,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
   flex:0 0 auto;
   min-height:84px;
   display:grid;
-  grid-template-columns:34px minmax(180px,1.5fr) 106px minmax(120px,.9fr) minmax(0,auto) auto;
+  grid-template-columns:34px minmax(220px,1.5fr) minmax(148px,.95fr) minmax(126px,.9fr) minmax(90px,auto) auto;
   align-items:center;
   gap:var(--s4);
   padding:var(--s4) var(--s6);
@@ -275,11 +275,14 @@ button.schedule-radar:hover{filter:brightness(.96)}
 .agenda-time,.agenda-place{
   min-width:0;display:flex;align-items:center;gap:var(--s2);
 }
+.agenda-time{min-width:148px;}
+
 .agenda-time>svg,.agenda-place>svg{width:15px;height:15px;flex:none;color:var(--muted-2)}
 .agenda-time strong,.agenda-place strong{
   min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   font-size:var(--t-sm);font-weight:600;
 }
+.agenda-time strong{overflow:visible;text-overflow:clip;white-space:nowrap;}
 .agenda-time strong{font-family:var(--font-mono);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
 .agenda-meta{display:flex;flex-wrap:wrap;gap:var(--s1);justify-content:flex-end;max-width:220px}
 .unit-pill{
@@ -1669,13 +1672,13 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .replay-spine::before{
   content:"";position:absolute;
-  inset-block:6px 6px;inset-inline-end:4px;
+  inset-block:6px 6px;inset-inline-end:10px;
   width:2px;border-radius:2px;
   background:linear-gradient(var(--line-strong),color-mix(in srgb,var(--line) 40%,transparent));
 }
 .replay-spine li{position:relative;display:block}
 .replay-dot{
-  position:absolute;inset-inline-end:-20px;top:5px;
+  position:absolute;inset-inline-end:5px;top:5px;
   width:10px;height:10px;border-radius:50%;
   background:var(--surface);border:2px solid var(--muted-2);
 }
@@ -1699,12 +1702,12 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .replay-still-line{position:relative;display:block;height:100%;min-height:52px}
 .replay-still-line i{
-  position:absolute;inset-inline-end:12px;inset-block:4px 0;
+  position:absolute;inset-inline-end:50%;transform:translateX(50%);inset-block:4px 0;
   width:2px;border-radius:2px;
   background:linear-gradient(var(--line-strong),transparent);
 }
 .replay-still-line b{
-  position:absolute;inset-inline-end:7px;top:2px;
+  position:absolute;inset-inline-end:50%;transform:translateX(50%);top:2px;
   width:12px;height:12px;border-radius:50%;
   background:var(--surface);border:2px solid var(--accent);
 }
@@ -3296,7 +3299,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-bottom:var(--s4)}
 .rooms-head small{color:var(--muted);font-size:var(--t-xs);line-height:1.5;flex:1 1 260px}
 .rooms-scale{display:grid;grid-template-columns:74px minmax(0,1fr);min-width:1000px;margin-bottom:var(--s2)}
-.rooms-scale-week{grid-template-columns:74px 82px minmax(0,1fr);min-width:1180px}
+.rooms-scale-week{grid-template-columns:74px minmax(0,1fr);min-width:1000px}
 .rooms-scale>small{display:flex;align-items:flex-end;padding-inline:var(--s2);color:var(--muted-2);font-size:8.5px;font-weight:600}
 .rooms-scale>div{
   position:relative;height:16px;
@@ -3305,7 +3308,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .rooms-scale span{position:absolute;transform:translateX(50%)}
 .rooms-rows{min-width:1000px;display:flex;flex-direction:column;gap:var(--s2)}
-.rooms-rows:has(.rooms-compare-room){min-width:1180px}
+.rooms-rows:has(.rooms-compare-room){min-width:1000px}
 .rooms-week-room{
   overflow:hidden;
   border:1px solid var(--line);border-radius:var(--r-md);
@@ -3356,7 +3359,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   position:relative;
   direction:rtl;
   height:54px;
-  border:1px solid var(--line);
+  border:1px solid color-mix(in srgb,var(--line-strong) 86%,var(--line));
   border-radius:var(--r-sm);
   background:var(--surface);
   overflow:hidden;
@@ -4035,11 +4038,11 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    changing one's mind never means scrolling to the end of a four-part form. */
 .schedule-editor{position:relative}
 .schedule-editor-close{
-  position:absolute;inset-block-start:2px;inset-inline-start:2px;
+  position:absolute;inset-block-start:2px;inset-inline-end:2px;inset-inline-start:auto;
   margin:0;z-index:6;
 }
 @media (max-width:768px){
-  .schedule-editor-close{inset-block-start:0;inset-inline-start:0}
+  .schedule-editor-close{inset-block-start:0;inset-inline-end:0;inset-inline-start:auto}
 }
 
 /* ==========================================================================

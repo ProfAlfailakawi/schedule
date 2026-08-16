@@ -1233,7 +1233,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   animation:rise .22s var(--ease-out) both;
 }
 .journey-close{
-  position:absolute;inset-block-start:var(--s4);inset-inline-start:var(--s4);
+  position:absolute;inset-block-start:var(--s4);inset-inline-end:var(--s4);inset-inline-start:auto;
   width:34px;height:34px;display:grid;place-items:center;
   border:1px solid var(--line);border-radius:var(--r-sm);
   background:var(--surface);color:var(--muted);

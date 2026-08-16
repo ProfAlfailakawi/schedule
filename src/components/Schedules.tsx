@@ -4267,6 +4267,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const xraySelected = xrayId
     ? filteredRows.find((r) => r.id === xrayId) || null
     : null;
+  useEffect(() => {
+    if (!xraySelected || viewMode !== "list") return;
+    const id = window.requestAnimationFrame(() => {
+      xraySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [xraySelected, viewMode]);
   const xraySharedDay = (a: FSchedule, b: FSchedule) =>
     days.some((d) => Boolean(a[d.key]) && Boolean(b[d.key]));
   const xrayTimeConnected = (a: FSchedule, b: FSchedule) => {
@@ -6536,17 +6543,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               {countOf(liveClash.pairs, AR.clash)}
             </button>
           ) : null}
-          {liveNotes.length ? (
-            <button
-              type="button"
-              className="schedule-radar radar-notes"
-              onClick={() => setReviewOpen(true)}
-              title="ملاحظات اللائحة على النطاق المفتوح — اضغط لفتح مراجعة الاعتماد"
-            >
-              <ClipboardCheck aria-hidden="true" />
-              {countOf(liveNotes.length, AR.note)}
-            </button>
-          ) : null}
           {/* What arrived from the department's own instructors. It is the only
               chip here that is about people rather than rows, so it says who,
               not how many. */}
@@ -6670,7 +6666,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         ) : null}
       </Surface>
       {xraySelected ? (
-        <section className="academic-xray no-print">
+        <section ref={xraySectionRef} className="academic-xray no-print">
           <div className="xray-beam">
             <BrainCircuit />
             <span>أشعة الجدول</span>
@@ -6826,11 +6822,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                        hover card. A variable only — every state colour the card
                        already owns (running, x-ray, just-changed) still wins. */
                     style={{ ["--hue" as any]: hueFor(c?.CourseCode || s.AdCourseName || "—", s.AdCourseName || c?.CourseName || "", i?.AdInstructorName, placeOf(s)) }}
-                    onClick={() => runVisualTransition(() => setXrayId((v) => (v === s.id ? null : s.id)))}
+                    onClick={() => runVisualTransition(() => setXrayId(s.id))}
                     onDoubleClick={() => openEdit(s)}
                     tabIndex={0}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") openContext(s);
+                      if (e.key === "Enter") { runVisualTransition(() => setXrayId(s.id)); return; }
                     }}
                   >
                     <div className="agenda-index">
@@ -6957,7 +6953,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                living lanes sharing one hour line. A reader can still fold it
                down to one day, but the default finally answers the real room
                question: what happens here across the whole week? */
-            const { displayDays, allBuildings, allRooms, byDayRoom, compactByRoom, noRoomByDay, roomCounts, hourMarks, span } = roomsMatrix;
+            const { displayDays, allBuildings, allRooms, byDayRoom, noRoomByDay, roomCounts, hourMarks, span } = roomsMatrix;
             /* Pinning rooms narrows the matrix to the ones being worked on —
                a building's four labs instead of every room in the college. */
             const buildingScopedRooms = matrixBuildings.size
@@ -7104,7 +7100,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     options={[{ value: "week", label: "الأسبوع كامل" }, ...days.map(day => ({ value: day.key, label: day.label }))]}
                     onChange={(value) => setMatrixDay(value as DayKey | "week")}
                   />
-                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "مقارنة سريعة: القاعة ثم أيام استخدامها ثم ساعاتها؛ وكل فراغ في المسار قابل للنقر لإضافة موعد مباشرة في ساعته." : "عرض يوم منفرد — ارجع إلى «الأسبوع كامل» للمقارنة المدمجة بين القاعات، أو اضغط أي فراغ لإضافة موعد في تلك الساعة."}</small>
+                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "نفس منطق الأسبوع: كل صف يوم مستقل داخل القاعة، وكل فراغ قابل للنقر أو السحب والإفلات مباشرة في ساعته." : "عرض يوم منفرد بنفس منطق الأسبوع: اسحب الموعد على الساعة المطلوبة أو اضغط أي فراغ لإضافة موعد في تلك الساعة."}</small>
                 </div>
                 {allBuildings.length > 1 ? (
                   <div className="rooms-filter-block">
@@ -7185,104 +7181,50 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   </div>
                 </div>
                 <div className="rooms-rows">
-                  {roomList.map(room => {
-                    const compact = compactByRoom.get(room.key) || { items: [], lanes: 1, laneDays: [] };
-                    const firstDay = (days.find(day => compact.items.some(item => Boolean((item.row as any)[day.key])))?.key || days[0].key) as DayKey;
-                    return matrixDay === "week" ? (
-                      <section className="rooms-week-room rooms-compare-room" key={room.key}>
-                        <div className="rooms-compare-row">
-                          <header className="rooms-compare-room-head">
-                            <strong dir="ltr">{room.label}</strong>
-                            <small><b className="num">{compact.items.length}</b> محاضرة</small>
-                          </header>
-                          <div className="rooms-compare-days">
-                            {compact.laneDays.map(lane => (
-                              <span key={lane.key}>{lane.labels.length ? lane.labels.map(label => <small key={label}>{label}</small>) : <small>بلا يوم</small>}</span>
-                            ))}
-                          </div>
-                          <div
-                            className="rooms-track rooms-compact-track"
-                            style={{ height: `${Math.max(74, compact.lanes * 68 + 8)}px` }}
-                            onDragOver={(e) => e.preventDefault()}
-                            onPointerMove={previewTrack({ day: firstDay, roomCode: room.building, roomHall: room.hall, label: room.label, trackKey: `compact|${room.key}` })}
-                            onPointerLeave={clearTrackPreview(`compact|${room.key}`)}
-                            onClick={createFromTrack({ day: firstDay, roomCode: room.building, roomHall: room.hall, label: room.label, trackKey: `compact|${room.key}` })}
-                            data-physics-day-column="true"
-                            onDrop={trackDrop(room.building, room.hall, firstDay)}
-                          >
-                            {/* The landing squares, on the compact track too —
-                                this is the layout the week view actually shows,
-                                and it was the one left without them. */}
-                            {timeSlots.map(slot => (
-                              <i
-                                key={`slot-${slot}`}
-                                className={`rooms-slot ${physicsSlotClass(firstDay as DayKey, slot, `${room.building}|${room.hall}`)}`}
-                                data-physics-slot="true"
-                                data-physics-day={firstDay}
-                                data-physics-start={slot}
-                                data-physics-label={room.label}
-                                data-physics-room={`${room.building}|${room.hall}`}
-                                style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
-                              />
-                            ))}
-                            {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
-                            {roomPreviewKey === `compact|${room.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
-                            {nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
-                            {compact.items.map(item => renderTrackCard(item.row, item))}
-                          </div>
-                        </div>
-                      </section>
-                    ) : (
-                      <section className="rooms-week-room" key={room.key}>
-                        <header className="rooms-week-room-head">
-                          <strong dir="ltr">{room.label}</strong>
-                          <small><b className="num">{roomCounts.get(room.key) || 0}</b> موعداً أسبوعياً</small>
-                        </header>
-                        <div className="rooms-week-days">
-                          {displayDays.map(day => {
-                            const inRoom = rowsFor(day.key as DayKey, room.key);
-                            return (
-                              <div className="rooms-row" key={`${room.key}|${day.key}`}>
-                                <small className="rooms-day-label">{day.label}</small>
-                                <div
-                                  className="rooms-track"
-                                  data-physics-day-column="true"
-                                  onDragOver={(e) => e.preventDefault()}
-                                  onPointerMove={previewTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
-                                  onPointerLeave={clearTrackPreview(`${room.key}|${day.key}`)}
-                                  onClick={createFromTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
-                                  onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}
-                                >
-                                  {/* The same landing squares the week grid has,
-                                      laid along the track instead of down a
-                                      column — so the drag engine reads this
-                                      board with the identical code, and the
-                                      lift, the verdict and the ring are the
-                                      same here as they are there. */}
-                                  {timeSlots.map(slot => (
-                                    <i
-                                      key={`slot-${slot}`}
-                                      className={`rooms-slot ${physicsSlotClass(day.key as DayKey, slot, `${room.building}|${room.hall}`)}`}
-                                      data-physics-slot="true"
-                                      data-physics-day={day.key}
-                                      data-physics-start={slot}
-                                      data-physics-label={`${day.label} · ${room.label}`}
-                                      data-physics-room={`${room.building}|${room.hall}`}
-                                      style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
-                                    />
-                                  ))}
-                                  {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
-                                  {roomPreviewKey === `${room.key}|${day.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
-                                  {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
-                                  {inRoom.map(row => renderTrackCard(row))}
-                                </div>
+                  {roomList.map(room => (
+                    <section className="rooms-week-room" key={room.key}>
+                      <header className="rooms-week-room-head">
+                        <strong dir="ltr">{room.label}</strong>
+                        <small><b className="num">{roomCounts.get(room.key) || 0}</b> موعداً أسبوعياً</small>
+                      </header>
+                      <div className="rooms-week-days">
+                        {displayDays.map(day => {
+                          const inRoom = rowsFor(day.key as DayKey, room.key);
+                          return (
+                            <div className="rooms-row" key={`${room.key}|${day.key}`}>
+                              <small className="rooms-day-label">{day.label}</small>
+                              <div
+                                className="rooms-track"
+                                data-physics-day-column="true"
+                                onDragOver={(e) => e.preventDefault()}
+                                onPointerMove={previewTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
+                                onPointerLeave={clearTrackPreview(`${room.key}|${day.key}`)}
+                                onClick={createFromTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
+                                onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}
+                              >
+                                {timeSlots.map(slot => (
+                                  <i
+                                    key={`slot-${slot}`}
+                                    className={`rooms-slot ${physicsSlotClass(day.key as DayKey, slot, `${room.building}|${room.hall}`)}`}
+                                    data-physics-slot="true"
+                                    data-physics-day={day.key}
+                                    data-physics-start={slot}
+                                    data-physics-label={`${day.label} · ${room.label}`}
+                                    data-physics-room={`${room.building}|${room.hall}`}
+                                    style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
+                                  />
+                                ))}
+                                {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                                {roomPreviewKey === `${room.key}|${day.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
+                                {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
+                                {inRoom.map(row => renderTrackCard(row))}
                               </div>
-                            );
-                          })}
-                        </div>
-                      </section>
-                    );
-                  })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
                   {displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length) ? (
                     <section className="rooms-week-room rooms-row-none">
                       <header className="rooms-week-room-head"><strong>بلا قاعة</strong></header>
@@ -8798,22 +8740,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 )}
               </div>
             ) : null}
-            {context.conflicts?.length ? (
-              <div className="context-conflicts">
-                <AlertTriangle />
-                <div>
-                  <strong>{context.conflicts.length} علاقة تحتاج انتباه</strong>
-                  <span>
-                    تعارضات الأستاذ/القاعة محسوبة حتى مع الحجوزات خارج القسم، مع
-                    إخفاء التفاصيل غير المصرح بها.
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="context-clear">
-                <CheckCircle2 /> لا يوجد تعارض ظاهر لهذا الموعد.
-              </div>
-            )}
             <div className="context-relations">
               <article>
                 <span>

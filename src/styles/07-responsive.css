@@ -378,7 +378,7 @@
   .week-peek{min-width:190px;max-width:250px}
 
   .academic-xray{grid-template-columns:minmax(0,1fr);gap:var(--s3);padding:var(--s4)}
-  .academic-xray>button{position:absolute;top:var(--s2);inset-inline-start:var(--s2)}
+  .academic-xray>button{position:absolute;top:var(--s2);inset-inline-end:var(--s2);inset-inline-start:auto}
   .xray-relations{justify-content:flex-start}
 
   .living-pulse-shell,.living-command-deck{grid-template-columns:minmax(0,1fr);gap:var(--s4);padding:var(--s4)}
