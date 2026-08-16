@@ -3697,7 +3697,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const who = i?.AdInstructorName || "بدون أستاذ";
     /* First and last name only — «د. عبدالرحمن الشراد» — then the width-aware
        shortener may trim further on a squeezed lane. */
-    const shortWho = i?.AdInstructorName ? instructorLabel(firstLast(i.AdInstructorName), widthShare) : who;
+    const shortWho = i?.AdInstructorName ? firstLast(i.AdInstructorName) : who;
     const place = placeOf(r);
     /* Computed once: the card wears it as colour, and — when the reader has
        asked for it — as a weave keyed to the same number. */
@@ -6561,7 +6561,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               const title = row.AdCourseName || course?.CourseName || code;
               const compactTitle = courseLabel(title, 0.46).text;
               const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
-              const compactWho = instructor?.AdInstructorName ? instructorLabel(instructor.AdInstructorName, 0.5) : "بدون أستاذ";
+              const compactWho = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
               const whoWords = who.split(/\s+/).filter(Boolean);
               const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
               const whoGiven = whoWords.join(" ") || who;
@@ -6604,6 +6604,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   onClick={() => void openContext(row)}
+                  onPointerEnter={(e) => { if (!physicsActive) openPeek(row, e.currentTarget); }}
+                  onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
+                  onFocus={(e) => openPeek(row, e.currentTarget)}
+                  onBlur={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter") void openContext(row); }}
                 >
