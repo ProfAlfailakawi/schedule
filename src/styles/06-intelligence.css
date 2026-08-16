@@ -3457,3 +3457,14 @@ button.twin-delta{width:100%}
 .intel-guide-steps{grid-template-columns:repeat(3,minmax(0,1fr))}.intel-guide-steps article{grid-template-columns:auto auto minmax(0,1fr)}.intel-guide-steps article>b{font:700 10px/1 var(--font-mono);color:var(--muted-2)}
 .decision-guide-modal>footer,.intel-guide-modal>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:2px;color:var(--muted);font-size:var(--t-xs)}.decision-guide-modal>footer button,.intel-guide-modal>footer button{border:0;border-radius:999px;padding:10px 17px;background:var(--accent);color:var(--accent-contrast);font:650 var(--t-xs)/1 var(--font);cursor:pointer}
 @media(max-width:720px){.decision-guide-backdrop,.intel-guide-backdrop{padding:14px}.decision-guide-modal,.intel-guide-modal{padding:18px;border-radius:22px}.decision-guide-modal-grid,.intel-guide-steps{grid-template-columns:1fr}.intel-guide-steps article{grid-template-columns:auto auto minmax(0,1fr)}.decision-guide-modal>footer,.intel-guide-modal>footer{align-items:flex-start;flex-direction:column}.decision-guide-modal>footer button,.intel-guide-modal>footer button{align-self:stretch}}
+
+/* Approval deck: a quiet entry page, with room for the heading before the cards. */
+.insight-preview-rail{padding:clamp(14px,2vw,22px);border:1px solid color-mix(in srgb,var(--line) 88%,transparent);border-radius:24px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 96%,transparent),color-mix(in srgb,var(--surface-2) 62%,var(--surface)));overflow:visible}
+.insight-preview-head{display:grid;gap:3px;margin:0 0 var(--s4);padding-inline:2px}
+.insight-preview-head .surface-kicker{line-height:1.4}
+.insight-preview-head strong{margin:0;font-size:clamp(19px,2vw,26px);line-height:1.25;letter-spacing:-.02em}
+.insight-preview-head small{margin:0;max-width:62ch;line-height:1.7}
+.insight-preview-list{grid-template-columns:repeat(auto-fit,minmax(min(250px,100%),1fr));gap:12px}
+.insight-preview{min-height:92px;padding:15px 16px;border-radius:18px;box-shadow:0 1px 0 color-mix(in srgb,var(--line) 70%,transparent)}
+.insight-preview-copy strong{font-size:14px;line-height:1.5}.insight-preview-copy small{line-height:1.65;-webkit-line-clamp:3}
+@media(max-width:640px){.insight-preview-rail{padding:14px;border-radius:20px}.insight-preview{min-height:84px}}

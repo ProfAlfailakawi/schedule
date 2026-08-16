@@ -313,7 +313,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 }
 .share-close{
   position:sticky;top:0;z-index:3;
-  float:inline-start;margin:calc(var(--s3) * -1) calc(var(--s3) * -1) 0 0;
+  float:inline-end;margin:calc(var(--s3) * -1) 0 0 calc(var(--s3) * -1);
   width:38px;height:38px;display:grid;place-items:center;
   border:1px solid var(--line);border-radius:var(--r-xs);
   background:var(--surface);color:var(--muted);

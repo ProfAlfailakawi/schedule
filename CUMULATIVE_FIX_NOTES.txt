@@ -1,0 +1,31 @@
+إصلاح النسخة التراكمية
+
+السبب الجذري لعدم عمل الملف السابق:
+الملف السابق كان يحتوي آخر ملفين معدلين فقط، بينما هذه التعديلات تعتمد على تعديلات سابقة متراكمة (خصوصاً Schedules.tsx ومرجع xraySectionRef وبقية طبقات الذكاء والواجهة). تطبيقه منفرداً على نسخة أقدم قد يترك المشروع في حالة غير متطابقة.
+
+هذه الحزمة تراكمية وتحتوي جميع الملفات المعدلة اللازمة من الدفعات الأخيرة بدون مجلد wrapper وبدون المشروع كاملًا.
+
+تم التأكد من وجود تعريف xraySectionRef واستخدامه، وتم إجراء فحص TypeScript transpile على ملفات TS/TSX المعدلة الرئيسية بنجاح.
+
+الملفات داخل الحزمة:
+- map_icons.ts
+- server.ts
+- firestore.indexes.json
+- src/App.tsx
+- src/types.ts
+- src/db/repository.ts
+- src/components/AdminUsers.tsx
+- src/components/Schedules.tsx
+- src/components/LivingScheduleLayer.tsx
+- src/components/ScheduleExperienceLayer.tsx
+- src/components/IntelligenceWorkspace.tsx
+- src/components/SchedulePublish.tsx
+- src/components/ScheduleTransfer.tsx
+- src/styles/04-screens.css
+- src/styles/05-schedule.css
+- src/styles/06-intelligence.css
+- src/styles/07-responsive.css
+- src/styles/09-details.css
+- src/utils/advancedIntelligence.ts
+- src/utils/clientTelemetry.ts
+- src/utils/offlineScheduleQueue.ts

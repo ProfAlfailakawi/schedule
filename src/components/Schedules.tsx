@@ -4562,7 +4562,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (rhythmSwitch) {
       days.forEach(day => { candidate[day.key] = rhythmSwitch.includes(day.key as DayKey); });
     }
-    const place = [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بلا قاعة";
+    const targetRoom = (target as any)?.room as { code?: string; hall?: string } | undefined;
+    const place = targetRoom
+      ? ([targetRoom.code, targetRoom.hall].filter(Boolean).join("/") || "بلا قاعة")
+      : ([row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بلا قاعة");
     const partyCount = multiSelect.has(row.id) ? multiSelect.size : 1;
     return {
       before: `${arabicDays(row) || "بلا يوم"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
@@ -6209,17 +6212,24 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </div>
             )}
             {editorTimingNote ? (
-              <div className="regulation-advice" role="status">
+              <div className="regulation-advice regulation-advice--visual" role="status">
                 <div className="regulation-advice-head">
-                  <Clock3 aria-hidden="true" />
-                  <strong>ملاحظة التوقيت</strong>
-                  <em>تنبيه — لا يمنع الحفظ</em>
+                  <div>
+                    <Clock3 aria-hidden="true" />
+                    <strong>ملاحظة التوقيت</strong>
+                  </div>
+                  <em>تنبيه فقط</em>
                 </div>
-                <article className="regulation-advice-item sev-medium">
-                  <span className="regulation-article">نمط الأيام</span>
-                  <strong>وقت بداية غير معتاد لهذه الأيام</strong>
-                  <span>{editorTimingNote}</span>
-                </article>
+                <div className="regulation-advice-grid regulation-advice-grid-single">
+                  <article className="regulation-advice-tile tone-timing">
+                    <span className="regulation-advice-icon"><Clock3 aria-hidden="true" /></span>
+                    <div>
+                      <small>نمط الأيام</small>
+                      <strong>بداية غير معتادة</strong>
+                      <p>{editorTimingNote}</p>
+                    </div>
+                  </article>
+                </div>
               </div>
             ) : null}
             {/*
@@ -6229,22 +6239,31 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               department is told about, not prevented from doing.
             */}
             {editorRegulation.length ? (
-              <div className="regulation-advice" role="status">
+              <div className="regulation-advice regulation-advice--visual" role="status">
                 <div className="regulation-advice-head">
-                  <ClipboardCheck aria-hidden="true" />
-                  <strong>ملاحظات اللائحة</strong>
-                  <em>تحذير — لا يمنع الحفظ</em>
+                  <div>
+                    <ClipboardCheck aria-hidden="true" />
+                    <strong>ملاحظات اللائحة</strong>
+                  </div>
+                  <em>{countOf(editorRegulation.length, AR.note)}</em>
                 </div>
-                {editorRegulation.slice(0, 4).map(finding => (
-                  <article key={finding.rule} className={`regulation-advice-item sev-${finding.severity}`}>
-                    <span className="regulation-article">{finding.article}</span>
-                    <strong>{finding.title}</strong>
-                    <span>{finding.detail}</span>
-                  </article>
-                ))}
+                <div className="regulation-advice-grid">
+                  {editorRegulation.slice(0, 4).map((finding, index) => (
+                    <article key={finding.rule} className={`regulation-advice-tile tone-${finding.severity}`}>
+                      <span className="regulation-advice-icon">
+                        {index % 3 === 0 ? <History aria-hidden="true" /> : index % 3 === 1 ? <Building2 aria-hidden="true" /> : <Lightbulb aria-hidden="true" />}
+                      </span>
+                      <div>
+                        <small>{finding.article}</small>
+                        <strong>{finding.title}</strong>
+                        <p>{finding.detail}</p>
+                      </div>
+                    </article>
+                  ))}
+                </div>
                 {editorRegulation.length > 4 ? (
                   <small className="regulation-advice-more">
-                    و{(editorRegulation.length - 4).toLocaleString("ar-KW-u-nu-latn")} ملاحظة أخرى تظهر في مراجعة الاعتماد.
+                    +{(editorRegulation.length - 4).toLocaleString("ar-KW-u-nu-latn")} داخل مراجعة الاعتماد
                   </small>
                 ) : null}
               </div>

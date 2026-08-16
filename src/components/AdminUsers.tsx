@@ -1222,7 +1222,7 @@ export default function AdminUsers({
               <div className="vault-preview-card vault-preview-compact">
                 <div className="vault-preview-head">
                   <FileCheck2 />
-                  <div><strong>النسخة سليمة وجاهزة</strong><span>{new Date(backupPreview.createdAt).toLocaleString("ar-KW")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div>
+                  <div><strong>النسخة سليمة وجاهزة</strong><span>{new Date(backupPreview.createdAt).toLocaleString("ar-KW-u-nu-latn")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div>
                 </div>
                 <div className="vault-preview-summary" aria-label="ملخص النسخة">
                   <span><b>{backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b><small>سجل</small></span>
@@ -1262,7 +1262,7 @@ export default function AdminUsers({
           <Surface className="system-vault-action vault-undo">
             <span className="vault-action-icon"><ArchiveRestore /></span>
             <div><small>04</small><h3>تراجع كامل</h3><p>{point ? `آخر نقطة أمان: ${point.action}` : "لا توجد عملية مدمرة محفوظة للتراجع عنها."}</p></div>
-            {point ? <div className="vault-restore-meta"><strong>{new Date(point.createdAt).toLocaleString("ar-KW")}</strong><span>{point.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div> : null}
+            {point ? <div className="vault-restore-meta"><strong>{new Date(point.createdAt).toLocaleString("ar-KW-u-nu-latn")}</strong><span>{point.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div> : null}
             <PrimaryButton type="button" disabled={!point || vaultLocked} onClick={() => void undoSystemOperation()}>
               <ArchiveRestore /> {backupBusy === "undo" ? "أعيد الحالة…" : "تراجع عن آخر عملية"}
             </PrimaryButton>
@@ -1278,7 +1278,7 @@ export default function AdminUsers({
             <header><ArchiveRestore /><strong>نقاط الأمان الأخيرة</strong></header>
             {backupStatus.restorePoints.slice(0, 6).map(item => (
               <article key={item.id} className={item.consumedAt ? "consumed" : ""}>
-                <div><strong>{item.action}</strong><span>{new Date(item.createdAt).toLocaleString("ar-KW")}</span></div>
+                <div><strong>{item.action}</strong><span>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</span></div>
                 <b>{item.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b>
               </article>
             ))}
@@ -1293,7 +1293,7 @@ export default function AdminUsers({
                 <small>تأكيد سيادي · حساب الإدارة الرئيسي</small>
                 <h3>{backupConfirm === "import" ? "استبدال النظام بالنسخة المفحوصة؟" : backupConfirm === "reset" ? "تصفير بيانات العمل؟" : "العودة إلى نقطة الأمان؟"}</h3>
                 <p>{backupConfirm === "import"
-                  ? `النسخة مؤرخة ${backupPreview ? new Date(backupPreview.createdAt).toLocaleString("ar-KW") : "—"}. سيُحفظ النظام الحالي كاملًا أولًا، وإذا فشلت أي خطوة يعيده الخادم تلقائيًا.`
+                  ? `النسخة مؤرخة ${backupPreview ? new Date(backupPreview.createdAt).toLocaleString("ar-KW-u-nu-latn") : "—"}. سيُحفظ النظام الحالي كاملًا أولًا، وإذا فشلت أي خطوة يعيده الخادم تلقائيًا.`
                   : backupConfirm === "reset"
                     ? "سيُحفظ النظام كاملًا أولًا ثم تُمسح بيانات العمل، مع إبقاء حساب الإدارة الرئيسي وباب التراجع فقط. إذا فشلت العملية يعود النظام تلقائيًا إلى حالته السابقة."
                     : `سيعود النظام إلى «${backupStatus?.latest?.action || "نقطة الأمان"}»، وسيحفظ الحالة الحالية كنقطة إعادة قبل التغيير.`}</p>
