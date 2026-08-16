@@ -407,7 +407,7 @@
   .cinema-timeline{grid-template-columns:repeat(5,minmax(230px,1fr))}
   .schedule-context,.intel-drawer{position:fixed;padding:var(--s5)}
 
-  .experience-actions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%}
+  .experience-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
   .experience-actions button{
     flex-direction:column;gap:3px;min-height:56px;padding-inline:var(--s2);justify-content:center;
   }
@@ -428,11 +428,12 @@
     border-radius:var(--r-2xl) var(--r-2xl) 0 0;
   }
   .one-decision-mode>header,.schedule-signature>header{
-    grid-template-columns:46px minmax(0,1fr);
+    grid-template-columns:46px minmax(0,1fr) auto;
     gap:var(--s3);
     padding:var(--s6) var(--s5) var(--s4);
     padding-inline-end:var(--s9);
   }
+  .schedule-signature header>b{min-width:54px;font-size:24px}
   .experience-close{inset-inline-end:var(--s4);top:var(--s4)}
   .decision-option-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
   .decision-orb,.signature-glyph{width:46px;height:46px}
@@ -667,6 +668,25 @@
   .schedule-page>.schedule-agenda-surface,
   .schedule-page>.rooms-surface,
   .schedule-page>.sched-skeleton-surface{order:-1}
+  /* On a phone the timetable is a viewport, never an editor. Keep vertical
+     reading natural, but remove the sideways pan/drag canvas that previously
+     made a finger gesture look like a move. The React capture guard supplies
+     the explanatory sheet on a tap. */
+  .schedule-page>.week-surface,
+  .schedule-page>.rooms-surface,
+  .schedule-page>.schedule-agenda-surface{
+    touch-action:pan-y;
+    overscroll-behavior-x:none;
+    -webkit-user-select:none;
+    user-select:none;
+  }
+  .schedule-page>.week-surface,
+  .schedule-page>.rooms-surface{
+    overflow-x:hidden !important;
+    scroll-snap-type:none !important;
+    -webkit-overflow-scrolling:auto;
+  }
+  .schedule-page>.schedule-agenda-surface .agenda-actions{display:none}
   /* The scope line still has to come first among what is left, because a board
      read against the wrong term is worse than a board found late. */
   .schedule-page>.schedule-control{order:0}

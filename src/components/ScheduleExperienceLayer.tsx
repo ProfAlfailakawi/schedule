@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Clock,
   Fingerprint,
-  Layers3,
   MapPin,
   ShieldCheck,
   Sparkles,
@@ -457,25 +456,6 @@ export default function ScheduleExperienceLayer({
         <div className="experience-actions">
           <button
             type="button"
-            className={e.ghostEnabled ? "active" : ""}
-            onClick={() => {
-              onEnsureWeek();
-              void e.toggleGhost();
-            }}
-            disabled={e.ghostBusy || !e.previousTerm}
-            title="إسقاط الفصل السابق خلف الجدول الحالي"
-          >
-            <Layers3 />
-            <span>
-              {e.ghostBusy
-                ? "أستدعي الفصل السابق…"
-                : e.ghostEnabled
-                  ? "إخفاء الشبح"
-                  : "شبح الفصل السابق"}
-            </span>
-          </button>
-          <button
-            type="button"
             onClick={e.openDecision}
             disabled={!rows.length}
           >
@@ -491,16 +471,6 @@ export default function ScheduleExperienceLayer({
             <span>بصمة القسم</span>
           </button>
         </div>
-        {e.ghostEnabled ? (
-          <div className="ghost-semester-readout">
-            <span>{e.previousTerm?.AdTermName || "الفصل السابق"}</span>
-            <b>{e.comparison.moved} تغيّر</b>
-            <small>
-              {e.comparison.day} أيام · {e.comparison.instructor} أساتذة ·{" "}
-              {e.comparison.room} قاعات
-            </small>
-          </div>
-        ) : null}
         {e.ghostError || e.insightError ? <Notice>{e.ghostError || e.insightError}</Notice> : null}
       </section>
 
@@ -746,6 +716,7 @@ export default function ScheduleExperienceLayer({
                 <small>/100</small>
               </b>
             </header>
+            <div className="signature-scroll">
             <div className="signature-grid">
               <article>
                 <span>
@@ -844,6 +815,7 @@ export default function ScheduleExperienceLayer({
                   ))}
                 </div>
               ) : null}
+            </div>
             </div>
             <footer>
               <ShieldCheck />

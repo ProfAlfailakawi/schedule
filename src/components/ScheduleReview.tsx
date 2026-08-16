@@ -87,7 +87,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   );
   const score = useMemo(() => regulationScore(findings, rows.length), [findings, rows.length]);
   const blocking = findings.filter(finding => finding.severity === "high");
-  const [open, setOpen] = useState<string | null>(findings[0]?.rule || null);
+  const [open, setOpen] = useState<string | null>(null);
 
   /**
    * The schedule as a bar rather than a list.

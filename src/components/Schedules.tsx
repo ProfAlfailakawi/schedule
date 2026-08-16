@@ -355,7 +355,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      the toolbar even after its fields are folded away. */
   const [lensOpen, setLensOpen] = useState(false);
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
-  const [mobileViewGate, setMobileViewGate] = useState<"week" | "rooms" | null>(null);
+  const [mobileViewGate, setMobileViewGate] = useState<"list" | "week" | "rooms" | null>(null);
+  const [phoneReadOnly, setPhoneReadOnly] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches,
+  );
+  const [livingPanelOpen, setLivingPanelOpen] = useState(false);
   const [returnNote] = useState(() => {
     const note = sessionStorage.getItem("schedule-return-note") || "";
     sessionStorage.removeItem("schedule-return-note");
@@ -366,6 +370,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const rippleTimer = useRef<number | undefined>(undefined),
     rippleKey = useRef("");
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia("(max-width: 760px)");
+    const sync = () => setPhoneReadOnly(query.matches);
+    sync();
+    query.addEventListener?.("change", sync);
+    return () => query.removeEventListener?.("change", sync);
+  }, []);
   const [filterCollege, setFilterCollege] = useState(
       Number(savedPrefs.filterCollege) || 0,
     ),
@@ -759,6 +771,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [undoBarId, undoLog],
   );
   const runUndoEntry = async (entry: UndoEntry) => {
+    if (showMobileReadOnlyGate()) return;
     if (entry.usedAt || undoBusy) return;
     // Anything but the newest change may sit under later edits to the same row,
     // so what the reversal will actually do is stated plainly before it runs.
@@ -1273,17 +1286,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     selectedInstructor = instructorById.get(form.AdInstructorId);
   const changeView = useCallback((value: string) => {
     const next = value === "week" ? "week" : value === "rooms" ? "rooms" : "list";
-    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
-    if (phone && next !== "list") {
-      setMobileViewGate(next);
-      return;
-    }
     startTransition(() => setViewMode(next));
-  }, []);
-  useEffect(() => {
-    const phone = typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches;
-    if (phone && viewMode !== "list") setViewMode("list");
-  }, []);
+    if (phoneReadOnly) setMobileViewGate(next);
+  }, [phoneReadOnly]);
+  const showMobileReadOnlyGate = useCallback(() => {
+    if (!phoneReadOnly) return false;
+    setMobileViewGate(viewMode === "week" ? "week" : viewMode === "rooms" ? "rooms" : "list");
+    return true;
+  }, [phoneReadOnly, viewMode]);
   const filterScope = resolveScopeSelection(scopes, filterCollege, isPowerAdmin);
   const formScope = resolveScopeSelection(scopes, form.AdCollegeId, isPowerAdmin);
   const copyScope = resolveScopeSelection(scopes, copyCollege, isPowerAdmin);
@@ -1312,6 +1322,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (next.sectionId !== copySection) setCopySection(next.sectionId);
   }, [mode, isPowerAdmin, sections.length, scopes, copyCollege, copySection]);
   const openCreate = (seed?: { day?: DayKey; start?: string; end?: string }) => {
+      if (showMobileReadOnlyGate()) return;
       setError(null);
       setMessage(null);
       setConflicts([]);
@@ -1350,6 +1361,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       setEditor("create");
     },
     openEdit = (row: FSchedule) => {
+      if (showMobileReadOnlyGate()) return;
       setError(null);
       setMessage(null);
       setConflicts([]);
@@ -2106,6 +2118,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (showMobileReadOnlyGate()) return;
     setError(null);
     setMessage(null);
     if (
@@ -2203,6 +2216,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * field that is already under the reader's hand.
    */
   const createQuick = async (draft: QuickDraft) => {
+    if (showMobileReadOnlyGate()) return;
     if (!quick) return;
     setQuickError(null);
     const scope = quickScope();
@@ -2268,6 +2282,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   /* «تفاصيل أكثر»: the same draft, handed to the full editor without losing a
      keystroke — the card is a shortcut through the form, never a smaller one. */
   const expandQuick = (draft: QuickDraft) => {
+    if (showMobileReadOnlyGate()) { setQuick(null); return; }
     if (!quick) return;
     const seedDay = quick.day, start = draft.start, end = draft.end;
     setQuick(null);
@@ -2283,6 +2298,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (draft.courseId) setCourseName(courseById.get(draft.courseId)?.CourseName || "");
   };
   const remove = async (id: number) => {
+    if (showMobileReadOnlyGate()) return;
     if (!window.confirm("هل أنت متأكد من حذف بيانات المقرر الدراسي؟")) return;
     setError(null);
     const before = rows.find((row) => row.id === id);
@@ -2588,6 +2604,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   }, [presence]);
 
   const commitMove = async (request: SchedulePhysicsDropRequest) => {
+    if (showMobileReadOnlyGate()) return;
     const { row, target } = request;
     const day = target.day as DayKey;
     // A whole selection travels together, keeping the shape it already had.
@@ -2770,6 +2787,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * undo entry, and the moved card wearing its own way back for a minute.
    */
   const commitRoomMove = async (row: FSchedule, day: DayKey, start: string, building: string, hall: string) => {
+    if (showMobileReadOnlyGate()) return;
     const duration = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
     const end = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(start) + duration));
     const unchanged = row.fstarttime === start &&
@@ -2877,6 +2895,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   };
 
   const undoPhysicsDecision = async () => {
+    if (showMobileReadOnlyGate()) return;
     if (!isPowerAdmin || !undoPoint) return;
     if (
       !window.confirm(
@@ -3262,6 +3281,50 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!window.matchMedia("(max-width:768px)").matches) return;
     setExpandedDay(current => current ?? todayKey ?? (days[0]?.key as DayKey));
   }, [viewMode, todayKey]);
+
+  /*
+   * Phone = observation, never editing.
+   *
+   * The timetable itself is still rendered — list, week and rooms can all be
+   * inspected — but an interaction that lands inside the timetable canvas is
+   * intercepted in the capture phase before a card, slot or drag engine sees
+   * it.  Pointer-down is stopped without preventDefault so normal vertical page
+   * scrolling keeps working; the resulting tap is then turned into one clear
+   * explanation instead of an accidental edit.
+   */
+  useEffect(() => {
+    if (!phoneReadOnly || mode !== "schedule" || typeof document === "undefined") return;
+    const root = document.querySelector<HTMLElement>(".schedule-page");
+    if (!root) return;
+    const insideCanvas = (event: Event) => {
+      const target = event.target as HTMLElement | null;
+      return Boolean(target?.closest(".schedule-agenda-surface, .rooms-surface, .week-surface"));
+    };
+    const stopStart = (event: Event) => {
+      if (!insideCanvas(event)) return;
+      event.stopPropagation();
+    };
+    const explain = (event: Event) => {
+      if (!insideCanvas(event)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setMobileViewGate(viewMode === "week" ? "week" : viewMode === "rooms" ? "rooms" : "list");
+    };
+    root.addEventListener("pointerdown", stopStart, true);
+    root.addEventListener("click", explain, true);
+    root.addEventListener("dblclick", explain, true);
+    root.addEventListener("dragstart", explain, true);
+    root.addEventListener("drop", explain, true);
+    root.addEventListener("contextmenu", explain, true);
+    return () => {
+      root.removeEventListener("pointerdown", stopStart, true);
+      root.removeEventListener("click", explain, true);
+      root.removeEventListener("dblclick", explain, true);
+      root.removeEventListener("dragstart", explain, true);
+      root.removeEventListener("drop", explain, true);
+      root.removeEventListener("contextmenu", explain, true);
+    };
+  }, [phoneReadOnly, mode, viewMode]);
   /** How many appointments each day actually carries — every day gets a count. */
   const dayCounts = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -4650,8 +4713,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     // Read-only accounts keep every reading command and lose only the writing
     // ones — the palette must never offer a door the account cannot open.
     const writes = new Set(["schedule.create", "schedule.pick", "schedule.undo", "schedule.clash"]);
-    return list.map(command => (isPowerAdmin || !writes.has(command.id) ? command : { ...command, visible: false }));
-  }, [viewMode, todayKey, picking, pendingUndo, liveClash, focusMode, presentationMode, hueBy, hueHidden, hueFocus, savedViews, activeView, viewDirty, isPowerAdmin, changeView, applyView, captureView, viewsStore]);
+    const phoneWrites = new Set(["schedule.create", "schedule.pick", "schedule.undo", "schedule.keymove", "schedule.repair"]);
+    return list.map(command => {
+      if (phoneReadOnly && phoneWrites.has(command.id)) return { ...command, visible: false };
+      return isPowerAdmin || !writes.has(command.id) ? command : { ...command, visible: false };
+    });
+  }, [viewMode, todayKey, picking, pendingUndo, liveClash, focusMode, presentationMode, hueBy, hueHidden, hueFocus, savedViews, activeView, viewDirty, isPowerAdmin, phoneReadOnly, changeView, applyView, captureView, viewsStore]);
 
   /**
    * ── One keyboard, one place ───────────────────────────────────────────────
@@ -5749,6 +5816,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         </div>
       </div>
     );
+  const dockSuppressed = Boolean(
+    presentationMode ||
+    livingPanelOpen ||
+    experience.decisionOpen ||
+    experience.signatureOpen ||
+    reviewOpen ||
+    editor !== "index" ||
+    viewDialog ||
+    transferOpen ||
+    undoLogOpen ||
+    paletteOpen ||
+    shortcutsOpen ||
+    driftOpen ||
+    inboxOpen ||
+    clash ||
+    context ||
+    quick ||
+    repair ||
+    fanned ||
+    mobileViewGate
+  );
   return (
     <div className="content-stack schedule-page">
       <PageTitle
@@ -5759,11 +5847,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         الجدول الدراسي
       </PageTitle>
       {mobileViewGate ? (
-        <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="هذا العرض يحتاج كمبيوتر">
+        <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="الجدول على الهاتف للقراءة فقط">
           <div className="mobile-desktop-gate-card">
-            <span className="mobile-desktop-gate-icon">{mobileViewGate === "week" ? <CalendarDays /> : <MapPin />}</span>
-            <div><strong>{mobileViewGate === "week" ? "عرض الأسبوع" : "عرض القاعات"}</strong><p>على الهاتف نحافظ على الجدول ثابتًا وقابلًا للقراءة. هذا العرض يحتاج شاشة كمبيوتر حتى تظهر الأعمدة والحركة بدقة ومن دون قص أو التفاف.</p></div>
-            <button type="button" onClick={() => setMobileViewGate(null)}>حسنًا</button>
+            <span className="mobile-desktop-gate-icon">
+              {mobileViewGate === "week" ? <CalendarDays /> : mobileViewGate === "rooms" ? <MapPin /> : <LayoutList />}
+            </span>
+            <div>
+              <strong>المشاهدة على الهاتف فقط</strong>
+              <p>
+                يمكنك قراءة {mobileViewGate === "week" ? "عرض الأسبوع" : mobileViewGate === "rooms" ? "عرض القاعات" : "قائمة المواعيد"} هنا،
+                لكن النقل والتعديل والسحب والإفلات وإنشاء المواعيد تعمل من الكمبيوتر فقط حتى لا يتغيّر الجدول بلمسة غير مقصودة.
+              </p>
+            </div>
+            <button type="button" onClick={() => setMobileViewGate(null)}>متابعة المشاهدة</button>
           </div>
         </div>
       ) : null}
@@ -5999,12 +6095,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             </GhostButton> : null}
             {workspaceToolsOpen ? <GhostButton
               type="button"
-              onClick={() => setTransferOpen(true)}
+              onClick={() => { if (!showMobileReadOnlyGate()) setTransferOpen(true); }}
               title={isPowerAdmin ? "استيراد وتصدير واستبدال أستاذ والمنتدبون" : "المنتدبون"}
             >
               <ArrowLeftRight /> {isPowerAdmin ? "أدوات البيانات" : "المنتدبون"}
             </GhostButton> : null}
-            {workspaceToolsOpen && isPowerAdmin ? (
+            {workspaceToolsOpen && isPowerAdmin && !phoneReadOnly ? (
               <SchedulePublish
                 collegeId={filterCollege}
                 sectionId={filterSection}
@@ -6144,6 +6240,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onRefresh={loadRows}
         experience={experience}
         onEnsureWeek={() => setViewMode("week")}
+        onPanelOpenChange={setLivingPanelOpen}
       />
       {rowsLoading && !rows.length ? (
         <Surface className="sched-skeleton-surface">
@@ -6401,13 +6498,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     options={[{ value: "week", label: "الأسبوع كامل" }, ...days.map(day => ({ value: day.key, label: day.label }))]}
                     onChange={(value) => setMatrixDay(value as DayKey | "week")}
                   />
-                  <small>{matrixDay === "week" ? "مقارنة سريعة: القاعة ثم أيام استخدامها ثم ساعاتها؛ كل مقرر يبقى داخل مدته الحقيقية ويظهر معه أستاذه ونمط أيامه." : "عرض يوم منفرد — ارجع إلى «الأسبوع كامل» للمقارنة المدمجة بين القاعات."}</small>
+                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "مقارنة سريعة: القاعة ثم أيام استخدامها ثم ساعاتها؛ كل مقرر يبقى داخل مدته الحقيقية ويظهر معه أستاذه ونمط أيامه." : "عرض يوم منفرد — ارجع إلى «الأسبوع كامل» للمقارنة المدمجة بين القاعات."}</small>
                 </div>
                 {allRooms.length > 1 ? (
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
                       <div><MapPin /><strong>القاعات المعروضة</strong></div>
-                      <small>{matrixRooms.size ? `اخترت ${matrixRooms.size} من ${countOf(allRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.` : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
+                      <small>{phoneReadOnly ? "القاعات معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixRooms.size ? `اخترت ${matrixRooms.size} من ${countOf(allRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.` : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
                     </div>
                     <div className="rooms-picker" role="group" aria-label="اختيار قاعة واحدة أو عدة قاعات">
                     <button
@@ -6592,6 +6689,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               >
                 {physicsActive && dragComparison
                   ? `قبل: ${dragComparison.before} ← بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
+                  : phoneReadOnly
+                    ? "على الهاتف هذا الجدول للقراءة فقط. المس أي جزء من الجدول لتعرف كيف تكمل النقل أو التعديل على الكمبيوتر."
                   : picking
                     ? "النقل الجماعي: اختر المواعيد المطلوبة، ثم اسحب أي واحد منها — تنتقل المجموعة معاً بعد فحص الموانع."
                     : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · أو انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}
@@ -7428,7 +7527,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         can drift out of step. It stands down for the cinema view, which is a
         room the audience is not meant to be steering.
       */}
-      {!presentationMode ? (
+      {!dockSuppressed ? (
         <nav className="schedule-dock no-print" aria-label="أدوات الجدول السريعة">
           <div className="dock-views" role="group" aria-label="طريقة العرض">
             <button

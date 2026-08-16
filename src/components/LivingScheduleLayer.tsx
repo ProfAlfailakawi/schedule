@@ -55,6 +55,13 @@ const DAYS: Array<{ key: DayKey; label: string }> = [
   { key: "fwednesday", label: "الأربعاء" },
   { key: "fthursday", label: "الخميس" },
 ];
+const termChronology = (term: AdTerm | undefined | null) => {
+  if (!term) return Number.NEGATIVE_INFINITY;
+  const name = String(term.AdTermName || "");
+  const years = name.match(/(\d{4})\s*\/\s*(\d{4})/);
+  const season = name.includes("الصيفي") ? 2 : name.includes("الثاني") ? 1 : name.includes("الأول") ? 0 : 0;
+  return years ? Number(years[1]) * 10 + season : Number(term.AdTermId || 0);
+};
 const dayLabel = (row: FSchedule) =>
   DAYS.filter((day) => row[day.key])
     .map((day) => day.label)
@@ -72,6 +79,7 @@ interface Props {
   onRefresh?: () => void;
   experience?: ScheduleExperience;
   onEnsureWeek?: () => void;
+  onPanelOpenChange?: (open: boolean) => void;
 }
 
 export default function LivingScheduleLayer({
@@ -87,6 +95,7 @@ export default function LivingScheduleLayer({
   onRefresh,
   experience,
   onEnsureWeek,
+  onPanelOpenChange,
 }: Props) {
   const power = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
   const [living, setLiving] = useState<any>(null),
@@ -95,6 +104,7 @@ export default function LivingScheduleLayer({
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
   const livingRequest = useRef(0);
+  const sourceTargetRef = useRef(0);
   const [selectedId, setSelectedId] = useState<number>(sourceRows[0]?.id || 0),
     [whyResult, setWhyResult] = useState<any>(null),
     [candidateStart, setCandidateStart] = useState(""),
@@ -109,6 +119,10 @@ export default function LivingScheduleLayer({
     [safety, setSafety] = useState<any[]>([]),
     [minutes, setMinutes] = useState<any>(null),
     [copilot, setCopilot] = useState<any>(null);
+  useEffect(() => {
+    onPanelOpenChange?.(Boolean(scene));
+  }, [scene, onPanelOpenChange]);
+  useEffect(() => () => onPanelOpenChange?.(false), [onPanelOpenChange]);
   const rows = useMemo(
     () =>
       living?.context
@@ -158,6 +172,16 @@ export default function LivingScheduleLayer({
         .filter(Boolean) as AdInstructor[],
     [rows, instructorById],
   );
+  const targetTerm = useMemo(
+    () => terms.find((term) => term.AdTermId === termId) || null,
+    [terms, termId],
+  );
+  const sourceTerms = useMemo(() => {
+    const targetOrder = termChronology(targetTerm);
+    return [...terms]
+      .filter((term) => term.AdTermId !== termId && termChronology(term) < targetOrder)
+      .sort((a, b) => termChronology(b) - termChronology(a));
+  }, [terms, termId, targetTerm]);
   const contextQuery = () => {
     const p = new URLSearchParams();
     if (collegeId) p.set("collegeId", String(collegeId));
@@ -201,13 +225,14 @@ export default function LivingScheduleLayer({
     setWhyResult(null);
   }, [selected?.id]);
   useEffect(() => {
-    if (!sourceTerm) {
-      const previous = [...terms]
-        .filter((t) => t.AdTermId !== termId)
-        .sort((a, b) => b.AdTermId - a.AdTermId)[0];
-      if (previous) setSourceTerm(previous.AdTermId);
+    if (sourceTargetRef.current !== termId) {
+      sourceTargetRef.current = termId;
+      setSourceTerm(sourceTerms[0]?.AdTermId || 0);
+      return;
     }
-  }, [terms, termId, sourceTerm]);
+    if (sourceTerms.some((term) => term.AdTermId === sourceTerm)) return;
+    setSourceTerm(sourceTerms[0]?.AdTermId || 0);
+  }, [termId, sourceTerms, sourceTerm]);
   const open = (next: Scene) => {
     setScene(next);
     setError("");
@@ -315,6 +340,8 @@ export default function LivingScheduleLayer({
       });
       setGenesis(d);
       setMessage("تم بناء مسودة بداية الفصل دون نشر أي موعد.");
+      onEnsureWeek?.();
+      setScene(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -582,14 +609,6 @@ export default function LivingScheduleLayer({
             </nav>
             {experience ? (
               <section className="living-experience-tools" aria-label="أدوات القرار المتقدمة">
-                {/* The comparison paints itself onto the week grid — which is
-                    behind this drawer. Both of its neighbours dismiss the drawer
-                    before acting for exactly that reason; this one did not, so
-                    it worked perfectly and invisibly, under a full-screen tint.
-                    It now leaves the room it drew in. */}
-                <button type="button" className={experience.ghostEnabled ? "active" : ""} onClick={() => { onEnsureWeek?.(); setScene(null); void experience.toggleGhost(); }} disabled={experience.ghostBusy || !experience.previousTerm}>
-                  <Dna /><span>{experience.ghostEnabled ? "إخفاء مقارنة الفصل" : "مقارنة الفصل السابق"}</span>
-                </button>
                 <button type="button" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>
                   <BrainCircuit /><span>القرار الأهم الآن</span>
                 </button>
@@ -761,33 +780,33 @@ export default function LivingScheduleLayer({
                   ) : null}
                   <div className="genesis-controls">
                     <label>
-                      <span>الفصل المصدر</span>
+                      <span>1 · انسخ من فصل سابق</span>
                       <select
                         value={sourceTerm}
                         onChange={(e) => setSourceTerm(Number(e.target.value))}
+                        disabled={!sourceTerms.length}
                       >
-                        {terms
-                          .filter((t) => t.AdTermId !== termId)
-                          .sort((a, b) => b.AdTermId - a.AdTermId)
-                          .map((t) => (
+                        {!sourceTerms.length ? <option value="">لا يوجد فصل سابق متاح</option> : null}
+                        {sourceTerms.map((t) => (
                             <option key={t.AdTermId} value={t.AdTermId}>
                               {t.AdTermName}
                             </option>
                           ))}
                       </select>
+                      <small>يعرض النظام الفصول الأقدم فقط؛ لا يمكن نسخ فصل أحدث إلى فصل أقدم.</small>
                     </label>
                     <div className="genesis-arrow">
                       <ArrowLeft />
                     </div>
                     <label>
-                      <span>الفصل الجديد</span>
+                      <span>2 · أنشئ مسودة للفصل المفتوح الآن</span>
                       <b>
-                        {terms.find((t) => t.AdTermId === termId)?.AdTermName ||
-                          living.context?.termName}
+                        {targetTerm?.AdTermName || living.context?.termName}
                       </b>
+                      <small>هذا هو الفصل الذي تعمل عليه الآن؛ لن يتغير الجدول الحقيقي قبل النشر.</small>
                     </label>
                     <PrimaryButton
-                      disabled={busy || !sourceTerm}
+                      disabled={busy || !sourceTerm || !sourceTerms.length}
                       onClick={runGenesis}
                     >
                       <WandSparkles />
