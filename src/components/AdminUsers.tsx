@@ -19,6 +19,7 @@ import {
   Upload,
   UserCog,
   UsersRound,
+  RefreshCw,
 } from "lucide-react";
 import {
   AddButton,
@@ -164,6 +165,19 @@ function EmptyInspector({ icon, title }: { icon: React.ReactNode; title: string 
   );
 }
 
+const collectionMeta: Record<string, { label: string, icon: React.FC<any> }> = {
+  users: { label: "المستخدمين", icon: UsersRound },
+  colleges: { label: "الكليات", icon: Landmark },
+  terms: { label: "الفصول", icon: Activity },
+  sections: { label: "الشعب", icon: Building2 },
+  instructors: { label: "المحاضرين", icon: UserCog },
+  courses: { label: "المقررات", icon: ScrollText },
+  schedules: { label: "الجداول", icon: ScrollText },
+  formNames: { label: "نماذج الصلاحيات", icon: ShieldCheck },
+  formSecurity: { label: "الأمن", icon: KeyRound },
+  collegeUserAssign: { label: "ربط الكليات", icon: UserCog },
+};
+
 export default function AdminUsers({
   mode,
   onNavigate,
@@ -295,18 +309,21 @@ export default function AdminUsers({
       if (runner === exportRunner.current) setBackupBusy(null);
     }
   };
-  const exportFullBackup = async () => {
+  const exportFullBackup = async (forceNew = false) => {
     setError(null);
     setBackupMessage(null);
-    // Failed is resumable too. This specifically preserves a 47/48 checkpoint
-    // instead of forcing a new scan after one transient production failure.
-    if (exportJob && ["queued", "running", "finalizing", "failed"].includes(exportJob.status)) {
+    if (!forceNew && exportJob && ["queued", "running", "finalizing", "failed"].includes(exportJob.status)) {
       await driveExportJob(exportJob.id);
       return;
     }
     setBackupBusy("export");
     try {
-      const job = await api("/api/system-backup/export-jobs", { method: "POST" }) as ExportJob;
+      const url = forceNew ? "/api/system-backup/export-jobs?force=true" : "/api/system-backup/export-jobs";
+      const job = await api(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ force: forceNew }),
+      }) as ExportJob;
       setExportJob(job);
       if (job.status === "ready") {
         setBackupMessage(`النسخة جاهزة: ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل.`);
@@ -321,15 +338,50 @@ export default function AdminUsers({
       setError(e.message || "تعذر بدء التصدير");
     }
   };
-  const downloadFullBackup = () => {
+  const resetExportJobs = async () => {
+    if (!window.confirm("هل أنت متأكد من رغبتك في تصفير التصدير الحالي؟")) return;
+    setError(null);
+    setBackupBusy("export");
+    try {
+      await api("/api/system-backup/export-jobs", { method: "DELETE" });
+      setExportJob(null);
+      setBackupMessage("تم تصفير عمليات التصدير السابقة بنجاح.");
+    } catch (e: any) {
+      setError(e.message || "تعذر تصفير المهام");
+    } finally {
+      setBackupBusy(null);
+    }
+  };
+
+  const downloadFullBackup = async () => {
     if (!exportJob || exportJob.status !== "ready") return;
-    const link = document.createElement("a");
-    link.href = `/api/system-backup/export-jobs/${encodeURIComponent(exportJob.id)}/download`;
-    link.rel = "noopener";
-    link.setAttribute("download", exportJob.filename || "schedule-full-backup.json.gz");
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    setBackupBusy("export");
+    setError(null);
+    try {
+      const response = await fetch(`/api/system-backup/export-jobs/${encodeURIComponent(exportJob.id)}/download`);
+      if (!response.ok) {
+        let msg = "تعذر تنزيل ملف النسخة الاحتياطية";
+        try { const d = await response.json(); if (d.error) msg = d.error; } catch {}
+        throw new Error(msg);
+      }
+      const blob = await response.blob();
+      const filename = exportJob.filename || "schedule-full-backup.json.gz";
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", filename);
+      document.body.appendChild(link);
+      link.click();
+      window.setTimeout(() => {
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      }, 1000);
+      setBackupMessage(`تم تنزيل ملف النسخة الاحتياطية بنجاح (${(blob.size / 1024 / 1024).toFixed(2)} MB).`);
+    } catch (e: any) {
+      setError(e.message || "تعذر تنزيل النسخة");
+    } finally {
+      setBackupBusy(null);
+    }
   };
   const previewBackup = async () => {
     if (!backupFile) { setError("اختر ملف النسخة الاحتياطية أولاً"); return; }
@@ -338,93 +390,22 @@ export default function AdminUsers({
     catch (e: any) { setError(e.message); }
     finally { setBackupBusy(null); }
   };
-  const uploadImportJob = (file: File): Promise<ImportJob> => new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/system-backup/import-jobs", true);
-    xhr.setRequestHeader("Content-Type", file.name.endsWith(".gz") ? "application/gzip" : "application/octet-stream");
-    xhr.setRequestHeader("X-Schedule-Confirm", "FULL-SYSTEM-IMPORT");
-    xhr.upload.onprogress = (event) => {
-      if (!event.lengthComputable) return;
-      setImportUploadPercent(Math.max(1, Math.min(8, Math.round((event.loaded / event.total) * 8))));
-    };
-    xhr.onerror = () => reject(new Error("انقطع الاتصال أثناء رفع النسخة. لم يبدأ الاستيراد بعد."));
-    xhr.onload = () => {
-      let data: any = {};
-      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : {}; }
-      catch { reject(new Error("وصل رد غير متوقع أثناء تجهيز الاستيراد")); return; }
-      if (xhr.status < 200 || xhr.status >= 300) { reject(new Error(data.error || `تعذر تجهيز الاستيراد (${xhr.status})`)); return; }
-      setImportUploadPercent(8);
-      resolve(data as ImportJob);
-    };
-    xhr.send(file);
-  });
-  const driveImportJob = async (jobId: string) => {
-    const runner = ++importRunner.current;
-    setBackupBusy("import");
-    setError(null);
-    let transportRetries = 0;
-    let visibleFailureRetries = 0;
-    try {
-      let job = await api(`/api/system-backup/import-jobs/${encodeURIComponent(jobId)}`) as ImportJob;
-      setImportJob(job);
-      while (runner === importRunner.current && job.status !== "ready") {
-        try {
-          job = await api(`/api/system-backup/import-jobs/${encodeURIComponent(jobId)}/step`, { method: "POST" }) as ImportJob;
-          transportRetries = 0;
-        } catch (stepError: any) {
-          transportRetries += 1;
-          if (transportRetries > 12) throw stepError;
-          setBackupMessage("تعثر الاتصال لحظيًا أثناء الاستيراد — أتابع من نقطة الأمان المحفوظة.");
-          await new Promise(resolve => window.setTimeout(resolve, Math.min(5000, 400 * (2 ** (transportRetries - 1)))));
-          continue;
-        }
-        if (runner !== importRunner.current) return;
-        setImportJob(job);
-        if (job.status === "failed") {
-          visibleFailureRetries += 1;
-          if (visibleFailureRetries > 8) break;
-          setBackupMessage(`تعثر الاستيراد عند ${job.completedUnits}/${job.totalUnits} — أعيد المرحلة نفسها دون تكرار المراحل المكتملة.`);
-          await new Promise(resolve => window.setTimeout(resolve, 1000 * visibleFailureRetries));
-          continue;
-        }
-        visibleFailureRetries = 0;
-        await new Promise(resolve => window.setTimeout(resolve, 160));
-      }
-      if (job.status === "ready") {
-        setBackupFile(null); setBackupPreview(null); setImportUploadPercent(0);
-        await refreshBackupStatus();
-        setBackupMessage("تم استيراد النظام كاملًا والتحقق منه. نقطة التراجع محفوظة تلقائيًا.");
-      } else if (job.status === "failed") {
-        try {
-          const status = await api("/api/system-backup/status") as BackupStatus;
-          if (runner === importRunner.current) setBackupStatus(status);
-        } catch {}
-        setError(job.error || "تعذر إكمال مرحلة الاستيراد. نقطة الأمان محفوظة ويمكن الاستكمال من نفس المرحلة.");
-      }
-    } catch (e: any) {
-      if (runner === importRunner.current) setError(`${e.message || "تعذر متابعة الاستيراد"} — نقطة التقدم محفوظة.`);
-    } finally {
-      if (runner === importRunner.current) setBackupBusy(null);
-    }
-  };
   const importFullBackup = async (confirmed = false) => {
-    // A staged import no longer needs the original browser file to resume.
-    if (importJob && ["running", "failed"].includes(importJob.status)) {
-      await driveImportJob(importJob.id);
-      return;
-    }
     if (!backupFile || !backupPreview) { setError("افحص النسخة أولاً قبل الاستيراد"); return; }
     if (!confirmed) { setBackupConfirm("import"); return; }
     setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("import"); setImportUploadPercent(1);
     try {
-      const job = await uploadImportJob(backupFile);
-      setImportJob(job);
+      setBackupMessage("جاري رفع النسخة واستيراد النظام كاملًا...");
+      await backupRequest("/api/system-backup/import", backupFile, "FULL-SYSTEM-IMPORT");
       setBackupFile(null);
-      setBackupMessage("تم رفع النسخة وفحصها. أبدأ الآن نقطة الأمان ثم الاستيراد المتدرج.");
-      setBackupBusy(null);
-      await driveImportJob(job.id);
+      setBackupPreview(null);
+      await refreshBackupStatus();
+      setBackupMessage("تم استيراد النظام كاملًا بنجاح وتم أخذ نقطة تراجع تلقائيًا.");
     } catch (e: any) {
-      setBackupBusy(null); setImportUploadPercent(0); setError(e.message || "تعذر بدء الاستيراد");
+      setError(e.message || "تعذر إكمال الاستيراد");
+    } finally {
+      setBackupBusy(null);
+      setImportUploadPercent(0);
     }
   };
   const resetFullSystem = async (confirmed = false) => {
@@ -446,7 +427,7 @@ export default function AdminUsers({
     if (!confirmed) { setBackupConfirm("undo"); return; }
     setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("undo");
     try {
-      await api("/api/system-backup/undo", { method: "POST", headers: { "X-Schedule-Confirm": "FULL-SYSTEM-UNDO" } });
+      await api("/api/system-backup/undo", { method: "POST", headers: { "Content-Type": "application/json", "X-Schedule-Confirm": "FULL-SYSTEM-UNDO" } });
       await refreshBackupStatus();
       setBackupMessage("تم التراجع الكامل بنجاح، وحُفظت الحالة التي غادرتها كنقطة إعادة آمنة.");
     } catch (e: any) { setError(e.message); }
@@ -1032,7 +1013,7 @@ export default function AdminUsers({
       : exportJob?.totalUnits ? Math.max(2, Math.min(97, Math.round((exportJob.completedUnits / exportJob.totalUnits) * 97)))
       : exportJob ? 2 : 0;
     const exportStatusLabel = exportJob?.status === "ready" ? "جاهزة للتنزيل"
-      : exportJob?.status === "failed" ? "توقفت مؤقتًا — التقدم محفوظ ويمكن الاستكمال"
+      : exportJob?.status === "failed" ? `توقفت مؤقتًا (${exportJob.error || "خطأ غير معروف"})`
       : exportJob?.status === "finalizing" ? "أبني الملف النهائي وأتحقق من SHA-256"
       : exportJob ? "أجمع البيانات وأحفظ نقاط التقدم" : "لم يبدأ التصدير بعد";
     const importPercent = importJob?.status === "ready" ? 100
@@ -1096,14 +1077,33 @@ export default function AdminUsers({
                 <PrimaryButton type="button" disabled={Boolean(backupBusy) || importInProgress} onClick={downloadFullBackup}>
                   <Download /> تنزيل النسخة
                 </PrimaryButton>
-                <SecondaryButton type="button" disabled={Boolean(backupBusy) || importInProgress} onClick={() => void exportFullBackup()}>
+                <SecondaryButton type="button" disabled={Boolean(backupBusy) || importInProgress} onClick={() => void exportFullBackup(true)}>
                   <DatabaseBackup /> إنشاء نسخة أحدث
                 </SecondaryButton>
               </div>
+            ) : exportJob?.status === "failed" ? (
+              <div className="vault-inline-actions">
+                <PrimaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
+                  <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${exportJob.documentCount} سجل)` : `استكمال من ${exportJob.completedUnits}/${exportJob.totalUnits}`}
+                </PrimaryButton>
+                <SecondaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(true)}>
+                  <RefreshCw /> بدء تصدير جديد
+                </SecondaryButton>
+                <SecondaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={resetExportJobs} title="إلغاء التصدير الحالي وتصفيره">
+                  تصفير المهام
+                </SecondaryButton>
+              </div>
             ) : (
-              <PrimaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup()}>
-                <DatabaseBackup /> {backupBusy === "export" ? "أتابع التصدير…" : exportInProgress ? "استكمال التصدير" : exportJob?.status === "failed" ? `استكمال من ${exportJob.completedUnits}/${exportJob.totalUnits}` : "تصدير النظام كاملًا"}
-              </PrimaryButton>
+              <div className="vault-inline-actions">
+                <PrimaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
+                  <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${exportJob?.documentCount || 0} سجل)` : exportInProgress ? "استكمال التصدير" : "تصدير النظام كاملًا"}
+                </PrimaryButton>
+                {exportJob && exportJob.status !== "ready" && (
+                  <SecondaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={resetExportJobs}>
+                    تصفير المهام العالقة
+                  </SecondaryButton>
+                )}
+              </div>
             )}
           </Surface>
 
@@ -1131,6 +1131,43 @@ export default function AdminUsers({
                 {importJob?.status === "failed" && importJob.error ? <p className="vault-export-error">{importJob.error}</p> : null}
               </div>
             ) : null}
+
+            {backupPreview ? (
+              <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-6 mt-6 space-y-4 shadow-sm">
+                <div className="flex items-center gap-4 text-emerald-900 border-b border-emerald-100 pb-4">
+                  <div className="p-3 bg-emerald-100 rounded-full text-emerald-600 shadow-inner">
+                    <FileCheck2 className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <strong className="block text-lg font-bold">النسخة مفحوصة وجاهزة</strong>
+                    <span className="text-sm opacity-80">{new Date(backupPreview.createdAt).toLocaleString("ar-KW")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between bg-white px-4 py-3 rounded-lg border border-slate-200 text-sm shadow-sm">
+                  <span className="text-slate-500 font-medium">البصمة (SHA-256)</span>
+                  <code dir="ltr" className="text-slate-600 font-mono select-all bg-slate-50 px-2 py-1 rounded">{backupPreview.sha256}</code>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
+                  {previewCollections.map(([name, count]) => {
+                    const meta = collectionMeta[name];
+                    const label = meta ? meta.label : name;
+                    const Icon = meta ? meta.icon : DatabaseBackup;
+                    return (
+                      <div key={name} title={name} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-sm transition-colors hover:border-emerald-300">
+                        <div className="text-emerald-600 bg-emerald-50 p-2 rounded-md">
+                          <Icon size={20} strokeWidth={1.5} />
+                        </div>
+                        <div className="flex flex-col">
+                          <b className="text-lg font-bold text-slate-800 leading-none">{count.toLocaleString("ar-KW-u-nu-latn")}</b>
+                          <span className="text-xs text-slate-500 mt-1 font-medium">{label}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             <div className="vault-inline-actions">
               <SecondaryButton type="button" disabled={!backupFile || Boolean(backupBusy) || exportInProgress || importResumable} onClick={() => void previewBackup()}>{backupBusy === "preview" ? "أفحص…" : "فحص النسخة"}</SecondaryButton>
               <PrimaryButton type="button" disabled={Boolean(backupBusy) || exportInProgress || (!importResumable && !backupPreview)} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أتابع الاستيراد…" : importResumable ? "استكمال الاستيراد" : "استيراد"}</PrimaryButton>
@@ -1155,16 +1192,6 @@ export default function AdminUsers({
             </PrimaryButton>
           </Surface>
         </div>
-
-        {backupPreview ? (
-          <Surface className="vault-preview-card">
-            <div className="vault-preview-head"><FileCheck2 /><div><strong>النسخة سليمة وجاهزة</strong><span>{new Date(backupPreview.createdAt).toLocaleString("ar-KW")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div></div>
-            <div className="vault-preview-hash"><span>SHA-256</span><code dir="ltr">{backupPreview.sha256}</code></div>
-            <div className="vault-counts">
-              {previewCollections.map(([name, count]) => <span key={name}><b>{count.toLocaleString("ar-KW-u-nu-latn")}</b>{name}</span>)}
-            </div>
-          </Surface>
-        ) : null}
 
         <Surface className="vault-safety-note">
           <ShieldCheck /><div><strong>شبكة الأمان تلقائية</strong><p>قبل الاستيراد أو التصفير تُحفظ نسخة داخلية كاملة يمكن الرجوع إليها. يحتفظ النظام بآخر 8 نقاط أمان فقط. جلسات الدخول النشطة لا تدخل ملف التصدير لأنها مفاتيح وصول مؤقتة وليست بيانات أكاديمية دائمة.</p></div>

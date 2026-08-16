@@ -35,6 +35,7 @@ import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 import { warmStart } from "./utils/warmStart";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
+import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb } from "./utils/clientTelemetry";
 
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
@@ -414,13 +415,16 @@ function NavSection({
 }
 
 export default function App() {
+  useEffect(() => { installClientTelemetry(); telemetryBreadcrumb("فتح التطبيق"); }, []);
   const [user, setUser] = useState<SessionUser | null>(null),
     [permissions, setPermissions] = useState<number[]>([]),
     [scopes, setScopes] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
+  useEffect(() => { setTelemetryOwner(Number(user?.SystemUserId || 0)); }, [user?.SystemUserId]);
   const [activeView, setActiveView] = useState<View>(
     () => viewByPath.get(window.location.pathname.toLowerCase()) || "dashboard",
   );
+  useEffect(() => { telemetryBreadcrumb(`واجهة: ${activeView}`); }, [activeView]);
   /** Which nav groups the reader has pressed open or shut, by group id. */
   // The primary workspace group opens by default so the daily destinations —
   // dashboard, schedule, queries — are one press away; the secondary groups

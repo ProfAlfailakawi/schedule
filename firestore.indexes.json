@@ -5,8 +5,14 @@
       "collectionGroup": "schedules",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "AdCourseId", "order": "ASCENDING" },
-        { "fieldPath": "AdTermId", "order": "ASCENDING" }
+        {
+          "fieldPath": "AdCourseId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "AdTermId",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
@@ -14,8 +20,29 @@
       "collectionGroup": "scheduleVersions",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "scopeKey", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
+        {
+          "fieldPath": "scopeKey",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "createdAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "_comment": "Experience health: recent sparse client telemetry for one department.",
+      "collectionGroup": "clientTelemetry",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "AdSectionId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "timestamp",
+          "order": "DESCENDING"
+        }
       ]
     }
   ],
@@ -23,6 +50,13 @@
     {
       "_comment": "Expired sessions delete themselves. Every abandoned browser used to leave a document that lived forever, because cleanup only happened if someone presented the expired session again.",
       "collectionGroup": "sessions",
+      "fieldPath": "expiresAtTtl",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "_comment": "Operational telemetry expires automatically; it is for recent diagnostics, not permanent tracking.",
+      "collectionGroup": "clientTelemetry",
       "fieldPath": "expiresAtTtl",
       "ttl": true,
       "indexes": []

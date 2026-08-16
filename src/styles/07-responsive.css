@@ -790,3 +790,4 @@
   .vault-confirm-seal{width:42px;height:42px;border-radius:14px}.vault-confirm-seal svg{width:20px;height:20px}
   .vault-confirm-copy h3{font-size:19px}.vault-confirm-actions{grid-template-columns:1fr}
 }
+@media (max-width:720px){.living-panel-head{grid-template-columns:38px minmax(0,1fr) 34px 34px}}

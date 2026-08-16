@@ -137,12 +137,60 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     .map(id => instructors.find(x => x.AdInstructorId === id))
     .filter(Boolean) as Instructor[];
 
-  const exportTerm = () => {
+  const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();
     if (collegeId) query.set("collegeId", String(collegeId));
     if (sectionId) query.set("sectionId", String(sectionId));
     if (termId) query.set("termId", String(termId));
-    window.location.href = `/api/schedules/export?${query}`;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/schedules/export?${query}`);
+      if (!response.ok) {
+        let msg = "تعذر تصدير بيانات الجدول";
+        try { const d = await response.json(); if (d.error) msg = d.error; } catch {}
+        throw new Error(msg);
+      }
+      const data = await response.json();
+      if (format === "xlsx") {
+        const XLSX = await import("xlsx");
+        const headers = ["رمز المقرر", "المقرر الدراسي", "الشعبة", "أستاذ المقرر", "الرقم المدني", "الأيام", "الوقت", "المبنى", "القاعة"];
+        const rows = (data.rows || []).map((r: any) => [
+          r.courseCode || "",
+          r.courseName || "",
+          r.section || "",
+          r.instructorName || "",
+          r.instructorCivil || "",
+          Array.isArray(r.days) ? r.days.join(" - ") : (r.days || ""),
+          (r.start && r.end) ? `${r.start}-${r.end}` : "",
+          r.building || "",
+          r.hall || "",
+        ]);
+        const sheet = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+        (sheet as any)["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 8 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 14 }, { wch: 9 }, { wch: 9 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, sheet, "الجدول الدراسي");
+        const fileName = `جدول_${data.scope?.section || "القسم"}_${data.scope?.term || "الفصل"}.xlsx`.replace(/[\\/*?:"<>|]/g, "_");
+        XLSX.writeFile(wb, fileName);
+      } else {
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json;charset=utf-8" });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.setAttribute("download", `schedule-${termId || "term"}.json`);
+        document.body.appendChild(a);
+        a.click();
+        window.setTimeout(() => {
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        }, 1000);
+      }
+    } catch (e: any) {
+      setError(e.message || "تعذر تصدير الجدول");
+    } finally {
+      setBusy(false);
+    }
   };
 
   /**
@@ -309,8 +357,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         <div className="transfer-body">
           {canTransfer && tab === "export" ? (
             <>
-              <p>يُصدَّر الفصل الحالي كاملاً بصيغة نصية مقروءة — الرموز والأسماء والأوقات والأيام — صالحة للأرشفة أو للاستيراد في نسخة أخرى.</p>
-              <PrimaryButton type="button" onClick={exportTerm} disabled={!scopeReady}><Download />نزّل ملف الفصل</PrimaryButton>
+              <p>تصدير الفصل الدراسي الحالي ببياناته الكاملة (المقررات، الأساتذة، الأوقات، القاعات، الأيام) مباشرة إلى ملف Excel أو JSON للأرشفة والمشاركة.</p>
+              <div className="transfer-import-actions">
+                <PrimaryButton type="button" onClick={() => void exportTerm("xlsx")} disabled={!scopeReady || busy}>
+                  <Download /> {busy ? "جاري التصدير…" : "تصدير إلى ملف Excel (.xlsx)"}
+                </PrimaryButton>
+                <SecondaryButton type="button" onClick={() => void exportTerm("json")} disabled={!scopeReady || busy}>
+                  <Download /> {busy ? "جاري التنزيل…" : "تنزيل ملف JSON"}
+                </SecondaryButton>
+              </div>
             </>
           ) : null}
 

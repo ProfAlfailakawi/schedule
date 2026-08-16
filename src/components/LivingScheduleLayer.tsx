@@ -37,6 +37,7 @@ import {
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import type { ScheduleExperience } from "./ScheduleExperienceLayer";
 import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
+import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 
 type Scene =
   | "pulse"
@@ -99,12 +100,16 @@ export default function LivingScheduleLayer({
   onEnsureWeek,
   onPanelOpenChange,
 }: Props) {
-  const power = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
+  const power = Boolean(user?.SystemUserId);
   const [living, setLiving] = useState<any>(null),
     [scene, setScene] = useState<Scene | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
+  const [decisionGuideOpen, setDecisionGuideOpen] = useState(false);
+  const [decisionGuideSeen, setDecisionGuideSeen] = useState(() => {
+    try { return localStorage.getItem("decision-center-guide-v2") === "1"; } catch { return true; }
+  });
   const livingRequest = useRef(0);
   const sourceTargetRef = useRef(0);
   const [selectedId, setSelectedId] = useState<number>(sourceRows[0]?.id || 0),
@@ -126,6 +131,9 @@ export default function LivingScheduleLayer({
     onPanelOpenChange?.(Boolean(scene));
   }, [scene, onPanelOpenChange]);
   useEffect(() => () => onPanelOpenChange?.(false), [onPanelOpenChange]);
+  useEffect(() => {
+    if (scene && !decisionGuideSeen) setDecisionGuideOpen(true);
+  }, [scene, decisionGuideSeen]);
   const rows = useMemo(
     () =>
       living?.context
@@ -193,13 +201,27 @@ export default function LivingScheduleLayer({
     return p.toString();
   };
   const json = async (url: string, options?: RequestInit) => {
-    const r = await fetch(url, options),
-      d = await r.json();
-    if (!r.ok) {
-      const issues = Array.isArray(d?.issues) ? d.issues.filter(Boolean).slice(0, 5) : [];
-      throw new Error(issues.length ? `${d.error || "تعذر تنفيذ الطلب"}: ${issues.join(" · ")}` : (d.error || "تعذر تنفيذ الطلب"));
+    const started = performance.now();
+    const method = String(options?.method || "GET").toUpperCase();
+    telemetryBreadcrumb(`مركز القرار · ${method} ${url.split("?")[0]}`);
+    let status = 0;
+    try {
+      const r = await fetch(url, options); status = r.status;
+      const body = await r.text();
+      let d:any = {};
+      try { d = body ? JSON.parse(body) : {}; }
+      catch { throw new Error(r.ok ? "وصل رد غير متوقع من الخادم." : `الخادم مشغول حالياً (${r.status}).`); }
+      telemetryApi(`decision:${url.split("?")[0]}`, performance.now() - started, r.status, r.ok);
+      if (!r.ok) {
+        const issues = Array.isArray(d?.issues) ? d.issues.filter(Boolean).slice(0, 5) : [];
+        throw new Error(issues.length ? `${d.error || "تعذر تنفيذ الطلب"}: ${issues.join(" · ")}` : (d.error || "تعذر تنفيذ الطلب"));
+      }
+      return d;
+    } catch (error) {
+      telemetryError(`decision:${url.split("?")[0]}`, error, performance.now() - started);
+      if (!status) telemetryApi(`decision:${url.split("?")[0]}`, performance.now() - started, 0, false);
+      throw error;
     }
-    return d;
   };
   const loadLiving = async () => {
     const request = ++livingRequest.current;
@@ -214,8 +236,14 @@ export default function LivingScheduleLayer({
     }
   };
   useEffect(() => {
-    if (experience) {
-      if (experience.living) setLiving(experience.living);
+    // Never wait for the deferred experience bundle. Department accounts do not
+    // load that bundle at all, and admin accounts load it during idle time; the
+    // old guard therefore left departments stuck forever and made admins wait
+    // before the command buttons even existed. The lightweight living read is
+    // now requested immediately, while an already available shared result is
+    // still reused.
+    if (experience?.living) {
+      setLiving(experience.living);
       return;
     }
     void loadLiving();
@@ -240,9 +268,11 @@ export default function LivingScheduleLayer({
     setSourceTerm(sourceTerms[0]?.AdTermId || 0);
   }, [termId, sourceTerms, sourceTerm]);
   const open = (next: Scene) => {
+    const uiStarted = performance.now();
     setScene(next);
     setError("");
     setMessage("");
+    requestAnimationFrame(() => telemetryTiming("decision-center.open", performance.now() - uiStarted));
     if (next === "safety") void loadSafety();
     if (next === "memory") void loadMemory();
   };
@@ -533,54 +563,50 @@ export default function LivingScheduleLayer({
   };
   if (!living)
     return (
-      <div className="living-pulse-shell loading">
-        <span />
-        <b>أقرأ نبض الجدول…</b>
-      </div>
-    );
-  if (!power)
-    return (
-      <div className="living-pulse-shell limited">
-        <span
-          className={`pulse-beacon ${living.pulse?.items?.[0]?.severity || "info"}`}
-        />
-        <div>
-          <small>نبض الجدول</small>
-          <strong>{living.pulse?.message}</strong>
-          <p>
-            {living.pulse?.items?.[0]?.detail ||
-              "لا توجد مشكلة حرجة ظاهرة الآن."}
-          </p>
+      <section className="living-command-deck living-loading no-print" aria-label="حالة الجدول ومركز القرار">
+        <div className="living-pulse-core">
+          <span className="pulse-beacon info" />
+          <div>
+            <small>حالة الجدول</small>
+            <strong>أقرأ نبض الجدول…</strong>
+            <p>أدوات القرار جاهزة؛ مؤشرات الصحة تصل بعد لحظة.</p>
+          </div>
         </div>
-        <Badge
-          tone={
-            living.health?.quality >= 85
-              ? "success"
-              : living.health?.quality >= 70
-                ? "warning"
-                : "danger"
-          }
-        >
-          {living.health?.quality}/100
-        </Badge>
-      </div>
+        <div className="living-health-strip" aria-label="مؤشرات صحة الجدول قيد التحميل">
+          {["الجودة", "المرونة", "العدالة"].map(label => (
+            <span key={label} style={{ ["--reading" as any]: "0%" }}>
+              <small>{label}</small><b>—</b>
+            </span>
+          ))}
+        </div>
+        <div className="living-command-actions">
+          {experience ? (
+            <button className="living-primary-decision" onClick={() => void experience.openDecision()} disabled={!sourceRows.length}>
+              <BrainCircuit />
+              قرار الآن
+            </button>
+          ) : null}
+          <button
+            className="living-more"
+            type="button"
+            onClick={() => { open("pulse"); void loadLiving(); }}
+            disabled={busy}
+          >
+            <Sparkles />
+            مركز القرار
+          </button>
+          <button className="living-help-trigger" type="button" onClick={() => { open("pulse"); setDecisionGuideOpen(true); }} aria-label="شرح مركز القرار"><CircleHelp /></button>
+        </div>
+      </section>
     );
-  const sceneItems: Array<{ id: Scene; label: string; icon: React.ReactNode }> =
-    [
-      { id: "pulse", label: "نظرة عامة", icon: <Activity /> },
-      { id: "topology", label: "خريطة الضغط", icon: <Network /> },
-      // Note 19: four scenes are hidden for now — "تحليل قرار", "مساعد القرار",
-      // "ذاكرة القرار" and "محضر القرار". Only the entries in THIS array were
-      // removed: every scene body, handler, state field and endpoint behind them
-      // is untouched and still typechecks, so bringing one back is re-inserting
-      // its one line here and nothing else:
-      //   { id: "memory",  label: "ذاكرة القرار", icon: <History /> },
-      //   { id: "meeting", label: "محضر القرار", icon: <FileClock /> },
-      { id: "health", label: "الصحة والعدالة", icon: <Gauge /> },
-      { id: "brief", label: "ملخص الدقيقة", icon: <Zap /> },
-      { id: "genesis", label: "بداية الفصل", icon: <Dna /> },
-      { id: "safety", label: "شبكة الأمان", icon: <RotateCcw /> },
-    ];
+  const sceneItems: Array<{ id: Scene; label: string; icon: React.ReactNode }> = [
+    { id: "pulse", label: "نظرة عامة", icon: <Activity /> },
+    { id: "topology", label: "خريطة الضغط", icon: <Network /> },
+    { id: "health", label: "الصحة والعدالة", icon: <Gauge /> },
+    { id: "brief" as Scene, label: "ملخص الدقيقة", icon: <Zap /> },
+    { id: "genesis" as Scene, label: "بداية الفصل", icon: <Dna /> },
+    { id: "safety" as Scene, label: "شبكة الأمان", icon: <RotateCcw /> },
+  ];
   return (
     <>
       <section className="living-command-deck no-print" aria-label="حالة الجدول ومركز القرار">
@@ -624,6 +650,7 @@ export default function LivingScheduleLayer({
             <Sparkles />
             مركز القرار
           </button>
+          <button className="living-help-trigger" type="button" onClick={() => { open("pulse"); setDecisionGuideOpen(true); }} aria-label="شرح مركز القرار"><CircleHelp /></button>
         </div>
       </section>
       {scene ? (
@@ -645,6 +672,7 @@ export default function LivingScheduleLayer({
                   <p>{living.context?.sectionName} · {living.context?.termName}</p>
                 </div>
               </div>
+              <button className="living-panel-help" type="button" onClick={() => setDecisionGuideOpen((value) => !value)} aria-label="شرح سريع"><CircleHelp /></button>
               <button onClick={() => setScene(null)} aria-label="إغلاق">
                 <X />
               </button>
@@ -662,6 +690,13 @@ export default function LivingScheduleLayer({
                 </button>
               ))}
             </nav>
+            {decisionGuideOpen ? (
+              <aside className="decision-guide-note" role="status">
+                <div className="decision-guide-head"><CircleHelp aria-hidden="true" /><div><strong>كيف تقرأ مركز القرار؟</strong><p>نظرة عامة = ماذا يحتاج قراراً · خريطة الضغط = أين السبب · الصحة = جودة وعدالة · بداية الفصل = بناء آمن · شبكة الأمان = الرجوع.</p></div></div>
+                <div className="decision-guide-tags"><span>القرار الأهم الآن</span><span>بصمة القسم</span><span>ملخص الدقيقة</span><span>ذاكرة القرار</span></div>
+                <div className="decision-guide-actions"><button type="button" onClick={() => setDecisionGuideOpen(false)}>إغلاق</button><button type="button" onClick={() => { try { localStorage.setItem("decision-center-guide-v2","1"); } catch {} setDecisionGuideSeen(true); setDecisionGuideOpen(false); }}>فهمت</button></div>
+              </aside>
+            ) : null}
             {experience ? (
               <section className="living-experience-tools" aria-label="أدوات القرار المتقدمة">
                 <button type="button" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>

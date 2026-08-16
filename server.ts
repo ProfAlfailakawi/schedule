@@ -29,6 +29,18 @@ import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
 import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
 import {
+  buildCourseLife,
+  buildDecisionCost,
+  buildHistoricalTimeModel,
+  buildOfferingLife,
+  discoverUnwrittenRules,
+  explainWhyHere,
+  investigateCrowding,
+  logicalAnomalies,
+  scheduleAccuracyFromVersions,
+  simulatePolicy,
+} from "./src/utils/advancedIntelligence";
+import {
   formatScheduleTimeRange,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
@@ -112,7 +124,7 @@ app.use(compression({
 // Full-system backups are intentionally compressed and can be much larger than
 // ordinary API payloads. Give only these two root-admin endpoints a larger raw
 // body allowance; every other JSON route keeps the tight 1 MB limit.
-app.use(["/api/system-backup/preview", "/api/system-backup/import", "/api/system-backup/import-jobs"], express.raw({
+app.use(["/api/system-backup/preview", "/api/system-backup/import"], express.raw({
   type: ["application/gzip", "application/octet-stream", "application/json"],
   limit: "30mb",
 }));
@@ -322,6 +334,27 @@ app.use("/api", (_req, res, next) => {
 // were paying for an identity lookup they never read.
 app.use("/api", authMiddleware as express.RequestHandler);
 
+type ApiPerformanceSample = { at:number; path:string; method:string; durationMs:number; status:number; userId:number; collegeId:number; sectionId:number; termId:number };
+const apiPerformanceSamples: ApiPerformanceSample[] = [];
+const API_PERFORMANCE_LIMIT = 5000;
+app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  if (req.path === "/health" || req.path === "/telemetry/client") { next(); return; }
+  const started = process.hrtime.bigint();
+  res.once("finish", () => {
+    const durationMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+    const q:any = req.query || {}, b:any = req.body || {};
+    apiPerformanceSamples.push({
+      at: Date.now(), path: req.path, method: req.method, durationMs: Math.round(durationMs), status: res.statusCode,
+      userId: Number(req.user?.SystemUserId || 0),
+      collegeId: Number(q.collegeId || q.AdCollegeId || b.collegeId || b.AdCollegeId || 0),
+      sectionId: Number(q.sectionId || q.AdSectionId || b.sectionId || b.AdSectionId || 0),
+      termId: Number(q.termId || q.AdTermId || b.termId || b.AdTermId || 0),
+    });
+    if (apiPerformanceSamples.length > API_PERFORMANCE_LIMIT) apiPerformanceSamples.splice(0, apiPerformanceSamples.length - API_PERFORMANCE_LIMIT);
+  });
+  next();
+});
+
 // Additive audit trail for successful state-changing API calls. No request body is stored,
 // so passwords and other sensitive values never enter the operational history.
 app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
@@ -347,7 +380,7 @@ app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) =
   const routePath = req.path;
   const authKind = routePath === "/auth/login" ? "login" : routePath === "/auth/logout" ? "logout" : null;
   const authEvent = authKind !== null;
-  const skip = (routePath.startsWith("/auth/") && !authEvent) || routePath.endsWith("/check-conflicts");
+  const skip = (routePath.startsWith("/auth/") && !authEvent) || routePath.endsWith("/check-conflicts") || routePath === "/telemetry/client";
   if (!mutating || skip) { next(); return; }
   const startedUser = req.user ? { id: Number(req.user.SystemUserId), name: String(req.user.Name || req.user.SystemUserLogin || "") } : null;
   res.on("finish", () => {
@@ -3313,6 +3346,131 @@ app.post("/api/schedules/copy", requireAuth, requirePowerAdmin, async (req: Auth
 
 // --- SMART SCHEDULE WORKSPACE (additive; legacy schedule endpoints remain unchanged) ---
 
+app.post("/api/telemetry/client", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const incoming = Array.isArray(req.body?.entries) ? req.body.entries.slice(0, 20) : [];
+  if (!incoming.length) { res.json({ accepted: 0 }); return; }
+  const safe = incoming.map((item:any) => {
+    const collegeId = Number(item?.collegeId || item?.AdCollegeId || 0);
+    const sectionId = Number(item?.sectionId || item?.AdSectionId || 0);
+    const termId = Number(item?.termId || item?.AdTermId || 0);
+    if (collegeId && sectionId && !isScopeAllowed(req, collegeId, sectionId)) return null;
+    const kind = ["api","error","offline","sync"].includes(String(item?.kind)) ? String(item.kind) : "error";
+    return {
+      SystemUserId: Number(req.user.SystemUserId),
+      userName: String(req.user.Name || req.user.SystemUserLogin || ""),
+      AdCollegeId: collegeId || undefined,
+      AdSectionId: sectionId || undefined,
+      AdTermId: termId || undefined,
+      kind: kind as any,
+      name: String(item?.name || "unknown").slice(0, 140),
+      durationMs: Number.isFinite(Number(item?.durationMs)) ? Math.max(0, Math.min(120000, Math.round(Number(item.durationMs)))) : undefined,
+      status: Number.isFinite(Number(item?.status)) ? Number(item.status) : undefined,
+      ok: typeof item?.ok === "boolean" ? item.ok : undefined,
+      message: String(item?.message || "").slice(0, 320) || undefined,
+      timestamp: /^\d{4}-\d{2}-\d{2}T/.test(String(item?.timestamp || "")) ? String(item.timestamp) : new Date().toISOString(),
+      breadcrumbs: Array.isArray(item?.breadcrumbs) ? item.breadcrumbs.slice(-12).map((b:any)=>({ at:String(b?.at||"").slice(0,40), action:String(b?.action||"").slice(0,90) })) : undefined,
+    };
+  }).filter(Boolean) as any[];
+  const accepted = await Repository.createClientTelemetry(safe);
+  res.json({ accepted });
+});
+
+app.get("/api/intelligence/experience-health", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const telemetry=await Repository.getClientTelemetry(collegeId,sectionId,1000).catch(()=>[]);
+  const cutoff=Date.now()-14*24*60*60*1000;
+  const recent=telemetry.filter(item=>Date.parse(item.timestamp)>=cutoff);
+  const perf=apiPerformanceSamples.filter(item=>item.at>=Date.now()-2*60*60*1000 && (item.sectionId===sectionId||(!item.sectionId&&item.userId===Number(req.user?.SystemUserId||0))) && (!item.collegeId||item.collegeId===collegeId));
+  const durations=[...perf.map(item=>item.durationMs),...recent.filter(item=>item.kind==="api"&&item.durationMs).map(item=>Number(item.durationMs))].filter(Number.isFinite).sort((a,b)=>a-b);
+  const p=(share:number)=>durations.length?durations[Math.min(durations.length-1,Math.floor((durations.length-1)*share))]:0;
+  const failures=recent.filter(item=>item.kind==="error"||(item.kind==="api"&&(item.ok===false||(item.status||0)>=400))||(item.kind==="sync"&&item.ok===false));
+  const offline=recent.filter(item=>item.kind==="offline").length;
+  const slow=durations.filter(ms=>ms>=1800).length;
+  const total=Math.max(1,durations.length);
+  const score=Math.max(0,Math.min(100,Math.round(100-(failures.length/Math.max(1,recent.length))*55-(slow/total)*35-Math.min(10,offline))));
+  const byPath=new Map<string,{count:number,total:number,errors:number}>();
+  perf.forEach(item=>{const x=byPath.get(item.path)||{count:0,total:0,errors:0};x.count++;x.total+=item.durationMs;if(item.status>=400)x.errors++;byPath.set(item.path,x);});
+  const slowest=[...byPath.entries()].map(([path,x])=>({path,count:x.count,avg:Math.round(x.total/Math.max(1,x.count)),errors:x.errors})).sort((a,b)=>b.avg-a.avg).slice(0,5);
+  const replays=failures.filter(item=>item.breadcrumbs?.length).slice(0,6).map(item=>({timestamp:item.timestamp,name:item.name,message:item.message||"",breadcrumbs:item.breadcrumbs||[]}));
+  res.json({score,label:score>=90?"ممتازة":score>=75?"جيدة":score>=55?"تحتاج متابعة":"تحتاج تدخلاً",samples:durations.length,p50:Math.round(p(.5)),p95:Math.round(p(.95)),slow,failures:failures.length,offline,slowest,replays,termId});
+});
+
+app.get("/api/intelligence/open-decisions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [manual,scheduleData,courses,instructors,history]=await Promise.all([
+    Repository.getOpenDecisions(collegeId,sectionId,termId,120),
+    scopedScheduleUniverse(collegeId,sectionId,termId),
+    Repository.getCoursesBySection(sectionId),Repository.getInstructorsByScope(sectionId,0),Repository.getSchedulesByScope({collegeId,sectionId}),
+  ]);
+  const analysis=analyzeSchedule(scheduleData.rows,scheduleData.universe,courses,instructors);
+  const anomalies=logicalAnomalies(scheduleData.rows,history);
+  const inferred=[
+    ...(analysis.alerts||[]).slice(0,5).map((item:any,index:number)=>({id:`inferred:alert:${index}`,title:item.title||"قرار يحتاج مراجعة",detail:item.detail||"",priority:index===0?"high":"medium",source:"inferred"})),
+    ...anomalies.filter(item=>item.severity!=="low").slice(0,4).map((item,index)=>({id:`inferred:anomaly:${index}`,title:item.title,detail:item.detail,priority:item.severity,source:"inferred",scheduleId:item.rowId})),
+  ];
+  res.json({manual,inferred,totalOpen:manual.filter(item=>item.status==="open").length+inferred.length});
+});
+
+app.post("/api/intelligence/open-decisions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const title=String(req.body?.title||"").trim().slice(0,140); if(title.length<3){res.status(400).json({error:"اكتب عنوان القرار المفتوح"});return;}
+  const priority=["low","medium","high"].includes(String(req.body?.priority))?String(req.body.priority):"medium";
+  const created=await Repository.createOpenDecision({
+    SystemUserId:Number(req.user.SystemUserId),userName:String(req.user.Name||""),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,
+    title,detail:String(req.body?.detail||"").trim().slice(0,500)||undefined,owner:String(req.body?.owner||"").trim().slice(0,100)||undefined,dueAt:String(req.body?.dueAt||"").slice(0,30)||undefined,
+    priority:priority as any,scheduleId:Number(req.body?.scheduleId||0)||undefined,source:req.body?.source==="assistant"?"assistant":"manual"
+  });
+  res.status(201).json(created);
+});
+
+app.patch("/api/intelligence/open-decisions/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const existing=(await Repository.getOpenDecisions(collegeId,sectionId,termId,250)).find(item=>item.id===String(req.params.id));
+  if(!existing){res.status(404).json({error:"القرار غير موجود في هذا النطاق"});return;}
+  const fields:any={};
+  if(["open","done"].includes(String(req.body?.status)))fields.status=String(req.body.status);
+  if(["low","medium","high"].includes(String(req.body?.priority)))fields.priority=String(req.body.priority);
+  if(typeof req.body?.owner==="string")fields.owner=String(req.body.owner).trim().slice(0,100);
+  if(typeof req.body?.dueAt==="string")fields.dueAt=String(req.body.dueAt).slice(0,30);
+  res.json(await Repository.updateOpenDecision(existing.id,fields));
+});
+
+app.get("/api/intelligence/operations-review", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [current,history,versions,terms,courses]=await Promise.all([
+    Repository.getSchedulesByScope({collegeId,sectionId,termId}),Repository.getSchedulesByScope({collegeId,sectionId}),Repository.getScheduleVersionsWithRows(collegeId,sectionId,termId,24),Repository.getTerms(),Repository.getCoursesBySection(sectionId),
+  ]);
+  const accuracy=scheduleAccuracyFromVersions(versions,current);
+  const anomalies=logicalAnomalies(current,history);
+  const rules=discoverUnwrittenRules(history,terms,courses.filter(course=>Number(course.AdSectionId)===sectionId));
+  res.json({accuracy,anomalies,unwrittenRules:rules,history:{rows:history.length,terms:new Set(history.map(row=>row.AdTermId)).size}});
+});
+
+app.post("/api/intelligence/policy-simulate", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!termId){res.status(400).json({error:"حدد الفصل الدراسي"});return;}
+  const university=Boolean(req.user?.IsAdminUser&&req.body?.scope==="university");
+  if(!university&&(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId))){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const type=String(req.body?.type||"");
+  if(!["day_off","close_building","no_classes_after","growth"].includes(type)){res.status(400).json({error:"اختر سياسة قابلة للمحاكاة"});return;}
+  const [terms,current,historyAll]=await Promise.all([
+    Repository.getTerms(),
+    university?Repository.getSchedulesByScope({termId}):Repository.getSchedulesByScope({collegeId,sectionId,termId}),
+    university?Repository.getSchedules():Repository.getSchedulesByScope({collegeId,sectionId}),
+  ]);
+  const recent=recentTenYearTermIds(terms); const history=historyAll.filter(row=>recent.has(Number(row.AdTermId||0)));
+  const input={type,day:String(req.body?.day||"") as any,time:String(req.body?.time||"17:00").slice(0,5),building:String(req.body?.building||"").trim().slice(0,40),growth:Number(req.body?.growth||10)};
+  const result=simulatePolicy(current,history,input);
+  const isAffected=(row:any)=>type==="day_off"?Boolean(row[input.day]):type==="close_building"?String(row.AdRoomCode||"").trim().toLowerCase()===input.building.toLowerCase():type==="no_classes_after"?timeToMinutes(row.fendtime)>timeToMinutes(input.time):false;
+  const affected=type==="growth"?[]:current.filter(isAffected);
+  res.json({...result,scope:university?"university":"department",impact:{sections:new Set(affected.map(row=>row.AdSectionId)).size,instructors:new Set(affected.map(row=>row.AdInstructorId)).size,rooms:new Set(affected.map(row=>`${row.AdRoomCode}/${row.AdRoomHall}`)).size},guardrail:"محاكاة فقط؛ لا تغيّر أي موعد ولا قاعدة."});
+});
+
 app.get("/api/intelligence/overview", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const { collegeId, sectionId, termId, section } = await resolveSmartContext(req);
   if (!collegeId || !sectionId || !termId || !section) { res.status(400).json({ error: "لا يوجد قسم أو فصل دراسي متاح للتحليل" }); return; }
@@ -3374,18 +3532,29 @@ app.post("/api/intelligence/ripple/:id", requirePermission(7), async (req: Authe
   res.json(forecast);
 });
 
-app.get("/api/intelligence/lookups", requirePermission(7), requirePowerAdmin, async (_req: AuthenticatedRequest, res: Response) => {
-  const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);
-  res.json({courses,instructors});
+app.get("/api/intelligence/lookups", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  if(req.user?.IsAdminUser){
+    const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);
+    res.json({courses,instructors});return;
+  }
+  const sectionIds=[...new Set((req.scopes||[]).map(scope=>Number(scope.AdSectionId)).filter(Boolean))];
+  const [courseGroups,instructorGroups]=await Promise.all([
+    Promise.all(sectionIds.map(id=>Repository.getCoursesBySection(id))),
+    Promise.all(sectionIds.map(id=>Repository.getInstructorsByScope(id,0))),
+  ]);
+  const courseMap=new Map<number,any>(),instructorMap=new Map<number,any>();
+  courseGroups.flat().forEach(item=>courseMap.set(Number(item.AdCourseId),item));
+  instructorGroups.flat().forEach(item=>instructorMap.set(Number(item.AdInstructorId),item));
+  res.json({courses:[...courseMap.values()],instructors:[...instructorMap.values()]});
 });
 
-app.get("/api/intelligence/genome", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/genome", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [sectionRows,terms,courses,instructors]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId}),Repository.getTerms(),Repository.getCourses(),Repository.getInstructors()]);
+  const [sectionRows,terms,courses,instructors]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId}),Repository.getTerms(),Repository.getCoursesBySection(sectionId),Repository.getInstructorsByScope(sectionId,0)]);
   res.json(buildScheduleGenome(sectionRows,terms,termId,courses,instructors));
 });
 
-app.get("/api/intelligence/constraints", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/constraints", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   res.json(await Repository.getScheduleConstraints(collegeId,sectionId,termId));
 });
@@ -3416,7 +3585,7 @@ app.delete("/api/intelligence/constraints/:id", requirePermission(7), requirePow
   const item=(await Repository.getScheduleConstraints(collegeId,sectionId,termId)).find(c=>c.id===String(req.params.id));if(!item){res.status(404).json({error:"القاعدة غير موجودة في هذا النطاق"});return;}await Repository.deleteScheduleConstraint(item.id);res.json({success:true});
 });
 
-app.post("/api/intelligence/war-room", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/war-room", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.status(400).json({error:"لا يوجد جدول لبناء غرفة قرار"});return;}
   res.json(buildWarRoom(base,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined));
@@ -3481,7 +3650,7 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const figures: Figure[] = [];
   const bars: Bar[] = [];
   let shift: { label: string; before: number|string; after: number|string; better?: boolean } | null = null;
-  let shape: "reading"|"alert"|"gaps"|"crowd"|"move"|"plan"|"rooms" = "reading"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${analysis.metrics.criticalConflicts} موضعاً يحتاج تحقق و${analysis.metrics.avgInstructorGap} دقيقة كمتوسط فراغ للأساتذة.`;
+  let shape: "reading"|"alert"|"gaps"|"crowd"|"investigation"|"move"|"plan"|"rooms" = "reading"; let summary=`جودة الجدول الحالية ${analysis.score}/100، مع ${analysis.metrics.criticalConflicts} موضعاً يحتاج تحقق و${analysis.metrics.avgInstructorGap} دقيقة كمتوسط فراغ للأساتذة.`;
   const normalized=prompt.replace(/[؟?]/g,"").toLowerCase();
   const dayMatch=SCHEDULE_DAYS.find(day=>normalized.includes(day.label));
   const hourMatch=normalized.match(/(?:إلى|الى|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?/);
@@ -3508,15 +3677,18 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
       [...analysis.professorLoads].sort((a:any,b:any)=>b.maxGap-a.maxGap).slice(0,6)
         .forEach((x:any)=>bars.push({label:x.name,value:x.maxGap,max:worst,
           caption:`${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د`}));}
-  } else if(dayMatch && /مزدحم|ازدحام|زحمة/.test(normalized)){
-    title=`لماذا ${dayMatch.label} مزدحم؟`; const day=analysis.dayLoad.find((x:any)=>x.key===dayMatch.key); const peaks=analysis.heatmap.filter((x:any)=>x.day===dayMatch.key).sort((a:any,b:any)=>b.count-a.count).slice(0,3);
-    summary=`في ${dayMatch.label} يوجد ${countOf(day?.count||0, AR.appointment)}؛ أعلى تزامن ظاهر يصل إلى ${countOf(peaks[0]?.count||0, AR.lecture)} في نصف ساعة واحدة.`;
-    peaks.forEach((x:any)=>bullets.push(`${x.time}: ${x.count} محاضرات متزامنة.`));
-    shape="crowd";
+  } else if(dayMatch && (/مزدحم|ازدحام|زحمة/.test(normalized) || /ليش|لماذا|سبب|تحقيق/.test(normalized))){
+    title=`تحقيق ${dayMatch.label}`; const day=analysis.dayLoad.find((x:any)=>x.key===dayMatch.key); const peaks=analysis.heatmap.filter((x:any)=>x.day===dayMatch.key).sort((a:any,b:any)=>b.count-a.count).slice(0,3);
+    const history=(await Repository.getSchedulesByScope({collegeId,sectionId})).filter(row=>Number(row.AdTermId)!==termId);
+    const investigation=investigateCrowding(target,dayMatch.key as any,history);
+    summary=`في ${dayMatch.label} يوجد ${countOf(day?.count||0, AR.appointment)}؛ ${investigation.verdict}`;
+    peaks.slice(0,2).forEach((x:any)=>bullets.push(`${x.time}: ${x.count} محاضرات متزامنة.`));
+    bullets.push(`الحركة موزعة على ${investigation.professors} أستاذ و${investigation.rooms} قاعة.`);
+    shape="investigation";
     figures.push({label:dayMatch.label,value:`${day?.count||0}`,hint:"موعداً",tone:"plain"},
+      {label:"مقابل التاريخ",value:`${investigation.delta>0?"+":""}${investigation.delta}`,tone:investigation.delta>=8?"warn":"good",hint:"نقطة"},
       {label:"أعلى تزامن",value:`${peaks[0]?.count||0}`,tone:(peaks[0]?.count||0)>6?"warn":"plain",hint:"في نصف ساعة"});
-    const busiest=Math.max(1,...analysis.dayLoad.map((x:any)=>x.count||0));
-    analysis.dayLoad.forEach((x:any)=>bars.push({label:x.label||x.key,value:x.count,max:busiest,caption:`${x.count}`}));
+    investigation.causes.forEach((x:any)=>bars.push(x));
   } else if(normalized.includes("إذا نقلت")||normalized.includes("اذا نقلت")){
     title="محاكاة نقل موعد"; const code=courses.find(c=>normalized.includes(String(c.CourseCode).toLowerCase())); const row=code?target.find(r=>r.AdCourseId===code.AdCourseId):target[0];
     if(row&&requestedHour!=null){const dur=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime));const candidate={...row,fstarttime:minutesToTime(requestedHour),fendtime:minutesToTime(requestedHour+dur)};const before=findConflicts([row],universe).length,after=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate)).length;summary=`نقل ${code?.CourseCode||row.AdCourseName} إلى ${candidate.fstarttime} يغيّر موانع الحفظ المحتملة من ${before} إلى ${after}.`;bullets.push(`الوقت المقترح: ${formatScheduleTimeRange(candidate.fstarttime, candidate.fendtime)}.`,after===0?"الموضع صالح ولا يظهر حجز مزدوج للأستاذ أو القاعة.":"الموضع غير مسموح؛ استخدم اقتراح البديل الآمن.");
@@ -3562,7 +3734,9 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
 app.get("/api/intelligence/context/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const id=Number(req.params.id||0); const selected=await Repository.getScheduleById(id); if(!selected){res.status(404).json({error:"الموعد غير موجود"});return;}
   if(!isScopeAllowed(req,selected.AdCollegeId,selected.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [termRows,courses,instructors,comments]=await Promise.all([Repository.getSchedulesByScope({termId:selected.AdTermId}),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleComments(id)]);
+  const [termRows,courses,instructors,comments,terms,courseHistory,versions]=await Promise.all([
+    Repository.getSchedulesByScope({termId:selected.AdTermId}),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleComments(id),Repository.getTerms(),Repository.getScheduleHistoryForCourses([selected.AdCourseId]),Repository.getScheduleVersionsWithRows(selected.AdCollegeId,selected.AdSectionId,selected.AdTermId,24)
+  ]);
   const visible=req.user.IsAdminUser?termRows:filterByScope(req,termRows); const termVisible=visible;
   const related={
     professor:termVisible.filter(r=>r.AdInstructorId===selected.AdInstructorId).sort((a,b)=>a.fstarttime.localeCompare(b.fstarttime)),
@@ -3584,8 +3758,12 @@ app.get("/api/intelligence/context/:id", requirePermission(7), async (req: Authe
     style.memory.aboutRoom(String(selected.AdRoomCode||""),String(selected.AdRoomHall||"")),
     day?style.memory.atSlot(day as any,String(selected.fstarttime||"")):null,
   ].filter(Boolean):[];
+  const courseLife=buildCourseLife(selected.AdCourseId,courseHistory,terms,instructors);
+  const offeringLife=buildOfferingLife(selected,courseHistory,terms,instructors,versions);
+  const decisionCost=buildDecisionCost(selected,termVisible,courseHistory);
+  const whyHere=explainWhyHere(selected,courseLife,externalConflicts);
   res.json({selected,course:courses.find(c=>c.AdCourseId===selected.AdCourseId)||null,instructor:instructors.find(i=>i.AdInstructorId===selected.AdInstructorId)||null,related,conflicts:externalConflicts,comments,
-    memory,memoryTerms:style.memory?.terms||0});
+    memory,memoryTerms:style.memory?.terms||0,courseLife,offeringLife,decisionCost,whyHere});
 });
 
 app.get("/api/intelligence/replay/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -3644,16 +3822,16 @@ app.put("/api/intelligence/comments/:scheduleId/:commentId", requirePermission(7
   const scheduleId=Number(req.params.scheduleId||0); const row=await Repository.getScheduleById(scheduleId); if(!row){res.status(404).json({error:"الموعد غير موجود"});return;} if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} await Repository.setScheduleCommentResolved(String(req.params.commentId),Boolean(req.body?.resolved)); res.json({success:true});
 });
 
-app.get("/api/intelligence/drafts", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} res.json(await Repository.getScheduleDrafts(collegeId,sectionId,termId));
 });
-app.post("/api/intelligence/drafts", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}); if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة قبل معالجة البيانات",issues});return;} const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,name:String(req.body?.name||"سيناريو جديد").slice(0,100),source:["what-if","auto","import","manual"].includes(req.body?.source)?req.body.source:"what-if",rows}); res.status(201).json(draft);
 });
 app.put("/api/intelligence/drafts/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
 });
-app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="publish"){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
   if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
@@ -3687,18 +3865,18 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), requirePo
   res.json({success:true,count:rows.length,publication,adjusted});
 });
 
-app.get("/api/intelligence/versions", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/versions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const versions=await Repository.getScheduleVersions(collegeId,sectionId,termId,80); res.json(versions.map(({rows,...meta})=>({...meta,rowCount:Number(meta.rowCount ?? rows.length)})));
 });
-app.get("/api/intelligence/versions/compare", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/versions/compare", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
 });
 app.post("/api/intelligence/versions/:id/restore", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="restore"){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
 });
 
-app.get("/api/intelligence/compare-terms", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),fromTermId=Number(req.query.fromTermId||0),toTermId=Number(req.query.toTermId||0); if(!collegeId||!sectionId||!fromTermId||!toTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [fromData,toData,courses,instructors,terms]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,fromTermId),scopedScheduleUniverse(collegeId,sectionId,toTermId),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms()]); const from=fromData.rows,to=toData.rows; const diff=compareTerms(from,to);
+app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),fromTermId=Number(req.query.fromTermId||0),toTermId=Number(req.query.toTermId||0); if(!collegeId||!sectionId||!fromTermId||!toTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [fromData,toData,courses,instructors,terms]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,fromTermId),scopedScheduleUniverse(collegeId,sectionId,toTermId),Repository.getCoursesBySection(sectionId),Repository.getInstructorsByScope(sectionId,0),Repository.getTerms()]); const from=fromData.rows,to=toData.rows; const diff=compareTerms(from,to);
   const courseById=new Map(courses.map(row=>[row.AdCourseId,row]));
   const instructorName=(id:number)=>instructors.find(row=>row.AdInstructorId===id)?.AdInstructorName||"";
   // Rows are shaped for reading, not for editing: code, section, and the
@@ -3753,16 +3931,16 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
   const fairness = buildFairnessEngine(rows, instructors);
   const fragility = buildFragilityMap(rows, universe, courses, instructors);
   const roomIntelligence = buildRoomResilience(rows, universe);
-  const topology = isPowerUser(req) ? buildConflictTopology(rows, universe, courses, instructors) : undefined;
-  const brief = isPowerUser(req) ? buildOneMinuteBrief(rows, universe, courses, instructors) : undefined;
-  const memories = isPowerUser(req) ? await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120) : [];
+  const topology = buildConflictTopology(rows, universe, courses, instructors);
+  const brief = buildOneMinuteBrief(rows, universe, courses, instructors);
+  const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
   res.json({
     context:{collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
     pulse,health,fairness,fragility,roomIntelligence,
     topology,brief,
-    memory:isPowerUser(req)?buildDecisionMemoryInsight(memories):undefined,
+    memory:buildDecisionMemoryInsight(memories),
     constraints:{count:constraints.filter(c=>c.enabled).length},
-    capabilities:{powerAdmin:isPowerUser(req),emergency:isPowerUser(req),genesis:isPowerUser(req),decisionMemory:isPowerUser(req),meetingIntelligence:isPowerUser(req)}
+    capabilities:{powerAdmin:true,emergency:true,genesis:true,decisionMemory:true,meetingIntelligence:true}
   });
 });
 
@@ -3793,13 +3971,13 @@ app.post("/api/intelligence/why-not", requirePermission(7), async (req: Authenti
   res.json({...explanation,question:String(req.body?.question||"ليش مو هذا الحل؟").slice(0,240),answer,memory:isPowerUser(req)?buildDecisionMemoryInsight(memories,selected.AdCourseId):undefined,guardrail:"«لماذا لا؟» يفسر أثر الخيار ولا يطبقه."});
 });
 
-app.get("/api/intelligence/decision-memory", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/decision-memory", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId}=smartContextFrom(req); if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const courseId=Number(req.query.courseId||0); const memories=await Repository.getScheduleDecisionMemories(collegeId,sectionId,250);
   res.json(buildDecisionMemoryInsight(memories,courseId||undefined));
 });
 
-app.post("/api/intelligence/decision-memory", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/decision-memory", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); const reason=String(req.body?.reason||"").trim(); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(reason.length<3||reason.length>700){res.status(400).json({error:"اكتب سبباً واضحاً بين 3 و700 حرف"});return;}
   const scheduleId=Number(req.body?.scheduleId||0); let row=scheduleId?await Repository.getScheduleById(scheduleId):undefined; if(row&&(row.AdCollegeId!==collegeId||row.AdSectionId!==sectionId)){res.status(403).json({error:"الموعد خارج نطاق هذا القسم"});return;}
   const kind=["rejected-option","accepted-note","meeting-decision"].includes(String(req.body?.kind))?String(req.body.kind) as any:"rejected-option";
@@ -3856,8 +4034,30 @@ app.post("/api/intelligence/emergency", requirePermission(7), requirePowerAdmin,
  * There is no cron, no background job, and nothing that wakes a server up.
  */
 const driftCache = new Map<string, { serial: number; body: unknown }>();
+const historicalTimeCache = new Map<string, { serial:number; expiresAt:number; body:ReturnType<typeof buildHistoricalTimeModel> }>();
 let driftSerial = 0;
-onSchedulesInvalidated(() => { driftSerial += 1; });
+onSchedulesInvalidated(() => { driftSerial += 1; historicalTimeCache.clear(); });
+
+app.get("/api/intelligence/department-start-rhythm", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
+  if(!collegeId||!isScopeAllowed(req,collegeId,sectionId)){
+    res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"}); return;
+  }
+  const cacheKey=`${collegeId}:${sectionId}:${termId||"latest"}`;
+  const cached=historicalTimeCache.get(cacheKey);
+  if(cached&&cached.serial===driftSerial&&cached.expiresAt>Date.now()){res.json(cached.body);return;}
+  const [terms,history]=await Promise.all([
+    Repository.getTerms(),
+    Repository.getSchedulesByScope({collegeId,sectionId}),
+  ]);
+  // One model answers every card in this department. It knows the department,
+  // the active day-pattern and each course separately, with recent terms given
+  // more weight than old history. The client picks the narrowest reliable layer.
+  const body=buildHistoricalTimeModel(history,terms,10,termId);
+  historicalTimeCache.set(cacheKey,{serial:driftSerial,expiresAt:Date.now()+5*60*1000,body});
+  if(historicalTimeCache.size>180)historicalTimeCache.clear();
+  res.json(body);
+});
 
 app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
@@ -3951,7 +4151,7 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
   res.json(body);
 });
 
-app.get("/api/intelligence/rollover", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/rollover", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const sourceTermId = Number(req.query.sourceTermId || 0);
@@ -3988,7 +4188,7 @@ app.get("/api/intelligence/rollover", requirePermission(7), requirePowerAdmin, a
   });
 });
 
-app.post("/api/intelligence/genesis", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/genesis", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),targetTermId=Number(req.body?.targetTermId||req.body?.termId||0),sourceTermId=Number(req.body?.sourceTermId||0); if(!collegeId||!sectionId||!targetTermId||!sourceTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(sourceTermId===targetTermId){res.status(400).json({error:"اختر فصلاً سابقاً مختلفاً عن الفصل الجديد"});return;}
   const [source,targetUniverse,courses,instructors,terms,constraints]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId,termId:sourceTermId}),Repository.getSchedulesByScope({termId:targetTermId}),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms(),Repository.getScheduleConstraints(collegeId,sectionId,targetTermId)]); if(!source.length){res.status(400).json({error:"الفصل السابق لا يحتوي جدولاً لهذا القسم"});return;}
   const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId).map(c=>c.AdCourseId));
@@ -4036,19 +4236,19 @@ app.post("/api/intelligence/genesis", requirePermission(7), requirePowerAdmin, a
   res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
 });
 
-app.get("/api/intelligence/brief", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,versions]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleVersions(collegeId,sectionId,termId,2)]); const {rows,universe}=scheduleData; let changedSince: number|undefined=undefined; if(versions[0]){const before=new Map(versions[0].rows.map(r=>[r.id,rowSignatureServer(r)]));changedSince=rows.filter(r=>before.get(r.id)!==rowSignatureServer(r)).length+versions[0].rows.filter(r=>!rows.some(x=>x.id===r.id)).length;} res.json(buildOneMinuteBrief(rows,universe,courses,instructors,changedSince));
 });
 
-app.post("/api/intelligence/meeting-minutes", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/meeting-minutes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const [scheduleData,courses,instructors,constraints,memories]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId),Repository.getScheduleDecisionMemories(collegeId,sectionId,120)]); const {rows,universe}=scheduleData; if(!rows.length){res.status(400).json({error:"لا يوجد جدول لبناء محضر قرار"});return;} const war=buildWarRoom(rows,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined); const chosen=war.options?.find((x:any)=>x.id===String(req.body?.optionId||""))||war.options?.[0]; const issueRowId=war.issue?.rowId; const comments=issueRowId?await Repository.getScheduleComments(issueRowId):[]; const recentMemory=memories.filter(m=>!war.issue?.rowId||m.scheduleId===war.issue.rowId||m.AdCourseId===rows.find(r=>r.id===war.issue.rowId)?.AdCourseId).slice(0,5); const minutes={title:"محضر قرار الجدول",problem:war.issue?`${war.issue.courseName} · شعبة ${war.issue.sectionCode} — ${war.issue.conflictCount} موضع يحتاج تحقق قبل الاعتماد.`:"مراجعة عامة للجدول",alternatives:(war.options||[]).map((o:any)=>({id:o.id,title:o.title,reason:o.reason,score:o.score,conflicts:o.conflicts,changed:o.changed})),selected:chosen?{id:chosen.id,title:chosen.title,reason:chosen.reason,score:chosen.score,conflicts:chosen.conflicts,changed:chosen.changed}:null,expectedImpact:chosen?`الجودة ${war.baseline.score} ← ${chosen.score}، وموانع الحفظ ${war.baseline.conflicts} ← ${chosen.conflicts}، وعدد المواعيد المتغيرة ${chosen.changed}.`:"لم يُحدد بديل.",discussion:comments.slice(0,8).map(c=>({text:c.text,user:c.userName,createdAt:c.createdAt,resolved:c.resolved})),memory:recentMemory.map(m=>({reason:m.reason,kind:m.kind,createdAt:m.createdAt,user:m.userName})),approvedBy:String(req.body?.approvedBy||req.user.Name).slice(0,120),generatedAt:new Date().toISOString()}; res.json(minutes);
 });
 
-app.get("/api/intelligence/safety-net", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/safety-net", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const versions=await Repository.getScheduleVersions(collegeId,sectionId,termId,18); res.json(versions.map(v=>({id:v.id,createdAt:v.createdAt,label:v.label,source:v.source,userName:v.userName,rowCount:Number(v.rowCount ?? v.rows.length),decisionLabel:`استرجع الجدول إلى ${v.label}`})));
 });
 
-app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="decision-undo"){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
 });
 
@@ -4063,10 +4263,9 @@ app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), requireP
  * they are bearer credentials / safety infrastructure, not university data.
  */
 app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
-  const [restorePoints, latestExport, latestImport] = await Promise.all([
+  const [restorePoints, latestExport] = await Promise.all([
     Repository.getSystemRestorePoints(),
     Repository.getLatestSystemExportJob(ROOT_ADMIN_USER_ID),
-    Repository.getLatestSystemImportJob(ROOT_ADMIN_USER_ID),
   ]);
   res.json({
     rootOnly: true,
@@ -4074,7 +4273,6 @@ app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req:
     restorePoints,
     latest: restorePoints.find(point => !point.consumedAt) || null,
     latestExport,
-    latestImport,
   });
 });
 
@@ -4088,8 +4286,14 @@ app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req:
  * longer performs a database walk while the browser waits for a file.
  */
 app.post("/api/system-backup/export-jobs", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const job = await Repository.startSystemExportJob(req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  const forceNew = req.query.force === "true" || req.body?.force === true;
+  const job = await Repository.startSystemExportJob(req.user!.SystemUserId, ROOT_ADMIN_USER_ID, forceNew);
   res.status(job.status === "ready" ? 200 : 202).json(job);
+});
+
+app.delete("/api/system-backup/export-jobs", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  await Repository.clearSystemExportJobs(ROOT_ADMIN_USER_ID);
+  res.status(200).json({ success: true });
 });
 
 app.get("/api/system-backup/export-jobs/:id", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -4133,31 +4337,19 @@ app.post("/api/system-backup/preview", requireAuth, requireRootAdmin, async (req
   });
 });
 
-// Resumable full-system import. Upload/validation happens once; the destructive
-// replacement itself advances in checkpointed stages and exposes real progress
-// to the root administrator. A safety export is completed first and referenced
-// by the undo point before the first collection is touched.
-app.post("/api/system-backup/import-jobs", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/system-backup/import", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
   if (req.get("x-schedule-confirm") !== "FULL-SYSTEM-IMPORT") {
     res.status(409).json({ error: "الاستيراد الكامل يحتاج تأكيداً صريحاً" });
     return;
   }
   const input = readSystemBackupBody(req);
-  const job = await Repository.startSystemImportJob(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
-  res.status(job.status === "ready" ? 200 : 202).json(job);
-});
-
-app.get("/api/system-backup/import-jobs/:id", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  res.json(await Repository.getSystemImportJob(String(req.params.id), ROOT_ADMIN_USER_ID));
-});
-
-app.post("/api/system-backup/import-jobs/:id/step", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const job = await Repository.advanceSystemImportJob(String(req.params.id), ROOT_ADMIN_USER_ID);
-  res.status(job.status === "ready" ? 200 : 202).json(job);
-});
-
-app.post("/api/system-backup/import", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
-  res.status(409).json({ error: "تم استبدال الاستيراد المباشر باستيراد متدرج مع نسبة تقدم ونقطة أمان. افتح خزنة النظام واستخدم «استيراد كامل»." });
+  const result = await Repository.importSystemBackup(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  res.json({
+    success: true,
+    message: "تم استيراد النسخة الكاملة والتحقق من سلامتها",
+    imported: result.backup.summary,
+    restorePoint: result.restorePoint,
+  });
 });
 
 app.post("/api/system-backup/reset", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {

@@ -26,6 +26,7 @@ import {
   Layers,
   Palette,
   Undo2,
+  Upload,
   CornerUpRight,
   ListChecks,
   ChevronDown,
@@ -123,6 +124,9 @@ import { courseLabel, instructorLabel } from "../utils/courseLabel";
 import { AR, countOf } from "../utils/arabicCount";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
 import { claimWarmStart } from "../utils/warmStart";
+import { pickHistoricalDayModel, type HistoricalTimeModel } from "../utils/advancedIntelligence";
+import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryOffline, telemetryTiming } from "../utils/clientTelemetry";
+import { canQueueScheduleMutation, enqueueScheduleMutation, flushOfflineScheduleQueue, offlineQueueCount, queuedPseudoResponse, setOfflineQueueOwner, subscribeOfflineQueue } from "../utils/offlineScheduleQueue";
 /* The same six hues the stylesheet paints from, so a chip and the ring it
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
@@ -146,6 +150,42 @@ interface Props {
 }
 type EditorMode = "index" | "create" | "edit";
 const AGENDA_PAGE_SIZE = 60;
+
+/* Hidden for now, deliberately not deleted. The data model/endpoints stay in
+   place so team notes can be restored later without rebuilding the feature. */
+const TEAM_NOTES_ENABLED = false;
+
+const WHOLE_HOUR_DAYS = new Set<DayKey>(["fsunday", "ftuesday", "fthursday"]);
+const HALF_HOUR_DAYS = new Set<DayKey>(["fmonday", "fwednesday"]);
+
+/**
+ * Local timetable convention: Sun/Tue/Thu start on :00, Mon/Wed on :30.
+ * It is guidance only — never a blocker. A coordinator may deliberately place
+ * a lecture elsewhere, but the screen must say that the move departed from the
+ * department's normal rhythm.
+ */
+const scheduleStartConventionNote = (row: Partial<FSchedule>): string | null => {
+  const start = String(row.fstarttime || "").trim();
+  const match = start.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const minute = Number(match[2]);
+  const active = days.filter(day => Boolean((row as any)[day.key])).map(day => day.key as DayKey);
+  if (!active.length) return null;
+  const hasWholeHourDays = active.some(day => WHOLE_HOUR_DAYS.has(day));
+  const hasHalfHourDays = active.some(day => HALF_HOUR_DAYS.has(day));
+  if (hasWholeHourDays && hasHalfHourDays) {
+    return "ملاحظة التوقيت: الأيام المختارة تجمع نمطين؛ الأحد/الثلاثاء/الخميس تبدأ عادةً على رأس الساعة، والاثنين/الأربعاء عند النصف. يمكنك المتابعة إذا كان ذلك مقصوداً.";
+  }
+  if (hasWholeHourDays && minute !== 0) {
+    return "ملاحظة التوقيت: محاضرات الأحد/الثلاثاء/الخميس تبدأ عادةً على رأس الساعة (مثل 09:00). يمكنك المتابعة بهذا الوقت إذا كان النقل مقصوداً.";
+  }
+  if (hasHalfHourDays && minute !== 30) {
+    return "ملاحظة التوقيت: محاضرات الاثنين/الأربعاء تبدأ عادةً عند النصف (مثل 09:30). يمكنك المتابعة بهذا الوقت إذا كان النقل مقصوداً.";
+  }
+  return null;
+};
+
+type DepartmentStartRhythm = HistoricalTimeModel;
 
 /**
  * A reversal, written down rather than held in a closure.
@@ -460,6 +500,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     ),
     [filterTerm, setFilterTerm] = useState(Number(savedPrefs.filterTerm) || 0),
     [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
+  const [departmentStartRhythm, setDepartmentStartRhythm] = useState<DepartmentStartRhythm | null>(null);
+  const [formStartRhythm, setFormStartRhythm] = useState<DepartmentStartRhythm | null>(null);
   const [copyCollege, setCopyCollege] = useState(0),
     [copySection, setCopySection] = useState(0),
     [copyFromTerm, setCopyFromTerm] = useState(0),
@@ -472,6 +514,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [previewing, setPreviewing] = useState(false);
   const [physicsNotice, setPhysicsNotice] = useState(""),
     [undoPoint, setUndoPoint] = useState<any>(null),
+    [historicalChoice, setHistoricalChoice] = useState<null | { dayLabel: string; picked: string; preferred: string; source: string }>(null),
     // What the server has said about squares the pointer has actually visited
     // during this drag. It refines the local reading; it does not replace it.
     [physicsField, setPhysicsField] = useState<Record<string, string>>({});
@@ -540,6 +583,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [viewDialog, setViewDialog] = useState<{ mode: "create" | "rename"; view?: ScheduleSavedView } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [offlinePending, setOfflinePending] = useState(() => offlineQueueCount());
+  const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
+  // The schedule itself stays quiet: help opens only when the question mark is
+  // pressed. First-run onboarding belongs to the two decision/intelligence hubs.
+  const [scheduleGuideOpen, setScheduleGuideOpen] = useState(false);
     /* The dock's search button has nothing of its own to search with — it brings
      the reader to the one field that already exists, rather than owning a
      second one that could disagree with it. */
@@ -583,33 +631,38 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     };
   }, []);
   const fetchJson = async (url: string, options?: RequestInit) => {
-    if (options?.method && options.method !== "GET" && !navigator.onLine)
-      throw new Error(
-        "أنت الآن دون اتصال. العرض متاح، لكن الحفظ متوقف لحماية الجدول.",
-      );
-    // Read the body as text, THEN parse — so a non-JSON response never explodes
-    // into «Unexpected token '<'». That response is almost always a gateway's
-    // own HTML page while the server is busy or restarting, not the client
-    // needing a re-upload; it is transient and the honest advice is "retry",
-    // which is what this now says.
-    /**
-     * A request that never answers used to hold the screen hostage.
-     *
-     * `saving` is one flag shared by every write, cleared in a `finally` — which
-     * only runs when the promise settles. A gateway that accepts the socket and
-     * then holds it open forever therefore left the flag true for the rest of
-     * the session: the form's buttons stayed dead, dragging stayed disabled, and
-     * the live channel went on believing the reader was mid-write. A request
-     * now has a horizon; past it, it fails honestly and everything unlocks.
-     */
+    const method = String(options?.method || "GET").toUpperCase();
+    const mutating = method !== "GET" && method !== "HEAD";
+    const queueable = mutating && canQueueScheduleMutation(url, method);
+    telemetryBreadcrumb(`${method} ${url.split("?")[0]}`);
+    if (mutating && !navigator.onLine) {
+      telemetryOffline("schedule.write.offline");
+      if (queueable) {
+        const queued = enqueueScheduleMutation(url, options || {});
+        if (queued) return queuedPseudoResponse(queued);
+      }
+      throw new Error("أنت الآن دون اتصال. يمكنك متابعة ترتيب المواعيد الموجودة، أما الإنشاء الجديد فيحتاج عودة الاتصال.");
+    }
     const timeout = new AbortController();
     const timer = window.setTimeout(() => timeout.abort(), 35_000);
+    const started = performance.now();
     let res: Response;
     try {
-      res = await fetch(url, { ...options, signal: options?.signal ?? timeout.signal });
+      res = await fetch(url, { ...options, credentials: options?.credentials || "include", signal: options?.signal ?? timeout.signal });
+      telemetryApi(url.split("?")[0], performance.now() - started, res.status, res.ok);
     } catch (error: any) {
+      const elapsed = performance.now() - started;
+      telemetryError(url.split("?")[0], error, elapsed);
+      // Writes on existing schedule rows are revision-protected and therefore
+      // safe to replay after an uncertain campus connection. A second replay
+      // cannot silently overwrite newer work; the server returns 409 instead.
+      const externalAbort = Boolean(options?.signal && options.signal.aborted);
+      if (queueable && !externalAbort) {
+        const queued = enqueueScheduleMutation(url, options || {});
+        if (queued) return queuedPseudoResponse(queued);
+      }
       if (error?.name === "AbortError" && timeout.signal.aborted)
-        throw new Error("تأخر الخادم في الرد ولم يُحفظ أي تغيير. أعد المحاولة.");
+        throw new Error("تأخر الخادم في الرد. لم أعتبر العملية فاشلة بصمت؛ إن كانت قابلة للمزامنة حُفظت محلياً.");
       throw error;
     } finally {
       window.clearTimeout(timer);
@@ -619,22 +672,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (body) {
       try { data = JSON.parse(body); }
       catch {
-        throw new Error(
-          res.ok
-            ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات."
-            : `الخادم مشغول حالياً (${res.status}). أعد المحاولة بعد قليل.`,
-        );
+        const parseError = new Error(res.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${res.status}). أعد المحاولة بعد قليل.`);
+        telemetryError("response.parse", parseError, performance.now() - started);
+        throw parseError;
       }
     }
     if (!res.ok) {
-      /**
-       * A refusal to overwrite is not an error to be flattened into a sentence.
-       *
-       * When the server answers 409 because the row moved on under the editor,
-       * the reply carries both versions — and the screen has to be able to show
-       * them and let a person choose. Wrapping it in a plain Error would throw
-       * that away, so the two sides travel on the thrown object.
-       */
       const failure: any = new Error(data.error || `تعذر إتمام العملية (${res.status}).`);
       if (res.status === 409 && data?.conflict === "revision") {
         failure.revisionConflict = true;
@@ -1040,6 +1083,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const scopeRef = useRef({ collegeId: 0, sectionId: 0, termId: 0 });
   scopeRef.current = { collegeId: filterCollege, sectionId: filterSection, termId: filterTerm };
+  useEffect(() => {
+    setTelemetryScope({ collegeId: filterCollege, sectionId: filterSection, termId: filterTerm });
+    telemetryBreadcrumb(`نطاق ${filterCollege}/${filterSection}/${filterTerm}`);
+  }, [filterCollege, filterSection, filterTerm]);
+  useEffect(() => { setOfflineQueueOwner(Number(user?.SystemUserId || 0)); setOfflinePending(offlineQueueCount()); }, [user?.SystemUserId]);
+  useEffect(() => subscribeOfflineQueue(setOfflinePending), []);
   /**
    * The channel that says who else is on this board.
    *
@@ -1085,6 +1134,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     }
   };
   useEffect(() => () => loadAbort.current?.abort(), []);
+  useEffect(() => {
+    const down = () => { setNetworkOnline(false); telemetryOffline("schedule.network"); };
+    const up = async () => {
+      setNetworkOnline(true);
+      const result = await flushOfflineScheduleQueue();
+      if (result.done) {
+        setPhysicsNotice(`تمت مزامنة ${result.done.toLocaleString("ar-KW-u-nu-latn")} تغييرات محلية.`);
+        await loadRows({ silent: true }).catch(() => undefined);
+      } else if (result.conflict) {
+        setPhysicsNotice("عاد الاتصال، لكن تغييراً محلياً اصطدم بنسخة أحدث. افتح الموعد للمقارنة قبل المتابعة.");
+      }
+    };
+    window.addEventListener("offline", down);
+    window.addEventListener("online", up);
+    if (navigator.onLine && offlineQueueCount()) void up();
+    return () => { window.removeEventListener("offline", down); window.removeEventListener("online", up); };
+  }, []);
   /**
    * One request opens the whole department.
    *
@@ -1123,6 +1189,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     resolve = false,
     onContext?: (context: { collegeId: number; sectionId: number; termId: number }) => void,
   ) => {
+    const uiStarted = performance.now();
     const token = ++loadToken.current;
     loadAbort.current?.abort();
     const controller = new AbortController();
@@ -1135,7 +1202,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         sectionId: Number(data?.context?.sectionId ?? sectionId) || 0,
         termId: Number(data?.context?.termId ?? termId) || 0,
       };
-      appliedScope.current = `${context.collegeId}|${context.sectionId}|${context.termId}`;
+      const nextScopeKey = `${context.collegeId}|${context.sectionId}|${context.termId}`;
+      const firstPaintForScope = appliedScope.current !== nextScopeKey;
+      appliedScope.current = nextScopeKey;
       if (Array.isArray(data?.colleges) && data.colleges.length) setColleges(sortByName(data.colleges, (row: any) => row.AdCollegeName));
       if (Array.isArray(data?.sections) && data.sections.length) setSections(sortByName(data.sections, (row: any) => row.AdSectionName));
       if (Array.isArray(data?.terms) && data.terms.length) setTerms([...data.terms].sort((a: AdTerm, b: AdTerm) => Number(b.AdTermId) - Number(a.AdTermId)));
@@ -1147,6 +1216,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       if (Array.isArray(data?.courses) && data.courses.length) setCourses(sortByName(data.courses, (row: any) => row.CourseName));
       setVisitingIds(new Set((Array.isArray(data?.visitingInstructorIds) ? data.visitingInstructorIds : []).map(Number).filter(Boolean)));
       onContext?.(context);
+      if (firstPaintForScope) requestAnimationFrame(() => telemetryTiming("schedule.ready", performance.now() - uiStarted));
       return context;
     };
     try {
@@ -1398,6 +1468,140 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (next.collegeId !== filterCollege) setFilterCollege(next.collegeId);
     if (next.sectionId !== filterSection) setFilterSection(next.sectionId);
   }, [isPowerAdmin, sections.length, scopes, filterCollege, filterSection]);
+
+  /*
+   * The clock the department has actually used over the last ten academic
+   * years. This is working knowledge for drag/drop, not another dashboard.
+   * If history is thin, the long-standing 1-3-5/:00 and 2-4/:30 convention is
+   * the safe fallback; either way it is advice, never a save restriction.
+   */
+  useEffect(() => {
+    if (mode !== "schedule" || !workspaceReady || !filterCollege) {
+      setDepartmentStartRhythm(null);
+      return;
+    }
+    let alive = true;
+    const query = new URLSearchParams({ collegeId: String(filterCollege), sectionId: String(filterSection || 0), termId: String(filterTerm || 0) });
+    void fetch(`/api/intelligence/department-start-rhythm?${query}`, { credentials: "include" })
+      .then(response => (response.ok ? response.json() : null))
+      .then(data => { if (alive) setDepartmentStartRhythm(data?.department?.days ? data : null); })
+      .catch(() => { if (alive) setDepartmentStartRhythm(null); });
+    return () => { alive = false; };
+  }, [mode, workspaceReady, filterCollege, filterSection, filterTerm, liveFeedSerial]);
+
+  // The editor may be pointed at another department by an administrator. Never
+  // reuse the visible board's history for that form: either read the form's own
+  // section or fall back to the institutional convention while it loads.
+  useEffect(() => {
+    if (mode !== "schedule" || editor === "index" || !form.AdCollegeId || !form.AdSectionId) {
+      setFormStartRhythm(null);
+      return;
+    }
+    if (Number(form.AdCollegeId) === Number(filterCollege) && Number(form.AdSectionId) === Number(filterSection) && Number(form.AdTermId || filterTerm) === Number(filterTerm)) {
+      setFormStartRhythm(departmentStartRhythm);
+      return;
+    }
+    let alive = true;
+    const query = new URLSearchParams({ collegeId: String(form.AdCollegeId), sectionId: String(form.AdSectionId), termId: String(form.AdTermId || 0) });
+    void fetch(`/api/intelligence/department-start-rhythm?${query}`, { credentials: "include" })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (alive) setFormStartRhythm(data?.department?.days ? data : null); })
+      .catch(() => { if (alive) setFormStartRhythm(null); });
+    return () => { alive = false; };
+  }, [mode, editor, form.AdCollegeId, form.AdSectionId, form.AdTermId, filterCollege, filterSection, filterTerm, departmentStartRhythm, liveFeedSerial]);
+
+  const historicalChoiceResolver = useRef<((keepPicked: boolean) => void) | null>(null);
+  const askHistoricalTimeChoice = useCallback((data: { dayLabel: string; picked: string; preferred: string; source: string }) =>
+    new Promise<boolean>(resolve => {
+      historicalChoiceResolver.current?.(false);
+      historicalChoiceResolver.current = resolve;
+      setHistoricalChoice(data);
+    }), []);
+  const settleHistoricalTimeChoice = useCallback((keepPicked: boolean) => {
+    const resolve = historicalChoiceResolver.current;
+    historicalChoiceResolver.current = null;
+    setHistoricalChoice(null);
+    resolve?.(keepPicked);
+  }, []);
+  useEffect(() => () => {
+    historicalChoiceResolver.current?.(false);
+    historicalChoiceResolver.current = null;
+  }, []);
+  useEffect(() => {
+    if (!historicalChoice) return;
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") settleHistoricalTimeChoice(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [historicalChoice, settleHistoricalTimeChoice]);
+
+  const historicalReadingFor = useCallback((row: Partial<FSchedule>, day: DayKey) => {
+    const rowCollege = Number(row.AdCollegeId || 0), rowSection = Number(row.AdSectionId || 0), rowTerm = Number(row.AdTermId || 0);
+    const boardMatch = rowCollege === Number(filterCollege) && rowSection === Number(filterSection) && (!rowTerm || !filterTerm || rowTerm === Number(filterTerm));
+    const formMatch = rowCollege === Number(form.AdCollegeId || 0) && rowSection === Number(form.AdSectionId || 0) && (!rowTerm || !form.AdTermId || rowTerm === Number(form.AdTermId));
+    const model = boardMatch ? departmentStartRhythm : formMatch ? formStartRhythm : null;
+    return pickHistoricalDayModel(model, row, day);
+  }, [departmentStartRhythm, formStartRhythm, filterCollege, filterSection, filterTerm, form.AdCollegeId, form.AdSectionId, form.AdTermId]);
+
+  const expectedStartMinuteForDay = useCallback((row: Partial<FSchedule>, day: DayKey) => {
+    const learned = historicalReadingFor(row, day).data;
+    if (learned && learned.samples >= 3 && learned.share >= 0.55) return learned.minute;
+    // Institutional fallback only when history has no reliable opinion.
+    if (WHOLE_HOUR_DAYS.has(day)) return 0;
+    if (HALF_HOUR_DAYS.has(day)) return 30;
+    return null;
+  }, [historicalReadingFor]);
+
+  const preferredStartForDrop = useCallback((row: Partial<FSchedule>, day: DayKey, picked: string) => {
+    const expectedMinute = expectedStartMinuteForDay(row, day);
+    const match = String(picked || "").match(/^(\d{1,2}):(\d{2})$/);
+    if (expectedMinute == null || !match) return picked;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (minute === expectedMinute) return picked;
+    return `${String(hour).padStart(2, "0")}:${String(expectedMinute).padStart(2, "0")}`;
+  }, [expectedStartMinuteForDay]);
+
+  const historicalTimingNote = useCallback((row: Partial<FSchedule>): string | null => {
+    const active = days.filter(day => Boolean((row as any)[day.key]));
+    if (!active.length || !row.fstarttime) return scheduleStartConventionNote(row);
+    const start = String(row.fstarttime || "");
+    const end = String(row.fendtime || "");
+    const startMinutes = mins(start), endMinutes = mins(end);
+    for (const day of active) {
+      const reading = historicalReadingFor(row, day.key as DayKey);
+      const preferred = preferredStartForDrop(row, day.key as DayKey, start);
+      if (preferred !== start) {
+        const source = reading.basis === "course-pattern" ? "سجل هذا المقرر مع نمط الأيام"
+          : reading.basis === "course" ? "سجل هذا المقرر"
+          : reading.basis === "pattern" ? "سجل نمط الأيام في القسم"
+          : reading.basis === "department" ? "سجل القسم الحديث"
+          : "القاعدة المؤسسية";
+        return `${source}: ${day.label} يبدأ عادةً ${preferred}، بينما اخترت ${start}. تنبيه فقط — يمكنك تثبيت الوقت الجديد إذا كان مقصوداً.`;
+      }
+      const learned = reading.data;
+      const duration = endMinutes > startMinutes ? endMinutes - startMinutes : 0;
+      if (learned && duration > 0 && learned.durationSamples >= 3 && learned.durationShare >= .35) {
+        const [low, high] = learned.durationRange || [0, 0];
+        if (low && high && (duration < low || duration > high)) {
+          const expectedEnd = timeFromMins(startMinutes + learned.durationMinutes);
+          return `${day.label}: التاريخ الأقرب لهذا المقرر/النمط يشير غالباً إلى ${formatScheduleTimeRange(start, expectedEnd)}، بينما أدخلت ${formatScheduleTimeRange(start, end)}. تنبيه فقط — لا يمنع الحفظ.`;
+        }
+      }
+    }
+    return scheduleStartConventionNote(row);
+  }, [historicalReadingFor, preferredStartForDrop]);
+
+  const chooseHistoricalDropTime = useCallback(async (row: Partial<FSchedule>, day: DayKey, picked: string) => {
+    const preferred = preferredStartForDrop(row, day, picked);
+    if (preferred === picked) return picked;
+    const dayLabel = days.find(item => item.key === day)?.label || "هذا اليوم";
+    const reading = historicalReadingFor(row, day);
+    const source = reading.data
+      ? (reading.basis === "course-pattern" ? "المقرر + نمط الأيام" : reading.basis === "course" ? "سجل المقرر" : reading.basis === "pattern" ? "نمط الأيام" : "سجل القسم الحديث")
+      : "القاعدة المؤسسية";
+    const keepPicked = await askHistoricalTimeChoice({ dayLabel, picked, preferred, source });
+    return keepPicked ? picked : preferred;
+  }, [preferredStartForDrop, historicalReadingFor, askHistoricalTimeChoice]);
   useEffect(() => {
     if (mode !== "copy" || isPowerAdmin || !sections.length) return;
     const next = coerceScopeValues(scopes, copyCollege, copySection, false);
@@ -1669,6 +1873,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     outsideTeachingDay?"وقت المحاضرة يجب أن يكون بين 08:00 و20:00.":"",
   ].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
+  const editorTimingNote = historicalTimingNote(form);
   /* The keystroke updates the input; the two-hundred-card grid follows a beat
      behind. Deferring the query keeps typing at the keyboard's speed instead of
      the layout's — React drops the stale in-between renders entirely. */
@@ -1996,6 +2201,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         if (signal.aborted || e?.name === "AbortError") throw e;
       }
     }
+    const timingNote = historicalTimingNote(candidate);
+    if (timingNote) {
+      decision = {
+        ...decision,
+        summary: decision.hardBlocked ? decision.summary : `${decision.summary} ${timingNote}`,
+        reasons: [timingNote, ...decision.reasons.filter(reason => reason !== timingNote)].slice(0, 4),
+        tradeoffs: [timingNote, ...decision.tradeoffs.filter(reason => reason !== timingNote)].slice(0, 3),
+      };
+    }
     return decision;
   };
   const addComment = async () => {
@@ -2285,7 +2499,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       // A save filed under another scope: the filters just moved, and the
       // scope effect reloads that workspace on its own — nothing to do here.
-      setMessage(editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد");
+      const queuedOffline = Boolean((saved as any)?.queuedOffline);
+      setMessage(queuedOffline ? "حُفظ التعديل محلياً وسيُزامن عند عودة الاتصال." : (editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد"));
+      setPhysicsNotice([queuedOffline ? "بانتظار المزامنة" : "", editorTimingNote || ""].filter(Boolean).join(" · "));
       back();
     } catch (e: any) {
       // The row moved on under this editor: hand back both versions instead of
@@ -2364,6 +2580,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       setQuick(null);
       setMessage("تم حفظ الموعد");
+      const timingNote = historicalTimingNote(payload);
+      setPhysicsNotice(timingNote || "");
     } catch (e: any) {
       setQuickError(friendlyError(e));
     } finally {
@@ -2579,6 +2797,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if(isSamePlacement(row,sourceDay,target as any)){setPhysicsNotice("هذا هو نفس الموضع الحالي؛ لم يتم تنفيذ أي تغيير.");return;}
     const candidate = buildMoveCandidate(row, target),
       payload: any = { ...candidate };
+    const timingNote = historicalTimingNote(candidate);
     delete payload.id;
     delete payload.AdCourseName;
     const dayText =
@@ -2633,7 +2852,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           setUndoPoint(null);
         }
       }
-      setPhysicsNotice("");
+      setPhysicsNotice(timingNote || "");
       setMessage(
         selected.length > 1
           ? "تم تغيير وقت المقرر مع الحفاظ على جميع أيامه."
@@ -2698,12 +2917,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (showMobileReadOnlyGate()) return;
     const { row, target } = request;
     const day = target.day as DayKey;
+    const pickedStart = target.start;
+    const chosenStart = await chooseHistoricalDropTime(row, day, pickedStart);
+    const effectiveTarget = chosenStart === pickedStart ? target : { ...target, start: chosenStart };
     // A whole selection travels together, keeping the shape it already had.
     const party = multiSelect.has(row.id)
       ? rows.filter(item => multiSelect.has(item.id))
       : [row];
     warnIfHeldElsewhere(party.map(item => item.id));
-    const shift = mins(target.start) - mins(row.fstarttime);
+    const shift = mins(effectiveTarget.start) - mins(row.fstarttime);
     const sourceDay = (days.find(d => Boolean(row[d.key]))?.key || day) as DayKey;
     const dayChanged = sourceDay !== day;
 
@@ -2730,7 +2952,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
 
     const moves = party.map(item => {
       const singleDay = days.filter(d => Boolean(item[d.key])).length === 1;
-      const start = item.id === row.id ? target.start : timeFromMins(mins(item.fstarttime) + shift);
+      const start = item.id === row.id ? effectiveTarget.start : timeFromMins(mins(item.fstarttime) + shift);
       const candidate = buildMoveCandidate(item, { day, start });
       // Only the carried card changes day; the rest keep theirs and shift in time.
       if (item.id !== row.id && singleDay && dayChanged) {
@@ -2742,6 +2964,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       return { before: item, after: candidate };
     });
+    const moveTimingNotes = [...new Set(
+      moves.map(move => historicalTimingNote(move.after)).filter((note): note is string => Boolean(note)),
+    )];
 
     // Anything that would land outside the day is not a move, it is a mistake.
     const outside = moves.find(m => mins(m.after.fstarttime) < gridWindow.start || mins(m.after.fendtime) > gridWindow.end);
@@ -2785,13 +3010,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       // rolled back below if the server refuses the move.
       markChanged(row.id);
       leaveMoveTraces(moves);
-      setPhysicsNotice("");
+      setPhysicsNotice(moveTimingNotes.join(" · "));
       const label = days.find(d => d.key === day)?.label || "";
       const movedIds = moves.map(m => m.before.id);
       const undoId = offerUndo(
         moves.length > 1
-          ? `نُقل ${countOf(moves.length, AR.appointment)} إلى ${label} ${target.start}`
-          : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${target.start}`,
+          ? `نُقل ${countOf(moves.length, AR.appointment)} إلى ${label} ${effectiveTarget.start}`
+          : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${effectiveTarget.start}`,
         moves.map(move => restoreStep(move.before)),
       );
       let undoTimer: number | undefined;
@@ -2822,7 +3047,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         });
         // The confirmation already carries the written rows — settle them in
         // place instead of re-reading the whole scope after every drag.
-        if (Array.isArray(outcome?.rows) && outcome.rows.length) {
+        if (outcome?.queuedOffline) {
+          setPhysicsNotice([moveTimingNotes.join(" · "), "حُفظ النقل محلياً · بانتظار المزامنة"].filter(Boolean).join(" · "));
+        } else if (Array.isArray(outcome?.rows) && outcome.rows.length) {
           const confirmed = new Map<number, FSchedule>(outcome.rows.map((item: FSchedule) => [item.id, item]));
           setRows(current => current.map(item => confirmed.get(item.id) || item));
         }
@@ -2879,6 +3106,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   const commitRoomMove = async (row: FSchedule, day: DayKey, start: string, building: string, hall: string) => {
     if (showMobileReadOnlyGate()) return;
+    start = await chooseHistoricalDropTime(row, day, start);
     const duration = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
     const end = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(start) + duration));
     const unchanged = row.fstarttime === start &&
@@ -2886,6 +3114,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (unchanged) return;
     warnIfHeldElsewhere([row.id]);
     const after: FSchedule = { ...row, fstarttime: start, fendtime: end, AdRoomCode: building, AdRoomHall: hall } as FSchedule;
+    const roomMoveTimingNote = start !== row.fstarttime ? historicalTimingNote(after) : null;
     setSaving(true);
     setError(null);
     try {
@@ -2900,6 +3129,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       // used to be. Carrying a lecture from F6 to F7 said nothing at all before
       // this line; now it reads exactly like every other move in the program.
       leaveMoveTraces([{ before: row, after }]);
+      setPhysicsNotice(roomMoveTimingNote || "");
       const place = [building, hall].filter(Boolean).join("/") || "بلا قاعة";
       const undoId = offerUndo(
         `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${place} ${start}`,
@@ -2948,6 +3178,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       } catch (refusal) {
         setRows(current => current.map(item => (item.id === row.id ? row : item)));
         setJustChangedId(current => (current === Number(row.id) ? null : current));
+        if (roomMoveTimingNote) setPhysicsNotice("");
         if (undoId) {
           if (undoTimer !== undefined) window.clearTimeout(undoTimer);
           setRecentMoves(current => {
@@ -3506,7 +3737,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * flow, and when a crowd of them collides the woven hour takes over and
    * lays them as horizontal, named, draggable slices.
    */
-  const LONG_BLOCK = Number.POSITIVE_INFINITY;
+  const LONG_BLOCK = 150;
   const weekLayout = useMemo(() => {
     type Placed = { row: FSchedule; top: number; height: number; lane: number; span: number; lanes: number; spine?: number };
     const layout: Record<string, { items: Placed[]; spine: Placed[]; busiest: number }> = {};
@@ -3532,9 +3763,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
        * So long single-day blocks get slim rails of their own at the edge of
        * the column, and the day's teaching keeps its full width.
        */
-      const spineRows = all.filter(item =>
-        days.filter(d => Boolean((item as any)[d.key])).length === 1 &&
-        mins(item.fendtime) - mins(item.fstarttime) >= LONG_BLOCK);
+      const spineRows = all.filter(item => {
+        const from = mins(item.fstarttime), to = mins(item.fendtime);
+        const isLongSingleDay =
+          days.filter(d => Boolean((item as any)[d.key])).length === 1 &&
+          to - from >= LONG_BLOCK;
+        if (!isLongSingleDay) return false;
+        // A long lecture only steps into the vertical companion column when it
+        // actually squeezes another lecture. Alone, it remains the normal full
+        // horizontal card. This keeps the finished row layout untouched.
+        return all.some(other =>
+          other.id !== item.id &&
+          mins(other.fstarttime) < to && mins(other.fendtime) > from);
+      });
       const items = all.filter(item => !spineRows.includes(item));
 
       const spineEnds: number[] = [];
@@ -3665,7 +3906,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * An expanded day gives every lane the full grid, so nothing there needs to
    * share. Everywhere else the card occupies the columns it earned.
    */
-  const RAIL = 26;
+  const RAIL = 48;
   const laneStyle = (placed: { lane: number; span: number; lanes: number }, rails: number): React.CSSProperties => {
     const reserved = rails * RAIL;
     if (placed.lanes <= 1) return reserved ? { insetInlineEnd: `${reserved + 5}px` } : {};
@@ -3697,7 +3938,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const who = i?.AdInstructorName || "بدون أستاذ";
     /* First and last name only — «د. عبدالرحمن الشراد» — then the width-aware
        shortener may trim further on a squeezed lane. */
-    const shortWho = i?.AdInstructorName ? instructorLabel(firstLast(i.AdInstructorName), widthShare) : who;
+    const shortWho = i?.AdInstructorName ? firstLast(i.AdInstructorName) : who;
     const place = placeOf(r);
     /* Computed once: the card wears it as colour, and — when the reader has
        asked for it — as a weave keyed to the same number. */
@@ -4007,11 +4248,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const before = blockersFor(row).length;
     const blockers = blockersFor(candidate);
     const delta = blockers.length - before;
+    const timingNote = historicalTimingNote(candidate);
     const targetLoad = rows.filter(item => Boolean(item[target.day]) && mins(item.fstarttime) < mins(candidate.fendtime) && mins(item.fendtime) > mins(candidate.fstarttime)).length;
     const ripple = {
       headline: blockers.length
         ? "غير متاح مبدئيًا — يوجد حجز ظاهر في هذا الموضع."
-        : "متاح مبدئيًا — أتأكد الآن من أثره على النطاق الكامل.",
+        : timingNote
+          ? "الموضع متاح، لكنه خارج توقيت الأيام المعتاد."
+          : "متاح مبدئيًا — أتأكد الآن من أثره على النطاق الكامل.",
       delta: {
         conflicts: delta,
         professorGap: 0,
@@ -4020,7 +4264,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       },
       effects: blockers.length
         ? blockers.slice(0, 2).map(item => ({ tone: "warn", text: `${item.message} — ${item.detail}` }))
-        : [{ tone: "good", text: "لا يظهر مانع في القاعة أو الأستاذ ضمن الجدول المعروض." }],
+        : timingNote
+          ? [
+              { tone: "warn", text: timingNote },
+              { tone: "good", text: "لا يظهر مانع في القاعة أو الأستاذ ضمن الجدول المعروض." },
+            ]
+          : [{ tone: "good", text: "لا يظهر مانع في القاعة أو الأستاذ ضمن الجدول المعروض." }],
     };
     return buildDecision(
       `${row.id}:${target.day}:${target.start}`,
@@ -5872,6 +6121,20 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </span>
               </div>
             )}
+            {editorTimingNote ? (
+              <div className="regulation-advice" role="status">
+                <div className="regulation-advice-head">
+                  <Clock3 aria-hidden="true" />
+                  <strong>ملاحظة التوقيت</strong>
+                  <em>تنبيه — لا يمنع الحفظ</em>
+                </div>
+                <article className="regulation-advice-item sev-medium">
+                  <span className="regulation-article">نمط الأيام</span>
+                  <strong>وقت بداية غير معتاد لهذه الأيام</strong>
+                  <span>{editorTimingNote}</span>
+                </article>
+              </div>
+            ) : null}
             {/*
               The articles, read on the draft. Deliberately below the blocking
               check and deliberately never blocking: a save is refused only by
@@ -5963,17 +6226,65 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     quick ||
     repair ||
     fanned ||
+    historicalChoice ||
     mobileViewGate
   );
+  const closeScheduleGuide = (remember = true) => {
+    if (remember) {
+      try { localStorage.setItem("schedule-guide-v3", "1"); } catch {}
+    }
+    setScheduleGuideOpen(false);
+  };
+  const liveEditors = peers.filter(peer => peer.editing).length;
+  const liveHolders = peers.filter(peer => peer.holding).length;
+  const liveCollaborators = peers.filter(peer => peer.cell || peer.holding || peer.editing).length;
   return (
     <div className={`content-stack schedule-page ${phoneReadOnly ? "schedule-phone" : ""}`.trim()}>
       <PageTitle
         eyebrow="مركز الجدول"
         subtitle="نطاق · مراجعة · نشر"
-        action={<AddButton onClick={openCreate}>إضافة موعد</AddButton>}
+        action={
+          <div className="page-title-actions no-print">
+            <GhostButton type="button" className="page-help-action" onClick={() => setScheduleGuideOpen(true)} title="تعريف سريع بأهم المزايا" aria-label="تعريف سريع بأهم مزايا الجدول">
+              <HelpCircle aria-hidden="true" />
+            </GhostButton>
+            <AddButton onClick={openCreate}>إضافة موعد</AddButton>
+          </div>
+        }
       >
         الجدول الدراسي
       </PageTitle>
+      {historicalChoice ? (
+        <div className="historical-time-backdrop no-print" role="dialog" aria-modal="true" aria-label="تنبيه التوقيت التاريخي">
+          <section className="historical-time-dialog">
+            <header><span><Clock3 aria-hidden="true" /></span><div><small>{historicalChoice.source}</small><strong>{historicalChoice.dayLabel} · وقت غير معتاد</strong></div></header>
+            <div className="historical-time-compare" dir="ltr"><b>{historicalChoice.picked}</b><ChevronLeft aria-hidden="true" /><strong>{historicalChoice.preferred}</strong></div>
+            <p>النمط الأقرب يشير إلى <b dir="ltr">{historicalChoice.preferred}</b>. الوقت الذي اخترته <b dir="ltr">{historicalChoice.picked}</b> يبقى مسموحاً.</p>
+            <footer><button type="button" onClick={() => settleHistoricalTimeChoice(true)}>ثبّت {historicalChoice.picked}</button><button type="button" className="primary" onClick={() => settleHistoricalTimeChoice(false)}>استخدم {historicalChoice.preferred}</button></footer>
+          </section>
+        </div>
+      ) : null}
+      {scheduleGuideOpen ? (
+        <div className="schedule-guide-backdrop no-print" role="dialog" aria-modal="true" aria-label="تعريف سريع بأهم مزايا الجدول" onMouseDown={event => { if (event.target === event.currentTarget) closeScheduleGuide(false); }}>
+          <section className="schedule-guide-card">
+            <header>
+              <span className="schedule-guide-mark"><HelpCircle aria-hidden="true" /></span>
+              <div><small>خريطة سريعة</small><strong>أين تجد الأشياء المهمة؟</strong></div>
+              <button type="button" onClick={() => closeScheduleGuide(false)} aria-label="إغلاق"><X /></button>
+            </header>
+            <div className="schedule-guide-grid">
+              <article><Clock3/><span><strong>وقت ذكي</strong><small>التاريخ ينبه فقط؛ لا يمنع.</small></span></article>
+              <article><BrainCircuit/><span><strong>قرار الآن</strong><small>أفضل ما يستحق انتباهك.</small></span></article>
+              <article><UsersRound/><span><strong>تعاون مباشر</strong><small>من يعمل على البطاقة الآن.</small></span></article>
+              <article><History/><span><strong>لماذا؟ وReplay</strong><small>افتح البطاقة لترى قصتها.</small></span></article>
+            </div>
+            <footer>
+              <span>السحب آمن · النسخة القديمة محمية · الاتصال الضعيف لا يضيع التعديل الآمن</span>
+              <button type="button" onClick={() => closeScheduleGuide(true)}>فهمت</button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
       {mobileViewGate ? (
         <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="بعض عروض الجدول للقراءة فقط على الهاتف">
           <div className="mobile-desktop-gate-card">
@@ -5993,6 +6304,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
       {error ? <Notice>{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
+      {!networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders ? (
+        <div className="schedule-ops-strip no-print" aria-label="حالة العمل الذكي">
+          {!networkOnline ? <span className="schedule-ops-pill warn"><Radio aria-hidden="true"/><b>دون اتصال · التغييرات الآمنة محلية</b></span> : null}
+          {offlinePending ? <span className="schedule-ops-pill warn"><Upload aria-hidden="true"/><b>{offlinePending.toLocaleString("ar-KW-u-nu-latn")} بانتظار المزامنة</b></span> : null}
+          {liveCollaborators ? <span className="schedule-ops-pill"><UsersRound aria-hidden="true"/><b>{liveCollaborators.toLocaleString("ar-KW-u-nu-latn")} يعمل الآن</b></span> : null}
+          {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>{(liveEditors + liveHolders).toLocaleString("ar-KW-u-nu-latn")} بطاقة تحت التحرير</b></span> : null}
+        </div>
+      ) : null}
       {physicsNotice || undoPoint ? (
         <div className="schedule-physics-status no-print">
           <div>
@@ -6561,7 +6880,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               const title = row.AdCourseName || course?.CourseName || code;
               const compactTitle = courseLabel(title, 0.46).text;
               const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
-              const compactWho = instructor?.AdInstructorName ? instructorLabel(instructor.AdInstructorName, 0.5) : "بدون أستاذ";
+              const compactWho = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
               const whoWords = who.split(/\s+/).filter(Boolean);
               const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
               const whoGiven = whoWords.join(" ") || who;
@@ -6604,6 +6923,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   onClick={() => void openContext(row)}
+                  onPointerEnter={(e) => { if (!physicsActive) openPeek(row, e.currentTarget); }}
+                  onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
+                  onFocus={(e) => openPeek(row, e.currentTarget)}
+                  onBlur={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter") void openContext(row); }}
                 >
@@ -7431,9 +7754,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                           tabIndex={0}
                           onKeyDown={(e) => { if (e.key === "Enter") openEdit(placed.row); }}
                         >
-                          <b>{courseLabel(placed.row.AdCourseName || c?.CourseName || code, 0.4).text}</b>
+                          <b>{placed.row.AdCourseName || c?.CourseName || code}</b>
                           <span>{railInstructor?.AdInstructorName ? firstLast(railInstructor.AdInstructorName) : "بدون أستاذ"}</span>
-                          <time dir="ltr">{placed.row.fstarttime}</time>
+                          <time dir="ltr">{code}</time>
                         </article>
                       );
                     })}
@@ -8210,19 +8533,57 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </p>
               </div>
             </div>
-            {isPowerAdmin ? (
-              <button
-                type="button"
-                className="decision-replay-trigger"
-                onClick={() => void loadReplay(context.selected)}
-                disabled={replayLoading}
-              >
-                <History />
-                {replayLoading
-                  ? "أعيد بناء تشريح القرار…"
-                  : "كيف وصل القرار إلى هذا الشكل؟"}
-              </button>
+            <div className="context-intelligence-summary">
+              <article className="context-why-here">
+                <span><HelpCircle aria-hidden="true" /></span>
+                <div><small>لماذا هذا هنا؟</small><strong>{context.whyHere || "لا يوجد دليل تاريخي كافٍ بعد."}</strong></div>
+              </article>
+              <article title={context.courseLife ? `${context.courseLife.firstTerm} ← ${context.courseLife.latestTerm} · ${context.courseLife.observations} حالة` : undefined}>
+                <span><History aria-hidden="true" /></span>
+                <div><small>حياة المقرر</small><strong>{context.courseLife ? `${context.courseLife.terms} فصل · ${context.courseLife.stability}% ثبات` : "تاريخ قليل"}</strong></div>
+              </article>
+              <article title={context.offeringLife ? `${context.offeringLife.firstTerm} ← ${context.offeringLife.latestTerm}` : undefined}>
+                <span><CalendarDays aria-hidden="true" /></span>
+                <div><small>حياة الشعبة</small><strong>{context.offeringLife ? (context.offeringLife.currentJourney ? `${context.offeringLife.currentJourney.snapshots} نسخة · ${context.offeringLife.currentJourney.changes} تغيّر` : `${context.offeringLife.terms} فصل · ${context.offeringLife.changes} تغيّر`) : "أول ظهور"}</strong></div>
+              </article>
+              <article className={`decision-cost-${context.decisionCost?.level || "low"}`} title={(context.decisionCost?.factors || []).join(" · ") || undefined}>
+                <span><BrainCircuit aria-hidden="true" /></span>
+                <div><small>تكلفة التغيير</small><strong>{context.decisionCost?.score ?? 0}/100</strong></div>
+                <i style={{ ["--cost" as any]: `${context.decisionCost?.score || 0}%` }} />
+              </article>
+            </div>
+            {(context.courseLife || context.offeringLife) ? (
+              <details className="context-life-details">
+                <summary><History aria-hidden="true" /><span>السيرة التاريخية</span><ChevronDown aria-hidden="true" /></summary>
+                <div className="context-life-details-grid">
+                  {context.courseLife ? <section>
+                    <header><History/><strong>المقرر</strong><b>{context.courseLife.confidence === "high" ? "ثقة عالية" : context.courseLife.confidence === "medium" ? "ثقة متوسطة" : "تاريخ محدود"}</b></header>
+                    <div><span>أول / آخر</span><strong>{context.courseLife.firstTerm} · {context.courseLife.latestTerm}</strong></div>
+                    <div><span>الوقت المعتاد</span><strong dir="ltr">{context.courseLife.usualStart || "—"}</strong></div>
+                    <div><span>المدة</span><strong>{context.courseLife.usualDuration ? `${context.courseLife.usualDuration} د` : "—"}</strong></div>
+                    <div><span>القاعة</span><strong>{context.courseLife.usualRoom || "—"}</strong></div>
+                  </section> : null}
+                  {context.offeringLife ? <section>
+                    <header><CalendarDays/><strong>الشعبة</strong><b>{context.offeringLife.stability}% ثبات</b></header>
+                    <div><span>النسخ الحالية</span><strong>{context.offeringLife.currentJourney?.snapshots || 0}</strong></div>
+                    <div><span>التغييرات</span><strong>{context.offeringLife.currentJourney?.changes ?? context.offeringLife.changes ?? 0}</strong></div>
+                    <div><span>الوقت المعتاد</span><strong dir="ltr">{context.offeringLife.usualStart || "—"}</strong></div>
+                    <div><span>القاعة المعتادة</span><strong>{context.offeringLife.usualRoom || "—"}</strong></div>
+                  </section> : null}
+                </div>
+              </details>
             ) : null}
+            <button
+              type="button"
+              className="decision-replay-trigger"
+              onClick={() => void loadReplay(context.selected)}
+              disabled={replayLoading}
+            >
+              <History />
+              {replayLoading
+                ? "أعيد بناء تشريح القرار…"
+                : "كيف وصل القرار إلى هذا الشكل؟"}
+            </button>
             {replay ? (
               <div className="decision-replay">
                 <div className="replay-head">
@@ -8433,6 +8794,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </ul>
               </div>
             ) : null}
+            {TEAM_NOTES_ENABLED ? (
             <div className="context-comments">
               <div className="context-comments-head">
                 <div>
@@ -8484,6 +8846,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 )}
               </div>
             </div>
+            ) : null}
           </aside>
         </div>
       ) : null}

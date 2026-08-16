@@ -1468,7 +1468,7 @@
 .vault-action-icon{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--surface-2);color:var(--accent);border:1px solid var(--line)}
 .vault-action-icon svg{width:21px;height:21px}.vault-reset .vault-action-icon{color:var(--danger);background:color-mix(in srgb,var(--danger-soft) 55%,var(--surface))}
 .system-vault-action>div:nth-of-type(1){min-width:0}.system-vault-action small{display:block;color:var(--muted-2);font:600 11px/1 var(--font-mono);letter-spacing:.08em}.system-vault-action h3{margin:5px 0 4px;font-size:18px}.system-vault-action p{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.75}
-.system-vault-action>.btn,.system-vault-action>.vault-file-picker,.system-vault-action>.vault-inline-actions,.system-vault-action>.vault-confirm-input,.system-vault-action>.vault-restore-meta{grid-column:1/-1}
+.system-vault-action>.btn,.system-vault-action>.vault-file-picker,.system-vault-action>.vault-inline-actions,.system-vault-action>.vault-confirm-input,.system-vault-action>.vault-restore-meta,.system-vault-action>.vault-preview-card{grid-column:1/-1}
 .system-vault-action>.btn{justify-self:stretch;width:100%}
 .vault-file-picker{min-height:52px;border:1px dashed var(--line-strong);border-radius:14px;padding:10px 13px;display:flex;align-items:center;gap:10px;color:var(--ink-2);background:var(--surface-2);cursor:pointer;transition:border-color .15s var(--ease),background .15s var(--ease)}
 .vault-file-picker:hover{border-color:var(--accent);background:var(--accent-softer)}.vault-file-picker input{position:absolute;inline-size:1px;block-size:1px;opacity:0;pointer-events:none}.vault-file-picker svg{width:18px;height:18px;color:var(--accent);flex:none}.vault-file-picker span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm)}
@@ -1520,3 +1520,12 @@
 .vault-file-picker.disabled{opacity:.58;cursor:not-allowed;pointer-events:none}
 .vault-import-progress{border-color:color-mix(in srgb,var(--accent) 28%,var(--line));background:color-mix(in srgb,var(--accent-softer) 42%,var(--surface))}
 .vault-import-progress .vault-export-progress-track i{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 78%,var(--success)),var(--success))}
+.vault-preview-card.inside-card {
+  margin: var(--s2) 0 var(--s4) 0;
+  border-radius: var(--radius-lg);
+  border: 1px dashed color-mix(in srgb, var(--success) 60%, transparent);
+}
+.vault-counts span svg {
+  color: var(--success);
+  opacity: 0.9;
+}

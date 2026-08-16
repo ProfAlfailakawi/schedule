@@ -15,6 +15,7 @@ import {
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import { Notice } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
+import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
 
 type DayKey = "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
 const dayKeys: DayKey[] = [
@@ -53,6 +54,9 @@ const placement = (row: Partial<FSchedule>) =>
  * A tool that cannot answer must at least be able to say so.
  */
 async function fetchJson(url: string, options?: RequestInit, timeoutMs = 35_000) {
+  const started = performance.now();
+  const method = String(options?.method || "GET").toUpperCase();
+  telemetryBreadcrumb(`قرار الآن · ${method} ${url.split("?")[0]}`);
   const controller = new AbortController();
   const externalSignal = options?.signal;
   const abortFromCaller = () => controller.abort();
@@ -63,6 +67,8 @@ async function fetchJson(url: string, options?: RequestInit, timeoutMs = 35_000)
   try {
     response = await fetch(url, { ...options, signal: controller.signal });
   } catch (error: any) {
+    telemetryError(`decision-now:${url.split("?")[0]}`, error, performance.now() - started);
+    telemetryApi(`decision-now:${url.split("?")[0]}`, performance.now() - started, 0, false);
     // A timeout or a flaky connection on a *background* smart read is not worth a
     // scary banner — it is tagged `soft` so callers can degrade quietly instead
     // of spamming the same message on every schedule change.
@@ -83,6 +89,7 @@ async function fetchJson(url: string, options?: RequestInit, timeoutMs = 35_000)
   const raw = await response.text();
   let data: any = null;
   try { data = raw ? JSON.parse(raw) : null; } catch { data = null; }
+  telemetryApi(`decision-now:${url.split("?")[0]}`, performance.now() - started, response.status, response.ok);
   if (response.ok) return data;
 
   if (response.status === 429 || /rate\s*exceeded|too many/i.test(raw)) {
@@ -222,7 +229,7 @@ export function useScheduleExperience({
     setSignatureOpen(false);
   }, [collegeId, sectionId, termId]);
   useEffect(() => {
-    if (!isPowerAdmin || !collegeId || !sectionId || !termId || !rows.length) {
+    if (!collegeId || !sectionId || !termId || !rows.length) {
       setLiving(null);
       setGenome(null);
       setConstraints([]);
@@ -271,7 +278,7 @@ export function useScheduleExperience({
       else window.clearTimeout(idleId);
       controller.abort();
     };
-  }, [isPowerAdmin, collegeId, sectionId, termId, rows]);
+  }, [collegeId, sectionId, termId, rows]);
 
   const toggleGhost = async () => {
     /*
@@ -284,7 +291,7 @@ export function useScheduleExperience({
      * them; `/api/schedules` treats a missing college or section as a wide read,
      * exactly as the board's own loader does.
      */
-    if (!isPowerAdmin || !termId) return;
+    if (!termId) return;
     if (ghostEnabled) {
       setGhostEnabled(false);
       return;
@@ -309,7 +316,7 @@ export function useScheduleExperience({
     }
   };
   const openDecision = async () => {
-    if (!isPowerAdmin || !collegeId || !sectionId || !termId) return;
+    if (!collegeId || !sectionId || !termId) return;
     setDecisionOpen(true);
     setDecisionBusy(true);
     setDecisionError("");
@@ -381,9 +388,10 @@ export default function ScheduleExperienceLayer({
   rows: FSchedule[];
   headless?: boolean;
 }) {
-  if (!isPowerAdmin) return null;
-  const e = experience,
-    health = e.living?.health,
+  const e = experience;
+  // Every authenticated schedule user with form 7 access receives the same
+  // scoped decision experience; the server still enforces college/section scope.
+  const health = e.living?.health,
     genome = e.genome;
   /* In the schedule this layer is headless until one of its two dialogs opens.
      Returning before the genome/constraint summaries prevents invisible work

@@ -9,6 +9,7 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronLeft,
+  CircleHelp,
   Command,
   Dna,
   FileClock,
@@ -73,6 +74,7 @@ import {
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
 import { formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
+import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 
 /**
  * A professor's week, laid out where it actually falls.
@@ -280,6 +282,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [rows, setRows] = useState<FSchedule[]>([]),
     [drafts, setDrafts] = useState<any[]>([]),
     [versions, setVersions] = useState<any[]>([]),
+    [operationsReview, setOperationsReview] = useState<any>(null),
+    [experienceHealth, setExperienceHealth] = useState<any>(null),
+    [decisionInbox, setDecisionInbox] = useState<any>({ manual: [], inferred: [], totalOpen: 0 }),
     [loading, setLoading] = useState(true),
     [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
@@ -367,6 +372,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
   const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("intel-onboarding-seen") !== "1");
+  const [showWorkspaceGuide, setShowWorkspaceGuide] = useState(() => localStorage.getItem("intel-workspace-guide-v2") !== "1");
+  const [decisionCompose, setDecisionCompose] = useState(false);
+  const [decisionTitle, setDecisionTitle] = useState("");
+  const [versionScrubIndex, setVersionScrubIndex] = useState(0);
   /* ما قاله الطلاب — والنقلة التي تُصلحه.
      Loaded with everything else, and empty is the ordinary state: a department
      that has never opened the survey sees the door and nothing more. */
@@ -374,7 +383,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [genome, setGenome] = useState<any>(null),
     [constraints, setConstraints] = useState<any[]>([]),
     [innovationMode, setInnovationMode] = useState<
-      "constraints" | "war" | "autopilot"
+      "constraints" | "war" | "autopilot" | "policy"
     >("constraints"),
     [warRoom, setWarRoom] = useState<any>(null),
     [warRowId, setWarRowId] = useState<number | "">(""),
@@ -384,6 +393,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     ),
     [autopilot, setAutopilot] = useState<any>(null),
     [autopilotBusy, setAutopilotBusy] = useState(false);
+  const [policyDraft, setPolicyDraft] = useState<any>({ type: "day_off", day: "fwednesday", time: "17:00", building: "", growth: 10, scope: isPowerAdmin ? "university" : "department" });
+  const [policyResult, setPolicyResult] = useState<any>(null);
+  const [policyBusy, setPolicyBusy] = useState(false);
   const [constraintDraft, setConstraintDraft] = useState<any>({
     type: "instructor_latest_end",
     AdInstructorId: 0,
@@ -395,23 +407,22 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     maxMinutes: 120,
   });
   const fetchJson = async (url: string, options?: RequestInit) => {
-    if (options?.method && options.method !== "GET" && !navigator.onLine)
-      throw new Error(
-        "أنت الآن دون اتصال. العرض متاح، لكن الحفظ والنشر متوقفان لحماية الجدول.",
-      );
-    // Text first, then parse: a gateway's HTML error page (busy/restarting
-    // instance) must read as "retry", never as a cryptic JSON crash.
-    const r = await fetch(url, options);
+    const method=String(options?.method||"GET").toUpperCase();
+    if (method !== "GET" && !navigator.onLine)
+      throw new Error("أنت الآن دون اتصال. القراءة متاحة، لكن الحفظ والنشر ينتظر عودة الاتصال.");
+    telemetryBreadcrumb(`${method} ${url.split("?")[0]}`);
+    const started=performance.now();
+    let r:Response;
+    try{r=await fetch(url,{...options,credentials:options?.credentials||"include"});telemetryApi(url.split("?")[0],performance.now()-started,r.status,r.ok);}
+    catch(error){telemetryError(url.split("?")[0],error,performance.now()-started);throw error;}
     const body = await r.text();
     let d: any = {};
     if (body) {
       try { d = JSON.parse(body); }
-      catch { throw new Error(r.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${r.status}). أعد المحاولة بعد قليل.`); }
+      catch { const error=new Error(r.ok ? "وصل رد غير متوقع من الخادم. أعد المحاولة بعد لحظات." : `الخادم مشغول حالياً (${r.status}). أعد المحاولة بعد قليل.`);telemetryError("response.parse",error);throw error; }
     }
     if (!r.ok)
-      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), {
-        issues: d.issues,
-      });
+      throw Object.assign(new Error(d.error || "تعذر تنفيذ العملية"), { issues: d.issues });
     return d;
   };
   useEffect(() => {
@@ -508,41 +519,70 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       }).toString(),
     [collegeId, sectionId, termId],
   );
+  useEffect(() => {
+    setTelemetryScope({collegeId,sectionId,termId});
+    if(collegeId&&sectionId&&termId)telemetryBreadcrumb(`مركز الذكاء ${collegeId}/${sectionId}/${termId}`);
+  },[collegeId,sectionId,termId]);
   /** Only the newest read may paint. Switching scope quickly used to let an
    *  older answer land last and describe another department's numbers under
    *  the new department's name. */
   const reloadSerial = useRef(0);
+  const intelligenceReadyScope = useRef("");
   const reload = async () => {
     if (!collegeId || !sectionId || !termId) return;
+    const uiStarted = performance.now();
     const serial = ++reloadSerial.current;
     setLoading(true);
     setError(null);
+    let painted = false;
     try {
-      /* The two readings everyone is allowed must arrive; the four that are
-         the main administrator's alone degrade to empty rather than throwing
-         the page away. Same reasoning as the mount above. */
-      const [o, r, d, v, g, cx, dm] = await Promise.all([
+      // The board and its score are the first paint. Everything else is useful
+      // context, not a reason to hold the whole intelligence room behind a
+      // spinner. This keeps the page responsive even when history/telemetry is
+      // cold in Firestore.
+      const [o, r] = await Promise.all([
         fetchJson(`/api/intelligence/overview?${contextQuery}`),
         fetchJson(`/api/schedules?${contextQuery}`),
+      ]);
+      if (serial !== reloadSerial.current) return;
+      setOverview(o);
+      setRows(r);
+      if (!scenario) setScenarioId(r[0]?.id || "");
+      painted = true;
+      setLoading(false);
+      const readyKey = `${collegeId}:${sectionId}:${termId}`;
+      if (intelligenceReadyScope.current !== readyKey) {
+        intelligenceReadyScope.current = readyKey;
+        requestAnimationFrame(() => telemetryTiming("intelligence.ready", performance.now() - uiStarted));
+      }
+
+      // Secondary evidence arrives in parallel and quietly fills only the cards
+      // that use it. A slow history query can no longer make «مركز الذكاء» feel
+      // blank or make a department think the feature is missing.
+      const [d, v, g, cx, dm, ops, decisions, ux] = await Promise.all([
         fetchJson(`/api/intelligence/drafts?${contextQuery}`).catch(() => []),
         fetchJson(`/api/intelligence/versions?${contextQuery}`).catch(() => []),
         fetchJson(`/api/intelligence/genome?${contextQuery}`).catch(() => null),
         fetchJson(`/api/intelligence/constraints?${contextQuery}`).catch(() => []),
         fetchJson(`/api/schedules/demand?${contextQuery}`).catch(() => null),
+        fetchJson(`/api/intelligence/operations-review?${contextQuery}`).catch(() => null),
+        fetchJson(`/api/intelligence/open-decisions?${contextQuery}`).catch(() => ({manual:[],inferred:[],totalOpen:0})),
+        fetchJson(`/api/intelligence/experience-health?${contextQuery}`).catch(() => null),
       ]);
       if (serial !== reloadSerial.current) return;
-      setOverview(o);
-      setRows(r);
       setDrafts(Array.isArray(d) ? d : []);
       setVersions(Array.isArray(v) ? v : []);
       setGenome(g);
       setConstraints(Array.isArray(cx) ? cx : []);
       setDemand(dm);
-      if (!scenario) setScenarioId(r[0]?.id || "");
+      setOperationsReview(ops);
+      setDecisionInbox(decisions || {manual:[],inferred:[],totalOpen:0});
+      setExperienceHealth(ux);
+      setVersionScrubIndex(Math.max(0,(Array.isArray(v)?v.length:0)-1));
     } catch (e: any) {
       if (serial === reloadSerial.current) setError(smartMessage(e));
     } finally {
-      if (serial === reloadSerial.current) setLoading(false);
+      if (!painted && serial === reloadSerial.current) setLoading(false);
     }
   };
   useEffect(() => {
@@ -1039,22 +1079,60 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setBusy(false);
     }
   };
+  const compareVersionPair = async (fromId: string, toId: string, quiet = false) => {
+    if (!fromId || !toId || fromId === toId) return;
+    if (!quiet) setBusy(true);
+    try {
+      setVersionCompare(await fetchJson(`/api/intelligence/versions/compare?fromId=${encodeURIComponent(fromId)}&toId=${encodeURIComponent(toId)}`));
+      setVersionFrom(fromId); setVersionTo(toId); setTimeTravel(50);
+    } catch (e: any) {
+      if (!quiet) setError(smartMessage(e));
+    } finally {
+      if (!quiet) setBusy(false);
+    }
+  };
   const compareVersions = async () => {
     if (!versionFrom || !versionTo) { setError("اختر نسختين للمقارنة."); return; }
     if (versionFrom === versionTo) { setError("اختر نسختين مختلفتين للمقارنة."); return; }
+    await compareVersionPair(versionFrom, versionTo);
+  };
+  useEffect(() => {
+    if (approveCard !== "versions" || versions.length < 2) return;
+    const chronological=[...versions].sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt)));
+    const index=Math.max(1,Math.min(chronological.length-1,versionScrubIndex));
+    const timer=window.setTimeout(()=>{void compareVersionPair(String(chronological[index-1].id),String(chronological[index].id),true);},220);
+    return()=>window.clearTimeout(timer);
+  },[versionScrubIndex,approveCard,versions.length]);
+  const addOpenDecision = async () => {
+    const title=decisionTitle.trim(); if(title.length<3)return;
     setBusy(true);
-    try {
-      setVersionCompare(
-        await fetchJson(
-          `/api/intelligence/versions/compare?fromId=${encodeURIComponent(versionFrom)}&toId=${encodeURIComponent(versionTo)}`,
-        ),
-      );
-      setTimeTravel(50);
-    } catch (e: any) {
-      setError(smartMessage(e));
-    } finally {
-      setBusy(false);
-    }
+    try{
+      await fetchJson("/api/intelligence/open-decisions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionId,termId,title,priority:"medium",source:"manual"})});
+      setDecisionTitle("");setDecisionCompose(false);
+      setDecisionInbox(await fetchJson(`/api/intelligence/open-decisions?${contextQuery}`));
+    }catch(e:any){setError(smartMessage(e));}finally{setBusy(false);}
+  };
+  const closeOpenDecision = async (item:any) => {
+    if(!item?.id||String(item.id).startsWith("inferred:"))return;
+    try{
+      await fetchJson(`/api/intelligence/open-decisions/${encodeURIComponent(item.id)}`,{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionId,termId,status:item.status==="done"?"open":"done"})});
+      setDecisionInbox(await fetchJson(`/api/intelligence/open-decisions?${contextQuery}`));
+    }catch(e:any){setError(smartMessage(e));}
+  };
+  const proposeUnwrittenRule = async (rule:any) => {
+    if(!rule?.title)return;
+    setBusy(true);
+    try{
+      await fetchJson("/api/intelligence/open-decisions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionId,termId,title:`قاعدة مقترحة: ${String(rule.title).slice(0,110)}`,detail:`مكتشفة من التاريخ بثقة ${Number(rule.confidence||0)}٪ · ${String(rule.detail||"").slice(0,220)}`,priority:Number(rule.confidence||0)>=90?"high":"medium",source:"assistant"})});
+      setDecisionInbox(await fetchJson(`/api/intelligence/open-decisions?${contextQuery}`));
+      setMessage("أُضيفت القاعدة المقترحة إلى دفتر القرارات للمراجعة.");
+    }catch(e:any){setError(smartMessage(e));}finally{setBusy(false);}
+  };
+  const runPolicy = async () => {
+    setPolicyBusy(true);setError(null);
+    try{
+      setPolicyResult(await fetchJson("/api/intelligence/policy-simulate",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({collegeId,sectionId,termId,...policyDraft,scope:isPowerAdmin?policyDraft.scope:"department"})}));
+    }catch(e:any){setError(smartMessage(e));}finally{setPolicyBusy(false);}
   };
   const compareTerms = async () => {
     if (!compareFrom || !compareTo) return;
@@ -1420,6 +1498,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const activeInsight = insightScenes.find((item) => item.value === insightScene) || null;
   const activeInsightKey = activeInsight?.value || "";
+  const chronologicalVersions = useMemo(() => [...versions].sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))), [versions]);
+  const versionActivityHeatmap = useMemo(() => {
+    const labels=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"],hours=Array.from({length:16},(_,i)=>i+7),counts=new Map<string,number>();
+    versions.forEach(version=>{const stamp=new Date(version.createdAt);if(Number.isNaN(stamp.getTime()))return;const hour=stamp.getHours();if(hour<7||hour>22)return;const key=`${stamp.getDay()}-${hour}`;counts.set(key,(counts.get(key)||0)+1);});
+    const max=Math.max(0,...counts.values());
+    return{labels,hours,max,cells:labels.map((label,day)=>({label,hours:hours.map(hour=>({hour,count:counts.get(`${day}-${hour}`)||0}))}))};
+  },[versions]);
+  const closeWorkspaceGuide=()=>{try{localStorage.setItem("intel-workspace-guide-v2","1");localStorage.setItem("intel-onboarding-seen","1");}catch{}setShowWorkspaceGuide(false);setShowOnboarding(false);};
 
   const handleDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -1474,10 +1560,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       <PageTitle
         eyebrow="ذكاء الجدول"
         subtitle="افهم · جرّب · اعتمد"
+        action={<GhostButton type="button" onClick={() => setShowWorkspaceGuide(true)}><CircleHelp aria-hidden="true" /> تعريف سريع</GhostButton>}
       >
         مركز الذكاء
       </PageTitle>
       <ContextBar />
+      {showWorkspaceGuide ? (
+        <aside className="intel-workspace-guide no-print" role="status">
+          <div><CircleHelp aria-hidden="true"/><span><small>أول مرة هنا؟</small><strong>ثلاث خطوات فقط</strong></span></div>
+          <ol><li><b>افهم</b><small>اقرأ الجودة والضغط واسأل الجدول.</small></li><li><b>جرّب</b><small>ماذا لو والسياسات بلا لمس الجدول الحقيقي.</small></li><li><b>اعتمد</b><small>قارن النسخ، راجع الخط الزمني، ثم انشر.</small></li></ol>
+          <button type="button" onClick={closeWorkspaceGuide}>فهمت</button>
+        </aside>
+      ) : null}
       <nav className="intelligence-scenes no-print" aria-label="مراحل مركز الذكاء">
         <Segmented
           value={scene}
@@ -2062,6 +2156,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <span>مقرر بلا موعد</span>
               </article>
             </div>
+            <div className="health-advanced-row">
+              <article className={operationsReview?.anomalies?.length ? "hit" : ""}><span>منطقياً</span><b>{Number(operationsReview?.anomalies?.length||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>شذوذ محتمل</small></article>
+              <article className={experienceHealth?.score<75 ? "hit" : ""}><span>تجربة القسم</span><b>{experienceHealth?.score ?? "—"}</b><small>{experienceHealth?.label || "تُقاس مع الاستخدام"}</small></article>
+              <article><span>زمن P95</span><b>{experienceHealth?.p95 ? `${experienceHealth.p95}ms` : "—"}</b><small>أبطأ 5٪</small></article>
+              <article className={experienceHealth?.failures ? "hit" : ""}><span>أخطاء الواجهة</span><b>{experienceHealth?.failures ?? 0}</b><small>آخر 14 يوماً</small></article>
+            </div>
+            {operationsReview?.anomalies?.length ? <details className="insight-disclosure"><summary>الشذوذ المنطقي ({operationsReview.anomalies.length})</summary><ul className="health-anomaly-list">{operationsReview.anomalies.slice(0,6).map((item:any,index:number)=><li key={`${item.kind}-${item.rowId||index}`} className={item.severity}><strong>{item.title}</strong><span>{item.detail}</span></li>)}</ul></details>:null}
+            {experienceHealth?.replays?.length ? <details className="insight-disclosure"><summary>Replay للأعطال الأخيرة ({experienceHealth.replays.length})</summary><div className="failure-replays">{experienceHealth.replays.slice(0,4).map((item:any,index:number)=><article key={`${item.timestamp}-${index}`}><strong>{item.name}</strong><small>{new Date(item.timestamp).toLocaleString("ar-KW-u-nu-latn")}</small><p>{item.message}</p><ol>{(item.breadcrumbs||[]).slice(-6).map((b:any,i:number)=><li key={i}>{b.action}</li>)}</ol></article>)}</div></details>:null}
+            {experienceHealth?.slowest?.length ? <details className="insight-disclosure"><summary>أبطأ مسارات الخادم</summary><div className="slow-endpoints">{experienceHealth.slowest.map((item:any)=><span key={item.path}><code>{item.path}</code><b>{item.avg}ms</b></span>)}</div></details>:null}
             <p>
               هذه القراءة لا تحذف ولا تصحح شيئاً تلقائياً؛ هدفها فقط كشف ما قد
               يفوت أثناء العمل السريع.
@@ -2501,6 +2604,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   ))}
               </div>
               </details>
+              {operationsReview?.unwrittenRules?.length ? (
+                <div className="unwritten-rules">
+                  <div className="unwritten-rules-head"><Sparkles /><span><small>قواعد لم يكتبها أحد</small><strong>مكتشفة من التاريخ</strong></span></div>
+                  <div className="unwritten-rules-list">{operationsReview.unwrittenRules.slice(0,6).map((rule:any)=><article key={rule.id}><b>{rule.confidence}%</b><span><strong>{rule.title}</strong><small>{rule.detail}</small></span><button type="button" onClick={()=>void proposeUnwrittenRule(rule)} disabled={busy} title="أضفها كقاعدة مقترحة إلى دفتر القرارات" aria-label={`اقتراح قاعدة: ${rule.title}`}><Plus /></button></article>)}</div>
+                </div>
+              ) : null}
               <div className="genome-foot">
                 <History />
                 <span>
@@ -2683,6 +2792,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <h3>{overview?.context?.sectionName}</h3>
               <p>قسمك فقط · الحجوزات الخارجية محسوبة دون كشف تفاصيلها.</p>
             </Surface>
+            <Surface className="decision-inbox-mini">
+              <div className="decision-inbox-mini-head"><div><span className="surface-kicker">دفتر القرارات</span><h3>{Number(decisionInbox?.totalOpen||0).toLocaleString("ar-KW-u-nu-latn")} مفتوح</h3></div><button type="button" onClick={()=>setDecisionCompose(value=>!value)} aria-label="إضافة قرار"><Plus /></button></div>
+              {decisionCompose?<form onSubmit={e=>{e.preventDefault();void addOpenDecision();}} className="decision-inbox-compose"><input autoFocus value={decisionTitle} onChange={e=>setDecisionTitle(e.target.value)} placeholder="قرار يحتاج حسم…" maxLength={140}/><button disabled={busy||decisionTitle.trim().length<3}><Save /></button></form>:null}
+              <div className="decision-inbox-list">
+                {[...(decisionInbox?.manual||[]).filter((item:any)=>item.status==="open"),...(decisionInbox?.inferred||[])].slice(0,5).map((item:any)=><button key={item.id} type="button" className={`priority-${item.priority||"medium"}`} onClick={()=>{if(!String(item.id).startsWith("inferred:"))void closeOpenDecision(item);}} title={String(item.id).startsWith("inferred:")?"مستنتج تلقائياً من الجدول":"اضغط لإغلاق القرار"}><i/><span><strong>{item.title}</strong>{item.detail?<small>{item.detail}</small>:null}</span>{String(item.id).startsWith("inferred:")?<Sparkles/>:<CheckCircle2/>}</button>)}
+              </div>
+            </Surface>
             <Surface>
               <span className="surface-kicker">أوامر مفيدة</span>
               {/* These were <span>s: they looked pressable and did nothing.
@@ -2819,6 +2935,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 onClick={() => setInnovationMode("autopilot")}
               >
                 <WandSparkles /> التحسين الآلي
+              </button>
+              <button
+                className={innovationMode === "policy" ? "active" : ""}
+                onClick={() => setInnovationMode("policy")}
+              >
+                <BarChart3 /> مختبر السياسات
               </button>
             </div>
             {innovationMode === "constraints" ? (
@@ -3191,6 +3313,36 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     للمقارنة فقط.
                   </div>
                 )}
+              </div>
+            ) : null}
+            {innovationMode === "policy" ? (
+              <div className="policy-lab">
+                <div className="policy-lab-head">
+                  <span className="policy-orb"><BarChart3 /></span>
+                  <div><strong>اختبر السياسة قبل إصدارها</strong><p>{isPowerAdmin ? "الجامعة أو القسم · آخر 10 سنوات كمرجع" : "قسمك · آخر 10 سنوات كمرجع"}</p></div>
+                  <Badge tone="success">محاكاة فقط</Badge>
+                </div>
+                <div className="policy-controls">
+                  <Field label="السياسة">
+                    <select value={policyDraft.type} onChange={e=>setPolicyDraft((p:any)=>({...p,type:e.target.value}))}>
+                      <option value="day_off">يوم بلا محاضرات</option>
+                      <option value="close_building">إغلاق مبنى</option>
+                      <option value="no_classes_after">لا محاضرات بعد وقت</option>
+                      <option value="growth">نمو الطلب</option>
+                    </select>
+                  </Field>
+                  {policyDraft.type==="day_off"?<Field label="اليوم"><select value={policyDraft.day} onChange={e=>setPolicyDraft((p:any)=>({...p,day:e.target.value}))}>{Object.entries(dayLabels).map(([key,label])=><option key={key} value={key}>{String(label)}</option>)}</select></Field>:null}
+                  {policyDraft.type==="close_building"?<Field label="المبنى"><input value={policyDraft.building} onChange={e=>setPolicyDraft((p:any)=>({...p,building:e.target.value}))} placeholder="B7" /></Field>:null}
+                  {policyDraft.type==="no_classes_after"?<Field label="آخر وقت"><input type="time" value={policyDraft.time} onChange={e=>setPolicyDraft((p:any)=>({...p,time:e.target.value}))} /></Field>:null}
+                  {policyDraft.type==="growth"?<Field label="النمو %"><input type="number" min="1" max="100" value={policyDraft.growth} onChange={e=>setPolicyDraft((p:any)=>({...p,growth:Number(e.target.value)||1}))} /></Field>:null}
+                  {isPowerAdmin?<Field label="النطاق"><select value={policyDraft.scope} onChange={e=>setPolicyDraft((p:any)=>({...p,scope:e.target.value}))}><option value="university">الجامعة</option><option value="department">القسم الحالي</option></select></Field>:null}
+                  <PrimaryButton onClick={runPolicy} disabled={policyBusy||(policyDraft.type==="close_building"&&!policyDraft.building.trim())}>{policyBusy?<RefreshCw/>:<Play/>}{policyBusy?"أحاكي…":"اختبر"}</PrimaryButton>
+                </div>
+                {policyResult?<div className="policy-result">
+                  <div className="policy-result-hero"><strong>{Number(policyResult.affected||0).toLocaleString("ar-KW-u-nu-latn")}</strong><span>{policyDraft.type==="growth"?"موعد/شعبة إضافية تقديرياً":"موعداً سيتأثر"}</span><i style={{["--policy-share" as any]:`${Math.min(100,Number(policyResult.share||0))}%`}} /></div>
+                  <div className="policy-metrics"><article><b>{policyResult.share}%</b><span>الحالي</span></article><article><b>{policyResult.historicalShare}%</b><span>تاريخياً</span></article><article><b>{policyResult.impact?.sections||0}</b><span>أقسام</span></article><article><b>{policyResult.impact?.instructors||0}</b><span>أساتذة</span></article></div>
+                  <p>{policyResult.summary}</p><small><ShieldCheck /> {policyResult.guardrail}</small>
+                </div>:<div className="innovation-empty">اختر سياسة واحدة. سترى أثرها على الواقع الحالي وعلى التاريخ قبل أن تتحول إلى قاعدة.</div>}
               </div>
             ) : null}
             {innovationMode === "autopilot" ? (
@@ -3753,6 +3905,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
               <History />
             </div>
+            {operationsReview?.accuracy ? (
+              <div className="accuracy-strip">
+                <article><span>دقة الجدول</span><strong>{operationsReview.accuracy.available ? `${operationsReview.accuracy.accuracy}%` : "—"}</strong><small>{operationsReview.accuracy.available ? `${operationsReview.accuracy.unchanged} بقيت كما اعتمدت` : "تحتاج نسخة محفوظة"}</small></article>
+                <article><span>تغيّر</span><strong>{operationsReview.accuracy.changed || 0}</strong><small>موعداً</small></article>
+                <article><span>أضيف / حُذف</span><strong>+{operationsReview.accuracy.added || 0} / -{operationsReview.accuracy.removed || 0}</strong><small>هوية شعبة</small></article>
+              </div>
+            ) : null}
+            {chronologicalVersions.length >= 2 ? (
+              <div className="version-scrubber">
+                <div><span className="surface-kicker">الوضع الزمني</span><strong>{new Date(chronologicalVersions[Math.max(1,Math.min(chronologicalVersions.length-1,versionScrubIndex))]?.createdAt).toLocaleString("ar-KW-u-nu-latn")}</strong></div>
+                <input type="range" min="1" max={Math.max(1,chronologicalVersions.length-1)} value={Math.max(1,Math.min(chronologicalVersions.length-1,versionScrubIndex))} onChange={e=>setVersionScrubIndex(Number(e.target.value))} aria-label="اسحب عبر تاريخ الجدول" />
+                <small>{chronologicalVersions.length} محطات محفوظة</small>
+              </div>
+            ) : null}
             <div className="version-compare">
               <select
                 value={versionFrom}
@@ -3922,6 +4088,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </div>
               )}
             </div>
+            {operationsReview?.accuracy?.postmortem?.length ? (
+              <div className="postmortem-card"><div><FileClock/><span><small>تشريح الفصل</small><strong>ماذا تعلّمنا من النسخ؟</strong></span></div><ul>{operationsReview.accuracy.postmortem.slice(0,4).map((line:string,index:number)=><li key={index}>{line}</li>)}</ul></div>
+            ) : null}
+            {versions.length ? (
+              <div className="edit-heatmap"><div className="edit-heatmap-head"><span><small>حرارة التعديلات البشرية</small><strong>متى يكثر التغيير</strong></span><Badge>{versions.length} نسخة</Badge></div><div className="edit-heatmap-grid"><i/>{versionActivityHeatmap.hours.map(hour=><small key={hour}>{String(hour).padStart(2,"0")}</small>)}{versionActivityHeatmap.cells.map(day=><React.Fragment key={day.label}><b>{day.label}</b>{day.hours.map(cell=>{const strength=versionActivityHeatmap.max?cell.count/versionActivityHeatmap.max:0;return <span key={`${day.label}-${cell.hour}`} title={`${day.label} ${cell.hour}:00 · ${cell.count} تعديل`} style={{["--heat-pct" as any]:`${Math.max(10,Math.round(strength*85))}%`}}>{cell.count||""}</span>;})}</React.Fragment>)}</div></div>
+            ) : null}
           </Surface>
           ) : null}
         </div>

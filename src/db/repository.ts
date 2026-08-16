@@ -22,6 +22,8 @@ import {
   AuditLogEntry,
   ScheduleVersion,
   ScheduleDraft,
+  ScheduleOpenDecision,
+  ClientTelemetryEntry,
   ScheduleComment,
   SchedulePublication,
   ScheduleConstraint,
@@ -172,6 +174,8 @@ interface DBState {
   auditLogs?: AuditLogEntry[];
   scheduleVersions?: ScheduleVersion[];
   scheduleDrafts?: ScheduleDraft[];
+  scheduleOpenDecisions?: ScheduleOpenDecision[];
+  clientTelemetry?: ClientTelemetryEntry[];
   scheduleComments?: ScheduleComment[];
   studentNeeds?: StudentNeed[];
   schedulePublications?: SchedulePublication[];
@@ -203,6 +207,8 @@ let db: DBState = {
   auditLogs: [],
   scheduleVersions: [],
   scheduleDrafts: [],
+  scheduleOpenDecisions: [],
+  clientTelemetry: [],
   scheduleComments: [],
   studentNeeds: [],
   schedulePublications: [],
@@ -550,6 +556,7 @@ export async function initDatabase() {
       } else {
         firestoreDb = getFirestore();
       }
+      firestoreDb.settings({ ignoreUndefinedProperties: true });
       // getFirestore() only creates a client; force one real read now so a wrong
       // project/database/credential cannot masquerade as a successful connection.
       const projectId = String(getApps()[0]?.options?.projectId || process.env.FIREBASE_PROJECT_ID || "(default)");
@@ -602,6 +609,8 @@ export async function initDatabase() {
       if (!Array.isArray(db.auditLogs)) db.auditLogs = [];
       if (!Array.isArray(db.scheduleVersions)) db.scheduleVersions = [];
       if (!Array.isArray(db.scheduleDrafts)) db.scheduleDrafts = [];
+      if (!Array.isArray(db.scheduleOpenDecisions)) db.scheduleOpenDecisions = [];
+      if (!Array.isArray(db.clientTelemetry)) db.clientTelemetry = [];
       if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
       if (!Array.isArray(db.schedulePublications)) db.schedulePublications = [];
       if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
@@ -774,7 +783,10 @@ const SYSTEM_IMPORT_JOB_COLLECTION = "_systemImportJobs";
 // Sessions are deliberately not portable: the document id is a live bearer
 // credential. Everything durable is included; live login tokens stay on the
 // server and survive a restore so the root administrator cannot lock himself out.
-const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, SYSTEM_EXPORT_JOB_COLLECTION, SYSTEM_IMPORT_JOB_COLLECTION, "sessions"]);
+// Operational diagnostics are deliberately not part of a business backup: they
+// expire automatically, contain no scheduling source-of-truth, and restoring an
+// old copy of them would make the experience-health reading lie about "recent" use.
+const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, SYSTEM_EXPORT_JOB_COLLECTION, SYSTEM_IMPORT_JOB_COLLECTION, "sessions", "clientTelemetry"]);
 const LOCAL_RESTORE_DIR = () => path.join(DB_DIR, "system-restore-points");
 const LOCAL_EXPORT_DIR = () => path.join(DB_DIR, "system-export-jobs");
 const LOCAL_IMPORT_DIR = () => path.join(DB_DIR, "system-import-jobs");
@@ -906,10 +918,14 @@ function exportJobSummary(row: SystemExportJobRecord): SystemExportJobSummary {
 }
 
 function firestoreBytesToBuffer(value: any): Buffer {
+  if (!value) return Buffer.alloc(0);
   if (Buffer.isBuffer(value)) return value;
   if (value instanceof Uint8Array) return Buffer.from(value);
   if (value && typeof value.toBuffer === "function") return Buffer.from(value.toBuffer());
   if (value && typeof value.toUint8Array === "function") return Buffer.from(value.toUint8Array());
+  if (typeof value === "string") return Buffer.from(value, "base64");
+  if (typeof value === "object" && Array.isArray(value.data)) return Buffer.from(value.data);
+  if (typeof value === "object" && value.buffer && value.buffer instanceof ArrayBuffer) return Buffer.from(value.buffer, value.byteOffset || 0, value.byteLength || value.buffer.byteLength);
   throw new Error("تعذر قراءة جزء النسخة المؤقت");
 }
 
@@ -1205,7 +1221,14 @@ async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<Syst
       }
       if (!snap) throw lastError || new Error("تعذر قراءة دفعة التصدير");
 
-      const encoded = snap.docs.map(item => ({ path: item.ref.path, data: backupEncode(item.data()) } as SystemBackupDocument));
+      const encoded: SystemBackupDocument[] = [];
+      for (const item of snap.docs) {
+        try {
+          encoded.push({ path: item.ref.path, data: backupEncode(item.data()) } as SystemBackupDocument);
+        } catch (encodeError: any) {
+          console.error(`Skipping document ${item.ref.path} due to encode error:`, encodeError);
+        }
+      }
       if (encoded.length) {
         row = await persistExportDocumentGroups(root, encoded, row);
         row.documentCount += encoded.length;
@@ -1686,6 +1709,7 @@ async function makeSystemBackup(rootAdminId: number): Promise<SystemBackupPayloa
     };
   }
   const state = JSON.parse(JSON.stringify(db)) as Record<string, unknown>;
+  delete state.clientTelemetry;
   const collectionCounts = localStateCounts(state);
   const partial = { storage: "local-json" as const, state };
   return {
@@ -1886,7 +1910,7 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
     const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
     db = {
       users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
-      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: []
+      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: []
     };
     saveDatabase();
   }
@@ -3082,6 +3106,90 @@ export const Repository = {
     return (db.scheduleVersions || []).find(row => row.id === id);
   },
 
+  createOpenDecision: async (entry: Omit<ScheduleOpenDecision, "id" | "createdAt" | "updatedAt" | "scopeKey" | "status"> & { status?: ScheduleOpenDecision["status"] }): Promise<ScheduleOpenDecision> => {
+    const now = new Date().toISOString();
+    const row: ScheduleOpenDecision = {
+      ...entry,
+      id: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      scopeKey: `${entry.AdCollegeId}:${entry.AdSectionId}:${entry.AdTermId}`,
+      status: entry.status || "open",
+    };
+    if (firestoreDb) {
+      await firestoreDb.collection("scheduleOpenDecisions").doc(row.id).set(row);
+      return row;
+    }
+    if (!Array.isArray(db.scheduleOpenDecisions)) db.scheduleOpenDecisions = [];
+    db.scheduleOpenDecisions.unshift(row);
+    if (db.scheduleOpenDecisions.length > 2500) db.scheduleOpenDecisions.length = 2500;
+    saveDatabase();
+    return row;
+  },
+
+  getOpenDecisions: async (collegeId: number, sectionId: number, termId: number, limit = 100): Promise<ScheduleOpenDecision[]> => {
+    const scopeKey = `${collegeId}:${sectionId}:${termId}`;
+    const safeLimit = Math.max(1, Math.min(250, Number(limit) || 100));
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("scheduleOpenDecisions").where("scopeKey", "==", scopeKey).limit(safeLimit).get();
+      return snap.docs.map(doc => doc.data() as ScheduleOpenDecision).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
+    }
+    return (db.scheduleOpenDecisions || []).filter(row => row.scopeKey === scopeKey).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).slice(0,safeLimit);
+  },
+
+  updateOpenDecision: async (id: string, fields: Partial<Pick<ScheduleOpenDecision, "title" | "detail" | "owner" | "dueAt" | "priority" | "status">>): Promise<ScheduleOpenDecision> => {
+    const updatedAt = new Date().toISOString();
+    if (firestoreDb) {
+      const ref = firestoreDb.collection("scheduleOpenDecisions").doc(id);
+      const doc = await ref.get();
+      if (!doc.exists) throw new Error("القرار غير موجود");
+      await ref.update({ ...fields, updatedAt });
+      return { ...(doc.data() as ScheduleOpenDecision), ...fields, updatedAt };
+    }
+    if (!Array.isArray(db.scheduleOpenDecisions)) db.scheduleOpenDecisions = [];
+    const index = db.scheduleOpenDecisions.findIndex(row => row.id === id);
+    if (index < 0) throw new Error("القرار غير موجود");
+    db.scheduleOpenDecisions[index] = { ...db.scheduleOpenDecisions[index], ...fields, updatedAt };
+    saveDatabase();
+    return db.scheduleOpenDecisions[index];
+  },
+
+  createClientTelemetry: async (entries: Array<Omit<ClientTelemetryEntry, "id" | "timestamp"> & { timestamp?: string }>): Promise<number> => {
+    const rows: ClientTelemetryEntry[] = entries.slice(0, 30).map(entry => ({
+      ...entry,
+      id: randomUUID(),
+      timestamp: entry.timestamp || new Date().toISOString(),
+      breadcrumbs: Array.isArray(entry.breadcrumbs) ? entry.breadcrumbs.slice(-12) : undefined,
+      // Experience telemetry is evidence for debugging, not a permanent user
+      // history. Firestore removes it after thirty days; the UI only reads 14.
+      expiresAtTtl: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    }));
+    if (!rows.length) return 0;
+    if (firestoreDb) {
+      const batch = firestoreDb.batch();
+      rows.forEach(row => batch.set(firestoreDb!.collection("clientTelemetry").doc(row.id), row));
+      await batch.commit();
+      return rows.length;
+    }
+    if (!Array.isArray(db.clientTelemetry)) db.clientTelemetry = [];
+    db.clientTelemetry.unshift(...rows);
+    if (db.clientTelemetry.length > 4000) db.clientTelemetry.length = 4000;
+    saveDatabase();
+    return rows.length;
+  },
+
+  getClientTelemetry: async (collegeId: number, sectionId: number, limit = 800): Promise<ClientTelemetryEntry[]> => {
+    const safeLimit = Math.max(1, Math.min(1500, Number(limit) || 800));
+    if (firestoreDb) {
+      const snap = await firestoreDb.collection("clientTelemetry").where("AdSectionId", "==", sectionId).orderBy("timestamp", "desc").limit(safeLimit).get();
+      return snap.docs.map(doc => doc.data() as ClientTelemetryEntry)
+        .filter(row => !collegeId || Number(row.AdCollegeId) === collegeId)
+        .sort((a,b)=>b.timestamp.localeCompare(a.timestamp));
+    }
+    return (db.clientTelemetry || []).filter(row => (!collegeId || Number(row.AdCollegeId) === collegeId) && Number(row.AdSectionId) === sectionId)
+      .sort((a,b)=>b.timestamp.localeCompare(a.timestamp)).slice(0,safeLimit);
+  },
+
   createScheduleDraft: async (entry: Omit<ScheduleDraft, "id" | "createdAt" | "updatedAt" | "scopeKey" | "status"> & { status?: ScheduleDraft["status"] }): Promise<ScheduleDraft> => {
     const now = new Date().toISOString();
     const row: ScheduleDraft = {
@@ -3661,8 +3769,16 @@ export const Repository = {
   exportSystemBackup: async (rootAdminId = 1): Promise<SystemBackupPayload> =>
     makeSystemBackup(rootAdminId),
 
-  startSystemExportJob: async (byUserId: number, rootAdminId = 1): Promise<SystemExportJobSummary> =>
-    startSystemExportJob(byUserId, rootAdminId),
+  clearSystemExportJobs: async (rootAdminId = 1): Promise<void> => {
+    if (!firestoreDb) return;
+    const snap = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).where("rootAdminId", "==", rootAdminId).get();
+    const batch = firestoreDb.batch();
+    snap.docs.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  },
+
+  startSystemExportJob: async (byUserId: number, rootAdminId = 1, forceNew = false, purpose: "manual" | "safety" = "manual"): Promise<SystemExportJobSummary> =>
+    startSystemExportJob(byUserId, rootAdminId, forceNew, purpose),
 
   getLatestSystemExportJob: async (rootAdminId = 1): Promise<SystemExportJobSummary | null> =>
     latestSystemExportJob(rootAdminId),

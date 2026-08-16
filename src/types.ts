@@ -197,6 +197,47 @@ export interface ScheduleDraft {
   publishedAt?: string;
 }
 
+/** A decision that is intentionally not finished yet. */
+export interface ScheduleOpenDecision {
+  id: string;
+  scopeKey: string;
+  createdAt: string;
+  updatedAt: string;
+  SystemUserId: number;
+  userName: string;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdTermId: number;
+  title: string;
+  detail?: string;
+  owner?: string;
+  dueAt?: string;
+  priority: "low" | "medium" | "high";
+  status: "open" | "done";
+  scheduleId?: number;
+  source: "manual" | "assistant";
+}
+
+/** Sparse operational telemetry: slow/failing interactions only, never schedule content. */
+export interface ClientTelemetryEntry {
+  id: string;
+  timestamp: string;
+  SystemUserId: number;
+  userName: string;
+  AdCollegeId?: number;
+  AdSectionId?: number;
+  AdTermId?: number;
+  kind: "api" | "error" | "offline" | "sync";
+  name: string;
+  durationMs?: number;
+  status?: number;
+  ok?: boolean;
+  message?: string;
+  breadcrumbs?: Array<{ at: string; action: string }>;
+  /** Firestore TTL: operational telemetry is short-lived by design. */
+  expiresAtTtl?: Date | string;
+}
+
 /**
  * ── ما يحتاجه الطالب ────────────────────────────────────────────────────────
  *
