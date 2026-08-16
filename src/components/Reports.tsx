@@ -87,8 +87,8 @@ const GRID_END = SCHEDULE_DAY_END;
 const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
-const COMPREHENSIVE_FIRST_PAGE_ROWS = 22;
-const COMPREHENSIVE_NEXT_PAGE_ROWS = 22;
+const COMPREHENSIVE_FIRST_PAGE_ROWS = 23;
+const COMPREHENSIVE_NEXT_PAGE_ROWS = 23;
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const duration = (row: FSchedule) => Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
 /**
