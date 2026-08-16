@@ -211,24 +211,29 @@ export default function AdminUsers({
     if (!rootAdmin) return;
     setBackupStatus(await api("/api/system-backup/status"));
   };
-  const exportFullBackup = async () => {
-    setError(null); setBackupBusy("export");
-    try {
-      const response = await fetch("/api/system-backup/export", { cache: "no-store" });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || "تعذر تصدير النسخة");
-      }
-      const blob = await response.blob();
-      const disposition = response.headers.get("content-disposition") || "";
-      const match = disposition.match(/filename="?([^";]+)"?/i);
-      const fileName = match?.[1] || `schedule-full-backup_${new Date().toISOString().slice(0, 10)}.json.gz`;
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url; link.download = fileName; document.body.appendChild(link); link.click(); link.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch (e: any) { setError(e.message); }
-    finally { setBackupBusy(null); }
+  const exportFullBackup = () => {
+    /*
+     * A download must start from the user's tap itself.
+     *
+     * The old flow awaited fetch(), built a Blob, then manufactured an <a> and
+     * clicked it. Mobile Safari/Chrome may no longer treat that late click as a
+     * user gesture, and a large Firestore export can keep the button stuck on
+     * «أجمع كل البيانات…» for a long time before the browser even sees a file.
+     *
+     * Let the browser own the download request instead. The same-origin session
+     * cookie travels with it, Content-Disposition supplies the real filename,
+     * and the server can spend as long as it needs collecting the snapshot
+     * without losing the original download gesture.
+     */
+    setError(null);
+    setBackupMessage("بدأ تجهيز النسخة الكاملة — ستظهر في التنزيلات فور اكتمال جمع البيانات.");
+    const link = document.createElement("a");
+    link.href = `/api/system-backup/export?download=${Date.now()}`;
+    link.rel = "noopener";
+    link.setAttribute("download", "");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   };
   const previewBackup = async () => {
     if (!backupFile) { setError("اختر ملف النسخة الاحتياطية أولاً"); return; }
@@ -837,7 +842,11 @@ export default function AdminUsers({
 
   if (mode === "backup") {
     const point = backupStatus?.latest || null;
-    const previewCollections = backupPreview ? Object.entries(backupPreview.collectionCounts).sort((a, b) => b[1] - a[1]) : [];
+    const previewCollections: Array<[string, number]> = backupPreview
+      ? Object.entries(backupPreview.collectionCounts)
+          .map(([name, count]) => [name, Number(count) || 0] as [string, number])
+          .sort((a, b) => b[1] - a[1])
+      : [];
     return (
       <div className="content-stack admin-page system-vault-page">
         {consoleHead()}

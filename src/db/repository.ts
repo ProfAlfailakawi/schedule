@@ -763,23 +763,46 @@ function systemBackupDigest(payload: Pick<SystemBackupPayload, "storage" | "docu
   return createHash("sha256").update(JSON.stringify(body)).digest("hex");
 }
 
+async function runWithConcurrency<T>(items: T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
+  if (!items.length) return;
+  let cursor = 0;
+  const workerCount = Math.max(1, Math.min(limit, items.length));
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const index = cursor++;
+      if (index >= items.length) return;
+      await work(items[index]);
+    }
+  });
+  await Promise.all(workers);
+}
+
 async function collectFirestoreCollection(ref: FirebaseFirestore.CollectionReference, output: SystemBackupDocument[]) {
   const snapshot = await ref.get();
-  for (const doc of snapshot.docs) {
+  /*
+   * A full backup used to inspect every document and every possible nested
+   * collection strictly one-after-another. On a production database that turns
+   * thousands of small Firestore round trips into minutes and makes the export
+   * button look frozen. We still walk every document/subcollection, but use a
+   * bounded pool so completeness is unchanged while network latency overlaps.
+   */
+  await runWithConcurrency(snapshot.docs, 10, async (doc) => {
     output.push({ path: doc.ref.path, data: backupEncode(doc.data()) });
     const nested = await doc.ref.listCollections();
-    for (const child of nested) await collectFirestoreCollection(child, output);
-  }
+    await runWithConcurrency(nested, 4, async (child) => {
+      await collectFirestoreCollection(child, output);
+    });
+  });
 }
 
 async function collectSystemDocuments(): Promise<SystemBackupDocument[]> {
   if (!firestoreDb) return [];
   const output: SystemBackupDocument[] = [];
-  const collections = await firestoreDb.listCollections();
-  for (const collection of collections) {
-    if (SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collection.id)) continue;
+  const collections = (await firestoreDb.listCollections())
+    .filter(collection => !SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collection.id));
+  await runWithConcurrency(collections, 4, async (collection) => {
     await collectFirestoreCollection(collection, output);
-  }
+  });
   return output.sort((a, b) => a.path.localeCompare(b.path));
 }
 

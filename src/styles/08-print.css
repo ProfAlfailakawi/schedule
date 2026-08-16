@@ -1634,3 +1634,63 @@
     flex:none !important;
   }
 }
+
+/* ========================================================================== 
+   FINAL — fairness report: no phantom sheet between logical pages
+   --------------------------------------------------------------------------
+   Fairness is the one portrait report that still exposed WebKit's fragmentation
+   edge case: the generic physical-width wrapper could be split from its own
+   page meta, so the meta landed on an otherwise empty physical sheet.  Give
+   each fairness page the portrait page name directly, let @page own the paper
+   dimensions, and keep the logical page together as one block.  This rule is
+   intentionally fairness-only; every other report keeps its proven layout.
+   ========================================================================== */
+@media print{
+  html[data-print-kind="fairness"] .print-report.print-fairness-new,
+  body .print-report.print-fairness-new.print-upright{
+    page:upright !important;
+  }
+
+  html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page,
+  body .print-report.print-fairness-new.print-upright .print-explicit-page{
+    page:upright !important;
+    box-sizing:border-box !important;
+    display:block !important;
+    width:auto !important;
+    min-width:0 !important;
+    max-width:none !important;
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    margin:0 !important;
+    padding:12mm 12mm 13mm !important;
+    overflow:visible !important;
+    break-inside:avoid-page !important;
+    page-break-inside:avoid !important;
+    break-before:auto !important;
+    page-break-before:auto !important;
+    break-after:page !important;
+    page-break-after:always !important;
+  }
+
+  html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page:last-child,
+  body .print-report.print-fairness-new.print-upright .print-explicit-page:last-child{
+    break-after:auto !important;
+    page-break-after:auto !important;
+  }
+
+  html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page + .print-explicit-page,
+  body .print-report.print-fairness-new.print-upright .print-explicit-page + .print-explicit-page{
+    break-before:auto !important;
+    page-break-before:auto !important;
+  }
+
+  html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page-meta,
+  body .print-report.print-fairness-new.print-upright .print-explicit-page-meta{
+    margin-top:3mm !important;
+    break-before:avoid !important;
+    page-break-before:avoid !important;
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+  }
+}

@@ -1943,7 +1943,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "fairness") {
-    const pages = fairness?.rows?.length ? paginateItems(fairness.rows, 12) : [];
+    /* Keep the portrait fairness sheet deliberately airy. Ten rows per logical
+       page fits the letterhead, score block and page meta as one indivisible
+       unit in WebKit/Chromium, while 39 instructors still need only four pages
+       (10/10/10/9) instead of producing a stranded footer/blank sheet. */
+    const pages = fairness?.rows?.length ? paginateItems(fairness.rows, 10) : [];
     return (
       <div className="print-report print-upright print-query-report print-fairness-new">
         {pages.length ? pages.map((pageRows: any[], pageIndex) => (
