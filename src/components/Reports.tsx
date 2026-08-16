@@ -441,10 +441,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   }));
 
   const collegeName = collegeById.get(filters.collegeId)?.AdCollegeName || "";
+  const termName = termById.get(filters.termId)?.AdTermName || "";
+  const section = sectionById.get(filters.sectionId);
+  const sectionName = section?.AdSectionName || "";
+  const sectionCode = section?.AdSectionCode || "";
   const scopeLine = [
-    termById.get(filters.termId)?.AdTermName,
+    termName,
     collegeName,
-    sectionById.get(filters.sectionId)?.AdSectionName
+    sectionName
   ].filter(Boolean).join(" · ");
 
   // --- grouped views -------------------------------------------------------
@@ -1331,6 +1335,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             balance={balance}
             scopeLine={scopeLine}
             collegeName={collegeName}
+            termName={termName}
+            sectionName={sectionName}
+            sectionCode={sectionCode}
             courseById={courseById}
             instructorById={instructorById}
           />
@@ -1471,7 +1478,7 @@ function groupRows(rows: FSchedule[], keyOf: (row: FSchedule) => string) {
     .sort((a, b) => byArabic(a.key, b.key));
 }
 
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, courseById, instructorById }: {
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -1481,6 +1488,9 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   balance: any;
   scopeLine: string;
   collegeName: string;
+  termName: string;
+  sectionName: string;
+  sectionCode: string;
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
 }) {
@@ -1506,71 +1516,93 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   };
   const courseOf = (row: FSchedule) => courseById.get(row.AdCourseId);
   const instructorOf = (row: FSchedule) => instructorById.get(row.AdInstructorId);
+  const issueDate = new Date().toLocaleDateString("ar-KW-u-nu-latn");
+  const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).join(",") || "—";
 
   if (kind === "comprehensive") {
-    const daily = DAYS.map(day => {
-      const dayRows = rows.filter(row => Boolean((row as any)[day.flag]));
-      const minutesTotal = dayRows.reduce((total, row) => total + duration(row), 0);
-      return { ...day, count: dayRows.length, hours: Math.round(minutesTotal / 60) };
-    });
-    const maxDay = Math.max(1, ...daily.map(day => day.count));
     const distinctSections = new Set(rows.map(row => String(row.SCode || "").trim()).filter(Boolean)).size;
-    const activeDays = daily.filter(day => day.count > 0).length;
-    const withoutInstructor = rows.filter(row => !row.AdInstructorId || !instructorOf(row)).length;
-    const withoutRoom = rows.filter(row => placeOfRow(row) === "بلا قاعة").length;
+    const totalWeeklyHours = Math.round(totalMinutes / 60);
+    const maxCapacity = rows.reduce((max, row) => {
+      const capacity = Number(courseOf(row)?.MaxStudent || 0);
+      return capacity > max ? capacity : max;
+    }, 0);
+    const headerStats = [
+      ["المواعيد", rows.length],
+      ["المقررات", distinctCourses],
+      ["الشعب", distinctSections],
+      ["الأساتذة", distinctInstructors],
+      ["القاعات", distinctRooms],
+      ["الساعات الأسبوعية", totalWeeklyHours],
+    ] as const;
+
     return (
-      <div className="print-report print-wide print-query-report print-comprehensive">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        <section className="print-comprehensive-overview">
-          <div className="print-document-metrics" aria-label="ملخص الجدول">
-            <div><strong>{rows.length}</strong><span>موعد</span></div>
-            <div><strong>{distinctCourses}</strong><span>مقرر</span></div>
-            <div><strong>{distinctInstructors}</strong><span>أستاذ</span></div>
-            <div><strong>{distinctRooms}</strong><span>قاعة</span></div>
-            <div><strong>{Math.round(totalMinutes / 60)}</strong><span>ساعة أسبوعية</span></div>
+      <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-remastered">
+        <header className="print-comprehensive-classic-head">
+          <div className="print-comprehensive-head-top">
+            <div className="print-comprehensive-side print-comprehensive-side-right">
+              <div><span>رمز القسم العلمي</span><strong>{sectionCode || "—"}</strong></div>
+              <div><span>القسم العلمي</span><strong>{sectionName || "—"}</strong></div>
+            </div>
+            <div className="print-comprehensive-title-block">
+              <h1>تقرير القسم العلمي الشامل</h1>
+              <p>{collegeName || "—"}</p>
+              <strong>{termName || scopeLine || "—"}</strong>
+            </div>
+            <div className="print-comprehensive-side print-comprehensive-side-left">
+              <div><span>تاريخ الإصدار</span><strong dir="ltr">{issueDate}</strong></div>
+              <div><span>أعلى سعة</span><strong>{maxCapacity ? num(maxCapacity) : "—"}</strong></div>
+            </div>
           </div>
-          <div className="print-week-pulse" aria-label="توزيع الأسبوع">
-            {daily.map(day => (
-              <div key={day.key}>
-                <span>{day.label}</span>
-                <i><b style={{ width: `${Math.max(4, Math.round((day.count / maxDay) * 100))}%` }} /></i>
-                <em>{day.count} موعد · {day.hours} س</em>
+          <div className="print-comprehensive-head-summary" aria-label="ملخص سريع">
+            {headerStats.map(([label, value]) => (
+              <div key={label}>
+                <strong>{num(value)}</strong>
+                <span>{label}</span>
               </div>
             ))}
           </div>
-        </section>
-
-        <div className="print-document-facts" aria-label="بيانات إضافية">
-          <span><b>{distinctSections}</b> شعبة</span>
-          <span><b>{activeDays}</b> أيام تدريس</span>
-          <span><b>{withoutInstructor}</b> بلا أستاذ</span>
-          <span><b>{withoutRoom}</b> بلا قاعة</span>
-        </div>
+        </header>
 
         {rows.length ? (
-          <table className="print-comprehensive-table print-comprehensive-legacy-order">
+          <table className="print-comprehensive-table print-comprehensive-modern-table">
             <colgroup>
-              <col style={{ width: "2.5%" }} />
-              <col style={{ width: "6%" }} />
-              <col style={{ width: "4%" }} />
-              <col style={{ width: "20%" }} />
-              <col style={{ width: "4%" }} />
-              <col style={{ width: "4%" }} />
-              <col style={{ width: "4%" }} />
-              <col style={{ width: "9%" }} />
-              <col style={{ width: "12%" }} />
+              <col style={{ width: "3.5%" }} />
+              <col style={{ width: "7.5%" }} />
+              <col style={{ width: "5.5%" }} />
+              <col style={{ width: "22%" }} />
+              <col style={{ width: "4.5%" }} />
+              <col style={{ width: "4.5%" }} />
+              <col style={{ width: "5%" }} />
+              <col style={{ width: "10%" }} />
               <col style={{ width: "6.5%" }} />
-              <col style={{ width: "17%" }} />
-              <col style={{ width: "11%" }} />
+              <col style={{ width: "4.8%" }} />
+              <col style={{ width: "6.5%" }} />
+              <col style={{ width: "14.2%" }} />
+              <col style={{ width: "10%" }} />
             </colgroup>
             <thead>
               <tr>
-                {["م", "رمز المقرر", "الشعبة", "المقرر", "وحدات", "ساعات", "سعة", "الوقت", "الأيام", "القاعة", "أستاذ المقرر", "الرقم المدني"].map(head => <th key={head}>{head}</th>)}
+                {[
+                  "م",
+                  "رمز المقرر الدراسي",
+                  "الشعبة",
+                  "المقرر الدراسي",
+                  "الوحدات",
+                  "الساعات",
+                  "السعة",
+                  "الوقت",
+                  "الأيام",
+                  "المبنى",
+                  "القاعة",
+                  "أستاذ المقرر",
+                  "الرقم المدني",
+                ].map(head => <th key={head}>{head}</th>)}
               </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => {
-                const course = courseOf(row), instructor = instructorOf(row);
+                const course = courseOf(row);
+                const instructor = instructorOf(row);
                 return (
                   <tr key={row.id}>
                     <td className="print-num">{index + 1}</td>
@@ -1580,22 +1612,38 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <td className="num">{course?.CourseCredit ?? "—"}</td>
                     <td className="num">{course?.CourseHours ?? "—"}</td>
                     <td className="num">{course?.MaxStudent ?? "—"}</td>
-                    <td className="print-ltr print-nowrap">{row.fstarttime}–{row.fendtime}</td>
-                    <td className="print-days">{dayCell(row)}</td>
-                    <td className="print-ltr">{placeOfRow(row)}</td>
+                    <td className="print-ltr print-nowrap">{row.fendtime && row.fstarttime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</td>
+                    <td className="print-ltr">{dayCodeCell(row)}</td>
+                    <td className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</td>
+                    <td className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</td>
                     <td className="print-wrap">{instructor?.AdInstructorName || "بدون أستاذ"}</td>
                     <td className="print-ltr">{instructor?.AdInstructorCivil || "—"}</td>
                   </tr>
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={13}>
+                  <div className="print-comprehensive-bottom">
+                    <div className="print-comprehensive-signatures">
+                      <div><span>توقيع رئيس لجنة الجدول</span><i /></div>
+                      <div><span>توقيع رئيس القسم العلمي</span><i /></div>
+                      <div><span>توقيع العميد</span><i /></div>
+                    </div>
+                    <div className="print-comprehensive-legend">
+                      <span>1=الأحد</span>
+                      <span>2=الاثنين</span>
+                      <span>3=الثلاثاء</span>
+                      <span>4=الأربعاء</span>
+                      <span>5=الخميس</span>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tfoot>
           </table>
         ) : <p className="print-empty">لا توجد مواعيد ضمن النطاق المحدد.</p>}
-
-        <div className="print-signatures">
-          <div><span>منسق الجدول</span><i /></div>
-          <div><span>رئيس القسم العلمي</span><i /></div>
-        </div>
       </div>
     );
   }
