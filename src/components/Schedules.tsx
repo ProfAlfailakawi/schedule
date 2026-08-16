@@ -3310,12 +3310,20 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       event.stopPropagation();
       setMobileViewGate(viewMode === "week" ? "week" : viewMode === "rooms" ? "rooms" : "list");
     };
+    const explainKey = (event: KeyboardEvent) => {
+      if (!insideCanvas(event)) return;
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setMobileViewGate(viewMode === "week" ? "week" : viewMode === "rooms" ? "rooms" : "list");
+    };
     root.addEventListener("pointerdown", stopStart, true);
     root.addEventListener("click", explain, true);
     root.addEventListener("dblclick", explain, true);
     root.addEventListener("dragstart", explain, true);
     root.addEventListener("drop", explain, true);
     root.addEventListener("contextmenu", explain, true);
+    root.addEventListener("keydown", explainKey, true);
     return () => {
       root.removeEventListener("pointerdown", stopStart, true);
       root.removeEventListener("click", explain, true);
@@ -3323,6 +3331,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       root.removeEventListener("dragstart", explain, true);
       root.removeEventListener("drop", explain, true);
       root.removeEventListener("contextmenu", explain, true);
+      root.removeEventListener("keydown", explainKey, true);
     };
   }, [phoneReadOnly, mode, viewMode]);
   /** How many appointments each day actually carries — every day gets a count. */
@@ -5853,13 +5862,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               {mobileViewGate === "week" ? <CalendarDays /> : mobileViewGate === "rooms" ? <MapPin /> : <LayoutList />}
             </span>
             <div>
-              <strong>المشاهدة على الهاتف فقط</strong>
+              <strong>هذا العرض للقراءة فقط على الهاتف</strong>
               <p>
-                يمكنك قراءة {mobileViewGate === "week" ? "عرض الأسبوع" : mobileViewGate === "rooms" ? "عرض القاعات" : "قائمة المواعيد"} هنا،
-                لكن النقل والتعديل والسحب والإفلات وإنشاء المواعيد تعمل من الكمبيوتر فقط حتى لا يتغيّر الجدول بلمسة غير مقصودة.
+                يمكنك تصفّح {mobileViewGate === "week" ? "عرض الأسبوع" : mobileViewGate === "rooms" ? "عرض القاعات" : "قائمة المواعيد"} هنا بوضوح كامل،
+                لكن النقل والتعديل والسحب والإفلات وإنشاء المواعيد تعمل من الكمبيوتر فقط. أي لمس أو ضغط داخل اللوحة سيشرح لك ذلك بدل أن ينفّذ تغييراً بالخطأ.
               </p>
             </div>
-            <button type="button" onClick={() => setMobileViewGate(null)}>متابعة المشاهدة</button>
+            <button type="button" onClick={() => setMobileViewGate(null)}>فهمت · متابعة العرض</button>
           </div>
         </div>
       ) : null}

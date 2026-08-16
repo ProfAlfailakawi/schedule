@@ -692,3 +692,17 @@
   .schedule-page>.schedule-control{order:0}
   .schedule-page>.schedule-mini-stats{order:1}
 }
+
+
+/* Final responsive cleanup: when the screen narrows, dense comparison and
+   professor cards must fall gracefully before text begins to crowd itself. */
+@media screen and (max-width:900px){
+  .term-compare .compare-controls,
+  .versions-card .version-compare{grid-template-columns:1fr}
+}
+@media screen and (max-width:640px){
+  .professor-intelligence .professor-load-list{grid-template-columns:1fr}
+  .schedule-signature header h2,
+  .one-decision-mode header h2{font-size:20px;line-height:1.35}
+  .signature-deviations{padding-inline:var(--s5)}
+}

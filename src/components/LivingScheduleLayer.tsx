@@ -746,10 +746,9 @@ export default function LivingScheduleLayer({
                     <Dna />
                     <div>
                       <small>بداية الفصل</small>
-                      <h3>لا تبدأ الفصل من صفحة بيضاء</h3>
+                      <h3>ابنِ مسودة أولية للفصل الحالي خلال خطوة واحدة</h3>
                       <p>
-                        انسخ بصمة الفصل السابق إلى مسودة جديدة ثم راجع الجودة
-                        والقيود قبل أي نشر.
+                        اختر الفصل المصدر أولاً، ثم أنشئ منه مسودة للفصل المفتوح الآن. بعدها راجع الجودة والقيود قبل أي نشر.
                       </p>
                     </div>
                   </div>
@@ -780,7 +779,7 @@ export default function LivingScheduleLayer({
                   ) : null}
                   <div className="genesis-controls">
                     <label>
-                      <span>1 · انسخ من فصل سابق</span>
+                      <span>1 · الفصل المصدر</span>
                       <select
                         value={sourceTerm}
                         onChange={(e) => setSourceTerm(Number(e.target.value))}
@@ -793,24 +792,24 @@ export default function LivingScheduleLayer({
                             </option>
                           ))}
                       </select>
-                      <small>يعرض النظام الفصول الأقدم فقط؛ لا يمكن نسخ فصل أحدث إلى فصل أقدم.</small>
+                      <small>هذه هي الفصول السابقة المتاحة للنسخ منها فقط.</small>
                     </label>
                     <div className="genesis-arrow">
                       <ArrowLeft />
                     </div>
                     <label>
-                      <span>2 · أنشئ مسودة للفصل المفتوح الآن</span>
+                      <span>2 · الفصل المستهدف الآن</span>
                       <b>
                         {targetTerm?.AdTermName || living.context?.termName}
                       </b>
-                      <small>هذا هو الفصل الذي تعمل عليه الآن؛ لن يتغير الجدول الحقيقي قبل النشر.</small>
+                      <small>ستُنشأ هنا مسودة تجريبية فقط؛ الجدول الحقيقي لن يتغير قبل قرار النشر.</small>
                     </label>
                     <PrimaryButton
                       disabled={busy || !sourceTerm || !sourceTerms.length}
                       onClick={runGenesis}
                     >
                       <WandSparkles />
-                      أنشئ مسودة بداية الفصل
+                      أنشئ المسودة للفصل الحالي
                     </PrimaryButton>
                   </div>
                   {genesis ? (
@@ -819,7 +818,7 @@ export default function LivingScheduleLayer({
                       <div>
                         <strong>{genesis.draft?.name}</strong>
                         <p>
-                          {genesis.coverage?.copiedRows} موعدًا نُسخت إلى مسودة
+                          تم نسخ {genesis.coverage?.copiedRows} موعدًا إلى المسودة الجديدة
                           · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
                           {genesis.analysis?.conflicts}
                         </p>

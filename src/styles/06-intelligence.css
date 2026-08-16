@@ -2607,3 +2607,48 @@
   .spatial-metrics{grid-template-columns:1fr}.genome-days{grid-template-columns:1fr}.scenario-fields{grid-template-columns:1fr}.scenario-days{display:grid;grid-template-columns:repeat(2,1fr)}
   .term-compare .compare-result,.compare-diff,.twin-score-row,.version-diff{grid-template-columns:1fr}
 }
+
+
+/* --- Final polish pass ------------------------------------------------------
+   These screens already worked, but several needed cleaner visual hierarchy:
+   the comparison header was too loose, the professor cards were too few per
+   row for the available width, and long analytical labels needed safer wrapping.
+*/
+.professor-intelligence .professor-load-list{grid-template-columns:repeat(3,minmax(0,1fr))}
+.professor-load-list button{align-items:start;min-height:92px}
+.professor-load-list button>div{display:grid;gap:4px;min-width:0}
+.professor-load-list strong{line-height:1.45;overflow-wrap:anywhere}
+.professor-load-list small{line-height:1.65}
+.professor-load-list button>span:last-of-type{max-width:none;justify-self:start;white-space:normal;line-height:1.5}
+.term-compare .compare-controls,
+.versions-card .version-compare{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);
+  gap:var(--s3);
+  align-items:center;
+}
+.term-compare .compare-controls > *,
+.versions-card .version-compare > *{min-width:0}
+.term-compare .compare-result>article,
+.term-compare .compare-result>div{display:grid;gap:6px;align-content:center;min-height:132px}
+.term-compare .compare-result strong{line-height:1.08}
+.compare-diff .compare-column>h3{gap:var(--s2);flex-wrap:wrap}
+.compare-rows{padding:var(--s2)}
+.schedule-heatmap{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--line) 55%,transparent)}
+.heat-cell>b{display:grid;place-items:center;min-height:34px;text-shadow:0 1px 0 rgba(255,255,255,.34)}
+.occupancy-row>button[data-level]{position:relative;overflow:hidden}
+.occupancy-row>button[data-level]::after{
+  content:attr(data-count);
+  position:absolute;inset:auto 3px 3px auto;
+  min-width:18px;height:18px;padding-inline:4px;
+  display:grid;place-items:center;
+  border-radius:999px;
+  background:rgba(255,255,255,.84);
+  color:var(--ink);
+  font:700 10px/1 var(--font-mono);
+  opacity:0;
+}
+.occupancy-row>button[data-level][data-count]:not([data-count="0"])::after{opacity:1}
+@media screen and (max-width:1180px){
+  .professor-intelligence .professor-load-list{grid-template-columns:repeat(2,minmax(0,1fr))}
+}

@@ -4652,3 +4652,41 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   .undo-log-backdrop,
   .mobile-desktop-gate
 ) .schedule-dock{display:none !important}
+
+
+/* --- Final polish pass: readability, wrapping, print safety -----------------
+   A handful of dense panels were visually correct but still felt crowded in
+   Arabic once the real data became long: names collided with numbers, the
+   fingerprint heading could breathe less than the cards beneath it, and long
+   print rows were allowed to split at unlucky places. These overrides do not
+   change structure; they give the structure room to read. */
+.schedule-signature>header{grid-template-columns:52px minmax(0,1fr) minmax(74px,auto)}
+.schedule-signature header h2,
+.one-decision-mode header h2{line-height:1.28;overflow-wrap:anywhere}
+.schedule-signature header p,
+.one-decision-mode header p,
+.decision-option-copy p,
+.decision-problem p,
+.decision-verdict p{max-width:68ch;overflow-wrap:anywhere}
+.signature-scroll{padding-bottom:var(--s2)}
+.signature-grid article,
+.decision-options article,
+.review-finding,
+.review-person,
+.review-row-card{overflow-wrap:anywhere}
+.signature-deviations{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s3);padding:0 var(--s7) var(--s5)}
+.signature-history{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s2)}
+.signature-history span{min-width:0;padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.review-finding>button{align-items:flex-start;gap:var(--s3)}
+.review-copy strong{line-height:1.45}
+.review-copy small{line-height:1.7}
+.review-person-head{align-items:flex-start}
+.review-row-card{grid-template-columns:minmax(0,1fr) auto;gap:var(--s2) var(--s3)}
+.review-row-card .rrc-main{min-width:0}
+.review-row-card .rrc-code{overflow-wrap:anywhere}
+@media print{
+  .print-report table{table-layout:fixed;width:100%}
+  .print-report thead{display:table-header-group}
+  .print-report tr,.print-report td,.print-report th{break-inside:avoid;page-break-inside:avoid}
+  .print-report td,.print-report th{vertical-align:top}
+}
