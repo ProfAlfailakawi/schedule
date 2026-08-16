@@ -598,6 +598,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      the reader to the one field that already exists, rather than owning a
      second one that could disagree with it. */
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const xraySectionRef = useRef<HTMLElement | null>(null);
   const [quickError, setQuickError] = useState<string | null>(null);
   /**
    * Someone else changed this row while it was open.
@@ -7003,7 +7004,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   {...trackGrip}
                   key={row.id}
                   data-row-id={row.id}
-                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${rowPending ? "schedule-row-pending" : ""}`}
+                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
                   style={cardStyle}
                   draggable={!physics.supported && !rowPending}
                   onDragStart={(e) => {
@@ -7101,6 +7102,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     onChange={(value) => setMatrixDay(value as DayKey | "week")}
                   />
                   <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "نفس منطق الأسبوع: كل صف يوم مستقل داخل القاعة، وكل فراغ قابل للنقر أو السحب والإفلات مباشرة في ساعته." : "عرض يوم منفرد بنفس منطق الأسبوع: اسحب الموعد على الساعة المطلوبة أو اضغط أي فراغ لإضافة موعد في تلك الساعة."}</small>
+                  {physicsActive && dragComparison ? (
+                    <div className="rooms-drag-compare" aria-live="polite">
+                      <GripVertical aria-hidden="true" />
+                      <span><b dir="ltr">{dragComparison.before}</b><ChevronLeft aria-hidden="true" /><b dir="ltr">{dragComparison.after}</b></span>
+                      <em dir="ltr">{dragComparison.place}</em>
+                    </div>
+                  ) : null}
                 </div>
                 {allBuildings.length > 1 ? (
                   <div className="rooms-filter-block">
@@ -7172,8 +7180,87 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     </div>
                   </div>
                 ) : null}
+                {hueLegend.length > 1 ? (
+                  <div className="week-legend rooms-legend" role="group" aria-label="مفتاح ألوان المباني والقاعات">
+                    <div className="week-legend-basis" role="group" aria-label="معنى اللون">
+                      {([
+                        { key: "course", label: "المقررات" },
+                        { key: "instructor", label: "الأساتذة" },
+                        { key: "room", label: "المباني والقاعات" },
+                      ] as const).map(basis => (
+                        <button
+                          key={basis.key}
+                          type="button"
+                          className={hueBy === basis.key ? "is-on" : ""}
+                          aria-pressed={hueBy === basis.key}
+                          onClick={() => setHueBy(basis.key)}
+                          title={`لوّن المباني والقاعات حسب ${basis.label}`}
+                        >
+                          {basis.label}
+                        </button>
+                      ))}
+                      <b className="num">
+                        {legendQuery
+                          ? `${legendShown.length.toLocaleString("ar-KW-u-nu-latn")}/${hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}`
+                          : hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}
+                      </b>
+                    </div>
+                    {legendSearchable ? (
+                      <span className="week-legend-search">
+                        <Search aria-hidden="true" />
+                        <input
+                          type="search"
+                          value={legendQuery}
+                          onChange={e => setLegendQuery(e.target.value)}
+                          placeholder={hueBy === "course" ? "ابحث عن مقرر…" : hueBy === "room" ? "ابحث عن قاعة…" : "ابحث عن أستاذ…"}
+                          aria-label="تصفية مفتاح الألوان"
+                        />
+                      </span>
+                    ) : null}
+                    <div className="week-legend-chips">
+                      {legendShown.length === 0 ? <span className="week-legend-none">لا مطابقة</span> : null}
+                      {legendShown.map(item => {
+                        const folded = hueHidden.has(item.key);
+                        return (
+                          <span className={`week-legend-item ${folded ? "is-folded" : ""}`} key={item.key} style={{ ["--hue" as any]: item.hue, ...textureFor(item.hue) }}>
+                            <button
+                              type="button"
+                              className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
+                              aria-pressed={hueFocus.has(item.key)}
+                              disabled={folded}
+                              title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لإبرازها في المباني والقاعات`}
+                              onClick={() => toggleHueFocus(item.key)}
+                            >
+                              <i aria-hidden="true" /><span>{item.label}</span><em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
+                            </button>
+                            <button
+                              type="button"
+                              className="week-legend-eye"
+                              aria-pressed={folded}
+                              aria-label={folded ? `إظهار ${item.label}` : `إخفاء ${item.label} من المباني والقاعات`}
+                              title={folded ? `إظهار ${item.label}` : `إخفاء ${item.label} مؤقتاً — لا يُحذف شيء`}
+                              onClick={() => toggleHueHidden(item.key)}
+                            >
+                              {folded ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                            </button>
+                          </span>
+                        );
+                      })}
+                    </div>
+                    {hueHidden.size ? (
+                      <button type="button" className="week-legend-clear is-folded-clear" onClick={() => setHueHidden(new Set())}>
+                        <EyeOff aria-hidden="true" />أعد المطوي <b className="num">{hueHidden.size.toLocaleString("ar-KW-u-nu-latn")}</b>
+                      </button>
+                    ) : null}
+                    {hueFocus.size ? (
+                      <button type="button" className="week-legend-clear" onClick={() => setHueFocus(new Set())}>
+                        <X aria-hidden="true" />عرض الكل {hueFocus.size > 1 ? <b className="num">{hueFocus.size.toLocaleString("ar-KW-u-nu-latn")}</b> : null}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
                 <div className={`rooms-scale ${matrixDay === "week" ? "rooms-scale-week" : ""}`} aria-hidden="true">
-                  {matrixDay === "week" ? <><small>القاعة</small><small>الأيام</small></> : <small />}
+                  {matrixDay === "week" ? <small>اليوم</small> : <small />}
                   <div>
                     {hourMarks.slice(0, -1).map(mark => (
                       <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{Math.floor(mark / 60)}</span>
@@ -8645,17 +8732,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <div className="context-life-details-grid">
                   {context.courseLife ? <section>
                     <header><History/><strong>المقرر</strong><b>{context.courseLife.confidence === "high" ? "ثقة عالية" : context.courseLife.confidence === "medium" ? "ثقة متوسطة" : "تاريخ محدود"}</b></header>
-                    <div><span>أول / آخر</span><strong>{context.courseLife.firstTerm} · {context.courseLife.latestTerm}</strong></div>
+                    <div className="context-life-range"><span>الفترة التاريخية</span><strong><i>{context.courseLife.firstTerm}</i><ChevronLeft aria-hidden="true"/><i>{context.courseLife.latestTerm}</i></strong></div>
                     <div><span>الوقت المعتاد</span><strong dir="ltr">{context.courseLife.usualStart || "—"}</strong></div>
-                    <div><span>المدة</span><strong>{context.courseLife.usualDuration ? `${context.courseLife.usualDuration} د` : "—"}</strong></div>
-                    <div><span>القاعة</span><strong>{context.courseLife.usualRoom || "—"}</strong></div>
+                    <div><span>المدة</span><strong><b dir="ltr">{context.courseLife.usualDuration || "—"}</b>{context.courseLife.usualDuration ? " دقيقة" : ""}</strong></div>
+                    <div className="context-life-wide"><span>القاعة المعتادة</span><strong dir="ltr">{context.courseLife.usualRoom || "—"}</strong></div>
                   </section> : null}
                   {context.offeringLife ? <section>
-                    <header><CalendarDays/><strong>الشعبة</strong><b>{context.offeringLife.stability}% ثبات</b></header>
-                    <div><span>النسخ الحالية</span><strong>{context.offeringLife.currentJourney?.snapshots || 0}</strong></div>
-                    <div><span>التغييرات</span><strong>{context.offeringLife.currentJourney?.changes ?? context.offeringLife.changes ?? 0}</strong></div>
+                    <header><CalendarDays/><strong>الشعبة</strong><b dir="ltr">{context.offeringLife.stability}% <span>ثبات</span></b></header>
+                    <div><span>النسخ الحالية</span><strong dir="ltr">{context.offeringLife.currentJourney?.snapshots || 0}</strong></div>
+                    <div><span>التغييرات</span><strong dir="ltr">{context.offeringLife.currentJourney?.changes ?? context.offeringLife.changes ?? 0}</strong></div>
                     <div><span>الوقت المعتاد</span><strong dir="ltr">{context.offeringLife.usualStart || "—"}</strong></div>
-                    <div><span>القاعة المعتادة</span><strong>{context.offeringLife.usualRoom || "—"}</strong></div>
+                    <div><span>القاعة المعتادة</span><strong dir="ltr">{context.offeringLife.usualRoom || "—"}</strong></div>
                   </section> : null}
                 </div>
               </details>
