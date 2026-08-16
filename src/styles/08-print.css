@@ -1563,3 +1563,74 @@
     width:100% !important;
   }
 }
+
+/* ========================================================================== 
+   FINAL — non-comprehensive reports: one logical page = one physical page
+   Browser print furniture (URL/date/Page x of y) needs margin space. Giving
+   the physical page zero margin removes that browser-owned band; the report
+   supplies its own inset instead. We also release the old fixed 178/263mm
+   boxes: those boxes plus a forced page break were the recurring source of a
+   completely blank sheet between/after otherwise correct report pages.
+   The comprehensive report owns its separate `comprehensive` page rule above
+   and is deliberately untouched here.
+   ========================================================================== */
+@page wide{
+  size:297mm 210mm;
+  margin:0;
+}
+@page upright{
+  size:210mm 297mm;
+  margin:0;
+}
+@page{
+  size:297mm 210mm;
+  margin:0;
+}
+
+@media print{
+  html[data-print-kind]:not([data-print-kind="comprehensive"]),
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) body,
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) #app-print-root,
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-only{
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    overflow:visible !important;
+  }
+
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-explicit-page{
+    box-sizing:border-box !important;
+    display:block !important;
+    height:auto !important;
+    min-height:0 !important;
+    max-height:none !important;
+    overflow:visible !important;
+    break-inside:auto !important;
+    page-break-inside:auto !important;
+    margin:0 !important;
+  }
+
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-wide .print-explicit-page{
+    width:297mm !important;
+    min-width:297mm !important;
+    max-width:297mm !important;
+    padding:8mm 8mm 9mm !important;
+  }
+
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-upright .print-explicit-page{
+    width:210mm !important;
+    min-width:210mm !important;
+    max-width:210mm !important;
+    padding:12mm 12mm 13mm !important;
+  }
+
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-explicit-page + .print-explicit-page{
+    break-before:page !important;
+    page-break-before:always !important;
+  }
+
+  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-explicit-page-meta{
+    margin-top:3mm !important;
+    flex:none !important;
+  }
+}

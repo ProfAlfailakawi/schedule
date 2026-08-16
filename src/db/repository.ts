@@ -1,7 +1,7 @@
 import fs from "fs";
 import { cachedReference, cachedSchedules, invalidateReference, invalidateSchedules, REFERENCE_KEYS } from "./referenceCache";
 import path from "path";
-import { createCipheriv, createDecipheriv, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { Firestore, WriteBatch } from "firebase-admin/firestore";
@@ -672,6 +672,419 @@ export class ScheduleRevisionConflict extends Error {
   }
 }
 
+
+
+export interface SystemBackupDocument {
+  path: string;
+  data: unknown;
+}
+
+export interface SystemBackupPayload {
+  format: "schedule-system-backup/1";
+  backupId: string;
+  createdAt: string;
+  storage: "firestore" | "local-json";
+  source: { app: "SCHEDULE"; rootAdminId: number };
+  summary: { documentCount: number; collectionCounts: Record<string, number> };
+  integrity: { algorithm: "sha256"; sha256: string };
+  documents?: SystemBackupDocument[];
+  state?: Record<string, unknown>;
+}
+
+export interface SystemRestorePointSummary {
+  id: string;
+  createdAt: string;
+  action: string;
+  byUserId: number;
+  documentCount: number;
+  collectionCounts: Record<string, number>;
+  consumedAt?: string;
+}
+
+const SYSTEM_BACKUP_FORMAT = "schedule-system-backup/1" as const;
+const SYSTEM_RESTORE_COLLECTION = "_systemRestorePoints";
+// Sessions are deliberately not portable: the document id is a live bearer
+// credential. Everything durable is included; live login tokens stay on the
+// server and survive a restore so the root administrator cannot lock himself out.
+const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, "sessions"]);
+const LOCAL_RESTORE_DIR = () => path.join(DB_DIR, "system-restore-points");
+
+function backupEncode(value: any): any {
+  if (value == null || typeof value !== "object") return value;
+  if (value instanceof Timestamp) return { __scheduleType: "timestamp", millis: value.toMillis() };
+  if (value instanceof Date) return { __scheduleType: "date", value: value.toISOString() };
+  if (Buffer.isBuffer(value)) return { __scheduleType: "bytes", base64: value.toString("base64") };
+  if (Array.isArray(value)) return value.map(backupEncode);
+  // Firestore Bytes exposes toBase64(), GeoPoint exposes latitude/longitude,
+  // and DocumentReference exposes path. Preserve those uncommon values too so
+  // this really is a system backup rather than a best-effort export.
+  if (typeof value.toBase64 === "function") return { __scheduleType: "bytes", base64: value.toBase64() };
+  if (typeof value.path === "string" && value.firestore) return { __scheduleType: "reference", path: value.path };
+  if (typeof value.latitude === "number" && typeof value.longitude === "number") {
+    return { __scheduleType: "geopoint", latitude: value.latitude, longitude: value.longitude };
+  }
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, backupEncode(item)]));
+}
+
+function backupDecode(value: any): any {
+  if (value == null || typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map(backupDecode);
+  if (value.__scheduleType === "timestamp") return Timestamp.fromMillis(Number(value.millis) || 0);
+  if (value.__scheduleType === "date") return new Date(String(value.value || ""));
+  if (value.__scheduleType === "bytes") return Buffer.from(String(value.base64 || ""), "base64");
+  if (value.__scheduleType === "reference" && firestoreDb) return firestoreDb.doc(String(value.path || ""));
+  // GeoPoint is not used by the application today. Keep its semantic shape on
+  // import without adding a new runtime dependency; Firestore accepts plain
+  // objects and no current reader relies on instanceof GeoPoint.
+  if (value.__scheduleType === "geopoint") return { latitude: Number(value.latitude), longitude: Number(value.longitude) };
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, backupDecode(item)]));
+}
+
+function systemBackupCollectionCounts(documents: SystemBackupDocument[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const item of documents) {
+    const collection = String(item.path || "").split("/")[0] || "unknown";
+    counts[collection] = (counts[collection] || 0) + 1;
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function localStateCounts(state: Record<string, unknown>): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const [key, value] of Object.entries(state)) {
+    if (Array.isArray(value)) counts[key] = value.length;
+    else if (value && typeof value === "object") counts[key] = Object.keys(value as object).length;
+  }
+  return Object.fromEntries(Object.entries(counts).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function systemBackupDigest(payload: Pick<SystemBackupPayload, "storage" | "documents" | "state">): string {
+  const body = payload.storage === "firestore" ? payload.documents || [] : payload.state || {};
+  return createHash("sha256").update(JSON.stringify(body)).digest("hex");
+}
+
+async function collectFirestoreCollection(ref: FirebaseFirestore.CollectionReference, output: SystemBackupDocument[]) {
+  const snapshot = await ref.get();
+  for (const doc of snapshot.docs) {
+    output.push({ path: doc.ref.path, data: backupEncode(doc.data()) });
+    const nested = await doc.ref.listCollections();
+    for (const child of nested) await collectFirestoreCollection(child, output);
+  }
+}
+
+async function collectSystemDocuments(): Promise<SystemBackupDocument[]> {
+  if (!firestoreDb) return [];
+  const output: SystemBackupDocument[] = [];
+  const collections = await firestoreDb.listCollections();
+  for (const collection of collections) {
+    if (SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collection.id)) continue;
+    await collectFirestoreCollection(collection, output);
+  }
+  return output.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function validateFirestoreDocumentPath(documentPath: string): boolean {
+  const parts = documentPath.split("/").filter(Boolean);
+  return parts.length >= 2 && parts.length % 2 === 0 && !SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(parts[0]);
+}
+
+function validateSystemBackupPayload(input: unknown, rootAdminId = 1): SystemBackupPayload {
+  if (!input || typeof input !== "object") throw new Error("ملف النسخة الاحتياطية غير صالح");
+  const backup = input as SystemBackupPayload;
+  if (backup.format !== SYSTEM_BACKUP_FORMAT) throw new Error("صيغة النسخة الاحتياطية غير مدعومة");
+  if (backup.source?.app !== "SCHEDULE") throw new Error("هذه النسخة لا تخص نظام SCHEDULE");
+  if (!backup.backupId || !backup.createdAt || Number.isNaN(Date.parse(backup.createdAt))) throw new Error("بيانات تعريف النسخة غير مكتملة");
+  if (backup.storage !== "firestore" && backup.storage !== "local-json") throw new Error("نوع التخزين في النسخة غير معروف");
+  const calculated = systemBackupDigest(backup);
+  if (!backup.integrity?.sha256 || calculated !== backup.integrity.sha256) throw new Error("فشل فحص سلامة النسخة الاحتياطية (SHA-256)");
+  if (backup.storage === "firestore") {
+    if (!Array.isArray(backup.documents)) throw new Error("النسخة لا تحتوي مستندات Firestore");
+    const seen = new Set<string>();
+    let rootFound = false;
+    for (const item of backup.documents) {
+      if (!item || typeof item.path !== "string" || !validateFirestoreDocumentPath(item.path)) throw new Error(`مسار غير صالح داخل النسخة: ${String((item as any)?.path || "")}`);
+      if (seen.has(item.path)) throw new Error(`المسار مكرر داخل النسخة: ${item.path}`);
+      seen.add(item.path);
+      if (item.path.split("/")[0] === "users" && Number((item.data as any)?.SystemUserId) === rootAdminId) rootFound = true;
+    }
+    if (!rootFound) throw new Error("النسخة لا تحتوي حساب الإدارة الرئيسي؛ تم إيقاف الاستيراد لحمايتك من فقدان الوصول");
+    const counts = systemBackupCollectionCounts(backup.documents);
+    if (Number(backup.summary?.documentCount) !== backup.documents.length || JSON.stringify(backup.summary?.collectionCounts || {}) !== JSON.stringify(counts)) {
+      throw new Error("فهرس النسخة لا يطابق محتواها؛ أوقف الاستيراد");
+    }
+  } else {
+    if (!backup.state || typeof backup.state !== "object") throw new Error("النسخة المحلية لا تحتوي حالة النظام");
+    const users = (backup.state as any).users;
+    if (!Array.isArray(users) || !users.some((user: any) => Number(user.SystemUserId) === rootAdminId)) throw new Error("النسخة لا تحتوي حساب الإدارة الرئيسي");
+    const counts = localStateCounts(backup.state);
+    const documentCount = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (Number(backup.summary?.documentCount) !== documentCount || JSON.stringify(backup.summary?.collectionCounts || {}) !== JSON.stringify(counts)) {
+      throw new Error("فهرس النسخة لا يطابق محتواها؛ أوقف الاستيراد");
+    }
+  }
+  return backup;
+}
+
+async function deleteFirestoreTree(ref: FirebaseFirestore.CollectionReference | FirebaseFirestore.DocumentReference): Promise<void> {
+  if (!firestoreDb) return;
+  const recursiveDelete = (firestoreDb as any).recursiveDelete;
+  if (typeof recursiveDelete === "function") {
+    await recursiveDelete.call(firestoreDb, ref);
+    return;
+  }
+  if (typeof (ref as any).listDocuments === "function") {
+    const collection = ref as FirebaseFirestore.CollectionReference;
+    const snap = await collection.get();
+    for (const doc of snap.docs) await deleteFirestoreTree(doc.ref);
+    return;
+  }
+  const doc = ref as FirebaseFirestore.DocumentReference;
+  const nested = await doc.listCollections();
+  for (const collection of nested) await deleteFirestoreTree(collection);
+  await doc.delete();
+}
+
+async function clearPortableFirestoreData(preserveTopCollections = new Set<string>()): Promise<void> {
+  if (!firestoreDb) return;
+  const collections = await firestoreDb.listCollections();
+  for (const collection of collections) {
+    if (SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collection.id) || preserveTopCollections.has(collection.id)) continue;
+    await deleteFirestoreTree(collection);
+  }
+}
+
+async function writeFirestoreDocuments(documents: SystemBackupDocument[]): Promise<void> {
+  if (!firestoreDb) throw new Error("Firestore غير مهيأ");
+  const ordered = [...documents].sort((a, b) => a.path.split("/").length - b.path.split("/").length || a.path.localeCompare(b.path));
+  for (let offset = 0; offset < ordered.length; offset += 350) {
+    const batch = firestoreDb.batch();
+    ordered.slice(offset, offset + 350).forEach(item => batch.set(firestoreDb!.doc(item.path), backupDecode(item.data), { merge: false }));
+    await batch.commit();
+  }
+}
+
+async function pruneFirestoreDocumentToDesired(
+  ref: FirebaseFirestore.DocumentReference,
+  desiredPaths: Set<string>,
+  protectedPaths: Set<string>,
+): Promise<void> {
+  // Identity collections are normally flat, but a full-system backup must stay
+  // exact even if a future feature adds a subcollection under a user/form. Walk
+  // those descendants as well so stale nested documents cannot survive import.
+  const nested = await ref.listCollections();
+  for (const collection of nested) {
+    const snap = await collection.get();
+    for (const doc of snap.docs) {
+      const wantedHere = desiredPaths.has(doc.ref.path);
+      const wantedBelow = [...desiredPaths].some(path => path.startsWith(`${doc.ref.path}/`));
+      if (wantedHere || wantedBelow || protectedPaths.has(doc.ref.path)) {
+        await pruneFirestoreDocumentToDesired(doc.ref, desiredPaths, protectedPaths);
+      } else {
+        await deleteFirestoreTree(doc.ref);
+      }
+    }
+  }
+  if (!desiredPaths.has(ref.path) && !protectedPaths.has(ref.path)) await ref.delete();
+}
+
+async function reconcileTopLevelCollection(collectionName: string, desired: SystemBackupDocument[], protectedPaths = new Set<string>()): Promise<void> {
+  if (!firestoreDb) return;
+  const desiredPaths = new Set(desired.map(item => item.path));
+  // Write the protected/root records first. During a failed import the main
+  // administrator therefore always keeps a valid account and a route back to
+  // the vault, even if later collections fail halfway through.
+  const protectedRows = desired.filter(item => protectedPaths.has(item.path));
+  const normalRows = desired.filter(item => !protectedPaths.has(item.path));
+  await writeFirestoreDocuments([...protectedRows, ...normalRows]);
+  const existing = await firestoreDb.collection(collectionName).get();
+  for (const doc of existing.docs) await pruneFirestoreDocumentToDesired(doc.ref, desiredPaths, protectedPaths);
+}
+
+function refreshSystemCachesAfterMutation() {
+  invalidateReference();
+  invalidateSchedules();
+  invalidateScheduleRelationCache();
+  announceIdentityChange();
+}
+
+async function makeSystemBackup(rootAdminId: number): Promise<SystemBackupPayload> {
+  const createdAt = new Date().toISOString();
+  const backupId = randomUUID();
+  if (firestoreDb) {
+    const documents = await collectSystemDocuments();
+    const collectionCounts = systemBackupCollectionCounts(documents);
+    const partial = { storage: "firestore" as const, documents };
+    return {
+      format: SYSTEM_BACKUP_FORMAT,
+      backupId,
+      createdAt,
+      storage: "firestore",
+      source: { app: "SCHEDULE", rootAdminId },
+      summary: { documentCount: documents.length, collectionCounts },
+      integrity: { algorithm: "sha256", sha256: systemBackupDigest(partial) },
+      documents,
+    };
+  }
+  const state = JSON.parse(JSON.stringify(db)) as Record<string, unknown>;
+  const collectionCounts = localStateCounts(state);
+  const partial = { storage: "local-json" as const, state };
+  return {
+    format: SYSTEM_BACKUP_FORMAT,
+    backupId,
+    createdAt,
+    storage: "local-json",
+    source: { app: "SCHEDULE", rootAdminId },
+    summary: { documentCount: Object.values(collectionCounts).reduce((a, b) => a + b, 0), collectionCounts },
+    integrity: { algorithm: "sha256", sha256: systemBackupDigest(partial) },
+    state,
+  };
+}
+
+async function saveSystemRestorePoint(action: string, byUserId: number, rootAdminId = 1): Promise<SystemRestorePointSummary> {
+  const snapshot = await makeSystemBackup(rootAdminId);
+  const meta: SystemRestorePointSummary = {
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    action,
+    byUserId,
+    documentCount: snapshot.summary.documentCount,
+    collectionCounts: snapshot.summary.collectionCounts,
+  };
+  if (firestoreDb) {
+    const root = firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(meta.id);
+    await root.set({ ...meta, backupFormat: snapshot.format, backupStorage: snapshot.storage, integrity: snapshot.integrity }, { merge: false });
+    const documents = snapshot.documents || [];
+    for (let offset = 0; offset < documents.length; offset += 300) {
+      const batch = firestoreDb.batch();
+      documents.slice(offset, offset + 300).forEach((item, index) => {
+        const absolute = offset + index + 1;
+        batch.set(root.collection("documents").doc(`d_${String(absolute).padStart(9, "0")}`), item);
+      });
+      await batch.commit();
+    }
+    // Keep a small, useful safety history rather than allowing safety copies to
+    // become a second database with no retention policy.
+    const older = await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).orderBy("createdAt", "desc").get();
+    for (const doc of older.docs.slice(8)) await deleteFirestoreTree(doc.ref);
+  } else {
+    fs.mkdirSync(LOCAL_RESTORE_DIR(), { recursive: true, mode: 0o700 });
+    const file = path.join(LOCAL_RESTORE_DIR(), `${meta.id}.json`);
+    fs.writeFileSync(file, JSON.stringify({ meta, snapshot }), { mode: 0o600 });
+    const files = fs.readdirSync(LOCAL_RESTORE_DIR()).filter(name => name.endsWith(".json")).map(name => ({ name, mtime: fs.statSync(path.join(LOCAL_RESTORE_DIR(), name)).mtimeMs })).sort((a, b) => b.mtime - a.mtime);
+    files.slice(8).forEach(item => { try { fs.unlinkSync(path.join(LOCAL_RESTORE_DIR(), item.name)); } catch {} });
+  }
+  return meta;
+}
+
+async function listSystemRestorePoints(): Promise<SystemRestorePointSummary[]> {
+  if (firestoreDb) {
+    const snap = await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).orderBy("createdAt", "desc").limit(8).get();
+    return snap.docs.map(doc => doc.data() as SystemRestorePointSummary);
+  }
+  if (!fs.existsSync(LOCAL_RESTORE_DIR())) return [];
+  const rows: SystemRestorePointSummary[] = [];
+  for (const name of fs.readdirSync(LOCAL_RESTORE_DIR()).filter(name => name.endsWith(".json"))) {
+    try { rows.push(JSON.parse(fs.readFileSync(path.join(LOCAL_RESTORE_DIR(), name), "utf8")).meta); } catch {}
+  }
+  return rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 8);
+}
+
+async function loadSystemRestorePoint(id: string, rootAdminId = 1): Promise<SystemBackupPayload> {
+  if (firestoreDb) {
+    const root = firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(id);
+    const metaDoc = await root.get();
+    if (!metaDoc.exists) throw new Error("نقطة التراجع غير موجودة");
+    const meta = metaDoc.data() as any;
+    const docs = await root.collection("documents").get();
+    const documents = docs.docs.sort((a, b) => a.id.localeCompare(b.id)).map(doc => doc.data() as SystemBackupDocument);
+    const backup: SystemBackupPayload = {
+      format: SYSTEM_BACKUP_FORMAT,
+      backupId: id,
+      createdAt: String(meta.createdAt || new Date().toISOString()),
+      storage: "firestore",
+      source: { app: "SCHEDULE", rootAdminId },
+      summary: { documentCount: documents.length, collectionCounts: systemBackupCollectionCounts(documents) },
+      integrity: meta.integrity || { algorithm: "sha256", sha256: systemBackupDigest({ storage: "firestore", documents }) },
+      documents,
+    };
+    return validateSystemBackupPayload(backup, rootAdminId);
+  }
+  const file = path.join(LOCAL_RESTORE_DIR(), `${id}.json`);
+  if (!fs.existsSync(file)) throw new Error("نقطة التراجع غير موجودة");
+  const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  return validateSystemBackupPayload(parsed.snapshot, rootAdminId);
+}
+
+async function markRestorePointConsumed(id: string) {
+  const consumedAt = new Date().toISOString();
+  if (firestoreDb) {
+    await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(id).set({ consumedAt }, { merge: true });
+    return;
+  }
+  const file = path.join(LOCAL_RESTORE_DIR(), `${id}.json`);
+  if (!fs.existsSync(file)) return;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    parsed.meta = { ...parsed.meta, consumedAt };
+    fs.writeFileSync(file, JSON.stringify(parsed), { mode: 0o600 });
+  } catch {}
+}
+
+async function replaceSystemFromBackup(input: SystemBackupPayload, rootAdminId = 1): Promise<SystemBackupPayload> {
+  const backup = validateSystemBackupPayload(input, rootAdminId);
+  if (firestoreDb) {
+    if (backup.storage !== "firestore") throw new Error("لا يمكن استيراد نسخة محلية إلى بيئة Firestore");
+    const documents = backup.documents || [];
+    const identityCollections = new Set(["users", "formSecurity", "formNames"]);
+    const ordinary = documents.filter(item => !identityCollections.has(item.path.split("/")[0]));
+    await clearPortableFirestoreData(identityCollections);
+    await writeFirestoreDocuments(ordinary);
+
+    const rootUserPath = `users/user_${rootAdminId}`;
+    const importedUserPaths = new Set(documents.filter(item => item.path.startsWith("users/")).map(item => item.path));
+    if (!importedUserPaths.has(rootUserPath)) throw new Error("مسار حساب الإدارة الرئيسي غير موجود في النسخة");
+    await reconcileTopLevelCollection("users", documents.filter(item => item.path.startsWith("users/")), new Set([rootUserPath]));
+
+    const rootPermissionPaths = new Set(documents.filter(item => item.path.startsWith("formSecurity/") && Number((item.data as any)?.SystemUserId) === rootAdminId).map(item => item.path));
+    await reconcileTopLevelCollection("formSecurity", documents.filter(item => item.path.startsWith("formSecurity/")), rootPermissionPaths);
+    await reconcileTopLevelCollection("formNames", documents.filter(item => item.path.startsWith("formNames/")));
+  } else {
+    if (backup.storage !== "local-json") throw new Error("لا يمكن استيراد نسخة Firestore إلى وضع البيانات المحلي");
+    db = JSON.parse(JSON.stringify(backup.state || {})) as DBState;
+    saveDatabase();
+  }
+  refreshSystemCachesAfterMutation();
+  return backup;
+}
+
+async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
+  if (firestoreDb) {
+    const current = await collectSystemDocuments();
+    const rootUserPath = `users/user_${rootAdminId}`;
+    const rootUsers = current.filter(item => item.path === rootUserPath);
+    if (!rootUsers.length) throw new Error("حساب الإدارة الرئيسي غير موجود");
+    const formNames = current.filter(item => item.path.startsWith("formNames/"));
+    const rootPermissions = current.filter(item => item.path.startsWith("formSecurity/") && Number((item.data as any)?.SystemUserId) === rootAdminId);
+    const identityCollections = new Set(["users", "formSecurity", "formNames"]);
+    await clearPortableFirestoreData(identityCollections);
+    await reconcileTopLevelCollection("users", rootUsers, new Set([rootUserPath]));
+    await reconcileTopLevelCollection("formSecurity", rootPermissions, new Set(rootPermissions.map(item => item.path)));
+    await reconcileTopLevelCollection("formNames", formNames);
+    const maxPermission = rootPermissions.reduce((max, item) => Math.max(max, Number((item.data as any)?.legacyId || 0)), 0);
+    await firestoreDb.doc(FIRESTORE_COUNTER_DOC).set({ users: rootAdminId, formSecurity: maxPermission, userScopes: 0, terms: 0, colleges: 0, sections: 0, instructors: 0, courses: 0, schedules: 0 }, { merge: false });
+  } else {
+    const root = db.users.find(user => user.SystemUserId === rootAdminId);
+    if (!root) throw new Error("حساب الإدارة الرئيسي غير موجود");
+    const formNames = [...db.formNames];
+    const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
+    db = {
+      users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
+      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: []
+    };
+    saveDatabase();
+  }
+  refreshSystemCachesAfterMutation();
+}
 export const Repository = {
   /** Lets the server drop any cached identity the moment accounts change. */
   onIdentityChanged: (listener: () => void) => { identityListeners.add(listener); },
@@ -2431,5 +2844,84 @@ export const Repository = {
       return snap.docs.map(doc => doc.data() as AdRoom);
     }
     return db.rooms;
+  },
+
+  // Root-administrator system safety ---------------------------------------
+  // These four operations deliberately live beside the repository rather than
+  // in the UI. A browser button is not a security boundary; the server repeats
+  // every validation and every destructive operation creates a rollback point
+  // before changing a single durable row.
+  exportSystemBackup: async (rootAdminId = 1): Promise<SystemBackupPayload> =>
+    makeSystemBackup(rootAdminId),
+
+  validateSystemBackup: async (input: unknown, rootAdminId = 1): Promise<SystemBackupPayload> =>
+    validateSystemBackupPayload(input, rootAdminId),
+
+  createSystemRestorePoint: async (action: string, byUserId: number, rootAdminId = 1): Promise<SystemRestorePointSummary> =>
+    saveSystemRestorePoint(action, byUserId, rootAdminId),
+
+  getSystemRestorePoints: async (): Promise<SystemRestorePointSummary[]> =>
+    listSystemRestorePoints(),
+
+  importSystemBackup: async (input: unknown, byUserId: number, rootAdminId = 1): Promise<{ backup: SystemBackupPayload; restorePoint: SystemRestorePointSummary }> => {
+    const backup = validateSystemBackupPayload(input, rootAdminId);
+    const restorePoint = await saveSystemRestorePoint("قبل الاستيراد الكامل", byUserId, rootAdminId);
+    try {
+      await replaceSystemFromBackup(backup, rootAdminId);
+      return { backup, restorePoint };
+    } catch (error: any) {
+      // Full-system replacement spans many Firestore batches. Treat the saved
+      // point as a transaction journal: if any batch fails, put the exact old
+      // state back before surfacing the error instead of leaving half a system.
+      try {
+        const original = await loadSystemRestorePoint(restorePoint.id, rootAdminId);
+        await replaceSystemFromBackup(original, rootAdminId);
+        await markRestorePointConsumed(restorePoint.id);
+      } catch (rollbackError: any) {
+        throw new Error(`تعذر الاستيراد وتعذر التراجع التلقائي: ${String(rollbackError?.message || rollbackError)}`);
+      }
+      throw new Error(`تعذر الاستيراد؛ أعاد النظام حالته السابقة تلقائياً. ${String(error?.message || error)}`);
+    }
+  },
+
+  resetSystem: async (byUserId: number, rootAdminId = 1): Promise<SystemRestorePointSummary> => {
+    const restorePoint = await saveSystemRestorePoint("قبل تصفير النظام", byUserId, rootAdminId);
+    try {
+      await resetSystemKeepingRoot(rootAdminId);
+      return restorePoint;
+    } catch (error: any) {
+      try {
+        const original = await loadSystemRestorePoint(restorePoint.id, rootAdminId);
+        await replaceSystemFromBackup(original, rootAdminId);
+        await markRestorePointConsumed(restorePoint.id);
+      } catch (rollbackError: any) {
+        throw new Error(`تعذر التصفير وتعذر التراجع التلقائي: ${String(rollbackError?.message || rollbackError)}`);
+      }
+      throw new Error(`تعذر التصفير؛ أعاد النظام حالته السابقة تلقائياً. ${String(error?.message || error)}`);
+    }
+  },
+
+  undoLastSystemOperation: async (byUserId: number, rootAdminId = 1): Promise<{ restored: SystemRestorePointSummary; redoPoint: SystemRestorePointSummary }> => {
+    const points = await listSystemRestorePoints();
+    const target = points.find(point => !point.consumedAt);
+    if (!target) throw new Error("لا توجد نقطة تراجع متاحة");
+    const backup = await loadSystemRestorePoint(target.id, rootAdminId);
+    // Capture the state we are leaving first. This means pressing «تراجع» مرة
+    // أخرى behaves like redo instead of turning one safety action into a trap.
+    const redoPoint = await saveSystemRestorePoint("قبل التراجع — نقطة إعادة", byUserId, rootAdminId);
+    try {
+      await replaceSystemFromBackup(backup, rootAdminId);
+      await markRestorePointConsumed(target.id);
+      return { restored: { ...target, consumedAt: new Date().toISOString() }, redoPoint };
+    } catch (error: any) {
+      try {
+        const current = await loadSystemRestorePoint(redoPoint.id, rootAdminId);
+        await replaceSystemFromBackup(current, rootAdminId);
+        await markRestorePointConsumed(redoPoint.id);
+      } catch (rollbackError: any) {
+        throw new Error(`تعذر التراجع وتعذر استعادة الحالة التي كنت عليها: ${String(rollbackError?.message || rollbackError)}`);
+      }
+      throw new Error(`تعذر التراجع؛ أعاد النظام الحالة التي كنت عليها تلقائياً. ${String(error?.message || error)}`);
+    }
   }
 };

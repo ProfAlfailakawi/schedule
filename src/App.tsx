@@ -119,6 +119,7 @@ interface SessionUser {
   IsActive: boolean;
   IsLocked: boolean;
   AdInstructorId?: number;
+  IsRootAdmin?: boolean;
 }
 interface SearchHit {
   id: number | string;
@@ -149,7 +150,7 @@ const reportViews: ReportMode[] = [
   "reportTime",
   "reportRoomTime",
 ];
-const adminViews: AdminMode[] = ["users", "permissions", "scopes", "audit"];
+const adminViews: AdminMode[] = ["users", "permissions", "scopes", "audit", "backup"];
 const academicViews: AcademicTab[] = ["terms", "colleges", "sections", "instructors", "courses"];
 /** Permission id that unlocks each academic catalogue. */
 const ACADEMIC_PERM: Record<AcademicTab, number> = {
@@ -184,6 +185,7 @@ const pathByView: Record<View, string> = {
   permissions: "/FormSecurity/Index",
   scopes: "/AdCollegeUserAssign/Index",
   audit: "/System/AuditLog",
+  backup: "/System/Backup",
   about: "/Public/Aboutus",
 };
 const viewByPath = new Map(
@@ -799,7 +801,7 @@ export default function App() {
     }),
     [permissions],
   );
-  const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
+  const isPowerAdmin = Boolean(user?.IsAdminUser || user?.IsRootAdmin);
   const availableSearchModes = searchViews.filter((v) =>
     v === "searchAdvanced"
       ? hasPerm(17)
@@ -1023,7 +1025,7 @@ export default function App() {
           unauthorized()
         );
       case "scheduleCopy":
-        return isPowerAdmin && hasPerm(7) && user.SystemUserId === 1 ? (
+        return isPowerAdmin && hasPerm(7) && user.IsRootAdmin ? (
           <Schedules mode="copy" user={user} scopes={scopes} />
         ) : (
           unauthorized()
@@ -1146,7 +1148,7 @@ export default function App() {
         );
       case "users":
         return isPowerAdmin && hasPerm(11) ? (
-          <AdminUsers mode="users" onNavigate={go} permissions={permissions} />
+          <AdminUsers mode="users" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} />
         ) : (
           unauthorized()
         );
@@ -1156,19 +1158,26 @@ export default function App() {
             mode="permissions"
             onNavigate={go}
             permissions={permissions}
+            rootAdmin={Boolean(user.IsRootAdmin)}
           />
         ) : (
           unauthorized()
         );
       case "scopes":
         return isPowerAdmin && hasPerm(15) ? (
-          <AdminUsers mode="scopes" onNavigate={go} permissions={permissions} />
+          <AdminUsers mode="scopes" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} />
         ) : (
           unauthorized()
         );
       case "audit":
         return isPowerAdmin && allowed.admin ? (
-          <AdminUsers mode="audit" onNavigate={go} permissions={permissions} />
+          <AdminUsers mode="audit" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} />
+        ) : (
+          unauthorized()
+        );
+      case "backup":
+        return user.IsRootAdmin ? (
+          <AdminUsers mode="backup" onNavigate={go} permissions={permissions} rootAdmin />
         ) : (
           unauthorized()
         );
@@ -1767,7 +1776,7 @@ export default function App() {
                   label="إدارة النظام"
                 />
               ) : null}
-              {allowed.schedule && user.SystemUserId === 1 ? (
+              {allowed.schedule && user.IsRootAdmin ? (
                 <NavButton
                   activeView={activeView}
                   onGo={go}
@@ -1804,7 +1813,7 @@ export default function App() {
                 icon={<SlidersHorizontal />}
                 label="إدارة النظام"
               />
-              {allowed.schedule && user.SystemUserId === 1 ? (
+              {allowed.schedule && user.IsRootAdmin ? (
                 <NavButton
                   activeView={activeView}
                   onGo={go}

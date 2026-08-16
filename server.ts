@@ -3,6 +3,7 @@ import compression from "compression";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { createHmac, randomBytes } from "crypto";
+import { gzipSync, gunzipSync } from "zlib";
 import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } from "./src/db/repository";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
@@ -107,6 +108,13 @@ app.use(compression({
     if (type.includes("text/event-stream")) return false;
     return compression.filter(req, res);
   },
+}));
+// Full-system backups are intentionally compressed and can be much larger than
+// ordinary API payloads. Give only these two root-admin endpoints a larger raw
+// body allowance; every other JSON route keeps the tight 1 MB limit.
+app.use(["/api/system-backup/preview", "/api/system-backup/import"], express.raw({
+  type: ["application/gzip", "application/octet-stream", "application/json"],
+  limit: "30mb",
 }));
 app.use(express.json({ limit: "1mb" }));
 
@@ -404,12 +412,30 @@ const powerOnlyFormIds = new Set([2, 3, 4, 5, 6, 11, 12, 15]);
    intelligence route is guarded by it, and every list route accepts it. */
 const DECISION_CENTRE_FORM_ID = 7;
 function isPowerUser(req: AuthenticatedRequest): boolean {
-  return Boolean(req.user && (req.user.IsAdminUser || req.user.SystemUserId === 1));
+  return Boolean(req.user && (req.user.IsAdminUser || Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID));
 }
 function requirePowerAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   if (!req.user) { res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" }); return; }
   if (!isPowerUser(req)) { res.status(403).json({ error: "هذه الأداة مخصصة لإدارة النظام الرئيسية" }); return; }
   next();
+}
+
+const ROOT_ADMIN_USER_ID = Math.max(1, Number(process.env.ROOT_ADMIN_USER_ID || 1) || 1);
+function requireRootAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!req.user) { res.status(401).json({ error: "الرجاء تسجيل الدخول أولاً" }); return; }
+  if (Number(req.user.SystemUserId) !== ROOT_ADMIN_USER_ID) {
+    res.status(403).json({ error: "هذه الخزنة مخصصة لحساب الإدارة الرئيسي فقط" });
+    return;
+  }
+  next();
+}
+
+function readSystemBackupBody(req: Request): unknown {
+  if (!Buffer.isBuffer(req.body)) return req.body;
+  let raw = req.body as Buffer;
+  if (raw.length >= 2 && raw[0] === 0x1f && raw[1] === 0x8b) raw = gunzipSync(raw);
+  if (raw.length > 80 * 1024 * 1024) throw new Error("النسخة بعد فك الضغط أكبر من الحد الآمن");
+  return JSON.parse(raw.toString("utf8"));
 }
 
 // Require Form permission
@@ -657,7 +683,7 @@ app.post("/api/auth/login", rateLimitLogin, async (req: Request, res: Response) 
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(await Repository.getUserAssigns(user.SystemUserId));
 
-  res.json({ user: safeUser, permissions, scopes });
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(user.SystemUserId) === ROOT_ADMIN_USER_ID }, permissions, scopes });
 });
 
 app.post("/api/auth/logout", async (req: AuthenticatedRequest, res: Response) => {
@@ -683,7 +709,7 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(req.scopes || []);
   // The interface says out loud when it is not on the university's database.
-  res.json({ user: safeUser, permissions, scopes, data: activeDataMode() });
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID }, permissions, scopes, data: activeDataMode() });
 });
 
 // Activity heartbeat: the server session still expires after 15 minutes of real
@@ -4026,6 +4052,94 @@ app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), requireP
   if(req.get("x-schedule-confirm")!=="decision-undo"){res.status(409).json({error:"يتطلب التراجع عن القرار تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"نقطة الأمان غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId); if(issues.length){res.status(400).json({error:"لا يمكن التراجع إلى نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل التراجع عن القرار: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`decision-undo:${version.id}`}); res.json({success:true,count:rows.length,message:`تمت العودة إلى ${version.label}`});
 });
 
+
+
+/**
+ * Root-only full-system vault.
+ *
+ * The portable backup contains every durable document (including historical
+ * archives, audit, versions, drafts, surveys, publications and metadata). Live
+ * session tokens and the server's own rollback copies are not exported because
+ * they are bearer credentials / safety infrastructure, not university data.
+ */
+app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  const restorePoints = await Repository.getSystemRestorePoints();
+  res.json({
+    rootOnly: true,
+    data: activeDataMode(),
+    restorePoints,
+    latest: restorePoints.find(point => !point.consumedAt) || null,
+  });
+});
+
+app.get("/api/system-backup/export", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const backup = await Repository.exportSystemBackup(ROOT_ADMIN_USER_ID);
+  const json = Buffer.from(JSON.stringify(backup), "utf8");
+  const compressed = gzipSync(json, { level: 9 });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");
+  res.setHeader("Content-Type", "application/gzip");
+  res.setHeader("Content-Disposition", `attachment; filename="schedule-full-backup_${stamp}.json.gz"`);
+  res.setHeader("Cache-Control", "no-store, max-age=0");
+  res.setHeader("X-Backup-SHA256", backup.integrity.sha256);
+  res.setHeader("X-Backup-Documents", String(backup.summary.documentCount));
+  res.send(compressed);
+});
+
+app.post("/api/system-backup/preview", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const input = readSystemBackupBody(req);
+  const backup = await Repository.validateSystemBackup(input, ROOT_ADMIN_USER_ID);
+  res.json({
+    valid: true,
+    backupId: backup.backupId,
+    createdAt: backup.createdAt,
+    storage: backup.storage,
+    documentCount: backup.summary.documentCount,
+    collectionCounts: backup.summary.collectionCounts,
+    sha256: backup.integrity.sha256,
+  });
+});
+
+app.post("/api/system-backup/import", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  if (req.get("x-schedule-confirm") !== "FULL-SYSTEM-IMPORT") {
+    res.status(409).json({ error: "الاستيراد الكامل يحتاج تأكيداً صريحاً" });
+    return;
+  }
+  const input = readSystemBackupBody(req);
+  const result = await Repository.importSystemBackup(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  res.json({
+    success: true,
+    message: "تم استيراد النسخة الكاملة والتحقق من سلامتها",
+    imported: result.backup.summary,
+    restorePoint: result.restorePoint,
+  });
+});
+
+app.post("/api/system-backup/reset", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  if (req.get("x-schedule-confirm") !== "FULL-SYSTEM-RESET" || String(req.body?.phrase || "") !== "تصفير النظام") {
+    res.status(409).json({ error: "اكتب «تصفير النظام» للتأكيد" });
+    return;
+  }
+  const restorePoint = await Repository.resetSystem(req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  res.json({
+    success: true,
+    message: "تم تصفير بيانات العمل. بقي حساب الإدارة الرئيسي فقط مع نقطة تراجع جاهزة.",
+    restorePoint,
+  });
+});
+
+app.post("/api/system-backup/undo", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  if (req.get("x-schedule-confirm") !== "FULL-SYSTEM-UNDO") {
+    res.status(409).json({ error: "التراجع الكامل يحتاج تأكيداً صريحاً" });
+    return;
+  }
+  const result = await Repository.undoLastSystemOperation(req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  res.json({
+    success: true,
+    message: `تمت العودة إلى نقطة الأمان: ${result.restored.action}`,
+    restored: result.restored,
+    redoPoint: result.redoPoint,
+  });
+});
 
 app.get("/api/audit-logs", requireAuth, requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const limit = Number(req.query.limit || 250);

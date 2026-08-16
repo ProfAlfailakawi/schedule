@@ -1443,3 +1443,61 @@
 .install-login .install-pop p,.install-login .install-steps li{color:#9aa8a1}
 .install-login .install-pop header button{color:#8e9a94}
 .apex-login-access footer{align-items:center}
+
+/* ── Root administrator · system vault ------------------------------------
+   A database backup is not a utility drawer. It is a deliberate, calm safety
+   surface: four actions, each with a different consequence and a visible
+   restore contract before anything destructive can happen. */
+.system-vault-page{gap:var(--s4)}
+.system-vault-hero{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;
+  gap:var(--s5);padding:var(--s6);border-color:color-mix(in srgb,var(--accent) 28%,var(--line));
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent-softer) 72%,var(--surface)) 0%,var(--surface) 58%);
+}
+.system-vault-seal{width:58px;height:58px;border-radius:18px;display:grid;place-items:center;background:var(--accent);color:white;box-shadow:0 12px 30px color-mix(in srgb,var(--accent) 20%,transparent)}
+.system-vault-seal svg{width:27px;height:27px}
+.system-vault-hero h2{margin:3px 0 4px;font-size:clamp(20px,2vw,28px);font-weight:720;letter-spacing:-.025em}
+.system-vault-hero p{margin:0;max-width:780px;color:var(--muted);font-size:var(--t-sm);line-height:1.8}
+.system-vault-state{min-width:126px;padding:12px 15px;border:1px solid var(--line);border-radius:16px;background:color-mix(in srgb,var(--surface) 88%,transparent);text-align:center}
+.system-vault-state span,.system-vault-state strong{display:block}.system-vault-state span{font-size:var(--t-xs);color:var(--muted)}.system-vault-state strong{margin-top:4px;font:650 var(--t-sm)/1.2 var(--font-mono)}
+.system-vault-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s4)}
+.system-vault-action{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s4);align-items:start;padding:var(--s5);overflow:hidden}
+.system-vault-action::after{content:"";position:absolute;inset-inline-start:0;inset-block:0;width:3px;background:var(--line-strong);opacity:.72}
+.system-vault-action.vault-export::after,.system-vault-action.vault-undo::after{background:var(--accent)}
+.system-vault-action.vault-reset::after{background:var(--danger)}
+.vault-action-icon{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:var(--surface-2);color:var(--accent);border:1px solid var(--line)}
+.vault-action-icon svg{width:21px;height:21px}.vault-reset .vault-action-icon{color:var(--danger);background:color-mix(in srgb,var(--danger-soft) 55%,var(--surface))}
+.system-vault-action>div:nth-of-type(1){min-width:0}.system-vault-action small{display:block;color:var(--muted-2);font:600 11px/1 var(--font-mono);letter-spacing:.08em}.system-vault-action h3{margin:5px 0 4px;font-size:18px}.system-vault-action p{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.75}
+.system-vault-action>.btn,.system-vault-action>.vault-file-picker,.system-vault-action>.vault-inline-actions,.system-vault-action>.vault-confirm-input,.system-vault-action>.vault-restore-meta{grid-column:1/-1}
+.system-vault-action>.btn{justify-self:stretch;width:100%}
+.vault-file-picker{min-height:52px;border:1px dashed var(--line-strong);border-radius:14px;padding:10px 13px;display:flex;align-items:center;gap:10px;color:var(--ink-2);background:var(--surface-2);cursor:pointer;transition:border-color .15s var(--ease),background .15s var(--ease)}
+.vault-file-picker:hover{border-color:var(--accent);background:var(--accent-softer)}.vault-file-picker input{position:absolute;inline-size:1px;block-size:1px;opacity:0;pointer-events:none}.vault-file-picker svg{width:18px;height:18px;color:var(--accent);flex:none}.vault-file-picker span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm)}
+.vault-inline-actions{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2)}.vault-inline-actions .btn{width:100%;justify-content:center}
+.vault-confirm-input{width:100%;height:48px;border:1px solid color-mix(in srgb,var(--danger) 30%,var(--line));border-radius:13px;background:var(--surface);padding:0 14px;color:var(--ink);font:inherit;outline:none}.vault-confirm-input:focus{border-color:var(--danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 12%,transparent)}
+.vault-restore-meta{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:10px 12px;background:var(--surface-2);border-radius:12px;font-size:var(--t-xs);color:var(--muted)}.vault-restore-meta strong{font-weight:600;color:var(--ink-2)}
+.vault-preview-card{padding:var(--s5);display:grid;gap:var(--s4);border-color:color-mix(in srgb,var(--success) 40%,var(--line));background:color-mix(in srgb,var(--success-soft) 36%,var(--surface))}
+.vault-preview-head{display:flex;align-items:center;gap:var(--s3)}.vault-preview-head>svg{width:30px;height:30px;color:var(--success)}.vault-preview-head strong,.vault-preview-head span{display:block}.vault-preview-head span{margin-top:2px;color:var(--muted);font-size:var(--t-sm)}
+.vault-preview-hash{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--s3);align-items:center}.vault-preview-hash span{font-size:var(--t-xs);color:var(--muted);font-weight:650}.vault-preview-hash code{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:9px 11px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:11px;color:var(--ink-2)}
+.vault-counts{display:flex;flex-wrap:wrap;gap:6px}.vault-counts span{display:inline-flex;align-items:center;gap:7px;padding:7px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font:500 11px/1.1 var(--font-mono);color:var(--muted)}.vault-counts b{font-family:var(--font);color:var(--ink)}
+.vault-safety-note{display:flex;align-items:flex-start;gap:var(--s3);padding:var(--s4) var(--s5)}.vault-safety-note>svg{width:22px;height:22px;color:var(--accent);flex:none;margin-top:1px}.vault-safety-note strong{display:block}.vault-safety-note p{margin:3px 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+.vault-history{padding:0;overflow:hidden}.vault-history>header{display:flex;align-items:center;gap:9px;padding:14px 16px;border-bottom:1px solid var(--line)}.vault-history>header svg{width:18px;height:18px;color:var(--accent)}.vault-history article{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--s3);padding:12px 16px;border-bottom:1px solid var(--line)}.vault-history article:last-child{border-bottom:0}.vault-history article>div strong,.vault-history article>div span{display:block}.vault-history article>div span{margin-top:2px;color:var(--muted);font-size:var(--t-xs)}.vault-history article>b{font:650 var(--t-sm)/1 var(--font-mono);color:var(--accent)}.vault-history article.consumed{opacity:.48}
+
+/* Root-only system vault confirmation. Destructive full-system actions never
+   fall back to a browser-native alert; the same calm admin language stays on
+   screen while the server keeps the real security boundary. */
+.vault-confirm-backdrop{
+  position:fixed;inset:0;z-index:1200;display:grid;place-items:center;
+  padding:24px;background:color-mix(in srgb,#07120f 55%,transparent);backdrop-filter:blur(7px);
+}
+.vault-confirm-sheet{
+  width:min(560px,100%);padding:26px;display:grid;
+  grid-template-columns:auto minmax(0,1fr);gap:18px;align-items:start;
+  border-color:color-mix(in srgb,var(--accent) 42%,var(--line));
+  box-shadow:0 30px 90px color-mix(in srgb,#000 24%,transparent);
+}
+.vault-confirm-sheet.danger{border-color:color-mix(in srgb,var(--danger) 52%,var(--line))}
+.vault-confirm-seal{width:52px;height:52px;border-radius:17px;display:grid;place-items:center;background:var(--accent-softer);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line))}
+.vault-confirm-sheet.danger .vault-confirm-seal{color:var(--danger);background:color-mix(in srgb,var(--danger-soft) 70%,var(--surface));border-color:color-mix(in srgb,var(--danger) 25%,var(--line))}
+.vault-confirm-seal svg{width:24px;height:24px}
+.vault-confirm-copy{min-width:0}.vault-confirm-copy small{display:block;color:var(--brass);font-size:var(--t-xs);font-weight:680}.vault-confirm-copy h3{margin:5px 0 7px;font-size:22px;letter-spacing:-.02em}.vault-confirm-copy p{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.85}
+.vault-confirm-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:4px}.vault-confirm-actions .btn{width:100%;justify-content:center}

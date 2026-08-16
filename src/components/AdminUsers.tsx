@@ -2,8 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { sortByName } from "../utils/sorting";
 import {
   Activity,
+  ArchiveRestore,
   Building2,
   Check,
+  DatabaseBackup,
+  Download,
+  Eraser,
+  FileCheck2,
   ChevronLeft,
   KeyRound,
   Landmark,
@@ -11,6 +16,7 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  Upload,
   UserCog,
   UsersRound,
 } from "lucide-react";
@@ -36,7 +42,7 @@ import {
   FormSecurity,
 } from "../types";
 
-export type AdminMode = "users" | "permissions" | "scopes" | "audit";
+export type AdminMode = "users" | "permissions" | "scopes" | "audit" | "backup";
 type PageMode = "index" | "create" | "edit";
 interface SafeUser {
   SystemUserId: number;
@@ -53,6 +59,32 @@ interface Props {
   mode: AdminMode;
   onNavigate?: (mode: AdminMode) => void;
   permissions?: number[];
+  rootAdmin?: boolean;
+}
+
+interface BackupPreview {
+  valid: boolean;
+  backupId: string;
+  createdAt: string;
+  storage: string;
+  documentCount: number;
+  collectionCounts: Record<string, number>;
+  sha256: string;
+}
+interface RestorePoint {
+  id: string;
+  createdAt: string;
+  action: string;
+  byUserId: number;
+  documentCount: number;
+  collectionCounts: Record<string, number>;
+  consumedAt?: string;
+}
+interface BackupStatus {
+  rootOnly: boolean;
+  data: { mode: string; real: boolean };
+  restorePoints: RestorePoint[];
+  latest: RestorePoint | null;
 }
 
 /**
@@ -105,6 +137,7 @@ export default function AdminUsers({
   mode,
   onNavigate,
   permissions = [],
+  rootAdmin = false,
 }: Props) {
   const [page, setPage] = useState<PageMode>("index"),
     [error, setError] = useState<string | null>(null),
@@ -115,7 +148,14 @@ export default function AdminUsers({
     [colleges, setColleges] = useState<AdCollege[]>([]),
     [sections, setSections] = useState<AdSection[]>([]),
     [instructors, setInstructors] = useState<any[]>([]),
-    [logs, setLogs] = useState<AuditLogEntry[]>([]);
+    [logs, setLogs] = useState<AuditLogEntry[]>([]),
+    [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null),
+    [backupBusy, setBackupBusy] = useState<"export" | "preview" | "import" | "reset" | "undo" | null>(null),
+    [backupFile, setBackupFile] = useState<File | null>(null),
+    [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null),
+    [resetPhrase, setResetPhrase] = useState(""),
+    [backupMessage, setBackupMessage] = useState<string | null>(null),
+    [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null);
   const [query, setQuery] = useState(""),
     [filterUser, setFilterUser] = useState(0),
     [selectedUserId, setSelectedUserId] = useState<number | null>(null),
@@ -149,6 +189,91 @@ export default function AdminUsers({
     if (!r.ok) throw new Error(d.error || "تعذر تنفيذ العملية");
     return d;
   };
+  const backupRequest = async (url: string, file: File, confirmHeader?: string) => {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": file.name.endsWith(".gz") ? "application/gzip" : "application/octet-stream",
+        ...(confirmHeader ? { "X-Schedule-Confirm": confirmHeader } : {}),
+      },
+      body: file,
+    });
+    const text = await response.text();
+    let data: any = {};
+    if (text) {
+      try { data = JSON.parse(text); }
+      catch { throw new Error(response.ok ? "وصل رد غير متوقع من الخادم" : `تعذر قراءة رد الخادم (${response.status})`); }
+    }
+    if (!response.ok) throw new Error(data.error || "تعذر تنفيذ العملية");
+    return data;
+  };
+  const refreshBackupStatus = async () => {
+    if (!rootAdmin) return;
+    setBackupStatus(await api("/api/system-backup/status"));
+  };
+  const exportFullBackup = async () => {
+    setError(null); setBackupBusy("export");
+    try {
+      const response = await fetch("/api/system-backup/export", { cache: "no-store" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "تعذر تصدير النسخة");
+      }
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") || "";
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const fileName = match?.[1] || `schedule-full-backup_${new Date().toISOString().slice(0, 10)}.json.gz`;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = fileName; document.body.appendChild(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e: any) { setError(e.message); }
+    finally { setBackupBusy(null); }
+  };
+  const previewBackup = async () => {
+    if (!backupFile) { setError("اختر ملف النسخة الاحتياطية أولاً"); return; }
+    setError(null); setBackupBusy("preview"); setBackupPreview(null);
+    try { setBackupPreview(await backupRequest("/api/system-backup/preview", backupFile)); }
+    catch (e: any) { setError(e.message); }
+    finally { setBackupBusy(null); }
+  };
+  const importFullBackup = async (confirmed = false) => {
+    if (!backupFile || !backupPreview) { setError("افحص النسخة أولاً قبل الاستيراد"); return; }
+    if (!confirmed) { setBackupConfirm("import"); return; }
+    setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("import");
+    try {
+      await backupRequest("/api/system-backup/import", backupFile, "FULL-SYSTEM-IMPORT");
+      setBackupFile(null); setBackupPreview(null); await refreshBackupStatus();
+      setBackupMessage("تم استيراد النظام كاملًا والتحقق منه. نقطة التراجع محفوظة تلقائيًا.");
+    } catch (e: any) { setError(e.message); }
+    finally { setBackupBusy(null); }
+  };
+  const resetFullSystem = async (confirmed = false) => {
+    if (resetPhrase !== "تصفير النظام") { setError("اكتب «تصفير النظام» حرفياً للتأكيد"); return; }
+    if (!confirmed) { setBackupConfirm("reset"); return; }
+    setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("reset");
+    try {
+      await api("/api/system-backup/reset", {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Schedule-Confirm": "FULL-SYSTEM-RESET" },
+        body: JSON.stringify({ phrase: resetPhrase }),
+      });
+      setResetPhrase(""); await refreshBackupStatus();
+      setBackupMessage("تم تصفير بيانات العمل. حساب الإدارة الرئيسي ونقطة التراجع ما زالا محفوظين.");
+    } catch (e: any) { setError(e.message); }
+    finally { setBackupBusy(null); }
+  };
+  const undoSystemOperation = async (confirmed = false) => {
+    if (!backupStatus?.latest) { setError("لا توجد نقطة تراجع متاحة"); return; }
+    if (!confirmed) { setBackupConfirm("undo"); return; }
+    setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("undo");
+    try {
+      await api("/api/system-backup/undo", { method: "POST", headers: { "X-Schedule-Confirm": "FULL-SYSTEM-UNDO" } });
+      await refreshBackupStatus();
+      setBackupMessage("تم التراجع الكامل بنجاح، وحُفظت الحالة التي غادرتها كنقطة إعادة آمنة.");
+    } catch (e: any) { setError(e.message); }
+    finally { setBackupBusy(null); }
+  };
+
   const permKey = (p: FormSecurity) =>
       String(p.legacyId ?? `${p.SystemUserId}-${p.FormNameId}`),
     scopeKey = (a: AdCollegeUserAssign, index = 0) =>
@@ -159,6 +284,11 @@ export default function AdminUsers({
   const load = async () => {
     setError(null);
     try {
+      if (mode === "backup") {
+        if (!rootAdmin) throw new Error("هذه الخزنة مخصصة لحساب الإدارة الرئيسي فقط");
+        setBackupStatus(await api("/api/system-backup/status"));
+        return;
+      }
       const base = await Promise.all([
         api(mode === "users" ? "/api/users" : "/api/admin-user-options"),
         api("/api/colleges"),
@@ -424,6 +554,7 @@ export default function AdminUsers({
       ? { value: "scopes", label: "النطاقات", icon: <Building2 /> }
       : null,
     { value: "audit", label: "السجل", icon: <ScrollText /> },
+    rootAdmin ? { value: "backup", label: "النسخة الاحتياطية", icon: <DatabaseBackup /> } : null,
   ].filter(Boolean) as Array<{ value: string; label: string; icon: React.ReactNode }>;
   // One header line for the whole console: the section rail plus whatever the
   // open section can create. Editor pages get the message only — switching
@@ -703,6 +834,122 @@ export default function AdminUsers({
         </Surface>
       </CatalogFormDrawer>
     ) : null;
+
+  if (mode === "backup") {
+    const point = backupStatus?.latest || null;
+    const previewCollections = backupPreview ? Object.entries(backupPreview.collectionCounts).sort((a, b) => b[1] - a[1]) : [];
+    return (
+      <div className="content-stack admin-page system-vault-page">
+        {consoleHead()}
+        <PageTitle eyebrow="إدارة النظام" subtitle="حساب الإدارة الرئيسي فقط">خزنة النظام</PageTitle>
+        {backupMessage ? <Notice type="success">{backupMessage}</Notice> : null}
+        <Surface className="system-vault-hero">
+          <div className="system-vault-seal"><ShieldCheck /></div>
+          <div>
+            <span className="surface-kicker">نسخة سيادية كاملة</span>
+            <h2>كل بيانات النظام الدائمة في ملف واحد</h2>
+            <p>كل سجل دائم في قاعدة النظام يُكتشف ويُضم تلقائيًا: المستخدمون وكلمات المرور المشفّرة، الصلاحيات، الكليات، الأقسام، المقررات، الأساتذة، القاعات، الفصول، الجداول، النسخ الزمنية، المسودات، النشر، الاستبيانات، السجل، الأرشيف والبيانات الوصفية — بما فيها أي مجموعات دائمة تُضاف لاحقًا.</p>
+          </div>
+          <div className="system-vault-state">
+            <span>{backupStatus?.data?.real ? "البيانات الحقيقية" : "وضع محلي"}</span>
+            <strong>{backupStatus?.data?.mode || "—"}</strong>
+          </div>
+        </Surface>
+
+        <div className="system-vault-grid">
+          <Surface className="system-vault-action vault-export">
+            <span className="vault-action-icon"><Download /></span>
+            <div><small>01</small><h3>تصدير كامل</h3><p>ينشئ ملف JSON مضغوطًا مع بصمة SHA-256 وفهرس بعدد السجلات في كل مجموعة.</p></div>
+            <PrimaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => void exportFullBackup()}>
+              <DatabaseBackup /> {backupBusy === "export" ? "أجمع كل البيانات…" : "تصدير النظام كاملًا"}
+            </PrimaryButton>
+          </Surface>
+
+          <Surface className="system-vault-action vault-import">
+            <span className="vault-action-icon"><Upload /></span>
+            <div><small>02</small><h3>استيراد كامل</h3><p>يفحص الملف والبصمة أولًا، ثم يحفظ نقطة تراجع تلقائية قبل استبدال أي سجل.</p></div>
+            <label className="vault-file-picker">
+              <input type="file" accept=".gz,.json,application/gzip,application/json,application/octet-stream" onChange={(event) => { setBackupFile(event.target.files?.[0] || null); setBackupPreview(null); setError(null); }} />
+              <FileCheck2 /><span>{backupFile ? backupFile.name : "اختر ملف النسخة"}</span>
+            </label>
+            <div className="vault-inline-actions">
+              <SecondaryButton type="button" disabled={!backupFile || Boolean(backupBusy)} onClick={() => void previewBackup()}>{backupBusy === "preview" ? "أفحص…" : "فحص النسخة"}</SecondaryButton>
+              <PrimaryButton type="button" disabled={!backupPreview || Boolean(backupBusy)} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أستعيد النظام…" : "استيراد"}</PrimaryButton>
+            </div>
+          </Surface>
+
+          <Surface className="system-vault-action vault-reset">
+            <span className="vault-action-icon"><Eraser /></span>
+            <div><small>03</small><h3>تصفير النظام</h3><p>يمسح بيانات العمل كاملة ويُبقي حساب الإدارة الرئيسي فقط كي لا تفقد باب التراجع.</p></div>
+            <input className="vault-confirm-input" value={resetPhrase} onChange={(event) => setResetPhrase(event.target.value)} placeholder="اكتب: تصفير النظام" autoComplete="off" />
+            <SecondaryButton type="button" disabled={resetPhrase !== "تصفير النظام" || Boolean(backupBusy)} onClick={() => void resetFullSystem()}>
+              <Eraser /> {backupBusy === "reset" ? "أصنع نقطة أمان ثم أصفّر…" : "تصفير"}
+            </SecondaryButton>
+          </Surface>
+
+          <Surface className="system-vault-action vault-undo">
+            <span className="vault-action-icon"><ArchiveRestore /></span>
+            <div><small>04</small><h3>تراجع كامل</h3><p>{point ? `آخر نقطة أمان: ${point.action}` : "لا توجد عملية مدمرة محفوظة للتراجع عنها."}</p></div>
+            {point ? <div className="vault-restore-meta"><strong>{new Date(point.createdAt).toLocaleString("ar-KW")}</strong><span>{point.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div> : null}
+            <PrimaryButton type="button" disabled={!point || Boolean(backupBusy)} onClick={() => void undoSystemOperation()}>
+              <ArchiveRestore /> {backupBusy === "undo" ? "أعيد الحالة…" : "تراجع عن آخر عملية"}
+            </PrimaryButton>
+          </Surface>
+        </div>
+
+        {backupPreview ? (
+          <Surface className="vault-preview-card">
+            <div className="vault-preview-head"><FileCheck2 /><div><strong>النسخة سليمة وجاهزة</strong><span>{new Date(backupPreview.createdAt).toLocaleString("ar-KW")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div></div>
+            <div className="vault-preview-hash"><span>SHA-256</span><code dir="ltr">{backupPreview.sha256}</code></div>
+            <div className="vault-counts">
+              {previewCollections.map(([name, count]) => <span key={name}><b>{count.toLocaleString("ar-KW-u-nu-latn")}</b>{name}</span>)}
+            </div>
+          </Surface>
+        ) : null}
+
+        <Surface className="vault-safety-note">
+          <ShieldCheck /><div><strong>شبكة الأمان تلقائية</strong><p>قبل الاستيراد أو التصفير تُحفظ نسخة داخلية كاملة يمكن الرجوع إليها. يحتفظ النظام بآخر 8 نقاط أمان فقط. جلسات الدخول النشطة لا تدخل ملف التصدير لأنها مفاتيح وصول مؤقتة وليست بيانات أكاديمية دائمة.</p></div>
+        </Surface>
+
+        {backupStatus?.restorePoints?.length ? (
+          <Surface className="vault-history">
+            <header><ArchiveRestore /><strong>نقاط الأمان الأخيرة</strong></header>
+            {backupStatus.restorePoints.slice(0, 6).map(item => (
+              <article key={item.id} className={item.consumedAt ? "consumed" : ""}>
+                <div><strong>{item.action}</strong><span>{new Date(item.createdAt).toLocaleString("ar-KW")}</span></div>
+                <b>{item.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b>
+              </article>
+            ))}
+          </Surface>
+        ) : null}
+
+        {backupConfirm ? (
+          <div className="vault-confirm-backdrop" role="dialog" aria-modal="true" aria-label="تأكيد عملية خزنة النظام" onMouseDown={(event) => { if (event.target === event.currentTarget && !backupBusy) setBackupConfirm(null); }}>
+            <Surface className={`vault-confirm-sheet ${backupConfirm === "reset" ? "danger" : ""}`}>
+              <span className="vault-confirm-seal">{backupConfirm === "reset" ? <Eraser /> : backupConfirm === "undo" ? <ArchiveRestore /> : <ShieldCheck />}</span>
+              <div className="vault-confirm-copy">
+                <small>تأكيد سيادي · حساب الإدارة الرئيسي</small>
+                <h3>{backupConfirm === "import" ? "استبدال النظام بالنسخة المفحوصة؟" : backupConfirm === "reset" ? "تصفير بيانات العمل؟" : "العودة إلى نقطة الأمان؟"}</h3>
+                <p>{backupConfirm === "import"
+                  ? `النسخة مؤرخة ${backupPreview ? new Date(backupPreview.createdAt).toLocaleString("ar-KW") : "—"}. سيُحفظ النظام الحالي كاملًا أولًا، وإذا فشلت أي خطوة يعيده الخادم تلقائيًا.`
+                  : backupConfirm === "reset"
+                    ? "سيُحفظ النظام كاملًا أولًا ثم تُمسح بيانات العمل، مع إبقاء حساب الإدارة الرئيسي وباب التراجع فقط. إذا فشلت العملية يعود النظام تلقائيًا إلى حالته السابقة."
+                    : `سيعود النظام إلى «${backupStatus?.latest?.action || "نقطة الأمان"}»، وسيحفظ الحالة الحالية كنقطة إعادة قبل التغيير.`}</p>
+              </div>
+              <div className="vault-confirm-actions">
+                <SecondaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => setBackupConfirm(null)}>إلغاء</SecondaryButton>
+                <PrimaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => {
+                  if (backupConfirm === "import") void importFullBackup(true);
+                  else if (backupConfirm === "reset") void resetFullSystem(true);
+                  else void undoSystemOperation(true);
+                }}>{backupConfirm === "import" ? "استيراد النسخة" : backupConfirm === "reset" ? "تصفير الآن" : "تنفيذ التراجع"}</PrimaryButton>
+              </div>
+            </Surface>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   if (mode === "users") {
     const filtered = users.filter((u) =>

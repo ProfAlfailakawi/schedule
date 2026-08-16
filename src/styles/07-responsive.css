@@ -778,3 +778,15 @@
     pointer-events:none !important;
   }
 }
+
+@media (max-width:760px){
+  .system-vault-hero{grid-template-columns:auto minmax(0,1fr);padding:18px;gap:14px}.system-vault-hero .system-vault-state{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;text-align:initial;min-width:0}.system-vault-hero .system-vault-state strong{margin:0}
+  .system-vault-seal{width:48px;height:48px;border-radius:15px}.system-vault-grid{grid-template-columns:1fr;gap:12px}.system-vault-action{padding:17px;gap:12px}.vault-inline-actions{grid-template-columns:1fr}.vault-preview-hash{grid-template-columns:1fr;gap:6px}.vault-preview-hash code{font-size:9.5px}.vault-counts{max-height:150px;overflow:auto}.vault-safety-note{padding:15px}
+}
+
+@media screen and (max-width:640px){
+  .vault-confirm-backdrop{padding:14px;place-items:end center}
+  .vault-confirm-sheet{width:100%;grid-template-columns:42px minmax(0,1fr);gap:12px;padding:18px;border-radius:24px 24px 18px 18px}
+  .vault-confirm-seal{width:42px;height:42px;border-radius:14px}.vault-confirm-seal svg{width:20px;height:20px}
+  .vault-confirm-copy h3{font-size:19px}.vault-confirm-actions{grid-template-columns:1fr}
+}
