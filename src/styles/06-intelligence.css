@@ -2966,3 +2966,49 @@ button.twin-delta{width:100%}
 @media(max-width:760px){
   .genesis-arrow{height:34px !important;transform:rotate(-90deg)}
 }
+
+/* Final interaction cleanup from field testing. */
+.twin-score-arrow{
+  width:auto !important;height:auto !important;
+  border:0 !important;border-radius:0 !important;background:transparent !important;
+  box-shadow:none !important;
+}
+.twin-score-arrow svg{width:20px !important;height:20px !important}
+
+/* The comparison divider keeps the two-arrow cue, but no circle/pill around it. */
+.time-travel-divider{box-shadow:none !important}
+.time-travel-divider i{
+  width:auto !important;height:auto !important;
+  border:0 !important;border-radius:0 !important;background:transparent !important;
+  box-shadow:none !important;
+}
+.time-travel-divider i svg{width:22px !important;height:22px !important}
+
+/* Version comparison must read like one long page on touch devices. The stage
+   height is computed from the largest day in React; no nested vertical scroller
+   is left to trap the finger before the final cards. */
+.time-travel-stage{max-height:none !important}
+.time-travel-track{
+  overflow:visible !important;
+  scrollbar-width:none !important;
+}
+.time-travel-track::-webkit-scrollbar{display:none !important}
+.time-travel-days>section{overflow:visible !important}
+
+/* Beginning-of-term arrows are a cue, not a control: no surrounding circle. */
+.genesis-arrow{
+  width:auto !important;height:auto !important;
+  border:0 !important;border-radius:0 !important;background:transparent !important;
+  box-shadow:none !important;
+}
+.genesis-arrow svg{width:20px !important;height:20px !important}
+@media(max-width:760px){
+  .genesis-arrow{height:24px !important}
+}
+
+.genesis-publish-issues{
+  margin:8px 0 0;padding:8px 22px 8px 8px;border:1px solid color-mix(in srgb,var(--warning) 28%,var(--line));
+  border-radius:10px;background:color-mix(in srgb,var(--warning) 7%,var(--surface));
+  color:var(--ink-2);font-size:11px;line-height:1.65;
+}
+.genesis-publish-issues li+li{margin-top:3px}

@@ -252,7 +252,8 @@ const smartMessage = (value: any) => {
     return "تعذر الاتصال بالخادم. تحقق من الإنترنت ثم أعد المحاولة؛ لم يتم حفظ أي تغيير.";
   if (/API endpoint not found/i.test(text))
     return "جزء من التحديث لم يُرفع على الخادم بعد. ارفع ملفات الحزمة الجديدة كاملة مع الحفاظ على المسارات.";
-  return text;
+  const issues = Array.isArray(value?.issues) ? value.issues.filter(Boolean).slice(0, 4) : [];
+  return issues.length ? `${text}: ${issues.join(" · ")}` : text;
 };
 
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
@@ -975,12 +976,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setError("النشر متوقف أثناء عدم الاتصال لحماية الجدول.");
       return;
     }
-    if (
-      !confirm(
-        `نشر «${d.name}» على الجدول الفعلي؟\nسيتم إنشاء نسخة زمنية تلقائياً قبل التنفيذ ويمكن التراجع عنها.`,
-      )
-    )
-      return;
+    // One deliberate click publishes. The server always captures a rollback
+    // point first, so a browser-native confirmation dialog adds friction but
+    // no extra safety — and on iOS it can be suppressed permanently.
     setBusy(true);
     try {
       await fetchJson(`/api/intelligence/drafts/${d.id}/publish`, {
@@ -999,12 +997,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }
   };
   const restoreVersion = async (v: any) => {
-    if (
-      !confirm(
-        `استرجاع النسخة «${v.label}»؟\nسيُحفظ الجدول الحالي كنسخة جديدة أولاً.`,
-      )
-    )
-      return;
+    // Restore is itself versioned before it runs, so it is reversible without
+    // relying on a native confirm dialog.
     setBusy(true);
     try {
       await fetchJson(`/api/intelligence/versions/${v.id}/restore`, {
@@ -1399,6 +1393,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const activeInsight = insightScenes.find((item) => item.value === insightScene) || null;
   const activeInsightKey = activeInsight?.value || "";
+  const versionCanvasHeight = useMemo(() => {
+    if (!versionCompare) return 420;
+    const all: FSchedule[] = [
+      ...(Array.isArray(versionCompare?.from?.rows) ? versionCompare.from.rows : []),
+      ...(Array.isArray(versionCompare?.to?.rows) ? versionCompare.to.rows : []),
+    ];
+    const maxRows = Math.max(1, ...Object.keys(dayLabels).map(day => all.filter(row => Boolean((row as any)[day])).length));
+    // Page-scroll instead of a hidden inner scroll: on phones the reader can
+    // simply continue down to every card in the week.
+    return Math.max(420, 88 + maxRows * 82);
+  }, [versionCompare]);
   const moveInsightFocus = (
     event: React.KeyboardEvent<HTMLButtonElement>,
     index: number,
@@ -2665,8 +2670,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ? [
                     { value: "board", label: "لوحة التجربة", detail: "حرّك الوقت وشاهد النتيجة لحظياً", icon: <CalendarClock />,
                       metric: String(scenarioEval?.scenario?.score ?? overview?.score ?? "") },
-                    { value: "editor", label: "السيناريو", detail: "عدّل الوقت والقاعة والأيام مباشرة", icon: <SlidersHorizontal />,
-                      metric: String(changedRows.length) },
                     { value: "ledger", label: "سجل التغييرات", detail: "ما غيّرته، موعداً موعداً", icon: <FileClock />,
                       metric: String(changedRows.length) },
                   ]
@@ -3768,7 +3771,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span>{versionCompare.to.label}</span>
                     </div>
                   </div>
-                  <div className="time-travel-stage">
+                  <div className="time-travel-stage" style={{ height: `${versionCanvasHeight}px` }}>
                     <VersionCanvas
                       rows={versionCompare.from.rows || []}
                       label="قبل"

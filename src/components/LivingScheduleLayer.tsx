@@ -194,7 +194,10 @@ export default function LivingScheduleLayer({
   const json = async (url: string, options?: RequestInit) => {
     const r = await fetch(url, options),
       d = await r.json();
-    if (!r.ok) throw new Error(d.error || "تعذر تنفيذ الطلب");
+    if (!r.ok) {
+      const issues = Array.isArray(d?.issues) ? d.issues.filter(Boolean).slice(0, 5) : [];
+      throw new Error(issues.length ? `${d.error || "تعذر تنفيذ الطلب"}: ${issues.join(" · ")}` : (d.error || "تعذر تنفيذ الطلب"));
+    }
     return d;
   };
   const loadLiving = async () => {
@@ -357,7 +360,9 @@ export default function LivingScheduleLayer({
   const publishGenesisDraft = async () => {
     const draftId = String(genesis?.draft?.id || "").trim();
     if (!draftId) return;
-    if (!window.confirm("نشر هذه المسودة على الجدول الرسمي الآن؟ سيتم حفظ نقطة تراجع تلقائياً قبل النشر.")) return;
+    // The publish endpoint captures a safety version before changing the live
+    // timetable. Keep this a single in-app action instead of a native Safari
+    // dialog that can be suppressed by the browser.
     setBusy(true);
     setError("");
     try {
@@ -370,7 +375,7 @@ export default function LivingScheduleLayer({
       const undoPoint = Array.isArray(points) ? points[0] : null;
       setGenesisUndoPoint(undoPoint);
       setGenesis((current: any) => current ? { ...current, published: true, publication: result?.publication } : current);
-      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${result.count} موعد` : ""}.`);
+      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${result.count} موعد` : ""}${result?.adjusted ? ` · عالج النظام ${result.adjusted} موعداً زمنياً بأمان قبل النشر` : ""}.`);
       await loadLiving();
       onRefresh?.();
     } catch (e: any) {
@@ -381,7 +386,8 @@ export default function LivingScheduleLayer({
   };
   const undoGenesisPublish = async () => {
     if (!genesisUndoPoint?.id) return;
-    if (!window.confirm(`التراجع عن آخر نشر والعودة إلى: ${genesisUndoPoint.label}؟`)) return;
+    // Undo also snapshots the current state before restoring, so it is itself
+    // reversible and does not need a browser-native confirmation modal.
     setBusy(true);
     setError("");
     try {
@@ -454,12 +460,8 @@ export default function LivingScheduleLayer({
     }
   };
   const undoDecision = async (item: any) => {
-    if (
-      !window.confirm(
-        `العودة إلى: ${item.label}؟\nسيتم حفظ نقطة أمان جديدة قبل الاسترجاع.`,
-      )
-    )
-      return;
+    // Restoring a point creates another safety snapshot first, so undo remains
+    // reversible without a browser-native confirmation dialog.
     setBusy(true);
     setError("");
     try {
@@ -882,6 +884,11 @@ export default function LivingScheduleLayer({
                             {genesis.reviewRequired ? ` · ${genesis.reviewRequired} ملاحظة للمراجعة` : ""}
                           </p>
                           <small>{genesis.guardrail}</small>
+                          {Array.isArray(genesis.issues) && genesis.issues.length ? (
+                            <ul className="genesis-publish-issues">
+                              {genesis.issues.slice(0, 6).map((issue: string, index: number) => <li key={`${index}-${issue}`}>{issue}</li>)}
+                            </ul>
+                          ) : null}
                         </div>
                       </div>
                       {Array.isArray(genesis.previewRows) && genesis.previewRows.length ? (

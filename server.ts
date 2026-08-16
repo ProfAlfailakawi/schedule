@@ -520,8 +520,9 @@ function safeDraftRows(input: unknown, collegeId: number, sectionId: number, ter
   }));
 }
 
-async function validateSmartRows(rows: any[], collegeId: number, sectionId: number) {
+async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean } = {}) {
   const termId = Number(rows[0]?.AdTermId || 0);
+  const checkConflicts = options.checkConflicts !== false;
   const [courses, instructors, currentSchedules] = await Promise.all([
     Repository.getCourses(), Repository.getInstructors(), Repository.getSchedulesByScope({ termId })
   ]);
@@ -539,7 +540,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     if (activeDays(row).length === 0) errors.push(`السطر ${index + 1}: لم يتم تحديد يوم للمحاضرة`);
     if (course) row.AdCourseName = course.CourseName;
   });
-  if (!errors.length && rows.length) {
+  if (checkConflicts && !errors.length && rows.length) {
     const external = currentSchedules.filter(item => !(item.AdCollegeId === collegeId && item.AdSectionId === sectionId));
     const universe = [...external, ...rows];
     const conflicts = findConflicts(rows as any, universe as any).filter((item:any) => item.severity === "high" || item.type === "duplicate");
@@ -1632,7 +1633,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     String(row.AdRoomHall||"").trim().toLocaleLowerCase()===roomHall.toLocaleLowerCase()&&rowOccupiesWindow(row,day,start,end));
   const opportunities:any[]=[];
   for(const roomHistory of roomGroups.values()){
-    const owner=dominantHistoricalHallOwner(roomHistory);if(!owner||owner.collegeId===collegeId)continue;
+    const owner=dominantHistoricalHallOwner(roomHistory);if(!owner||(owner.collegeId===collegeId&&owner.sectionId===sectionId))continue;
     const ownerSection=sections.find(section=>Number(section.AdSectionId)===owner.sectionId);
     const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===owner.collegeId);
     if(!ownerSection||!ownerCollege)continue;
@@ -2396,6 +2397,7 @@ app.post("/api/hall-barter/requests", requirePermission(7), async (req: Authenti
   const board=await buildHallBarterBoard(req,collegeId,sectionId,termId);
   const opportunity=board.opportunities.find((item:any)=>item.id===opportunityId);
   if(!opportunity){res.status(409).json({error:"هذه النافذة لم تعد متاحة كما كانت. حدّث البورصة واختر نافذة أخرى."});return;}
+  if(Number(opportunity.ownerCollegeId)===collegeId&&Number(opportunity.ownerSectionId)===sectionId){res.status(409).json({error:"لا يمكن للقسم استعارة قاعة من نفسه."});return;}
   const request=await Repository.createHallBarterRequest({
     AdTermId:termId,roomCode:opportunity.roomCode,roomHall:opportunity.roomHall,day:opportunity.day,
     startTime:opportunity.startTime,endTime:opportunity.endTime,
@@ -2416,6 +2418,9 @@ app.post("/api/hall-barter/requests/:id/respond", requirePermission(7), async (r
   const decision=String(req.body?.decision||"");
   if(decision!=="approve"&&decision!=="reject"){res.status(400).json({error:"حدد الموافقة أو الرفض"});return;}
   if(decision==="approve"){
+    if(Number(request.requesterCollegeId)===Number(request.ownerCollegeId)&&Number(request.requesterSectionId)===Number(request.ownerSectionId)){
+      res.status(409).json({error:"لا يمكن اعتماد استعارة لأن القسم الطالب هو نفسه القسم المضيف."});return;
+    }
     const [requesterCollege,ownerCollege]=await Promise.all([
       Repository.getCollegeById(Number(request.requesterCollegeId)),
       Repository.getCollegeById(Number(request.ownerCollegeId)),
@@ -3391,7 +3396,7 @@ app.post("/api/intelligence/autopilot", requirePermission(7), requirePowerAdmin,
 app.post("/api/intelligence/evaluate", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const errors=await validateSmartRows(rows,collegeId,sectionId);
+  const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const errors=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false});
   if(errors.length){res.status(400).json({error:"المسودة تحتوي بيانات تحتاج مراجعة",issues:errors});return;}
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);
   const {rows:baseline,universe}=scheduleData;
@@ -3608,14 +3613,43 @@ app.get("/api/intelligence/drafts", requirePermission(7), requirePowerAdmin, asy
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} res.json(await Repository.getScheduleDrafts(collegeId,sectionId,termId));
 });
 app.post("/api/intelligence/drafts", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const issues=await validateSmartRows(rows,collegeId,sectionId); if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة قبل معالجة البيانات",issues});return;} const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,name:String(req.body?.name||"سيناريو جديد").slice(0,100),source:["what-if","auto","import","manual"].includes(req.body?.source)?req.body.source:"what-if",rows}); res.status(201).json(draft);
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}); if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة قبل معالجة البيانات",issues});return;} const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,name:String(req.body?.name||"سيناريو جديد").slice(0,100),source:["what-if","auto","import","manual"].includes(req.body?.source)?req.body.source:"what-if",rows}); res.status(201).json(draft);
 });
 app.put("/api/intelligence/drafts/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId);if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات تحتاج مراجعة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
+  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
 });
 app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="publish"){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
-  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const issues=await validateSmartRows(draft.rows,draft.AdCollegeId,draft.AdSectionId); if(issues.length){res.status(400).json({error:"لا يمكن نشر المسودة قبل معالجة البيانات",issues});return;} await captureScopeVersion(req,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish"); const rows=await Repository.replaceScheduleScope(draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,draft.rows); await Repository.updateScheduleDraft(draft.id,{status:"published",rows,publishedAt:new Date().toISOString()}); const publication=await Repository.upsertSchedulePublication({AdCollegeId:draft.AdCollegeId,AdSectionId:draft.AdSectionId,AdTermId:draft.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:draft.id}); res.json({success:true,count:rows.length,publication});
+  const draft=await Repository.getScheduleDraftById(String(req.params.id));
+  if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
+  if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+
+  let publishRows=safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);
+  let issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId);
+  let adjusted=0;
+  /* Beginning-of-term drafts may only be blocked because the copied placement
+     collides with the new term. Repair that case before rejecting: the existing
+     optimiser is safety-first and moves time only — never course, teacher, day
+     or room. This also repairs genesis drafts created before this release. */
+  if(issues.length&&/^بداية الفصل/.test(String(draft.name||""))){
+    const termRows=await Repository.getSchedulesByScope({termId:draft.AdTermId});
+    const external=termRows.filter(row=>!(Number(row.AdCollegeId)===Number(draft.AdCollegeId)&&Number(row.AdSectionId)===Number(draft.AdSectionId)));
+    const original=new Map(publishRows.map(row=>[Number(row.id),`${row.fstarttime}|${row.fendtime}`]));
+    for(let pass=0;pass<4;pass++){
+      const proposal=autoScheduleProposal(publishRows,[...external,...publishRows]);
+      publishRows=proposal.rows;
+      if(!proposal.changed)break;
+    }
+    adjusted=publishRows.filter(row=>original.get(Number(row.id))!==`${row.fstarttime}|${row.fendtime}`).length;
+    issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId);
+  }
+  if(issues.length){res.status(400).json({error:"لا يمكن نشر المسودة قبل معالجة البيانات",issues});return;}
+
+  await captureScopeVersion(req,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish");
+  const rows=await Repository.replaceScheduleScope(draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,publishRows);
+  await Repository.updateScheduleDraft(draft.id,{status:"published",rows,publishedAt:new Date().toISOString()});
+  const publication=await Repository.upsertSchedulePublication({AdCollegeId:draft.AdCollegeId,AdSectionId:draft.AdSectionId,AdTermId:draft.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:draft.id});
+  res.json({success:true,count:rows.length,publication,adjusted});
 });
 
 app.get("/api/intelligence/versions", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -3923,18 +3957,39 @@ app.post("/api/intelligence/genesis", requirePermission(7), requirePowerAdmin, a
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),targetTermId=Number(req.body?.targetTermId||req.body?.termId||0),sourceTermId=Number(req.body?.sourceTermId||0); if(!collegeId||!sectionId||!targetTermId||!sourceTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(sourceTermId===targetTermId){res.status(400).json({error:"اختر فصلاً سابقاً مختلفاً عن الفصل الجديد"});return;}
   const [source,targetUniverse,courses,instructors,terms,constraints]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId,termId:sourceTermId}),Repository.getSchedulesByScope({termId:targetTermId}),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms(),Repository.getScheduleConstraints(collegeId,sectionId,targetTermId)]); if(!source.length){res.status(400).json({error:"الفصل السابق لا يحتوي جدولاً لهذا القسم"});return;}
   const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId).map(c=>c.AdCourseId));
+  const validInstructorIds=new Set(instructors.map(i=>Number(i.AdInstructorId)));
+  const sourceByCourse=new Map<number,FSchedule[]>();
+  source.forEach(row=>{const list=sourceByCourse.get(Number(row.AdCourseId))||[];list.push(row);sourceByCourse.set(Number(row.AdCourseId),list);});
   const candidateRows=source
     .filter(r=>validCourseIds.has(r.AdCourseId))
-    .map((r,index)=>({...r,id:-(index+1),AdTermId:targetTermId,SCode:asciiDigits(r.SCode).trim()}));
+    .map((r,index)=>{
+      const siblings=sourceByCourse.get(Number(r.AdCourseId))||[];
+      const instructorId=validInstructorIds.has(Number(r.AdInstructorId))
+        ? Number(r.AdInstructorId)
+        : Number(siblings.find(x=>validInstructorIds.has(Number(x.AdInstructorId)))?.AdInstructorId||0);
+      const roomSibling=siblings.find(x=>String(x.AdRoomCode||"").trim()&&String(x.AdRoomHall||"").trim());
+      const sectionCode=asciiDigits(r.SCode).replace(/\D/g,"")||String(index+1);
+      return{...r,id:-(index+1),AdTermId:targetTermId,SCode:sectionCode,AdInstructorId:instructorId,
+        AdRoomCode:String(r.AdRoomCode||"").trim()||String(roomSibling?.AdRoomCode||"").trim(),
+        AdRoomHall:String(r.AdRoomHall||"").trim()||String(roomSibling?.AdRoomHall||"").trim()};
+    });
   if(!candidateRows.length){res.status(400).json({error:"لم أجد مواعيد قابلة للنسخ لهذا القسم في الفصل السابق"});return;}
-  /* Genesis creates an isolated draft, not a publication. Legacy data can carry
-     a retired room, an unavailable teacher, or a conflict that is exactly what
-     the coordinator must review in the new term. Blocking the copy at that
-     point made a safe draft impossible to create. Keep the issues attached to
-     the result; the existing publication gate still refuses unresolved rows. */
-  const rows=safeDraftRows(candidateRows,collegeId,sectionId,targetTermId);
+  /* A beginning-of-term draft should be reviewable and, when the only problem
+     is a target-term collision, publishable without a dead end. Normalise old
+     identifiers and then run the safety-first optimiser against the target
+     term. It preserves course, instructor, days and room; only safe time shifts
+     are allowed. */
+  const initialRows=safeDraftRows(candidateRows,collegeId,sectionId,targetTermId);
+  const external=targetUniverse.filter(r=>!(Number(r.AdCollegeId)===collegeId&&Number(r.AdSectionId)===sectionId));
+  let rows=initialRows;
+  for(let pass=0;pass<4;pass++){
+    const proposal=autoScheduleProposal(rows,[...external,...rows]);
+    rows=proposal.rows;
+    if(!proposal.changed)break;
+  }
+  const adjustedRows=rows.filter((row,index)=>row.fstarttime!==initialRows[index]?.fstarttime||row.fendtime!==initialRows[index]?.fendtime).length;
   const issues=await validateSmartRows(rows,collegeId,sectionId);
-  const universe=targetUniverse.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)).concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
+  const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
   const courseById=new Map(courses.map(course=>[Number(course.AdCourseId),course]));
   const instructorById=new Map(instructors.map(instructor=>[Number(instructor.AdInstructorId),instructor]));
   const previewRows=draft.rows.map((row,index)=>({
@@ -3943,7 +3998,7 @@ app.post("/api/intelligence/genesis", requirePermission(7), requirePowerAdmin, a
     days:SCHEDULE_DAY_KEYS.map((key,i)=>row[key]?DAY_LABELS[i]:null).filter(Boolean).join(" · "),start:row.fstarttime,end:row.fendtime,
     building:row.AdRoomCode||"",hall:row.AdRoomHall||"",
   }));
-  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length},reviewRequired:issues.length,issues:issues.slice(0,24),previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
+  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {

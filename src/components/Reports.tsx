@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, Clock3, LayoutList,
   Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
@@ -86,8 +87,8 @@ const GRID_END = SCHEDULE_DAY_END;
 const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
-const COMPREHENSIVE_FIRST_PAGE_ROWS = 22;
-const COMPREHENSIVE_NEXT_PAGE_ROWS = 23;
+const COMPREHENSIVE_FIRST_PAGE_ROWS = 15;
+const COMPREHENSIVE_NEXT_PAGE_ROWS = 17;
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const duration = (row: FSchedule) => Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
 /**
@@ -442,10 +443,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     clear: () => set(day.key, false)
   }));
 
-  const collegeName = collegeById.get(filters.collegeId)?.AdCollegeName || "";
+  const resultCollegeIds = [...new Set(results.map(row => Number(row.AdCollegeId || 0)).filter(Boolean))];
+  const resultSectionIds = [...new Set(results.map(row => Number(row.AdSectionId || 0)).filter(Boolean))];
+  const resolvedCollegeId = filters.collegeId || (resultCollegeIds.length === 1 ? resultCollegeIds[0] : 0);
+  const resolvedSectionId = filters.sectionId || (resultSectionIds.length === 1 ? resultSectionIds[0] : 0);
+  const collegeName = collegeById.get(resolvedCollegeId)?.AdCollegeName || (resultCollegeIds.length > 1 ? "عدة كليات" : "");
   const termName = termById.get(filters.termId)?.AdTermName || "";
-  const section = sectionById.get(filters.sectionId);
-  const sectionName = section?.AdSectionName || "";
+  const section = sectionById.get(resolvedSectionId);
+  const sectionName = section?.AdSectionName || (resultSectionIds.length > 1 ? "عدة أقسام" : "");
   const sectionCode = section?.AdSectionCode || "";
   const scopeLine = [
     termName,
@@ -634,13 +639,31 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     return params.toString();
   };
   const print = (kind: Exclude<PrintKind, null>) => {
-    setPrintKind(kind);
-    requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
+    /* Safari/iOS only opens the print sheet reliably while the call is still
+       inside the original tap/click. Rendering the portal through two animation
+       frames loses that user gesture. Flush the sheet synchronously, force one
+       layout read, then print immediately. Named @page rules are also unreliable
+       in Safari, so inject the active orientation as the unnamed @page for this
+       print only. */
+    const wide = ["list", "week", "instructor", "room", "matrix", "balance", "comprehensive"].includes(kind);
+    document.getElementById("schedule-print-page-size")?.remove();
+    const pageStyle = document.createElement("style");
+    pageStyle.id = "schedule-print-page-size";
+    pageStyle.textContent = wide
+      ? "@page{size:A4 landscape;margin:12mm 10mm 18mm}"
+      : "@page{size:A4 portrait;margin:14mm 12mm 18mm}";
+    document.head.appendChild(pageStyle);
+    flushSync(() => setPrintKind(kind));
+    void document.body.offsetHeight;
+    window.print();
   };
   const printCurrent = () => print(lens);
 
   useEffect(() => {
-    const clearPrintedSheet = () => setPrintKind(null);
+    const clearPrintedSheet = () => {
+      setPrintKind(null);
+      document.getElementById("schedule-print-page-size")?.remove();
+    };
     window.addEventListener("afterprint", clearPrintedSheet);
     return () => window.removeEventListener("afterprint", clearPrintedSheet);
   }, []);
@@ -1540,7 +1563,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   };
   const courseOf = (row: FSchedule) => courseById.get(row.AdCourseId);
   const instructorOf = (row: FSchedule) => instructorById.get(row.AdInstructorId);
-  const issueDate = new Date().toLocaleDateString("ar-KW-u-nu-latn");
+  const issued = new Date();
+  const issueDate = `${String(issued.getDate()).padStart(2, "0")}/${String(issued.getMonth() + 1).padStart(2, "0")}/${issued.getFullYear()}`;
   const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).join(",") || "—";
 
   if (kind === "comprehensive") {
@@ -1572,19 +1596,19 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
 
                 <table className="print-comprehensive-table print-comprehensive-modern-table">
                   <colgroup>
-                    <col style={{ width: "3.5%" }} />
-                    <col style={{ width: "7%" }} />
-                    <col style={{ width: "5%" }} />
-                    <col style={{ width: "21.5%" }} />
-                    <col style={{ width: "4%" }} />
-                    <col style={{ width: "4%" }} />
-                    <col style={{ width: "4%" }} />
-                    <col style={{ width: "10.5%" }} />
-                    <col style={{ width: "6.5%" }} />
-                    <col style={{ width: "4.5%" }} />
-                    <col style={{ width: "6.5%" }} />
-                    <col style={{ width: "13.5%" }} />
-                    <col style={{ width: "9%" }} />
+                    <col style={{ width: "10mm" }} />
+                    <col style={{ width: "19mm" }} />
+                    <col style={{ width: "12mm" }} />
+                    <col style={{ width: "49mm" }} />
+                    <col style={{ width: "9mm" }} />
+                    <col style={{ width: "9mm" }} />
+                    <col style={{ width: "11mm" }} />
+                    <col style={{ width: "25mm" }} />
+                    <col style={{ width: "18mm" }} />
+                    <col style={{ width: "12mm" }} />
+                    <col style={{ width: "15mm" }} />
+                    <col style={{ width: "39mm" }} />
+                    <col style={{ width: "28mm" }} />
                   </colgroup>
                   <thead>
                     <tr>
@@ -1659,7 +1683,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "list") {
-    const pages = paginateItems(rows, 18);
+    const pages = paginateItems(rows, 16);
     return (
       <div className="print-report print-wide print-query-report print-query-list-report">
         {pages.length ? pages.map((pageRows, pageIndex) => (
@@ -1673,7 +1697,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             <div className="print-query-list">
               {pageRows.map((row, index) => {
                 const course = courseOf(row), instructor = instructorOf(row);
-                const serial = pageIndex * 18 + index + 1;
+                const serial = pageIndex * 16 + index + 1;
                 return (
                   <article key={row.id}>
                     <span className="print-list-index">{String(serial).padStart(2, "0")}</span>
@@ -1700,7 +1724,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
       ...day,
       rows: rows.filter(row => Boolean((row as any)[day.flag])).sort((a, b) => a.fstarttime.localeCompare(b.fstarttime)),
     }));
-    const pageCount = Math.max(1, ...dayBuckets.map(day => Math.ceil(day.rows.length / 5)));
+    const pageCount = Math.max(1, ...dayBuckets.map(day => Math.ceil(day.rows.length / 4)));
     return (
       <div className="print-report print-wide print-query-report print-query-week-report">
         {Array.from({ length: pageCount }, (_, pageIndex) => (
@@ -1708,7 +1732,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <div className="print-query-week">
               {dayBuckets.map(day => {
-                const dayRows = day.rows.slice(pageIndex * 5, pageIndex * 5 + 5);
+                const dayRows = day.rows.slice(pageIndex * 4, pageIndex * 4 + 4);
                 return (
                   <section key={day.key}>
                     <h2>{day.label}<b>{day.rows.length}</b></h2>
@@ -1734,7 +1758,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
 
   if (kind === "instructor") {
     const groups = groupRows(rows, row => instructorOf(row)?.AdInstructorName || "بدون أستاذ");
-    const pages = groups.flatMap(group => paginateItems(group.rows, 13).map(groupRows => ({ group, rows: groupRows })));
+    const pages = groups.flatMap(group => paginateItems(group.rows, 10).map(groupRows => ({ group, rows: groupRows })));
     return (
       <div className="print-report print-wide print-query-report print-query-groups-report">
         {pages.length ? pages.map((page, pageIndex) => {
@@ -1778,7 +1802,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
       const bucket = resultByRoom.get(key);
       if (bucket) bucket.push(row); else resultByRoom.set(key, [row]);
     });
-    const roomPages = roomLoad?.rooms?.length ? paginateItems(roomLoad.rooms, 10) : [];
+    const roomPages = roomLoad?.rooms?.length ? paginateItems(roomLoad.rooms, 8) : [];
     const freeRooms = roomDay !== "week" && roomLoad?.rooms?.length ? roomLoad.rooms.filter((room: any) => room.windows.length) : [];
     const freePages = paginateItems(freeRooms, 12);
     const directory = [...resultByRoom.entries()].sort(([a], [b]) => byArabic(a, b));
@@ -1846,7 +1870,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "matrix") {
-    const pages = matrix?.lines?.length ? paginateItems(matrix.lines, 8) : [];
+    const pages = matrix?.lines?.length ? paginateItems(matrix.lines, 4) : [];
     return (
       <div className="print-report print-wide print-query-report print-query-matrix-report">
         {pages.length ? pages.map((pageLines: any[], pageIndex) => (
@@ -1871,7 +1895,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   if (kind === "time") {
     const groups = groupRows(rows, row => row.fstarttime).sort((a, b) => a.key.localeCompare(b.key));
     const maxCount = Math.max(1, ...groups.map(group => group.rows.length));
-    const pages = paginateItems(groups, 12);
+    const pages = paginateItems(groups, 10);
     return (
       <div className="print-report print-upright print-query-report print-time-report">
         {pages.length ? pages.map((pageGroups, pageIndex) => (
@@ -1894,7 +1918,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "fairness") {
-    const pages = fairness?.rows?.length ? paginateItems(fairness.rows, 16) : [];
+    const pages = fairness?.rows?.length ? paginateItems(fairness.rows, 12) : [];
     return (
       <div className="print-report print-upright print-query-report print-fairness-new">
         {pages.length ? pages.map((pageRows: any[], pageIndex) => (
@@ -1921,7 +1945,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "balance") {
-    const pages = balance?.departments?.length ? paginateItems(balance.departments, 14) : [];
+    const pages = balance?.departments?.length ? paginateItems(balance.departments, 12) : [];
     return (
       <div className="print-report print-wide print-query-report print-balance-report">
         {pages.length ? pages.map((pageDepartments: any[], pageIndex) => (
