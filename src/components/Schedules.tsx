@@ -174,6 +174,60 @@ const undoClock = (at: number) =>
  */
 const SLOT_H = 46;
 
+const normalizeArabicIndicDigits = (value: string) =>
+  value.replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+
+const normalizeRoomToken = (value: unknown) =>
+  normalizeArabicIndicDigits(String(value || ""))
+    .replace(/[‎‏؜]/g, "")
+    .replace(/\s+/g, "")
+    .replace(/[\/]/g, "")
+    .toUpperCase();
+
+const compactRoomLabel = (value: unknown) =>
+  normalizeArabicIndicDigits(String(value || ""))
+    .replace(/[‎‏؜]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const prettyBuildingLabel = (value: unknown) => {
+  const token = normalizeRoomToken(value);
+  if (!token) return "";
+  const matched = token.match(/^([A-Z]+)(\d.*)$/);
+  return matched ? `${matched[1]} ${matched[2]}` : compactRoomLabel(value) || token;
+};
+
+const prettyHallLabel = (value: unknown) => {
+  const token = normalizeRoomToken(value);
+  if (!token) return "";
+  const matched = token.match(/^([A-Z]+)(\d.*)$/);
+  return matched ? `${matched[1]}${matched[2]}` : compactRoomLabel(value) || token;
+};
+
+const roomIdentity = (buildingRaw: unknown, hallRaw: unknown) => {
+  const buildingKey = normalizeRoomToken(buildingRaw);
+  const hallKey = normalizeRoomToken(hallRaw);
+  const building = prettyBuildingLabel(buildingRaw);
+  const hall = prettyHallLabel(hallRaw);
+  return {
+    buildingKey,
+    hallKey,
+    key: `${buildingKey}|${hallKey}`,
+    building,
+    hall,
+    label: [building, hall].filter(Boolean).join("/"),
+  };
+};
+
+const sameRoom = (
+  left: { AdRoomCode?: unknown; AdRoomHall?: unknown },
+  right: { AdRoomCode?: unknown; AdRoomHall?: unknown },
+) => {
+  const a = roomIdentity(left.AdRoomCode, left.AdRoomHall);
+  const b = roomIdentity(right.AdRoomCode, right.AdRoomHall);
+  return Boolean(a.buildingKey || a.hallKey) && a.key === b.key;
+};
+
 /**
  * The detail card, painted on the window rather than inside the grid.
  *
@@ -345,6 +399,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [moveTraces, setMoveTraces] = useState<Array<{ key: string; dayKey: DayKey; top: number; height: number; label: string }>>([]),
     /* Which day the rooms matrix is reading, and which rooms are pinned. */
     [matrixDay, setMatrixDay] = useState<DayKey | "week">("week"),
+    [matrixBuildings, setMatrixBuildings] = useState<Set<string>>(new Set()),
     [matrixRooms, setMatrixRooms] = useState<Set<string>>(new Set()),
     [viewMode, setViewMode] = useState(
       isPhoneDevice() ? "list" : savedPrefs.viewMode === "week" ? "week" : savedPrefs.viewMode === "rooms" ? "rooms" : "list",
@@ -638,9 +693,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const lensActive = Boolean(lens.instructorId || lens.building || lens.rooms.length || (lens.from && lens.to));
   const lensMatches = (row: FSchedule) => {
     if (!lensActive) return true;
+    const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
     if (lens.instructorId && Number(row.AdInstructorId) !== lens.instructorId) return false;
-    if (lens.building && String(row.AdRoomCode || "") !== lens.building) return false;
-    if (lens.rooms.length && !lens.rooms.includes(`${String(row.AdRoomCode || "")}|${String(row.AdRoomHall || "")}`)) return false;
+    if (lens.building && room.buildingKey !== normalizeRoomToken(lens.building)) return false;
+    if (lens.rooms.length && !lens.rooms.includes(room.key)) return false;
     if (lens.from && lens.to) {
       // Any overlap with the chosen window counts, not only an exact match.
       if (!(mins(row.fstarttime) < mins(lens.to) && mins(row.fendtime) > mins(lens.from))) return false;
@@ -658,26 +714,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * instead of leaving an empty box and a guess.
    */
   const estate = useMemo(() => {
-    const map = new Map<string, Set<string>>();
+    const map = new Map<string, { label: string; halls: Map<string, string> }>();
     rows.forEach(row => {
-      const code = String(row.AdRoomCode || "").trim();
-      const hall = String(row.AdRoomHall || "").trim();
-      if (!code || !hall) return;
-      if (!map.has(code)) map.set(code, new Set());
-      map.get(code)!.add(hall);
+      const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
+      if (!room.buildingKey || !room.hallKey) return;
+      if (!map.has(room.buildingKey)) map.set(room.buildingKey, { label: room.building, halls: new Map() });
+      map.get(room.buildingKey)!.halls.set(room.hallKey, room.hall);
     });
     return map;
   }, [rows]);
-  const buildingOptions = useMemo(() => [...estate.keys()].sort(byArabic), [estate]);
+  const buildingOptions = useMemo(() => [...estate.values()].map(item => item.label).sort(byArabic), [estate]);
   const hallOptions = useMemo(() => {
-    const code = String(form.AdRoomCode || "").trim();
+    const code = normalizeRoomToken(form.AdRoomCode);
     if (!code) return [] as string[];
-    return [...(estate.get(code) || [])].sort(byArabic);
+    return [...(estate.get(code)?.halls.values() || [])].sort(byArabic);
   }, [estate, form.AdRoomCode]);
   /* The same reading, asked about any building rather than the form's — the
      quick card names its own building and needs the halls that go with it. */
   const hallsOf = useCallback(
-    (building: string) => [...(estate.get(String(building || "").trim()) || [])].sort(byArabic),
+    (building: string) => [...(estate.get(normalizeRoomToken(building))?.halls.values() || [])].sort(byArabic),
     [estate],
   );
 
@@ -1693,7 +1748,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     return [...seen.entries()].map(([id, name]) => ({ id, name })).sort((a, b) => byArabic(a.name, b.name));
   }, [filteredRows, instructorById]);
   const weekBuildings = useMemo(
-    () => [...new Set(filteredRows.map(row => String(row.AdRoomCode || "")).filter(Boolean))].sort(byArabic),
+    () => [...new Map(filteredRows
+      .map(row => roomIdentity(row.AdRoomCode, row.AdRoomHall))
+      .filter(room => room.buildingKey)
+      .map(room => [room.buildingKey, room.building] as const)).values()].sort(byArabic),
     [filteredRows]
   );
   /**
@@ -1708,12 +1766,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const weekRooms = useMemo(() => {
     const seen = new Map<string, { building: string; hall: string; label: string }>();
     filteredRows.forEach(row => {
-      const building = String(row.AdRoomCode || "");
-      const hall = String(row.AdRoomHall || "");
-      if (!hall) return;
-      if (lens.building && building !== lens.building) return;
-      const key = `${building}|${hall}`;
-      if (!seen.has(key)) seen.set(key, { building, hall, label: building ? `${building}/${hall}` : hall });
+      const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
+      if (!room.hallKey) return;
+      if (lens.building && room.buildingKey !== normalizeRoomToken(lens.building)) return;
+      if (!seen.has(room.key)) seen.set(room.key, { building: room.building, hall: room.hall, label: room.label || room.hall });
     });
     return [...seen.values()].sort((a, b) => byArabic(a.label, b.label));
   }, [filteredRows, lens.building]);
@@ -2972,8 +3028,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const busy = new Set<string>();
     if (!lensRoomActive) return busy;
     rows.forEach(row => {
-      if (lens.building && String(row.AdRoomCode || "") !== lens.building) return;
-      if (lens.rooms.length && !lens.rooms.includes(`${String(row.AdRoomCode || "")}|${String(row.AdRoomHall || "")}`)) return;
+      const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
+      if (lens.building && room.buildingKey !== normalizeRoomToken(lens.building)) return;
+      if (lens.rooms.length && !lens.rooms.includes(room.key)) return;
       const from = mins(row.fstarttime), to = mins(row.fendtime);
       if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return;
       days.forEach(day => {
@@ -3137,14 +3194,35 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const displayDays = matrixDay === "week"
       ? days
       : days.filter(day => day.key === matrixDay);
-    const roomsSeen = new Map<string, { key: string; building: string; hall: string; label: string }>();
+    const roomsSeen = new Map<string, {
+      key: string;
+      building: string;
+      hall: string;
+      buildingKey: string;
+      hallKey: string;
+      label: string;
+    }>();
     filteredRows.forEach(row => {
-      const building = String(row.AdRoomCode || ""), hall = String(row.AdRoomHall || "");
-      if (!building && !hall) return;
-      const key = `${building}|${hall}`;
-      if (!roomsSeen.has(key)) roomsSeen.set(key, { key, building, hall, label: [building, hall].filter(Boolean).join("/") });
+      const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
+      if (!room.buildingKey && !room.hallKey) return;
+      if (!roomsSeen.has(room.key)) {
+        roomsSeen.set(room.key, {
+          key: room.key,
+          building: room.building,
+          hall: room.hall,
+          buildingKey: room.buildingKey,
+          hallKey: room.hallKey,
+          label: room.label,
+        });
+      }
     });
     const allRooms = [...roomsSeen.values()].sort((a, b) => byArabic(a.label, b.label));
+    const buildingCounts = new Map<string, number>();
+    allRooms.forEach(room => buildingCounts.set(room.buildingKey, (buildingCounts.get(room.buildingKey) || 0) + 1));
+    const allBuildings = [...new Map(allRooms
+      .filter(room => room.buildingKey)
+      .map(room => [room.buildingKey, { key: room.buildingKey, label: room.building, count: buildingCounts.get(room.buildingKey) || 0 }] as const)
+    ).values()].sort((a, b) => byArabic(a.label, b.label));
     // One pass builds every room/day bucket. The full-week view therefore
     // costs one O(rows × five-days) index, not five complete room renders.
     const byDayRoom = new Map<string, FSchedule[]>();
@@ -3153,23 +3231,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const roomCounts = new Map<string, number>();
     filteredRows.forEach(row => {
       if (!row.fstarttime || !row.fendtime || mins(row.fendtime) <= mins(row.fstarttime)) return;
-      const building = String(row.AdRoomCode || ""), hall = String(row.AdRoomHall || "");
-      const key = `${building}|${hall}`;
-      if (building || hall) {
-        const roomRows = byRoom.get(key);
-        if (roomRows) roomRows.push(row); else byRoom.set(key, [row]);
+      const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
+      if (room.buildingKey || room.hallKey) {
+        const roomRows = byRoom.get(room.key);
+        if (roomRows) roomRows.push(row); else byRoom.set(room.key, [row]);
       }
       days.forEach(day => {
         if (!Boolean((row as any)[day.key])) return;
-        if (!building && !hall) {
+        if (!room.buildingKey && !room.hallKey) {
           const homeless = noRoomByDay.get(day.key as DayKey);
           if (homeless) homeless.push(row); else noRoomByDay.set(day.key as DayKey, [row]);
           return;
         }
-        const dayKey = `${day.key}|${key}`;
+        const dayKey = `${day.key}|${room.key}`;
         const bucket = byDayRoom.get(dayKey);
         if (bucket) bucket.push(row); else byDayRoom.set(dayKey, [row]);
-        roomCounts.set(key, (roomCounts.get(key) || 0) + 1);
+        roomCounts.set(room.key, (roomCounts.get(room.key) || 0) + 1);
       });
     });
     const hourMarks: number[] = [];
@@ -3217,8 +3294,30 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       });
       compactByRoom.set(key, { items, lanes: Math.max(1, laneDays.length), laneDays });
     });
-    return { displayDays, allRooms, byDayRoom, compactByRoom, noRoomByDay, roomCounts, hourMarks, span: Math.max(60, gridWindow.end - gridWindow.start) };
+    return {
+      displayDays,
+      allRooms,
+      allBuildings,
+      byDayRoom,
+      compactByRoom,
+      noRoomByDay,
+      roomCounts,
+      hourMarks,
+      span: Math.max(60, gridWindow.end - gridWindow.start),
+    };
   }, [filteredRows, matrixDay, gridWindow]);
+  useEffect(() => {
+    const allowed = new Set(
+      roomsMatrix.allRooms
+        .filter(room => !matrixBuildings.size || matrixBuildings.has(room.buildingKey))
+        .map(room => room.key),
+    );
+    setMatrixRooms(current => {
+      if (!current.size) return current;
+      const next = new Set([...current].filter(key => allowed.has(key)));
+      return next.size === current.size ? current : next;
+    });
+  }, [roomsMatrix.allRooms, matrixBuildings]);
   /* The ladder is the window's own, not the constant's. It already declared
      `gridWindow` as its dependency and then ignored it — so a window that grew
      to hold an early or late lecture produced a card with nowhere to stand. */
@@ -3255,9 +3354,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       quickSearch,
       hueFocus: [...hueFocus],
       hueHidden: [...hueHidden],
+      matrixBuildings: [...matrixBuildings],
       matrixRooms: [...matrixRooms],
     },
-  }), [filterCollege, filterSection, filterTerm, viewMode, hueBy, colorBlind, expandedDay, matrixDay, quickSearch, hueFocus, hueHidden, matrixRooms]);
+  }), [filterCollege, filterSection, filterTerm, viewMode, hueBy, colorBlind, expandedDay, matrixDay, quickSearch, hueFocus, hueHidden, matrixBuildings, matrixRooms]);
 
   const activeView = useMemo(
     () => savedViews.find(view => view.id === activeViewId) || null,
@@ -3288,6 +3388,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     setQuickSearch(view.filters.quickSearch);
     setHueFocus(new Set(view.filters.hueFocus));
     setHueHidden(new Set(view.filters.hueHidden));
+    setMatrixBuildings(new Set(view.filters.matrixBuildings || []));
     setMatrixRooms(new Set(view.filters.matrixRooms));
     setActiveViewId(view.id);
     setMessage(stale ? stale : `فُتح العرض: ${view.name}`);
@@ -3597,7 +3698,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     /* First and last name only — «د. عبدالرحمن الشراد» — then the width-aware
        shortener may trim further on a squeezed lane. */
     const shortWho = i?.AdInstructorName ? instructorLabel(firstLast(i.AdInstructorName), widthShare) : who;
-    const place = [r.AdRoomCode, r.AdRoomHall].filter(Boolean).join("/");
+    const place = placeOf(r);
     /* Computed once: the card wears it as colour, and — when the reader has
        asked for it — as a weave keyed to the same number. */
     const cardHue = hueFor(code, title, i?.AdInstructorName, placeOf(r));
@@ -3662,9 +3763,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
         <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
         <small className="week-when"><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>{place ? <i>{place}</i> : null}</small>
-        {/* «112 · ش520»: the course number and the section stop looking like
-            one ambiguous pair of numerals. */}
-        <em className="week-code" dir="ltr">{code}<b dir="rtl">ش{r.SCode}</b></em>
+        <em className="week-code" dir="ltr">{code}</em>
         {(() => {
           /* The card that just landed says so, and carries its own way back:
              one press undoes exactly this move — no hunting through a log. */
@@ -3696,8 +3795,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   };
   /** One switch decides what colour answers: "which course?" or "whose?" */
   /** «مبنى/قاعة», or the honest absence of one — one spelling, used everywhere. */
-  const placeOf = (r: FSchedule) =>
-    [String(r.AdRoomCode || "").trim(), String(r.AdRoomHall || "").trim()].filter(Boolean).join("/") || "بدون قاعة";
+  const placeOf = (r: FSchedule) => roomIdentity(r.AdRoomCode, r.AdRoomHall).label || "بدون قاعة";
   const hueFor = (code: string, title: string, instructorName?: string, room?: string) =>
     hueBy === "instructor"
       ? courseHue(instructorName || "بدون أستاذ", "")
@@ -3865,11 +3963,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const rel: string[] = [];
     if (r.AdInstructorId === xraySelected.AdInstructorId) rel.push("professor");
     if (r.AdCourseId === xraySelected.AdCourseId) rel.push("course");
-    if (
-      r.AdRoomCode === xraySelected.AdRoomCode &&
-      r.AdRoomHall === xraySelected.AdRoomHall
-    )
-      rel.push("room");
+    if (sameRoom(r, xraySelected)) rel.push("room");
     if (xraySharedDay(r, xraySelected)) rel.push("day");
     if (xrayTimeConnected(r, xraySelected)) rel.push("time");
     return rel.length
@@ -3893,7 +3987,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const combinedDelivery = (a: FSchedule, b: FSchedule) =>
       a.AdCourseId === b.AdCourseId && String(a.SCode) !== String(b.SCode) &&
       a.AdInstructorId === b.AdInstructorId &&
-      a.AdRoomCode === b.AdRoomCode && a.AdRoomHall === b.AdRoomHall &&
+      sameRoom(a, b) &&
       samePlacement(a, b);
     const blockersFor = (probe: FSchedule) => rows.flatMap(other => {
       if (other.id === row.id || other.AdTermId !== probe.AdTermId || combinedDelivery(probe, other)) return [];
@@ -3901,7 +3995,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       const overlaps = mins(probe.fstarttime) < mins(other.fendtime) && mins(other.fstarttime) < mins(probe.fendtime);
       if (!sharesDay || !overlaps) return [];
       const instructorBusy = Boolean(probe.AdInstructorId) && probe.AdInstructorId === other.AdInstructorId;
-      const roomBusy = Boolean(probe.AdRoomCode && probe.AdRoomHall) && probe.AdRoomCode === other.AdRoomCode && probe.AdRoomHall === other.AdRoomHall;
+      const roomBusy = Boolean(probe.AdRoomCode && probe.AdRoomHall) && sameRoom(probe, other);
       if (!instructorBusy && !roomBusy) return [];
       return [{
         type: instructorBusy ? "instructor" : "room",
@@ -4230,7 +4324,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!carried || physics.state.phase === "idle") return { blocked, tier, suggestions };
     const span = Math.max(30, mins(carried.fendtime) - mins(carried.fstarttime));
     const instructorRows = weekRows.filter(row => row.id !== carried.id && carried.AdInstructorId && row.AdInstructorId === carried.AdInstructorId);
-    const hallRows = weekRows.filter(row => row.id !== carried.id && carried.AdRoomCode && row.AdRoomCode === carried.AdRoomCode && row.AdRoomHall === carried.AdRoomHall);
+    const hallRows = weekRows.filter(row => row.id !== carried.id && carried.AdRoomCode && sameRoom(row, carried));
     for (const day of days) {
       for (const slot of timeSlots) {
         const key = `${day.key}:${slot}`;
@@ -4335,7 +4429,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (busyInstructor)
       return { tier: "blocked", why: `الأستاذ مرتبط بـ${nameOf(busyInstructor)} ${busyInstructor.fstarttime}` };
     const busyHall = row.AdRoomCode
-      ? clash(item => item.AdRoomCode === row.AdRoomCode && item.AdRoomHall === row.AdRoomHall) : undefined;
+      ? clash(item => sameRoom(item, row)) : undefined;
     if (busyHall)
       return { tier: "blocked", why: `القاعة محجوزة لـ${nameOf(busyHall)} ${busyHall.fstarttime}` };
 
@@ -6206,11 +6300,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               <Table2 />
               <b>
                 {
-                  rows.filter(
-                    (r) =>
-                      r.AdRoomCode === xraySelected.AdRoomCode &&
-                      r.AdRoomHall === xraySelected.AdRoomHall,
-                  ).length
+                  rows.filter((r) => sameRoom(r, xraySelected)).length
                 }
               </b>{" "}
               للقاعة
@@ -6455,16 +6545,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                living lanes sharing one hour line. A reader can still fold it
                down to one day, but the default finally answers the real room
                question: what happens here across the whole week? */
-            const { displayDays, allRooms, byDayRoom, compactByRoom, noRoomByDay, roomCounts, hourMarks, span } = roomsMatrix;
+            const { displayDays, allBuildings, allRooms, byDayRoom, compactByRoom, noRoomByDay, roomCounts, hourMarks, span } = roomsMatrix;
             /* Pinning rooms narrows the matrix to the ones being worked on —
                a building's four labs instead of every room in the college. */
-            const roomList = matrixRooms.size ? allRooms.filter(room => matrixRooms.has(room.key)) : allRooms;
+            const buildingScopedRooms = matrixBuildings.size
+              ? allRooms.filter(room => matrixBuildings.has(room.buildingKey))
+              : allRooms;
+            const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
-            const rowsFor = (day: DayKey, building: string, hall: string) => byDayRoom.get(`${day}|${building}|${hall}`) || [];
+            const rowsFor = (day: DayKey, roomKey: string) => byDayRoom.get(`${day}|${roomKey}`) || [];
             const renderTrackCard = (row: FSchedule, placement?: { lane: number; visualFrom: number; visualTo: number }) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
-              const code = course?.CourseCode || "—";
+              const code = String(course?.CourseCode || "").trim() || "—";
               const title = row.AdCourseName || course?.CourseName || code;
               const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
               const whoWords = who.split(/\s+/).filter(Boolean);
@@ -6514,7 +6607,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 >
                   <b>{placement ? title : courseLabel(title, 0.82).text}</b>
                   <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
-                  <em dir="ltr">{[String(course?.CourseCode || "").slice(0, 8), String(row.SCode || "")].filter(Boolean).join("/") || "—"}</em>
+                  <em dir="ltr">{code}</em>
                   {undoEntry ? (
                     <button
                       type="button"
@@ -6552,38 +6645,73 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   />
                   <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "مقارنة سريعة: القاعة ثم أيام استخدامها ثم ساعاتها؛ كل مقرر يبقى داخل مدته الحقيقية ويظهر معه أستاذه ونمط أيامه." : "عرض يوم منفرد — ارجع إلى «الأسبوع كامل» للمقارنة المدمجة بين القاعات."}</small>
                 </div>
-                {allRooms.length > 1 ? (
+                {allBuildings.length > 1 ? (
+                  <div className="rooms-filter-block">
+                    <div className="rooms-filter-copy">
+                      <div><Building2 /><strong>المباني المعروضة</strong></div>
+                      <small>{phoneReadOnly ? "المباني معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixBuildings.size ? `اخترت ${matrixBuildings.size.toLocaleString("ar-KW-u-nu-latn")} من ${allBuildings.length.toLocaleString("ar-KW-u-nu-latn")} مبنى — اضغط لإضافة مبنى أو إزالته.` : "كل المباني ظاهرة — اختر مبنى واحدًا أو عدة مبانٍ قبل تصفية القاعات."}</small>
+                    </div>
+                    <div className="rooms-picker" role="group" aria-label="اختيار مبنى واحد أو عدة مبانٍ">
+                      <button
+                        type="button"
+                        className={`rooms-chip ${matrixBuildings.size ? "" : "on"}`}
+                        aria-pressed={matrixBuildings.size === 0}
+                        onClick={() => setMatrixBuildings(new Set())}
+                      >
+                        كل المباني <b className="num">{allBuildings.length}</b>
+                      </button>
+                      {allBuildings.map(building => (
+                        <button
+                          type="button"
+                          key={building.key}
+                          className={`rooms-chip ${matrixBuildings.has(building.key) ? "on" : ""}`}
+                          aria-pressed={matrixBuildings.has(building.key)}
+                          title={`${matrixBuildings.has(building.key) ? "إخفاء" : "إظهار"} ${building.label}`}
+                          onClick={() => setMatrixBuildings(current => {
+                            const next = new Set(current);
+                            if (next.has(building.key)) next.delete(building.key); else next.add(building.key);
+                            return next;
+                          })}
+                        >
+                          <span dir="ltr">{building.label}</span>
+                          <b className="num">{building.count}</b>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                {buildingScopedRooms.length > 1 ? (
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
                       <div><MapPin /><strong>القاعات المعروضة</strong></div>
-                      <small>{phoneReadOnly ? "القاعات معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixRooms.size ? `اخترت ${matrixRooms.size} من ${countOf(allRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.` : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
+                      <small>{phoneReadOnly ? "القاعات معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixRooms.size ? `اخترت ${matrixRooms.size} من ${countOf(buildingScopedRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.` : matrixBuildings.size ? "كل قاعات المباني المختارة ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة." : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
                     </div>
                     <div className="rooms-picker" role="group" aria-label="اختيار قاعة واحدة أو عدة قاعات">
-                    <button
-                      type="button"
-                      className={`rooms-chip ${matrixRooms.size ? "" : "on"}`}
-                      aria-pressed={matrixRooms.size === 0}
-                      onClick={() => setMatrixRooms(new Set())}
-                    >
-                      كل القاعات <b className="num">{allRooms.length}</b>
-                    </button>
-                    {allRooms.map(room => (
                       <button
                         type="button"
-                        key={room.key}
-                        className={`rooms-chip ${matrixRooms.has(room.key) ? "on" : ""}`}
-                        aria-pressed={matrixRooms.has(room.key)}
-                        title={`${matrixRooms.has(room.key) ? "إخفاء" : "إظهار"} ${room.label}`}
-                        onClick={() => setMatrixRooms(current => {
-                          const next = new Set(current);
-                          if (next.has(room.key)) next.delete(room.key); else next.add(room.key);
-                          return next;
-                        })}
+                        className={`rooms-chip ${matrixRooms.size ? "" : "on"}`}
+                        aria-pressed={matrixRooms.size === 0}
+                        onClick={() => setMatrixRooms(new Set())}
                       >
-                        <span dir="ltr">{room.label}</span>
-                        <b className="num">{roomCounts.get(room.key) || 0}</b>
+                        كل القاعات <b className="num">{buildingScopedRooms.length}</b>
                       </button>
-                    ))}
+                      {buildingScopedRooms.map(room => (
+                        <button
+                          type="button"
+                          key={room.key}
+                          className={`rooms-chip ${matrixRooms.has(room.key) ? "on" : ""}`}
+                          aria-pressed={matrixRooms.has(room.key)}
+                          title={`${matrixRooms.has(room.key) ? "إخفاء" : "إظهار"} ${room.label}`}
+                          onClick={() => setMatrixRooms(current => {
+                            const next = new Set(current);
+                            if (next.has(room.key)) next.delete(room.key); else next.add(room.key);
+                            return next;
+                          })}
+                        >
+                          <span dir="ltr">{room.label}</span>
+                          <b className="num">{roomCounts.get(room.key) || 0}</b>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 ) : null}
@@ -6628,7 +6756,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 data-physics-slot="true"
                                 data-physics-day={firstDay}
                                 data-physics-start={slot}
-                                data-physics-label={`${room.building}/${room.hall}`}
+                                data-physics-label={room.label}
                                 data-physics-room={`${room.building}|${room.hall}`}
                                 style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
                               />
@@ -6647,7 +6775,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         </header>
                         <div className="rooms-week-days">
                           {displayDays.map(day => {
-                            const inRoom = rowsFor(day.key as DayKey, room.building, room.hall);
+                            const inRoom = rowsFor(day.key as DayKey, room.key);
                             return (
                               <div className="rooms-row" key={`${room.key}|${day.key}`}>
                                 <small className="rooms-day-label">{day.label}</small>
@@ -6670,7 +6798,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                       data-physics-slot="true"
                                       data-physics-day={day.key}
                                       data-physics-start={slot}
-                                      data-physics-label={`${day.label} · ${room.building}/${room.hall}`}
+                                      data-physics-label={`${day.label} · ${room.label}`}
                                       data-physics-room={`${room.building}|${room.hall}`}
                                       style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
                                     />
@@ -7374,9 +7502,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             {bundle.rows.map((row) => {
                               const course = courseById.get(row.AdCourseId);
                               const bandInstructor = instructorById.get(row.AdInstructorId);
-                              const bandCode = course?.CourseCode || row.AdCourseName || "—";
-                              const bandTitle = row.AdCourseName || course?.CourseName || bandCode;
-                              const bandWho = bandInstructor?.AdInstructorName ? firstLast(bandInstructor.AdInstructorName) : "بدون أستاذ";
+                              const courseCode = String(course?.CourseCode || "").trim() || "—";
+                              const bandCode = courseCode || row.AdCourseName || "—";
+                              const rawBandTitle = row.AdCourseName || course?.CourseName || bandCode;
+                              const bandTitle = courseLabel(
+                                rawBandTitle,
+                                bundle.rows.length >= 8 ? 0.36 : bundle.rows.length >= 6 ? 0.44 : bundle.rows.length >= 5 ? 0.52 : 0.62,
+                              ).text;
+                              const bandWho = bandInstructor?.AdInstructorName
+                                ? firstLast(instructorLabel(bandInstructor.AdInstructorName, bundle.rows.length >= 8 ? 0.56 : 0.68).text)
+                                : "بدون أستاذ";
                               /* The slice is the lecture's real handle: the same grip the
                                  full card carries, so a drag starts here exactly as it
                                  would there — lift, conflicts, verdict, drop. A press
@@ -7388,14 +7523,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   key={row.id}
                                   role="button"
                                   tabIndex={0}
-                                  aria-label={`${bandTitle} · ${bandWho} · ${bandCode} · شعبة ${row.SCode || "—"} — اسحبها أو افتح المروحة`}
+                                  aria-label={`${rawBandTitle} · ${bandWho} · ${courseCode} — اسحبها أو افتح المروحة`}
                                   data-row-id={row.id}
                                   className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""} ${hueFocusClass(row)}`}
                                   style={(() => {
                                     const bandHue = hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName, placeOf(row));
                                     return { ["--hue" as any]: bandHue, ...textureFor(bandHue) };
                                   })()}
-                                  title={`${bandTitle} · ${bandWho} — اسحبها مباشرة أو اضغط للمروحة`}
+                                  title={`${rawBandTitle} · ${bandWho} — اسحبها مباشرة أو اضغط للمروحة`}
                                   onPointerDown={(e) => {
                                     pressOrigin.current = { x: e.clientX, y: e.clientY };
                                     grip.onPointerDown?.(e);
@@ -7413,10 +7548,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                     <strong>{bandTitle}</strong>
                                     <small>{bandWho}</small>
                                   </span>
-                                  {/* Section beside code: three sections of one course are
-                                      three identical names — the section is what tells them
-                                      apart before the fan is ever opened. */}
-                                  <em dir="ltr">{[String(course?.CourseCode || "").slice(0, 8), String(row.SCode || "")].filter(Boolean).join("/") || "—"}</em>
+                                  <em dir="ltr">{courseCode}</em>
                                 </div>
                               );
                             })}

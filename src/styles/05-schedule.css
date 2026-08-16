@@ -596,41 +596,37 @@ button.schedule-radar:hover{filter:brightness(.96)}
   inset-inline:0;
   z-index:9;
   height:0;
-  border-top:2px solid var(--brass);
+  border-top:1px solid color-mix(in srgb,var(--brass) 82%,var(--ink) 18%);
+  opacity:.95;
   pointer-events:none;
 }
 .week-now::before{
   content:"";
   position:absolute;
   inset-inline-start:0;
-  top:-4px;
-  width:7px;height:7px;
+  top:-2px;
+  width:5px;height:5px;
   border-radius:var(--r-full);
-  background:var(--brass);
+  background:color-mix(in srgb,var(--brass) 90%,var(--ink) 10%);
 }
-/* The pill carries no `direction` of its own on purpose: `inset-inline-start`
-   resolves against the element's own direction, so an ltr pill would anchor
-   itself to the physical left and drift to the far side of the column in this
-   right-to-left grid. The <time> inside is what turns the digits around — the
-   same primitive the rest of the interface uses for clock values. */
+/* The pill is now a light marker rather than a heavy brass block: it keeps the
+   hour legible, but it no longer competes with the lectures underneath. */
 .week-now span{
   position:absolute;
-  inset-inline-start:11px;
-  top:-9px;
-  padding:1px 6px;
+  inset-inline-start:8px;
+  top:-11px;
+  padding:0 5px;
   border-radius:var(--r-full);
-  /* Brass alone puts white text at 4.5:1 — right on the line. Pulling it a
-     seventh of the way toward ink darkens it on paper and lightens it in the
-     dark theme, because ink is whichever pole the surface is not, so the pill
-     gains contrast in both without leaving the brass family. */
-  background:color-mix(in srgb,var(--brass) 86%,var(--ink));
-  color:var(--surface);
-  font:600 10px/1.6 var(--font-mono);
+  border:1px solid color-mix(in srgb,var(--brass) 34%,var(--line) 66%);
+  background:color-mix(in srgb,var(--surface) 94%,var(--brass) 6%);
+  color:color-mix(in srgb,var(--brass) 82%,var(--ink) 18%);
+  font:600 9px/1.45 var(--font-mono);
   white-space:nowrap;
+  box-shadow:none;
 }
 /* Today carries the faintest wash, so the column is findable when the hour in
    view is nowhere near the line. */
-.week-day[data-today="true"]{background:color-mix(in srgb,var(--brass) 4%,transparent)}
+.week-day[data-today="true"]{background:color-mix(in srgb,var(--brass) 7%,transparent)}
 .week-day-head[data-today="true"] .week-day-toggle>span{color:var(--brass);font-weight:650}
 
 /* --- The card -------------------------------------------------------------
@@ -2702,45 +2698,61 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    fifty-minute block. Two calm columns turn eight items into four rows and
    nine into five: every lecture remains visible without growing over the next
    hour. Course and instructor keep the line; code is a tiny seal. */
-.week-bundle-bands[data-dense="true"]{
+.week-bundle-bands[data-dense="true"],
+.week-bundle-bands[data-crush="true"]{
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
   grid-auto-flow:row;grid-auto-rows:minmax(0,1fr);gap:1px;
 }
-.week-bundle-bands[data-dense="true"] .week-bundle-band{
-  min-width:0;min-height:0;padding-inline:1.5px;gap:1px;border-inline-start-width:2px;
-}
-/*
-   ── الحزمة المزدحمة: متى يتوقف الشريط عن محاولة الكلام ─────────────────────
- *
- * Measured with twenty lectures in one hour: each band came out 95×7 pixels
- * and printed the course name at 6.25px, the teacher at 5.35px and the code at
- * 4.1px. Those are not small type. Nothing at four pixels is read by anybody;
- * it is a texture that looks like damage, and it was the reason a crowded hour
- * looked broken rather than busy.
- *
- * So a band that cannot print a name stops trying. Below fourteen pixels it
- * becomes what it honestly is — a clean coloured slice, one per lecture, in
- * the lecture's own hue. The identity is not lost: it is in the tooltip, in
- * the accessible label, in the hover card, and in full the instant the hour is
- * opened or the fan is fanned. A readable stripe beats an unreadable sentence.
- */
-.week-bundle-bands[data-dense="true"] .week-band-identity{gap:1px}
-.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:8.5px;font-weight:600;line-height:1.1;letter-spacing:-.1px}
-.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:8.5px;line-height:1.1;font-weight:400;letter-spacing:-.1px}
-.week-bundle-bands[data-dense="true"] .week-band-identity small::before{margin-inline-end:1px}
-/* The code is the first thing out of a dense weave — a number nobody reads at
-   this size and the least of the three. */
-.week-bundle-bands[data-dense="true"] .week-bundle-band em{display:none}
-
-/* Past this many in one hour there is no room for type at all, at any size. */
-.week-bundle-bands[data-crush="true"] .week-band-identity{display:none}
+.week-bundle-bands[data-dense="true"] .week-bundle-band,
 .week-bundle-bands[data-crush="true"] .week-bundle-band{
-  border-inline-start-width:0;border-radius:3px;
-  background:hsl(var(--hue) 44% 62% / .58);
-  min-height:5px;
+  position:relative;
+  min-width:0;min-height:0;
+  padding:2px 4px 2px 5px;
+  gap:0;
+  border-inline-start-width:2px;
+  border-radius:4px;
+  align-items:flex-start;
+  justify-content:center;
+  flex-direction:column;
+}
+/* In the crowded overview the card must still speak clearly: one readable line
+   for the course, one for the teacher, and the course number as the tiniest
+   seal. The title is shortened semantically in TS before it reaches CSS, so
+   these lines stay words rather than a trail of dots. */
+.week-bundle-bands[data-dense="true"] .week-band-identity,
+.week-bundle-bands[data-crush="true"] .week-band-identity{
+  width:100%;display:flex;flex-direction:column;align-items:flex-start;gap:0;
+  white-space:normal;
+}
+.week-bundle-bands[data-dense="true"] .week-band-identity strong,
+.week-bundle-bands[data-crush="true"] .week-band-identity strong{
+  width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  line-height:1.08;letter-spacing:-.08px;
+}
+.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:8.7px;font-weight:670}
+.week-bundle-bands[data-crush="true"] .week-band-identity strong{font-size:8px;font-weight:670}
+.week-bundle-bands[data-dense="true"] .week-band-identity small,
+.week-bundle-bands[data-crush="true"] .week-band-identity small{
+  width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  line-height:1.04;letter-spacing:-.08px;color:color-mix(in srgb,var(--label) 82%,transparent);
+}
+.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:7.35px;font-weight:340}
+.week-bundle-bands[data-crush="true"] .week-band-identity small{font-size:6.9px;font-weight:350}
+.week-bundle-bands[data-dense="true"] .week-band-identity small::before,
+.week-bundle-bands[data-crush="true"] .week-band-identity small::before{display:none}
+.week-bundle-bands[data-dense="true"] .week-bundle-band em,
+.week-bundle-bands[data-crush="true"] .week-bundle-band em{
+  position:absolute;inset-inline-end:4px;inset-block-end:2px;
+  display:block;font-style:normal;font-variant-numeric:tabular-nums;
+  color:color-mix(in srgb,var(--label) 58%,transparent);
+}
+.week-bundle-bands[data-dense="true"] .week-bundle-band em{font:600 5.7px/1 var(--font-mono)}
+.week-bundle-bands[data-crush="true"] .week-bundle-band em{font:600 5.4px/1 var(--font-mono)}
+.week-bundle-bands[data-crush="true"] .week-bundle-band{
+  background:color-mix(in srgb,var(--tint) 90%,white 10%);
 }
 .week-bundle-bands[data-crush="true"] .week-bundle-band:hover{
-  background:hsl(var(--hue) 52% 50% / .92);
+  background:color-mix(in srgb,var(--tint) 94%,white 6%);
 }
 
 /* --- The fan ---------------------------------------------------------------
@@ -3347,18 +3359,25 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    first time it says what it is. A line with no label is a line a reader has to
    invent a meaning for. */
 .rooms-now{
-  position:absolute;inset-block:0;width:0;
-  border-inline-start:2px solid var(--brass);z-index:6;
+  position:absolute;inset-block-start:12px;inset-block-end:0;width:0;
+  border-inline-start:1px solid color-mix(in srgb,var(--brass) 82%,var(--ink) 18%);
+  z-index:6;
   pointer-events:none;
 }
+.rooms-now::before{
+  content:"";position:absolute;inset-inline-start:-2px;inset-block-start:-2px;
+  width:5px;height:5px;border-radius:50%;background:color-mix(in srgb,var(--brass) 90%,var(--ink) 10%);
+}
 .rooms-now b{
-  position:absolute;inset-block-start:-9px;inset-inline-start:0;
-  transform:translateX(50%);
-  padding:1px 6px;border-radius:var(--r-full);
-  background:var(--brass);color:#fff;
-  font:700 9px/1.5 var(--font-mono);letter-spacing:-.2px;
+  position:absolute;inset-block-start:-16px;inset-inline-start:0;
+  transform:translateX(72%);
+  padding:0 5px;border-radius:var(--r-full);
+  border:1px solid color-mix(in srgb,var(--brass) 34%,var(--line) 66%);
+  background:color-mix(in srgb,var(--surface) 95%,var(--brass) 5%);
+  color:color-mix(in srgb,var(--brass) 82%,var(--ink) 18%);
+  font:600 8.5px/1.4 var(--font-mono);letter-spacing:-.12px;
   white-space:nowrap;
-  box-shadow:0 1px 3px rgb(17 25 22 / .25);
+  box-shadow:none;
 }
 .rooms-card{
   --tint:hsl(var(--hue,158) 34% 96%);
@@ -3382,11 +3401,11 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   --label:hsl(var(--hue,158) 46% 88%);
 }
 .rooms-card b{
-  font-size:10px;font-weight:620;color:var(--label);line-height:1.16;
+  font-size:10.25px;font-weight:590;color:var(--label);line-height:1.22;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .rooms-card span{
-  font-size:8.5px;font-weight:300;color:var(--ink-2);opacity:.84;line-height:1.08;letter-spacing:-.2px;
+  font-size:8.75px;font-weight:340;color:var(--ink-2);opacity:.84;line-height:1.16;letter-spacing:-.15px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 /* `clip` cut names mid-letter — «عبدالعزيز» arrived as «ـبدالعزيز», which in
@@ -3394,9 +3413,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    says plainly that the name continues, and the full name is on the title. */
 .rooms-card span i{display:block;font:inherit;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rooms-card em{
-  position:absolute;top:3px;left:5px;right:auto;
-  font:500 6.5px/1 var(--font-mono);font-style:normal;
-  color:color-mix(in srgb,var(--label) 55%,transparent);
+  position:absolute;top:4px;left:5px;right:auto;
+  font:500 6px/1 var(--font-mono);font-style:normal;
+  color:color-mix(in srgb,var(--label) 52%,transparent);
+  letter-spacing:-.15px;
 }
 .rooms-card.rooms-card-compact{justify-content:flex-start;gap:1px;padding:4px 4px 10px;border-radius:5px}
 .rooms-card.rooms-card-compact::after{
@@ -3422,12 +3442,12 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   /* A word is never cut in half here either: a line that will not fit is
      dropped whole, matching the rule the week card already follows. */
   white-space:normal;overflow:hidden;text-overflow:ellipsis;overflow-wrap:normal;word-break:keep-all;
-  font-size:9.5px;font-weight:620;line-height:1.32;letter-spacing:0;
+  font-size:10px;font-weight:590;line-height:1.35;letter-spacing:0;
 }
 .rooms-card.rooms-card-compact span{
   flex:none;display:block;min-height:12px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-  font-size:8.5px;font-weight:400;line-height:1.3;letter-spacing:0;
+  font-size:8.6px;font-weight:350;line-height:1.32;letter-spacing:0;
 }
 /* Third in the order, and the first thing out when the card is this small. */
 .rooms-card.rooms-card-compact em{display:none}
