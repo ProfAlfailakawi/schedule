@@ -839,3 +839,155 @@
     white-space:nowrap !important;
   }
 }
+
+@media print{
+  /* Cross-report pagination hardening: a section or row should move as a unit
+     instead of starting page 2 from a split fragment. */
+  .print-query-list>article,
+  .print-query-group,
+  .print-query-week .slot,
+  .print-room-occupancy-report section,
+  .print-room-line,
+  .print-time-list>article,
+  .print-fairness-rows>div,
+  .print-balance-report tbody tr,
+  .print-query-matrix-report tbody tr,
+  .print-query-groups-report tbody tr{
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+  }
+
+  .print-comprehensive-book{
+    font-size:7.95pt !important;
+  }
+  .print-comprehensive-pages{
+    display:block !important;
+  }
+  .print-comprehensive-page{
+    display:block !important;
+    break-inside:avoid-page !important;
+    page-break-inside:avoid !important;
+  }
+  .print-comprehensive-page + .print-comprehensive-page{
+    break-before:page !important;
+    page-break-before:always !important;
+  }
+  .print-comprehensive-page .print-comprehensive-classic-head{
+    margin:0 0 3mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-head-top{
+    grid-template-columns:minmax(28mm,1fr) minmax(0,1.45fr) minmax(28mm,1fr) !important;
+    gap:2.4mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-title-block{
+    padding:3.2mm 3.8mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-title-block h1{
+    font-size:13.2pt !important;
+  }
+  .print-comprehensive-page .print-comprehensive-title-block p{
+    margin:1.1mm 0 .5mm !important;
+    font-size:8.2pt !important;
+  }
+  .print-comprehensive-page .print-comprehensive-title-block strong{
+    font-size:8pt !important;
+  }
+  .print-comprehensive-page .print-comprehensive-side>div{
+    min-height:13.8mm !important;
+    padding:2.1mm 2.6mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-side strong{
+    font-size:8.7pt !important;
+  }
+  .print-comprehensive-page .print-comprehensive-head-summary{
+    gap:1mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-head-summary>div{
+    min-height:12mm !important;
+    padding:1.5mm 1mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-head-summary strong{
+    font-size:10pt !important;
+  }
+  .print-comprehensive-page .print-comprehensive-head-summary span{
+    font-size:5.9pt !important;
+  }
+
+  .print-comprehensive-page .print-comprehensive-modern-table{
+    table-layout:fixed !important;
+    margin-top:0 !important;
+    font-size:6.45pt !important;
+  }
+  .print-comprehensive-page .print-comprehensive-modern-table th,
+  .print-comprehensive-page .print-comprehensive-modern-table td{
+    padding:1.2mm .8mm !important;
+    line-height:1.22 !important;
+    vertical-align:middle !important;
+  }
+  .print-comprehensive-page .print-comprehensive-modern-table th{
+    font-size:5.75pt !important;
+    background:#eef4f1 !important;
+    color:#153e36 !important;
+  }
+  .print-comprehensive-page .print-comprehensive-modern-table .print-ltr{
+    font-size:6pt !important;
+    letter-spacing:-.015em !important;
+  }
+  .print-comprehensive-page .print-comprehensive-modern-table .print-wrap{
+    overflow-wrap:normal !important;
+    word-break:normal !important;
+  }
+
+  .print-comprehensive-page-footer{
+    display:grid !important;
+    grid-template-columns:minmax(0,1.45fr) minmax(24mm,.72fr) minmax(0,.95fr) !important;
+    align-items:end !important;
+    gap:3mm !important;
+    margin-top:3.2mm !important;
+    padding-top:2.3mm !important;
+    border-top:.8pt solid #bcc7c2 !important;
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+  }
+  .print-comprehensive-page-meta{
+    display:grid !important;
+    gap:2mm !important;
+    align-content:end !important;
+  }
+  .print-comprehensive-page-number{
+    text-align:center !important;
+    font-size:9.4pt !important;
+    font-weight:800 !important;
+    color:#173f37 !important;
+    font-variant-numeric:tabular-nums !important;
+  }
+  .print-comprehensive-page-context{
+    display:grid !important;
+    gap:.8mm !important;
+    text-align:center !important;
+  }
+  .print-comprehensive-page-context span{
+    display:block !important;
+    font-size:6.1pt !important;
+    color:#5f6a66 !important;
+  }
+  .print-comprehensive-page .print-comprehensive-signatures{
+    gap:1.8mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-signatures>div{
+    gap:4.6mm !important;
+    min-height:13.5mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-signatures span{
+    font-size:6.35pt !important;
+  }
+  .print-comprehensive-page .print-comprehensive-legend{
+    justify-content:flex-end !important;
+    align-content:end !important;
+    gap:1mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-legend span{
+    font-size:5.7pt !important;
+    padding:.8mm 1.25mm !important;
+  }
+}

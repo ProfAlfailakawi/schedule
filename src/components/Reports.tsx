@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Building2, CalendarDays, ChevronDown, Clock3, Download, LayoutList,
+  Building2, CalendarDays, ChevronDown, Clock3, LayoutList,
   Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
@@ -86,6 +86,8 @@ const GRID_END = SCHEDULE_DAY_END;
 const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
+const COMPREHENSIVE_FIRST_PAGE_ROWS = 22;
+const COMPREHENSIVE_NEXT_PAGE_ROWS = 23;
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
 const duration = (row: FSchedule) => Math.max(0, minutes(row.fendtime) - minutes(row.fstarttime));
 /**
@@ -631,7 +633,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     DAYS.forEach(day => { if (filters[day.key]) params.set(day.key, "true"); });
     return params.toString();
   };
-  const excel = () => { window.location.href = `/api/reports/excel/ScheduleExcel?${queryString()}`; };
   const print = (kind: Exclude<PrintKind, null>) => {
     setPrintKind(kind);
     requestAnimationFrame(() => requestAnimationFrame(() => window.print()));
@@ -915,7 +916,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <SecondaryButton type="button" onClick={() => print("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
               <Table2 aria-hidden="true" />التقرير الشامل
             </SecondaryButton>
-            <SecondaryButton type="button" onClick={excel}><Download aria-hidden="true" />Excel</SecondaryButton>
           </div>
         </header>
 
@@ -1478,6 +1478,18 @@ function groupRows(rows: FSchedule[], keyOf: (row: FSchedule) => string) {
     .sort((a, b) => byArabic(a.key, b.key));
 }
 
+function paginateComprehensiveRows(rows: FSchedule[]) {
+  if (!rows.length) return [[]] as FSchedule[][];
+  if (rows.length <= COMPREHENSIVE_FIRST_PAGE_ROWS) return [rows];
+  const pages: FSchedule[][] = [rows.slice(0, COMPREHENSIVE_FIRST_PAGE_ROWS)];
+  let cursor = COMPREHENSIVE_FIRST_PAGE_ROWS;
+  while (cursor < rows.length) {
+    pages.push(rows.slice(cursor, cursor + COMPREHENSIVE_NEXT_PAGE_ROWS));
+    cursor += COMPREHENSIVE_NEXT_PAGE_ROWS;
+  }
+  return pages;
+}
+
 function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById }: {
   kind: PrintKind;
   rows: FSchedule[];
@@ -1534,115 +1546,124 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
       ["القاعات", distinctRooms],
       ["الساعات الأسبوعية", totalWeeklyHours],
     ] as const;
+    const pages = paginateComprehensiveRows(rows);
+    const legendItems = DAYS.map((day, index) => `${index + 1}=${day.label}`);
 
     return (
-      <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-remastered">
-        <header className="print-comprehensive-classic-head">
-          <div className="print-comprehensive-head-top">
-            <div className="print-comprehensive-side print-comprehensive-side-right">
-              <div><span>رمز القسم العلمي</span><strong>{sectionCode || "—"}</strong></div>
-              <div><span>القسم العلمي</span><strong>{sectionName || "—"}</strong></div>
-            </div>
-            <div className="print-comprehensive-title-block">
-              <h1>تقرير القسم العلمي الشامل</h1>
-              <p>{collegeName || "—"}</p>
-              <strong>{termName || scopeLine || "—"}</strong>
-            </div>
-            <div className="print-comprehensive-side print-comprehensive-side-left">
-              <div><span>تاريخ الإصدار</span><strong dir="ltr">{issueDate}</strong></div>
-              <div><span>أعلى سعة</span><strong>{maxCapacity ? num(maxCapacity) : "—"}</strong></div>
-            </div>
-          </div>
-          <div className="print-comprehensive-head-summary" aria-label="ملخص سريع">
-            {headerStats.map(([label, value]) => (
-              <div key={label}>
-                <strong>{num(value)}</strong>
-                <span>{label}</span>
-              </div>
-            ))}
-          </div>
-        </header>
-
+      <div className="print-report print-upright print-query-report print-comprehensive print-comprehensive-book">
         {rows.length ? (
-          <table className="print-comprehensive-table print-comprehensive-modern-table">
-            <colgroup>
-              <col style={{ width: "3.5%" }} />
-              <col style={{ width: "7.5%" }} />
-              <col style={{ width: "5.5%" }} />
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "4.5%" }} />
-              <col style={{ width: "4.5%" }} />
-              <col style={{ width: "5%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "6.5%" }} />
-              <col style={{ width: "4.8%" }} />
-              <col style={{ width: "6.5%" }} />
-              <col style={{ width: "14.2%" }} />
-              <col style={{ width: "10%" }} />
-            </colgroup>
-            <thead>
-              <tr>
-                {[
-                  "م",
-                  "رمز المقرر الدراسي",
-                  "الشعبة",
-                  "المقرر الدراسي",
-                  "الوحدات",
-                  "الساعات",
-                  "السعة",
-                  "الوقت",
-                  "الأيام",
-                  "المبنى",
-                  "القاعة",
-                  "أستاذ المقرر",
-                  "الرقم المدني",
-                ].map(head => <th key={head}>{head}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => {
-                const course = courseOf(row);
-                const instructor = instructorOf(row);
-                return (
-                  <tr key={row.id}>
-                    <td className="print-num">{index + 1}</td>
-                    <td className="print-ltr">{course?.CourseCode || "—"}</td>
-                    <td className="print-ltr">{row.SCode || "—"}</td>
-                    <td className="print-wrap">{course?.CourseName || row.AdCourseName || "—"}</td>
-                    <td className="num">{course?.CourseCredit ?? "—"}</td>
-                    <td className="num">{course?.CourseHours ?? "—"}</td>
-                    <td className="num">{course?.MaxStudent ?? "—"}</td>
-                    <td className="print-ltr print-nowrap">{row.fendtime && row.fstarttime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</td>
-                    <td className="print-ltr">{dayCodeCell(row)}</td>
-                    <td className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</td>
-                    <td className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</td>
-                    <td className="print-wrap">{instructor?.AdInstructorName || "بدون أستاذ"}</td>
-                    <td className="print-ltr">{instructor?.AdInstructorCivil || "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={13}>
-                  <div className="print-comprehensive-bottom">
-                    <div className="print-comprehensive-signatures">
-                      <div><span>توقيع رئيس لجنة الجدول</span><i /></div>
-                      <div><span>توقيع رئيس القسم العلمي</span><i /></div>
-                      <div><span>توقيع العميد</span><i /></div>
+          <div className="print-comprehensive-pages">
+            {pages.map((pageRows, pageIndex) => (
+              <section className="print-comprehensive-page" key={`page-${pageIndex + 1}`}>
+                <header className="print-comprehensive-classic-head">
+                  <div className="print-comprehensive-head-top">
+                    <div className="print-comprehensive-side print-comprehensive-side-right">
+                      <div><span>رمز القسم العلمي</span><strong>{sectionCode || "—"}</strong></div>
+                      <div><span>القسم العلمي</span><strong>{sectionName || "—"}</strong></div>
                     </div>
-                    <div className="print-comprehensive-legend">
-                      <span>1=الأحد</span>
-                      <span>2=الاثنين</span>
-                      <span>3=الثلاثاء</span>
-                      <span>4=الأربعاء</span>
-                      <span>5=الخميس</span>
+                    <div className="print-comprehensive-title-block">
+                      <h1>تقرير القسم العلمي الشامل</h1>
+                      <p>الكلية: {collegeName || "—"}</p>
+                      <strong>{termName || scopeLine || "—"}</strong>
+                    </div>
+                    <div className="print-comprehensive-side print-comprehensive-side-left">
+                      <div><span>تاريخ الإصدار</span><strong dir="ltr">{issueDate}</strong></div>
+                      <div><span>أعلى سعة</span><strong>{maxCapacity ? num(maxCapacity) : "—"}</strong></div>
                     </div>
                   </div>
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                  <div className="print-comprehensive-head-summary" aria-label="ملخص سريع">
+                    {headerStats.map(([label, value]) => (
+                      <div key={label}>
+                        <strong>{num(value)}</strong>
+                        <span>{label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </header>
+
+                <table className="print-comprehensive-table print-comprehensive-modern-table">
+                  <colgroup>
+                    <col style={{ width: "3.5%" }} />
+                    <col style={{ width: "7%" }} />
+                    <col style={{ width: "5%" }} />
+                    <col style={{ width: "21.5%" }} />
+                    <col style={{ width: "4%" }} />
+                    <col style={{ width: "4%" }} />
+                    <col style={{ width: "4%" }} />
+                    <col style={{ width: "10.5%" }} />
+                    <col style={{ width: "6.5%" }} />
+                    <col style={{ width: "4.5%" }} />
+                    <col style={{ width: "6.5%" }} />
+                    <col style={{ width: "13.5%" }} />
+                    <col style={{ width: "9%" }} />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      {[
+                        "م",
+                        "رمز المقرر الدراسي",
+                        "الشعبة",
+                        "المقرر الدراسي",
+                        "الوحدات",
+                        "الساعات",
+                        "السعة",
+                        "الوقت",
+                        "الأيام",
+                        "المبنى",
+                        "القاعة",
+                        "أستاذ المقرر",
+                        "الرقم المدني",
+                      ].map(head => <th key={head}>{head}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pageRows.map((row, index) => {
+                      const course = courseOf(row);
+                      const instructor = instructorOf(row);
+                      const serial = pageIndex === 0
+                        ? index + 1
+                        : COMPREHENSIVE_FIRST_PAGE_ROWS + ((pageIndex - 1) * COMPREHENSIVE_NEXT_PAGE_ROWS) + index + 1;
+                      return (
+                        <tr key={row.id}>
+                          <td className="print-num">{serial}</td>
+                          <td className="print-ltr">{course?.CourseCode || "—"}</td>
+                          <td className="print-ltr">{row.SCode || "—"}</td>
+                          <td className="print-wrap">{course?.CourseName || row.AdCourseName || "—"}</td>
+                          <td className="num">{course?.CourseCredit ?? "—"}</td>
+                          <td className="num">{course?.CourseHours ?? "—"}</td>
+                          <td className="num">{course?.MaxStudent ?? "—"}</td>
+                          <td className="print-ltr print-nowrap">{row.fendtime && row.fstarttime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</td>
+                          <td className="print-ltr">{dayCodeCell(row)}</td>
+                          <td className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</td>
+                          <td className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</td>
+                          <td className="print-wrap">{instructor?.AdInstructorName || "بدون أستاذ"}</td>
+                          <td className="print-ltr">{instructor?.AdInstructorCivil || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+
+                <footer className="print-comprehensive-page-footer">
+                  <div className="print-comprehensive-signatures">
+                    <div><span>توقيع رئيس لجنة الجدول</span><i /></div>
+                    <div><span>توقيع رئيس القسم العلمي</span><i /></div>
+                    <div><span>توقيع العميد</span><i /></div>
+                  </div>
+                  <div className="print-comprehensive-page-meta">
+                    <div className="print-comprehensive-page-number"><bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi></div>
+                    <div className="print-comprehensive-page-context">
+                      <span>الكلية: {collegeName || "—"}</span>
+                      <span>القسم: {sectionName || "—"}</span>
+                    </div>
+                  </div>
+                  <div className="print-comprehensive-legend">
+                    {legendItems.map(item => <span key={item}>{item}</span>)}
+                  </div>
+                </footer>
+              </section>
+            ))}
+          </div>
         ) : <p className="print-empty">لا توجد مواعيد ضمن النطاق المحدد.</p>}
       </div>
     );
