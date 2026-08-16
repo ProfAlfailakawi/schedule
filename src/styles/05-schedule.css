@@ -2706,8 +2706,8 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-bundle-bands[data-dense="true"] .week-bundle-band,
 .week-bundle-bands[data-crush="true"] .week-bundle-band{
   min-width:0;min-height:0;
-  padding:1px 4px;
-  gap:3px;
+  padding:1px 3px;
+  gap:2px;
   border-inline-start-width:2px;
   border-radius:4px;
   align-items:center;
@@ -2718,26 +2718,26 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    the course number as the tiniest seal. Nothing stacks, so nothing collides. */
 .week-bundle-bands[data-dense="true"] .week-band-identity,
 .week-bundle-bands[data-crush="true"] .week-band-identity{
-  flex:1;min-width:0;display:flex;align-items:center;gap:3px;overflow:hidden;
+  flex:1;min-width:0;display:flex;align-items:center;gap:0;overflow:hidden;
   color:var(--label);white-space:nowrap;
 }
 .week-bundle-bands[data-dense="true"] .week-band-identity strong,
 .week-bundle-bands[data-crush="true"] .week-band-identity strong{
-  flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  line-height:1.14;letter-spacing:-.08px;
+  flex:1 1 56%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  line-height:1.16;letter-spacing:-.1px;
 }
-.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:6.7px;font-weight:600}
-.week-bundle-bands[data-crush="true"] .week-band-identity strong{font-size:6.25px;font-weight:590}
+.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:4.95px;font-weight:480}
+.week-bundle-bands[data-crush="true"] .week-band-identity strong{font-size:4.7px;font-weight:475}
 .week-bundle-bands[data-dense="true"] .week-band-identity small,
 .week-bundle-bands[data-crush="true"] .week-band-identity small{
-  flex:0 1 48%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  flex:0 1 39%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   line-height:1.18;letter-spacing:-.08px;color:color-mix(in srgb,var(--label) 80%,transparent);
 }
-.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:5.35px;font-weight:280}
-.week-bundle-bands[data-crush="true"] .week-band-identity small{font-size:5.05px;font-weight:275}
+.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:4.55px;font-weight:260}
+.week-bundle-bands[data-crush="true"] .week-band-identity small{font-size:4.75px;font-weight:260}
 .week-bundle-bands[data-dense="true"] .week-band-identity small::before,
 .week-bundle-bands[data-crush="true"] .week-band-identity small::before{
-  content:"·";margin-inline-end:3px;color:color-mix(in srgb,var(--label) 36%,transparent);
+  content:"·";margin-inline-end:.5px;color:color-mix(in srgb,var(--label) 30%,transparent);
 }
 .week-bundle-bands[data-dense="true"] .week-bundle-band em,
 .week-bundle-bands[data-crush="true"] .week-bundle-band em{
@@ -2745,8 +2745,8 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   color:color-mix(in srgb,var(--label) 56%,transparent);
   letter-spacing:-.08px;
 }
-.week-bundle-bands[data-dense="true"] .week-bundle-band em{font:300 4.25px/1 var(--font-mono)}
-.week-bundle-bands[data-crush="true"] .week-bundle-band em{font:300 4px/1 var(--font-mono)}
+.week-bundle-bands[data-dense="true"] .week-bundle-band em{font:300 4px/1 var(--font-mono)}
+.week-bundle-bands[data-crush="true"] .week-bundle-band em{font:300 3.8px/1 var(--font-mono)}
 .week-bundle-bands[data-crush="true"] .week-bundle-band{
   background:color-mix(in srgb,var(--tint) 90%,white 10%);
 }
