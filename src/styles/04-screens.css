@@ -1501,3 +1501,15 @@
 .vault-confirm-seal svg{width:24px;height:24px}
 .vault-confirm-copy{min-width:0}.vault-confirm-copy small{display:block;color:var(--brass);font-size:var(--t-xs);font-weight:680}.vault-confirm-copy h3{margin:5px 0 7px;font-size:22px;letter-spacing:-.02em}.vault-confirm-copy p{margin:0;color:var(--muted);font-size:var(--t-sm);line-height:1.85}
 .vault-confirm-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding-top:4px}.vault-confirm-actions .btn{width:100%;justify-content:center}
+
+/* Durable export progress --------------------------------------------------
+   The root backup is a resumable server job now, not a spinner attached to one
+   HTTP request. This block makes the checkpoint visible without turning the
+   vault into a developer console. */
+.vault-export-progress{grid-column:1/-1;display:grid;gap:9px;padding:12px 13px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2);min-width:0}
+.vault-export-progress-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.vault-export-progress-head span{color:var(--ink-2);font-size:var(--t-xs);font-weight:650}.vault-export-progress-head strong{font:700 13px/1 var(--font-mono);color:var(--accent)}
+.vault-export-progress-track{height:7px;border-radius:999px;background:color-mix(in srgb,var(--line) 72%,transparent);overflow:hidden}.vault-export-progress-track i{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 72%,var(--brass)));transition:width .28s var(--ease)}
+.vault-export-progress-meta{display:flex;flex-wrap:wrap;align-items:center;gap:7px 13px;color:var(--muted);font-size:11px}.vault-export-progress-meta span{display:inline-flex;gap:4px;align-items:baseline}.vault-export-progress-meta b{font:650 11px/1 var(--font-mono);color:var(--ink-2)}
+.vault-export-current,.vault-export-ready-hash{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0!important;padding:0!important;color:var(--muted-2)!important;font:500 10px/1.4 var(--font-mono)!important;letter-spacing:0!important}
+.vault-export-ready-hash{color:var(--success)!important}.vault-export-error{margin:0!important;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--danger-soft) 52%,var(--surface));color:var(--danger)!important;font-size:11px!important;line-height:1.55!important}
+.vault-export-progress.status-ready{border-color:color-mix(in srgb,var(--success) 36%,var(--line));background:color-mix(in srgb,var(--success-soft) 32%,var(--surface))}.vault-export-progress.status-failed{border-color:color-mix(in srgb,var(--danger) 32%,var(--line))}

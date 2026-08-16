@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sortByName } from "../utils/sorting";
 import {
   Activity,
@@ -80,11 +80,27 @@ interface RestorePoint {
   collectionCounts: Record<string, number>;
   consumedAt?: string;
 }
+interface ExportJob {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "queued" | "running" | "finalizing" | "ready" | "failed";
+  totalUnits: number;
+  completedUnits: number;
+  documentCount: number;
+  collectionCounts: Record<string, number>;
+  current?: string;
+  filename?: string;
+  sha256?: string;
+  sizeBytes?: number;
+  error?: string;
+}
 interface BackupStatus {
   rootOnly: boolean;
   data: { mode: string; real: boolean };
   restorePoints: RestorePoint[];
   latest: RestorePoint | null;
+  latestExport?: ExportJob | null;
 }
 
 /**
@@ -150,12 +166,14 @@ export default function AdminUsers({
     [instructors, setInstructors] = useState<any[]>([]),
     [logs, setLogs] = useState<AuditLogEntry[]>([]),
     [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null),
+    [exportJob, setExportJob] = useState<ExportJob | null>(null),
     [backupBusy, setBackupBusy] = useState<"export" | "preview" | "import" | "reset" | "undo" | null>(null),
     [backupFile, setBackupFile] = useState<File | null>(null),
     [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null),
     [resetPhrase, setResetPhrase] = useState(""),
     [backupMessage, setBackupMessage] = useState<string | null>(null),
     [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null);
+  const exportRunner = useRef(0);
   const [query, setQuery] = useState(""),
     [filterUser, setFilterUser] = useState(0),
     [selectedUserId, setSelectedUserId] = useState<number | null>(null),
@@ -209,28 +227,73 @@ export default function AdminUsers({
   };
   const refreshBackupStatus = async () => {
     if (!rootAdmin) return;
-    setBackupStatus(await api("/api/system-backup/status"));
+    const status = await api("/api/system-backup/status") as BackupStatus;
+    setBackupStatus(status);
+    setExportJob(status.latestExport || null);
   };
-  const exportFullBackup = () => {
-    /*
-     * A download must start from the user's tap itself.
-     *
-     * The old flow awaited fetch(), built a Blob, then manufactured an <a> and
-     * clicked it. Mobile Safari/Chrome may no longer treat that late click as a
-     * user gesture, and a large Firestore export can keep the button stuck on
-     * «أجمع كل البيانات…» for a long time before the browser even sees a file.
-     *
-     * Let the browser own the download request instead. The same-origin session
-     * cookie travels with it, Content-Disposition supplies the real filename,
-     * and the server can spend as long as it needs collecting the snapshot
-     * without losing the original download gesture.
-     */
+  const driveExportJob = async (jobId: string) => {
+    const runner = ++exportRunner.current;
+    setBackupBusy("export");
     setError(null);
-    setBackupMessage("بدأ تجهيز النسخة الكاملة — ستظهر في التنزيلات فور اكتمال جمع البيانات.");
+    try {
+      let job = await api(`/api/system-backup/export-jobs/${encodeURIComponent(jobId)}`) as ExportJob;
+      setExportJob(job);
+      while (runner === exportRunner.current && ["queued", "running", "finalizing"].includes(job.status)) {
+        job = await api(`/api/system-backup/export-jobs/${encodeURIComponent(jobId)}/step`, { method: "POST" }) as ExportJob;
+        if (runner !== exportRunner.current) return;
+        setExportJob(job);
+        if (["ready", "failed"].includes(job.status)) break;
+        await new Promise(resolve => window.setTimeout(resolve, 120));
+      }
+      if (job.status === "ready") {
+        setBackupMessage(`اكتملت النسخة: ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل. اضغط «تنزيل النسخة» لحفظ الملف.`);
+        const status = await api("/api/system-backup/status") as BackupStatus;
+        if (runner === exportRunner.current) setBackupStatus(status);
+      } else if (job.status === "failed") {
+        setError(job.error || "تعذر إكمال التصدير. يمكنك بدء نسخة جديدة دون التأثير على بيانات النظام.");
+      }
+    } catch (e: any) {
+      if (runner === exportRunner.current) setError(e.message || "تعذر متابعة التصدير");
+    } finally {
+      if (runner === exportRunner.current) setBackupBusy(null);
+    }
+  };
+  const exportFullBackup = async () => {
+    setError(null);
+    setBackupMessage(null);
+    // A running job is a checkpoint, not a dead button. Resume it exactly where
+    // the last browser/instance stopped instead of starting the database walk
+    // again from zero.
+    if (exportJob && ["queued", "running", "finalizing"].includes(exportJob.status)) {
+      await driveExportJob(exportJob.id);
+      return;
+    }
+    setBackupBusy("export");
+    try {
+      const job = await api("/api/system-backup/export-jobs", { method: "POST" }) as ExportJob;
+      setExportJob(job);
+      if (job.status === "ready") {
+        setBackupMessage(`النسخة جاهزة: ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل.`);
+        setBackupBusy(null);
+        return;
+      }
+      setBackupMessage("بدأ التصدير الآمن. يمكنك ترك الصفحة والعودة؛ التقدم المحفوظ لن يضيع.");
+      setBackupBusy(null);
+      await driveExportJob(job.id);
+    } catch (e: any) {
+      setBackupBusy(null);
+      setError(e.message || "تعذر بدء التصدير");
+    }
+  };
+  const downloadFullBackup = () => {
+    if (!exportJob || exportJob.status !== "ready") return;
+    // This navigation happens directly from the user's click, which keeps
+    // Safari/Chrome download permissions intact. The server only streams the
+    // already-built gzip; it performs no database scan here.
     const link = document.createElement("a");
-    link.href = `/api/system-backup/export?download=${Date.now()}`;
+    link.href = `/api/system-backup/export-jobs/${encodeURIComponent(exportJob.id)}/download`;
     link.rel = "noopener";
-    link.setAttribute("download", "");
+    link.setAttribute("download", exportJob.filename || "schedule-full-backup.json.gz");
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -291,7 +354,9 @@ export default function AdminUsers({
     try {
       if (mode === "backup") {
         if (!rootAdmin) throw new Error("هذه الخزنة مخصصة لحساب الإدارة الرئيسي فقط");
-        setBackupStatus(await api("/api/system-backup/status"));
+        const status = await api("/api/system-backup/status") as BackupStatus;
+        setBackupStatus(status);
+        setExportJob(status.latestExport || null);
         return;
       }
       const base = await Promise.all([
@@ -325,6 +390,10 @@ export default function AdminUsers({
     }
   };
   useEffect(() => {
+    // Stop only the browser-side driver when leaving the screen. The durable
+    // server checkpoint remains resumable when the vault is opened again.
+    exportRunner.current += 1;
+    setBackupBusy(null);
     setPage("index");
     setQuery("");
     setFilterUser(0);
@@ -842,6 +911,16 @@ export default function AdminUsers({
 
   if (mode === "backup") {
     const point = backupStatus?.latest || null;
+    const exportInProgress = Boolean(exportJob && ["queued", "running", "finalizing"].includes(exportJob.status));
+    const vaultLocked = Boolean(backupBusy) || exportInProgress;
+    const exportPercent = exportJob?.status === "ready" ? 100
+      : exportJob?.status === "finalizing" ? 99
+      : exportJob?.totalUnits ? Math.max(2, Math.min(97, Math.round((exportJob.completedUnits / exportJob.totalUnits) * 97)))
+      : exportJob ? 2 : 0;
+    const exportStatusLabel = exportJob?.status === "ready" ? "جاهزة للتنزيل"
+      : exportJob?.status === "failed" ? "توقفت — يمكن البدء من جديد"
+      : exportJob?.status === "finalizing" ? "أبني الملف النهائي وأتحقق من SHA-256"
+      : exportJob ? "أجمع البيانات وأحفظ نقاط التقدم" : "لم يبدأ التصدير بعد";
     const previewCollections: Array<[string, number]> = backupPreview
       ? Object.entries(backupPreview.collectionCounts)
           .map(([name, count]) => [name, Number(count) || 0] as [string, number])
@@ -852,6 +931,7 @@ export default function AdminUsers({
         {consoleHead()}
         <PageTitle eyebrow="إدارة النظام" subtitle="حساب الإدارة الرئيسي فقط">خزنة النظام</PageTitle>
         {backupMessage ? <Notice type="success">{backupMessage}</Notice> : null}
+        {error ? <Notice>{error}</Notice> : null}
         <Surface className="system-vault-hero">
           <div className="system-vault-seal"><ShieldCheck /></div>
           <div>
@@ -868,10 +948,40 @@ export default function AdminUsers({
         <div className="system-vault-grid">
           <Surface className="system-vault-action vault-export">
             <span className="vault-action-icon"><Download /></span>
-            <div><small>01</small><h3>تصدير كامل</h3><p>ينشئ ملف JSON مضغوطًا مع بصمة SHA-256 وفهرس بعدد السجلات في كل مجموعة.</p></div>
-            <PrimaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => void exportFullBackup()}>
-              <DatabaseBackup /> {backupBusy === "export" ? "أجمع كل البيانات…" : "تصدير النظام كاملًا"}
-            </PrimaryButton>
+            <div><small>01</small><h3>تصدير كامل</h3><p>تصدير متدرج وآمن: يحفظ تقدمه بعد كل دفعة، ثم يبني ملف JSON مضغوطًا مع SHA-256 دون إبقاء المتصفح منتظرًا لطلب واحد طويل.</p></div>
+            {exportJob ? (
+              <div className={`vault-export-progress status-${exportJob.status}`}>
+                <div className="vault-export-progress-head">
+                  <span>{exportStatusLabel}</span>
+                  <strong>{exportPercent}%</strong>
+                </div>
+                <div className="vault-export-progress-track" aria-label={`تقدم التصدير ${exportPercent}%`}>
+                  <i style={{ width: `${exportPercent}%` }} />
+                </div>
+                <div className="vault-export-progress-meta">
+                  <span><b>{exportJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> سجل جُمِع</span>
+                  <span><b>{exportJob.completedUnits.toLocaleString("ar-KW-u-nu-latn")}</b> / {exportJob.totalUnits.toLocaleString("ar-KW-u-nu-latn")} مرحلة</span>
+                  {exportJob.sizeBytes ? <span><b>{(exportJob.sizeBytes / 1024 / 1024).toFixed(exportJob.sizeBytes > 10 * 1024 * 1024 ? 1 : 2)}</b> MB</span> : null}
+                </div>
+                {exportJob.current && exportJob.status !== "ready" ? <small className="vault-export-current" dir="ltr">{exportJob.current}</small> : null}
+                {exportJob.status === "ready" && exportJob.sha256 ? <code className="vault-export-ready-hash" dir="ltr">SHA-256 · {exportJob.sha256}</code> : null}
+                {exportJob.status === "failed" && exportJob.error ? <p className="vault-export-error">{exportJob.error}</p> : null}
+              </div>
+            ) : null}
+            {exportJob?.status === "ready" ? (
+              <div className="vault-inline-actions">
+                <PrimaryButton type="button" disabled={Boolean(backupBusy)} onClick={downloadFullBackup}>
+                  <Download /> تنزيل النسخة
+                </PrimaryButton>
+                <SecondaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => void exportFullBackup()}>
+                  <DatabaseBackup /> إنشاء نسخة أحدث
+                </SecondaryButton>
+              </div>
+            ) : (
+              <PrimaryButton type="button" disabled={backupBusy === "export" || (Boolean(backupBusy) && backupBusy !== "export")} onClick={() => void exportFullBackup()}>
+                <DatabaseBackup /> {backupBusy === "export" ? "أتابع التصدير…" : exportInProgress ? "استكمال التصدير" : exportJob?.status === "failed" ? "بدء نسخة جديدة" : "تصدير النظام كاملًا"}
+              </PrimaryButton>
+            )}
           </Surface>
 
           <Surface className="system-vault-action vault-import">
@@ -882,8 +992,8 @@ export default function AdminUsers({
               <FileCheck2 /><span>{backupFile ? backupFile.name : "اختر ملف النسخة"}</span>
             </label>
             <div className="vault-inline-actions">
-              <SecondaryButton type="button" disabled={!backupFile || Boolean(backupBusy)} onClick={() => void previewBackup()}>{backupBusy === "preview" ? "أفحص…" : "فحص النسخة"}</SecondaryButton>
-              <PrimaryButton type="button" disabled={!backupPreview || Boolean(backupBusy)} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أستعيد النظام…" : "استيراد"}</PrimaryButton>
+              <SecondaryButton type="button" disabled={!backupFile || vaultLocked} onClick={() => void previewBackup()}>{backupBusy === "preview" ? "أفحص…" : "فحص النسخة"}</SecondaryButton>
+              <PrimaryButton type="button" disabled={!backupPreview || vaultLocked} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أستعيد النظام…" : "استيراد"}</PrimaryButton>
             </div>
           </Surface>
 
@@ -891,7 +1001,7 @@ export default function AdminUsers({
             <span className="vault-action-icon"><Eraser /></span>
             <div><small>03</small><h3>تصفير النظام</h3><p>يمسح بيانات العمل كاملة ويُبقي حساب الإدارة الرئيسي فقط كي لا تفقد باب التراجع.</p></div>
             <input className="vault-confirm-input" value={resetPhrase} onChange={(event) => setResetPhrase(event.target.value)} placeholder="اكتب: تصفير النظام" autoComplete="off" />
-            <SecondaryButton type="button" disabled={resetPhrase !== "تصفير النظام" || Boolean(backupBusy)} onClick={() => void resetFullSystem()}>
+            <SecondaryButton type="button" disabled={resetPhrase !== "تصفير النظام" || vaultLocked} onClick={() => void resetFullSystem()}>
               <Eraser /> {backupBusy === "reset" ? "أصنع نقطة أمان ثم أصفّر…" : "تصفير"}
             </SecondaryButton>
           </Surface>
@@ -900,7 +1010,7 @@ export default function AdminUsers({
             <span className="vault-action-icon"><ArchiveRestore /></span>
             <div><small>04</small><h3>تراجع كامل</h3><p>{point ? `آخر نقطة أمان: ${point.action}` : "لا توجد عملية مدمرة محفوظة للتراجع عنها."}</p></div>
             {point ? <div className="vault-restore-meta"><strong>{new Date(point.createdAt).toLocaleString("ar-KW")}</strong><span>{point.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div> : null}
-            <PrimaryButton type="button" disabled={!point || Boolean(backupBusy)} onClick={() => void undoSystemOperation()}>
+            <PrimaryButton type="button" disabled={!point || vaultLocked} onClick={() => void undoSystemOperation()}>
               <ArchiveRestore /> {backupBusy === "undo" ? "أعيد الحالة…" : "تراجع عن آخر عملية"}
             </PrimaryButton>
           </Surface>

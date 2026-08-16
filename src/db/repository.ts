@@ -3,8 +3,9 @@ import { cachedReference, cachedSchedules, invalidateReference, invalidateSchedu
 import path from "path";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
 import { getApps, initializeApp, cert } from "firebase-admin/app";
-import { getFirestore, FieldValue, Timestamp } from "firebase-admin/firestore";
+import { getFirestore, FieldPath, FieldValue, Timestamp } from "firebase-admin/firestore";
 import type { Firestore, WriteBatch } from "firebase-admin/firestore";
+import { gzipSync, gunzipSync } from "zlib";
 import { defaultPrivateDirectory, isCloudRunRuntime, materializePackagedSnapshotOnce, packagedSnapshotPath, readJsonSnapshot } from "./snapshot";
 import {
   SystemUser,
@@ -701,13 +702,48 @@ export interface SystemRestorePointSummary {
   consumedAt?: string;
 }
 
+export type SystemExportJobStatus = "queued" | "running" | "finalizing" | "ready" | "failed";
+
+export interface SystemExportJobSummary {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: SystemExportJobStatus;
+  totalUnits: number;
+  completedUnits: number;
+  documentCount: number;
+  collectionCounts: Record<string, number>;
+  current?: string;
+  filename?: string;
+  sha256?: string;
+  sizeBytes?: number;
+  error?: string;
+}
+
+interface SystemExportQueueUnit {
+  path: string;
+  cursor?: string;
+}
+
+interface SystemExportJobRecord extends SystemExportJobSummary {
+  rootAdminId: number;
+  byUserId: number;
+  queue: SystemExportQueueUnit[];
+  nextIndex: number;
+  dataChunkSeq: number;
+  dataGroupSeq: number;
+  fileChunkCount: number;
+}
+
 const SYSTEM_BACKUP_FORMAT = "schedule-system-backup/1" as const;
 const SYSTEM_RESTORE_COLLECTION = "_systemRestorePoints";
+const SYSTEM_EXPORT_JOB_COLLECTION = "_systemExportJobs";
 // Sessions are deliberately not portable: the document id is a live bearer
 // credential. Everything durable is included; live login tokens stay on the
 // server and survive a restore so the root administrator cannot lock himself out.
-const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, "sessions"]);
+const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, SYSTEM_EXPORT_JOB_COLLECTION, "sessions"]);
 const LOCAL_RESTORE_DIR = () => path.join(DB_DIR, "system-restore-points");
+const LOCAL_EXPORT_DIR = () => path.join(DB_DIR, "system-export-jobs");
 
 function backupEncode(value: any): any {
   if (value == null || typeof value !== "object") return value;
@@ -804,6 +840,339 @@ async function collectSystemDocuments(): Promise<SystemBackupDocument[]> {
     await collectFirestoreCollection(collection, output);
   });
   return output.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+
+/* -------------------------------------------------------------------------
+ * Resumable full-system export jobs
+ * -------------------------------------------------------------------------
+ *
+ * A browser download is the wrong lifetime for a full Firestore walk. Cloud Run
+ * can end an HTTP request long before a large academic archive has been read,
+ * and a closed tab should not throw away twelve minutes of work. The vault now
+ * advances a durable job in short, bounded steps. Each successful page is
+ * checkpointed under an internal collection excluded from the backup itself.
+ * Reopening the vault sees the same job and resumes from its last cursor.
+ *
+ * Current application data is flat except the immutable legacy SQL archive
+ * (`legacyArchive/{table}/rows`). Top-level collections are discovered at run
+ * time, so future top-level data is included automatically; the one real nested
+ * durable structure is queued explicitly without asking Firestore
+ * `listCollections()` once for every document (the source of the old multi-
+ * minute export).
+ */
+const SYSTEM_EXPORT_PAGE_SIZE = 250;
+const SYSTEM_EXPORT_STEP_BUDGET_MS = 6500;
+const SYSTEM_EXPORT_RAW_GROUP_TARGET = 460 * 1024;
+const SYSTEM_EXPORT_STORED_PIECE = 580 * 1024;
+
+function exportJobSummary(row: SystemExportJobRecord): SystemExportJobSummary {
+  const { rootAdminId: _root, byUserId: _by, queue: _queue, nextIndex: _next, dataChunkSeq: _dcs, dataGroupSeq: _dgs, fileChunkCount: _fcc, ...summary } = row;
+  return summary;
+}
+
+function firestoreBytesToBuffer(value: any): Buffer {
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Uint8Array) return Buffer.from(value);
+  if (value && typeof value.toBuffer === "function") return Buffer.from(value.toBuffer());
+  if (value && typeof value.toUint8Array === "function") return Buffer.from(value.toUint8Array());
+  throw new Error("تعذر قراءة جزء النسخة المؤقت");
+}
+
+function splitBuffer(value: Buffer, maxBytes = SYSTEM_EXPORT_STORED_PIECE): Buffer[] {
+  const parts: Buffer[] = [];
+  for (let offset = 0; offset < value.length; offset += maxBytes) parts.push(value.subarray(offset, Math.min(value.length, offset + maxBytes)));
+  return parts.length ? parts : [Buffer.alloc(0)];
+}
+
+function groupBackupDocuments(documents: SystemBackupDocument[]): SystemBackupDocument[][] {
+  const groups: SystemBackupDocument[][] = [];
+  let current: SystemBackupDocument[] = [];
+  let bytes = 0;
+  for (const item of documents) {
+    const size = Buffer.byteLength(JSON.stringify(item), "utf8") + 1;
+    if (current.length && bytes + size > SYSTEM_EXPORT_RAW_GROUP_TARGET) {
+      groups.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(item);
+    bytes += size;
+  }
+  if (current.length) groups.push(current);
+  return groups;
+}
+
+async function persistExportDocumentGroups(
+  root: FirebaseFirestore.DocumentReference,
+  documents: SystemBackupDocument[],
+  row: SystemExportJobRecord,
+): Promise<SystemExportJobRecord> {
+  for (const group of groupBackupDocuments(documents)) {
+    const groupId = row.dataGroupSeq + 1;
+    const raw = Buffer.from(group.map(item => JSON.stringify(item)).join("\n"), "utf8");
+    const compressed = gzipSync(raw, { level: 1 });
+    const pieces = splitBuffer(compressed);
+    const batch = firestoreDb!.batch();
+    pieces.forEach((piece, index) => {
+      row.dataChunkSeq += 1;
+      batch.set(root.collection("dataChunks").doc(`c_${String(row.dataChunkSeq).padStart(9, "0")}`), {
+        group: groupId,
+        part: index,
+        parts: pieces.length,
+        payload: piece,
+      });
+    });
+    await batch.commit();
+    row.dataGroupSeq = groupId;
+  }
+  return row;
+}
+
+async function readExportDocuments(root: FirebaseFirestore.DocumentReference): Promise<SystemBackupDocument[]> {
+  const snap = await root.collection("dataChunks").get();
+  const chunks = snap.docs.sort((a, b) => a.id.localeCompare(b.id));
+  const grouped = new Map<number, Array<{ part: number; payload: Buffer }>>();
+  for (const doc of chunks) {
+    const data = doc.data() as any;
+    const group = Number(data.group || 0);
+    const list = grouped.get(group) || [];
+    list.push({ part: Number(data.part || 0), payload: firestoreBytesToBuffer(data.payload) });
+    grouped.set(group, list);
+  }
+  const unique = new Map<string, SystemBackupDocument>();
+  for (const groupId of [...grouped.keys()].sort((a, b) => a - b)) {
+    const pieces = (grouped.get(groupId) || []).sort((a, b) => a.part - b.part).map(item => item.payload);
+    const text = gunzipSync(Buffer.concat(pieces)).toString("utf8");
+    for (const line of text.split("\n")) {
+      if (!line) continue;
+      const item = JSON.parse(line) as SystemBackupDocument;
+      // A retried page can have been checkpointed twice if an instance died
+      // between writing its data chunk and updating its cursor. Path identity
+      // makes finalization idempotent and guarantees one document in the file.
+      unique.set(item.path, item);
+    }
+  }
+  return [...unique.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+async function writeFinalExportFile(root: FirebaseFirestore.DocumentReference, payload: SystemBackupPayload): Promise<{ chunkCount: number; sizeBytes: number }> {
+  const compressed = gzipSync(Buffer.from(JSON.stringify(payload), "utf8"), { level: 6 });
+  const pieces = splitBuffer(compressed);
+  const existing = await root.collection("fileChunks").get();
+  for (let offset = 0; offset < Math.max(existing.docs.length, pieces.length); offset += 300) {
+    const batch = firestoreDb!.batch();
+    existing.docs.slice(offset, offset + 300).forEach(doc => batch.delete(doc.ref));
+    pieces.slice(offset, offset + 300).forEach((piece, index) => {
+      const absolute = offset + index + 1;
+      batch.set(root.collection("fileChunks").doc(`f_${String(absolute).padStart(6, "0")}`), { payload: piece });
+    });
+    await batch.commit();
+  }
+  return { chunkCount: pieces.length, sizeBytes: compressed.length };
+}
+
+async function finalizeFirestoreExportJob(root: FirebaseFirestore.DocumentReference, row: SystemExportJobRecord): Promise<SystemExportJobRecord> {
+  row.status = "finalizing";
+  row.current = "أتحقق من البصمة وأبني الملف النهائي";
+  row.updatedAt = new Date().toISOString();
+  await root.set(row, { merge: true });
+
+  const documents = await readExportDocuments(root);
+  const counts = systemBackupCollectionCounts(documents);
+  const backup: SystemBackupPayload = {
+    format: SYSTEM_BACKUP_FORMAT,
+    backupId: row.id,
+    createdAt: row.createdAt,
+    storage: "firestore",
+    source: { app: "SCHEDULE", rootAdminId: row.rootAdminId },
+    summary: { documentCount: documents.length, collectionCounts: counts },
+    integrity: { algorithm: "sha256", sha256: systemBackupDigest({ storage: "firestore", documents }) },
+    documents,
+  };
+  validateSystemBackupPayload(backup, row.rootAdminId);
+  const file = await writeFinalExportFile(root, backup);
+  const stamp = row.createdAt.replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");
+  row = {
+    ...row,
+    status: "ready",
+    current: undefined,
+    updatedAt: new Date().toISOString(),
+    completedUnits: row.queue.length,
+    totalUnits: row.queue.length,
+    documentCount: documents.length,
+    collectionCounts: counts,
+    filename: `schedule-full-backup_${stamp}.json.gz`,
+    sha256: backup.integrity.sha256,
+    sizeBytes: file.sizeBytes,
+    fileChunkCount: file.chunkCount,
+    error: undefined,
+  };
+  await root.set(row, { merge: false });
+  // Once the portable gzip exists, the staging chunks have no value. Removing
+  // them keeps the vault from becoming a second copy of the university DB.
+  try { await deleteFirestoreTree(root.collection("dataChunks")); } catch {}
+  return row;
+}
+
+function localExportMetaPath(id: string) { return path.join(LOCAL_EXPORT_DIR(), `${id}.json`); }
+function localExportFilePath(id: string) { return path.join(LOCAL_EXPORT_DIR(), `${id}.json.gz`); }
+
+function readLocalExportJob(id: string): SystemExportJobRecord | null {
+  try { return JSON.parse(fs.readFileSync(localExportMetaPath(id), "utf8")) as SystemExportJobRecord; } catch { return null; }
+}
+
+function writeLocalExportJob(row: SystemExportJobRecord) {
+  fs.mkdirSync(LOCAL_EXPORT_DIR(), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(localExportMetaPath(row.id), JSON.stringify(row), { mode: 0o600 });
+}
+
+async function latestSystemExportJob(rootAdminId = 1): Promise<SystemExportJobSummary | null> {
+  if (firestoreDb) {
+    const snap = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).orderBy("createdAt", "desc").limit(1).get();
+    if (!snap.docs.length) return null;
+    const row = snap.docs[0].data() as SystemExportJobRecord;
+    return Number(row.rootAdminId) === rootAdminId ? exportJobSummary(row) : null;
+  }
+  if (!fs.existsSync(LOCAL_EXPORT_DIR())) return null;
+  const rows = fs.readdirSync(LOCAL_EXPORT_DIR()).filter(name => name.endsWith(".json") && !name.endsWith(".json.gz"))
+    .map(name => readLocalExportJob(name.replace(/\.json$/, ""))).filter(Boolean) as SystemExportJobRecord[];
+  const row = rows.filter(item => item.rootAdminId === rootAdminId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  return row ? exportJobSummary(row) : null;
+}
+
+async function startSystemExportJob(byUserId: number, rootAdminId = 1): Promise<SystemExportJobSummary> {
+  const latest = await latestSystemExportJob(rootAdminId);
+  if (latest && ["queued", "running", "finalizing"].includes(latest.status)) return latest;
+  const id = randomUUID();
+  const createdAt = new Date().toISOString();
+
+  if (!firestoreDb) {
+    const backup = await makeSystemBackup(rootAdminId);
+    const compressed = gzipSync(Buffer.from(JSON.stringify(backup), "utf8"), { level: 6 });
+    fs.mkdirSync(LOCAL_EXPORT_DIR(), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(localExportFilePath(id), compressed, { mode: 0o600 });
+    const row: SystemExportJobRecord = {
+      id, createdAt, updatedAt: new Date().toISOString(), status: "ready",
+      totalUnits: 1, completedUnits: 1, documentCount: backup.summary.documentCount,
+      collectionCounts: backup.summary.collectionCounts, filename: `schedule-full-backup_${createdAt.replace(/[:.]/g, "-").replace("T", "_").replace("Z", "")}.json.gz`,
+      sha256: backup.integrity.sha256, sizeBytes: compressed.length,
+      rootAdminId, byUserId, queue: [], nextIndex: 0, dataChunkSeq: 0, dataGroupSeq: 0, fileChunkCount: 1,
+    };
+    writeLocalExportJob(row);
+    return exportJobSummary(row);
+  }
+
+  const paths = (await firestoreDb.listCollections())
+    .filter(collection => !SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collection.id))
+    .map(collection => collection.path)
+    .sort((a, b) => a.localeCompare(b));
+  // Discover the only nested durable structure up front so the total number of
+  // stages is stable from the first progress frame instead of jumping midway.
+  if (paths.includes("legacyArchive")) {
+    const archiveTables = await firestoreDb.collection("legacyArchive").get();
+    for (const table of archiveTables.docs) paths.push(`${table.ref.path}/rows`);
+    paths.sort((a, b) => a.localeCompare(b));
+  }
+  const row: SystemExportJobRecord = {
+    id, createdAt, updatedAt: createdAt, status: "running",
+    totalUnits: paths.length, completedUnits: 0, documentCount: 0, collectionCounts: {},
+    current: paths[0] || "تهيئة النسخة",
+    rootAdminId, byUserId, queue: paths.map(path => ({ path })), nextIndex: 0,
+    dataChunkSeq: 0, dataGroupSeq: 0, fileChunkCount: 0,
+  };
+  const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
+  await root.set(row, { merge: false });
+  // Keep only a few finished export files. Running jobs are never discarded.
+  try {
+    const older = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).orderBy("createdAt", "desc").get();
+    const finished = older.docs.filter(doc => !["queued", "running", "finalizing"].includes(String(doc.data().status)));
+    for (const doc of finished.slice(4)) await deleteFirestoreTree(doc.ref);
+  } catch {}
+  return exportJobSummary(row);
+}
+
+async function getSystemExportJob(id: string, rootAdminId = 1): Promise<SystemExportJobSummary> {
+  if (firestoreDb) {
+    const doc = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id).get();
+    if (!doc.exists) throw new Error("مهمة التصدير غير موجودة");
+    const row = doc.data() as SystemExportJobRecord;
+    if (Number(row.rootAdminId) !== rootAdminId) throw new Error("مهمة التصدير لا تخص هذا الحساب");
+    return exportJobSummary(row);
+  }
+  const row = readLocalExportJob(id);
+  if (!row || row.rootAdminId !== rootAdminId) throw new Error("مهمة التصدير غير موجودة");
+  return exportJobSummary(row);
+}
+
+async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<SystemExportJobSummary> {
+  if (!firestoreDb) return getSystemExportJob(id, rootAdminId);
+  const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
+  const doc = await root.get();
+  if (!doc.exists) throw new Error("مهمة التصدير غير موجودة");
+  let row = doc.data() as SystemExportJobRecord;
+  if (Number(row.rootAdminId) !== rootAdminId) throw new Error("مهمة التصدير لا تخص هذا الحساب");
+  if (["ready", "failed"].includes(row.status)) return exportJobSummary(row);
+
+  const deadline = Date.now() + SYSTEM_EXPORT_STEP_BUDGET_MS;
+  try {
+    while (row.nextIndex < row.queue.length && Date.now() < deadline) {
+      const unit = row.queue[row.nextIndex];
+      row.status = "running";
+      row.current = unit.path;
+      row.updatedAt = new Date().toISOString();
+      const collection = firestoreDb.collection(unit.path);
+      let query: FirebaseFirestore.Query = collection.orderBy(FieldPath.documentId()).limit(SYSTEM_EXPORT_PAGE_SIZE);
+      if (unit.cursor) query = query.startAfter(unit.cursor);
+      const snap = await query.get();
+      const encoded = snap.docs.map(item => ({ path: item.ref.path, data: backupEncode(item.data()) } as SystemBackupDocument));
+      if (encoded.length) {
+        row = await persistExportDocumentGroups(root, encoded, row);
+        row.documentCount += encoded.length;
+        const top = unit.path.split("/")[0] || "unknown";
+        row.collectionCounts[top] = (row.collectionCounts[top] || 0) + encoded.length;
+      }
+
+      if (snap.size < SYSTEM_EXPORT_PAGE_SIZE) {
+        row.completedUnits += 1;
+        row.nextIndex += 1;
+      } else {
+        unit.cursor = snap.docs[snap.docs.length - 1].id;
+        row.queue[row.nextIndex] = unit;
+      }
+      row.current = row.queue[row.nextIndex]?.path;
+      row.updatedAt = new Date().toISOString();
+      await root.set(row, { merge: false });
+    }
+    if (row.nextIndex >= row.queue.length) row = await finalizeFirestoreExportJob(root, row);
+    return exportJobSummary(row);
+  } catch (error: any) {
+    row.status = "failed";
+    row.error = String(error?.message || error || "تعذر إكمال التصدير").slice(0, 900);
+    row.current = undefined;
+    row.updatedAt = new Date().toISOString();
+    await root.set(row, { merge: false });
+    return exportJobSummary(row);
+  }
+}
+
+async function readSystemExportFile(id: string, rootAdminId = 1): Promise<{ summary: SystemExportJobSummary; chunks: Buffer[] }> {
+  if (firestoreDb) {
+    const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
+    const doc = await root.get();
+    if (!doc.exists) throw new Error("مهمة التصدير غير موجودة");
+    const row = doc.data() as SystemExportJobRecord;
+    if (Number(row.rootAdminId) !== rootAdminId) throw new Error("مهمة التصدير لا تخص هذا الحساب");
+    if (row.status !== "ready" || !row.fileChunkCount) throw new Error("ملف النسخة لم يجهز بعد");
+    const snap = await root.collection("fileChunks").get();
+    const chunks = snap.docs.sort((a, b) => a.id.localeCompare(b.id)).slice(0, row.fileChunkCount)
+      .map(item => firestoreBytesToBuffer((item.data() as any).payload));
+    if (chunks.length !== row.fileChunkCount) throw new Error("ملف النسخة غير مكتمل؛ أعد إنشاء التصدير");
+    return { summary: exportJobSummary(row), chunks };
+  }
+  const row = readLocalExportJob(id);
+  if (!row || row.rootAdminId !== rootAdminId || row.status !== "ready") throw new Error("ملف النسخة غير جاهز");
+  return { summary: exportJobSummary(row), chunks: [fs.readFileSync(localExportFilePath(id))] };
 }
 
 function validateFirestoreDocumentPath(documentPath: string): boolean {
@@ -2876,6 +3245,21 @@ export const Repository = {
   // before changing a single durable row.
   exportSystemBackup: async (rootAdminId = 1): Promise<SystemBackupPayload> =>
     makeSystemBackup(rootAdminId),
+
+  startSystemExportJob: async (byUserId: number, rootAdminId = 1): Promise<SystemExportJobSummary> =>
+    startSystemExportJob(byUserId, rootAdminId),
+
+  getLatestSystemExportJob: async (rootAdminId = 1): Promise<SystemExportJobSummary | null> =>
+    latestSystemExportJob(rootAdminId),
+
+  getSystemExportJob: async (id: string, rootAdminId = 1): Promise<SystemExportJobSummary> =>
+    getSystemExportJob(id, rootAdminId),
+
+  advanceSystemExportJob: async (id: string, rootAdminId = 1): Promise<SystemExportJobSummary> =>
+    advanceSystemExportJob(id, rootAdminId),
+
+  readSystemExportFile: async (id: string, rootAdminId = 1): Promise<{ summary: SystemExportJobSummary; chunks: Buffer[] }> =>
+    readSystemExportFile(id, rootAdminId),
 
   validateSystemBackup: async (input: unknown, rootAdminId = 1): Promise<SystemBackupPayload> =>
     validateSystemBackupPayload(input, rootAdminId),

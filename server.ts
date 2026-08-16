@@ -3,7 +3,7 @@ import compression from "compression";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { createHmac, randomBytes } from "crypto";
-import { gzipSync, gunzipSync } from "zlib";
+import { gunzipSync } from "zlib";
 import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } from "./src/db/repository";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
@@ -4063,26 +4063,58 @@ app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), requireP
  * they are bearer credentials / safety infrastructure, not university data.
  */
 app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
-  const restorePoints = await Repository.getSystemRestorePoints();
+  const [restorePoints, latestExport] = await Promise.all([
+    Repository.getSystemRestorePoints(),
+    Repository.getLatestSystemExportJob(ROOT_ADMIN_USER_ID),
+  ]);
   res.json({
     rootOnly: true,
     data: activeDataMode(),
     restorePoints,
     latest: restorePoints.find(point => !point.consumedAt) || null,
+    latestExport,
   });
 });
 
-app.get("/api/system-backup/export", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const backup = await Repository.exportSystemBackup(ROOT_ADMIN_USER_ID);
-  const json = Buffer.from(JSON.stringify(backup), "utf8");
-  const compressed = gzipSync(json, { level: 9 });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-").replace("T", "_").replace("Z", "");
+/*
+ * Durable, resumable export pipeline.
+ *
+ * Every step is deliberately short enough to fit comfortably inside Cloud Run
+ * request limits. Progress and staging chunks live in Firestore, so closing the
+ * browser loses no completed work; reopening the root vault can resume the same
+ * job. The final download is only a read of already-built gzip chunks and no
+ * longer performs a database walk while the browser waits for a file.
+ */
+app.post("/api/system-backup/export-jobs", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const job = await Repository.startSystemExportJob(req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  res.status(job.status === "ready" ? 200 : 202).json(job);
+});
+
+app.get("/api/system-backup/export-jobs/:id", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  res.json(await Repository.getSystemExportJob(String(req.params.id), ROOT_ADMIN_USER_ID));
+});
+
+app.post("/api/system-backup/export-jobs/:id/step", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const job = await Repository.advanceSystemExportJob(String(req.params.id), ROOT_ADMIN_USER_ID);
+  res.status(job.status === "ready" ? 200 : 202).json(job);
+});
+
+app.get("/api/system-backup/export-jobs/:id/download", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const file = await Repository.readSystemExportFile(String(req.params.id), ROOT_ADMIN_USER_ID);
   res.setHeader("Content-Type", "application/gzip");
-  res.setHeader("Content-Disposition", `attachment; filename="schedule-full-backup_${stamp}.json.gz"`);
-  res.setHeader("Cache-Control", "no-store, max-age=0");
-  res.setHeader("X-Backup-SHA256", backup.integrity.sha256);
-  res.setHeader("X-Backup-Documents", String(backup.summary.documentCount));
-  res.send(compressed);
+  res.setHeader("Content-Disposition", `attachment; filename="${String(file.summary.filename || "schedule-full-backup.json.gz").replace(/[\"\r\n]/g, "")}"`);
+  res.setHeader("Content-Length", String(file.summary.sizeBytes || file.chunks.reduce((sum, chunk) => sum + chunk.length, 0)));
+  res.setHeader("Cache-Control", "private, no-store, max-age=0");
+  if (file.summary.sha256) res.setHeader("X-Backup-SHA256", file.summary.sha256);
+  res.setHeader("X-Backup-Documents", String(file.summary.documentCount));
+  for (const chunk of file.chunks) res.write(chunk);
+  res.end();
+});
+
+// The old one-request export was the source of the 5/12-minute dead wait. Keep
+// a clear response for stale clients instead of silently starting that path.
+app.get("/api/system-backup/export", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  res.status(409).json({ error: "تم استبدال التصدير المباشر بتصدير متدرج وآمن. افتح خزنة النظام وابدأ التصدير من هناك." });
 });
 
 app.post("/api/system-backup/preview", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
