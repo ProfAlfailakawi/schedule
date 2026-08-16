@@ -13,7 +13,7 @@
 
 @page{size:A4 portrait;margin:14mm 12mm 18mm}
 /* Named page for the genuinely wide sheets — the week grid and the matrices. */
-@page wide{size:A4 landscape;margin:12mm 10mm 18mm}
+@page wide{size:A4 landscape;margin:14mm 10mm 18mm}
 /* Kept so existing sheets that already asked for portrait stay correct. */
 @page upright{size:A4 portrait;margin:14mm 12mm 18mm}
 
@@ -209,8 +209,9 @@
 
   /* Repeated on every printed page by the browser. */
   .print-foot{
-    position:fixed !important;inset-inline:0 !important;bottom:0 !important;
-    display:flex !important;align-items:center !important;justify-content:space-between !important;
+    display:none !important;
+    position:static !important;inset:auto !important;
+    align-items:center !important;justify-content:space-between !important;
     bottom:-10mm !important;
     padding-top:1.6mm !important;border-top:.6pt solid #bbb !important;
     font-size:7.4pt !important;color:#666 !important;
@@ -844,7 +845,6 @@
   /* Cross-report pagination hardening: a section or row should move as a unit
      instead of starting page 2 from a split fragment. */
   .print-query-list>article,
-  .print-query-group,
   .print-query-week .slot,
   .print-room-occupancy-report section,
   .print-room-line,
@@ -940,7 +940,7 @@
 
   .print-comprehensive-page-footer{
     display:grid !important;
-    grid-template-columns:minmax(0,1.45fr) minmax(24mm,.72fr) minmax(0,.95fr) !important;
+    grid-template-columns:minmax(0,1.55fr) minmax(30mm,.62fr) minmax(0,.9fr) !important;
     align-items:end !important;
     gap:3mm !important;
     margin-top:3.2mm !important;
@@ -990,4 +990,52 @@
     font-size:5.7pt !important;
     padding:.8mm 1.25mm !important;
   }
+}
+
+@media print{
+  /* Reports are paginated by the application, not left to a browser to cut a
+     card/grid in the middle. Every page gets its own letterhead and truthful
+     page marker; there are no fixed footers that can drift into page two. */
+  .print-explicit-page{
+    display:block !important;
+    width:100% !important;
+    min-width:0 !important;
+    break-inside:avoid-page !important;
+    page-break-inside:avoid !important;
+  }
+  .print-explicit-page + .print-explicit-page{
+    break-before:page !important;
+    page-break-before:always !important;
+  }
+  .print-explicit-page .print-head{margin-bottom:3.5mm !important}
+  .print-explicit-page-meta{
+    display:grid !important;
+    grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) !important;
+    align-items:center !important;
+    gap:4mm !important;
+    margin-top:3mm !important;
+    padding-top:1.8mm !important;
+    border-top:.55pt solid #c5ceca !important;
+    color:#68736e !important;
+    font-size:6.7pt !important;
+    break-inside:avoid !important;
+  }
+  .print-explicit-page-meta span{text-align:right !important}
+  .print-explicit-page-meta bdi{
+    min-width:18mm !important;text-align:center !important;
+    color:#153f37 !important;font-weight:800 !important;
+    font-variant-numeric:tabular-nums !important;
+  }
+  .print-explicit-page-meta time{text-align:left !important;color:#68736e !important}
+
+  .print-query-group{break-inside:auto !important;page-break-inside:auto !important}
+  .print-query-group>header{break-after:avoid !important;page-break-after:avoid !important}
+  .print-query-group>table thead{display:table-header-group !important}
+  .print-query-group>table tbody tr{break-inside:avoid !important;page-break-inside:avoid !important}
+  .print-query-group>table tbody tr:first-child{break-before:avoid !important;page-break-before:avoid !important}
+
+  /* The comprehensive document deliberately follows the reference PDF in
+     landscape. Its page units are already explicit, so no browser fragment can
+     start a later page from half a table. */
+  .print-comprehensive-book{page:wide !important}
 }

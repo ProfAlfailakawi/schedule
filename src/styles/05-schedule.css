@@ -4893,3 +4893,38 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   .week-hall-barter{inset-inline:2px;padding:4px;gap:1px 3px}
   .week-hall-barter>span{display:none}
 }
+
+/* The barter market is useful but secondary. Closed, it is now a compact
+   utility capsule instead of a full-width hero; opening it still reveals the
+   complete operational surface. */
+.hall-barter-board:not(.is-open){
+  width:max-content;max-width:100%;margin-inline-start:auto;
+  border-radius:999px;box-shadow:none;background:var(--surface);
+}
+.hall-barter-board:not(.is-open) .hall-barter-summary{
+  width:auto;min-height:44px;grid-template-columns:34px auto auto;gap:8px;
+  padding:5px 9px 5px 7px;
+}
+.hall-barter-board:not(.is-open) .hall-barter-mark{
+  width:32px;height:32px;border-radius:10px;
+}
+.hall-barter-board:not(.is-open) .hall-barter-mark>svg:first-child{width:17px;height:17px}
+.hall-barter-board:not(.is-open) .hall-barter-mark>svg:last-child{
+  inset-inline-end:-4px;inset-block-end:-4px;width:17px;height:17px;padding:3px;border-width:1.5px;border-radius:999px;
+}
+.hall-barter-board:not(.is-open) .hall-barter-summary-copy{display:flex;align-items:center;gap:7px;white-space:nowrap}
+.hall-barter-board:not(.is-open) .hall-barter-summary-copy small,
+.hall-barter-board:not(.is-open) .hall-barter-summary-copy em{display:none}
+.hall-barter-board:not(.is-open) .hall-barter-summary-copy strong{font-size:12px;line-height:1.2;font-weight:700}
+.hall-barter-board:not(.is-open) .hall-barter-summary-stats{gap:4px;flex-wrap:nowrap}
+.hall-barter-board:not(.is-open) .hall-barter-summary-stats>b{
+  min-height:26px;padding:0 7px;font-size:9px;border-radius:999px;
+}
+.hall-barter-board:not(.is-open) .hall-barter-summary-stats>b:not(:first-child){display:none}
+.hall-barter-board:not(.is-open) .hall-barter-summary-stats i{font-size:10px}
+.hall-barter-board:not(.is-open) .hall-barter-chevron{width:15px;height:15px}
+@media(max-width:680px){
+  .hall-barter-board:not(.is-open){width:100%;border-radius:14px}
+  .hall-barter-board:not(.is-open) .hall-barter-summary{width:100%;grid-template-columns:32px minmax(0,1fr) auto auto;padding:6px 8px}
+  .hall-barter-board:not(.is-open) .hall-barter-summary-stats{grid-column:auto;padding:0}
+}

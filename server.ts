@@ -1532,6 +1532,21 @@ const HALL_BARTER_MIN_HISTORY_TERMS = 3;
 const HALL_BARTER_MIN_FREE_SHARE = 0.72;
 const HALL_BARTER_MAX_OPPORTUNITIES = 30;
 const HALL_BARTER_DAY_LABEL = new Map(SCHEDULE_DAY_KEYS.map((key,index)=>[key,DAY_LABELS[index]]));
+type HallCampusGender = "male" | "female" | null;
+function hallCampusGender(name: unknown): HallCampusGender {
+  const value=String(name||"").trim().toLocaleLowerCase("ar");
+  if(!value)return null;
+  if(/بنات|إناث|اناث|طالبات|girls?|women|female/.test(value))return "female";
+  if(/بنين|ذكور|طلاب|boys?|men|male/.test(value))return "male";
+  return null;
+}
+function sameHallCampusGender(a: unknown,b: unknown){
+  const left=hallCampusGender(a),right=hallCampusGender(b);
+  // The university operates fully segregated male/female campuses. If a legacy
+  // college name does not identify its campus, the barter market fails closed:
+  // no cross-college borrowing is safer than guessing the wrong campus.
+  return Boolean(left&&right&&left===right);
+}
 let hallBarterSerial = 0;
 const hallBarterBoardCache = new Map<string,{ scheduleSerial:number; barterSerial:number; expiresAt:number; body:any }>();
 
@@ -1594,6 +1609,8 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     Repository.getSchedulesByScope({termId}),
     Repository.getTerms(),Repository.getSections(),Repository.getColleges(),Repository.getHallBarterRequests(termId),
   ]);
+  const requesterCollege=colleges.find(college=>Number(college.AdCollegeId)===collegeId);
+  const requesterGender=hallCampusGender(requesterCollege?.AdCollegeName);
   const recentIds=recentTenYearTermIds(terms);
   // The target term is checked separately as “free now”; counting it as history
   // would make an unfinished current timetable look artificially stable.
@@ -1619,6 +1636,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     const ownerSection=sections.find(section=>Number(section.AdSectionId)===owner.sectionId);
     const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===owner.collegeId);
     if(!ownerSection||!ownerCollege)continue;
+    if(!requesterGender||hallCampusGender(ownerCollege.AdCollegeName)!==requesterGender)continue;
     const roomCode=String(roomHistory[0].AdRoomCode||"").trim(),roomHall=String(roomHistory[0].AdRoomHall||"").trim();
     const roomTerms=[...new Set(roomHistory.map(row=>Number(row.AdTermId||0)).filter(Boolean))];
     if(roomTerms.length<HALL_BARTER_MIN_HISTORY_TERMS)continue;
@@ -1661,10 +1679,11 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
   }
   opportunities.sort((a,b)=>b.confidence-a.confidence||b.durationMinutes-a.durationMinutes||a.roomCode.localeCompare(b.roomCode,"ar"));
   const shaped=requests.map(request=>hallBarterRequestShape(request,sections,colleges));
+  const sameCampusRequests=shaped.filter(request=>sameHallCampusGender(request.requesterCollegeName,request.ownerCollegeName));
   const body={
     opportunities:opportunities.slice(0,HALL_BARTER_MAX_OPPORTUNITIES),
-    incoming:shaped.filter(request=>request.ownerCollegeId===collegeId&&request.ownerSectionId===sectionId),
-    outgoing:shaped.filter(request=>request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId),
+    incoming:sameCampusRequests.filter(request=>request.ownerCollegeId===collegeId&&request.ownerSectionId===sectionId),
+    outgoing:sameCampusRequests.filter(request=>request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId),
     memory:{terms:new Set(history.map(row=>Number(row.AdTermId||0)).filter(Boolean)).size,years:10,buildings:[...preferredBuildings]},
   };
   hallBarterBoardCache.set(cacheKey,{scheduleSerial:driftSerial,barterSerial:hallBarterSerial,expiresAt:Date.now()+2*60*1000,body});
@@ -2397,6 +2416,13 @@ app.post("/api/hall-barter/requests/:id/respond", requirePermission(7), async (r
   const decision=String(req.body?.decision||"");
   if(decision!=="approve"&&decision!=="reject"){res.status(400).json({error:"حدد الموافقة أو الرفض"});return;}
   if(decision==="approve"){
+    const [requesterCollege,ownerCollege]=await Promise.all([
+      Repository.getCollegeById(Number(request.requesterCollegeId)),
+      Repository.getCollegeById(Number(request.ownerCollegeId)),
+    ]);
+    if(!sameHallCampusGender(requesterCollege?.AdCollegeName,ownerCollege?.AdCollegeName)){
+      res.status(409).json({error:"لا يمكن اعتماد استعارة بين حرم البنين وحرم البنات. القاعات منفصلة بالكامل بين الجهتين."});return;
+    }
     const [termRows,allRequests]=await Promise.all([Repository.getSchedulesByScope({termId:request.AdTermId}),Repository.getHallBarterRequests(request.AdTermId)]);
     const roomBusy=termRows.some(row=>
       String(row.AdRoomCode||"").trim().toLocaleLowerCase()===String(request.roomCode).trim().toLocaleLowerCase()&&

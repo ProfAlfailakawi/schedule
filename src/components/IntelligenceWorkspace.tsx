@@ -143,7 +143,7 @@ type InsightScene =
   | "students";
 /* «جرّب» — every card it holds, including the three that used to appear on
    their own the moment a scenario existed. */
-type TwinCard = "hero" | "lab" | "board" | "editor" | "ledger" | "steps";
+type TwinCard = "hero" | "lab" | "board" | "editor" | "ledger";
 type ApproveCard = "compare" | "drafts" | "versions";
 type ChatItem = { prompt: string; answer: any };
 interface Props {
@@ -2665,10 +2665,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ? [
                     { value: "board", label: "لوحة التجربة", detail: "حرّك الوقت وشاهد النتيجة لحظياً", icon: <CalendarClock />,
                       metric: String(scenarioEval?.scenario?.score ?? overview?.score ?? "") },
+                    { value: "editor", label: "السيناريو", detail: "عدّل الوقت والقاعة والأيام مباشرة", icon: <SlidersHorizontal />,
+                      metric: String(changedRows.length) },
                     { value: "ledger", label: "سجل التغييرات", detail: "ما غيّرته، موعداً موعداً", icon: <FileClock />,
                       metric: String(changedRows.length) },
                   ]
-                : [{ value: "steps", label: "كيف تعمل", detail: "أربع خطوات من النسخة إلى الاعتماد", icon: <Play /> }]),
+                : []),
             ]}
           />
           {twinCard === "hero" ? (
@@ -3248,19 +3250,30 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <small>من 100</small>
                 </article>
                 <span className="twin-score-arrow" aria-hidden="true"><ArrowLeftRight /></span>
-                <article
-                  className={`twin-score-card scenario ${
+                <button
+                  type="button"
+                  className={`twin-score-card scenario twin-score-action ${
                     (scenarioEval?.scenario?.score || 0) >=
                     (scenarioEval?.baseline?.score || overview?.score || 0)
                       ? "better"
                       : ""
                   }`}
+                  onClick={() => showTwinCard("editor")}
+                  aria-label="فتح محرر السيناريو"
+                  title="فتح محرر السيناريو"
                 >
                   <span>السيناريو</span>
                   <strong><Num value={scenarioEval?.scenario?.score ?? "—"} /></strong>
-                  <small>من 100</small>
-                </article>
-                <div className="twin-delta">
+                  <small>اضغط للتعديل</small>
+                </button>
+                <button
+                  type="button"
+                  className="twin-delta twin-score-action"
+                  onClick={() => void evaluateScenario()}
+                  disabled={busy}
+                  aria-label="إعادة حساب فرق الجودة"
+                  title="إعادة حساب الجودة الآن"
+                >
                   <b>
                     {scenarioEval
                       ? <Num
@@ -3268,8 +3281,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           value={(scenarioEval.scenario.score || 0) - (scenarioEval.baseline.score || 0)} />
                       : "—"}
                   </b>
-                  <span>فرق الجودة</span>
-                </div>
+                  <span>{busy ? "أحسب الجودة…" : "فرق الجودة"}</span>
+                </button>
                 {scenarioEval?.constraints ? (
                   <div
                     className={`twin-constraint-score ${scenarioEval.constraints.scenario.total ? "warn" : "ok"}`}
@@ -3489,40 +3502,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </div>
                 </Surface>
               </div>
-          ) : null}
-          {!scenario && twinCard === "steps" ? (
-            <Surface className="twin-explainer">
-              <div className="twin-steps">
-                <article>
-                  <span>1</span>
-                  <div>
-                    <strong>انسخ</strong>
-                    <p>نسخة وهمية مطابقة</p>
-                  </div>
-                </article>
-                <article>
-                  <span>2</span>
-                  <div>
-                    <strong>جرّب</strong>
-                    <p>يدوي أو آلي</p>
-                  </div>
-                </article>
-                <article>
-                  <span>3</span>
-                  <div>
-                    <strong>قارن</strong>
-                    <p>قبل / بعد</p>
-                  </div>
-                </article>
-                <article>
-                  <span>4</span>
-                  <div>
-                    <strong>اعتمد</strong>
-                    <p>مسودة أولاً · النشر باختيارك</p>
-                  </div>
-                </article>
-              </div>
-            </Surface>
           ) : null}
         </div>
       ) : null}
@@ -3807,7 +3786,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       className="time-travel-divider"
                       style={{ left: `${timeTravel}%` }}
                     >
-                      <i />
+                      <i><ArrowLeftRight aria-hidden="true" /></i>
                     </div>
                     <input
                       className="time-travel-slider"

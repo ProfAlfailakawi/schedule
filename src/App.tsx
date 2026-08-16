@@ -1808,9 +1808,11 @@ export default function App() {
             </div>
             <div className="user-card-identity">
               <strong>{user.Name}</strong>
-              <small className="user-card-section">
-                {isPowerAdmin ? "إدارة كاملة" : (scopes[0]?.AdSectionName || "القسم العلمي")}
-              </small>
+              {isPowerAdmin || !/^\s*قسم(?:\s|$)/.test(user.Name || "") ? (
+                <small className="user-card-section">
+                  {isPowerAdmin ? "إدارة كاملة" : (scopes[0]?.AdSectionName || "القسم العلمي")}
+                </small>
+              ) : null}
               {isPowerAdmin ? (
                 <small className="user-card-college">جميع الأقسام المخوّلة</small>
               ) : null}

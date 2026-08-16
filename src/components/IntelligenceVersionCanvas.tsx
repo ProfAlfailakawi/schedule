@@ -26,7 +26,6 @@ export function IntelligenceVersionCanvas({ rows, label }: { rows: FSchedule[]; 
               {rows
                 .filter((row) => Boolean((row as any)[key]))
                 .sort((a, b) => intelligenceMinutes(a.fstarttime) - intelligenceMinutes(b.fstarttime))
-                .slice(0, 12)
                 .map((row) => (
                   <article key={`${key}-${row.id}`}>
                     <time dir="ltr">{row.fstarttime}</time>

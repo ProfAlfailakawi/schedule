@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { sortByName } from "../utils/sorting";
-import { AR, countOf } from "../utils/arabicCount";
 import {
   Activity,
   Building2,
@@ -14,7 +13,6 @@ import {
   Trash2,
   UserCog,
   UsersRound,
-  WandSparkles,
 } from "lucide-react";
 import {
   AddButton,
@@ -118,31 +116,6 @@ export default function AdminUsers({
     [sections, setSections] = useState<AdSection[]>([]),
     [instructors, setInstructors] = useState<any[]>([]),
     [logs, setLogs] = useState<AuditLogEntry[]>([]);
-  const [grantBusy, setGrantBusy] = useState(false),
-    [grantNote, setGrantNote] = useState<string | null>(null);
-
-  /** Give every active department مركز القرار, and say what actually changed. */
-  const grantDecisionCentre = async () => {
-    setError(null);
-    setGrantBusy(true);
-    try {
-      const result = await api("/api/users/grant-decision-centre", { method: "POST" });
-      const granted = Number(result?.granted || 0), had = Number(result?.alreadyHad || 0);
-      /* «تمت الإضافة إلى حسابان» is wrong Arabic — إلى governs the oblique dual,
-         حسابين. A counted phrase is only safe where the nominative belongs, so
-         the numbers are stated after a colon and never after a preposition. */
-      setGrantNote(
-        granted
-          ? `أصبح مركز القرار متاحاً لكل الأقسام. الجديد: ${countOf(granted, AR.account)}؛ وكان لديه أصلاً: ${countOf(had, AR.account)}.`
-          : `كل الحسابات النشطة لديها مركز القرار أصلاً — ${countOf(had, AR.account)}. لم يتغيّر شيء.`,
-      );
-      await load();
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setGrantBusy(false);
-    }
-  };
   const [query, setQuery] = useState(""),
     [filterUser, setFilterUser] = useState(0),
     [selectedUserId, setSelectedUserId] = useState<number | null>(null),
@@ -754,15 +727,8 @@ export default function AdminUsers({
           >
             مستخدم جديد
           </AddButton>
-          {/* Ticking the same box on every department by hand is how a screen
-              ends up half-deployed. One press, idempotent, and it reports
-              exactly how many accounts it changed. */}
-          <SecondaryButton onClick={grantDecisionCentre} disabled={grantBusy}>
-            <WandSparkles /> امنح مركز القرار لكل الأقسام
-          </SecondaryButton>
           </>,
         )}
-        {grantNote ? <Notice type="success" onDismiss={() => setGrantNote(null)}>{grantNote}</Notice> : null}
         <div className="admin-quiet-summary">
           <span>
             <UsersRound />

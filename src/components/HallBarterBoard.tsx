@@ -185,7 +185,7 @@ export default function HallBarterBoard({
         <div className="hall-barter-body">
           <div className="hall-barter-guard">
             <ShieldCheck aria-hidden="true" />
-            <div><strong>الاستعارة تحجز نافذة القاعة فقط</strong><span>لا ينشئ النظام محاضرة وهمية ولا يغيّر مقررًا. بعد الموافقة يظل إنشاء الموعد الحقيقي عبر محرر الجدول المعتاد، مع فحص التضارب نفسه.</span></div>
+            <div><strong>الاستعارة تحجز نافذة القاعة فقط</strong><span>لا ينشئ النظام محاضرة وهمية ولا يغيّر مقررًا. البورصة تفصل البنين والبنات بالكامل، وبعد الموافقة يظل إنشاء الموعد الحقيقي عبر محرر الجدول المعتاد مع فحص التضارب نفسه.</span></div>
             <GhostButton type="button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />تحديث</GhostButton>
           </div>
           <div className="hall-barter-memory">

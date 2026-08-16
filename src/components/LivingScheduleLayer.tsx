@@ -18,6 +18,7 @@ import {
   Save,
   ShieldCheck,
   Sparkles,
+  Upload,
   UsersRound,
   WandSparkles,
   X,
@@ -114,6 +115,7 @@ export default function LivingScheduleLayer({
     [candidateDay, setCandidateDay] = useState<"same" | DayKey>("same");
   const [sourceTerm, setSourceTerm] = useState(0),
     [genesis, setGenesis] = useState<any>(null),
+    [genesisUndoPoint, setGenesisUndoPoint] = useState<any>(null),
     [memoryReason, setMemoryReason] = useState(""),
     [memory, setMemory] = useState<any>(null),
     [safety, setSafety] = useState<any[]>([]),
@@ -327,6 +329,7 @@ export default function LivingScheduleLayer({
     setBusy(true);
     setError("");
     setGenesis(null);
+    setGenesisUndoPoint(null);
     try {
       const d = await json("/api/intelligence/genesis", {
         method: "POST",
@@ -345,6 +348,52 @@ export default function LivingScheduleLayer({
           : "تم بناء مسودة بداية الفصل دون نشر أي موعد."
       );
       onEnsureWeek?.();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const publishGenesisDraft = async () => {
+    const draftId = String(genesis?.draft?.id || "").trim();
+    if (!draftId) return;
+    if (!window.confirm("نشر هذه المسودة على الجدول الرسمي الآن؟ سيتم حفظ نقطة تراجع تلقائياً قبل النشر.")) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/publish`, {
+        method: "POST",
+        headers: { "x-schedule-confirm": "publish" },
+      });
+      const q = contextQuery();
+      const points = await json(`/api/intelligence/safety-net?${q}`).catch(() => []);
+      const undoPoint = Array.isArray(points) ? points[0] : null;
+      setGenesisUndoPoint(undoPoint);
+      setGenesis((current: any) => current ? { ...current, published: true, publication: result?.publication } : current);
+      setMessage(`تم نشر المسودة على الجدول الرسمي بنجاح${result?.count ? ` · ${result.count} موعد` : ""}.`);
+      await loadLiving();
+      onRefresh?.();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const undoGenesisPublish = async () => {
+    if (!genesisUndoPoint?.id) return;
+    if (!window.confirm(`التراجع عن آخر نشر والعودة إلى: ${genesisUndoPoint.label}؟`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      const d = await json(`/api/intelligence/safety-net/${genesisUndoPoint.id}/undo`, {
+        method: "POST",
+        headers: { "x-schedule-confirm": "decision-undo" },
+      });
+      setGenesis((current: any) => current ? { ...current, published: false } : current);
+      setGenesisUndoPoint(null);
+      setMessage(d.message || "تم التراجع عن النشر بنجاح.");
+      await loadLiving();
+      onRefresh?.();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -864,7 +913,21 @@ export default function LivingScheduleLayer({
                               </tbody>
                             </table>
                           </div>
-                          <p>المعروض هنا هو محتوى المسودة المحفوظة نفسها؛ لا يتم نشره على الجدول الرسمي إلا من بوابة النشر.</p>
+                          <div className="genesis-preview-actions">
+                            <p>{genesis.published ? "هذه المسودة منشورة الآن على الجدول الرسمي." : "راجع الجدول، ثم انشره من هنا مباشرة عندما يكون جاهزاً."}</p>
+                            <div>
+                              {!genesis.published ? (
+                                <PrimaryButton type="button" onClick={() => void publishGenesisDraft()} disabled={busy || !genesis?.draft?.id}>
+                                  <Upload /> انشر الآن
+                                </PrimaryButton>
+                              ) : null}
+                              {genesis.published && genesisUndoPoint ? (
+                                <SecondaryButton type="button" onClick={() => void undoGenesisPublish()} disabled={busy}>
+                                  <RotateCcw /> تراجع عن النشر
+                                </SecondaryButton>
+                              ) : null}
+                            </div>
+                          </div>
                         </section>
                       ) : null}
                     </>

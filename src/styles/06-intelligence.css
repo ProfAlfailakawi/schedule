@@ -2899,3 +2899,70 @@
 .genesis-preview th{position:sticky;top:0;z-index:1;background:var(--surface);color:var(--muted);font-weight:650}
 .genesis-preview td strong{display:block;font-size:12px}.genesis-preview td small{display:block;margin-top:3px;color:var(--muted)}
 .genesis-preview>p{margin:0;padding:12px 14px;color:var(--muted);font-size:11px;line-height:1.7;background:var(--surface-2)}
+
+/* New notes — functional controls and compact, scroll-safe comparison. */
+.twin-score-action{
+  appearance:none;font:inherit;color:inherit;cursor:pointer;
+  transition:border-color .16s ease,background .16s ease,transform .16s ease;
+}
+.twin-score-action:hover:not(:disabled){
+  border-color:color-mix(in srgb,var(--accent) 45%,var(--line)) !important;
+  transform:translateY(-1px);
+}
+.twin-score-action:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.twin-score-action:disabled{cursor:wait;opacity:.72}
+button.twin-score-card{width:100%;border:1px solid var(--line);padding:var(--s3) var(--s4);text-align:center}
+button.twin-delta{width:100%}
+
+/* Keep the back chevron visibly inside its own circle instead of letting the
+   glyph float against the pill edge. */
+.insight-back svg{
+  width:24px !important;height:24px !important;padding:5px !important;
+  border:1px solid var(--line);border-radius:999px;background:var(--surface-2);
+  box-sizing:border-box;flex:none;
+}
+
+/* The version canvas used to hide everything after a few cards: every day lane
+   had overflow:hidden while an invisible full-stage range input sat above it.
+   The lanes now scroll, and the drag target is only a narrow band through the
+   comparison handle so vertical scrolling remains available. */
+.time-travel-track{
+  overflow-y:auto !important;overflow-x:hidden !important;
+  scrollbar-width:thin;overscroll-behavior:contain;
+}
+.time-travel-track::-webkit-scrollbar{width:7px}
+.time-travel-track::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:999px}
+.time-travel-slider{
+  top:50% !important;bottom:auto !important;height:56px !important;
+  transform:translateY(-50%);cursor:ew-resize !important;
+}
+.time-travel-divider i{
+  display:grid !important;place-items:center !important;
+  width:36px !important;height:36px !important;border-radius:999px !important;
+  background:var(--surface) !important;
+}
+.time-travel-divider i svg{width:16px;height:16px;color:var(--brass)}
+
+/* Beginning-of-term publish is deliberately where the draft is reviewed. */
+.genesis-preview-actions{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
+  padding:12px 14px;border-top:1px solid var(--line);background:var(--surface-2);
+}
+.genesis-preview-actions>p{margin:0;min-width:0;color:var(--muted);font-size:11px;line-height:1.7}
+.genesis-preview-actions>div{display:flex;align-items:center;gap:8px;flex:none}
+@media(max-width:760px){
+  .genesis-preview-actions{align-items:stretch;flex-direction:column}
+  .genesis-preview-actions>div{width:100%;display:grid;grid-template-columns:1fr}
+  .genesis-preview-actions .btn{width:100%}
+}
+
+/* Source → target cue: keep the arrow visually anchored inside a real circle. */
+.genesis-arrow{
+  align-self:center;justify-self:center;width:34px;height:34px;padding:0 !important;
+  border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:999px;
+  background:var(--surface);box-shadow:0 3px 12px color-mix(in srgb,#000 6%,transparent);
+}
+.genesis-arrow svg{width:16px !important;height:16px !important}
+@media(max-width:760px){
+  .genesis-arrow{height:34px !important;transform:rotate(-90deg)}
+}

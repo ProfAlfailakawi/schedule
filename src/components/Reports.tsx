@@ -1490,6 +1490,23 @@ function paginateComprehensiveRows(rows: FSchedule[]) {
   return pages;
 }
 
+function paginateItems<T>(items: T[], size: number): T[][] {
+  if (!items.length) return [];
+  const pages: T[][] = [];
+  for (let index = 0; index < items.length; index += size) pages.push(items.slice(index, index + size));
+  return pages;
+}
+
+function PrintPageMeta({ page, total, college, date }: { page: number; total: number; college: string; date: string }) {
+  return (
+    <footer className="print-explicit-page-meta">
+      <span>{college || "الجدول الأكاديمي"}</span>
+      <bdi dir="ltr">{page} / {total}</bdi>
+      <time dir="ltr">{date}</time>
+    </footer>
+  );
+}
+
 function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById }: {
   kind: PrintKind;
   rows: FSchedule[];
@@ -1508,13 +1525,8 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
 }) {
   if (!kind) return null;
 
-  const totalMinutes = rows.reduce(
-    (total, row) => total + duration(row) * Math.max(1, dayFlags(row).length),
-    0,
-  );
   const distinctCourses = new Set(rows.map(row => row.AdCourseId).filter(Boolean)).size;
   const distinctInstructors = new Set(rows.map(row => row.AdInstructorId).filter(Boolean)).size;
-  const distinctRooms = new Set(rows.map(row => placeOfRow(row)).filter(room => room !== "بلا قاعة")).size;
   const titles: Record<Exclude<PrintKind, null>, string> = {
     list: "نتائج الاستعلام",
     week: "الأسبوع",
@@ -1532,25 +1544,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).join(",") || "—";
 
   if (kind === "comprehensive") {
-    const distinctSections = new Set(rows.map(row => String(row.SCode || "").trim()).filter(Boolean)).size;
-    const totalWeeklyHours = Math.round(totalMinutes / 60);
-    const maxCapacity = rows.reduce((max, row) => {
-      const capacity = Number(courseOf(row)?.MaxStudent || 0);
-      return capacity > max ? capacity : max;
-    }, 0);
-    const headerStats = [
-      ["المواعيد", rows.length],
-      ["المقررات", distinctCourses],
-      ["الشعب", distinctSections],
-      ["الأساتذة", distinctInstructors],
-      ["القاعات", distinctRooms],
-      ["الساعات الأسبوعية", totalWeeklyHours],
-    ] as const;
     const pages = paginateComprehensiveRows(rows);
     const legendItems = DAYS.map((day, index) => `${index + 1}=${day.label}`);
 
     return (
-      <div className="print-report print-upright print-query-report print-comprehensive print-comprehensive-book">
+      <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-book">
         {rows.length ? (
           <div className="print-comprehensive-pages">
             {pages.map((pageRows, pageIndex) => (
@@ -1564,20 +1562,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <div className="print-comprehensive-title-block">
                       <h1>تقرير القسم العلمي الشامل</h1>
                       <p>الكلية: {collegeName || "—"}</p>
-                      <strong>{termName || scopeLine || "—"}</strong>
                     </div>
                     <div className="print-comprehensive-side print-comprehensive-side-left">
+                      <div><span>الفصل الدراسي</span><strong>{termName || scopeLine || "—"}</strong></div>
                       <div><span>تاريخ الإصدار</span><strong dir="ltr">{issueDate}</strong></div>
-                      <div><span>أعلى سعة</span><strong>{maxCapacity ? num(maxCapacity) : "—"}</strong></div>
                     </div>
-                  </div>
-                  <div className="print-comprehensive-head-summary" aria-label="ملخص سريع">
-                    {headerStats.map(([label, value]) => (
-                      <div key={label}>
-                        <strong>{num(value)}</strong>
-                        <span>{label}</span>
-                      </div>
-                    ))}
                   </div>
                 </header>
 
@@ -1670,90 +1659,109 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "list") {
+    const pages = paginateItems(rows, 18);
     return (
       <div className="print-report print-wide print-query-report print-query-list-report">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        <div className="print-query-summaryline">
-          <span><b>{rows.length}</b> موعد</span>
-          <span><b>{distinctCourses}</b> مقرر</span>
-          <span><b>{distinctInstructors}</b> أستاذ</span>
-        </div>
-        {rows.length ? (
-          <div className="print-query-list">
-            {rows.map((row, index) => {
-              const course = courseOf(row), instructor = instructorOf(row);
-              return (
-                <article key={row.id}>
-                  <span className="print-list-index">{String(index + 1).padStart(2, "0")}</span>
-                  <div className="print-list-core">
-                    <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
-                    <span><bdi className="print-ltr">{course?.CourseCode || "—"}</bdi><i>شعبة {row.SCode || "—"}</i><em>{instructor?.AdInstructorName || "بدون أستاذ"}</em></span>
-                  </div>
-                  <time className="print-ltr">{row.fstarttime}–{row.fendtime}</time>
-                  <span className="print-ltr print-list-room">{placeOfRow(row)}</span>
-                  <span className="print-days print-list-days">{dayCell(row)}</span>
-                </article>
-              );
-            })}
-          </div>
-        ) : <p className="print-empty">لا توجد نتائج ضمن النطاق المحدد.</p>}
+        {pages.length ? pages.map((pageRows, pageIndex) => (
+          <section className="print-explicit-page" key={`list-page-${pageIndex + 1}`}>
+            <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+            <div className="print-query-summaryline">
+              <span><b>{rows.length}</b> موعد</span>
+              <span><b>{distinctCourses}</b> مقرر</span>
+              <span><b>{distinctInstructors}</b> أستاذ</span>
+            </div>
+            <div className="print-query-list">
+              {pageRows.map((row, index) => {
+                const course = courseOf(row), instructor = instructorOf(row);
+                const serial = pageIndex * 18 + index + 1;
+                return (
+                  <article key={row.id}>
+                    <span className="print-list-index">{String(serial).padStart(2, "0")}</span>
+                    <div className="print-list-core">
+                      <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
+                      <span><bdi className="print-ltr">{course?.CourseCode || "—"}</bdi><i>شعبة {row.SCode || "—"}</i><em>{instructor?.AdInstructorName || "بدون أستاذ"}</em></span>
+                    </div>
+                    <time className="print-ltr">{row.fstarttime}–{row.fendtime}</time>
+                    <span className="print-ltr print-list-room">{placeOfRow(row)}</span>
+                    <span className="print-days print-list-days">{dayCell(row)}</span>
+                  </article>
+                );
+              })}
+            </div>
+            <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
+          </section>
+        )) : <p className="print-empty">لا توجد نتائج ضمن النطاق المحدد.</p>}
       </div>
     );
   }
 
   if (kind === "week") {
+    const dayBuckets = DAYS.map(day => ({
+      ...day,
+      rows: rows.filter(row => Boolean((row as any)[day.flag])).sort((a, b) => a.fstarttime.localeCompare(b.fstarttime)),
+    }));
+    const pageCount = Math.max(1, ...dayBuckets.map(day => Math.ceil(day.rows.length / 5)));
     return (
       <div className="print-report print-wide print-query-report print-query-week-report">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        <div className="print-query-week">
-          {DAYS.map(day => {
-            const dayRows = rows.filter(row => Boolean((row as any)[day.flag])).sort((a, b) => a.fstarttime.localeCompare(b.fstarttime));
-            return (
-              <section key={day.key}>
-                <h2>{day.label}<b>{dayRows.length}</b></h2>
-                <div>
-                  {dayRows.length ? dayRows.map(row => (
-                    <article key={`${day.key}-${row.id}`}>
-                      <time className="print-ltr"><b>{row.fstarttime}</b><span>{row.fendtime}</span></time>
-                      <div><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span>{instructorOf(row)?.AdInstructorName || "بدون أستاذ"}</span></div>
-                      <small><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</bdi><bdi className="print-ltr">{placeOfRow(row)}</bdi></small>
-                    </article>
-                  )) : <p>لا مواعيد</p>}
-                </div>
-              </section>
-            );
-          })}
-        </div>
+        {Array.from({ length: pageCount }, (_, pageIndex) => (
+          <section className="print-explicit-page" key={`week-page-${pageIndex + 1}`}>
+            <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+            <div className="print-query-week">
+              {dayBuckets.map(day => {
+                const dayRows = day.rows.slice(pageIndex * 5, pageIndex * 5 + 5);
+                return (
+                  <section key={day.key}>
+                    <h2>{day.label}<b>{day.rows.length}</b></h2>
+                    <div>
+                      {dayRows.length ? dayRows.map(row => (
+                        <article key={`${day.key}-${row.id}`}>
+                          <time className="print-ltr"><b>{row.fstarttime}</b><span>{row.fendtime}</span></time>
+                          <div><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span>{instructorOf(row)?.AdInstructorName || "بدون أستاذ"}</span></div>
+                          <small><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</bdi><bdi className="print-ltr">{placeOfRow(row)}</bdi></small>
+                        </article>
+                      )) : <p>—</p>}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+            <PrintPageMeta page={pageIndex + 1} total={pageCount} college={collegeName} date={issueDate} />
+          </section>
+        ))}
       </div>
     );
   }
 
   if (kind === "instructor") {
     const groups = groupRows(rows, row => instructorOf(row)?.AdInstructorName || "بدون أستاذ");
+    const pages = groups.flatMap(group => paginateItems(group.rows, 13).map(groupRows => ({ group, rows: groupRows })));
     return (
       <div className="print-report print-wide print-query-report print-query-groups-report">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        {groups.length ? groups.map(group => {
-          const instructor = instructorOf(group.rows[0]);
-          const load = group.rows.reduce((total, row) => total + duration(row) * Math.max(1, dayFlags(row).length), 0);
-          const days = new Set(group.rows.flatMap(row => dayFlags(row).map(day => day.key))).size;
+        {pages.length ? pages.map((page, pageIndex) => {
+          const instructor = instructorOf(page.group.rows[0]);
+          const load = page.group.rows.reduce((total, row) => total + duration(row) * Math.max(1, dayFlags(row).length), 0);
+          const days = new Set(page.group.rows.flatMap(row => dayFlags(row).map(day => day.key))).size;
           return (
-            <section className="print-query-group" key={group.key}>
-              <header>
-                <div><strong>{group.key}</strong>{instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}</div>
-                <span><b>{group.rows.length}</b> موعد</span><span><b>{Math.round(load / 60)}</b> س</span><span><b>{days}</b> أيام</span>
-              </header>
-              <table>
-                <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
-                <thead><tr><th>المقرر</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الشعبة</th></tr></thead>
-                <tbody>{group.rows.map(row => <tr key={row.id}>
-                  <td className="print-course-block"><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"}</bdi></span></td>
-                  <td className="print-days">{dayCell(row)}</td>
-                  <td className="print-ltr">{row.fstarttime}–{row.fendtime}</td>
-                  <td className="print-ltr">{placeOfRow(row)}</td>
-                  <td className="print-ltr">{row.SCode || "—"}</td>
-                </tr>)}</tbody>
-              </table>
+            <section className="print-explicit-page" key={`${page.group.key}-${pageIndex}`}>
+              <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+              <section className="print-query-group">
+                <header>
+                  <div><strong>{page.group.key}</strong>{instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}</div>
+                  <span><b>{page.group.rows.length}</b> موعد</span><span><b>{Math.round(load / 60)}</b> س</span><span><b>{days}</b> أيام</span>
+                </header>
+                <table>
+                  <colgroup><col style={{ width: "38%" }} /><col style={{ width: "20%" }} /><col style={{ width: "19%" }} /><col style={{ width: "13%" }} /><col style={{ width: "10%" }} /></colgroup>
+                  <thead><tr><th>المقرر</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الشعبة</th></tr></thead>
+                  <tbody>{page.rows.map(row => <tr key={row.id}>
+                    <td className="print-course-block"><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"}</bdi></span></td>
+                    <td className="print-days">{dayCell(row)}</td>
+                    <td className="print-ltr">{row.fstarttime}–{row.fendtime}</td>
+                    <td className="print-ltr">{placeOfRow(row)}</td>
+                    <td className="print-ltr">{row.SCode || "—"}</td>
+                  </tr>)}</tbody>
+                </table>
+              </section>
+              <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
             </section>
           );
         }) : <p className="print-empty">لا توجد بيانات أساتذة ضمن النطاق المحدد.</p>}
@@ -1770,41 +1778,67 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
       const bucket = resultByRoom.get(key);
       if (bucket) bucket.push(row); else resultByRoom.set(key, [row]);
     });
+    const roomPages = roomLoad?.rooms?.length ? paginateItems(roomLoad.rooms, 10) : [];
+    const freeRooms = roomDay !== "week" && roomLoad?.rooms?.length ? roomLoad.rooms.filter((room: any) => room.windows.length) : [];
+    const freePages = paginateItems(freeRooms, 12);
+    const directory = [...resultByRoom.entries()].sort(([a], [b]) => byArabic(a, b));
+    const directoryPages = paginateItems(directory, 24);
+    const totalPages = roomPages.length + freePages.length + directoryPages.length;
+    const scope = `${scopeLine}${scopeLine ? " · " : ""}${selectedDayLabel}`;
     return (
       <div className="print-report print-wide print-query-report print-room-occupancy-report">
-        <PrintLetterhead title={titles[kind]} scope={`${scopeLine}${scopeLine ? " · " : ""}${selectedDayLabel}`} college={collegeName} />
-        {roomLoad?.rooms?.length ? (
+        {totalPages ? (
           <>
-            <div className="print-query-summaryline">
-              <span><b>{roomLoad.rooms.length}</b> قاعة</span>
-              <span><b>{roomLoad.totalRate}</b>٪ متوسط الإشغال</span>
-              <span>المربع الداكن = إشغال أعلى</span>
-            </div>
-            <table className="print-occupancy-table">
-              <colgroup><col style={{ width: "12%" }} />{roomLoad.slots.map((point: number) => <col key={point} />)}<col style={{ width: "7%" }} /></colgroup>
-              <thead><tr><th>القاعة</th>{roomLoad.slots.map((point: number) => <th key={point} className="print-ltr">{clock(point)}</th>)}<th>الإشغال</th></tr></thead>
-              <tbody>{roomLoad.rooms.map((room: any) => <tr key={room.key}>
-                <th className="print-ltr">{room.name}</th>
-                {room.cells.map((cell: any) => <td key={cell.point} className={`print-heat print-heat-${Math.min(5, cell.taken)}`}>{cell.taken > 1 ? cell.taken : cell.taken ? "•" : ""}</td>)}
-                <td className="print-ltr"><strong>{room.rate}%</strong></td>
-              </tr>)}</tbody>
-            </table>
-            {roomDay !== "week" ? (
-              <section className="print-free-windows">
-                <h2>الفترات المتاحة</h2>
-                <div>{roomLoad.rooms.filter((room: any) => room.windows.length).map((room: any) => (
-                  <article key={room.key}><strong className="print-ltr">{room.name}</strong><span>{room.windows.map((window: any, index: number) => <time className="print-ltr" key={index}>{clock(window.from)}–{clock(window.to)}</time>)}</span></article>
-                ))}</div>
+            {roomPages.map((pageRooms: any[], pageIndex) => (
+              <section className="print-explicit-page" key={`room-occupancy-${pageIndex + 1}`}>
+                <PrintLetterhead title={titles[kind]} scope={scope} college={collegeName} footer={false} />
+                <div className="print-query-summaryline">
+                  <span><b>{roomLoad.rooms.length}</b> قاعة</span>
+                  <span><b>{roomLoad.totalRate}</b>٪ متوسط الإشغال</span>
+                  <span>المربع الداكن = إشغال أعلى</span>
+                </div>
+                <table className="print-occupancy-table">
+                  <colgroup><col style={{ width: "12%" }} />{roomLoad.slots.map((point: number) => <col key={point} />)}<col style={{ width: "7%" }} /></colgroup>
+                  <thead><tr><th>القاعة</th>{roomLoad.slots.map((point: number) => <th key={point} className="print-ltr">{clock(point)}</th>)}<th>الإشغال</th></tr></thead>
+                  <tbody>{pageRooms.map((room: any) => <tr key={room.key}>
+                    <th className="print-ltr">{room.name}</th>
+                    {room.cells.map((cell: any) => <td key={cell.point} className={`print-heat print-heat-${Math.min(5, cell.taken)}`}>{cell.taken > 1 ? cell.taken : cell.taken ? "•" : ""}</td>)}
+                    <td className="print-ltr"><strong>{room.rate}%</strong></td>
+                  </tr>)}</tbody>
+                </table>
+                <PrintPageMeta page={pageIndex + 1} total={totalPages} college={collegeName} date={issueDate} />
               </section>
-            ) : null}
-            {resultByRoom.size ? (
-              <section className="print-room-directory">
-                <h2>مواعيد القاعات في نطاق الاستعلام</h2>
-                {[...resultByRoom.entries()].sort(([a], [b]) => byArabic(a, b)).map(([room, roomRows]) => (
-                  <div key={room} className="print-room-line"><strong className="print-ltr">{room}</strong><span>{roomRows.length} موعد</span><em>{Math.round(roomRows.reduce((t, row) => t + duration(row) * Math.max(1, dayFlags(row).length), 0) / 60)} س</em></div>
-                ))}
-              </section>
-            ) : null}
+            ))}
+            {freePages.map((pageRooms: any[], freeIndex) => {
+              const pageNumber = roomPages.length + freeIndex + 1;
+              return (
+                <section className="print-explicit-page" key={`room-free-${freeIndex + 1}`}>
+                  <PrintLetterhead title={`${titles[kind]} — الفترات المتاحة`} scope={scope} college={collegeName} footer={false} />
+                  <section className="print-free-windows">
+                    <h2>الفترات المتاحة</h2>
+                    <div>{pageRooms.map((room: any) => (
+                      <article key={room.key}><strong className="print-ltr">{room.name}</strong><span>{room.windows.map((window: any, index: number) => <time className="print-ltr" key={index}>{clock(window.from)}–{clock(window.to)}</time>)}</span></article>
+                    ))}</div>
+                  </section>
+                  <PrintPageMeta page={pageNumber} total={totalPages} college={collegeName} date={issueDate} />
+                </section>
+              );
+            })}
+            {directoryPages.map((pageEntries, directoryIndex) => {
+              const pageNumber = roomPages.length + freePages.length + directoryIndex + 1;
+              return (
+                <section className="print-explicit-page" key={`room-directory-${directoryIndex + 1}`}>
+                  <PrintLetterhead title={`${titles[kind]} — دليل القاعات`} scope={scope} college={collegeName} footer={false} />
+                  <section className="print-room-directory">
+                    <h2>مواعيد القاعات في نطاق الاستعلام</h2>
+                    {pageEntries.map(([room, roomRows]) => (
+                      <div key={room} className="print-room-line"><strong className="print-ltr">{room}</strong><span>{roomRows.length} موعد</span><em>{Math.round(roomRows.reduce((t, row) => t + duration(row) * Math.max(1, dayFlags(row).length), 0) / 60)} س</em></div>
+                    ))}
+                  </section>
+                  <PrintPageMeta page={pageNumber} total={totalPages} college={collegeName} date={issueDate} />
+                </section>
+              );
+            })}
           </>
         ) : <p className="print-empty">لا توجد بيانات إشغال للقاعات ضمن النطاق المحدد.</p>}
       </div>
@@ -1812,20 +1846,24 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "matrix") {
+    const pages = matrix?.lines?.length ? paginateItems(matrix.lines, 8) : [];
     return (
       <div className="print-report print-wide print-query-report print-query-matrix-report">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        {matrix?.lines?.length ? (
-          <table className="print-matrix-new">
-            <colgroup><col style={{ width: "8%" }} /><col style={{ width: "11%" }} />{matrix.columns.map((point: number) => <col key={point} />)}</colgroup>
-            <thead><tr><th>القاعة</th><th>الأيام</th>{matrix.columns.map((point: number) => <th key={point} className="print-ltr">{clock(point)}<small>{clock(point + 60)}</small></th>)}</tr></thead>
-            <tbody>{matrix.lines.map((line: any) => <tr key={line.id}>
-              <th><strong>{line.room.hall || "—"}</strong><small>{line.room.building}</small></th>
-              <td>{line.group.label}</td>
-              {line.cells.map((cell: any) => <td key={cell.point} className={cell.rows.length ? "taken" : ""}>{cell.rows.map((row: FSchedule) => <span className="print-matrix-slot" key={row.id}><b>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</b><em>{instructorOf(row)?.AdInstructorName || "—"}</em><i className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</i></span>)}</td>)}
-            </tr>)}</tbody>
-          </table>
-        ) : <p className="print-empty">لا توجد قاعات × أوقات ضمن النطاق المحدد.</p>}
+        {pages.length ? pages.map((pageLines: any[], pageIndex) => (
+          <section className="print-explicit-page" key={`matrix-page-${pageIndex + 1}`}>
+            <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+            <table className="print-matrix-new">
+              <colgroup><col style={{ width: "8%" }} /><col style={{ width: "11%" }} />{matrix.columns.map((point: number) => <col key={point} />)}</colgroup>
+              <thead><tr><th>القاعة</th><th>الأيام</th>{matrix.columns.map((point: number) => <th key={point} className="print-ltr">{clock(point)}<small>{clock(point + 60)}</small></th>)}</tr></thead>
+              <tbody>{pageLines.map((line: any) => <tr key={line.id}>
+                <th><strong>{line.room.hall || "—"}</strong><small>{line.room.building}</small></th>
+                <td>{line.group.label}</td>
+                {line.cells.map((cell: any) => <td key={cell.point} className={cell.rows.length ? "taken" : ""}>{cell.rows.map((row: FSchedule) => <span className="print-matrix-slot" key={row.id}><b>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</b><em>{instructorOf(row)?.AdInstructorName || "—"}</em><i className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</i></span>)}</td>)}
+              </tr>)}</tbody>
+            </table>
+            <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
+          </section>
+        )) : <p className="print-empty">لا توجد قاعات × أوقات ضمن النطاق المحدد.</p>}
       </div>
     );
   }
@@ -1833,62 +1871,72 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   if (kind === "time") {
     const groups = groupRows(rows, row => row.fstarttime).sort((a, b) => a.key.localeCompare(b.key));
     const maxCount = Math.max(1, ...groups.map(group => group.rows.length));
+    const pages = paginateItems(groups, 12);
     return (
       <div className="print-report print-upright print-query-report print-time-report">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        {groups.length ? <div className="print-time-list">{groups.map(group => {
-          const rooms = [...new Set(group.rows.map(row => placeOfRow(row)).filter(room => room !== "بلا قاعة"))];
-          return <article key={group.key}>
-            <time className="print-ltr">{group.key}</time>
-            <i><b style={{ width: `${Math.round((group.rows.length / maxCount) * 100)}%` }} /></i>
-            <strong>{group.rows.length}</strong>
-            <div>{rooms.slice(0, 12).map(room => <span className="print-ltr" key={room}>{room}</span>)}</div>
-          </article>;
-        })}</div> : <p className="print-empty">لا توجد أوقات ضمن النطاق المحدد.</p>}
+        {pages.length ? pages.map((pageGroups, pageIndex) => (
+          <section className="print-explicit-page" key={`time-page-${pageIndex + 1}`}>
+            <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
+            <div className="print-time-list">{pageGroups.map(group => {
+              const rooms = [...new Set(group.rows.map(row => placeOfRow(row)).filter(room => room !== "بلا قاعة"))];
+              return <article key={group.key}>
+                <time className="print-ltr">{group.key}</time>
+                <i><b style={{ width: `${Math.round((group.rows.length / maxCount) * 100)}%` }} /></i>
+                <strong>{group.rows.length}</strong>
+                <div>{rooms.slice(0, 12).map(room => <span className="print-ltr" key={room}>{room}</span>)}</div>
+              </article>;
+            })}</div>
+            <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
+          </section>
+        )) : <p className="print-empty">لا توجد أوقات ضمن النطاق المحدد.</p>}
       </div>
     );
   }
 
   if (kind === "fairness") {
+    const pages = fairness?.rows?.length ? paginateItems(fairness.rows, 16) : [];
     return (
       <div className="print-report print-upright print-query-report print-fairness-new">
-        <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
-        {fairness?.rows?.length ? (
-          <>
+        {pages.length ? pages.map((pageRows: any[], pageIndex) => (
+          <section className="print-explicit-page" key={`fairness-page-${pageIndex + 1}`}>
+            <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <section className="print-fairness-hero">
               <div><strong>{fairness.score}</strong><span>/ 100</span><small>مؤشر العدالة</small></div>
               <dl><div><dt>متوسط النصاب</dt><dd>{Math.round(fairness.average / 60)} س</dd></div><div><dt>الفارق</dt><dd>{Math.round(fairness.spread / 60)} س</dd></div><div><dt>الأساتذة</dt><dd>{fairness.rows.length}</dd></div></dl>
             </section>
             <div className="print-fairness-rows">
-              {fairness.rows.map((row: any) => <div key={row.id}>
+              {pageRows.map((row: any) => <div key={row.id}>
                 <span>{row.name}</span>
                 <i><b style={{ width: `${Math.max(4, Math.round((row.load / Math.max(1, fairness.rows[0].load)) * 100))}%` }} /></i>
                 <em>{Math.round(row.load / 60)} س</em>
                 <small className="print-ltr">{row.delta > 0 ? "+" : ""}{Math.round(row.delta / 60)}</small>
               </div>)}
             </div>
-            <div className="print-signatures"><div><span>منسق الجدول</span><i /></div><div><span>رئيس القسم العلمي</span><i /></div></div>
-          </>
-        ) : <p className="print-empty">لا توجد بيانات كافية لحساب العدالة.</p>}
+            {pageIndex === pages.length - 1 ? <div className="print-signatures"><div><span>منسق الجدول</span><i /></div><div><span>رئيس القسم العلمي</span><i /></div></div> : null}
+            <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
+          </section>
+        )) : <p className="print-empty">لا توجد بيانات كافية لحساب العدالة.</p>}
       </div>
     );
   }
 
   if (kind === "balance") {
+    const pages = balance?.departments?.length ? paginateItems(balance.departments, 14) : [];
     return (
       <div className="print-report print-wide print-query-report print-balance-report">
-        <PrintLetterhead title={titles[kind]} scope={balance?.termName || scopeLine} college={collegeName} />
-        {balance?.departments?.length ? (
-          <>
+        {pages.length ? pages.map((pageDepartments: any[], pageIndex) => (
+          <section className="print-explicit-page" key={`balance-page-${pageIndex + 1}`}>
+            <PrintLetterhead title={titles[kind]} scope={balance?.termName || scopeLine} college={collegeName} footer={false} />
             <div className="print-query-summaryline"><span><b>{balance.totals.departments}</b> قسم</span><span><b>{balance.totals.rows}</b> موعد</span><span><b>{balance.totals.conflicts}</b> مانع اعتماد</span></div>
             <table>
               <thead><tr><th>القسم العلمي</th><th>المواعيد</th><th>الأساتذة</th><th>القاعات</th><th>صباحي</th><th>العدالة</th><th>الجودة</th><th>موانع</th></tr></thead>
-              <tbody>{balance.departments.map((item: any) => <tr key={item.sectionId}>
+              <tbody>{pageDepartments.map((item: any) => <tr key={item.sectionId}>
                 <td className="print-wrap"><strong>{item.sectionName}</strong><small>{item.collegeName}</small></td><td>{item.rows}</td><td>{item.instructors}</td><td>{item.rooms}</td><td>{item.morningPct}%</td><td>{item.fairness}</td><td>{item.quality}</td><td>{item.conflicts || "—"}</td>
               </tr>)}</tbody>
             </table>
-          </>
-        ) : <p className="print-empty">لا توجد بيانات ميزان أقسام لهذا الفصل.</p>}
+            <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
+          </section>
+        )) : <p className="print-empty">لا توجد بيانات ميزان أقسام لهذا الفصل.</p>}
       </div>
     );
   }
