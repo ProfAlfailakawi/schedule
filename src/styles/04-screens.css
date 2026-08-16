@@ -1513,3 +1513,10 @@
 .vault-export-current,.vault-export-ready-hash{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:0!important;padding:0!important;color:var(--muted-2)!important;font:500 10px/1.4 var(--font-mono)!important;letter-spacing:0!important}
 .vault-export-ready-hash{color:var(--success)!important}.vault-export-error{margin:0!important;padding:8px 10px;border-radius:10px;background:color-mix(in srgb,var(--danger-soft) 52%,var(--surface));color:var(--danger)!important;font-size:11px!important;line-height:1.55!important}
 .vault-export-progress.status-ready{border-color:color-mix(in srgb,var(--success) 36%,var(--line));background:color-mix(in srgb,var(--success-soft) 32%,var(--surface))}.vault-export-progress.status-failed{border-color:color-mix(in srgb,var(--danger) 32%,var(--line))}
+
+/* Resumable import uses the same quiet progress language as export. The file
+   picker locks only after the source has been staged, preventing a second file
+   from replacing an import that is already halfway through. */
+.vault-file-picker.disabled{opacity:.58;cursor:not-allowed;pointer-events:none}
+.vault-import-progress{border-color:color-mix(in srgb,var(--accent) 28%,var(--line));background:color-mix(in srgb,var(--accent-softer) 42%,var(--surface))}
+.vault-import-progress .vault-export-progress-track i{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 78%,var(--success)),var(--success))}

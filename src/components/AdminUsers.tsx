@@ -95,12 +95,27 @@ interface ExportJob {
   sizeBytes?: number;
   error?: string;
 }
+interface ImportJob {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: "running" | "ready" | "failed";
+  phase: "safety" | "apply" | "finalizing";
+  totalUnits: number;
+  completedUnits: number;
+  documentCount: number;
+  collectionCounts: Record<string, number>;
+  current?: string;
+  error?: string;
+  restorePointId?: string;
+}
 interface BackupStatus {
   rootOnly: boolean;
   data: { mode: string; real: boolean };
   restorePoints: RestorePoint[];
   latest: RestorePoint | null;
   latestExport?: ExportJob | null;
+  latestImport?: ImportJob | null;
 }
 
 /**
@@ -167,6 +182,8 @@ export default function AdminUsers({
     [logs, setLogs] = useState<AuditLogEntry[]>([]),
     [backupStatus, setBackupStatus] = useState<BackupStatus | null>(null),
     [exportJob, setExportJob] = useState<ExportJob | null>(null),
+    [importJob, setImportJob] = useState<ImportJob | null>(null),
+    [importUploadPercent, setImportUploadPercent] = useState(0),
     [backupBusy, setBackupBusy] = useState<"export" | "preview" | "import" | "reset" | "undo" | null>(null),
     [backupFile, setBackupFile] = useState<File | null>(null),
     [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null),
@@ -174,6 +191,7 @@ export default function AdminUsers({
     [backupMessage, setBackupMessage] = useState<string | null>(null),
     [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null);
   const exportRunner = useRef(0);
+  const importRunner = useRef(0);
   const [query, setQuery] = useState(""),
     [filterUser, setFilterUser] = useState(0),
     [selectedUserId, setSelectedUserId] = useState<number | null>(null),
@@ -230,30 +248,49 @@ export default function AdminUsers({
     const status = await api("/api/system-backup/status") as BackupStatus;
     setBackupStatus(status);
     setExportJob(status.latestExport || null);
+    setImportJob(status.latestImport || null);
   };
   const driveExportJob = async (jobId: string) => {
     const runner = ++exportRunner.current;
     setBackupBusy("export");
     setError(null);
+    let transportRetries = 0;
+    let visibleFailureRetries = 0;
     try {
       let job = await api(`/api/system-backup/export-jobs/${encodeURIComponent(jobId)}`) as ExportJob;
       setExportJob(job);
-      while (runner === exportRunner.current && ["queued", "running", "finalizing"].includes(job.status)) {
-        job = await api(`/api/system-backup/export-jobs/${encodeURIComponent(jobId)}/step`, { method: "POST" }) as ExportJob;
+      while (runner === exportRunner.current && job.status !== "ready") {
+        try {
+          job = await api(`/api/system-backup/export-jobs/${encodeURIComponent(jobId)}/step`, { method: "POST" }) as ExportJob;
+          transportRetries = 0;
+        } catch (stepError: any) {
+          transportRetries += 1;
+          if (transportRetries > 12) throw stepError;
+          setBackupMessage(`الاتصال تعثر لحظيًا — أحاول المتابعة من ${job.completedUnits}/${job.totalUnits} بدون فقد التقدم.`);
+          await new Promise(resolve => window.setTimeout(resolve, Math.min(5000, 350 * (2 ** (transportRetries - 1)))));
+          continue;
+        }
         if (runner !== exportRunner.current) return;
         setExportJob(job);
-        if (["ready", "failed"].includes(job.status)) break;
-        await new Promise(resolve => window.setTimeout(resolve, 120));
+        if (job.status === "failed") {
+          visibleFailureRetries += 1;
+          if (visibleFailureRetries > 8) break;
+          setBackupMessage(`توقفت مرحلة مؤقتًا عند ${job.completedUnits}/${job.totalUnits} — أعيد المحاولة من نفس النقطة.`);
+          await new Promise(resolve => window.setTimeout(resolve, 900 * visibleFailureRetries));
+          continue;
+        }
+        visibleFailureRetries = 0;
+        await new Promise(resolve => window.setTimeout(resolve, 140));
       }
       if (job.status === "ready") {
         setBackupMessage(`اكتملت النسخة: ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل. اضغط «تنزيل النسخة» لحفظ الملف.`);
         const status = await api("/api/system-backup/status") as BackupStatus;
-        if (runner === exportRunner.current) setBackupStatus(status);
+        if (runner === exportRunner.current) { setBackupStatus(status); setExportJob(status.latestExport || job); }
       } else if (job.status === "failed") {
-        setError(job.error || "تعذر إكمال التصدير. يمكنك بدء نسخة جديدة دون التأثير على بيانات النظام.");
+        setError(job.error || `تعذر إكمال المرحلة ${job.completedUnits + 1}/${job.totalUnits}. التقدم محفوظ ويمكن استكماله.`);
       }
     } catch (e: any) {
-      if (runner === exportRunner.current) setError(e.message || "تعذر متابعة التصدير");
+      if (runner === exportRunner.current) setError(`${e.message || "تعذر متابعة التصدير"} — التقدم المحفوظ لم يُفقد.`);
     } finally {
       if (runner === exportRunner.current) setBackupBusy(null);
     }
@@ -261,10 +298,9 @@ export default function AdminUsers({
   const exportFullBackup = async () => {
     setError(null);
     setBackupMessage(null);
-    // A running job is a checkpoint, not a dead button. Resume it exactly where
-    // the last browser/instance stopped instead of starting the database walk
-    // again from zero.
-    if (exportJob && ["queued", "running", "finalizing"].includes(exportJob.status)) {
+    // Failed is resumable too. This specifically preserves a 47/48 checkpoint
+    // instead of forcing a new scan after one transient production failure.
+    if (exportJob && ["queued", "running", "finalizing", "failed"].includes(exportJob.status)) {
       await driveExportJob(exportJob.id);
       return;
     }
@@ -287,9 +323,6 @@ export default function AdminUsers({
   };
   const downloadFullBackup = () => {
     if (!exportJob || exportJob.status !== "ready") return;
-    // This navigation happens directly from the user's click, which keeps
-    // Safari/Chrome download permissions intact. The server only streams the
-    // already-built gzip; it performs no database scan here.
     const link = document.createElement("a");
     link.href = `/api/system-backup/export-jobs/${encodeURIComponent(exportJob.id)}/download`;
     link.rel = "noopener";
@@ -300,21 +333,99 @@ export default function AdminUsers({
   };
   const previewBackup = async () => {
     if (!backupFile) { setError("اختر ملف النسخة الاحتياطية أولاً"); return; }
-    setError(null); setBackupBusy("preview"); setBackupPreview(null);
+    setError(null); setBackupBusy("preview"); setBackupPreview(null); setImportJob(null); setImportUploadPercent(0);
     try { setBackupPreview(await backupRequest("/api/system-backup/preview", backupFile)); }
     catch (e: any) { setError(e.message); }
     finally { setBackupBusy(null); }
   };
+  const uploadImportJob = (file: File): Promise<ImportJob> => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/system-backup/import-jobs", true);
+    xhr.setRequestHeader("Content-Type", file.name.endsWith(".gz") ? "application/gzip" : "application/octet-stream");
+    xhr.setRequestHeader("X-Schedule-Confirm", "FULL-SYSTEM-IMPORT");
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      setImportUploadPercent(Math.max(1, Math.min(8, Math.round((event.loaded / event.total) * 8))));
+    };
+    xhr.onerror = () => reject(new Error("انقطع الاتصال أثناء رفع النسخة. لم يبدأ الاستيراد بعد."));
+    xhr.onload = () => {
+      let data: any = {};
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : {}; }
+      catch { reject(new Error("وصل رد غير متوقع أثناء تجهيز الاستيراد")); return; }
+      if (xhr.status < 200 || xhr.status >= 300) { reject(new Error(data.error || `تعذر تجهيز الاستيراد (${xhr.status})`)); return; }
+      setImportUploadPercent(8);
+      resolve(data as ImportJob);
+    };
+    xhr.send(file);
+  });
+  const driveImportJob = async (jobId: string) => {
+    const runner = ++importRunner.current;
+    setBackupBusy("import");
+    setError(null);
+    let transportRetries = 0;
+    let visibleFailureRetries = 0;
+    try {
+      let job = await api(`/api/system-backup/import-jobs/${encodeURIComponent(jobId)}`) as ImportJob;
+      setImportJob(job);
+      while (runner === importRunner.current && job.status !== "ready") {
+        try {
+          job = await api(`/api/system-backup/import-jobs/${encodeURIComponent(jobId)}/step`, { method: "POST" }) as ImportJob;
+          transportRetries = 0;
+        } catch (stepError: any) {
+          transportRetries += 1;
+          if (transportRetries > 12) throw stepError;
+          setBackupMessage("تعثر الاتصال لحظيًا أثناء الاستيراد — أتابع من نقطة الأمان المحفوظة.");
+          await new Promise(resolve => window.setTimeout(resolve, Math.min(5000, 400 * (2 ** (transportRetries - 1)))));
+          continue;
+        }
+        if (runner !== importRunner.current) return;
+        setImportJob(job);
+        if (job.status === "failed") {
+          visibleFailureRetries += 1;
+          if (visibleFailureRetries > 8) break;
+          setBackupMessage(`تعثر الاستيراد عند ${job.completedUnits}/${job.totalUnits} — أعيد المرحلة نفسها دون تكرار المراحل المكتملة.`);
+          await new Promise(resolve => window.setTimeout(resolve, 1000 * visibleFailureRetries));
+          continue;
+        }
+        visibleFailureRetries = 0;
+        await new Promise(resolve => window.setTimeout(resolve, 160));
+      }
+      if (job.status === "ready") {
+        setBackupFile(null); setBackupPreview(null); setImportUploadPercent(0);
+        await refreshBackupStatus();
+        setBackupMessage("تم استيراد النظام كاملًا والتحقق منه. نقطة التراجع محفوظة تلقائيًا.");
+      } else if (job.status === "failed") {
+        try {
+          const status = await api("/api/system-backup/status") as BackupStatus;
+          if (runner === importRunner.current) setBackupStatus(status);
+        } catch {}
+        setError(job.error || "تعذر إكمال مرحلة الاستيراد. نقطة الأمان محفوظة ويمكن الاستكمال من نفس المرحلة.");
+      }
+    } catch (e: any) {
+      if (runner === importRunner.current) setError(`${e.message || "تعذر متابعة الاستيراد"} — نقطة التقدم محفوظة.`);
+    } finally {
+      if (runner === importRunner.current) setBackupBusy(null);
+    }
+  };
   const importFullBackup = async (confirmed = false) => {
+    // A staged import no longer needs the original browser file to resume.
+    if (importJob && ["running", "failed"].includes(importJob.status)) {
+      await driveImportJob(importJob.id);
+      return;
+    }
     if (!backupFile || !backupPreview) { setError("افحص النسخة أولاً قبل الاستيراد"); return; }
     if (!confirmed) { setBackupConfirm("import"); return; }
-    setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("import");
+    setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("import"); setImportUploadPercent(1);
     try {
-      await backupRequest("/api/system-backup/import", backupFile, "FULL-SYSTEM-IMPORT");
-      setBackupFile(null); setBackupPreview(null); await refreshBackupStatus();
-      setBackupMessage("تم استيراد النظام كاملًا والتحقق منه. نقطة التراجع محفوظة تلقائيًا.");
-    } catch (e: any) { setError(e.message); }
-    finally { setBackupBusy(null); }
+      const job = await uploadImportJob(backupFile);
+      setImportJob(job);
+      setBackupFile(null);
+      setBackupMessage("تم رفع النسخة وفحصها. أبدأ الآن نقطة الأمان ثم الاستيراد المتدرج.");
+      setBackupBusy(null);
+      await driveImportJob(job.id);
+    } catch (e: any) {
+      setBackupBusy(null); setImportUploadPercent(0); setError(e.message || "تعذر بدء الاستيراد");
+    }
   };
   const resetFullSystem = async (confirmed = false) => {
     if (resetPhrase !== "تصفير النظام") { setError("اكتب «تصفير النظام» حرفياً للتأكيد"); return; }
@@ -357,6 +468,7 @@ export default function AdminUsers({
         const status = await api("/api/system-backup/status") as BackupStatus;
         setBackupStatus(status);
         setExportJob(status.latestExport || null);
+        setImportJob(status.latestImport || null);
         return;
       }
       const base = await Promise.all([
@@ -912,15 +1024,26 @@ export default function AdminUsers({
   if (mode === "backup") {
     const point = backupStatus?.latest || null;
     const exportInProgress = Boolean(exportJob && ["queued", "running", "finalizing"].includes(exportJob.status));
-    const vaultLocked = Boolean(backupBusy) || exportInProgress;
+    const importInProgress = Boolean(importJob && importJob.status === "running");
+    const importResumable = Boolean(importJob && ["running", "failed"].includes(importJob.status));
+    const vaultLocked = Boolean(backupBusy) || exportInProgress || importInProgress;
     const exportPercent = exportJob?.status === "ready" ? 100
       : exportJob?.status === "finalizing" ? 99
       : exportJob?.totalUnits ? Math.max(2, Math.min(97, Math.round((exportJob.completedUnits / exportJob.totalUnits) * 97)))
       : exportJob ? 2 : 0;
     const exportStatusLabel = exportJob?.status === "ready" ? "جاهزة للتنزيل"
-      : exportJob?.status === "failed" ? "توقفت — يمكن البدء من جديد"
+      : exportJob?.status === "failed" ? "توقفت مؤقتًا — التقدم محفوظ ويمكن الاستكمال"
       : exportJob?.status === "finalizing" ? "أبني الملف النهائي وأتحقق من SHA-256"
       : exportJob ? "أجمع البيانات وأحفظ نقاط التقدم" : "لم يبدأ التصدير بعد";
+    const importPercent = importJob?.status === "ready" ? 100
+      : importJob?.totalUnits ? Math.max(8, Math.min(99, 8 + Math.round((importJob.completedUnits / importJob.totalUnits) * 91)))
+      : importUploadPercent;
+    const importStatusLabel = importJob?.status === "ready" ? "اكتمل الاستيراد"
+      : importJob?.status === "failed" ? "توقفت مرحلة — يمكن الاستكمال من نفس النقطة"
+      : importJob?.phase === "safety" ? "أحفظ نقطة أمان كاملة قبل تغيير أي سجل"
+      : importJob?.phase === "apply" ? "أستعيد البيانات على مراحل محفوظة"
+      : importJob?.phase === "finalizing" ? "أراجع النتيجة وأحدث الذاكرة"
+      : backupBusy === "import" && importUploadPercent ? "أرفع النسخة وأفحصها" : "جاهز للاستيراد";
     const previewCollections: Array<[string, number]> = backupPreview
       ? Object.entries(backupPreview.collectionCounts)
           .map(([name, count]) => [name, Number(count) || 0] as [string, number])
@@ -970,30 +1093,47 @@ export default function AdminUsers({
             ) : null}
             {exportJob?.status === "ready" ? (
               <div className="vault-inline-actions">
-                <PrimaryButton type="button" disabled={Boolean(backupBusy)} onClick={downloadFullBackup}>
+                <PrimaryButton type="button" disabled={Boolean(backupBusy) || importInProgress} onClick={downloadFullBackup}>
                   <Download /> تنزيل النسخة
                 </PrimaryButton>
-                <SecondaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => void exportFullBackup()}>
+                <SecondaryButton type="button" disabled={Boolean(backupBusy) || importInProgress} onClick={() => void exportFullBackup()}>
                   <DatabaseBackup /> إنشاء نسخة أحدث
                 </SecondaryButton>
               </div>
             ) : (
-              <PrimaryButton type="button" disabled={backupBusy === "export" || (Boolean(backupBusy) && backupBusy !== "export")} onClick={() => void exportFullBackup()}>
-                <DatabaseBackup /> {backupBusy === "export" ? "أتابع التصدير…" : exportInProgress ? "استكمال التصدير" : exportJob?.status === "failed" ? "بدء نسخة جديدة" : "تصدير النظام كاملًا"}
+              <PrimaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup()}>
+                <DatabaseBackup /> {backupBusy === "export" ? "أتابع التصدير…" : exportInProgress ? "استكمال التصدير" : exportJob?.status === "failed" ? `استكمال من ${exportJob.completedUnits}/${exportJob.totalUnits}` : "تصدير النظام كاملًا"}
               </PrimaryButton>
             )}
           </Surface>
 
           <Surface className="system-vault-action vault-import">
             <span className="vault-action-icon"><Upload /></span>
-            <div><small>02</small><h3>استيراد كامل</h3><p>يفحص الملف والبصمة أولًا، ثم يحفظ نقطة تراجع تلقائية قبل استبدال أي سجل.</p></div>
-            <label className="vault-file-picker">
-              <input type="file" accept=".gz,.json,application/gzip,application/json,application/octet-stream" onChange={(event) => { setBackupFile(event.target.files?.[0] || null); setBackupPreview(null); setError(null); }} />
-              <FileCheck2 /><span>{backupFile ? backupFile.name : "اختر ملف النسخة"}</span>
+            <div><small>02</small><h3>استيراد كامل</h3><p>يفحص الملف والبصمة أولًا، ثم يصنع نقطة أمان كاملة ويستعيد كل مجموعة على مراحل محفوظة مع نسبة تقدم حقيقية.</p></div>
+            <label className={`vault-file-picker ${importResumable ? "disabled" : ""}`}>
+              <input type="file" disabled={importResumable} accept=".gz,.json,application/gzip,application/json,application/octet-stream" onChange={(event) => { setBackupFile(event.target.files?.[0] || null); setBackupPreview(null); setImportJob(null); setImportUploadPercent(0); setError(null); }} />
+              <FileCheck2 /><span>{backupFile ? backupFile.name : importResumable ? "النسخة مرفوعة ومحفوظة — أكمل الاستيراد" : "اختر ملف النسخة"}</span>
             </label>
+            {(importJob || (backupBusy === "import" && importUploadPercent > 0)) ? (
+              <div className={`vault-export-progress vault-import-progress status-${importJob?.status || "running"}`}>
+                <div className="vault-export-progress-head">
+                  <span>{importStatusLabel}</span>
+                  <strong>{importPercent}%</strong>
+                </div>
+                <div className="vault-export-progress-track" aria-label={`تقدم الاستيراد ${importPercent}%`}>
+                  <i style={{ width: `${importPercent}%` }} />
+                </div>
+                <div className="vault-export-progress-meta">
+                  {importJob ? <span><b>{importJob.completedUnits.toLocaleString("ar-KW-u-nu-latn")}</b> / {importJob.totalUnits.toLocaleString("ar-KW-u-nu-latn")} مرحلة</span> : <span><b>{importUploadPercent}%</b> رفع الملف</span>}
+                  {importJob ? <span><b>{importJob.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b> سجل في النسخة</span> : null}
+                </div>
+                {importJob?.current ? <small className="vault-export-current">{importJob.current}</small> : null}
+                {importJob?.status === "failed" && importJob.error ? <p className="vault-export-error">{importJob.error}</p> : null}
+              </div>
+            ) : null}
             <div className="vault-inline-actions">
-              <SecondaryButton type="button" disabled={!backupFile || vaultLocked} onClick={() => void previewBackup()}>{backupBusy === "preview" ? "أفحص…" : "فحص النسخة"}</SecondaryButton>
-              <PrimaryButton type="button" disabled={!backupPreview || vaultLocked} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أستعيد النظام…" : "استيراد"}</PrimaryButton>
+              <SecondaryButton type="button" disabled={!backupFile || Boolean(backupBusy) || exportInProgress || importResumable} onClick={() => void previewBackup()}>{backupBusy === "preview" ? "أفحص…" : "فحص النسخة"}</SecondaryButton>
+              <PrimaryButton type="button" disabled={Boolean(backupBusy) || exportInProgress || (!importResumable && !backupPreview)} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أتابع الاستيراد…" : importResumable ? "استكمال الاستيراد" : "استيراد"}</PrimaryButton>
             </div>
           </Surface>
 

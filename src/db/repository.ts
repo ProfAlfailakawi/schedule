@@ -700,6 +700,7 @@ export interface SystemRestorePointSummary {
   documentCount: number;
   collectionCounts: Record<string, number>;
   consumedAt?: string;
+  exportJobId?: string;
 }
 
 export type SystemExportJobStatus = "queued" | "running" | "finalizing" | "ready" | "failed";
@@ -709,6 +710,7 @@ export interface SystemExportJobSummary {
   createdAt: string;
   updatedAt: string;
   status: SystemExportJobStatus;
+  purpose?: "manual" | "safety";
   totalUnits: number;
   completedUnits: number;
   documentCount: number;
@@ -723,6 +725,8 @@ export interface SystemExportJobSummary {
 interface SystemExportQueueUnit {
   path: string;
   cursor?: string;
+  retryCount?: number;
+  lastError?: string;
 }
 
 interface SystemExportJobRecord extends SystemExportJobSummary {
@@ -735,15 +739,45 @@ interface SystemExportJobRecord extends SystemExportJobSummary {
   fileChunkCount: number;
 }
 
+export type SystemImportJobStatus = "running" | "ready" | "failed";
+export type SystemImportJobPhase = "safety" | "apply" | "finalizing";
+
+export interface SystemImportJobSummary {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+  status: SystemImportJobStatus;
+  phase: SystemImportJobPhase;
+  totalUnits: number;
+  completedUnits: number;
+  documentCount: number;
+  collectionCounts: Record<string, number>;
+  current?: string;
+  error?: string;
+  restorePointId?: string;
+}
+
+interface SystemImportJobRecord extends SystemImportJobSummary {
+  rootAdminId: number;
+  byUserId: number;
+  queue: string[];
+  nextIndex: number;
+  safetyExportJobId: string;
+  safetyUnits: number;
+  retryCount?: number;
+}
+
 const SYSTEM_BACKUP_FORMAT = "schedule-system-backup/1" as const;
 const SYSTEM_RESTORE_COLLECTION = "_systemRestorePoints";
 const SYSTEM_EXPORT_JOB_COLLECTION = "_systemExportJobs";
+const SYSTEM_IMPORT_JOB_COLLECTION = "_systemImportJobs";
 // Sessions are deliberately not portable: the document id is a live bearer
 // credential. Everything durable is included; live login tokens stay on the
 // server and survive a restore so the root administrator cannot lock himself out.
-const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, SYSTEM_EXPORT_JOB_COLLECTION, "sessions"]);
+const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, SYSTEM_EXPORT_JOB_COLLECTION, SYSTEM_IMPORT_JOB_COLLECTION, "sessions"]);
 const LOCAL_RESTORE_DIR = () => path.join(DB_DIR, "system-restore-points");
 const LOCAL_EXPORT_DIR = () => path.join(DB_DIR, "system-export-jobs");
+const LOCAL_IMPORT_DIR = () => path.join(DB_DIR, "system-import-jobs");
 
 function backupEncode(value: any): any {
   if (value == null || typeof value !== "object") return value;
@@ -1029,21 +1063,26 @@ function writeLocalExportJob(row: SystemExportJobRecord) {
 
 async function latestSystemExportJob(rootAdminId = 1): Promise<SystemExportJobSummary | null> {
   if (firestoreDb) {
-    const snap = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).orderBy("createdAt", "desc").limit(1).get();
-    if (!snap.docs.length) return null;
-    const row = snap.docs[0].data() as SystemExportJobRecord;
-    return Number(row.rootAdminId) === rootAdminId ? exportJobSummary(row) : null;
+    // Safety exports created by an import are deliberately invisible in the
+    // manual export card. Fetch a small recent window and choose the newest
+    // manual job without requiring a compound Firestore index.
+    const snap = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).orderBy("createdAt", "desc").limit(12).get();
+    const row = snap.docs.map(doc => doc.data() as SystemExportJobRecord)
+      .find(item => Number(item.rootAdminId) === rootAdminId && (item.purpose || "manual") === "manual");
+    return row ? exportJobSummary(row) : null;
   }
   if (!fs.existsSync(LOCAL_EXPORT_DIR())) return null;
   const rows = fs.readdirSync(LOCAL_EXPORT_DIR()).filter(name => name.endsWith(".json") && !name.endsWith(".json.gz"))
     .map(name => readLocalExportJob(name.replace(/\.json$/, ""))).filter(Boolean) as SystemExportJobRecord[];
-  const row = rows.filter(item => item.rootAdminId === rootAdminId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  const row = rows.filter(item => item.rootAdminId === rootAdminId && (item.purpose || "manual") === "manual").sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   return row ? exportJobSummary(row) : null;
 }
 
-async function startSystemExportJob(byUserId: number, rootAdminId = 1): Promise<SystemExportJobSummary> {
-  const latest = await latestSystemExportJob(rootAdminId);
-  if (latest && ["queued", "running", "finalizing"].includes(latest.status)) return latest;
+async function startSystemExportJob(byUserId: number, rootAdminId = 1, forceNew = false, purpose: "manual" | "safety" = "manual"): Promise<SystemExportJobSummary> {
+  const latest = !forceNew && purpose === "manual" ? await latestSystemExportJob(rootAdminId) : null;
+  // A failed job still contains a valid checkpoint. Returning it here lets the
+  // new code continue from 47/48 instead of discarding twelve minutes of work.
+  if (latest && ["queued", "running", "finalizing", "failed"].includes(latest.status)) return latest;
   const id = randomUUID();
   const createdAt = new Date().toISOString();
 
@@ -1057,7 +1096,7 @@ async function startSystemExportJob(byUserId: number, rootAdminId = 1): Promise<
       totalUnits: 1, completedUnits: 1, documentCount: backup.summary.documentCount,
       collectionCounts: backup.summary.collectionCounts, filename: `schedule-full-backup_${createdAt.replace(/[:.]/g, "-").replace("T", "_").replace("Z", "")}.json.gz`,
       sha256: backup.integrity.sha256, sizeBytes: compressed.length,
-      rootAdminId, byUserId, queue: [], nextIndex: 0, dataChunkSeq: 0, dataGroupSeq: 0, fileChunkCount: 1,
+      rootAdminId, byUserId, purpose, queue: [], nextIndex: 0, dataChunkSeq: 0, dataGroupSeq: 0, fileChunkCount: 1,
     };
     writeLocalExportJob(row);
     return exportJobSummary(row);
@@ -1078,15 +1117,22 @@ async function startSystemExportJob(byUserId: number, rootAdminId = 1): Promise<
     id, createdAt, updatedAt: createdAt, status: "running",
     totalUnits: paths.length, completedUnits: 0, documentCount: 0, collectionCounts: {},
     current: paths[0] || "تهيئة النسخة",
-    rootAdminId, byUserId, queue: paths.map(path => ({ path })), nextIndex: 0,
+    rootAdminId, byUserId, purpose, queue: paths.map(path => ({ path })), nextIndex: 0,
     dataChunkSeq: 0, dataGroupSeq: 0, fileChunkCount: 0,
   };
   const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
   await root.set(row, { merge: false });
   // Keep only a few finished export files. Running jobs are never discarded.
   try {
-    const older = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).orderBy("createdAt", "desc").get();
-    const finished = older.docs.filter(doc => !["queued", "running", "finalizing"].includes(String(doc.data().status)));
+    const [older, restoreRefs] = await Promise.all([
+      firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).orderBy("createdAt", "desc").get(),
+      firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).orderBy("createdAt", "desc").limit(12).get(),
+    ]);
+    const protectedExportIds = new Set(restoreRefs.docs.map(doc => String((doc.data() as any).exportJobId || "")).filter(Boolean));
+    // Failed exports are checkpoints too; never garbage-collect them until the
+    // user has successfully resumed/replaced them. Only completed portable
+    // files participate in retention.
+    const finished = older.docs.filter(doc => String(doc.data().status) === "ready" && !protectedExportIds.has(doc.id));
     for (const doc of finished.slice(4)) await deleteFirestoreTree(doc.ref);
   } catch {}
   return exportJobSummary(row);
@@ -1105,6 +1151,16 @@ async function getSystemExportJob(id: string, rootAdminId = 1): Promise<SystemEx
   return exportJobSummary(row);
 }
 
+
+function isTransientBackupError(error: any): boolean {
+  const message = String(error?.message || error || "").toLowerCase();
+  const code = String(error?.code || "").toLowerCase();
+  return ["deadline", "unavailable", "aborted", "resource-exhausted", "internal", "econnreset", "etimedout", "socket", "network", "503", "504", "429"]
+    .some(token => message.includes(token) || code.includes(token));
+}
+
+async function sleepMs(ms: number) { await new Promise(resolve => setTimeout(resolve, ms)); }
+
 async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<SystemExportJobSummary> {
   if (!firestoreDb) return getSystemExportJob(id, rootAdminId);
   const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
@@ -1112,7 +1168,17 @@ async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<Syst
   if (!doc.exists) throw new Error("مهمة التصدير غير موجودة");
   let row = doc.data() as SystemExportJobRecord;
   if (Number(row.rootAdminId) !== rootAdminId) throw new Error("مهمة التصدير لا تخص هذا الحساب");
-  if (["ready", "failed"].includes(row.status)) return exportJobSummary(row);
+  if (row.status === "ready") return exportJobSummary(row);
+
+  // `failed` is a pause, not a graveyard. The 47/48 production failure proved
+  // that a single transient Firestore/Cloud Run hiccup must never throw away
+  // a fully checkpointed export. Re-enter the exact same cursor and continue.
+  if (row.status === "failed") {
+    row.status = "running";
+    row.error = undefined;
+    row.updatedAt = new Date().toISOString();
+    await root.set(row, { merge: false });
+  }
 
   const deadline = Date.now() + SYSTEM_EXPORT_STEP_BUDGET_MS;
   try {
@@ -1124,7 +1190,21 @@ async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<Syst
       const collection = firestoreDb.collection(unit.path);
       let query: FirebaseFirestore.Query = collection.orderBy(FieldPath.documentId()).limit(SYSTEM_EXPORT_PAGE_SIZE);
       if (unit.cursor) query = query.startAfter(unit.cursor);
-      const snap = await query.get();
+
+      let snap: FirebaseFirestore.QuerySnapshot | null = null;
+      let lastError: any = null;
+      // Retry a page locally first. This catches short Firestore hiccups without
+      // even making the browser notice; the cursor is committed only on success.
+      for (let attempt = 0; attempt < 4; attempt += 1) {
+        try { snap = await query.get(); lastError = null; break; }
+        catch (error: any) {
+          lastError = error;
+          if (!isTransientBackupError(error) || attempt === 3) break;
+          await sleepMs(180 * (2 ** attempt));
+        }
+      }
+      if (!snap) throw lastError || new Error("تعذر قراءة دفعة التصدير");
+
       const encoded = snap.docs.map(item => ({ path: item.ref.path, data: backupEncode(item.data()) } as SystemBackupDocument));
       if (encoded.length) {
         row = await persistExportDocumentGroups(root, encoded, row);
@@ -1133,6 +1213,8 @@ async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<Syst
         row.collectionCounts[top] = (row.collectionCounts[top] || 0) + encoded.length;
       }
 
+      unit.retryCount = 0;
+      unit.lastError = undefined;
       if (snap.size < SYSTEM_EXPORT_PAGE_SIZE) {
         row.completedUnits += 1;
         row.nextIndex += 1;
@@ -1142,20 +1224,30 @@ async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<Syst
       }
       row.current = row.queue[row.nextIndex]?.path;
       row.updatedAt = new Date().toISOString();
+      row.error = undefined;
       await root.set(row, { merge: false });
     }
     if (row.nextIndex >= row.queue.length) row = await finalizeFirestoreExportJob(root, row);
     return exportJobSummary(row);
   } catch (error: any) {
-    row.status = "failed";
+    const unit = row.queue[row.nextIndex];
+    const retryCount = Number(unit?.retryCount || 0) + 1;
+    if (unit) {
+      unit.retryCount = retryCount;
+      unit.lastError = String(error?.message || error || "تعذر إكمال التصدير").slice(0, 500);
+      row.queue[row.nextIndex] = unit;
+    }
+    // Transient failures stay resumable automatically. Only repeated/permanent
+    // failures become visibly "failed", and even those can be resumed manually
+    // from the same cursor after deployment or connectivity recovery.
+    row.status = isTransientBackupError(error) && retryCount < 8 ? "running" : "failed";
     row.error = String(error?.message || error || "تعذر إكمال التصدير").slice(0, 900);
-    row.current = undefined;
+    row.current = unit?.path || row.current;
     row.updatedAt = new Date().toISOString();
     await root.set(row, { merge: false });
     return exportJobSummary(row);
   }
 }
-
 async function readSystemExportFile(id: string, rootAdminId = 1): Promise<{ summary: SystemExportJobSummary; chunks: Buffer[] }> {
   if (firestoreDb) {
     const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
@@ -1173,6 +1265,282 @@ async function readSystemExportFile(id: string, rootAdminId = 1): Promise<{ summ
   const row = readLocalExportJob(id);
   if (!row || row.rootAdminId !== rootAdminId || row.status !== "ready") throw new Error("ملف النسخة غير جاهز");
   return { summary: exportJobSummary(row), chunks: [fs.readFileSync(localExportFilePath(id))] };
+}
+
+
+function importJobSummary(row: SystemImportJobRecord): SystemImportJobSummary {
+  const { rootAdminId: _root, byUserId: _by, queue: _queue, nextIndex: _next, safetyExportJobId: _safety, safetyUnits: _su, retryCount: _retry, ...summary } = row;
+  return summary;
+}
+
+function localImportMetaPath(id: string) { return path.join(LOCAL_IMPORT_DIR(), `${id}.json`); }
+function localImportSourcePath(id: string) { return path.join(LOCAL_IMPORT_DIR(), `${id}.source.json.gz`); }
+function readLocalImportJob(id: string): SystemImportJobRecord | null {
+  try { return JSON.parse(fs.readFileSync(localImportMetaPath(id), "utf8")) as SystemImportJobRecord; } catch { return null; }
+}
+function writeLocalImportJob(row: SystemImportJobRecord) {
+  fs.mkdirSync(LOCAL_IMPORT_DIR(), { recursive: true, mode: 0o700 });
+  fs.writeFileSync(localImportMetaPath(row.id), JSON.stringify(row), { mode: 0o600 });
+}
+
+async function persistImportBackup(root: FirebaseFirestore.DocumentReference, backup: SystemBackupPayload): Promise<void> {
+  const documents = backup.documents || [];
+  const byCollection = new Map<string, SystemBackupDocument[]>();
+  for (const item of documents) {
+    const top = item.path.split("/")[0] || "unknown";
+    const list = byCollection.get(top) || [];
+    list.push(item);
+    byCollection.set(top, list);
+  }
+  let seq = 0;
+  let pending: Array<{ ref: FirebaseFirestore.DocumentReference; data: any }> = [];
+  const flush = async () => {
+    if (!pending.length) return;
+    const batch = firestoreDb!.batch();
+    pending.forEach(item => batch.set(item.ref, item.data, { merge: false }));
+    await batch.commit();
+    pending = [];
+  };
+  for (const collectionName of [...byCollection.keys()].sort((a, b) => a.localeCompare(b))) {
+    let groupSeq = 0;
+    for (const group of groupBackupDocuments(byCollection.get(collectionName) || [])) {
+      groupSeq += 1;
+      const raw = Buffer.from(group.map(item => JSON.stringify(item)).join("\n"), "utf8");
+      const compressed = gzipSync(raw, { level: 1 });
+      const pieces = splitBuffer(compressed);
+      for (let part = 0; part < pieces.length; part += 1) {
+        seq += 1;
+        pending.push({
+          ref: root.collection("payloadChunks").doc(`p_${String(seq).padStart(9, "0")}`),
+          data: { collection: collectionName, group: groupSeq, part, parts: pieces.length, payload: pieces[part] },
+        });
+        if (pending.length >= 250) await flush();
+      }
+    }
+  }
+  await flush();
+}
+
+async function readImportCollection(root: FirebaseFirestore.DocumentReference, collectionName: string): Promise<SystemBackupDocument[]> {
+  const snap = await root.collection("payloadChunks").where("collection", "==", collectionName).get();
+  if (!snap.docs.length) return [];
+  const grouped = new Map<number, Array<{ part: number; payload: Buffer }>>();
+  for (const doc of snap.docs) {
+    const data = doc.data() as any;
+    const group = Number(data.group || 0);
+    const list = grouped.get(group) || [];
+    list.push({ part: Number(data.part || 0), payload: firestoreBytesToBuffer(data.payload) });
+    grouped.set(group, list);
+  }
+  const output: SystemBackupDocument[] = [];
+  for (const groupId of [...grouped.keys()].sort((a, b) => a - b)) {
+    const pieces = (grouped.get(groupId) || []).sort((a, b) => a.part - b.part).map(item => item.payload);
+    const text = gunzipSync(Buffer.concat(pieces)).toString("utf8");
+    for (const line of text.split("\n")) if (line) output.push(JSON.parse(line) as SystemBackupDocument);
+  }
+  return output.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+async function latestSystemImportJob(rootAdminId = 1): Promise<SystemImportJobSummary | null> {
+  if (firestoreDb) {
+    const snap = await firestoreDb.collection(SYSTEM_IMPORT_JOB_COLLECTION).orderBy("createdAt", "desc").limit(1).get();
+    if (!snap.docs.length) return null;
+    const row = snap.docs[0].data() as SystemImportJobRecord;
+    return Number(row.rootAdminId) === rootAdminId ? importJobSummary(row) : null;
+  }
+  if (!fs.existsSync(LOCAL_IMPORT_DIR())) return null;
+  const rows = fs.readdirSync(LOCAL_IMPORT_DIR()).filter(name => name.endsWith(".json") && !name.includes("source"))
+    .map(name => readLocalImportJob(name.replace(/\.json$/, ""))).filter(Boolean) as SystemImportJobRecord[];
+  const row = rows.filter(item => item.rootAdminId === rootAdminId).sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  return row ? importJobSummary(row) : null;
+}
+
+async function startSystemImportJob(input: unknown, byUserId: number, rootAdminId = 1): Promise<SystemImportJobSummary> {
+  const existingJob = await latestSystemImportJob(rootAdminId);
+  if (existingJob && ["running", "failed"].includes(existingJob.status)) {
+    throw new Error(`يوجد استيراد غير مكتمل عند ${existingJob.completedUnits}/${existingJob.totalUnits}. أكمله من نفس المهمة قبل بدء ملف آخر.`);
+  }
+  const backup = validateSystemBackupPayload(input, rootAdminId);
+  const id = randomUUID();
+  const createdAt = new Date().toISOString();
+  const importedCollections = Object.keys(backup.summary.collectionCounts || {}).filter(name => !SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(name));
+
+  if (!firestoreDb) {
+    const safety = await startSystemExportJob(byUserId, rootAdminId, true, "safety");
+    fs.mkdirSync(LOCAL_IMPORT_DIR(), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(localImportSourcePath(id), gzipSync(Buffer.from(JSON.stringify(backup), "utf8"), { level: 1 }), { mode: 0o600 });
+    const row: SystemImportJobRecord = {
+      id, createdAt, updatedAt: createdAt, status: "running", phase: "safety",
+      totalUnits: safety.totalUnits + importedCollections.length + 1, completedUnits: 0,
+      documentCount: backup.summary.documentCount, collectionCounts: backup.summary.collectionCounts,
+      current: "أحفظ نقطة أمان قبل الاستيراد", rootAdminId, byUserId,
+      queue: importedCollections.sort((a, b) => a.localeCompare(b)), nextIndex: 0,
+      safetyExportJobId: safety.id, safetyUnits: safety.totalUnits,
+    };
+    writeLocalImportJob(row);
+    return importJobSummary(row);
+  }
+
+  const existing = (await firestoreDb.listCollections())
+    .map(collection => collection.id)
+    .filter(name => !SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(name));
+  const queue = [...new Set([...existing, ...importedCollections])].sort((a, b) => a.localeCompare(b));
+  const root = firestoreDb.collection(SYSTEM_IMPORT_JOB_COLLECTION).doc(id);
+  // Stage the validated payload before publishing a resumable parent job. Only
+  // after staging succeeds do we start the safety export, so a failed upload
+  // cannot leave either a half-source job or an orphan safety scan behind.
+  try {
+    await persistImportBackup(root, backup);
+    const safety = await startSystemExportJob(byUserId, rootAdminId, true, "safety");
+    const row: SystemImportJobRecord = {
+      id, createdAt, updatedAt: createdAt, status: "running", phase: "safety",
+      totalUnits: safety.totalUnits + queue.length + 1, completedUnits: 0,
+      documentCount: backup.summary.documentCount, collectionCounts: backup.summary.collectionCounts,
+      current: "أحفظ نقطة أمان قبل الاستيراد", rootAdminId, byUserId,
+      queue, nextIndex: 0, safetyExportJobId: safety.id, safetyUnits: safety.totalUnits,
+    };
+    await root.set(row, { merge: false });
+    return importJobSummary(row);
+  } catch (error) {
+    try { await deleteFirestoreTree(root); } catch {}
+    throw error;
+  }
+}
+
+async function getSystemImportJob(id: string, rootAdminId = 1): Promise<SystemImportJobSummary> {
+  if (firestoreDb) {
+    const doc = await firestoreDb.collection(SYSTEM_IMPORT_JOB_COLLECTION).doc(id).get();
+    if (!doc.exists) throw new Error("مهمة الاستيراد غير موجودة");
+    const row = doc.data() as SystemImportJobRecord;
+    if (Number(row.rootAdminId) !== rootAdminId) throw new Error("مهمة الاستيراد لا تخص هذا الحساب");
+    return importJobSummary(row);
+  }
+  const row = readLocalImportJob(id);
+  if (!row || row.rootAdminId !== rootAdminId) throw new Error("مهمة الاستيراد غير موجودة");
+  return importJobSummary(row);
+}
+
+async function applyImportedCollection(collectionName: string, desired: SystemBackupDocument[], rootAdminId: number): Promise<void> {
+  if (!firestoreDb) return;
+  if (SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collectionName)) return;
+  if (collectionName === "users") {
+    const rootUserPath = `users/user_${rootAdminId}`;
+    if (!desired.some(item => item.path === rootUserPath)) throw new Error("النسخة لا تحتوي مسار حساب الإدارة الرئيسي");
+    await reconcileTopLevelCollection("users", desired, new Set([rootUserPath]));
+    return;
+  }
+  if (collectionName === "formSecurity") {
+    const protectedPaths = new Set(desired.filter(item => Number((item.data as any)?.SystemUserId) === rootAdminId).map(item => item.path));
+    await reconcileTopLevelCollection("formSecurity", desired, protectedPaths);
+    return;
+  }
+  if (collectionName === "formNames") {
+    await reconcileTopLevelCollection("formNames", desired);
+    return;
+  }
+  if (!desired.length) {
+    const ref = firestoreDb.collection(collectionName);
+    const snap = await ref.limit(1).get();
+    if (!snap.empty) await deleteFirestoreTree(ref);
+    return;
+  }
+  await reconcileTopLevelCollection(collectionName, desired);
+}
+
+async function advanceSystemImportJob(id: string, rootAdminId = 1): Promise<SystemImportJobSummary> {
+  if (!firestoreDb) {
+    let row = readLocalImportJob(id);
+    if (!row || row.rootAdminId !== rootAdminId) throw new Error("مهمة الاستيراد غير موجودة");
+    if (row.status === "ready") return importJobSummary(row);
+    try {
+      if (!row.restorePointId) {
+        const restore = await createSystemRestorePointFromExport("قبل الاستيراد الكامل", row.byUserId, row.safetyExportJobId, rootAdminId);
+        row.restorePointId = restore.id;
+      }
+      const backup = validateSystemBackupPayload(JSON.parse(gunzipSync(fs.readFileSync(localImportSourcePath(id))).toString("utf8")), rootAdminId);
+      await replaceSystemFromBackup(backup, rootAdminId);
+      row = { ...row, status: "ready", phase: "finalizing", completedUnits: row.totalUnits, current: undefined, error: undefined, updatedAt: new Date().toISOString() };
+      writeLocalImportJob(row);
+      return importJobSummary(row);
+    } catch (error: any) {
+      row.status = "failed"; row.error = String(error?.message || error).slice(0, 900); row.updatedAt = new Date().toISOString(); writeLocalImportJob(row);
+      return importJobSummary(row);
+    }
+  }
+
+  const root = firestoreDb.collection(SYSTEM_IMPORT_JOB_COLLECTION).doc(id);
+  const snap = await root.get();
+  if (!snap.exists) throw new Error("مهمة الاستيراد غير موجودة");
+  let row = snap.data() as SystemImportJobRecord;
+  if (Number(row.rootAdminId) !== rootAdminId) throw new Error("مهمة الاستيراد لا تخص هذا الحساب");
+  if (row.status === "ready") return importJobSummary(row);
+  if (row.status === "failed") { row.status = "running"; row.error = undefined; }
+
+  try {
+    if (row.phase === "safety") {
+      let safety = await getSystemExportJob(row.safetyExportJobId, rootAdminId);
+      if (safety.status !== "ready") safety = await advanceSystemExportJob(row.safetyExportJobId, rootAdminId);
+      row.safetyUnits = Math.max(1, safety.totalUnits || row.safetyUnits || 1);
+      row.totalUnits = row.safetyUnits + row.queue.length + 1;
+      row.completedUnits = Math.min(row.safetyUnits, safety.completedUnits || 0);
+      row.current = safety.status === "ready" ? "أثبت نقطة الأمان" : `نقطة الأمان · ${safety.current || "أجمع البيانات الحالية"}`;
+      row.updatedAt = new Date().toISOString();
+      if (safety.status !== "ready") {
+        row.error = safety.status === "failed" ? safety.error : undefined;
+        await root.set(row, { merge: false });
+        return importJobSummary(row);
+      }
+      if (!row.restorePointId) {
+        const restore = await createSystemRestorePointFromExport("قبل الاستيراد الكامل", row.byUserId, row.safetyExportJobId, rootAdminId);
+        row.restorePointId = restore.id;
+      }
+      row.phase = "apply";
+      row.completedUnits = row.safetyUnits;
+      row.current = row.queue[0] ? `أستعيد ${row.queue[0]}` : "أراجع النتيجة";
+      row.error = undefined;
+      await root.set(row, { merge: false });
+    }
+
+    if (row.phase === "apply" && row.nextIndex < row.queue.length) {
+      const collectionName = row.queue[row.nextIndex];
+      row.current = `أستعيد ${collectionName}`;
+      row.updatedAt = new Date().toISOString();
+      await root.set(row, { merge: false });
+      const desired = await readImportCollection(root, collectionName);
+      await applyImportedCollection(collectionName, desired, rootAdminId);
+      row.nextIndex += 1;
+      row.retryCount = 0;
+      row.completedUnits = row.safetyUnits + row.nextIndex;
+      row.current = row.queue[row.nextIndex] ? `أستعيد ${row.queue[row.nextIndex]}` : "أراجع الفهارس وأحدث الذاكرة";
+      row.updatedAt = new Date().toISOString();
+      row.error = undefined;
+      if (row.nextIndex >= row.queue.length) row.phase = "finalizing";
+      await root.set(row, { merge: false });
+      if (row.phase !== "finalizing") return importJobSummary(row);
+    }
+
+    if (row.phase === "finalizing") {
+      refreshSystemCachesAfterMutation();
+      row.status = "ready";
+      row.completedUnits = row.totalUnits;
+      row.current = undefined;
+      row.error = undefined;
+      row.updatedAt = new Date().toISOString();
+      await root.set(row, { merge: false });
+      // Staged source chunks are no longer needed after a verified complete
+      // import. The safety export remains because the restore point references it.
+      try { await deleteFirestoreTree(root.collection("payloadChunks")); } catch {}
+      return importJobSummary(row);
+    }
+    return importJobSummary(row);
+  } catch (error: any) {
+    row.retryCount = Number(row.retryCount || 0) + 1;
+    row.error = String(error?.message || error || "تعذر متابعة الاستيراد").slice(0, 900);
+    row.status = isTransientBackupError(error) && row.retryCount < 8 ? "running" : "failed";
+    row.updatedAt = new Date().toISOString();
+    await root.set(row, { merge: false });
+    return importJobSummary(row);
+  }
 }
 
 function validateFirestoreDocumentPath(documentPath: string): boolean {
@@ -1332,6 +1700,43 @@ async function makeSystemBackup(rootAdminId: number): Promise<SystemBackupPayloa
   };
 }
 
+async function createSystemRestorePointFromExport(
+  action: string,
+  byUserId: number,
+  exportJobId: string,
+  rootAdminId = 1,
+): Promise<SystemRestorePointSummary> {
+  const file = await readSystemExportFile(exportJobId, rootAdminId);
+  const meta: SystemRestorePointSummary = {
+    id: randomUUID(),
+    createdAt: new Date().toISOString(),
+    action,
+    byUserId,
+    documentCount: file.summary.documentCount,
+    collectionCounts: file.summary.collectionCounts,
+    exportJobId,
+  };
+  if (firestoreDb) {
+    await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(meta.id).set(meta, { merge: false });
+    // Reference-based safety points obey the same retention rule as ordinary
+    // restore points. The referenced safety export is protected while the point
+    // exists; once the old point is removed a later export cleanup may reclaim
+    // the orphan file safely.
+    try {
+      const older = await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).orderBy("createdAt", "desc").get();
+      for (const doc of older.docs.slice(8)) await deleteFirestoreTree(doc.ref);
+    } catch {}
+  } else {
+    fs.mkdirSync(LOCAL_RESTORE_DIR(), { recursive: true, mode: 0o700 });
+    fs.writeFileSync(path.join(LOCAL_RESTORE_DIR(), `${meta.id}.json`), JSON.stringify({ meta, exportJobId }), { mode: 0o600 });
+    const files = fs.readdirSync(LOCAL_RESTORE_DIR()).filter(name => name.endsWith(".json"))
+      .map(name => ({ name, mtime: fs.statSync(path.join(LOCAL_RESTORE_DIR(), name)).mtimeMs }))
+      .sort((a, b) => b.mtime - a.mtime);
+    files.slice(8).forEach(item => { try { fs.unlinkSync(path.join(LOCAL_RESTORE_DIR(), item.name)); } catch {} });
+  }
+  return meta;
+}
+
 async function saveSystemRestorePoint(action: string, byUserId: number, rootAdminId = 1): Promise<SystemRestorePointSummary> {
   const snapshot = await makeSystemBackup(rootAdminId);
   const meta: SystemRestorePointSummary = {
@@ -1387,6 +1792,11 @@ async function loadSystemRestorePoint(id: string, rootAdminId = 1): Promise<Syst
     const metaDoc = await root.get();
     if (!metaDoc.exists) throw new Error("نقطة التراجع غير موجودة");
     const meta = metaDoc.data() as any;
+    if (meta.exportJobId) {
+      const file = await readSystemExportFile(String(meta.exportJobId), rootAdminId);
+      const parsed = JSON.parse(gunzipSync(Buffer.concat(file.chunks)).toString("utf8"));
+      return validateSystemBackupPayload(parsed, rootAdminId);
+    }
     const docs = await root.collection("documents").get();
     const documents = docs.docs.sort((a, b) => a.id.localeCompare(b.id)).map(doc => doc.data() as SystemBackupDocument);
     const backup: SystemBackupPayload = {
@@ -1404,6 +1814,11 @@ async function loadSystemRestorePoint(id: string, rootAdminId = 1): Promise<Syst
   const file = path.join(LOCAL_RESTORE_DIR(), `${id}.json`);
   if (!fs.existsSync(file)) throw new Error("نقطة التراجع غير موجودة");
   const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+  if (parsed.exportJobId || parsed.meta?.exportJobId) {
+    const exportId = String(parsed.exportJobId || parsed.meta.exportJobId);
+    const exported = await readSystemExportFile(exportId, rootAdminId);
+    return validateSystemBackupPayload(JSON.parse(gunzipSync(Buffer.concat(exported.chunks)).toString("utf8")), rootAdminId);
+  }
   return validateSystemBackupPayload(parsed.snapshot, rootAdminId);
 }
 
@@ -3260,6 +3675,18 @@ export const Repository = {
 
   readSystemExportFile: async (id: string, rootAdminId = 1): Promise<{ summary: SystemExportJobSummary; chunks: Buffer[] }> =>
     readSystemExportFile(id, rootAdminId),
+
+  getLatestSystemImportJob: async (rootAdminId = 1): Promise<SystemImportJobSummary | null> =>
+    latestSystemImportJob(rootAdminId),
+
+  startSystemImportJob: async (input: unknown, byUserId: number, rootAdminId = 1): Promise<SystemImportJobSummary> =>
+    startSystemImportJob(input, byUserId, rootAdminId),
+
+  getSystemImportJob: async (id: string, rootAdminId = 1): Promise<SystemImportJobSummary> =>
+    getSystemImportJob(id, rootAdminId),
+
+  advanceSystemImportJob: async (id: string, rootAdminId = 1): Promise<SystemImportJobSummary> =>
+    advanceSystemImportJob(id, rootAdminId),
 
   validateSystemBackup: async (input: unknown, rootAdminId = 1): Promise<SystemBackupPayload> =>
     validateSystemBackupPayload(input, rootAdminId),

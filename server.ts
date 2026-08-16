@@ -112,7 +112,7 @@ app.use(compression({
 // Full-system backups are intentionally compressed and can be much larger than
 // ordinary API payloads. Give only these two root-admin endpoints a larger raw
 // body allowance; every other JSON route keeps the tight 1 MB limit.
-app.use(["/api/system-backup/preview", "/api/system-backup/import"], express.raw({
+app.use(["/api/system-backup/preview", "/api/system-backup/import", "/api/system-backup/import-jobs"], express.raw({
   type: ["application/gzip", "application/octet-stream", "application/json"],
   limit: "30mb",
 }));
@@ -4063,9 +4063,10 @@ app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), requireP
  * they are bearer credentials / safety infrastructure, not university data.
  */
 app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
-  const [restorePoints, latestExport] = await Promise.all([
+  const [restorePoints, latestExport, latestImport] = await Promise.all([
     Repository.getSystemRestorePoints(),
     Repository.getLatestSystemExportJob(ROOT_ADMIN_USER_ID),
+    Repository.getLatestSystemImportJob(ROOT_ADMIN_USER_ID),
   ]);
   res.json({
     rootOnly: true,
@@ -4073,6 +4074,7 @@ app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req:
     restorePoints,
     latest: restorePoints.find(point => !point.consumedAt) || null,
     latestExport,
+    latestImport,
   });
 });
 
@@ -4131,19 +4133,31 @@ app.post("/api/system-backup/preview", requireAuth, requireRootAdmin, async (req
   });
 });
 
-app.post("/api/system-backup/import", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+// Resumable full-system import. Upload/validation happens once; the destructive
+// replacement itself advances in checkpointed stages and exposes real progress
+// to the root administrator. A safety export is completed first and referenced
+// by the undo point before the first collection is touched.
+app.post("/api/system-backup/import-jobs", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
   if (req.get("x-schedule-confirm") !== "FULL-SYSTEM-IMPORT") {
     res.status(409).json({ error: "الاستيراد الكامل يحتاج تأكيداً صريحاً" });
     return;
   }
   const input = readSystemBackupBody(req);
-  const result = await Repository.importSystemBackup(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
-  res.json({
-    success: true,
-    message: "تم استيراد النسخة الكاملة والتحقق من سلامتها",
-    imported: result.backup.summary,
-    restorePoint: result.restorePoint,
-  });
+  const job = await Repository.startSystemImportJob(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  res.status(job.status === "ready" ? 200 : 202).json(job);
+});
+
+app.get("/api/system-backup/import-jobs/:id", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  res.json(await Repository.getSystemImportJob(String(req.params.id), ROOT_ADMIN_USER_ID));
+});
+
+app.post("/api/system-backup/import-jobs/:id/step", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const job = await Repository.advanceSystemImportJob(String(req.params.id), ROOT_ADMIN_USER_ID);
+  res.status(job.status === "ready" ? 200 : 202).json(job);
+});
+
+app.post("/api/system-backup/import", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  res.status(409).json({ error: "تم استبدال الاستيراد المباشر باستيراد متدرج مع نسبة تقدم ونقطة أمان. افتح خزنة النظام واستخدم «استيراد كامل»." });
 });
 
 app.post("/api/system-backup/reset", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
