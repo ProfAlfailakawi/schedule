@@ -7510,7 +7510,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 bundle.rows.length >= 8 ? 0.36 : bundle.rows.length >= 6 ? 0.44 : bundle.rows.length >= 5 ? 0.52 : 0.62,
                               ).text;
                               const bandWho = bandInstructor?.AdInstructorName
-                                ? firstLast(instructorLabel(bandInstructor.AdInstructorName, bundle.rows.length >= 8 ? 0.56 : 0.68).text)
+                                ? firstLast(instructorLabel(bandInstructor.AdInstructorName, bundle.rows.length >= 8 ? 0.56 : 0.68))
                                 : "بدون أستاذ";
                               /* The slice is the lecture's real handle: the same grip the
                                  full card carries, so a drag starts here exactly as it
