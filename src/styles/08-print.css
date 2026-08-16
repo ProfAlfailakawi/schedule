@@ -1460,34 +1460,106 @@
 }
 
 /* ========================================================================== 
-   FINAL — 20-row comprehensive rhythm + page number directly under day key.
+   FINAL — 23-row comprehensive sheet fit
+   Twenty-three rows are visually the best density, but the previous 10mm top
+   inset left the logical page a few millimetres taller than the 210mm physical
+   landscape sheet. The visible content fitted, while the remaining box/padding
+   spilled onto a blank physical page before the next explicit page break.
+   Lift the document slightly and reclaim only the wasted air; no typography,
+   row height, columns, signatures or data are changed.
+   ========================================================================== */
+@media print{
+  .print-comprehensive-page{
+    padding-block-start:5mm !important;
+    padding-block-end:6mm !important;
+  }
+  .print-comprehensive-page .print-comprehensive-classic-head{
+    margin-block-end:2mm !important;
+  }
+  .print-comprehensive-page-footer{
+    margin-top:1.8mm !important;
+    padding-top:1.4mm !important;
+  }
+}
+
+/* ========================================================================== 
+   FINAL — 23 rows + footer on the same physical sheet
+   The header fit after the previous lift, but WebKit still measured the 23
+   body rows a few millimetres taller than the remaining A4-landscape content
+   box. Because the footer is intentionally indivisible, Safari moved the whole
+   footer to the next sheet. Reclaim that space from the repetitive table rows
+   — not from the footer — so the footer keeps its original visual rhythm.
+   ========================================================================== */
+@media print{
+  .print-comprehensive-grid-head>[role="columnheader"]{
+    min-height:8.9mm !important;
+    padding-block:.9mm !important;
+  }
+  .print-comprehensive-grid-body .print-comprehensive-grid-row{
+    min-height:5.32mm !important;
+  }
+  .print-comprehensive-grid-body .print-comprehensive-grid-row>[role="cell"]{
+    padding-block:.82mm !important;
+  }
+
+  /* Restore the footer's comfortable spacing. The saved millimetres now come
+     from the 23 repeated data rows, so signatures/legend/page number remain a
+     single, balanced block on page 1 instead of being sacrificed for fit. */
+  .print-comprehensive-page-footer{
+    margin-top:2.2mm !important;
+    padding-top:1.7mm !important;
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+  }
+  .print-comprehensive-page .print-comprehensive-signatures>div{
+    min-height:11.5mm !important;
+    gap:3.8mm !important;
+  }
+}
+
+/* ========================================================================== 
+   FINAL — footer legend pinned to the physical left edge
+   Keep the five day keys on one clean row, with the logical page number
+   directly beneath them. Signatures retain the remaining width on the right.
    ========================================================================== */
 @media print{
   .print-comprehensive-page-footer{
-    grid-template-columns:minmax(0,1.65fr) minmax(52mm,.85fr) !important;
+    direction:ltr !important;
+    grid-template-columns:58mm minmax(0,1fr) !important;
+    grid-template-areas:"legend signatures" !important;
     align-items:end !important;
-    gap:4mm !important;
   }
-  .print-comprehensive-legend-stack{
+  .print-comprehensive-page .print-comprehensive-legend-stack{
+    grid-area:legend !important;
+    justify-self:start !important;
+    align-self:end !important;
+    width:58mm !important;
     display:grid !important;
-    justify-items:center !important;
-    align-content:end !important;
-    gap:1.4mm !important;
-    min-width:0 !important;
+    grid-template-rows:auto auto !important;
+    gap:1.15mm !important;
+    direction:rtl !important;
   }
-  .print-comprehensive-legend-stack .print-comprehensive-legend{
-    justify-content:center !important;
+  .print-comprehensive-page .print-comprehensive-legend{
+    display:flex !important;
+    flex-wrap:nowrap !important;
+    justify-content:flex-start !important;
+    align-items:center !important;
+    gap:.8mm !important;
     width:100% !important;
   }
-  .print-comprehensive-legend-stack .print-comprehensive-page-number{
+  .print-comprehensive-page .print-comprehensive-legend span{
+    flex:none !important;
+    white-space:nowrap !important;
+  }
+  .print-comprehensive-page .print-comprehensive-page-number{
     width:100% !important;
     text-align:center !important;
-    font-size:8.5pt !important;
-    line-height:1 !important;
+    justify-self:stretch !important;
+    margin:0 !important;
   }
-  /* Twenty rows make better use of the landscape sheet while preserving the
-     signatures as one unsplit block. */
-  .print-comprehensive-grid-body .print-comprehensive-grid-row{
-    min-height:5.45mm !important;
+  .print-comprehensive-page .print-comprehensive-signatures{
+    grid-area:signatures !important;
+    direction:rtl !important;
+    width:100% !important;
   }
 }
