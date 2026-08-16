@@ -1446,6 +1446,9 @@ async function getSystemImportJob(id: string, rootAdminId = 1): Promise<SystemIm
 async function applyImportedCollection(collectionName: string, desired: SystemBackupDocument[], rootAdminId: number): Promise<void> {
   if (!firestoreDb) return;
   if (SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collectionName)) return;
+
+  // Identity collections stay reconciled in-place so the root administrator's
+  // account and permissions are never removed between two writes.
   if (collectionName === "users") {
     const rootUserPath = `users/user_${rootAdminId}`;
     if (!desired.some(item => item.path === rootUserPath)) throw new Error("النسخة لا تحتوي مسار حساب الإدارة الرئيسي");
@@ -1461,13 +1464,24 @@ async function applyImportedCollection(collectionName: string, desired: SystemBa
     await reconcileTopLevelCollection("formNames", desired);
     return;
   }
-  if (!desired.length) {
-    const ref = firestoreDb.collection(collectionName);
-    const snap = await ref.limit(1).get();
-    if (!snap.empty) await deleteFirestoreTree(ref);
-    return;
-  }
-  await reconcileTopLevelCollection(collectionName, desired);
+
+  /*
+   * Large academic collections are replaced as a collection, not reconciled
+   * document-by-document. The previous algorithm called listCollections() on
+   * every existing document after writing it. With 18k legacyArchive rows and
+   * 15k schedules that meant tens of thousands of sequential Firestore network
+   * calls and is the root cause of imports appearing frozen.
+   *
+   * recursiveDelete(collection) is exact (nested stale data is removed too),
+   * then the desired documents are written in 350-write batches. The import
+   * job owns a safety export before reaching this phase, and the step is
+   * idempotent: retrying simply clears the partially replaced collection and
+   * writes it again from the staged source.
+   */
+  const ref = firestoreDb.collection(collectionName);
+  const existing = await ref.limit(1).get();
+  if (!existing.empty) await deleteFirestoreTree(ref);
+  if (desired.length) await writeFirestoreDocuments(desired);
 }
 
 async function advanceSystemImportJob(id: string, rootAdminId = 1): Promise<SystemImportJobSummary> {

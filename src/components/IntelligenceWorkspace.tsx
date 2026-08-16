@@ -371,8 +371,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
-  const [showOnboarding, setShowOnboarding] = useState(() => localStorage.getItem("intel-onboarding-seen") !== "1");
-  const [showWorkspaceGuide, setShowWorkspaceGuide] = useState(() => localStorage.getItem("intel-workspace-guide-v2") !== "1");
+  // Help never opens on its own; one deliberate question mark owns it.
+  const [showWorkspaceGuide, setShowWorkspaceGuide] = useState(false);
   const [decisionCompose, setDecisionCompose] = useState(false);
   const [decisionTitle, setDecisionTitle] = useState("");
   const [versionScrubIndex, setVersionScrubIndex] = useState(0);
@@ -1505,7 +1505,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const max=Math.max(0,...counts.values());
     return{labels,hours,max,cells:labels.map((label,day)=>({label,hours:hours.map(hour=>({hour,count:counts.get(`${day}-${hour}`)||0}))}))};
   },[versions]);
-  const closeWorkspaceGuide=()=>{try{localStorage.setItem("intel-workspace-guide-v2","1");localStorage.setItem("intel-onboarding-seen","1");}catch{}setShowWorkspaceGuide(false);setShowOnboarding(false);};
+  const closeWorkspaceGuide = () => setShowWorkspaceGuide(false);
 
   const handleDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -1560,17 +1560,27 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       <PageTitle
         eyebrow="ذكاء الجدول"
         subtitle="افهم · جرّب · اعتمد"
-        action={<GhostButton type="button" onClick={() => setShowWorkspaceGuide(true)}><CircleHelp aria-hidden="true" /> تعريف سريع</GhostButton>}
+        action={<GhostButton type="button" className="page-help-action" onClick={() => setShowWorkspaceGuide(true)} title="شرح مركز الذكاء" aria-label="شرح مركز الذكاء"><CircleHelp aria-hidden="true" /></GhostButton>}
       >
         مركز الذكاء
       </PageTitle>
       <ContextBar />
       {showWorkspaceGuide ? (
-        <aside className="intel-workspace-guide no-print" role="status">
-          <div><CircleHelp aria-hidden="true"/><span><small>أول مرة هنا؟</small><strong>ثلاث خطوات فقط</strong></span></div>
-          <ol><li><b>افهم</b><small>اقرأ الجودة والضغط واسأل الجدول.</small></li><li><b>جرّب</b><small>ماذا لو والسياسات بلا لمس الجدول الحقيقي.</small></li><li><b>اعتمد</b><small>قارن النسخ، راجع الخط الزمني، ثم انشر.</small></li></ol>
-          <button type="button" onClick={closeWorkspaceGuide}>فهمت</button>
-        </aside>
+        <div className="intel-guide-backdrop no-print" role="dialog" aria-modal="true" aria-label="شرح مركز الذكاء" onMouseDown={(event) => { if (event.target === event.currentTarget) closeWorkspaceGuide(); }}>
+          <section className="intel-guide-modal">
+            <header>
+              <span><CircleHelp aria-hidden="true" /></span>
+              <div><small>ثلاث خطوات</small><strong>كيف تستخدم مركز الذكاء؟</strong></div>
+              <button type="button" onClick={closeWorkspaceGuide} aria-label="إغلاق"><X /></button>
+            </header>
+            <div className="intel-guide-steps">
+              <article><b>01</b><BrainCircuit /><div><strong>افهم</strong><small>الجودة والضغط واسأل الجدول.</small></div></article>
+              <article><b>02</b><Network /><div><strong>جرّب</strong><small>ماذا لو والسياسات خارج الجدول الحقيقي.</small></div></article>
+              <article><b>03</b><ShieldCheck /><div><strong>اعتمد</strong><small>قارن النسخ والخط الزمني ثم انشر.</small></div></article>
+            </div>
+            <footer><span>لا يظهر هذا الشرح إلا عندما تطلبه.</span><button type="button" onClick={closeWorkspaceGuide}>فهمت</button></footer>
+          </section>
+        </div>
       ) : null}
       <nav className="intelligence-scenes no-print" aria-label="مراحل مركز الذكاء">
         <Segmented
@@ -1661,12 +1671,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
       {tab === "command" && overview ? (
         <div className="intel-command-grid intel-insight-workspace">
-          {showOnboarding && !insightScene ? (
-            <aside className="intel-onboarding" role="note">
-              <div><Sparkles aria-hidden="true" /><span><strong>ابدأ من قراءة واحدة</strong><small>كل بطاقة تجيب سؤالاً واحداً. افتحها، اقرأ الرقم أولاً، ثم التفاصيل عند الحاجة.</small></span></div>
-              <button type="button" onClick={() => { localStorage.setItem("intel-onboarding-seen", "1"); setShowOnboarding(false); }}>فهمت</button>
-            </aside>
-          ) : null}
           <nav
             className="insight-preview-rail no-print"
             aria-label="مشاهد قراءة القرار"

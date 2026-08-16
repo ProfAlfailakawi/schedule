@@ -1,4 +1,20 @@
-const collectionMeta: Record<string, { label: string, icon: any }> = {
+import {
+  Activity,
+  Building2,
+  KeyRound,
+  Landmark,
+  ScrollText,
+  ShieldCheck,
+  UserCog,
+  UsersRound,
+} from "lucide-react";
+
+/**
+ * Shared verification map used by the admin backup preview.
+ * Keeping its imports local makes this file type-check independently instead
+ * of relying on icon imports from AdminUsers.tsx.
+ */
+export const collectionMeta: Record<string, { label: string; icon: any }> = {
   users: { label: "المستخدمين", icon: UsersRound },
   colleges: { label: "الكليات", icon: Landmark },
   terms: { label: "الفصول", icon: Activity },
@@ -10,3 +26,5 @@ const collectionMeta: Record<string, { label: string, icon: any }> = {
   formSecurity: { label: "الأمن", icon: KeyRound },
   collegeUserAssign: { label: "ربط الكليات", icon: UserCog },
 };
+
+export default collectionMeta;

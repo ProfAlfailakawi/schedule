@@ -106,10 +106,8 @@ export default function LivingScheduleLayer({
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
+  // Help is intentionally manual: it opens only when the user asks for it.
   const [decisionGuideOpen, setDecisionGuideOpen] = useState(false);
-  const [decisionGuideSeen, setDecisionGuideSeen] = useState(() => {
-    try { return localStorage.getItem("decision-center-guide-v2") === "1"; } catch { return true; }
-  });
   const livingRequest = useRef(0);
   const sourceTargetRef = useRef(0);
   const [selectedId, setSelectedId] = useState<number>(sourceRows[0]?.id || 0),
@@ -131,9 +129,6 @@ export default function LivingScheduleLayer({
     onPanelOpenChange?.(Boolean(scene));
   }, [scene, onPanelOpenChange]);
   useEffect(() => () => onPanelOpenChange?.(false), [onPanelOpenChange]);
-  useEffect(() => {
-    if (scene && !decisionGuideSeen) setDecisionGuideOpen(true);
-  }, [scene, decisionGuideSeen]);
   const rows = useMemo(
     () =>
       living?.context
@@ -203,7 +198,7 @@ export default function LivingScheduleLayer({
   const json = async (url: string, options?: RequestInit) => {
     const started = performance.now();
     const method = String(options?.method || "GET").toUpperCase();
-    telemetryBreadcrumb(`مركز القرار · ${method} ${url.split("?")[0]}`);
+    telemetryBreadcrumb(`مركز الذكاء · ${method} ${url.split("?")[0]}`);
     let status = 0;
     try {
       const r = await fetch(url, options); status = r.status;
@@ -563,7 +558,7 @@ export default function LivingScheduleLayer({
   };
   if (!living)
     return (
-      <section className="living-command-deck living-loading no-print" aria-label="حالة الجدول ومركز القرار">
+      <section className="living-command-deck living-loading no-print" aria-label="حالة الجدول ومركز الذكاء">
         <div className="living-pulse-core">
           <span className="pulse-beacon info" />
           <div>
@@ -593,9 +588,8 @@ export default function LivingScheduleLayer({
             disabled={busy}
           >
             <Sparkles />
-            مركز القرار
+            مركز الذكاء
           </button>
-          <button className="living-help-trigger" type="button" onClick={() => { open("pulse"); setDecisionGuideOpen(true); }} aria-label="شرح مركز القرار"><CircleHelp /></button>
         </div>
       </section>
     );
@@ -609,7 +603,7 @@ export default function LivingScheduleLayer({
   ];
   return (
     <>
-      <section className="living-command-deck no-print" aria-label="حالة الجدول ومركز القرار">
+      <section className="living-command-deck no-print" aria-label="حالة الجدول ومركز الذكاء">
         <div className="living-pulse-core">
           <span className={`pulse-beacon ${living.pulse?.items?.[0]?.severity || "info"}`} />
           <div>
@@ -648,9 +642,8 @@ export default function LivingScheduleLayer({
           ) : null}
           <button className="living-more" onClick={() => open("pulse")}>
             <Sparkles />
-            مركز القرار
+            مركز الذكاء
           </button>
-          <button className="living-help-trigger" type="button" onClick={() => { open("pulse"); setDecisionGuideOpen(true); }} aria-label="شرح مركز القرار"><CircleHelp /></button>
         </div>
       </section>
       {scene ? (
@@ -666,13 +659,13 @@ export default function LivingScheduleLayer({
                 {sceneItems.find((x) => x.id === scene)?.icon}
               </span>
               <div className="living-panel-heading">
-                <span>لوحة القرار</span>
+                <span>لوحة الذكاء</span>
                 <div>
                   <h2>{sceneItems.find((x) => x.id === scene)?.label}</h2>
                   <p>{living.context?.sectionName} · {living.context?.termName}</p>
                 </div>
               </div>
-              <button className="living-panel-help" type="button" onClick={() => setDecisionGuideOpen((value) => !value)} aria-label="شرح سريع"><CircleHelp /></button>
+              <button className="living-panel-help" type="button" onClick={() => setDecisionGuideOpen(true)} aria-label="شرح مركز الذكاء"><CircleHelp /></button>
               <button onClick={() => setScene(null)} aria-label="إغلاق">
                 <X />
               </button>
@@ -690,13 +683,6 @@ export default function LivingScheduleLayer({
                 </button>
               ))}
             </nav>
-            {decisionGuideOpen ? (
-              <aside className="decision-guide-note" role="status">
-                <div className="decision-guide-head"><CircleHelp aria-hidden="true" /><div><strong>كيف تقرأ مركز القرار؟</strong><p>نظرة عامة = ماذا يحتاج قراراً · خريطة الضغط = أين السبب · الصحة = جودة وعدالة · بداية الفصل = بناء آمن · شبكة الأمان = الرجوع.</p></div></div>
-                <div className="decision-guide-tags"><span>القرار الأهم الآن</span><span>بصمة القسم</span><span>ملخص الدقيقة</span><span>ذاكرة القرار</span></div>
-                <div className="decision-guide-actions"><button type="button" onClick={() => setDecisionGuideOpen(false)}>إغلاق</button><button type="button" onClick={() => { try { localStorage.setItem("decision-center-guide-v2","1"); } catch {} setDecisionGuideSeen(true); setDecisionGuideOpen(false); }}>فهمت</button></div>
-              </aside>
-            ) : null}
             {experience ? (
               <section className="living-experience-tools" aria-label="أدوات القرار المتقدمة">
                 <button type="button" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>
@@ -1273,6 +1259,25 @@ export default function LivingScheduleLayer({
           </aside>
         </div>
       ) : null}
+      {decisionGuideOpen ? (
+        <div className="decision-guide-backdrop no-print" role="dialog" aria-modal="true" aria-label="شرح مركز الذكاء" onMouseDown={(event) => { if (event.target === event.currentTarget) setDecisionGuideOpen(false); }}>
+          <section className="decision-guide-modal">
+            <header>
+              <span><CircleHelp aria-hidden="true" /></span>
+              <div><small>خريطة سريعة</small><strong>مركز الذكاء في أربع إشارات</strong></div>
+              <button type="button" onClick={() => setDecisionGuideOpen(false)} aria-label="إغلاق"><X /></button>
+            </header>
+            <div className="decision-guide-modal-grid">
+              <article><BrainCircuit /><div><strong>القرار الأهم</strong><small>ما الذي يستحق تدخلك الآن.</small></div></article>
+              <article><Activity /><div><strong>خريطة الضغط</strong><small>أين تتجمع المشكلة ولماذا.</small></div></article>
+              <article><ShieldCheck /><div><strong>شبكة الأمان</strong><small>تراجع وإصلاح بلا فقدان.</small></div></article>
+              <article><Gauge /><div><strong>بصمة القسم</strong><small>كيف يختلف الحاضر عن تاريخه.</small></div></article>
+            </div>
+            <footer><span>افتح القراءة التي تحتاجها فقط؛ البقية تبقى صامتة.</span><button type="button" onClick={() => setDecisionGuideOpen(false)}>فهمت</button></footer>
+          </section>
+        </div>
+      ) : null}
+
     </>
   );
 }

@@ -2283,6 +2283,17 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   background:var(--success);
 }
 
+.decision-fingerprint{margin:10px 0 0;padding:12px 14px;border-radius:16px;border:1px solid color-mix(in srgb,var(--line) 88%,transparent);background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 86%,transparent),var(--surface));box-shadow:var(--shadow-sm)}
+.decision-fingerprint header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
+.decision-fingerprint header span{display:flex;align-items:center;gap:7px;color:var(--ink-2);font-size:12px;font-weight:700}
+.decision-fingerprint header small{color:var(--muted);font-size:11px}
+.decision-fingerprint>strong{display:block;color:var(--ink);font-size:13px;line-height:1.7;margin-bottom:10px}
+.decision-fingerprint-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.decision-fingerprint-grid span{display:block;padding:9px 10px;border-radius:12px;background:color-mix(in srgb,var(--surface-2) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.decision-fingerprint-grid b{display:block;color:var(--muted);font-size:10px;margin-bottom:4px}
+.decision-fingerprint-grid small{display:block;color:var(--ink-2);font-size:11px;line-height:1.5}
+@media (max-width:860px){.decision-fingerprint-grid{grid-template-columns:1fr}}
+
 /* ==========================================================================
    LIVE DRAG — the answer arrives before the drop
    The card follows the cursor, and a compact read-out beside the target slot
@@ -2407,10 +2418,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    ========================================================================== */
 
 /* --- The ground: quieter lines, no zebra ---------------------------------- */
-.week-slot{border-bottom:1px dashed color-mix(in srgb,var(--line) 55%,transparent)}
-.week-slot:nth-child(2n){background:transparent;border-bottom:1px solid color-mix(in srgb,var(--line) 90%,transparent)}
+.week-slot{border-bottom:1px dashed color-mix(in srgb,var(--line-strong) 58%,transparent)}
+.week-slot:nth-child(2n){background:transparent;border-bottom:1px solid color-mix(in srgb,var(--line-strong) 92%,transparent)}
 .week-slot:hover{background:color-mix(in srgb,var(--accent) 5%,transparent)}
-.week-day{border-inline-start:1px solid color-mix(in srgb,var(--line) 80%,transparent)}
+.week-day{border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 84%,transparent)}
 
 /* The gutter says each hour once. Half-hours keep their row height but hold
    their tongue — the dashes in the grid already say "half" without a number. */
@@ -3352,8 +3363,18 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .rooms-week-days .rooms-track{height:46px;border:0;border-radius:0;background:transparent}
 .rooms-compact-track{height:auto;border:0;border-radius:0;background:transparent}
-.rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line) 80%,transparent)}
+.rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line-strong) 84%,transparent)}
 .rooms-hourline-terminal{border-inline-start-style:solid;border-inline-start-color:var(--line-strong)}
+.rooms-slot-preview{
+  position:absolute;inset-block:3px;z-index:2;pointer-events:none;border-radius:7px;
+  background:color-mix(in srgb,var(--accent) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--accent) 56%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent);
+}
+.rooms-track:hover{background:color-mix(in srgb,var(--accent) 3%,transparent)}
+.rooms-track:has(.rooms-slot-preview){background:color-mix(in srgb,var(--accent) 4%,transparent)}
+.schedule-row-pending{opacity:.82;filter:saturate(.88)}
+.schedule-row-pending::after{content:"جارٍ التثبيت";position:absolute;inset-inline-start:6px;top:4px;font:700 8px/1 var(--font-ui);color:var(--warning);background:color-mix(in srgb,var(--surface) 78%,transparent);padding:2px 5px;border-radius:999px;border:1px solid color-mix(in srgb,var(--warning) 28%,transparent)}
 /* «الآن» — the same brass the week grid uses for the current hour, and for the
    first time it says what it is. A line with no label is a line a reader has to
    invent a meaning for. */

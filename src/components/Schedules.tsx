@@ -149,6 +149,9 @@ interface Props {
   scopes?: any[];
 }
 type EditorMode = "index" | "create" | "edit";
+type CreateSeed = { day?: DayKey; start?: string; end?: string; roomCode?: string; roomHall?: string };
+type RoomHoverSeed = { trackKey: string; day: DayKey; start: string; roomCode: string; roomHall: string; label: string };
+type DecisionFingerprint = { summary: string; before: string; after: string; place: string; quality: string; count: number; when: number };
 const AGENDA_PAGE_SIZE = 60;
 
 /* Hidden for now, deliberately not deleted. The data model/endpoints stay in
@@ -514,6 +517,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [previewing, setPreviewing] = useState(false);
   const [physicsNotice, setPhysicsNotice] = useState(""),
     [undoPoint, setUndoPoint] = useState<any>(null),
+    [pendingWriteIds, setPendingWriteIds] = useState<Set<number>>(() => new Set()),
+    [roomHover, setRoomHover] = useState<RoomHoverSeed | null>(null),
+    [decisionFingerprint, setDecisionFingerprint] = useState<DecisionFingerprint | null>(null),
     [historicalChoice, setHistoricalChoice] = useState<null | { dayLabel: string; picked: string; preferred: string; source: string }>(null),
     // What the server has said about squares the pointer has actually visited
     // during this drag. It refines the local reading; it does not replace it.
@@ -634,6 +640,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const method = String(options?.method || "GET").toUpperCase();
     const mutating = method !== "GET" && method !== "HEAD";
     const queueable = mutating && canQueueScheduleMutation(url, method);
+    const readRequest = !mutating;
     telemetryBreadcrumb(`${method} ${url.split("?")[0]}`);
     if (mutating && !navigator.onLine) {
       telemetryOffline("schedule.write.offline");
@@ -643,30 +650,47 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       throw new Error("أنت الآن دون اتصال. يمكنك متابعة ترتيب المواعيد الموجودة، أما الإنشاء الجديد فيحتاج عودة الاتصال.");
     }
-    const timeout = new AbortController();
-    const timer = window.setTimeout(() => timeout.abort(), 35_000);
+    let res: Response | null = null;
+    let lastError: any = null;
+    const maxAttempts = readRequest ? 2 : 1;
     const started = performance.now();
-    let res: Response;
-    try {
-      res = await fetch(url, { ...options, credentials: options?.credentials || "include", signal: options?.signal ?? timeout.signal });
-      telemetryApi(url.split("?")[0], performance.now() - started, res.status, res.ok);
-    } catch (error: any) {
-      const elapsed = performance.now() - started;
-      telemetryError(url.split("?")[0], error, elapsed);
-      // Writes on existing schedule rows are revision-protected and therefore
-      // safe to replay after an uncertain campus connection. A second replay
-      // cannot silently overwrite newer work; the server returns 409 instead.
-      const externalAbort = Boolean(options?.signal && options.signal.aborted);
-      if (queueable && !externalAbort) {
-        const queued = enqueueScheduleMutation(url, options || {});
-        if (queued) return queuedPseudoResponse(queued);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const timeout = new AbortController();
+      const timeoutMs = readRequest && attempt === 1 ? 20_000 : 35_000;
+      const timer = window.setTimeout(() => timeout.abort(), timeoutMs);
+      try {
+        res = await fetch(url, { ...options, credentials: options?.credentials || "include", signal: options?.signal ?? timeout.signal });
+        telemetryApi(url.split("?")[0], performance.now() - started, res.status, res.ok);
+        lastError = null;
+        break;
+      } catch (error: any) {
+        lastError = error;
+        const elapsed = performance.now() - started;
+        telemetryError(url.split("?")[0], error, elapsed);
+        const externalAbort = Boolean(options?.signal && options.signal.aborted);
+        if (queueable && !externalAbort) {
+          const queued = enqueueScheduleMutation(url, options || {});
+          if (queued) {
+            window.clearTimeout(timer);
+            return queuedPseudoResponse(queued);
+          }
+        }
+        const timedOut = error?.name === "AbortError" && timeout.signal.aborted;
+        if (readRequest && timedOut && attempt < maxAttempts && !externalAbort) {
+          window.clearTimeout(timer);
+          continue;
+        }
+        if (timedOut) {
+          throw new Error(readRequest
+            ? "الخدمة أبطأ من المعتاد في قراءة هذا الجدول. أعدت المحاولة تلقائياً، لكن الرد لم يصل بعد. حدّث الصفحة أو أعد المحاولة بعد قليل."
+            : "الخادم تأخر في تثبيت هذا التغيير. إن كانت العملية قابلة للمزامنة فقد حُفظت محلياً، وإلا فلم يُعتمد أي تغيير بعد.");
+        }
+        throw error;
+      } finally {
+        window.clearTimeout(timer);
       }
-      if (error?.name === "AbortError" && timeout.signal.aborted)
-        throw new Error("تأخر الخادم في الرد. لم أعتبر العملية فاشلة بصمت؛ إن كانت قابلة للمزامنة حُفظت محلياً.");
-      throw error;
-    } finally {
-      window.clearTimeout(timer);
     }
+    if (!res) throw lastError || new Error("تعذر الوصول إلى الخدمة حالياً.");
     const body = await res.text();
     let data: any = {};
     if (body) {
@@ -1346,6 +1370,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     })();
   }, [mode, user?.SystemUserId]);
   useEffect(() => {
+    setRoomHover(null);
+    setDecisionFingerprint(null);
+  }, [filterCollege, filterSection, filterTerm, viewMode]);
+
+  useEffect(() => {
     if (mode !== "schedule" || !workspaceReady) return;
     localStorage.setItem(
       prefsKey,
@@ -1608,7 +1637,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (next.collegeId !== copyCollege) setCopyCollege(next.collegeId);
     if (next.sectionId !== copySection) setCopySection(next.sectionId);
   }, [mode, isPowerAdmin, sections.length, scopes, copyCollege, copySection]);
-  const openCreate = (seed?: { day?: DayKey; start?: string; end?: string }) => {
+  const markPendingWrites = useCallback((ids: number[], pending: boolean) => {
+    if (!ids.length) return;
+    setPendingWriteIds((current) => {
+      const next = new Set(current);
+      ids.forEach((id) => {
+        if (pending) next.add(id);
+        else next.delete(id);
+      });
+      return next;
+    });
+  }, []);
+  const stampDecisionFingerprint = useCallback((payload: DecisionFingerprint | null) => {
+    setDecisionFingerprint(payload);
+  }, []);
+
+  const openCreate = (seed?: CreateSeed) => {
       if (showMobileReadOnlyGate()) return;
       setError(null);
       setMessage(null);
@@ -1631,6 +1675,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       if (seed?.day) {
         days.forEach(day => { (next as any)[day.key] = day.key === seed.day; });
       }
+      if (seed?.roomCode !== undefined) next.AdRoomCode = seed.roomCode;
+      if (seed?.roomHall !== undefined) next.AdRoomHall = seed.roomHall;
       if (seed?.start) {
         next.fstarttime = seed.start;
         // A square gives an hour; a stroke down the column gives its own length.
@@ -2967,6 +3013,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const moveTimingNotes = [...new Set(
       moves.map(move => historicalTimingNote(move.after)).filter((note): note is string => Boolean(note)),
     )];
+    const leadAfter = moves.find(move => move.before.id === row.id)?.after || moves[0]?.after || row;
+    const motionSignature = {
+      before: `${arabicDays(row) || "بلا يوم"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
+      after: `${arabicDays(leadAfter) || (days.find(d => d.key === day)?.label || day)} · ${formatScheduleTimeRange(leadAfter.fstarttime, leadAfter.fendtime)}`,
+      place: [leadAfter.AdRoomCode, leadAfter.AdRoomHall].filter(Boolean).join("/") || "بلا قاعة",
+      partyCount: party.length,
+    };
 
     // Anything that would land outside the day is not a move, it is a mistake.
     const outside = moves.find(m => mins(m.after.fstarttime) < gridWindow.start || mins(m.after.fendtime) > gridWindow.end);
@@ -2978,6 +3031,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
 
     setSaving(true);
     setError(null);
+    markPendingWrites(moves.map(move => move.before.id), true);
     try {
       /**
        * One atomic request instead of "check, then N separate PUTs".
@@ -3019,6 +3073,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${effectiveTarget.start}`,
         moves.map(move => restoreStep(move.before)),
       );
+      stampDecisionFingerprint({
+        summary: request.decision?.summary || (moves.length > 1 ? `نقل جماعي إلى ${label} ${effectiveTarget.start}` : `نقل إلى ${label} ${effectiveTarget.start}`),
+        before: motionSignature.before,
+        after: motionSignature.after,
+        place: motionSignature.place,
+        quality: request.decision?.quality || "good",
+        count: motionSignature.partyCount,
+        when: Date.now(),
+      });
       let undoTimer: number | undefined;
       if (undoId) {
         /* The moved cards wear their own undo for a minute. */
@@ -3093,6 +3156,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       void loadRows({ silent: true });
     } finally {
+      markPendingWrites(moves.map(move => move.before.id), false);
       setSaving(false);
     }
   };
@@ -3117,6 +3181,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const roomMoveTimingNote = start !== row.fstarttime ? historicalTimingNote(after) : null;
     setSaving(true);
     setError(null);
+    markPendingWrites([row.id], true);
     try {
       /* Same atomic door the week drag uses: server-side re-check + one write. */
       setRows(current => current.map(item => (item.id === row.id ? after : item)));
@@ -3135,6 +3200,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${place} ${start}`,
         [restoreStep(row)],
       );
+      stampDecisionFingerprint({
+        summary: `نقل داخل المباني والقاعات إلى ${place} ${start}`,
+        before: `${arabicDays(row) || "بلا يوم"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
+        after: `${days.find(d => d.key === day)?.label || day} · ${formatScheduleTimeRange(start, end)}`,
+        place,
+        quality: "good",
+        count: 1,
+        when: Date.now(),
+      });
       let undoTimer: number | undefined;
       if (undoId) {
         setRecentMoves(current => ({ ...current, [row.id]: undoId }));
@@ -3212,6 +3286,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       void loadRows({ silent: true });
     } finally {
+      markPendingWrites([row.id], false);
       setSaving(false);
     }
   };
@@ -3485,7 +3560,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const compactByRoom = new Map<string, {
       items: Array<{ row: FSchedule; lane: number; visualFrom: number; visualTo: number }>;
       lanes: number;
-      laneDays: Array<{ key: string; labels: string[] }>;
+      laneDays: Array<{ key: string; dayKeys: DayKey[]; labels: string[] }>;
     }>();
     byRoom.forEach((roomRows, key) => {
       /* A compact lane has one *day pattern*, not an unrelated union of room
@@ -3504,7 +3579,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         });
       });
       const items: Array<{ row: FSchedule; lane: number; visualFrom: number; visualTo: number }> = [];
-      const laneDays: Array<{ key: string; labels: string[] }> = [];
+      const laneDays: Array<{ key: string; dayKeys: DayKey[]; labels: string[] }> = [];
       [...groups.entries()].sort((a, b) => a[1].firstDay - b[1].firstDay || a[0].localeCompare(b[0])).forEach(([pattern, group]) => {
         const laneEnds: number[] = [];
         group.rows.slice().sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(a.fendtime) - mins(b.fendtime)).forEach(row => {
@@ -3517,7 +3592,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           if (localLane < 0) {
             localLane = laneEnds.length;
             laneEnds.push(visualTo);
-            laneDays.push({ key: `${pattern}:${localLane}`, labels: group.labels });
+            laneDays.push({ key: `${pattern}:${localLane}`, dayKeys: group.rows[0] ? days.filter(day => Boolean((group.rows[0] as any)[day.key])).map(day => day.key as DayKey) : [], labels: group.labels });
           } else laneEnds[localLane] = visualTo;
           const laneBase = laneDays.length - laneEnds.length;
           items.push({ row, lane: laneBase + localLane, visualFrom, visualTo });
@@ -3946,11 +4021,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     // The drag lives on pointerdown. Recording where the press began has to be
     // merged with it rather than declared after it — a second onPointerDown prop
     // silently replaces the first, which is exactly how dragging was lost.
-    const grip = physics.bindEvent(r, d.key);
+    const rowPending = pendingWriteIds.has(r.id);
+    const grip = rowPending ? {} : physics.bindEvent(r, d.key);
     return (
       <article
         {...grip}
-        draggable={!saving && !physics.supported}
+        draggable={!physics.supported && !rowPending}
         onDragStart={(e) => {
           e.dataTransfer.setData("text/schedule-id", String(r.id));
           e.dataTransfer.effectAllowed = "move";
@@ -3959,6 +4035,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         onDragEnd={clearRipple}
         onPointerDown={(e) => {
           pressOrigin.current = { x: e.clientX, y: e.clientY };
+          if (rowPending) {
+            setPhysicsNotice("هذا الموعد ما زال بانتظار تثبيت نقله السابق. يمكنك سحب بقية المواعيد الآن، ثم العودة إليه بعد اكتمال الحفظ.");
+            return;
+          }
           grip.onPointerDown?.(e);
         }}
         onClick={(e) => {
@@ -3966,7 +4046,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           // Geometry alone was not enough — a card nudged five pixels and settled
           // back still read as a click and opened the whole lecture on top of a
           // move. The drag itself is now asked whether it just happened.
-          if (physics.didDrag() || physicsActive) return;
+          if (physics.didDrag() || physicsActive || rowPending) return;
           const from = pressOrigin.current;
           if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
           if (picking) { toggleSelect(r.id); return; }
@@ -4290,7 +4370,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       mode !== "schedule" ||
       editor !== "index" ||
       (viewMode !== "week" && viewMode !== "rooms") ||
-      saving ||
       presentationMode ||
       // One card, one hand: while the keyboard is carrying a lecture the
       // pointer layer is switched off entirely, so a stray press cannot pick up
@@ -5020,7 +5099,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const list: ScheduleCommand[] = [
       { id: "view.list", group: "التنقل", label: "عرض القائمة", keywords: ["list", "قائمة"], icon: <LayoutList />, execute: () => changeView("list") },
       { id: "view.week", group: "التنقل", label: "عرض الأسبوع", keywords: ["week", "اسبوع", "شبكة"], icon: <CalendarDays />, execute: () => changeView("week") },
-      { id: "view.rooms", group: "التنقل", label: "عرض القاعات", keywords: ["rooms", "قاعات", "مبنى"], icon: <MapPin />, execute: () => changeView("rooms") },
+      { id: "view.rooms", group: "التنقل", label: "عرض المباني والقاعات", keywords: ["rooms", "قاعات", "مبنى"], icon: <MapPin />, execute: () => changeView("rooms") },
       {
         id: "view.today", group: "التنقل", label: "افتح يوم اليوم وحده",
         keywords: ["today", "اليوم"], icon: <Focus />, enabled: Boolean(todayKey),
@@ -6292,7 +6371,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               {mobileViewGate === "week" ? <CalendarDays /> : <MapPin />}
             </span>
             <div>
-              <strong>{mobileViewGate === "week" ? "عرض الأسبوع" : "عرض القاعات"} للقراءة فقط على الهاتف</strong>
+              <strong>{mobileViewGate === "week" ? "عرض الأسبوع" : "عرض المباني والقاعات"} للقراءة فقط على الهاتف</strong>
               <p>
                 يمكنك تصفّح هذا العرض بوضوح كامل، لكن السحب والنقل المباشر داخله يعملان من الكمبيوتر فقط. إذا أردت التعديل أو إضافة موعد من الهاتف، استخدم «قائمة» فهي متاحة للتحرير والإنشاء.
               </p>
@@ -6332,6 +6411,20 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           ) : null}
         </div>
       ) : null}
+      {decisionFingerprint ? (
+        <div className="decision-fingerprint no-print" aria-label="بصمة القرار">
+          <header>
+            <span><Sparkles aria-hidden="true" /> بصمة القرار</span>
+            <small>{decisionFingerprint.count > 1 ? `${decisionFingerprint.count.toLocaleString("ar-KW-u-nu-latn")} مواعيد` : "موعد واحد"}</small>
+          </header>
+          <strong>{decisionFingerprint.summary}</strong>
+          <div className="decision-fingerprint-grid">
+            <span><b>قبل</b><small>{decisionFingerprint.before}</small></span>
+            <span><b>بعد</b><small>{decisionFingerprint.after}</small></span>
+            <span><b>المكان</b><small>{decisionFingerprint.place}</small></span>
+          </div>
+        </div>
+      ) : null}
       <Surface className="schedule-control">
         <div className="filter-strip">
           {filterScope.lockCollege && filterScope.lockSection && filterScopeLabel ? <div className="scope-filter-chip"><span>النطاق</span><strong>{filterScopeLabel}</strong></div> : null}
@@ -6363,7 +6456,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 <CalendarDays aria-hidden="true" /> أسبوع
               </button>
               <button type="button" className={viewMode === "rooms" ? "active" : ""} aria-pressed={viewMode === "rooms"} onClick={() => changeView("rooms")}>
-                <MapPin aria-hidden="true" /> القاعات
+                <MapPin aria-hidden="true" /> المباني والقاعات
               </button>
             </>) : null}
           </div>
@@ -6907,22 +7000,31 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               // The card is bound to the same drag engine the week uses, so it
               // lifts, floats, is judged and lands with the identical behaviour
               // — not an imitation of it.
-              const trackGrip = physics.bindEvent(row, (activeRoomDays[0]?.key || "fsunday") as any);
+              const rowPending = pendingWriteIds.has(row.id);
+              const trackGrip = rowPending ? {} : physics.bindEvent(row, (activeRoomDays[0]?.key || "fsunday") as any);
               return (
                 <article
                   {...trackGrip}
                   key={row.id}
                   data-row-id={row.id}
-                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""}`}
+                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${rowPending ? "schedule-row-pending" : ""}`}
                   style={cardStyle}
-                  draggable={!saving && !physics.supported}
+                  draggable={!physics.supported && !rowPending}
                   onDragStart={(e) => {
                     e.dataTransfer.setData("text/schedule-id", String(row.id));
                     e.dataTransfer.effectAllowed = "move";
                   }}
                   title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
-                  onClick={() => void openContext(row)}
+                  onPointerDown={(e) => {
+                    if (rowPending) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setPhysicsNotice("هذا الموعد ما زال بانتظار تثبيت نقله السابق. يمكنك سحب بقية المواعيد الآن، ثم العودة إليه بعد اكتمال الحفظ.");
+                      return;
+                    }
+                  }}
+                  onClick={() => { if (!rowPending) void openContext(row); }}
                   onPointerEnter={(e) => { if (!physicsActive) openPeek(row, e.currentTarget); }}
                   onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                   onFocus={(e) => openPeek(row, e.currentTarget)}
@@ -6947,11 +7049,45 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </article>
               );
             };
+            const roomPreviewKey = roomHover?.trackKey || "";
+            const trackSeedFromPoint = (track: DOMRect, clientX: number, meta: { day: DayKey; roomCode: string; roomHall: string; label: string; trackKey: string }) => {
+              const share = Math.min(1, Math.max(0, (track.right - clientX) / Math.max(1, track.width)));
+              const raw = gridWindow.start + share * span;
+              const snapped = Math.max(gridWindow.start, Math.min(gridWindow.end - SCHEDULE_SLOT_MINUTES, Math.round(raw / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES));
+              return {
+                trackKey: meta.trackKey,
+                day: meta.day,
+                start: timeFromMins(snapped),
+                roomCode: meta.roomCode,
+                roomHall: meta.roomHall,
+                label: meta.label,
+              } as RoomHoverSeed;
+            };
+            const previewTrack = (meta: { day: DayKey; roomCode: string; roomHall: string; label: string; trackKey: string }) => (e: React.PointerEvent<HTMLDivElement>) => {
+              if (phoneReadOnly || physicsActive || e.target !== e.currentTarget) return;
+              setRoomHover(trackSeedFromPoint(e.currentTarget.getBoundingClientRect(), e.clientX, meta));
+            };
+            const clearTrackPreview = (trackKey: string) => () => {
+              setRoomHover(current => current?.trackKey === trackKey ? null : current);
+            };
+            const createFromTrack = (meta: { day: DayKey; roomCode: string; roomHall: string; label: string; trackKey: string }) => (e: React.MouseEvent<HTMLDivElement>) => {
+              if (phoneReadOnly || physicsActive || e.target !== e.currentTarget) return;
+              const seed = trackSeedFromPoint(e.currentTarget.getBoundingClientRect(), e.clientX, meta);
+              setRoomHover(seed);
+              openCreate({
+                day: seed.day,
+                start: seed.start,
+                end: timeFromMins(Math.min(gridWindow.end, mins(seed.start) + 60)),
+                roomCode: seed.roomCode,
+                roomHall: seed.roomHall,
+              });
+            };
+
             const trackDrop = (building: string, hall: string, day: DayKey) => async (e: React.DragEvent<HTMLDivElement>) => {
               e.preventDefault();
               const id = Number(e.dataTransfer.getData("text/schedule-id"));
               const row = rows.find(item => item.id === id);
-              if (!row || saving) return;
+              if (!row) return;
               const track = e.currentTarget.getBoundingClientRect();
               /* RTL: the track starts at its right edge; the drop's share of the
                  width, snapped to the half hour, is the new start. */
@@ -6968,7 +7104,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     options={[{ value: "week", label: "الأسبوع كامل" }, ...days.map(day => ({ value: day.key, label: day.label }))]}
                     onChange={(value) => setMatrixDay(value as DayKey | "week")}
                   />
-                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "مقارنة سريعة: القاعة ثم أيام استخدامها ثم ساعاتها؛ كل مقرر يبقى داخل مدته الحقيقية ويظهر معه أستاذه ونمط أيامه." : "عرض يوم منفرد — ارجع إلى «الأسبوع كامل» للمقارنة المدمجة بين القاعات."}</small>
+                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "مقارنة سريعة: القاعة ثم أيام استخدامها ثم ساعاتها؛ وكل فراغ في المسار قابل للنقر لإضافة موعد مباشرة في ساعته." : "عرض يوم منفرد — ارجع إلى «الأسبوع كامل» للمقارنة المدمجة بين القاعات، أو اضغط أي فراغ لإضافة موعد في تلك الساعة."}</small>
                 </div>
                 {allBuildings.length > 1 ? (
                   <div className="rooms-filter-block">
@@ -7068,6 +7204,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             className="rooms-track rooms-compact-track"
                             style={{ height: `${Math.max(74, compact.lanes * 68 + 8)}px` }}
                             onDragOver={(e) => e.preventDefault()}
+                            onPointerMove={previewTrack({ day: firstDay, roomCode: room.building, roomHall: room.hall, label: room.label, trackKey: `compact|${room.key}` })}
+                            onPointerLeave={clearTrackPreview(`compact|${room.key}`)}
+                            onClick={createFromTrack({ day: firstDay, roomCode: room.building, roomHall: room.hall, label: room.label, trackKey: `compact|${room.key}` })}
                             data-physics-day-column="true"
                             onDrop={trackDrop(room.building, room.hall, firstDay)}
                           >
@@ -7087,6 +7226,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                               />
                             ))}
                             {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                            {roomPreviewKey === `compact|${room.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
                             {nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
                             {compact.items.map(item => renderTrackCard(item.row, item))}
                           </div>
@@ -7108,6 +7248,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   className="rooms-track"
                                   data-physics-day-column="true"
                                   onDragOver={(e) => e.preventDefault()}
+                                  onPointerMove={previewTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
+                                  onPointerLeave={clearTrackPreview(`${room.key}|${day.key}`)}
+                                  onClick={createFromTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
                                   onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}
                                 >
                                   {/* The same landing squares the week grid has,
@@ -7129,6 +7272,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                     />
                                   ))}
                                   {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                                  {roomPreviewKey === `${room.key}|${day.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
                                   {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
                                   {inRoom.map(row => renderTrackCard(row))}
                                 </div>
@@ -7146,7 +7290,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         {displayDays.map(day => (
                           <div className="rooms-row" key={`none|${day.key}`}>
                             <small className="rooms-day-label">{day.label}</small>
-                            <div className="rooms-track" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop("", "", day.key as DayKey)}>
+                            <div className="rooms-track" onDragOver={(e) => e.preventDefault()} onPointerMove={previewTrack({ day: day.key as DayKey, roomCode: "", roomHall: "", label: `${day.label} · بلا قاعة`, trackKey: `none|${day.key}` })} onPointerLeave={clearTrackPreview(`none|${day.key}`)} onClick={createFromTrack({ day: day.key as DayKey, roomCode: "", roomHall: "", label: `${day.label} · بلا قاعة`, trackKey: `none|${day.key}` })} onDrop={trackDrop("", "", day.key as DayKey)}>
+                              {roomPreviewKey === `none|${day.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
                               {(noRoomByDay.get(day.key as DayKey) || []).map(renderTrackCard)}
                             </div>
                           </div>
@@ -7263,7 +7408,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   {([
                     { key: "course", label: "المقررات" },
                     { key: "instructor", label: "الأساتذة" },
-                    { key: "room", label: "القاعات" },
+                    { key: "room", label: "المباني والقاعات" },
                   ] as const).map(basis => (
                     <button
                       key={basis.key}
@@ -8073,7 +8218,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               ><CalendarDays aria-hidden="true" /></button>
               <button
                 type="button" className={viewMode === "rooms" ? "on" : ""} aria-pressed={viewMode === "rooms"}
-                onClick={() => changeView("rooms")} title="عرض القاعات" aria-label="عرض القاعات"
+                onClick={() => changeView("rooms")} title="عرض المباني والقاعات" aria-label="عرض المباني والقاعات"
               ><MapPin aria-hidden="true" /></button>
             </>) : null}
           </div>

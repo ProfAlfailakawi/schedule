@@ -1431,7 +1431,7 @@ export default function App() {
           {
             label: "راجع موانع الحفظ الآن",
             hint: isPowerAdmin
-              ? "افتح مركز القرار"
+              ? "افتح مركز الذكاء"
               : "افتح الجدول وفحص الموانع",
             keywords: "تعارض تعارضات",
             icon: <ShieldCheck />,
@@ -1738,7 +1738,7 @@ export default function App() {
                 onGo={go}
                 view="intelligence"
                 icon={<WandSparkles />}
-                label="مركز القرار"
+                label="مركز الذكاء"
               />
             </NavSection>
           ) : null}

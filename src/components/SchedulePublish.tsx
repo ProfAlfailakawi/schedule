@@ -253,14 +253,14 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
             <button
               type="button"
               className="share-survey-shortcut"
-              aria-label="افتح استبيان الطلبة في مركز القرار"
+              aria-label="افتح استبيان الطلبة في مركز الذكاء"
               onClick={openStudentSurveyWorkspace}
               disabled={!scoped}
             >
               <span className="share-survey-shortcut-icon" aria-hidden="true"><ClipboardList /></span>
               <span className="share-survey-shortcut-copy">
                 <strong>استبيان الطلبة</strong>
-                <small>اختصار إلى مكانه في مركز القرار</small>
+                <small>اختصار إلى مكانه في مركز الذكاء</small>
               </span>
               <ArrowUpLeft className="share-survey-shortcut-arrow" aria-hidden="true" />
             </button>

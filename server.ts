@@ -122,9 +122,9 @@ app.use(compression({
   },
 }));
 // Full-system backups are intentionally compressed and can be much larger than
-// ordinary API payloads. Give only these two root-admin endpoints a larger raw
+// ordinary API payloads. Give only the backup upload endpoints a larger raw
 // body allowance; every other JSON route keeps the tight 1 MB limit.
-app.use(["/api/system-backup/preview", "/api/system-backup/import"], express.raw({
+app.use(["/api/system-backup/preview", "/api/system-backup/import", "/api/system-backup/import-jobs"], express.raw({
   type: ["application/gzip", "application/octet-stream", "application/json"],
   limit: "30mb",
 }));
@@ -441,7 +441,7 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
 // Screens that are intentionally reserved for the main administrator.
 // The department scheduler keeps the operational schedule/search/report tools only.
 const powerOnlyFormIds = new Set([2, 3, 4, 5, 6, 11, 12, 15]);
-/* The schedule workspace and مركز القرار are the same permission — every
+/* The schedule workspace and مركز الذكاء are the same permission — every
    intelligence route is guarded by it, and every list route accepts it. */
 const DECISION_CENTRE_FORM_ID = 7;
 function isPowerUser(req: AuthenticatedRequest): boolean {
@@ -4263,9 +4263,10 @@ app.post("/api/intelligence/safety-net/:id/undo", requirePermission(7), async (r
  * they are bearer credentials / safety infrastructure, not university data.
  */
 app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
-  const [restorePoints, latestExport] = await Promise.all([
+  const [restorePoints, latestExport, latestImport] = await Promise.all([
     Repository.getSystemRestorePoints(),
     Repository.getLatestSystemExportJob(ROOT_ADMIN_USER_ID),
+    Repository.getLatestSystemImportJob(ROOT_ADMIN_USER_ID),
   ]);
   res.json({
     rootOnly: true,
@@ -4273,6 +4274,7 @@ app.get("/api/system-backup/status", requireAuth, requireRootAdmin, async (_req:
     restorePoints,
     latest: restorePoints.find(point => !point.consumedAt) || null,
     latestExport,
+    latestImport,
   });
 });
 
@@ -4337,19 +4339,36 @@ app.post("/api/system-backup/preview", requireAuth, requireRootAdmin, async (req
   });
 });
 
-app.post("/api/system-backup/import", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+/*
+ * Resumable import pipeline.
+ *
+ * The previous endpoint performed validation, safety export, and the complete
+ * Firestore replacement inside one HTTP request. On a real 36k-document backup
+ * that request could sit at 1% until a gateway timeout even while the server was
+ * working. The source is now staged once, then every following request advances
+ * exactly one durable checkpoint. Closing the browser does not lose progress.
+ */
+app.post("/api/system-backup/import-jobs", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
   if (req.get("x-schedule-confirm") !== "FULL-SYSTEM-IMPORT") {
     res.status(409).json({ error: "الاستيراد الكامل يحتاج تأكيداً صريحاً" });
     return;
   }
   const input = readSystemBackupBody(req);
-  const result = await Repository.importSystemBackup(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
-  res.json({
-    success: true,
-    message: "تم استيراد النسخة الكاملة والتحقق من سلامتها",
-    imported: result.backup.summary,
-    restorePoint: result.restorePoint,
-  });
+  const job = await Repository.startSystemImportJob(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
+  res.status(job.status === "ready" ? 200 : 202).json(job);
+});
+
+app.get("/api/system-backup/import-jobs/:id", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  res.json(await Repository.getSystemImportJob(String(req.params.id), ROOT_ADMIN_USER_ID));
+});
+
+app.post("/api/system-backup/import-jobs/:id/step", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const job = await Repository.advanceSystemImportJob(String(req.params.id), ROOT_ADMIN_USER_ID);
+  res.status(job.status === "ready" ? 200 : 202).json(job);
+});
+
+app.post("/api/system-backup/import", requireAuth, requireRootAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  res.status(409).json({ error: "تم استبدال الاستيراد المباشر باستيراد متدرج قابل للاستكمال. افتح خزنة النظام واضغط «استيراد» من جديد." });
 });
 
 app.post("/api/system-backup/reset", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -4444,7 +4463,7 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
   });
   /* A new department used to start with nothing at all: an account that logs in
      to an empty rail and waits for somebody to remember to tick a box. Form 7
-     is the whole operational baseline — the schedule workspace and مركز القرار
+     is the whole operational baseline — the schedule workspace and مركز الذكاء
      — and every route a scheduler needs accepts it. So it is granted on
      creation, and the account works the first time it signs in. Anything beyond
      it is still a deliberate decision on the permissions screen. */
@@ -4453,12 +4472,12 @@ app.post("/api/users", requirePermission(11), async (req: Request, res: Response
 });
 
 /**
- * ── مركز القرار لكل الأقسام ─────────────────────────────────────────────────
+ * ── مركز الذكاء لكل الأقسام ─────────────────────────────────────────────────
  *
  * The screen has existed for a while; the permission behind it did not travel
  * with it. Departments created before it — and any account an administrator set
  * up field by field — can be missing form 7 entirely, so the rail simply never
- * shows مركز القرار and nobody can tell whether the feature is absent or the
+ * shows مركز الذكاء and nobody can tell whether the feature is absent or the
  * permission is.
  *
  * This grants it to every account that should have it, once. It is idempotent
@@ -4477,7 +4496,7 @@ app.post("/api/users/grant-decision-centre", requirePermission(11), requirePower
     granted += 1;
     if (names.length < 40) names.push(user.Name || user.SystemUserLogin || `#${user.SystemUserId}`);
   }
-  res.locals.auditChanges = `منح مركز القرار: ${granted} حساب جديد، ${alreadyHad} كان لديه الصلاحية`;
+  res.locals.auditChanges = `منح مركز الذكاء: ${granted} حساب جديد، ${alreadyHad} كان لديه الصلاحية`;
   res.json({ granted, alreadyHad, total: users.length, names });
 });
 

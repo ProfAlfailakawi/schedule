@@ -33,11 +33,15 @@ export const scheduleArabicDays = (row: Partial<FSchedule>) =>
   scheduleDays.filter((day) => Boolean(row[day.key])).map((day) => day.label).join(" - ");
 
 export const scheduleFriendlyError = (value: any) => {
-  const text = String(value?.message || value || "تعذر تنفيذ العملية");
+  const text = String(value?.message || value || "تعذر تنفيذ العملية").trim();
   if (/Failed to fetch|NetworkError/i.test(text))
-    return "تعذر الاتصال بالخادم. لم يتم حفظ أي تغيير؛ تحقق من الإنترنت ثم أعد المحاولة.";
-  if (/Unexpected token|JSON/i.test(text))
-    return "الخادم مشغول لحظياً ولم يرسل رداً مكتملاً. أعد المحاولة بعد قليل.";
+    return "تعذر الوصول إلى الخدمة الآن. يبدو أن الاتصال انقطع أو أن الخادم غير متاح مؤقتاً؛ لم يُعتمد أي تغيير جديد.";
+  if (/AbortError|أبطأ من المعتاد|تأخر .*الرد|تأخر الخادم/i.test(text))
+    return text.includes("حُفظت محلياً") || text.includes("قابلة للمزامنة")
+      ? "الخادم تأخر في تأكيد التغيير. راجع شريط الحالة: إذا ظهرت عبارة «بانتظار المزامنة» فالتغيير محفوظ محلياً وسيُرسل تلقائياً، وإلا فأعد المحاولة."
+      : "الخدمة أبطأ من المعتاد في تحميل هذا الجزء من الجدول. لم أفقدك السياق؛ فقط أعد المحاولة بعد قليل أو حدّث الصفحة.";
+  if (/Unexpected token|JSON|رد غير متوقع/i.test(text))
+    return "وصل رد غير مكتمل من الخادم. السبب غالباً ضغط مؤقت على الخدمة، وليس خطأ في إدخالك. أعد المحاولة بعد لحظات.";
   return text;
 };
 

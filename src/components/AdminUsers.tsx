@@ -257,6 +257,30 @@ export default function AdminUsers({
     if (!response.ok) throw new Error(data.error || "تعذر تنفيذ العملية");
     return data;
   };
+  const uploadBackupJob = (file: File): Promise<ImportJob> => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/system-backup/import-jobs", true);
+    xhr.withCredentials = true;
+    xhr.responseType = "text";
+    xhr.setRequestHeader("Content-Type", file.name.endsWith(".gz") ? "application/gzip" : "application/octet-stream");
+    xhr.setRequestHeader("X-Schedule-Confirm", "FULL-SYSTEM-IMPORT");
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.max(1, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      setImportUploadPercent(percent);
+    };
+    xhr.onerror = () => reject(new Error("انقطع الاتصال أثناء رفع النسخة. لم يبدأ الاستيراد؛ أعد المحاولة وسيبدأ من ملفك نفسه."));
+    xhr.onabort = () => reject(new Error("تم إيقاف رفع النسخة قبل بدء الاستيراد."));
+    xhr.onload = () => {
+      let data: any = {};
+      try { data = xhr.responseText ? JSON.parse(xhr.responseText) : {}; }
+      catch { reject(new Error(`تعذر قراءة رد الخادم (${xhr.status || "بدون حالة"})`)); return; }
+      if (xhr.status < 200 || xhr.status >= 300) { reject(new Error(data.error || "تعذر بدء الاستيراد")); return; }
+      setImportUploadPercent(100);
+      resolve(data as ImportJob);
+    };
+    xhr.send(file);
+  });
   const refreshBackupStatus = async () => {
     if (!rootAdmin) return;
     const status = await api("/api/system-backup/status") as BackupStatus;
@@ -383,6 +407,61 @@ export default function AdminUsers({
       setBackupBusy(null);
     }
   };
+  const driveImportJob = async (jobId: string) => {
+    const runner = ++importRunner.current;
+    setBackupBusy("import");
+    setError(null);
+    setImportUploadPercent(0);
+    let transportRetries = 0;
+    let visibleFailureRetries = 0;
+    try {
+      let job = await api(`/api/system-backup/import-jobs/${encodeURIComponent(jobId)}`) as ImportJob;
+      setImportJob(job);
+      while (runner === importRunner.current && job.status !== "ready") {
+        try {
+          job = await api(`/api/system-backup/import-jobs/${encodeURIComponent(jobId)}/step`, { method: "POST" }) as ImportJob;
+          transportRetries = 0;
+        } catch (stepError: any) {
+          transportRetries += 1;
+          if (transportRetries > 12) throw stepError;
+          setBackupMessage(`الاتصال تعثر لحظياً — الاستيراد محفوظ عند ${job.completedUnits}/${job.totalUnits} وسأكمل تلقائياً.`);
+          await new Promise(resolve => window.setTimeout(resolve, Math.min(5000, 400 * (2 ** (transportRetries - 1)))));
+          continue;
+        }
+        if (runner !== importRunner.current) return;
+        setImportJob(job);
+        if (job.status === "failed") {
+          visibleFailureRetries += 1;
+          if (visibleFailureRetries > 8) break;
+          setBackupMessage(`توقفت مرحلة مؤقتاً عند ${job.completedUnits}/${job.totalUnits} — أعيدها من نفس النقطة دون إعادة ما اكتمل.`);
+          await new Promise(resolve => window.setTimeout(resolve, 900 * visibleFailureRetries));
+          continue;
+        }
+        visibleFailureRetries = 0;
+        await new Promise(resolve => window.setTimeout(resolve, 180));
+      }
+      if (job.status === "ready") {
+        setImportJob(job);
+        setBackupFile(null);
+        setBackupPreview(null);
+        setImportUploadPercent(0);
+        setBackupMessage(`اكتمل الاستيراد والتحقق من ${job.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل. نقطة التراجع محفوظة تلقائياً.`);
+        const status = await api("/api/system-backup/status") as BackupStatus;
+        if (runner === importRunner.current) {
+          setBackupStatus(status);
+          setExportJob(status.latestExport || null);
+          setImportJob(status.latestImport || job);
+        }
+      } else if (job.status === "failed") {
+        setError(job.error || `تعذر إكمال المرحلة ${job.completedUnits + 1}/${job.totalUnits}. التقدم محفوظ ويمكن استكماله.`);
+      }
+    } catch (e: any) {
+      if (runner === importRunner.current) setError(`${e.message || "تعذر متابعة الاستيراد"} — ما اكتمل من المراحل محفوظ.`);
+    } finally {
+      if (runner === importRunner.current) setBackupBusy(null);
+    }
+  };
+
   const previewBackup = async () => {
     if (!backupFile) { setError("اختر ملف النسخة الاحتياطية أولاً"); return; }
     setError(null); setBackupBusy("preview"); setBackupPreview(null); setImportJob(null); setImportUploadPercent(0);
@@ -391,21 +470,27 @@ export default function AdminUsers({
     finally { setBackupBusy(null); }
   };
   const importFullBackup = async (confirmed = false) => {
+    if (importJob && ["running", "failed"].includes(importJob.status)) {
+      await driveImportJob(importJob.id);
+      return;
+    }
     if (!backupFile || !backupPreview) { setError("افحص النسخة أولاً قبل الاستيراد"); return; }
     if (!confirmed) { setBackupConfirm("import"); return; }
-    setBackupConfirm(null); setBackupMessage(null); setError(null); setBackupBusy("import"); setImportUploadPercent(1);
+    setBackupConfirm(null);
+    setBackupMessage("أرفع النسخة مرة واحدة؛ بعد ذلك كل مرحلة تحفظ تقدمها تلقائياً.");
+    setError(null);
+    setBackupBusy("import");
+    setImportUploadPercent(1);
     try {
-      setBackupMessage("جاري رفع النسخة واستيراد النظام كاملًا...");
-      await backupRequest("/api/system-backup/import", backupFile, "FULL-SYSTEM-IMPORT");
-      setBackupFile(null);
-      setBackupPreview(null);
-      await refreshBackupStatus();
-      setBackupMessage("تم استيراد النظام كاملًا بنجاح وتم أخذ نقطة تراجع تلقائيًا.");
+      const job = await uploadBackupJob(backupFile);
+      setImportJob(job);
+      setBackupMessage("تم رفع النسخة وفحصها. بدأت نقطة الأمان والاستيراد المتدرج.");
+      setBackupBusy(null);
+      await driveImportJob(job.id);
     } catch (e: any) {
-      setError(e.message || "تعذر إكمال الاستيراد");
-    } finally {
       setBackupBusy(null);
       setImportUploadPercent(0);
+      setError(e.message || "تعذر بدء الاستيراد");
     }
   };
   const resetFullSystem = async (confirmed = false) => {
@@ -1017,14 +1102,15 @@ export default function AdminUsers({
       : exportJob?.status === "finalizing" ? "أبني الملف النهائي وأتحقق من SHA-256"
       : exportJob ? "أجمع البيانات وأحفظ نقاط التقدم" : "لم يبدأ التصدير بعد";
     const importPercent = importJob?.status === "ready" ? 100
-      : importJob?.totalUnits ? Math.max(8, Math.min(99, 8 + Math.round((importJob.completedUnits / importJob.totalUnits) * 91)))
+      : importJob?.totalUnits ? Math.max(0, Math.min(99, Math.round((importJob.completedUnits / importJob.totalUnits) * 100)))
       : importUploadPercent;
     const importStatusLabel = importJob?.status === "ready" ? "اكتمل الاستيراد"
-      : importJob?.status === "failed" ? "توقفت مرحلة — يمكن الاستكمال من نفس النقطة"
-      : importJob?.phase === "safety" ? "أحفظ نقطة أمان كاملة قبل تغيير أي سجل"
-      : importJob?.phase === "apply" ? "أستعيد البيانات على مراحل محفوظة"
-      : importJob?.phase === "finalizing" ? "أراجع النتيجة وأحدث الذاكرة"
-      : backupBusy === "import" && importUploadPercent ? "أرفع النسخة وأفحصها" : "جاهز للاستيراد";
+      : importJob?.status === "failed" ? "توقفت مرحلة — التقدم محفوظ"
+      : importJob?.phase === "safety" ? "نقطة أمان قبل الاستيراد"
+      : importJob?.phase === "apply" ? "استعادة البيانات"
+      : importJob?.phase === "finalizing" ? "التحقق النهائي"
+      : backupBusy === "import" && importUploadPercent >= 100 ? "الرفع اكتمل · أفحص وأجهز النسخة"
+      : backupBusy === "import" && importUploadPercent ? `رفع النسخة ${importUploadPercent}%` : "جاهز للاستيراد";
     const previewCollections: Array<[string, number]> = backupPreview
       ? Object.entries(backupPreview.collectionCounts)
           .map(([name, count]) => [name, Number(count) || 0] as [string, number])
@@ -1133,38 +1219,28 @@ export default function AdminUsers({
             ) : null}
 
             {backupPreview ? (
-              <div className="bg-emerald-50/50 border border-emerald-200 rounded-xl p-6 mt-6 space-y-4 shadow-sm">
-                <div className="flex items-center gap-4 text-emerald-900 border-b border-emerald-100 pb-4">
-                  <div className="p-3 bg-emerald-100 rounded-full text-emerald-600 shadow-inner">
-                    <FileCheck2 className="w-6 h-6" />
+              <div className="vault-preview-card vault-preview-compact">
+                <div className="vault-preview-head">
+                  <FileCheck2 />
+                  <div><strong>النسخة سليمة وجاهزة</strong><span>{new Date(backupPreview.createdAt).toLocaleString("ar-KW")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span></div>
+                </div>
+                <div className="vault-preview-summary" aria-label="ملخص النسخة">
+                  <span><b>{backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")}</b><small>سجل</small></span>
+                  <span><b>{previewCollections.length.toLocaleString("ar-KW-u-nu-latn")}</b><small>مجموعة</small></span>
+                  <span><b>{backupPreview.storage === "firestore" ? "Firestore" : "محلي"}</b><small>المصدر</small></span>
+                </div>
+                <details className="vault-preview-details">
+                  <summary>التفاصيل التقنية</summary>
+                  <div className="vault-preview-hash"><span>SHA-256</span><code dir="ltr">{backupPreview.sha256}</code></div>
+                  <div className="vault-counts">
+                    {previewCollections.map(([name, count]) => {
+                      const meta = collectionMeta[name];
+                      const label = meta ? meta.label : name;
+                      const Icon = meta ? meta.icon : DatabaseBackup;
+                      return <span key={name} title={name}><Icon size={14} /><b>{count.toLocaleString("ar-KW-u-nu-latn")}</b>{label}</span>;
+                    })}
                   </div>
-                  <div>
-                    <strong className="block text-lg font-bold">النسخة مفحوصة وجاهزة</strong>
-                    <span className="text-sm opacity-80">{new Date(backupPreview.createdAt).toLocaleString("ar-KW")} · {backupPreview.documentCount.toLocaleString("ar-KW-u-nu-latn")} سجل</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between bg-white px-4 py-3 rounded-lg border border-slate-200 text-sm shadow-sm">
-                  <span className="text-slate-500 font-medium">البصمة (SHA-256)</span>
-                  <code dir="ltr" className="text-slate-600 font-mono select-all bg-slate-50 px-2 py-1 rounded">{backupPreview.sha256}</code>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 pt-2">
-                  {previewCollections.map(([name, count]) => {
-                    const meta = collectionMeta[name];
-                    const label = meta ? meta.label : name;
-                    const Icon = meta ? meta.icon : DatabaseBackup;
-                    return (
-                      <div key={name} title={name} className="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-200 shadow-sm transition-colors hover:border-emerald-300">
-                        <div className="text-emerald-600 bg-emerald-50 p-2 rounded-md">
-                          <Icon size={20} strokeWidth={1.5} />
-                        </div>
-                        <div className="flex flex-col">
-                          <b className="text-lg font-bold text-slate-800 leading-none">{count.toLocaleString("ar-KW-u-nu-latn")}</b>
-                          <span className="text-xs text-slate-500 mt-1 font-medium">{label}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                </details>
               </div>
             ) : null}
 
