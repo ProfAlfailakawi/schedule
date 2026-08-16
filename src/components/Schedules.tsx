@@ -6559,7 +6559,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               const instructor = instructorById.get(row.AdInstructorId);
               const code = String(course?.CourseCode || "").trim() || "—";
               const title = row.AdCourseName || course?.CourseName || code;
+              const compactTitle = courseLabel(title, 0.46).text;
               const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
+              const compactWho = instructor?.AdInstructorName ? instructorLabel(instructor.AdInstructorName, 0.5) : "بدون أستاذ";
               const whoWords = who.split(/\s+/).filter(Boolean);
               const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
               const whoGiven = whoWords.join(" ") || who;
@@ -6605,8 +6607,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   tabIndex={0}
                   onKeyDown={(e) => { if (e.key === "Enter") void openContext(row); }}
                 >
-                  <b>{placement ? title : courseLabel(title, 0.82).text}</b>
-                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
+                  <b>{placement ? compactTitle : courseLabel(title, 0.82).text}</b>
+                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{placement ? <i>{compactWho}</i> : <><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</>}</span>
                   <em dir="ltr">{code}</em>
                   {undoEntry ? (
                     <button
@@ -7510,7 +7512,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 bundle.rows.length >= 8 ? 0.36 : bundle.rows.length >= 6 ? 0.44 : bundle.rows.length >= 5 ? 0.52 : 0.62,
                               ).text;
                               const bandWho = bandInstructor?.AdInstructorName
-                                ? firstLast(instructorLabel(bandInstructor.AdInstructorName, bundle.rows.length >= 8 ? 0.56 : 0.68))
+                                ? firstLast(bandInstructor.AdInstructorName)
                                 : "بدون أستاذ";
                               /* The slice is the lecture's real handle: the same grip the
                                  full card carries, so a drag starts here exactly as it
