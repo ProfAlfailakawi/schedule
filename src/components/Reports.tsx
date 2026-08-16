@@ -899,9 +899,15 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           <div className="query-canvas-actions">
-            <SecondaryButton type="button" onClick={printCurrent}>
-              <Printer aria-hidden="true" />طباعة هذا العرض
-            </SecondaryButton>
+            <button
+              type="button"
+              className="query-print-icon"
+              onClick={printCurrent}
+              aria-label="طباعة هذا العرض"
+              title="طباعة هذا العرض"
+            >
+              <Printer aria-hidden="true" />
+            </button>
             <SecondaryButton type="button" onClick={() => print("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
               <Table2 aria-hidden="true" />التقرير الشامل
             </SecondaryButton>
@@ -1130,10 +1136,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                         type="button"
                         key={cell.point}
                         data-level={Math.min(5, cell.taken)}
+                        data-count={cell.taken}
                         data-mine={cell.mine ? "1" : undefined}
                         className={roomPick?.room === room.name && roomPick?.point === cell.point ? "picked" : ""}
                         title={`${room.name} · ${clock(cell.point)} · ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
-                        aria-label={`${room.name} الساعة ${clock(cell.point)}`}
+                        aria-label={`${room.name} الساعة ${clock(cell.point)}، ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
                         aria-pressed={roomPick?.room === room.name && roomPick?.point === cell.point}
                         onClick={() => setRoomPick(current =>
                           current?.room === room.name && current?.point === cell.point
@@ -1507,6 +1514,10 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
       return { ...day, count: dayRows.length, hours: Math.round(minutesTotal / 60) };
     });
     const maxDay = Math.max(1, ...daily.map(day => day.count));
+    const distinctSections = new Set(rows.map(row => String(row.SCode || "").trim()).filter(Boolean)).size;
+    const activeDays = daily.filter(day => day.count > 0).length;
+    const withoutInstructor = rows.filter(row => !row.AdInstructorId || !instructorOf(row)).length;
+    const withoutRoom = rows.filter(row => placeOfRow(row) === "بلا قاعة").length;
     return (
       <div className="print-report print-wide print-query-report print-comprehensive">
         <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} />
@@ -1529,18 +1540,33 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
           </div>
         </section>
 
+        <div className="print-document-facts" aria-label="بيانات إضافية">
+          <span><b>{distinctSections}</b> شعبة</span>
+          <span><b>{activeDays}</b> أيام تدريس</span>
+          <span><b>{withoutInstructor}</b> بلا أستاذ</span>
+          <span><b>{withoutRoom}</b> بلا قاعة</span>
+        </div>
+
         {rows.length ? (
-          <table className="print-comprehensive-table">
+          <table className="print-comprehensive-table print-comprehensive-legacy-order">
             <colgroup>
-              <col style={{ width: "3.5%" }} />
-              <col style={{ width: "27%" }} />
-              <col style={{ width: "23%" }} />
-              <col style={{ width: "22%" }} />
-              <col style={{ width: "10%" }} />
-              <col style={{ width: "14.5%" }} />
+              <col style={{ width: "2.5%" }} />
+              <col style={{ width: "6%" }} />
+              <col style={{ width: "4%" }} />
+              <col style={{ width: "20%" }} />
+              <col style={{ width: "4%" }} />
+              <col style={{ width: "4%" }} />
+              <col style={{ width: "4%" }} />
+              <col style={{ width: "9%" }} />
+              <col style={{ width: "12%" }} />
+              <col style={{ width: "6.5%" }} />
+              <col style={{ width: "17%" }} />
+              <col style={{ width: "11%" }} />
             </colgroup>
             <thead>
-              <tr><th>م</th><th>المقرر</th><th>الموعد</th><th>أستاذ المقرر</th><th>القاعة</th><th>البيانات الأكاديمية</th></tr>
+              <tr>
+                {["م", "رمز المقرر", "الشعبة", "المقرر", "وحدات", "ساعات", "سعة", "الوقت", "الأيام", "القاعة", "أستاذ المقرر", "الرقم المدني"].map(head => <th key={head}>{head}</th>)}
+              </tr>
             </thead>
             <tbody>
               {rows.map((row, index) => {
@@ -1548,26 +1574,17 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                 return (
                   <tr key={row.id}>
                     <td className="print-num">{index + 1}</td>
-                    <td className="print-course-block">
-                      <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
-                      <span><bdi className="print-ltr">{course?.CourseCode || "—"}</bdi><i>الشعبة {row.SCode || "—"}</i></span>
-                    </td>
-                    <td className="print-schedule-block">
-                      <span className="print-days">{dayCell(row)}</span>
-                      <time className="print-ltr">{row.fstarttime}–{row.fendtime}</time>
-                    </td>
-                    <td className="print-person-block">
-                      <strong>{instructor?.AdInstructorName || "بدون أستاذ"}</strong>
-                      {instructor?.AdInstructorCivil ? <small className="print-ltr">{instructor.AdInstructorCivil}</small> : null}
-                    </td>
+                    <td className="print-ltr">{course?.CourseCode || "—"}</td>
+                    <td className="print-ltr">{row.SCode || "—"}</td>
+                    <td className="print-wrap">{course?.CourseName || row.AdCourseName || "—"}</td>
+                    <td className="num">{course?.CourseCredit ?? "—"}</td>
+                    <td className="num">{course?.CourseHours ?? "—"}</td>
+                    <td className="num">{course?.MaxStudent ?? "—"}</td>
+                    <td className="print-ltr print-nowrap">{row.fstarttime}–{row.fendtime}</td>
+                    <td className="print-days">{dayCell(row)}</td>
                     <td className="print-ltr">{placeOfRow(row)}</td>
-                    <td>
-                      <div className="print-academic-facts">
-                        <span><b>{course?.CourseCredit ?? "—"}</b><small>وحدات</small></span>
-                        <span><b>{course?.CourseHours ?? "—"}</b><small>ساعات</small></span>
-                        <span><b>{course?.MaxStudent ?? "—"}</b><small>سعة</small></span>
-                      </div>
-                    </td>
+                    <td className="print-wrap">{instructor?.AdInstructorName || "بدون أستاذ"}</td>
+                    <td className="print-ltr">{instructor?.AdInstructorCivil || "—"}</td>
                   </tr>
                 );
               })}

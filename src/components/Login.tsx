@@ -8,6 +8,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Field, Notice, PrimaryButton } from "./ui";
+import InstallApp from "./InstallApp";
 interface LoginProps {
   onLoginSuccess: (data: {
     user: any;
@@ -136,6 +137,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           </form>
           <footer>
             <span>Schedule</span>
+            <InstallApp variant="login" />
             <small>{new Date().getFullYear()}</small>
           </footer>
         </div>

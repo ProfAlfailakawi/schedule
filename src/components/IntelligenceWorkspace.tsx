@@ -1807,7 +1807,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         title={`${dayLabels[day]} ${time}: ${cell?.count || 0}`}
                       >
                         <i aria-hidden="true" />
-                        {ratio > 0.62 ? <b>{cell?.count}</b> : null}
+                        {(cell?.count || 0) > 0 ? <b>{cell?.count}</b> : null}
                       </span>
                     );
                   })}
@@ -1952,7 +1952,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <UsersRound />
             </div>
             <div className="professor-load-list">
-              {overview.professorLoads.slice(0, 8).map((p: any) => (
+              {overview.professorLoads.map((p: any) => (
                 <button key={p.id} onClick={() => loadProfessor(p)}>
                   <span className="prof-avatar">{p.name.trim().charAt(0)}</span>
                   <div>
@@ -2036,6 +2036,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <div>
                   <span className="surface-kicker">ما قاله الطلاب</span>
                   <h2>كم شعبة نفتح، وأين نضعها</h2>
+                  <span className={`demand-cohort cohort-${demand.cohort || "mixed"}`}>
+                    <i aria-hidden="true" />
+                    {demand.cohortLabel || "طلبة القسم"}
+                    {demand.sectionName ? ` · ${demand.sectionName}` : ""}
+                  </span>
                 </div>
                 <UsersRound />
               </div>
@@ -2144,7 +2149,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <article>
                   <span>أجاب</span>
                   <strong><Num value={demand.respondents} /></strong>
-                  <small>{demand.respondents ? nounFor(demand.respondents, AR.student) : "لم يجب أحد بعد"}</small>
+                  <small>
+                    {demand.respondents ? `${nounFor(demand.respondents, AR.student)} · ${demand.cohortLabel || "طلبة القسم"}` : `لم يجب أحد بعد · ${demand.cohortLabel || "طلبة القسم"}`}
+                  </small>
                 </article>
                 <article>
                   <span>مقررات مطلوبة</span>
@@ -2657,12 +2664,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ? [
                     { value: "board", label: "لوحة التجربة", detail: "حرّك الوقت وشاهد النتيجة لحظياً", icon: <CalendarClock />,
                       metric: String(scenarioEval?.scenario?.score ?? overview?.score ?? "") },
-                    { value: "editor", label: "ماذا لو؟", detail: "عدّل موعداً داخل النسخة", icon: <Network /> },
                     { value: "ledger", label: "سجل التغييرات", detail: "ما غيّرته، موعداً موعداً", icon: <FileClock />,
                       metric: String(changedRows.length) },
                   ]
                 : [{ value: "steps", label: "كيف تعمل", detail: "أربع خطوات من النسخة إلى الاعتماد", icon: <Play /> }]),
-              { value: "lab", label: "مختبر القرار", detail: "القواعد وغرفة الاجتماع والتحسين الآلي", icon: <WandSparkles /> },
             ]}
           />
           {twinCard === "hero" ? (
@@ -3235,20 +3240,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           ) : null}
           {scenario && twinCard === "board" ? (
             <>
-              <section className="twin-score-row">
-                <article>
+              <section className="twin-score-row" aria-label="مقارنة جودة الجدول والسيناريو">
+                <article className="twin-score-card baseline">
                   <span>الجدول الحالي</span>
                   <strong><Num value={scenarioEval?.baseline?.score ?? overview?.score} /></strong>
                   <small>من 100</small>
                 </article>
-                <ArrowLeftRight />
+                <span className="twin-score-arrow" aria-hidden="true"><ArrowLeftRight /></span>
                 <article
-                  className={
+                  className={`twin-score-card scenario ${
                     (scenarioEval?.scenario?.score || 0) >=
                     (scenarioEval?.baseline?.score || overview?.score || 0)
                       ? "better"
                       : ""
-                  }
+                  }`}
                 >
                   <span>السيناريو</span>
                   <strong><Num value={scenarioEval?.scenario?.score ?? "—"} /></strong>
@@ -3269,7 +3274,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     className={`twin-constraint-score ${scenarioEval.constraints.scenario.total ? "warn" : "ok"}`}
                   >
                     <b>{scenarioEval.constraints.scenario.total}</b>
-                    <span>مخالفة Constraint</span>
+                    <span>مخالفات القيود</span>
                   </div>
                 ) : null}
               </section>

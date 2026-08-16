@@ -590,3 +590,16 @@ html[data-schedule-workspace="focus"] .schedule-control{
   background:#ffffff26;font-size:var(--t-xs);font-weight:700;letter-spacing:.04em;
 }
 .fake-data-banner span{font-size:var(--t-xs);line-height:1.6}
+
+
+/* User identity: show the actual academic scope in full, not a generic job
+   label. Long Arabic department names wrap naturally inside the rail. */
+.user-card{min-height:68px;align-items:start}
+.user-card-identity{min-width:0;padding-block:2px}
+.user-card strong,.user-card small{
+  overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere;
+}
+.user-card strong{line-height:1.45}
+.user-card-section{margin-top:2px !important;color:var(--nav-ink) !important;line-height:1.45;font-weight:600}
+.user-card-college{margin-top:2px !important;line-height:1.45;color:var(--nav-muted) !important}
+.user-card-tools{align-self:center}

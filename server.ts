@@ -580,6 +580,27 @@ async function scopedScheduleUniverse(collegeId: number, sectionId: number, term
 }
 
 
+// Client-facing scope labels: authorization still uses the numeric assignments,
+ // while the shell can show the real department/college name instead of a generic role.
+async function clientScopeDetails(scopes: any[]) {
+  if (!Array.isArray(scopes) || !scopes.length) return [];
+  const [sections, colleges] = await Promise.all([
+    Repository.getSections().catch(() => []),
+    Repository.getColleges().catch(() => []),
+  ]);
+  const sectionById = new Map<number, string>(
+    sections.map((row: any) => [Number(row.AdSectionId), String(row.AdSectionName || "")] as [number, string]),
+  );
+  const collegeById = new Map<number, string>(
+    colleges.map((row: any) => [Number(row.AdCollegeId), String(row.AdCollegeName || "")] as [number, string]),
+  );
+  return scopes.map((scope: any) => ({
+    ...scope,
+    AdSectionName: sectionById.get(Number(scope.AdSectionId)) || "",
+    AdCollegeName: collegeById.get(Number(scope.AdCollegeId)) || "",
+  }));
+}
+
 // --- AUTH API ---
 
 app.post("/api/auth/login", rateLimitLogin, async (req: Request, res: Response) => {
@@ -632,7 +653,7 @@ app.post("/api/auth/login", rateLimitLogin, async (req: Request, res: Response) 
   const safeUser = safeSystemUser(user);
   const userPerms = await Repository.getSecurityByUser(user.SystemUserId);
   const permissions = userPerms.map(p => p.FormNameId);
-  const scopes = await Repository.getUserAssigns(user.SystemUserId);
+  const scopes = await clientScopeDetails(await Repository.getUserAssigns(user.SystemUserId));
 
   res.json({ user: safeUser, permissions, scopes });
 });
@@ -658,7 +679,7 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const safeUser = safeSystemUser(req.user);
   const userPerms = await Repository.getSecurityByUser(req.user.SystemUserId);
   const permissions = userPerms.map(p => p.FormNameId);
-  const scopes = req.scopes || [];
+  const scopes = await clientScopeDetails(req.scopes || []);
   // The interface says out loud when it is not on the university's database.
   res.json({ user: safeUser, permissions, scopes, data: activeDataMode() });
 });
@@ -3616,9 +3637,20 @@ app.get("/api/intelligence/rollover", requirePermission(7), requirePowerAdmin, a
 app.post("/api/intelligence/genesis", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),targetTermId=Number(req.body?.targetTermId||req.body?.termId||0),sourceTermId=Number(req.body?.sourceTermId||0); if(!collegeId||!sectionId||!targetTermId||!sourceTermId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} if(sourceTermId===targetTermId){res.status(400).json({error:"اختر فصلاً سابقاً مختلفاً عن الفصل الجديد"});return;}
   const [source,targetUniverse,courses,instructors,terms,constraints]=await Promise.all([Repository.getSchedulesByScope({collegeId,sectionId,termId:sourceTermId}),Repository.getSchedulesByScope({termId:targetTermId}),Repository.getCourses(),Repository.getInstructors(),Repository.getTerms(),Repository.getScheduleConstraints(collegeId,sectionId,targetTermId)]); if(!source.length){res.status(400).json({error:"الفصل السابق لا يحتوي جدولاً لهذا القسم"});return;}
-  const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId).map(c=>c.AdCourseId)); const rows=source.filter(r=>validCourseIds.has(r.AdCourseId)).map((r,index)=>({...r,id:-(index+1),AdTermId:targetTermId})); const issues=await validateSmartRows(rows,collegeId,sectionId); if(issues.length){res.status(400).json({error:"تعذر بناء بداية الفصل بسبب بيانات تحتاج مراجعة",issues});return;}
+  const validCourseIds=new Set(courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId).map(c=>c.AdCourseId));
+  const candidateRows=source
+    .filter(r=>validCourseIds.has(r.AdCourseId))
+    .map((r,index)=>({...r,id:-(index+1),AdTermId:targetTermId,SCode:asciiDigits(r.SCode).trim()}));
+  if(!candidateRows.length){res.status(400).json({error:"لم أجد مواعيد قابلة للنسخ لهذا القسم في الفصل السابق"});return;}
+  /* Genesis creates an isolated draft, not a publication. Legacy data can carry
+     a retired room, an unavailable teacher, or a conflict that is exactly what
+     the coordinator must review in the new term. Blocking the copy at that
+     point made a safe draft impossible to create. Keep the issues attached to
+     the result; the existing publication gate still refuses unresolved rows. */
+  const rows=safeDraftRows(candidateRows,collegeId,sectionId,targetTermId);
+  const issues=await validateSmartRows(rows,collegeId,sectionId);
   const universe=targetUniverse.filter(r=>!(r.AdCollegeId===collegeId&&r.AdSectionId===sectionId)).concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
-  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length},guardrail:"بداية الفصل أنشأت مسودة فقط؛ الجدول الحقيقي لم يتغير."});
+  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length},reviewRequired:issues.length,issues:issues.slice(0,24),guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة فقط؛ الجدول الحقيقي لم يتغير."});
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
@@ -4629,6 +4661,28 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
 const surveyFingerprint = (civil: string) =>
   createHmac("sha256", CALENDAR_SECRET).update(`need|${civil}`).digest("hex").slice(0, 32);
 
+const asciiDigits = (value: unknown) => String(value ?? "")
+  .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+  .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
+
+const surveyCohort = (sectionName: string) => {
+  const text = String(sectionName || "");
+  if (/بنات|طالبات|إناث|اناث/.test(text)) return { cohort: "girls", cohortLabel: "طالبات" };
+  if (/بنين|طلاب|ذكور/.test(text)) return { cohort: "boys", cohortLabel: "طلاب" };
+  return { cohort: "mixed", cohortLabel: "طلبة القسم" };
+};
+
+function surveyCourseIdsForSection(courses: any[], history: any[], sectionId: number) {
+  const taught = new Map<number, number>();
+  for (const row of history) {
+    if (Number(row.AdSectionId) !== Number(sectionId)) continue;
+    taught.set(Number(row.AdCourseId), Math.max(taught.get(Number(row.AdCourseId)) || 0, Number(row.AdTermId) || 0));
+  }
+  const allowed = new Set<number>();
+  for (const course of courses) if (taught.has(Number(course.AdCourseId))) allowed.add(Number(course.AdCourseId));
+  return { taught, allowed };
+}
+
 app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   if ("error" in resolved) { res.status(resolved.status).json({ error: resolved.error }); return; }
@@ -4640,23 +4694,22 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   /* The courses offered are the ones this section has ACTUALLY taught — read
      from its own history, newest first. A catalogue entry nobody has taught in
      a decade is not something to ask a student about. */
-  const taught = new Map<number, number>();
-  for (const row of history) {
-    if (Number(row.AdSectionId) !== Number(resolved.link.AdSectionId)) continue;
-    taught.set(Number(row.AdCourseId), Math.max(taught.get(Number(row.AdCourseId)) || 0, Number(row.AdTermId)));
-  }
+  const { taught } = surveyCourseIdsForSection(courses, history, Number(resolved.link.AdSectionId));
   const offered = courses
-    .filter(course => taught.has(course.AdCourseId))
+    .filter(course => taught.has(Number(course.AdCourseId)))
     .map(course => ({ id: course.AdCourseId, code: course.CourseCode, name: course.CourseName,
-                      lastTaught: taught.get(course.AdCourseId) || 0 }))
+                      lastTaught: taught.get(Number(course.AdCourseId)) || 0 }))
     .sort((a, b) => b.lastTaught - a.lastTaught || String(a.code).localeCompare(String(b.code), "ar"));
 
+  const sectionName = sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "";
+  const cohort = surveyCohort(sectionName);
   res.setHeader("Cache-Control", "no-store");
   res.json({
-    section: sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "",
+    section: sectionName,
     college: colleges.find(row => row.AdCollegeId === resolved.link.AdCollegeId)?.AdCollegeName || "",
     term: terms.find(row => row.AdTermId === resolved.link.AdTermId)?.AdTermName || "",
     label: resolved.link.label, expiresAt: resolved.link.expiresAt,
+    ...cohort,
     courses: offered,
   });
 });
@@ -4672,17 +4725,22 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   }
 
   const body = (req.body || {}) as Record<string, unknown>;
-  const civil = String(body.civil || "").replace(/\D/g, "");
+  const civil = asciiDigits(body.civil).replace(/\D/g, "");
   // The checksum is the whole gate: one person, one answer, and no account.
   if (!validateCivilId(civil).isValid) { res.status(400).json({ error: "الرقم المدني غير صحيح" }); return; }
   const name = String(body.name || "").trim().slice(0, 60);
   if (name.length < 3) { res.status(400).json({ error: "اكتب اسمك كاملاً" }); return; }
 
-  const courses = await Repository.getCourses();
-  const allowed = new Set(courses.filter(course =>
-    Number(course.AdSectionId) === Number(resolved.link.AdSectionId)).map(course => course.AdCourseId));
+  const [courses, history] = await Promise.all([
+    Repository.getCourses(),
+    Repository.getSchedulesByScope({ sectionId: Number(resolved.link.AdSectionId) }),
+  ]);
+  /* GET and POST use the exact same eligibility rule. Previously the page
+     showed courses from teaching history while POST checked catalogue ownership;
+     a real selection could therefore be rejected as if nothing had been picked. */
+  const { allowed } = surveyCourseIdsForSection(courses, history, Number(resolved.link.AdSectionId));
   const courseIds = [...new Set((Array.isArray(body.courseIds) ? body.courseIds : [])
-    .map(Number).filter(id => allowed.has(id)))].slice(0, 12);
+    .map(value => Number(asciiDigits(value))).filter(id => allowed.has(id)))].slice(0, 12);
   if (!courseIds.length) { res.status(400).json({ error: "اختر مقرراً واحداً على الأقل" }); return; }
 
   await Repository.saveStudentNeed({
@@ -4718,7 +4776,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
    * search needs; the section's own history is what the room and teacher
    * preferences are read from. Nothing here ever needed another department's
    * back-catalogue. */
-  const [needs, courses, termWeek, sectionHistory, links, history, allTerms] = await Promise.all([
+  const [needs, courses, termWeek, sectionHistory, links, history, allTerms, sections] = await Promise.all([
     Repository.getStudentNeeds(collegeId, sectionId, termId),
     Repository.getCourses(),
     Repository.getSchedulesByScope({ termId }),
@@ -4726,6 +4784,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     Repository.getShareLinks(collegeId, sectionId, termId).catch(() => []),
     Repository.getStudentNeedHistory(collegeId, sectionId).catch(() => []),
     Repository.getTerms().catch(() => []),
+    Repository.getSections().catch(() => []),
   ]);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId);
   const reading = readStudentDemand(needs, mine);
@@ -4787,10 +4846,14 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     .filter(link => link.kind === "survey" && !link.revoked && Date.parse(link.expiresAt) > now)
     .map(link => ({ id: link.id, label: link.label, expiresAt: link.expiresAt, views: link.views || 0 }));
 
+  const sectionName = String((sections as any[]).find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || "");
+  const cohort = surveyCohort(sectionName);
   res.setHeader("Cache-Control", "no-store");
   res.json({
     ...reading,
     ...repairs,
+    ...cohort,
+    sectionName,
     survey,
     openings,
     succession: { links: succession.links.slice(0, 10), pathsSeen: succession.pathsSeen,
@@ -5086,14 +5149,16 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   var ar=function(n){try{return Number(n||0).toLocaleString("ar-KW-u-nu-latn")}catch(e){return String(n)}};
   var hours=function(m){var h=Math.floor(m/60),r=m%60;return r?ar(h)+"٫"+ar(Math.round(r/6)):ar(h)};
   var esc=function(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML};
+  var ascii=function(value){return String(value||"")
+    .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})
+    .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))});};
+  civil.addEventListener("input",function(){var v=ascii(civil.value);if(v!==civil.value)civil.value=v;});
 
   document.getElementById("print").addEventListener("click",function(e){e.preventDefault();window.print()});
 
   document.getElementById("form").addEventListener("submit",function(event){
     event.preventDefault();
-    var value=(civil.value||"").replace(/[^0-9٠-٩۰-۹]/g,"")
-      .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})
-      .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))});
+    var value=ascii(civil.value).replace(/[^0-9]/g,"");
     if(value.length<8){note.textContent="اكتب الرقم المدني كاملاً.";return}
     note.textContent="";go.disabled=true;go.textContent="…";
     fetch("/api/public/staff/"+encodeURIComponent(TOKEN),{
@@ -5375,9 +5440,13 @@ function surveyPage(token: string, label: string): string {
 <meta name="robots" content="noindex,nofollow">
 <title>${label} · SCHEDULE</title>
 <style>
-:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f}
+:root{--bg:#0a100f;--card:#111917;--line:#1e2a27;--ink:#eef2ee;--dim:#8d9a94;--jade:#69c0a8;--brass:#c79b5f;--cohort-rgb:105,192,168}
 *{box-sizing:border-box}
-body{margin:0;min-height:100dvh;background:var(--bg);color:var(--ink);
+body[data-cohort="boys"]{--jade:#71a9d6;--cohort-rgb:113,169,214}
+body[data-cohort="girls"]{--jade:#c18bab;--cohort-rgb:193,139,171}
+body{margin:0;min-height:100dvh;background:
+  radial-gradient(circle at 88% 0%,rgba(var(--cohort-rgb),.10),transparent 34%),
+  var(--bg);color:var(--ink);
   font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;
   -webkit-text-size-adjust:100%;padding:22px 16px 40px}
 .wrap{max-inline-size:640px;margin-inline:auto}
@@ -5408,10 +5477,13 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .pick strong{font-size:13.5px;font-weight:600;line-height:1.4}
 .pick small{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
 .pick[aria-pressed="true"]{border-color:var(--jade);background:color-mix(in srgb,var(--jade) 12%,var(--card))}
-.pick i{position:absolute;inset-block-start:11px;inset-inline-end:11px;inline-size:17px;block-size:17px;
-  border-radius:50%;border:1.5px solid var(--line);display:grid;place-items:center;font-style:normal;
-  font-size:11px;color:transparent;transition:.16s}
-.pick[aria-pressed="true"] i{border-color:var(--jade);background:var(--jade);color:#04100d}
+.pick i{position:absolute;inset-block-start:11px;inset-inline-end:11px;inline-size:19px;block-size:19px;
+  border-radius:6px;border:1.5px solid color-mix(in srgb,var(--line) 85%,#fff);display:grid;place-items:center;
+  background:rgba(255,255,255,.015);transition:border-color .16s,background .16s,transform .16s}
+.pick i::after{content:"";inline-size:6px;block-size:10px;border:0;border-right:2px solid #07100d;border-bottom:2px solid #07100d;
+  transform:translateY(-1px) rotate(45deg) scale(.4);opacity:0;transition:.16s}
+.pick[aria-pressed="true"] i{border-color:var(--jade);background:var(--jade);transform:scale(1.04)}
+.pick[aria-pressed="true"] i::after{opacity:1;transform:translateY(-1px) rotate(45deg) scale(1)}
 .field{display:grid;gap:6px;margin-block-end:12px}
 .field label{font-size:12.5px;color:var(--dim)}
 .field input{
@@ -5490,8 +5562,8 @@ h1{margin:10px 0 4px;font-size:23px;font-weight:700;line-height:1.35}
 .fold .grid{display:none;padding:0 10px 12px}
 .fold.open .grid{display:grid}
 .fold[hidden]{display:none}
-.cohort-badge{display:inline-flex;align-items:center;gap:8px;margin:0 0 16px;padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:rgba(110,204,180,.08);color:var(--dim);font-size:13px}
-.cohort-badge b{color:var(--mint);font-weight:700}.cohort-badge i{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 4px rgba(110,204,180,.09)}
+.cohort-badge{display:inline-flex;align-items:center;gap:8px;margin:0 0 16px;padding:8px 12px;border:1px solid rgba(var(--cohort-rgb),.32);border-radius:999px;background:rgba(var(--cohort-rgb),.08);color:var(--dim);font-size:13px}
+.cohort-badge b{color:var(--jade);font-weight:700}.cohort-badge i{width:8px;height:8px;border-radius:50%;background:var(--jade);box-shadow:0 0 0 4px rgba(var(--cohort-rgb),.10)}
 .gender-note{margin:-4px 0 16px;color:var(--dim);font-size:12px;line-height:1.7}
 
 .count{
@@ -5511,6 +5583,11 @@ body{padding-block-end:8px}
 </div>
 <script>
 /* العدد والمعدود — نفس قاعدة البرنامج، مكتوبة هنا لأن هذه الصفحة لا تحمل حزمته. */
+function asciiDigits(value){
+  return String(value==null?"":value)
+    .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d));})
+    .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d));});
+}
 function arCourses(n){
   n = Math.max(0, Number(n) || 0);
   if (n === 1) return "مقرراً واحداً";
@@ -5531,6 +5608,7 @@ function arCourses(n){
     .then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});})
     .then(function(x){
       if(!x.ok){ body.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح الاستبيان")+'</div>'; return; }
+      document.body.dataset.cohort=x.d.cohort||"mixed";
       document.getElementById("head").textContent=x.d.section||x.d.label||"مقررات القسم";
       render(x.d);
     })
@@ -5558,10 +5636,9 @@ function arCourses(n){
        difference between a page and a wall. One group is never folded — a
        grouping of one is not a grouping. */
     var openAll = groups.length < 2;
-    var scopeText=(d.college||"")+" "+(d.section||"");
-    var cohort=/بنات/.test(scopeText)?"طالبات":/بنين/.test(scopeText)?"طلاب":"طلبة";
+    var cohort=d.cohortLabel||"طلبة القسم";
     body.innerHTML=
-      '<div class="cohort-badge"><i></i><span>الفئة: <b>'+cohort+'</b></span></div>'+
+      '<div class="cohort-badge"><i></i><span>الفئة: <b>'+esc(cohort)+'</b></span></div>'+
       '<p class="gender-note">الفئة محددة من رابط القسم نفسه حتى لا تختلط إجابات البنات والبنين.</p>'+
       '<div class="step"><b>1</b> أي المقررات تحتاجها؟</div>'+
       '<div class="seek"><input id="seek" type="search" inputmode="search" '+
@@ -5578,7 +5655,7 @@ function arCourses(n){
           '<div class="grid">'+g.items.map(function(c){
             return '<button type="button" class="pick" data-id="'+c.id+'" '+
                    'data-find="'+esc((c.name+" "+c.code).toLowerCase())+'" aria-pressed="false">'+
-                   '<i>✓</i><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>';
+                   '<i aria-hidden="true"></i><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>';
           }).join("")+'</div></section>';
       }).join("")+'</div>'+
       '<p class="note" id="nohit" hidden>لا مقرر بهذا الاسم أو الرمز.</p>'+
@@ -5650,11 +5727,17 @@ function arCourses(n){
       nohit.hidden = hits>0;
       seekCount.textContent = q ? arCourses(hits) : "";
     });
+    document.addEventListener("input",function(e){
+      var input=e.target;
+      if(!input||typeof input.value!=="string") return;
+      var normalized=asciiDigits(input.value);
+      if(normalized!==input.value) input.value=normalized;
+    },true);
     ["nm","cv"].forEach(function(k){ document.getElementById(k).addEventListener("input",refresh); });
 
     function refresh(){
       var nm=document.getElementById("nm").value.trim();
-      var cv=document.getElementById("cv").value.replace(/\D/g,"");
+      var cv=asciiDigits(document.getElementById("cv").value).replace(/\D/g,"");
       var ready=picked.size>0 && nm.length>=3 && cv.length===12;
       send.disabled=!ready;
       /* The button says what is missing rather than sitting grey and silent. */
@@ -5669,7 +5752,7 @@ function arCourses(n){
       fetch("/api/public/survey/"+encodeURIComponent(TOKEN),{
         method:"POST",headers:{"Content-Type":"application/json"},
         body:JSON.stringify({name:document.getElementById("nm").value.trim(),
-          civil:document.getElementById("cv").value,courseIds:Array.from(picked)})
+          civil:asciiDigits(document.getElementById("cv").value),courseIds:Array.from(picked)})
       }).then(function(r){return r.json().then(function(d){return {ok:r.ok,d:d};});})
         .then(function(x){
           if(!x.ok){ document.getElementById("err").innerHTML='<div class="err">'+esc(x.d.error)+'</div>';

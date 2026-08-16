@@ -1806,10 +1806,18 @@ export default function App() {
               {user.Name.trim().charAt(0) || "م"}
               <i aria-hidden="true" />
             </div>
-            <div>
+            <div className="user-card-identity">
               <strong>{user.Name}</strong>
-              <small>
-                {isPowerAdmin ? "إدارة كاملة" : "مسؤول الجدول · قسمك فقط"}
+              <small className="user-card-section">
+                {isPowerAdmin ? "إدارة كاملة" : (scopes[0]?.AdSectionName || "القسم العلمي")}
+              </small>
+              <small className="user-card-college">
+                {isPowerAdmin
+                  ? "جميع الأقسام المخوّلة"
+                  : [
+                      scopes[0]?.AdCollegeName,
+                      scopes.length > 1 ? `+ ${scopes.length - 1} أقسام أخرى` : "",
+                    ].filter(Boolean).join(" · ")}
               </small>
             </div>
             <span className="sr-only" role="status">{healthLabel}</span>

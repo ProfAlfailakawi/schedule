@@ -6052,7 +6052,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               ref={searchRef}
               value={quickSearch}
               onChange={e => setQuickSearch(e.target.value)}
-              placeholder="بحث سريع: مقرر، أستاذ، شعبة، قاعة..."
+              placeholder="بحث سريع"
               aria-label="بحث سريع داخل مواعيد الجدول"
             />
             {quickSearch ? <button type="button" onClick={() => setQuickSearch("")} aria-label="مسح البحث السريع">×</button> : null}

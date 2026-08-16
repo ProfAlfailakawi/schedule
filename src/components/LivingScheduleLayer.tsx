@@ -339,9 +339,12 @@ export default function LivingScheduleLayer({
         }),
       });
       setGenesis(d);
-      setMessage("تم بناء مسودة بداية الفصل دون نشر أي موعد.");
+      setMessage(
+        d.reviewRequired
+          ? `تم بناء المسودة بنجاح، ومعها ${d.reviewRequired} ملاحظة واضحة للمراجعة قبل النشر.`
+          : "تم بناء مسودة بداية الفصل دون نشر أي موعد."
+      );
       onEnsureWeek?.();
-      setScene(null);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -787,11 +790,16 @@ export default function LivingScheduleLayer({
                       >
                         {!sourceTerms.length ? <option value="">لا يوجد فصل سابق متاح</option> : null}
                         {sourceTerms.map((t) => (
-                            <option key={t.AdTermId} value={t.AdTermId}>
+                            <option key={t.AdTermId} value={t.AdTermId} title={t.AdTermName}>
                               {t.AdTermName}
                             </option>
                           ))}
                       </select>
+                      {sourceTerm ? (
+                        <output className="genesis-term-full" title={sourceTerms.find(t => t.AdTermId === sourceTerm)?.AdTermName || ""}>
+                          {sourceTerms.find(t => t.AdTermId === sourceTerm)?.AdTermName || ""}
+                        </output>
+                      ) : null}
                       <small>هذه هي الفصول السابقة المتاحة للنسخ منها فقط.</small>
                     </label>
                     <div className="genesis-arrow">
@@ -799,7 +807,7 @@ export default function LivingScheduleLayer({
                     </div>
                     <label>
                       <span>2 · الفصل المستهدف الآن</span>
-                      <b>
+                      <b title={targetTerm?.AdTermName || living.context?.termName}>
                         {targetTerm?.AdTermName || living.context?.termName}
                       </b>
                       <small>ستُنشأ هنا مسودة تجريبية فقط؛ الجدول الحقيقي لن يتغير قبل قرار النشر.</small>
@@ -821,6 +829,7 @@ export default function LivingScheduleLayer({
                           تم نسخ {genesis.coverage?.copiedRows} موعدًا إلى المسودة الجديدة
                           · الجودة {genesis.analysis?.score}/100 · الموانع{" "}
                           {genesis.analysis?.conflicts}
+                          {genesis.reviewRequired ? ` · ${genesis.reviewRequired} ملاحظة للمراجعة` : ""}
                         </p>
                         <small>{genesis.guardrail}</small>
                       </div>

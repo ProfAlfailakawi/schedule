@@ -16,28 +16,65 @@
     <link rel="apple-touch-icon" href="/schedule-icon-192.png" />
     <title>SCHEDULE · Academic Workspace</title>
     <style>
-      /* The first paint belongs to the page, not to the bundle: if the
-         application never arrives, something readable is already on screen. */
-      #boot { position: fixed; inset: 0; display: grid; place-items: center; background: #080c0b; color: #e8ece7;
-              font-family: system-ui, "Segoe UI", Tahoma, sans-serif; }
-      @media (prefers-color-scheme: light) { #boot { background: #f2f3ef; color: #171c1a; } }
-      #boot-spin { width: 34px; height: 34px; border-radius: 50%; border: 2px solid currentColor;
-                   border-top-color: transparent; opacity: .35; animation: boot-turn .8s linear infinite; }
-      @keyframes boot-turn { to { transform: rotate(360deg); } }
-      #boot-card { display: none; max-width: 420px; padding: 28px; text-align: center; line-height: 1.8; }
-      #boot.failed #boot-spin { display: none; }
-      #boot.failed #boot-card { display: block; }
-      #boot-card h1 { margin: 0 0 10px; font-size: 19px; font-weight: 600; }
-      #boot-card p { margin: 0 0 20px; font-size: 14px; opacity: .72; }
-      #boot-card button { min-height: 44px; padding: 0 22px; border: 0; border-radius: 10px; cursor: pointer;
-                          background: #1f6b5c; color: #fff; font: inherit; font-weight: 600; }
-      #boot-card small { display: block; margin-top: 14px; font-size: 11px; opacity: .45; direction: ltr; }
+      /* A real first screen, rendered before the bundle. It is also the boot
+         guard's failure surface, so beauty never costs recoverability. */
+      #boot {
+        position:fixed;inset:0;z-index:99999;display:grid;place-items:center;
+        background:
+          radial-gradient(circle at 50% 38%,rgba(47,133,116,.16),transparent 34%),
+          linear-gradient(145deg,#07100e,#0a0f0e 56%,#11100c);
+        color:#edf2ee;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;
+        opacity:1;transition:opacity .26s ease,filter .26s ease;
+      }
+      #boot.leaving{opacity:0;filter:blur(4px);pointer-events:none}
+      #boot-splash{display:grid;place-items:center;text-align:center;gap:11px;animation:boot-rise .52s cubic-bezier(.2,.8,.2,1) both}
+      #boot-mark{
+        position:relative;width:82px;height:82px;border:1px solid rgba(255,255,255,.14);
+        border-radius:20px;background:rgba(255,255,255,.055);
+        box-shadow:0 24px 70px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.06);
+        overflow:hidden;
+      }
+      #boot-mark::before{
+        content:"";position:absolute;inset:20px 17px 16px;border:2px solid #67b59f;border-radius:8px;
+      }
+      #boot-mark::after{
+        content:"";position:absolute;left:17px;right:17px;top:32px;height:2px;background:#67b59f;
+        box-shadow:0 8px 0 rgba(103,181,159,.35),0 16px 0 rgba(103,181,159,.2);
+      }
+      #boot-mark i,#boot-mark b{
+        position:absolute;top:14px;width:4px;height:14px;border-radius:99px;background:#c39a60;z-index:2;
+      }
+      #boot-mark i{left:30px}#boot-mark b{right:30px}
+      #boot-word{margin-top:9px;font:650 15px/1 system-ui,sans-serif;letter-spacing:.3em;color:#f0f3f1}
+      #boot-ar{font-size:13px;color:#89968f;letter-spacing:.01em}
+      #boot-line{width:132px;height:2px;margin-top:7px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+      #boot-line i{display:block;width:38%;height:100%;border-radius:inherit;background:linear-gradient(90deg,transparent,#68b9a2,transparent);animation:boot-scan 1.05s ease-in-out infinite}
+      @keyframes boot-rise{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+      @keyframes boot-scan{0%{transform:translateX(-130%)}100%{transform:translateX(360%)}}
+      #boot-card{display:none;max-width:440px;padding:30px;text-align:center;line-height:1.8}
+      #boot.failed #boot-splash{display:none}
+      #boot.failed #boot-card{display:block}
+      #boot-card h1{margin:0 0 10px;font-size:19px;font-weight:650}
+      #boot-card p{margin:0 0 20px;font-size:14px;opacity:.72}
+      #boot-card button{min-height:44px;padding:0 22px;border:0;border-radius:11px;cursor:pointer;background:#1f6b5c;color:#fff;font:inherit;font-weight:650}
+      #boot-card small{display:block;margin-top:14px;font-size:11px;opacity:.45;direction:ltr}
+      @media (prefers-color-scheme:light){
+        #boot{background:radial-gradient(circle at 50% 38%,rgba(47,133,116,.12),transparent 34%),#f2f3ef;color:#171c1a}
+        #boot-mark{border-color:#d9dfdb;background:#fff;box-shadow:0 24px 70px rgba(29,52,45,.12),inset 0 1px 0 #fff}
+        #boot-word{color:#18211e}#boot-ar{color:#6f7c76}#boot-line{background:#dfe5e1}
+      }
+      @media (prefers-reduced-motion:reduce){#boot-splash,#boot-line i{animation:none}#boot{transition:none}}
     </style>
   </head>
   <body>
     <div id="root"></div>
     <div id="boot" role="status" aria-live="polite">
-      <div id="boot-spin" aria-label="جارٍ التحميل"></div>
+      <div id="boot-splash" aria-label="جارٍ تشغيل SCHEDULE">
+        <div id="boot-mark" aria-hidden="true"><i></i><b></b></div>
+        <div id="boot-word">SCHEDULE</div>
+        <div id="boot-ar">مساحة تشغيل الجدول الأكاديمي</div>
+        <div id="boot-line" aria-hidden="true"><i></i></div>
+      </div>
       <div id="boot-card">
         <h1>تعذر تحميل البرنامج</h1>
         <p>حاولنا تنظيف النسخة المحفوظة وإعادة التحميل تلقائياً ولم ينجح. اضغط الزر، وإذا تكرر الأمر أبلغ مسؤول النظام بالسطر الأخير.</p>
@@ -67,6 +104,7 @@
         var booted = false;
         var reason = "";
         var boot = document.getElementById("boot");
+        var bootStarted = Date.now();
 
         function read() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
         function write(v) { try { sessionStorage.setItem(KEY, v); } catch (e) {} }
@@ -78,9 +116,17 @@
           return !!(root && root.childElementCount > 0);
         }
         function stand_down() {
+          if (booted) return;
           booted = true;
           clear();
-          if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+          if (!boot || !boot.parentNode) return;
+          var wait = Math.max(0, 760 - (Date.now() - bootStarted));
+          setTimeout(function () {
+            boot.classList.add("leaving");
+            setTimeout(function () {
+              if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+            }, 280);
+          }, wait);
         }
 
         function fail(detail) {
