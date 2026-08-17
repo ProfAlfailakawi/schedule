@@ -7367,11 +7367,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       {historicalChoice ? (
         <div className="historical-time-backdrop no-print" role="dialog" aria-modal="true" aria-label="تنبيه التوقيت التاريخي">
           <section className="historical-time-dialog">
-            <button type="button" className="historical-time-close" onClick={() => settleHistoricalTimeChoice("cancel")} aria-label="إلغاء النقل والعودة للوضع السابق" title="إلغاء"><X /></button>
+            <button type="button" className="historical-time-close" data-guide-ignore="إلغاء نافذة اقتراح التوقيت فقط وإرجاع الموعد لمكانه السابق؛ لا ينفذ نقلاً" onClick={() => settleHistoricalTimeChoice("cancel")} aria-label="إلغاء النقل والعودة للوضع السابق" title="إلغاء"><X /></button>
             <header><span><Clock3 aria-hidden="true" /></span><div><small>{historicalChoice.source}</small><strong>{historicalChoice.dayLabel} · وقت غير معتاد</strong></div></header>
             <div className="historical-time-compare" dir="ltr"><b>{historicalChoice.picked}</b><ChevronLeft aria-hidden="true" /><strong>{historicalChoice.preferred}</strong></div>
             <p>النمط الأقرب يشير إلى <b dir="ltr">{historicalChoice.preferred}</b>. الوقت الذي اخترته <b dir="ltr">{historicalChoice.picked}</b> يبقى مسموحاً.</p>
-            <footer><button type="button" onClick={() => settleHistoricalTimeChoice("picked")}>ثبّت {historicalChoice.picked}</button><button type="button" className="primary" onClick={() => settleHistoricalTimeChoice("preferred")}>استخدم {historicalChoice.preferred}</button></footer>
+            <footer><button type="button" data-guide-ignore="اختيار صريح داخل تنبيه التوقيت لتثبيت الموعد المسحوب كما اختاره المستخدم" onClick={() => settleHistoricalTimeChoice("picked")}>ثبّت {historicalChoice.picked}</button><button type="button" className="primary" data-guide-ignore="اختيار صريح داخل تنبيه التوقيت لاعتماد الوقت التاريخي المقترح بدلاً من الوقت المسحوب" onClick={() => settleHistoricalTimeChoice("preferred")}>استخدم {historicalChoice.preferred}</button></footer>
           </section>
         </div>
       ) : null}
