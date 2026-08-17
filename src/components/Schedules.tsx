@@ -8700,6 +8700,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       return (
                         <button
                           type="button"
+                          data-guide-ignore="فتح يوم مزدحم داخل لوحة الأسبوع لعرض بطاقاته كاملة فقط ولا ينفذ أي تعديل على الجدول"
                           className={`week-density-block ${lensActive && !hits ? "lens-miss" : ""} ${flaggedHere.length ? "density-flagged" : ""}`}
                           data-tight={bundle.height < 58 ? "true" : undefined}
                           key={bundle.key}
