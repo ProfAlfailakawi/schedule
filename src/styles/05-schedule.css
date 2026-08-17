@@ -967,7 +967,6 @@ button.schedule-radar:hover{filter:brightness(.96)}
    away from the slot it actually left. Room echoes therefore use the exact same
    physical coordinate system as `.rooms-card`: right + width in the source track. */
 .rooms-track>.rooms-move-trace{
-  inset-inline:auto !important;
   inset-block:3px !important;
   left:auto !important;
   margin:0;
