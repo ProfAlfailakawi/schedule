@@ -134,7 +134,7 @@ import { GUIDE_ACTIONS, allAllowedGuideFeatures, canRunGuideAction, featureById,
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
 const PRESENCE_HUES = [200, 262, 38, 96, 288, 178];
-import { buildWeekDensityPlan, clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth } from "../utils/weekVisual";
+import { buildWeekDensityPlan, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../utils/weekVisual";
 import {
   formatScheduleTimeRange,
   scheduleClockForDisplay,
@@ -254,7 +254,7 @@ const undoClock = (at: number) =>
  * row is tall enough for a card to say the course and the instructor in full
  * rather than truncating both to fit a line and a half.
  */
-const SLOT_H = 46;
+const SLOT_H = 56;
 
 const normalizeArabicIndicDigits = (value: string) =>
   value.replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
@@ -1106,15 +1106,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const timer = window.setTimeout(() => setReviewFocus(new Set()), 20000);
     return () => window.clearTimeout(timer);
   }, [reviewFocus]);
-  // A flagged lecture is often inside a weave, where it draws as no card at all.
-  // After the highlight is set, open the first weave that holds a flagged row —
-  // and scroll the lit card into view — so "أظهرها على الجدول" and the radar
-  // actually land the reader on the thing they asked to see, not a silent band.
+  // Every lecture is now always present as a real card.  Review therefore has
+  // one job only: bring that existing card into view; there is no density band
+  // to open and no alternate representation to reconcile.
   useEffect(() => {
     if (!reviewFocus.size || viewMode !== "week") return;
     const raf = window.requestAnimationFrame(() => window.setTimeout(() => {
-      const band = document.querySelector<HTMLButtonElement>(".week-bundle.bundle-flagged .week-bundle-head");
-      if (band) { band.click(); band.scrollIntoView({ behavior: "smooth", block: "center" }); return; }
       const card = document.querySelector<HTMLElement>(".week-event.review-flagged");
       card?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 60));
@@ -4261,67 +4258,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   }, [weekRows, gridWindow]);
 
   /**
-   * When an hour exceeds the overview's readable lane budget, lanes stop being
-   * the answer for that local time block.
+   * Dense weeks stay literal.
    *
-   * Eight concurrent courses in a 212px column are eight slivers of 26 pixels —
-   * a bar chart of nothing. Past the overview's density budget the collision
-   * becomes one honest object: a quiet summary that says how many are actually
-   * simultaneous and where the crowded block sits.  Opening it expands the day
-   * itself; no floating card ever covers the timetable it is explaining.
-   *
-   * Clusters are found by time-overlap connectivity on the already-laid-out
-   * items, so the weave covers exactly the block the lanes would have covered.
+   * Every lecture remains a real card in the overview.  Crowding is solved by
+   * giving the affected day enough horizontal paper for its actual peak lanes,
+   * then making that wider canvas deliberately navigable.  We never replace a
+   * lecture with a summary, rotate its text or shrink its identity into
+   * microtype.
    */
   const weekDensity = useMemo(
     () => buildWeekDensityPlan(days.map(day => ({ key: day.key as DayKey, peak: weekLayout[day.key]?.busiest || 1 }))),
     [weekLayout],
   );
-  const weekDensityByDay = useMemo(
-    () => new Map(weekDensity.days.map(day => [day.key, day] as const)),
-    [weekDensity],
-  );
-  const weekBundles = useMemo(() => {
-    type Bundle = { key: string; top: number; height: number; from: string; to: string; rows: FSchedule[] };
-    const byDay: Record<string, Bundle[]> = {};
-    const bundled: Record<string, Set<number>> = {};
-    for (const day of days) {
-      const density = weekDensityByDay.get(day.key as DayKey);
-      const bundleThreshold = density?.mode === "summary" ? density.bundleThreshold : 7;
-      /* Membership and clustering live in utils/weekVisual (clusterSqueezed),
-         where the per-card rule — genuinely squeezed lanes, two spans or fewer — and
-         the chain-tail exemption are documented and under test. */
-      const items = weekLayout[day.key]?.items || [];
-      const rowById = new Map(items.map(item => [item.row.id, item.row]));
-      const clusters = clusterSqueezed(
-        items.map(item => ({ id: item.row.id, top: item.top, height: item.height, lanes: item.lanes, span: item.span })),
-        bundleThreshold,
-      );
-      const dayBundles: Bundle[] = [];
-      const ids = new Set<number>();
-      clusters.forEach(cluster => {
-        const rows = cluster.ids
-          .map(id => rowById.get(id))
-          .filter((row): row is FSchedule => Boolean(row))
-          .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime));
-        if (!rows.length) return;
-        const from = rows.reduce((m, r) => Math.min(m, mins(r.fstarttime)), Number.POSITIVE_INFINITY);
-        const to = rows.reduce((m, r) => Math.max(m, mins(r.fendtime)), 0);
-        rows.forEach(row => ids.add(row.id));
-        dayBundles.push({
-          key: `${day.key}:${rows.map(r => r.id).join("-")}`,
-          top: cluster.top,
-          height: cluster.bottom - cluster.top,
-          from: timeFromMins(from),
-          to: timeFromMins(to),
-          rows,
-        });
-      });
-      byDay[day.key] = dayBundles;
-      bundled[day.key] = ids;
-    }
-    return { byDay, bundled };
-  }, [weekLayout, weekDensityByDay]);
 
   /**
    * Where a card sits across the width of its day.
@@ -4334,9 +4282,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (placed.lanes <= 1) return {};
     const unit = `(100% / ${placed.lanes})`;
     return {
-      insetInlineStart: `calc(${placed.lane} * ${unit} + 4px)`,
+      insetInlineStart: `calc(${placed.lane} * ${unit} + 1px)`,
       insetInlineEnd: "auto",
-      width: `calc(${placed.span} * ${unit} - 8px)`,
+      width: `calc(${placed.span} * ${unit} - 2px)`,
       zIndex: 20 + placed.lane,
     };
   };
@@ -4351,6 +4299,129 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     style["--week-focus-width"] = `${readableWeekDayWidth(focusPeak)}px`;
     return style;
   }, [weekDensity, expandedDay, weekLayout]);
+  const weekStripConfig = useMemo(() => {
+    const durations = weekRows
+      .map(row => mins(row.fendtime) - mins(row.fstarttime))
+      .filter(duration => Number.isFinite(duration) && duration > 0);
+    const minDuration = durations.length ? Math.min(...durations) : 50;
+    const hourWidth = readableWeekStripHourWidth(minDuration);
+    // The academic ruler still ends at 20:00. A small unlabeled terminal pad
+    // lives *after* the ruler purely as visual breathing room, so a short last
+    // appointment can remain readable without inventing a 21:00 teaching hour.
+    const visualEnd = gridWindow.end;
+    const terminalPad = 76;
+    const spanMinutes = Math.max(SCHEDULE_SLOT_MINUTES, visualEnd - gridWindow.start);
+    const timeWidth = Math.round((spanMinutes / 60) * hourWidth);
+    const timelineWidth = timeWidth + terminalPad;
+    const labelWidth = 116;
+    // The identity is now a literal single-line row, so density can be paid for
+    // by geometry rather than typography.
+    const laneHeight = 48;
+    const cardHeight = 32;
+    const compactTwoLineHeight = 42;
+    const gutter = 6;
+    const canvasWidth = labelWidth + timelineWidth;
+    const peaks = days.map(day => ({ peak: weekLayout[day.key]?.busiest || 1 }));
+    const dense = shouldUseWeekStrips(peaks, weekDensity.totalWidth);
+    return { minDuration, hourWidth, visualEnd, terminalPad, spanMinutes, timeWidth, timelineWidth, labelWidth, laneHeight, cardHeight, compactTwoLineHeight, gutter, canvasWidth, dense };
+  }, [weekRows, gridWindow, weekLayout, weekDensity.totalWidth]);
+  const denseWeekStrips = weekStripConfig.dense && !experience.ghostEnabled;
+  const weekStripStyle = useMemo(() => ({
+    ["--week-overview-width" as any]: `${weekStripConfig.canvasWidth}px`,
+    ["--week-strip-canvas" as any]: `${weekStripConfig.canvasWidth}px`,
+    ["--week-strip-label" as any]: `${weekStripConfig.labelWidth}px`,
+    ["--week-strip-timeline" as any]: `${weekStripConfig.timelineWidth}px`,
+    ["--week-strip-lane" as any]: `${weekStripConfig.laneHeight}px`,
+    ["--week-strip-card" as any]: `${weekStripConfig.cardHeight}px`,
+    ["--week-strip-hour" as any]: `${weekStripConfig.hourWidth}px`,
+    ["--week-strip-terminal-pad" as any]: `${weekStripConfig.terminalPad}px`,
+  }) as React.CSSProperties, [weekStripConfig]);
+
+  const weekTopScrollRef = useRef<HTMLDivElement | null>(null);
+  const weekMainScrollRef = useRef<HTMLDivElement | null>(null);
+  const syncWeekScroll = (source: "top" | "main", value: number) => {
+    const target = source === "top" ? weekMainScrollRef.current : weekTopScrollRef.current;
+    if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
+  };
+
+  const weekStripHourMarks = useMemo(() => {
+    const marks: number[] = [];
+    for (let mark = gridWindow.start; mark <= weekStripConfig.visualEnd; mark += 60) marks.push(mark);
+    if (marks[marks.length - 1] !== weekStripConfig.visualEnd) marks.push(weekStripConfig.visualEnd);
+    return marks;
+  }, [gridWindow.start, weekStripConfig.visualEnd]);
+  const weekStripOffset = (minutesAt: number) =>
+    ((minutesAt - gridWindow.start) / 60) * weekStripConfig.hourWidth;
+  const weekStripSpanWidth = (from: number, to: number) =>
+    Math.max(2, ((to - from) / 60) * weekStripConfig.hourWidth);
+  const weekStripDayHeight = (peak: number) => {
+    const lanes = Math.max(1, peak);
+    return Math.max(
+      72,
+      weekStripConfig.gutter * 2 + weekStripConfig.compactTwoLineHeight + Math.max(0, lanes - 1) * weekStripConfig.laneHeight,
+    );
+  };
+  const estimateArabicInlineWidth = (value: string, pxPerGlyph: number) => {
+    let width = 0;
+    for (const ch of String(value || "")) {
+      if (/\s/.test(ch)) width += pxPerGlyph * 0.48;
+      else if (/[.،,:;·—\-]/.test(ch)) width += pxPerGlyph * 0.55;
+      else if (/[0-9]/.test(ch)) width += pxPerGlyph * 0.72;
+      else width += pxPerGlyph;
+    }
+    return width;
+  };
+  const weekStripIdentityMode = (row: FSchedule, title: string, instructor: string, code: string) => {
+    const from = Math.max(gridWindow.start, mins(row.fstarttime));
+    const rawTo = mins(row.fendtime);
+    const to = Math.min(weekStripConfig.visualEnd, rawTo);
+    const inset = 4;
+    const naturalWidth = Math.max(2, weekStripSpanWidth(from, to) - inset * 2);
+    const touchesTerminal = rawTo >= weekStripConfig.visualEnd;
+    const terminalBorrow = touchesTerminal
+      ? Math.min(weekStripConfig.terminalPad - 10, Math.max(0, 118 - naturalWidth))
+      : 0;
+    const available = naturalWidth + terminalBorrow - 14;
+    // Conservative estimate: if this says "single", the three identities have
+    // genuine breathing room. Otherwise the instructor receives its own line.
+    const oneLineNeed =
+      estimateArabicInlineWidth(title, 6.15) +
+      estimateArabicInlineWidth(instructor, 5.15) +
+      estimateArabicInlineWidth(code, 5.1) +
+      43;
+    return oneLineNeed <= available ? "single" : "double";
+  };
+
+  const weekStripCardStyle = (placed: { row: FSchedule; lane: number }, identityMode: "single" | "double" = "single"): React.CSSProperties => {
+    const from = Math.max(gridWindow.start, mins(placed.row.fstarttime));
+    const rawTo = mins(placed.row.fendtime);
+    const to = Math.min(weekStripConfig.visualEnd, rawTo);
+    const inset = 4;
+    const naturalWidth = Math.max(2, weekStripSpanWidth(from, to) - inset * 2);
+    const touchesTerminal = rawTo >= weekStripConfig.visualEnd;
+    // Only the true edge case borrows the unlabeled after-hours gutter. The
+    // time ruler remains exact: a subtle cap inside the card still marks 20:00.
+    const readableTerminalWidth = 118;
+    const terminalBorrow = touchesTerminal
+      ? Math.min(weekStripConfig.terminalPad - 10, Math.max(0, readableTerminalWidth - naturalWidth))
+      : 0;
+    const renderedHeight = identityMode === "double"
+      ? weekStripConfig.compactTwoLineHeight
+      : weekStripConfig.cardHeight;
+    const centeredTop = weekStripConfig.gutter
+      + placed.lane * weekStripConfig.laneHeight
+      + Math.max(0, Math.floor((weekStripConfig.laneHeight - renderedHeight) / 2));
+    return {
+      insetInlineStart: `${weekStripOffset(from) + inset}px`,
+      insetInlineEnd: "auto",
+      top: `${centeredTop}px`,
+      width: `${naturalWidth + terminalBorrow}px`,
+      height: `${renderedHeight}px`,
+      zIndex: 20 + placed.lane,
+      ["--week-terminal-borrow" as any]: `${terminalBorrow}px`,
+      ["--week-terminal-cap" as any]: terminalBorrow > 0 ? "var(--edge)" : "transparent",
+    };
+  };
 
   /**
    * A single week card. Shared by ordinary hours and by opened days.
@@ -4367,7 +4438,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const i = instructorById.get(r.AdInstructorId);
     const code = c?.CourseCode || r.AdCourseName || "—";
     const title = r.AdCourseName || c?.CourseName || code;
-    const label = courseLabel(title, widthShare);
+    const label = { text: title, shortened: false };
     const who = i?.AdInstructorName || "بدون أستاذ";
     /* First and last name only — «د. عبدالرحمن الشراد» — then the width-aware
        shortener may trim further on a squeezed lane. */
@@ -4380,6 +4451,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     // merged with it rather than declared after it — a second onPointerDown prop
     // silently replaces the first, which is exactly how dragging was lost.
     const rowPending = pendingWriteIds.has(r.id);
+    const denseIdentityMode = denseWeekStrips ? weekStripIdentityMode(r, title, who, String(code)) : "single";
     const grip = rowPending ? {} : physics.bindEvent(r, d.key);
     return (
       <article
@@ -4420,7 +4492,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); pickUpWithKeyboard(r); }
         }}
         aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${formatScheduleTimeRange(r.fstarttime, r.fendtime)}${place ? ` · قاعة ${place}` : ""}`}
-        data-narrow={widthShare <= 0.34 ? "true" : undefined}
         data-row-id={r.id}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
         style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
@@ -4431,10 +4502,20 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         key={`${d.key}-${r.id}`}
       >
         <GripVertical data-physics-handle="true" className="week-drag-handle" />
-        <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
-        <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
-        <small className="week-when"><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>{place ? <i>{place}</i> : null}</small>
-        <em className="week-code" dir="ltr">{code}</em>
+        {denseWeekStrips ? (
+          <div className="week-identity-line" data-mode={denseIdentityMode}>
+            <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
+            <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
+            <em className="week-code" dir="ltr">{code}</em>
+          </div>
+        ) : (
+          <>
+            <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
+            <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
+            <small className="week-when"><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>{place ? <i>{place}</i> : null}</small>
+            <em className="week-code" dir="ltr">{code}</em>
+          </>
+        )}
         {(() => {
           /* The card that just landed says so, and carries its own way back:
              one press undoes exactly this move — no hunting through a log. */
@@ -4835,7 +4916,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   useEffect(() => {
     if (!physicsActive) return;
     let pointerX = -1, pointerY = -1, frame = 0;
-    const surface = document.querySelector<HTMLElement>(".week-surface");
+    const surface = document.querySelector<HTMLElement>(".week-scroll-main") || document.querySelector<HTMLElement>(".week-surface");
     const EDGE = 48, TOP_GUARD = 72, MAX_STEP = 24;
     const follow = (event: PointerEvent) => { pointerX = event.clientX; pointerY = event.clientY; };
     const tick = () => {
@@ -7689,23 +7770,33 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               const instructor = instructorById.get(row.AdInstructorId);
               const code = String(course?.CourseCode || "").trim() || "—";
               const title = row.AdCourseName || course?.CourseName || code;
-              const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
-              const whoWords = who.split(/\s+/).filter(Boolean);
-              const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
-              const whoGiven = whoWords.join(" ") || who;
+              const who = instructor?.AdInstructorName || "بدون أستاذ";
               const activeRoomDays = days.filter(day => Boolean((row as any)[day.key]));
               const dayNames = activeRoomDays.map(day => day.label).join(" · ") || "بلا يوم";
               const undoId = recentMoves[row.id];
               const undoEntry = undoId ? undoLog.find(item => item.id === undoId && !item.usedAt) : null;
               const actualFrom = mins(row.fstarttime), actualTo = mins(row.fendtime);
+              const temporalWidthPx = Math.max(2, ((actualTo - actualFrom) / 60) * ROOM_HOUR_WIDTH);
+              const oneLineNeed =
+                estimateArabicInlineWidth(title, 6.15) +
+                estimateArabicInlineWidth(who, 5.15) +
+                estimateArabicInlineWidth(code, 5.1) +
+                43;
+              const roomIdentityMode: "single" | "double" = oneLineNeed <= Math.max(0, temporalWidthPx - 16)
+                ? "single"
+                : "double";
+              const roomCardHeight = roomIdentityMode === "double" ? 44 : 34;
+              const roomLaneTop = placement
+                ? 4 + placement.lane * ROOM_LANE_HEIGHT + Math.max(0, Math.floor((56 - roomCardHeight) / 2))
+                : undefined;
               const cardStyle: React.CSSProperties = {
                 ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName, placeOf(row)),
                 right: `${pct(actualFrom)}%`,
                 width: `${Math.max(3, pct(actualTo) - pct(actualFrom))}%`,
                 ...(placement ? {
-                  top: `${4 + placement.lane * ROOM_LANE_HEIGHT}px`,
+                  top: `${roomLaneTop}px`,
                   bottom: "auto",
-                  height: "56px",
+                  height: `${roomCardHeight}px`,
                 } : {}),
               };
               // The card is bound to the same drag engine the week uses, so it
@@ -7756,9 +7847,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   }}
                 >
                   <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
-                  <b>{courseLabel(title, 0.82).text}</b>
-                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
-                  <em dir="ltr">{code}</em>
+                  <div className="rooms-identity-line" data-mode={roomIdentityMode}>
+                    <strong className="rooms-identity-title">{title}</strong>
+                    <span className="rooms-identity-who" title={who}>{who}</span>
+                    <em className="rooms-identity-code" dir="ltr">{code}</em>
+                  </div>
                   {undoEntry ? (
                     <button
                       type="button"
@@ -8133,7 +8226,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                announced something. The screen reader is already served by the
                «يقرأ الجدول…» status line in the filter strip. */
             data-guide-target="schedule.week.board"
-            className={`week-surface ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
+            className={`week-surface ${denseWeekStrips ? "week-strip-mode" : ""} ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
           >
             {/* One question at a time, asked of the whole week. The controls
                 fold away; their answer remains visible on the toolbar button. */}
@@ -8452,6 +8545,269 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               the surface scrolls — the same trick a printed timetable uses when
               it changes to a larger sheet.
             */}
+            {denseWeekStrips ? (
+              <>
+                {/*
+                  Dense-week projection.
+
+                  The classic calendar remains the right picture while every day
+                  can afford readable columns. Once the week becomes a panorama,
+                  the projection rotates instead of the type shrinking: time runs
+                  horizontally, the five days become calm horizontal bands, and
+                  concurrency consumes vertical paper. It is the same timetable,
+                  the same cards and the same drag engine — only the surrounding
+                  geometry changes.
+                */}
+                <div
+                  ref={weekTopScrollRef}
+                  className="week-scroll-top week-strip-scroll-top no-print"
+                  data-expanded={expandedDay || undefined}
+                  style={weekStripStyle}
+                  onScroll={(e) => syncWeekScroll("top", e.currentTarget.scrollLeft)}
+                  aria-label="تمرير أفقي أعلى الجدول"
+                  data-guide-ignore="شريط تمرير بصري للوحة الأسبوع ولا ينفذ أي إجراء على بيانات الجدول"
+                >
+                  <div className="week-scroll-spacer" aria-hidden="true" />
+                </div>
+                <div
+                  ref={weekMainScrollRef}
+                  className="week-scroll-main week-strips-scroll"
+                  onScroll={(e) => syncWeekScroll("main", e.currentTarget.scrollLeft)}
+                >
+                  <div
+                    className="week-strips"
+                    style={weekStripStyle}
+                    data-expanded={expandedDay || undefined}
+                  >
+                    <div className="week-strip-ruler">
+                      <div className="week-strip-ruler-label">
+                        <span>الأسبوع</span>
+                        <small>الوقت أفقي · الازدحام رأسي</small>
+                      </div>
+                      <div
+                        className="week-strip-ruler-track"
+                        style={{ width: `${weekStripConfig.timelineWidth}px` }}
+                        aria-hidden="true"
+                      >
+                        {weekStripHourMarks.map((mark) => (
+                          <i
+                            key={`week-strip-ruler-${mark}`}
+                            className={`week-strip-hourmark ${mark === gridWindow.end ? "terminal" : ""}`}
+                            style={{ insetInlineStart: `${weekStripOffset(mark)}px` }}
+                          >
+                            <span dir="ltr">{timeFromMins(mark)}</span>
+                          </i>
+                        ))}
+                      </div>
+                    </div>
+                    {(expandedDay ? days.filter(day => day.key === expandedDay) : days).map((d) => {
+                      const layout = weekLayout[d.key] || { items: [], busiest: 1 };
+                      const dayHeight = weekStripDayHeight(layout.busiest);
+                      return (
+                        <section
+                          className="week-strip-day-row"
+                          data-today={todayKey === d.key ? "true" : undefined}
+                          data-busiest={layout.busiest}
+                          style={{ minHeight: `${dayHeight}px` }}
+                          key={`week-strip-${d.key}`}
+                        >
+                          <div
+                            className="week-strip-day-label"
+                            style={{ ["--reading" as any]: `${dayLoad.share[d.key] || 0}%` }}
+                          >
+                            <strong>{d.label}</strong>
+                            <span><b>{dayCounts[d.key] || 0}</b> موعدًا</span>
+                            <small>ذروة {layout.busiest} معًا</small>
+                          </div>
+                          <div
+                            className="week-strip-track"
+                            style={{
+                              width: `${weekStripConfig.timelineWidth}px`,
+                              height: `${dayHeight}px`,
+                            }}
+                            data-physics-day-column="true"
+                            data-physics-day={d.key}
+                          >
+                            {weekStripHourMarks.map((mark) => (
+                              <i
+                                key={`week-strip-grid-${d.key}-${mark}`}
+                                className={`week-strip-hourline ${mark === gridWindow.end ? "terminal" : ""}`}
+                                style={{ insetInlineStart: `${weekStripOffset(mark)}px` }}
+                                aria-hidden="true"
+                              />
+                            ))}
+                            {hallBarterReservations
+                              .filter((reservation) => reservation.status === "approved" && reservation.day === d.key)
+                              .map((reservation) => {
+                                const start = Math.max(gridWindow.start, mins(reservation.startTime));
+                                const end = Math.min(gridWindow.end, mins(reservation.endTime));
+                                if (end <= gridWindow.start || start >= gridWindow.end) return null;
+                                const borrowing = reservation.requesterCollegeId === filterCollege && reservation.requesterSectionId === filterSection;
+                                return (
+                                  <div
+                                    key={`week-strip-hall-barter-${reservation.id}-${d.key}`}
+                                    className={`week-strip-hall-barter ${borrowing ? "borrowed" : "lent"}`}
+                                    style={{
+                                      insetInlineStart: `${weekStripOffset(start)}px`,
+                                      width: `${weekStripSpanWidth(start, end)}px`,
+                                    }}
+                                    title={`${borrowing ? "نافذة قاعة مستعارة لقسمك" : "نافذة قاعة معارة"} · ${reservation.roomCode}/${reservation.roomHall} · ${formatScheduleTimeRange(reservation.startTime, reservation.endTime)}`}
+                                    aria-hidden="true"
+                                  />
+                                );
+                              })}
+                            {timeSlots.map((t) => {
+                              const slotStart = mins(t);
+                              return (
+                                <div
+                                  data-physics-slot="true"
+                                  data-physics-day={d.key}
+                                  data-physics-start={t}
+                                  data-physics-label={d.label}
+                                  className={`week-strip-slot ${ripple?.targetDay === d.key && ripple?.targetStart === t ? "ripple-target" : ""} ${physicsSlotClass(d.key, t)} ${lensRoomActive && !lensRoomBusy.has(`${d.key}|${t}`) ? "room-free" : ""} ${decisionSlot(d.key as DayKey, t) ? `field-${decisionSlot(d.key as DayKey, t)!.tier}` : ""}`}
+                                  key={`week-strip-slot-${d.key}-${t}`}
+                                  style={{
+                                    insetInlineStart: `${weekStripOffset(slotStart)}px`,
+                                    width: `${weekStripSpanWidth(slotStart, Math.min(gridWindow.end, slotStart + SCHEDULE_SLOT_MINUTES))}px`,
+                                  }}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  role="button"
+                                  tabIndex={-1}
+                                  data-guide-ignore="خانة زمنية مباشرة في إسقاط الأسبوع الكثيف وتستخدم نفس سلوك السحب والإضافة الموثق في شبكة الأسبوع"
+                                  title={
+                                    slotBlockReason(d.key as DayKey, t) ||
+                                    (decisionSlot(d.key as DayKey, t)
+                                      ? `${d.label} ${t} — ${decisionSlot(d.key as DayKey, t)!.why}`
+                                      : `إضافة موعد · ${d.label} ${t}`)
+                                  }
+                                  onPointerDown={(e) => {
+                                    if (e.target !== e.currentTarget || e.button !== 0) return;
+                                    paintRef.current = { day: d.key as DayKey, anchor: mins(t) };
+                                    setPaint({ day: d.key as DayKey, from: t, to: timeFromMins(mins(t) + SCHEDULE_SLOT_MINUTES) });
+                                  }}
+                                  onPointerEnter={() => {
+                                    const stroke = paintRef.current;
+                                    if (!stroke || stroke.day !== d.key) return;
+                                    const here = mins(t);
+                                    setPaint({
+                                      day: d.key as DayKey,
+                                      from: timeFromMins(Math.min(stroke.anchor, here)),
+                                      to: timeFromMins(Math.max(stroke.anchor, here) + SCHEDULE_SLOT_MINUTES),
+                                    });
+                                  }}
+                                  onDragEnter={() => {
+                                    const row = rows.find((r) => r.id === draggingId);
+                                    if (row) previewRipple(row, d.key, t);
+                                  }}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    const id = Number(
+                                      e.dataTransfer.getData("text/schedule-id") ||
+                                        draggingId,
+                                    );
+                                    const row = rows.find((r) => r.id === id);
+                                    if (row) {
+                                      const sourceDay = (days.find(day => Boolean(row[day.key]))?.key || d.key) as DayKey;
+                                      if (!(sourceDay === d.key && row.fstarttime === t)) {
+                                        void commitMove({ row, sourceDay: sourceDay as any, target: { day: d.key as any, start: t, label: d.label }, decision: null });
+                                      }
+                                    }
+                                    window.setTimeout(clearRipple, 0);
+                                  }}
+                                />
+                              );
+                            })}
+                            {keyMove && keyMove.day === d.key && keyMoveRow ? (
+                              <div
+                                className={`week-strip-keymove tier-${keyMoveReading?.tier || "fair"}`}
+                                style={{
+                                  insetInlineStart: `${weekStripOffset(mins(keyMove.start))}px`,
+                                  width: `${weekStripSpanWidth(mins(keyMove.start), mins(keyMove.start) + Math.max(SCHEDULE_SLOT_MINUTES, mins(keyMoveRow.fendtime) - mins(keyMoveRow.fstarttime)))}px`,
+                                }}
+                                aria-hidden="true"
+                              >
+                                <b dir="ltr">{keyMove.start}</b>
+                              </div>
+                            ) : null}
+                            {paint && paint.day === d.key ? (
+                              <div
+                                className="week-strip-paint"
+                                style={{
+                                  insetInlineStart: `${weekStripOffset(mins(paint.from))}px`,
+                                  width: `${weekStripSpanWidth(mins(paint.from), mins(paint.to))}px`,
+                                }}
+                                aria-hidden="true"
+                              >
+                                <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b>
+                                <span>موعد جديد</span>
+                              </div>
+                            ) : null}
+                            {todayKey === d.key &&
+                            termIsRunning &&
+                            nowMinutes >= gridWindow.start &&
+                            nowMinutes <= gridWindow.end ? (
+                              <div
+                                className="week-strip-now no-print"
+                                style={{ insetInlineStart: `${weekStripOffset(nowMinutes)}px` }}
+                                aria-hidden="true"
+                              >
+                                <span><time dir="ltr">{timeFromMins(nowMinutes)}</time></span>
+                              </div>
+                            ) : null}
+                            {moveTraces
+                              .filter((trace) => trace.dayKey === d.key)
+                              .map((trace) => (
+                                <div
+                                  key={`week-strip-trace-${trace.key}`}
+                                  className="week-strip-move-trace"
+                                  style={{
+                                    insetInlineStart: `${weekStripOffset(trace.from)}px`,
+                                    width: `${weekStripSpanWidth(trace.from, trace.to)}px`,
+                                  }}
+                                  aria-hidden="true"
+                                >
+                                  <span><CornerUpRight aria-hidden="true" />نُقل من هنا</span>
+                                </div>
+                              ))}
+                            {layout.items.map((placed) => {
+                              const course = courseById.get(placed.row.AdCourseId);
+                              const instructor = instructorById.get(placed.row.AdInstructorId);
+                              const code = String(course?.CourseCode || placed.row.AdCourseName || "—");
+                              const title = placed.row.AdCourseName || course?.CourseName || code;
+                              const who = instructor?.AdInstructorName || "بدون أستاذ";
+                              const identityMode = weekStripIdentityMode(placed.row, title, who, code);
+                              return renderWeekCard(
+                                placed.row,
+                                d,
+                                weekStripCardStyle(placed, identityMode),
+                                1,
+                              );
+                            })}
+                          </div>
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+            <div
+              ref={weekTopScrollRef}
+              className="week-scroll-top no-print"
+              data-expanded={expandedDay || undefined}
+              style={weekGridStyle}
+              onScroll={(e) => syncWeekScroll("top", e.currentTarget.scrollLeft)}
+              aria-label="تمرير أفقي أعلى الجدول"
+              data-guide-ignore="شريط تمرير بصري للوحة الأسبوع ولا ينفذ أي إجراء على بيانات الجدول"
+            >
+              <div className="week-scroll-spacer" aria-hidden="true" />
+            </div>
+            <div
+              ref={weekMainScrollRef}
+              className="week-scroll-main"
+              onScroll={(e) => syncWeekScroll("main", e.currentTarget.scrollLeft)}
+            >
             <div
               className={`week-calendar ${physicsActive ? "gravity-field-active" : ""}`}
               data-expanded={expandedDay || undefined}
@@ -8684,56 +9040,20 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           <span><CornerUpRight aria-hidden="true" />نُقل من هنا</span>
                         </div>
                       ))}
-                    {(weekLayout[d.key]?.items || [])
-                      .filter((placed) => expandedDay === d.key || !weekBundles.bundled[d.key]?.has(placed.row.id))
-                      .map((placed) =>
-                        renderWeekCard(placed.row, d, {
-                          top: placed.top,
-                          height: placed.height,
-                          ...laneStyle(placed),
-                        }, placed.span / placed.lanes),
-                      )}
-                    {expandedDay === d.key ? null : (weekBundles.byDay[d.key] || []).map((bundle) => {
-                      const peak = peakConcurrency(bundle.rows.map(r => ({ start: mins(r.fstarttime), end: mins(r.fendtime) })));
-                      const hits = lensActive ? bundle.rows.filter(lensMatches).length : bundle.rows.length;
-                      const flaggedHere = bundle.rows.filter(r => reviewFocus.has(r.id));
-                      return (
-                        <button
-                          type="button"
-                          data-guide-ignore="فتح يوم مزدحم داخل لوحة الأسبوع لعرض بطاقاته كاملة فقط ولا ينفذ أي تعديل على الجدول"
-                          className={`week-density-block ${lensActive && !hits ? "lens-miss" : ""} ${flaggedHere.length ? "density-flagged" : ""}`}
-                          data-tight={bundle.height < 58 ? "true" : undefined}
-                          key={bundle.key}
-                          style={{ top: bundle.top, height: bundle.height }}
-                          aria-label={`ذروة ${peak} محاضرات متزامنة يوم ${d.label} من ${bundle.from} إلى ${bundle.to} — افتح اليوم لعرض كل المحاضرات`}
-                          title={`ذروة ${peak} معاً · ${formatScheduleTimeRange(bundle.from, bundle.to)} — افتح ${d.label} لعرض البطاقات كاملة`}
-                          onClick={() => setExpandedDay(d.key as DayKey)}
-                        >
-                          <span className="week-density-copy">
-                            <small>ازدحام زمني</small>
-                            <strong><b className="num">{peak}</b> محاضرات معاً</strong>
-                          </span>
-                          <span className="week-density-meta">
-                            <time dir="ltr">{formatScheduleTimeRange(bundle.from, bundle.to)}</time>
-                            {bundle.rows.length !== peak ? <i><b className="num">{bundle.rows.length}</b> موعداً</i> : null}
-                            <em>افتح اليوم <Expand aria-hidden="true" /></em>
-                          </span>
-                          <span className="week-density-hues" aria-hidden="true">
-                            {bundle.rows.slice(0, 12).map(row => {
-                              const course = courseById.get(row.AdCourseId);
-                              const title = row.AdCourseName || course?.CourseName || course?.CourseCode || "—";
-                              const code = String(course?.CourseCode || title);
-                              const hue = hueFor(code, title, instructorById.get(row.AdInstructorId)?.AdInstructorName, placeOf(row));
-                              return <i key={row.id} style={{ ["--hue" as any]: hue }} />;
-                            })}
-                          </span>
-                        </button>
-                      );
-                    })}
+                    {(weekLayout[d.key]?.items || []).map((placed) =>
+                      renderWeekCard(placed.row, d, {
+                        top: placed.top,
+                        height: placed.height,
+                        ...laneStyle(placed),
+                      }, placed.span / placed.lanes),
+                    )}
                   </div>
                 );
               })}
             </div>
+            </div>
+              </>
+            )}
           </Surface>
         </>
       )}

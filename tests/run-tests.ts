@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
-import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth } from "../src/utils/weekVisual";
+import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../src/utils/weekVisual";
 import { findConflicts } from "../src/utils/scheduleIntelligence";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
@@ -181,11 +181,12 @@ async function runTests() {
     assert(peakConcurrency([{start:480,end:840},{start:540,end:600},{start:660,end:720}]) === 2, "a long block under two short ones peaks at two");
     assert(peakConcurrency([]) === 0 && peakConcurrency([{start:600,end:600}]) === 0, "empty and zero-length spans peak at zero");
 
-    // Adaptive week geometry: readable cards first, semantic density only when
-    // the five-day overview would otherwise become an unbounded canvas.
-    assert(readableWeekDayWidth(1) === 224, "one-lane day keeps the calm 224px column");
-    assert(readableWeekDayWidth(4) === 480, "four simultaneous lectures receive four readable 112px lanes plus gaps");
-    assert(readableWeekDayWidth(12) === 1440, "focus width scales to twelve real lanes instead of microtext");
+    // Adaptive week geometry: every lecture remains a literal readable card.
+    // Dense weeks spend horizontal paper and scroll; they never collapse into
+    // a summary or pay for density with microtype.
+    assert(readableWeekDayWidth(1) === 164, "one-lane day uses the compact calm column");
+    assert(readableWeekDayWidth(4) === 448, "four simultaneous lectures keep four 110px-painted reading lanes");
+    assert(readableWeekDayWidth(12) === 1344, "focus width keeps twelve real lanes at the reading floor");
     const quietPlan = buildWeekDensityPlan([
       { key: "fsunday", peak: 1 }, { key: "fmonday", peak: 2 }, { key: "ftuesday", peak: 4 },
       { key: "fwednesday", peak: 2 }, { key: "fthursday", peak: 1 },
@@ -195,12 +196,23 @@ async function runTests() {
       { key: "fsunday", peak: 12 }, { key: "fmonday", peak: 1 }, { key: "ftuesday", peak: 2 },
       { key: "fwednesday", peak: 1 }, { key: "fthursday", peak: 1 },
     ] as any);
-    assert(extremePlan.days.find(day => day.key === "fsunday")?.mode === "summary", "twelve-way collision is semantic in overview");
+    assert(extremePlan.days.find(day => day.key === "fsunday")?.mode === "cards", "twelve-way collision remains twelve real cards in overview");
+    assert(extremePlan.days.find(day => day.key === "fsunday")?.width === 1344, "twelve-way day keeps twelve readable real lanes");
     const allBusyPlan = buildWeekDensityPlan([
       { key: "fsunday", peak: 6 }, { key: "fmonday", peak: 6 }, { key: "ftuesday", peak: 6 },
       { key: "fwednesday", peak: 6 }, { key: "fthursday", peak: 6 },
     ] as any);
-    assert(allBusyPlan.totalWidth <= 1880 && allBusyPlan.days.every(day => day.mode === "summary"), "five peak-six days stay inside the overview budget without shrinking cards");
+    assert(allBusyPlan.totalWidth === 3414 && allBusyPlan.days.every(day => day.mode === "cards"), "five peak-six days stay literal while every painted lane remains readable");
+
+    // Dense-week orientation: when the classic projection turns into a
+    // panorama, density grows vertically while time keeps a readable horizontal
+    // scale. The breakpoint is data-driven, not a screen-size trick.
+    assert(readableWeekStripHourWidth(50) === 180, "a normal fifty-minute lecture gets about 150px of horizontal time");
+    assert(readableWeekStripHourWidth(30) === 224, "a thirty-minute appointment widens the strip scale enough to stay readable");
+    assert(readableWeekStripHourWidth(10) === 240, "pathological tiny appointments cannot make the ruler unbounded");
+    assert(!shouldUseWeekStrips([{ peak: 1 }, { peak: 2 }, { peak: 3 }], 1400), "a calm week keeps the classic five-column calendar");
+    assert(shouldUseWeekStrips([{ peak: 6 }, { peak: 6 }, { peak: 6 }, { peak: 6 }, { peak: 6 }], allBusyPlan.totalWidth), "a panoramic dense week rotates into horizontal day strips");
+    assert(shouldUseWeekStrips([{ peak: 8 }], 1200), "extreme local concurrency can trigger the dense projection even before the panorama threshold");
   }
 
   await initDatabase();

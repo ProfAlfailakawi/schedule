@@ -316,7 +316,34 @@ button.schedule-radar:hover{filter:brightness(.96)}
 
 /* --- Week calendar -------------------------------------------------------- */
 
-.week-surface{padding:var(--s5);overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}
+.week-surface{padding:var(--s5);overflow:visible}
+.week-scroll-top,
+.week-scroll-main{
+  width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+  overscroll-behavior-x:contain;
+  scrollbar-gutter:stable;
+}
+.week-scroll-top{
+  height:17px;
+  margin:0 0 6px;
+  padding:0;
+  border-block:1px solid color-mix(in srgb,var(--line) 74%,transparent);
+  background:color-mix(in srgb,var(--surface-2) 64%,transparent);
+  scrollbar-width:thin;
+}
+.week-scroll-main{padding-bottom:2px;scrollbar-width:auto}
+.week-scroll-spacer{height:1px;width:var(--week-overview-width,878px)}
+.week-scroll-top[data-expanded] .week-scroll-spacer{width:calc(var(--week-gutter,58px) + var(--week-focus-width,164px))}
+.week-scroll-top::-webkit-scrollbar{height:12px}
+.week-scroll-main::-webkit-scrollbar{height:13px}
+.week-scroll-top::-webkit-scrollbar-track,
+.week-scroll-main::-webkit-scrollbar-track{background:color-mix(in srgb,var(--surface-3) 68%,transparent);border-radius:999px}
+.week-scroll-top::-webkit-scrollbar-thumb,
+.week-scroll-main::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 46%,var(--line-strong));border:3px solid transparent;background-clip:padding-box;border-radius:999px}
+.week-scroll-top::-webkit-scrollbar-thumb:hover,
+.week-scroll-main::-webkit-scrollbar-thumb:hover{background:color-mix(in srgb,var(--accent) 52%,var(--muted));border:3px solid transparent;background-clip:padding-box}
 .week-note{
   min-height:44px;display:flex;align-items:center;gap:var(--s3);
   margin-bottom:var(--s3);padding:0 var(--s4);
@@ -395,22 +422,22 @@ button.schedule-radar:hover{filter:brightness(.96)}
   display:grid;
   /* One number decides the geometry: the component positions cards with the
      same value, so a card at two o'clock sits on the two o'clock line. */
-  --week-slot:46px;
+  --week-slot:52px;
   /* Each day owns its own minimum.  A quiet Sunday no longer pays for a dense
      Monday, and a dense Monday no longer solves its problem by shrinking every
      card on the board.  The component budgets these five values from actual
      peak concurrency. */
   grid-template-columns:
     var(--week-gutter,58px)
-    minmax(var(--week-day-0,224px),1fr)
-    minmax(var(--week-day-1,224px),1fr)
-    minmax(var(--week-day-2,224px),1fr)
-    minmax(var(--week-day-3,224px),1fr)
-    minmax(var(--week-day-4,224px),1fr);
-  min-width:var(--week-overview-width,1178px);
+    minmax(var(--week-day-0,164px),1fr)
+    minmax(var(--week-day-1,164px),1fr)
+    minmax(var(--week-day-2,164px),1fr)
+    minmax(var(--week-day-3,164px),1fr)
+    minmax(var(--week-day-4,164px),1fr);
+  min-width:var(--week-overview-width,878px);
   border:1px solid var(--line);
   border-radius:var(--r-lg);
-  overflow:hidden;
+  overflow:clip;
   background:var(--surface);
 }
 .week-time-head,.week-day-head{
@@ -524,8 +551,8 @@ button.schedule-radar:hover{filter:brightness(.96)}
    the real width required by its lanes.  Focus is detail, not a full-width
    pile of overlapping cards. */
 .week-calendar[data-expanded]{
-  grid-template-columns:var(--week-gutter,58px) minmax(var(--week-focus-width,224px),1fr);
-  min-width:calc(var(--week-gutter,58px) + var(--week-focus-width,224px));
+  grid-template-columns:var(--week-gutter,58px) minmax(var(--week-focus-width,164px),1fr);
+  min-width:calc(var(--week-gutter,58px) + var(--week-focus-width,164px));
 }
 .week-calendar[data-expanded] .week-day-collapsed,
 .week-calendar[data-expanded] .week-day-head:has(.week-day-toggle[aria-pressed="false"]){display:none}
@@ -751,7 +778,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
      line flush to the bottom, the descender of a final «ي/ن» clipped against the
      card's overflow. 1.3 restores the tail with no reflow — the clamp counts and
      card heights are unchanged. */
-  font-size:clamp(10.5px,calc(7.2px + 2.4cqw),16px);line-height:1.3;font-weight:640;
+  font-size:clamp(11px,calc(8.2px + 2cqw),14px);line-height:1.28;font-weight:490;
   color:var(--label);
   display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
   /* The gutter the catalogue chip occupies, reserved rather than guessed.
@@ -774,7 +801,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
   background:currentColor;opacity:.4;
 }
 .week-who{
-  font-size:clamp(10px,calc(7.9px + 1.9cqw),13px);line-height:1.34;color:var(--ink-2);
+  font-size:clamp(10.25px,calc(8.4px + 1.45cqw),12px);line-height:1.28;color:var(--ink-2);font-weight:350;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
   opacity:.82;letter-spacing:-.1px;
 }
@@ -809,11 +836,11 @@ button.schedule-radar:hover{filter:brightness(.96)}
   border-radius:3px;
   background:color-mix(in srgb,var(--edge) 15%,transparent);
   color:color-mix(in srgb,var(--label) 66%,transparent);
-  font:600 clamp(10px,calc(8.8px + 0.9cqw),11px)/1.1 var(--font-mono);font-style:normal;
+  font:370 clamp(10px,calc(9.15px + 0.7cqw),10.5px)/1.1 var(--font-mono);font-style:normal;
   font-variant-numeric:tabular-nums;letter-spacing:-.2px;
   pointer-events:none;
 }
-.week-code b{opacity:.55;font-weight:600}
+.week-code b{opacity:.55;font-weight:430}
 .week-code b::before{content:"·";margin-inline-end:2px;opacity:.7}
 
 /*
@@ -829,18 +856,19 @@ button.schedule-radar:hover{filter:brightness(.96)}
 @container (max-height:56px){.week-when{display:none}}
 /* No semicolon between rules: a stray one here made the parser silently drop
    the title clamp — found by CSSOM inspection, not by eye. */
-@container (max-height:44px){.week-who{display:none}.week-title{-webkit-line-clamp:2}}
-@container (max-height:30px){.week-title{-webkit-line-clamp:1}}
+@container (max-height:44px){.week-title{-webkit-line-clamp:1}.week-who{font-size:10px;line-height:1.16}}
+@container (max-height:30px){.week-title{-webkit-line-clamp:1}.week-who{font-size:10px}}
 @container (max-width:112px){.week-when i{display:none}}
 
-/* Defensive floor only. The elastic week never intentionally allocates a
-   real lecture less than 112px; if an external container forces it smaller,
-   metadata yields before Arabic typography does. */
+/* Defensive floor only. The compact elastic week intentionally paints an
+   84px card at its densest normal lane; only an external container should ever
+   force it into the emergency micro-width rules below. */
 @container (max-width:46px){
-  .week-event{align-items:stretch;padding:2px 3px 10px;gap:1px}
-  .week-title{display:-webkit-box;padding:0;font-size:10.5px;line-height:1.18;font-weight:620;-webkit-line-clamp:2;overflow-wrap:anywhere;word-break:normal;letter-spacing:-.1px}
-  .week-who{display:none}
-  .week-when,.week-code{display:none}
+  .week-event{align-items:stretch;padding:2px 3px;gap:0}
+  .week-title{display:-webkit-box;padding-inline-end:24px;font-size:10.25px;line-height:1.12;font-weight:470;-webkit-line-clamp:1;overflow-wrap:anywhere;word-break:normal;letter-spacing:-.1px}
+  .week-who{display:block;font-size:10px;line-height:1.12;font-weight:350}
+  .week-when{display:none}
+  .week-code{display:inline-flex;max-width:22px;font-size:10px;font-weight:360}
 }
 
 /* --- Colour as information -------------------------------------------------
@@ -881,10 +909,10 @@ button.schedule-radar:hover{filter:brightness(.96)}
    reads this board by: the course and the teacher. What gives way is the
    number, then the clock — never a name. And nothing here goes below the size
    at which Arabic stops being text and becomes texture. */
-.week-event[data-narrow="true"] .week-who{display:block;font-size:10px;font-weight:400;line-height:1.25;opacity:.9;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.week-event[data-narrow="true"] .week-who{display:block;font-size:10.25px;font-weight:350;line-height:1.22;opacity:.9;letter-spacing:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .week-event[data-narrow="true"] .week-when i{display:none}
-.week-event[data-narrow="true"] .week-title{font-size:10.5px;font-weight:620;line-height:1.3;-webkit-line-clamp:3;padding-inline-end:0;letter-spacing:0;overflow-wrap:anywhere;word-break:normal}
-.week-event[data-narrow="true"] .week-code{display:none}
+.week-event[data-narrow="true"] .week-title{font-size:10.75px;font-weight:460;line-height:1.24;-webkit-line-clamp:2;padding-inline-end:var(--code-gutter);letter-spacing:0;overflow-wrap:normal;word-break:keep-all}
+.week-event[data-narrow="true"] .week-code{display:inline-flex;font-size:10px;font-weight:360}
 
 /* --- The move echo ---------------------------------------------------------
    A dashed accent placeholder marks the slot a card just left, then fades on its
@@ -2619,13 +2647,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-event.lens-miss{opacity:.22;filter:saturate(.35)}
 .week-event.lens-hit{box-shadow:0 0 0 1px color-mix(in srgb,var(--edge) 30%,transparent)}
 
-/* A lane split in two or three has no floor for a stamp. The card measures
-   itself: below 150px of width the catalogue mark stands down and the clock
-   line takes its corner back — the hover peek still says the full name. */
-@container (max-width:150px){
-  .week-code{display:none}
-  .week-when{padding-inline-end:0 !important}
-}
+/* Course, instructor and catalogue number are the three permanent identity
+   lines of a lecture.  Width pressure may remove secondary time/place prose,
+   but never any of those three. */
 
 /* ==========================================================================
    THE WOVEN HOUR — five or more concurrent lectures, read horizontally
@@ -3343,9 +3367,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    and the instructor, thin type and all — and gives up only the clock,
    which the row it sits on already states. */
 @container (max-width:64px){
-  .week-when,.week-code{display:none}
-  .week-title{font-size:10.5px;-webkit-line-clamp:2;letter-spacing:0}
-  .week-who{font-size:10px;opacity:.85}
+  .week-when{display:none}
+  .week-code{display:block;font-size:9.5px;font-weight:420;line-height:1.12}
+  .week-title{font-size:10.25px;font-weight:520;-webkit-line-clamp:1;letter-spacing:0}
+  .week-who{display:block;font-size:9.75px;font-weight:380;opacity:.88}
 }
 
 @media (prefers-reduced-motion:reduce){
@@ -3541,7 +3566,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   --label:hsl(var(--hue,158) 46% 88%);
 }
 .rooms-card b{
-  font-size:11.5px;font-weight:620;color:var(--label);line-height:1.22;
+  font-size:11.5px;font-weight:540;color:var(--label);line-height:1.22;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
 }
 .rooms-card span{
@@ -3554,7 +3579,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-card span i{display:block;font:inherit;font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rooms-card em{
   position:absolute;top:4px;left:5px;right:auto;
-  font:550 10px/1 var(--font-mono);font-style:normal;
+  font:430 10px/1 var(--font-mono);font-style:normal;
   color:color-mix(in srgb,var(--label) 52%,transparent);
   letter-spacing:-.08px;
 }
@@ -3577,26 +3602,26 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
  * the teacher hold at every size, the code leaves first, and nothing prints
  * below the size at which Arabic stops being language.
  */
-.rooms-card.rooms-card-compact b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;font-weight:620;line-height:1.12}
+.rooms-card.rooms-card-compact b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;font-weight:530;line-height:1.12}
 .rooms-card.rooms-card-compact span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:390;line-height:1.08}
-.rooms-card.rooms-card-compact em{display:none}
-.rooms-week-days .rooms-card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px;font-weight:620;line-height:1.18;letter-spacing:-.08px}
+.rooms-card.rooms-card-compact em{display:block;font-weight:420}
+.rooms-week-days .rooms-card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px;font-weight:540;line-height:1.18;letter-spacing:-.08px}
 .rooms-week-days .rooms-card span{flex:none;display:block;min-height:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:390;line-height:1.12;letter-spacing:-.08px}
-.rooms-week-days .rooms-card em{display:block;position:absolute;left:5px;bottom:4px;top:auto;right:auto;font:550 10px/1 var(--font-mono);font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent);letter-spacing:-.08px}
+.rooms-week-days .rooms-card em{display:block;position:absolute;left:5px;bottom:4px;top:auto;right:auto;font:430 10px/1 var(--font-mono);font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent);letter-spacing:-.08px}
 /* Even a sliver keeps both identities. Time yields first because the axis
    already says it; subject and instructor never disappear. */
 .rooms-card{container-type:inline-size}
 @container (max-width:90px){
   .rooms-card:not(.rooms-card-compact){padding-inline:4px}
-  .rooms-card:not(.rooms-card-compact) b{font-size:10.5px;font-weight:620;letter-spacing:0}
-  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:10px;font-weight:400;letter-spacing:0}
-  .rooms-card:not(.rooms-card-compact) em{display:none}
+  .rooms-card:not(.rooms-card-compact) b{font-size:10.5px;font-weight:520;letter-spacing:0;padding-inline-end:24px}
+  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:10px;font-weight:390;letter-spacing:0}
+  .rooms-card:not(.rooms-card-compact) em{display:block;font-size:9px;font-weight:420;max-width:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 @container (max-width:44px){
   .rooms-card:not(.rooms-card-compact){padding-inline:2px}
-  .rooms-card:not(.rooms-card-compact) b{font-size:10px;letter-spacing:-.15px}
-  .rooms-card:not(.rooms-card-compact) span{display:none}
-  .rooms-card:not(.rooms-card-compact) em{display:none}
+  .rooms-card:not(.rooms-card-compact) b{font-size:9.75px;font-weight:510;letter-spacing:-.15px}
+  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:9.25px;font-weight:380}
+  .rooms-card:not(.rooms-card-compact) em{display:block;font-size:8.75px;font-weight:410}
 }
 .rooms-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
 .rooms-card .week-moved-pill{top:2px;inset-inline-end:2px}
@@ -3712,15 +3737,14 @@ html.schedule-physics-active .rooms-paint{display:none}
  */
 @container (max-width:66px){
   .week-when{display:none}
-  /* Last in, first out: the number is the least of the three. */
-  .week-code{display:none !important}
+  .week-code{display:block !important;position:static;order:3;padding:0;background:transparent;font-size:9.5px;font-weight:420;line-height:1.12}
   .week-title{
-    display:-webkit-box !important;-webkit-box-orient:vertical;-webkit-line-clamp:3;
-    font-size:10.5px;font-weight:600;line-height:1.3;
+    display:-webkit-box !important;-webkit-box-orient:vertical;-webkit-line-clamp:1;
+    font-size:10.25px;font-weight:520;line-height:1.2;
     overflow:hidden;overflow-wrap:anywhere;word-break:normal;
   }
   .week-who{
-    display:block !important;font-size:10px;font-weight:400;opacity:.9;
+    display:block !important;font-size:9.75px;font-weight:380;opacity:.9;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
   }
   .week-event{padding:3px 3px;justify-content:flex-start}
@@ -3736,13 +3760,12 @@ html.schedule-physics-active .rooms-paint{display:none}
    A card that cannot print something legibly should print less, not smaller.
 */
 @container (min-width:66.01px) and (max-width:100px){
-  .week-title{font-size:10.5px;font-weight:600;line-height:1.35;-webkit-line-clamp:2;overflow-wrap:anywhere;word-break:normal}
-  .week-who{display:block;font-size:10px;font-weight:400;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .week-title{font-size:10.5px;font-weight:520;line-height:1.25;-webkit-line-clamp:1;overflow-wrap:normal;word-break:keep-all}
+  .week-who{display:block;font-size:10px;font-weight:380;opacity:.9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* The clock goes first: the row this card sits on already states the hour,
      so it is the only genuinely redundant line here. */
   .week-when{display:none}
-  /* Below the supported card floor the number yields rather than becoming microtype. */
-  .week-code{display:none !important}
+  .week-code{display:block !important;position:static;order:3;padding:0;background:transparent;font-size:9.75px;font-weight:420;line-height:1.14}
 }
 /* A half-hour card still says who teaches it: title folds to one line and the
    instructor keeps the second. */
@@ -5797,3 +5820,746 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   }
 }
 .undo-log-open b{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+
+/* ========================================================================== 
+   V6 — COMPACT CANVAS / FULL-READABLE CARDS
+   --------------------------------------------------------------------------
+   V4 made the canvas pleasantly compact by making the *cards* compact. That
+   inverted the priority: the week fit the window, but course / teacher / code
+   became a texture. V6 removes waste instead of removing reading width.
+
+   Geometry contract:
+   - 112px of day paper per concurrent lane.
+   - laneStyle uses a 2px separator => 110px painted card minimum.
+   - quiet days keep their small 164px column.
+   - a little extra vertical paper carries real Arabic lines without microtype.
+   ========================================================================== */
+.week-calendar{
+  --week-slot:56px;
+  grid-template-columns:
+    var(--week-gutter,54px)
+    minmax(var(--week-day-0,164px),1fr)
+    minmax(var(--week-day-1,164px),1fr)
+    minmax(var(--week-day-2,164px),1fr)
+    minmax(var(--week-day-3,164px),1fr)
+    minmax(var(--week-day-4,164px),1fr);
+}
+
+/* Spend less on chrome, never on the lecture identity. */
+.week-surface{padding:var(--s4)}
+.week-scroll-top{margin-bottom:4px}
+
+/* The three identifiers are permanent and deliberately light. Container
+   queries may reduce line count when duration is short, but not font size. */
+.week-event{
+  gap:1px;
+  padding:4px 5px;
+  border-inline-start-width:2px;
+}
+.week-event .week-title{
+  order:1;
+  padding-inline-end:0;
+  font-size:11.25px;
+  line-height:1.23;
+  font-weight:380;
+  letter-spacing:-.06px;
+  -webkit-line-clamp:2;
+  overflow-wrap:normal;
+  word-break:keep-all;
+}
+.week-event .week-who{
+  order:2;
+  display:block;
+  font-size:10.35px;
+  line-height:1.18;
+  font-weight:300;
+  letter-spacing:-.04px;
+  opacity:.84;
+}
+.week-event .week-code{
+  order:3;
+  font-weight:300;
+}
+.week-event .week-when{order:4}
+
+/* At the actual 110px reading floor the code becomes a normal third line.
+   There is no floating stamp, no reserved corner and therefore no collision
+   with the Arabic title. */
+@container (max-width:150px){
+  .week-event .week-title{
+    padding-inline-end:0;
+    font-size:11px;
+    line-height:1.2;
+    font-weight:380;
+    -webkit-line-clamp:2;
+  }
+  .week-event .week-who{
+    display:block;
+    font-size:10.25px;
+    line-height:1.16;
+    font-weight:300;
+  }
+  .week-event .week-code{
+    display:block !important;
+    position:static;
+    inset:auto;
+    width:auto;
+    max-width:100%;
+    height:auto;
+    padding:0;
+    background:transparent;
+    color:color-mix(in srgb,var(--label) 72%,var(--muted));
+    font-family:var(--font-mono);
+    font-size:10px;
+    line-height:1.08;
+    font-weight:300;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .week-event .week-code b{display:none}
+  .week-event:has(.week-code) .week-when{padding-inline-end:0}
+}
+
+/* A short lecture yields redundant time/place first. Course, teacher and code
+   remain. This is vertical progressive disclosure, not micro-typography. */
+@container (max-height:64px){
+  .week-event .week-when{display:none}
+  .week-event .week-title{-webkit-line-clamp:1}
+}
+@container (max-height:50px){
+  .week-event{padding-block:3px;gap:0}
+  .week-event .week-title{font-size:10.75px;line-height:1.12;font-weight:380;-webkit-line-clamp:1}
+  .week-event .week-who{font-size:10.1px;line-height:1.08;font-weight:300}
+  .week-event .week-code{font-size:10px;line-height:1.05;font-weight:300}
+}
+
+/* The old data-narrow language is intentionally neutralised. Density no longer
+   means a different mini-card; actual container width is the only authority. */
+.week-event[data-narrow="true"]{padding:4px 5px;gap:1px}
+.week-event[data-narrow="true"] .week-title{font-size:11px;line-height:1.2;font-weight:380;padding-inline-end:0;-webkit-line-clamp:2}
+.week-event[data-narrow="true"] .week-who{display:block;font-size:10.25px;line-height:1.16;font-weight:300}
+.week-event[data-narrow="true"] .week-code{display:block !important;font-size:10px;font-weight:300}
+
+/* ========================================================================== 
+   V7 — ADAPTIVE ORIENTATION / DENSE WEEK STRIPS
+   --------------------------------------------------------------------------
+   When the classic five-column projection becomes a panorama, widening the
+   same picture is the wrong trade. Dense weeks rotate the information model:
+   time becomes the horizontal truth, days become calm horizontal bands, and
+   concurrency spends vertical paper. The lecture card itself is unchanged —
+   course, instructor and code remain the three permanent lines.
+   ========================================================================== */
+
+.week-strip-mode .week-daystrip{
+  position:sticky;
+  top:0;
+  z-index:28;
+  padding:4px 0 6px;
+  margin-bottom:6px;
+  background:color-mix(in srgb,var(--surface) 94%,transparent);
+  backdrop-filter:blur(8px);
+}
+@media screen and (min-width:769px){
+  .week-strip-mode .week-daystrip{display:flex}
+}
+
+.week-strip-scroll-top .week-scroll-spacer{width:var(--week-strip-canvas,var(--week-overview-width,1800px))}
+.week-strips-scroll{
+  scroll-snap-type:x proximity;
+  scroll-padding-inline:var(--week-strip-label,128px);
+}
+.week-strips{
+  width:var(--week-strip-canvas,1800px);
+  min-width:var(--week-strip-canvas,1800px);
+  direction:rtl;
+  border:1px solid color-mix(in srgb,var(--line-strong) 78%,var(--line));
+  border-radius:var(--r-lg);
+  overflow:clip;
+  background:var(--surface);
+  box-shadow:0 1px 0 color-mix(in srgb,var(--ink) 3%,transparent);
+}
+
+.week-strip-ruler,
+.week-strip-day-row{
+  display:grid;
+  grid-template-columns:var(--week-strip-label,128px) var(--week-strip-timeline,1600px);
+  width:var(--week-strip-canvas,1800px);
+}
+.week-strip-ruler{
+  position:sticky;
+  top:0;
+  z-index:24;
+  min-height:46px;
+  border-bottom:1px solid var(--line-strong);
+  background:color-mix(in srgb,var(--surface-2) 94%,var(--surface));
+}
+.week-strip-ruler-label,
+.week-strip-day-label{
+  position:sticky;
+  inset-inline-start:0;
+  z-index:26;
+  border-inline-end:1px solid color-mix(in srgb,var(--line-strong) 82%,var(--line));
+  background:color-mix(in srgb,var(--surface) 96%,var(--surface-2) 4%);
+}
+.week-strip-ruler-label{
+  min-height:46px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:1px;
+  padding:6px 12px;
+}
+.week-strip-ruler-label span{
+  color:var(--ink-2);
+  font-size:11.5px;
+  font-weight:620;
+  letter-spacing:-.08px;
+}
+.week-strip-ruler-label small{
+  color:var(--muted);
+  font-size:9.75px;
+  font-weight:380;
+  white-space:nowrap;
+}
+.week-strip-ruler-track{
+  position:relative;
+  height:46px;
+  direction:rtl;
+  background:linear-gradient(to bottom,color-mix(in srgb,var(--surface-2) 78%,transparent),var(--surface));
+}
+.week-strip-hourmark{
+  position:absolute;
+  inset-block:0;
+  width:0;
+  z-index:3;
+  border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 82%,transparent);
+  color:var(--muted);
+  font-style:normal;
+}
+.week-strip-hourmark span{
+  position:absolute;
+  inset-block-start:15px;
+  inset-inline-start:7px;
+  color:var(--ink-2);
+  font:500 10.5px/1 var(--font-mono);
+  font-variant-numeric:tabular-nums;
+  white-space:nowrap;
+}
+.week-strip-hourmark.terminal span{
+  inset-inline-start:auto;
+  inset-inline-end:7px;
+}
+
+.week-strip-day-row{
+  position:relative;
+  border-bottom:1px solid color-mix(in srgb,var(--line) 82%,transparent);
+  background:var(--surface);
+}
+.week-strip-day-row:last-child{border-bottom:0}
+.week-strip-day-row[data-today="true"]{
+  background:color-mix(in srgb,var(--brass) 3.5%,var(--surface));
+}
+.week-strip-day-label{
+  align-self:stretch;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:3px;
+  padding:10px 13px 12px;
+  color:var(--ink-2);
+}
+.week-strip-day-label::before{
+  content:"";
+  position:absolute;
+  inset-inline-start:8px;
+  inset-block:12px;
+  width:2px;
+  border-radius:999px;
+  background:color-mix(in srgb,var(--accent) 52%,transparent);
+  opacity:.45;
+}
+.week-strip-day-label::after{
+  content:"";
+  position:absolute;
+  inset-inline:13px;
+  bottom:7px;
+  height:2px;
+  border-radius:999px;
+  background:linear-gradient(var(--accent),var(--accent)) no-repeat,
+             color-mix(in srgb,var(--line-strong) 42%,transparent);
+  background-size:var(--reading,0%) 100%,100% 100%;
+  background-position:100% 0,0 0;
+  opacity:.68;
+}
+.week-strip-day-label strong{
+  font-size:13px;
+  line-height:1.15;
+  font-weight:620;
+  letter-spacing:-.12px;
+  color:var(--ink);
+}
+.week-strip-day-label span{
+  display:flex;
+  align-items:baseline;
+  gap:4px;
+  color:var(--muted);
+  font-size:10px;
+  font-weight:390;
+}
+.week-strip-day-label span b{
+  color:var(--ink-2);
+  font:560 10px/1 var(--font-mono);
+  font-variant-numeric:tabular-nums;
+}
+.week-strip-day-label small{
+  color:color-mix(in srgb,var(--accent) 64%,var(--muted));
+  font-size:9.75px;
+  font-weight:430;
+}
+.week-strip-day-row[data-today="true"] .week-strip-day-label strong{color:var(--brass)}
+
+.week-strip-track{
+  position:relative;
+  direction:rtl;
+  min-height:78px;
+  overflow:hidden;
+  background:
+    linear-gradient(to bottom,color-mix(in srgb,var(--surface-2) 34%,transparent),transparent 22px),
+    linear-gradient(to inline-end,transparent 0,color-mix(in srgb,var(--surface-2) 18%,transparent) 100%),
+    var(--surface);
+}
+.week-strip-hourline{
+  position:absolute;
+  inset-block:0;
+  width:0;
+  z-index:1;
+  pointer-events:none;
+  border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 78%,transparent);
+  opacity:.72;
+}
+.week-strip-hourline.terminal{border-inline-start-style:solid;opacity:1}
+.week-strip-slot{
+  position:absolute;
+  inset-block:0;
+  z-index:2;
+  border-inline-end:1px dashed color-mix(in srgb,var(--line) 62%,transparent);
+  background:transparent;
+  cursor:crosshair;
+  transition:background .12s var(--ease),box-shadow .12s var(--ease);
+}
+.week-strip-slot:hover{
+  background:color-mix(in srgb,var(--accent) 3%,transparent);
+  box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 10%,transparent);
+}
+.week-strip-slot.ripple-target,
+.week-strip-slot.physics-target{
+  background:color-mix(in srgb,var(--accent) 10%,transparent);
+}
+.week-strip-slot.room-free{background:color-mix(in srgb,var(--success) 4%,transparent)}
+
+/* Dense-strip identity is adaptive, but never lossy.
+   If course + full instructor + code genuinely fit, they read as one sentence.
+   If they do not, only the composition changes: course owns row one, while the
+   full instructor and code form a quieter second row. No identifier disappears. */
+.week-strip-track .week-event{
+  inset-block:auto;
+  min-height:28px;
+  margin:0;
+  display:block;
+  padding:0;
+  border-inline-start-width:3px;
+  border-color:color-mix(in srgb,var(--edge) 16%,var(--line));
+  border-inline-start-color:var(--edge);
+  border-radius:8px;
+  box-shadow:0 1px 0 color-mix(in srgb,var(--ink) 3%,transparent);
+  contain:paint;
+}
+.week-strip-track .week-event:hover{
+  box-shadow:0 5px 16px color-mix(in srgb,var(--ink) 9%,transparent);
+  z-index:60!important;
+}
+.week-strip-track .week-event .week-drag-handle{display:none}
+.week-strip-track .week-event>.week-identity-line{
+  width:100%;
+  height:100%;
+  min-width:0;
+  direction:rtl;
+  box-sizing:border-box;
+  color:var(--label);
+}
+
+/* One-line state: only chosen after a conservative content-width estimate. */
+.week-strip-track .week-identity-line[data-mode="single"]{
+  display:grid;
+  grid-template-columns:max-content max-content auto;
+  align-items:center;
+  justify-content:start;
+  gap:0;
+  padding:0 7px;
+  white-space:nowrap;
+  overflow:hidden;
+}
+.week-strip-track .week-identity-line[data-mode="single"] .week-title{
+  grid-column:1;
+  display:block;
+  margin:0;
+  padding:0;
+  font-size:11.05px;
+  line-height:1.08;
+  font-weight:560;
+  letter-spacing:-.08px;
+  white-space:nowrap;
+}
+.week-strip-track .week-identity-line[data-mode="single"] .week-who{
+  grid-column:2;
+  display:inline-flex;
+  align-items:center;
+  margin:0;
+  padding:0;
+  font-size:9.85px;
+  line-height:1.08;
+  font-weight:330;
+  letter-spacing:-.04px;
+  opacity:.82;
+  white-space:nowrap;
+}
+.week-strip-track .week-identity-line[data-mode="single"] .week-who::before{
+  content:"—";
+  margin-inline:3px 4px;
+  color:color-mix(in srgb,var(--label) 32%,var(--muted));
+  opacity:.68;
+}
+.week-strip-track .week-identity-line[data-mode="single"] .week-code{
+  grid-column:3;
+  margin-inline-start:5px;
+}
+
+/* Two-line state: the short card becomes a tiny academic nameplate rather than
+   a squeezed one-line label. The title receives the entire first row; the
+   instructor sits close beneath it and the code anchors the lower edge. */
+.week-strip-track .week-identity-line[data-mode="double"]{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:1fr 1fr;
+  align-items:center;
+  column-gap:5px;
+  row-gap:0;
+  padding:3px 7px 3px 8px;
+  overflow:hidden;
+}
+.week-strip-track .week-identity-line[data-mode="double"] .week-title{
+  grid-column:1 / -1;
+  grid-row:1;
+  align-self:end;
+  min-width:0;
+  display:block;
+  margin:0;
+  padding:0;
+  font-size:10.55px;
+  line-height:1.02;
+  font-weight:560;
+  letter-spacing:-.13px;
+  white-space:nowrap;
+  overflow:visible;
+  text-overflow:clip;
+}
+.week-strip-track .week-identity-line[data-mode="double"] .week-who{
+  grid-column:1;
+  grid-row:2;
+  align-self:start;
+  min-width:0;
+  display:block;
+  margin:0;
+  padding:0;
+  font-size:9.35px;
+  line-height:1.03;
+  font-weight:320;
+  letter-spacing:-.06px;
+  opacity:.78;
+  white-space:nowrap;
+  overflow:visible;
+  text-overflow:clip;
+}
+.week-strip-track .week-identity-line[data-mode="double"] .week-who::before{content:none}
+.week-strip-track .week-identity-line[data-mode="double"] .week-code{
+  grid-column:2;
+  grid-row:2;
+  align-self:start;
+  margin-inline-start:4px;
+}
+
+.week-strip-track .week-identity-line .week-visiting{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:13px;
+  height:13px;
+  margin-inline-start:3px;
+  border-radius:999px;
+  font-size:8px;
+  line-height:1;
+}
+.week-strip-track .week-identity-line .week-code{
+  position:static;
+  inset:auto;
+  display:inline-flex!important;
+  align-items:center;
+  justify-content:center;
+  min-width:23px;
+  max-width:38px;
+  height:15px;
+  margin:0;
+  padding:0 4px;
+  border-radius:999px;
+  background:color-mix(in srgb,var(--edge) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--edge) 12%,transparent);
+  color:color-mix(in srgb,var(--label) 58%,var(--muted));
+  font:350 8.45px/1 var(--font-mono);
+  font-style:normal;
+  letter-spacing:-.05px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.week-strip-track .week-identity-line .week-code b{display:none}
+.week-strip-track .week-event .week-when{display:none!important}
+
+/* Only the genuinely tiny tail of the distribution gets a fractional optical
+   tightening; it keeps both rows and all three identifiers. */
+@container (max-width:145px){
+  .week-strip-track .week-identity-line[data-mode="double"]{padding-inline:5px;column-gap:3px}
+  .week-strip-track .week-identity-line[data-mode="double"] .week-title{font-size:10.15px;letter-spacing:-.18px}
+  .week-strip-track .week-identity-line[data-mode="double"] .week-who{font-size:9.05px;letter-spacing:-.08px}
+  .week-strip-track .week-identity-line[data-mode="double"] .week-code{min-width:21px;max-width:32px;height:14px;padding-inline:3px;font-size:8.05px}
+}
+
+/* All day bands share one ruler origin and one hour unit. The grid is painted
+   from that common variable, so Sunday/Monday cannot drift from the rows below
+   even when their lane counts differ. */
+.week-strip-track{
+  background:
+    repeating-linear-gradient(
+      to left,
+      transparent 0,
+      transparent calc(var(--week-strip-hour,144px) - 1px),
+      color-mix(in srgb,var(--line-strong) 42%,transparent) calc(var(--week-strip-hour,144px) - 1px),
+      color-mix(in srgb,var(--line-strong) 42%,transparent) var(--week-strip-hour,144px)
+    ),
+    linear-gradient(to bottom,color-mix(in srgb,var(--surface-2) 26%,transparent),transparent 20px),
+    var(--surface);
+  background-position:right top,right top,right top;
+}
+
+/* 20:00 is the last academic tick. The narrow area beyond it is deliberately
+   *not* another hour: it is a terminal readability gutter. Only a short card
+   that actually ends at 20:00 may borrow from it, and the true end remains
+   visible as a hairline cap inside that card. */
+.week-strip-ruler-track::after,
+.week-strip-track::before{
+  content:"";
+  position:absolute;
+  inset-block:0;
+  inset-inline-end:0;
+  width:var(--week-strip-terminal-pad,0px);
+  pointer-events:none;
+}
+.week-strip-ruler-track::after{
+  z-index:1;
+  background:linear-gradient(to right,
+    color-mix(in srgb,var(--surface-2) 68%,var(--surface)),
+    color-mix(in srgb,var(--surface) 92%,transparent));
+  border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 54%,transparent);
+}
+.week-strip-track::before{
+  z-index:2;
+  background:linear-gradient(to right,
+    color-mix(in srgb,var(--surface-2) 34%,var(--surface)),
+    color-mix(in srgb,var(--surface) 95%,transparent));
+  border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 38%,transparent);
+}
+.week-strip-track .week-event::after{
+  content:"";
+  position:absolute;
+  inset-block:6px;
+  inset-inline-end:var(--week-terminal-borrow,0px);
+  width:1px;
+  border-radius:999px;
+  background:var(--week-terminal-cap,transparent);
+  opacity:.44;
+  pointer-events:none;
+}
+.week-strip-hall-barter{
+  position:absolute;
+  inset-block-end:3px;
+  z-index:8;
+  height:4px;
+  border-radius:999px;
+  background:color-mix(in srgb,var(--info) 58%,transparent);
+  pointer-events:none;
+}
+.week-strip-hall-barter.lent{background:color-mix(in srgb,var(--warning) 58%,transparent)}
+.week-strip-keymove,
+.week-strip-paint{
+  position:absolute;
+  inset-block:3px;
+  z-index:7;
+  display:flex;
+  align-items:flex-start;
+  gap:4px;
+  padding:4px 6px;
+  border-radius:7px;
+  border:1px dashed color-mix(in srgb,var(--accent) 58%,transparent);
+  background:color-mix(in srgb,var(--accent) 8%,transparent);
+  color:var(--accent);
+  pointer-events:none;
+  overflow:hidden;
+}
+.week-strip-keymove b,
+.week-strip-paint b{font:540 9.5px/1 var(--font-mono);white-space:nowrap}
+.week-strip-paint span{font-size:9.5px;font-weight:520;white-space:nowrap}
+.week-strip-now{
+  position:absolute;
+  inset-block:0;
+  width:14px;
+  margin-inline-start:-7px;
+  z-index:55;
+  pointer-events:none;
+}
+.week-strip-now::after{
+  content:"";
+  position:absolute;
+  inset-inline-start:6px;
+  inset-block:0;
+  border-inline-start:1px solid color-mix(in srgb,var(--brass) 84%,var(--ink) 16%);
+}
+.week-strip-now::before{
+  content:"";
+  position:absolute;
+  inset-inline-start:4px;
+  inset-block-start:0;
+  width:5px;
+  height:5px;
+  border-radius:50%;
+  background:var(--brass);
+}
+.week-strip-now span{
+  position:absolute;
+  inset-inline-start:9px;
+  inset-block-start:5px;
+  padding:1px 5px;
+  border:1px solid color-mix(in srgb,var(--brass) 30%,var(--line));
+  border-radius:999px;
+  background:var(--surface);
+  color:var(--brass);
+  font:520 9px/1.3 var(--font-mono);
+  white-space:nowrap;
+}
+.week-strip-move-trace{
+  position:absolute;
+  inset-block-start:3px;
+  z-index:9;
+  height:21px;
+  border:1px dashed color-mix(in srgb,var(--brass) 70%,transparent);
+  border-radius:6px;
+  background:color-mix(in srgb,var(--brass) 7%,transparent);
+  pointer-events:none;
+  overflow:hidden;
+  animation:week-move-trace-fade 7s cubic-bezier(.4,0,.2,1) forwards;
+}
+.week-strip-move-trace span{
+  display:inline-flex;
+  align-items:center;
+  gap:3px;
+  padding:3px 5px;
+  color:var(--brass);
+  font-size:9px;
+  font-weight:560;
+  white-space:nowrap;
+}
+.week-strip-move-trace svg{width:10px;height:10px}
+
+@media(max-width:1100px){
+  .week-strip-ruler,
+  .week-strip-day-row{grid-template-columns:108px var(--week-strip-timeline,1600px)}
+  .week-strips{--week-strip-label:108px}
+  .week-strip-ruler-label small{display:none}
+  .week-strip-day-label{padding-inline:10px}
+}
+
+@media print{
+  .week-strip-mode .week-daystrip{position:static;backdrop-filter:none}
+  .week-strips{width:100%;min-width:0;box-shadow:none}
+}
+
+
+/* ── Rooms / buildings: the same adaptive identity grammar as the dense week ──
+   Wide appointment: course — full instructor · code on one line.
+   Short appointment: course + code above, full instructor below.
+   Information never pays for temporal density by becoming microtext. */
+.rooms-card:has(>.rooms-identity-line){
+  min-height:0;
+  display:block;
+  padding:0;
+  border-radius:8px;
+  overflow:hidden;
+  container-type:inline-size;
+}
+.rooms-card:has(>.rooms-identity-line)>.rooms-drag-handle{display:none}
+.rooms-card>.rooms-identity-line{
+  width:100%;height:100%;min-width:0;
+  display:grid;align-items:center;
+  padding:0 7px 0 8px;
+  color:var(--label);
+}
+.rooms-card>.rooms-identity-line[data-mode="single"]{
+  grid-template-columns:max-content minmax(0,max-content) auto;
+  justify-content:start;
+  column-gap:0;
+  white-space:nowrap;
+}
+.rooms-card>.rooms-identity-line[data-mode="single"] .rooms-identity-title{
+  min-width:0;font-size:11.1px;line-height:1.08;font-weight:560;
+  white-space:nowrap;color:var(--label);
+}
+.rooms-card>.rooms-identity-line[data-mode="single"] .rooms-identity-who{
+  min-width:0;display:inline-flex;align-items:center;
+  margin-inline-start:0;font-size:9.95px;line-height:1.08;font-weight:340;
+  color:var(--ink-2);opacity:.84;white-space:nowrap;
+}
+.rooms-card>.rooms-identity-line[data-mode="single"] .rooms-identity-who::before{
+  content:"—";margin-inline:3px 4px;color:color-mix(in srgb,var(--label) 32%,var(--muted));opacity:.72;
+}
+.rooms-card>.rooms-identity-line[data-mode="single"] .rooms-identity-code{
+  position:static;display:inline-flex;align-items:center;justify-content:center;
+  min-width:23px;max-width:38px;height:15px;margin-inline-start:6px;padding:0 4px;
+  border-radius:999px;background:color-mix(in srgb,var(--edge) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--edge) 12%,transparent);
+  color:color-mix(in srgb,var(--label) 58%,var(--muted));
+  font:350 8.45px/1 var(--font-mono);font-style:normal;white-space:nowrap;
+}
+.rooms-card>.rooms-identity-line[data-mode="double"]{
+  grid-template-columns:minmax(0,1fr) auto;
+  grid-template-rows:1fr 1fr;
+  column-gap:6px;row-gap:0;
+  padding-block:4px;
+}
+.rooms-card>.rooms-identity-line[data-mode="double"] .rooms-identity-title{
+  grid-column:1;grid-row:1;align-self:end;min-width:0;
+  font-size:10.9px;line-height:1.05;font-weight:560;color:var(--label);
+  white-space:nowrap;overflow:visible;text-overflow:clip;
+}
+.rooms-card>.rooms-identity-line[data-mode="double"] .rooms-identity-who{
+  grid-column:1/-1;grid-row:2;align-self:start;min-width:0;
+  display:block;font-size:9.55px;line-height:1.05;font-weight:340;
+  color:var(--ink-2);opacity:.84;white-space:nowrap;overflow:visible;text-overflow:clip;
+}
+.rooms-card>.rooms-identity-line[data-mode="double"] .rooms-identity-code{
+  grid-column:2;grid-row:1;align-self:end;position:static;
+  display:inline-flex;align-items:center;justify-content:center;
+  min-width:22px;height:14px;padding:0 4px;border-radius:999px;
+  background:color-mix(in srgb,var(--edge) 8%,transparent);
+  border:1px solid color-mix(in srgb,var(--edge) 12%,transparent);
+  color:color-mix(in srgb,var(--label) 58%,var(--muted));
+  font:350 8.2px/1 var(--font-mono);font-style:normal;white-space:nowrap;
+}

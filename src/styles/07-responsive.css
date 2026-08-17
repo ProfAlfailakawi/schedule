@@ -354,16 +354,17 @@
   /* The phone inherits the desktop density arithmetic instead of forcing every
      day back to 220px.  Horizontal travel is preferable to recreating the
      4–8px cards this layout was built to remove. */
-  .week-surface{padding:var(--s3);scroll-snap-type:x proximity}
+  .week-surface{padding:var(--s3)}
+  .week-scroll-main{scroll-snap-type:x proximity}
   .week-calendar{--week-gutter:46px}
   /* A focused day may fit the phone when it is quiet, but a twelve-lane day
      keeps its real readable width and scrolls intentionally instead of being
      crushed into twelve slivers. */
   .week-calendar[data-expanded]{
-    min-width:calc(var(--week-gutter,46px) + var(--week-focus-width,224px));
-    grid-template-columns:var(--week-gutter,46px) minmax(var(--week-focus-width,224px),1fr);
+    min-width:calc(var(--week-gutter,46px) + var(--week-focus-width,164px));
+    grid-template-columns:var(--week-gutter,46px) minmax(var(--week-focus-width,164px),1fr);
   }
-  .week-surface:has(.week-calendar[data-expanded]){scroll-snap-type:none}
+  .week-scroll-main:has(.week-calendar[data-expanded]){scroll-snap-type:none}
   /* Five days across a phone: the label carries the day, the count rides below. */
   .week-daystrip{gap:var(--s1)}
   .week-daystrip-day{
@@ -684,6 +685,11 @@
     overflow-x:hidden !important;
     scroll-snap-type:none !important;
     -webkit-overflow-scrolling:auto;
+  }
+  .schedule-page>.week-surface .week-scroll-main,
+  .schedule-page>.week-surface .week-scroll-top{
+    overflow-x:hidden !important;
+    scroll-snap-type:none !important;
   }
   .schedule-page>.schedule-agenda-surface .agenda-actions{display:flex}
   /* The scope line still has to come first among what is left, because a board

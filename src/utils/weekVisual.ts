@@ -90,22 +90,63 @@ export function peakConcurrency(spans: Array<{ start: number; end: number }>): n
 }
 
 /**
- * The visual width one day needs before its lecture cards stop being labels
- * and start becoming slivers.
+ * The visual width one day needs before its lecture cards stop being cards.
  *
- * The important number is the *simultaneous* count, not the day's total.  A
- * 112px lecture is the smallest card that can still carry the current course,
- * instructor and code hierarchy without resorting to microtype.  The small
- * gap and frame allowance keep neighbouring card borders from visually
- * merging into one coloured strip.
+ * The compact V4 experiment proved that 84px of painted width is too little
+ * for Arabic course + instructor + catalogue number: the whole week fitted,
+ * but the information did not.  The compromise is a hard reading floor rather
+ * than a percentage scale.  Every concurrent lane receives 112px of paper;
+ * laneStyle spends only 2px on separation, leaving a 110px painted card.
+ * Quiet one-lane days stay compact so the extra paper goes only to the days
+ * that actually need it.
  */
 export function readableWeekDayWidth(peak: number): number {
   const concurrency = Math.max(1, Math.floor(Number.isFinite(peak) ? peak : 1));
-  if (concurrency === 1) return 224;
-  if (concurrency === 2) return 246;
-  /* laneStyle keeps an 8px breathing gutter inside each lane.  120px of paper
-     therefore leaves exactly 112px of painted card — the readability floor. */
-  return concurrency * 120;
+  if (concurrency === 1) return 164;
+  return concurrency * 112;
+}
+
+
+/**
+ * The hour width used by the dense-week strip view.
+ *
+ * In the transposed view concurrency consumes vertical paper, not horizontal
+ * paper, so the horizontal scale can finally mean time again. The scale is
+ * chosen from the shortest real appointment on screen: a normal 50-minute
+ * lecture lands around 150px, while a 30-minute appointment can widen the
+ * ruler enough to keep course / instructor / code readable. The upper clamp
+ * prevents one pathological tiny appointment from turning the week into an
+ * endless canvas.
+ */
+export function readableWeekStripHourWidth(minDurationMinutes: number): number {
+  const duration = Number.isFinite(minDurationMinutes) && minDurationMinutes > 0
+    ? minDurationMinutes
+    : 50;
+  // The single-line identity bought back horizontal paper. Spend that gain by
+  // trimming the ruler a notch instead of squeezing text: a 50-minute lecture
+  // now lands around 130px rather than 150px, while short appointments still
+  // keep enough width to remain readable.
+  return Math.round(Math.min(200, Math.max(144, (92 * 60) / duration)));
+}
+
+/**
+ * Decide when the classic five-column week has stopped being the right
+ * projection of the data.
+ *
+ * This is a data breakpoint, not a device breakpoint. Once the five day
+ * columns together need roughly a desktop-and-a-half of paper, or one moment
+ * reaches extreme concurrency, continuing to widen the same projection only
+ * creates a panorama. The dense projection turns the week ninety degrees:
+ * time runs horizontally and concurrency grows vertically.
+ */
+export function shouldUseWeekStrips(
+  peaks: Array<{ peak: number }>,
+  classicWidth: number,
+): boolean {
+  const clean = peaks.map(item => Math.max(1, Math.floor(Number.isFinite(item.peak) ? item.peak : 1)));
+  const maxPeak = clean.length ? Math.max(...clean) : 1;
+  const pressure = clean.reduce((sum, peak) => sum + Math.max(0, peak - 3), 0);
+  return classicWidth >= 1700 || maxPeak >= 8 || pressure >= 9;
 }
 
 export interface WeekDensityPlanDay {
@@ -118,57 +159,36 @@ export interface WeekDensityPlanDay {
 }
 
 /**
- * Allocate horizontal "paper" to a five-day overview without ever paying for
- * that space by shrinking the cards.
+ * Allocate literal horizontal paper to the week.
  *
- * Normal days keep their real lanes.  Seven-plus concurrency is always a
- * semantic summary in the overview.  If several merely-busy days together
- * would make the week needlessly huge, the densest ones fold their four-plus
- * collision windows too, until the overview returns to a bounded desktop
- * canvas.  Opening that day restores every real lane at its readable width.
+ * The overview never substitutes a cluster, summary or micro-card for a real
+ * lecture.  Every day receives enough width for its true peak concurrency at
+ * the readable lane floor above.  On a dense dataset the canvas therefore
+ * becomes wider and is navigated horizontally; the information itself remains
+ * unchanged and every card keeps its course, instructor and catalogue number.
+ *
+ * `budget` and `summaryWidth` remain accepted for source compatibility with
+ * older callers, but they deliberately do not collapse information anymore.
  */
 export function buildWeekDensityPlan(
   peaks: Array<{ key: DayKey; peak: number }>,
   options: { budget?: number; gutter?: number; summaryWidth?: number } = {},
 ): { days: WeekDensityPlanDay[]; totalWidth: number } {
-  const budget = options.budget ?? 1880;
-  const gutter = options.gutter ?? 58;
-  const summaryWidth = options.summaryWidth ?? 360;
-
+  const gutter = options.gutter ?? 54;
   const planned: WeekDensityPlanDay[] = peaks.map(({ key, peak }) => {
     const cleanPeak = Math.max(1, Math.floor(Number.isFinite(peak) ? peak : 1));
-    const extreme = cleanPeak >= 7;
     return {
       key,
       peak: cleanPeak,
-      width: extreme ? summaryWidth : readableWeekDayWidth(cleanPeak),
-      mode: extreme ? "summary" : "cards",
-      bundleThreshold: extreme ? 4 : 7,
+      width: readableWeekDayWidth(cleanPeak),
+      mode: "cards",
+      bundleThreshold: Number.MAX_SAFE_INTEGER,
     };
   });
-
-  let totalWidth = gutter + planned.reduce((sum, day) => sum + day.width, 0);
-  if (totalWidth > budget) {
-    // Converting a peak-six day saves far more paper than converting a
-    // peak-four day, so fold the largest useful saving first.  Peak <= 3 stays
-    // literal: three 112px lanes already fit the same footprint as a summary.
-    const candidates = planned
-      .filter(day => day.mode === "cards" && day.peak >= 4)
-      .sort((a, b) =>
-        (readableWeekDayWidth(b.peak) - summaryWidth) - (readableWeekDayWidth(a.peak) - summaryWidth) ||
-        b.peak - a.peak,
-      );
-    for (const day of candidates) {
-      if (totalWidth <= budget) break;
-      const before = day.width;
-      day.mode = "summary";
-      day.width = summaryWidth;
-      day.bundleThreshold = 4;
-      totalWidth -= Math.max(0, before - summaryWidth);
-    }
-  }
-
-  return { days: planned, totalWidth };
+  return {
+    days: planned,
+    totalWidth: gutter + planned.reduce((sum, day) => sum + day.width, 0),
+  };
 }
 
 export interface SqueezedCandidate {
