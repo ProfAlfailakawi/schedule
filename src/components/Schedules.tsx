@@ -134,6 +134,10 @@ import { GUIDE_ACTIONS, allAllowedGuideFeatures, canRunGuideAction, featureById,
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
 const PRESENCE_HUES = [200, 262, 38, 96, 288, 178];
+const byRoomIdentity = (a: { building?: string; hall?: string; label?: string }, b: { building?: string; hall?: string; label?: string }) =>
+  byArabic(a.building || a.label || "", b.building || b.label || "") ||
+  byArabic(a.hall || "", b.hall || "") ||
+  byArabic(a.label || "", b.label || "");
 import { buildWeekDensityPlan, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../utils/weekVisual";
 import {
   formatScheduleTimeRange,
@@ -1228,11 +1232,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const up = async () => {
       setNetworkOnline(true);
       const result = await flushOfflineScheduleQueue();
+      setOfflinePending(result.remaining);
       if (result.done) {
         setPhysicsNotice(`تمت مزامنة ${result.done.toLocaleString("ar-KW-u-nu-latn")} تغييرات محلية.`);
         await loadRows({ silent: true }).catch(() => undefined);
       } else if (result.conflict) {
-        setPhysicsNotice("عاد الاتصال، لكن تغييراً محلياً اصطدم بنسخة أحدث. افتح الموعد للمقارنة قبل المتابعة.");
+        setPhysicsNotice("عاد الاتصال؛ تم حفظ التغيير المتعارض للمراجعة خارج طابور المزامنة حتى لا يعلق العداد.");
       }
     };
     window.addEventListener("offline", down);
@@ -1255,14 +1260,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       try {
         const result = await flushOfflineScheduleQueue();
         if (cancelled) return;
+        setOfflinePending(result.remaining);
         if (result.done) {
-          setOfflinePending(result.remaining);
           setPhysicsNotice(result.remaining
             ? `${result.remaining.toLocaleString("ar-KW-u-nu-latn")} تغيير ما زال بانتظار التثبيت.`
             : "تم تثبيت التغييرات في الخلفية.");
           void loadRows({ silent: true }).catch(() => undefined);
         } else if (result.conflict) {
-          setPhysicsNotice("يوجد تغيير محلي اصطدم بنسخة أحدث؛ افتح الموعد للمقارنة قبل المتابعة.");
+          setPhysicsNotice("تم إخراج تغيير متعارض من طابور المزامنة وحفظه للمراجعة؛ بقية التغييرات تستمر طبيعيًا.");
         }
       } finally {
         syncFlushBusy.current = false;
@@ -1551,9 +1556,27 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const changeView = useCallback((value: string) => {
     const requested = value === "week" ? "week" : value === "rooms" ? "rooms" : "list";
     const next = phoneReadOnly ? "list" : requested;
+
+    // View-local state never leaks into another projection. A room comparison
+    // belongs to the rooms canvas only; an expanded/focused day belongs to the
+    // week only. Shared filters (course/instructor/colour/search) intentionally
+    // survive because the reader expects the same question to follow them.
+    if (viewMode === "rooms" && next !== "rooms") {
+      setMatrixDay("week");
+      setMatrixBuildings(new Set());
+      setMatrixRooms(new Set());
+    }
+    if (viewMode === "week" && next !== "week") {
+      setExpandedDay(null);
+      setReviewFocus(new Set());
+      setPicking(false);
+      setMultiSelect(new Set());
+      setPaint(null);
+    }
+
     startTransition(() => setViewMode(next));
     setMobileViewGate(null);
-  }, [phoneReadOnly]);
+  }, [phoneReadOnly, viewMode]);
   const guideViewStartedRef = useRef({ view:viewMode, at:Date.now() });
   useEffect(() => {
     if (guideViewStartedRef.current.view === viewMode) return;
@@ -3930,7 +3953,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         });
       }
     });
-    const allRooms = [...roomsSeen.values()].sort((a, b) => byArabic(a.label, b.label));
+    const allRooms = [...roomsSeen.values()].sort(byRoomIdentity);
     const buildingCounts = new Map<string, number>();
     allRooms.forEach(room => buildingCounts.set(room.buildingKey, (buildingCounts.get(room.buildingKey) || 0) + 1));
     const allBuildings = [...new Map(allRooms
@@ -4019,6 +4042,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     [gridWindow],
   );
   const [expandedDay, setExpandedDay] = useState<DayKey | null>(null);
+  const previousBoardViewRef = useRef(viewMode);
+  useEffect(() => {
+    const previous = previousBoardViewRef.current;
+    if (previous === viewMode) return;
+    previousBoardViewRef.current = viewMode;
+
+    // Week and rooms are separate canvases. A room/building/day selection from
+    // one projection must never leak into the other and make the next board look
+    // partially filtered on arrival.
+    if (viewMode === "week") {
+      setMatrixDay("week");
+      setMatrixBuildings(new Set());
+      setMatrixRooms(new Set());
+    } else if (viewMode === "rooms") {
+      setExpandedDay(null);
+      setReviewFocus(new Set());
+      setMultiSelect(new Set());
+      setPicking(false);
+    }
+  }, [viewMode]);
   const [hallBarterReservations, setHallBarterReservations] = useState<HallBarterReservationView[]>([]);
   useEffect(() => { setHallBarterReservations([]); }, [filterCollege, filterSection, filterTerm]);
 
@@ -4305,25 +4348,29 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       .filter(duration => Number.isFinite(duration) && duration > 0);
     const minDuration = durations.length ? Math.min(...durations) : 50;
     const hourWidth = readableWeekStripHourWidth(minDuration);
-    // The academic ruler still ends at 20:00. A small unlabeled terminal pad
-    // lives *after* the ruler purely as visual breathing room, so a short last
-    // appointment can remain readable without inventing a 21:00 teaching hour.
-    const visualEnd = gridWindow.end;
-    const terminalPad = 76;
+    // 20:00 is a hard visual boundary. Readability is solved vertically by the
+    // adaptive identity card, never by borrowing pixels beyond the lecture's
+    // actual end time.
+    const visualEnd = SCHEDULE_DAY_END;
+    const terminalPad = 0;
+    // Only the final academic hour gets a little more paper. 19:00–20:00 is
+    // 14px wider than the other hours, but 20:00 stays a hard boundary.
+    const terminalHourBonus = 14;
+    const terminalHourStart = Math.max(gridWindow.start, visualEnd - 60);
     const spanMinutes = Math.max(SCHEDULE_SLOT_MINUTES, visualEnd - gridWindow.start);
-    const timeWidth = Math.round((spanMinutes / 60) * hourWidth);
-    const timelineWidth = timeWidth + terminalPad;
-    const labelWidth = 116;
+    const timeWidth = Math.round((spanMinutes / 60) * hourWidth) + terminalHourBonus;
+    const timelineWidth = timeWidth;
+    const labelWidth = 64;
     // The identity is now a literal single-line row, so density can be paid for
     // by geometry rather than typography.
-    const laneHeight = 48;
-    const cardHeight = 32;
-    const compactTwoLineHeight = 42;
-    const gutter = 6;
+    const laneHeight = 38;
+    const cardHeight = 27;
+    const compactTwoLineHeight = 36;
+    const gutter = 4;
     const canvasWidth = labelWidth + timelineWidth;
     const peaks = days.map(day => ({ peak: weekLayout[day.key]?.busiest || 1 }));
     const dense = shouldUseWeekStrips(peaks, weekDensity.totalWidth);
-    return { minDuration, hourWidth, visualEnd, terminalPad, spanMinutes, timeWidth, timelineWidth, labelWidth, laneHeight, cardHeight, compactTwoLineHeight, gutter, canvasWidth, dense };
+    return { minDuration, hourWidth, visualEnd, terminalPad, terminalHourBonus, terminalHourStart, spanMinutes, timeWidth, timelineWidth, labelWidth, laneHeight, cardHeight, compactTwoLineHeight, gutter, canvasWidth, dense };
   }, [weekRows, gridWindow, weekLayout, weekDensity.totalWidth]);
   const denseWeekStrips = weekStripConfig.dense && !experience.ghostEnabled;
   const weekStripStyle = useMemo(() => ({
@@ -4350,10 +4397,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (marks[marks.length - 1] !== weekStripConfig.visualEnd) marks.push(weekStripConfig.visualEnd);
     return marks;
   }, [gridWindow.start, weekStripConfig.visualEnd]);
-  const weekStripOffset = (minutesAt: number) =>
-    ((minutesAt - gridWindow.start) / 60) * weekStripConfig.hourWidth;
+  const weekStripOffset = (minutesAt: number) => {
+    const clamped = Math.max(gridWindow.start, Math.min(weekStripConfig.visualEnd, minutesAt));
+    const base = ((clamped - gridWindow.start) / 60) * weekStripConfig.hourWidth;
+    if (clamped <= weekStripConfig.terminalHourStart) return base;
+    return base + ((clamped - weekStripConfig.terminalHourStart) / 60) * weekStripConfig.terminalHourBonus;
+  };
   const weekStripSpanWidth = (from: number, to: number) =>
-    Math.max(2, ((to - from) / 60) * weekStripConfig.hourWidth);
+    Math.max(2, weekStripOffset(to) - weekStripOffset(from));
   const weekStripDayHeight = (peak: number) => {
     const lanes = Math.max(1, peak);
     return Math.max(
@@ -4377,11 +4428,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const to = Math.min(weekStripConfig.visualEnd, rawTo);
     const inset = 4;
     const naturalWidth = Math.max(2, weekStripSpanWidth(from, to) - inset * 2);
-    const touchesTerminal = rawTo >= weekStripConfig.visualEnd;
-    const terminalBorrow = touchesTerminal
-      ? Math.min(weekStripConfig.terminalPad - 10, Math.max(0, 118 - naturalWidth))
-      : 0;
-    const available = naturalWidth + terminalBorrow - 14;
+    const available = naturalWidth - 12;
     // Conservative estimate: if this says "single", the three identities have
     // genuine breathing room. Otherwise the instructor receives its own line.
     const oneLineNeed =
@@ -4398,13 +4445,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const to = Math.min(weekStripConfig.visualEnd, rawTo);
     const inset = 4;
     const naturalWidth = Math.max(2, weekStripSpanWidth(from, to) - inset * 2);
-    const touchesTerminal = rawTo >= weekStripConfig.visualEnd;
-    // Only the true edge case borrows the unlabeled after-hours gutter. The
-    // time ruler remains exact: a subtle cap inside the card still marks 20:00.
-    const readableTerminalWidth = 118;
-    const terminalBorrow = touchesTerminal
-      ? Math.min(weekStripConfig.terminalPad - 10, Math.max(0, readableTerminalWidth - naturalWidth))
-      : 0;
     const renderedHeight = identityMode === "double"
       ? weekStripConfig.compactTwoLineHeight
       : weekStripConfig.cardHeight;
@@ -4415,11 +4455,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       insetInlineStart: `${weekStripOffset(from) + inset}px`,
       insetInlineEnd: "auto",
       top: `${centeredTop}px`,
-      width: `${naturalWidth + terminalBorrow}px`,
+      width: `${naturalWidth}px`,
       height: `${renderedHeight}px`,
       zIndex: 20 + placed.lane,
-      ["--week-terminal-borrow" as any]: `${terminalBorrow}px`,
-      ["--week-terminal-cap" as any]: terminalBorrow > 0 ? "var(--edge)" : "transparent",
     };
   };
 
@@ -4617,7 +4655,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (found) found.count += 1;
       else seen.set(id.key, { ...id, count: 1 });
     });
-    return [...seen.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "ar"));
+    return [...seen.values()].sort((a, b) => byArabic(a.label, b.label) || b.count - a.count);
   }, [filteredRows, hueBy, courseById, instructorById]);
 
   /* Arabic is written with and without its diacritics and with three shapes of
@@ -5574,7 +5612,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         execute: proposeRepair,
       },
       { id: "schedule.review", group: "الجدول", label: "مراجعة الاعتماد", keywords: ["review", "اعتماد", "مراجعة"], icon: <ClipboardCheck />, execute: () => setReviewOpen(true) },
-      { id: "schedule.focus", group: "العرض", label: focusMode ? "إنهاء التركيز" : "وضع التركيز", keywords: ["focus", "تركيز"], icon: <Focus />, execute: () => { setFocusMode(!focusMode); setPresentationMode(false); if (!focusMode) changeView("week"); } },
+      { id: "schedule.focus", group: "العرض", label: focusMode ? "إنهاء التركيز" : "وضع التركيز", keywords: ["focus", "تركيز"], icon: <Focus />, execute: () => { setFocusMode(!focusMode); setPresentationMode(false); } },
       { id: "schedule.present", group: "العرض", label: presentationMode ? "إنهاء العرض" : "وضع العرض", keywords: ["present", "عرض", "شاشة"], icon: <Expand />, execute: () => { setPresentationMode(!presentationMode); setFocusMode(false); if (!presentationMode) changeView("week"); } },
       { id: "hue.course", group: "العرض", label: "التلوين حسب المقرر", keywords: ["colour", "color", "لون", "مقرر"], icon: <Palette />, enabled: hueBy !== "course", execute: () => setHueBy("course") },
       { id: "hue.instructor", group: "العرض", label: "التلوين حسب الأستاذ", keywords: ["colour", "color", "لون", "استاذ"], icon: <Palette />, enabled: hueBy !== "instructor", execute: () => setHueBy("instructor") },
@@ -7225,6 +7263,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
 
   return (
     <div className={`content-stack schedule-page ${phoneReadOnly ? "schedule-phone" : ""}`.trim()}>
+      {focusMode ? (
+        <button
+          type="button"
+          className="schedule-focus-exit no-print"
+          data-guide-ignore="زر خروج خافت من وضع التركيز؛ Escape ينفذ الإجراء نفسه"
+          onClick={() => setFocusMode(false)}
+          aria-label="إنهاء وضع التركيز"
+          title="إنهاء التركيز · Esc"
+        >
+          <X aria-hidden="true" />
+        </button>
+      ) : null}
       <PageTitle
         eyebrow="مركز الجدول"
         subtitle="نطاق · مراجعة · نشر"
@@ -7467,10 +7517,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             </GhostButton>
             {!phoneReadOnly && (workspaceToolsOpen || focusMode) ? <GhostButton
               type="button"
+              data-guide-ignore="تبديل وضع التركيز فقط؛ لا يغير بيانات الجدول"
               onClick={() => {
                 setFocusMode(!focusMode);
                 setPresentationMode(false);
-                if (!focusMode) setViewMode("week");
               }}
               aria-pressed={focusMode}
             >
@@ -7744,14 +7794,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             // than the week view.
             const roomsWithAfterglow = [...new Map(
               [...allRooms, ...tracedRooms].map(room => [room.key, room] as const),
-            ).values()].sort((a, b) => byArabic(a.label, b.label));
+            ).values()].sort(byRoomIdentity);
             const buildingScopedRooms = matrixBuildings.size
               ? roomsWithAfterglow.filter(room => matrixBuildings.has(room.buildingKey))
               : roomsWithAfterglow;
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
             const ROOM_HOUR_WIDTH = 136;
-            const ROOM_LABEL_WIDTH = 74;
+            const ROOM_LABEL_WIDTH = 64;
             const ROOM_LANE_HEIGHT = 62;
             const timelineWidth = Math.max(ROOM_HOUR_WIDTH, Math.round((span / 60) * ROOM_HOUR_WIDTH));
             const roomsCanvasWidth = ROOM_LABEL_WIDTH + timelineWidth;
@@ -7770,33 +7820,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               const instructor = instructorById.get(row.AdInstructorId);
               const code = String(course?.CourseCode || "").trim() || "—";
               const title = row.AdCourseName || course?.CourseName || code;
-              const who = instructor?.AdInstructorName || "بدون أستاذ";
+              const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
+              const whoWords = who.split(/\s+/).filter(Boolean);
+              const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
+              const whoGiven = whoWords.join(" ") || who;
               const activeRoomDays = days.filter(day => Boolean((row as any)[day.key]));
               const dayNames = activeRoomDays.map(day => day.label).join(" · ") || "بلا يوم";
               const undoId = recentMoves[row.id];
               const undoEntry = undoId ? undoLog.find(item => item.id === undoId && !item.usedAt) : null;
               const actualFrom = mins(row.fstarttime), actualTo = mins(row.fendtime);
-              const temporalWidthPx = Math.max(2, ((actualTo - actualFrom) / 60) * ROOM_HOUR_WIDTH);
-              const oneLineNeed =
-                estimateArabicInlineWidth(title, 6.15) +
-                estimateArabicInlineWidth(who, 5.15) +
-                estimateArabicInlineWidth(code, 5.1) +
-                43;
-              const roomIdentityMode: "single" | "double" = oneLineNeed <= Math.max(0, temporalWidthPx - 16)
-                ? "single"
-                : "double";
-              const roomCardHeight = roomIdentityMode === "double" ? 44 : 34;
-              const roomLaneTop = placement
-                ? 4 + placement.lane * ROOM_LANE_HEIGHT + Math.max(0, Math.floor((56 - roomCardHeight) / 2))
-                : undefined;
               const cardStyle: React.CSSProperties = {
                 ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName, placeOf(row)),
                 right: `${pct(actualFrom)}%`,
                 width: `${Math.max(3, pct(actualTo) - pct(actualFrom))}%`,
                 ...(placement ? {
-                  top: `${roomLaneTop}px`,
+                  top: `${4 + placement.lane * ROOM_LANE_HEIGHT}px`,
                   bottom: "auto",
-                  height: `${roomCardHeight}px`,
+                  height: "56px",
                 } : {}),
               };
               // The card is bound to the same drag engine the week uses, so it
@@ -7847,11 +7887,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   }}
                 >
                   <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
-                  <div className="rooms-identity-line" data-mode={roomIdentityMode}>
-                    <strong className="rooms-identity-title">{title}</strong>
-                    <span className="rooms-identity-who" title={who}>{who}</span>
-                    <em className="rooms-identity-code" dir="ltr">{code}</em>
-                  </div>
+                  <b>{courseLabel(title, 0.82).text}</b>
+                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
+                  <em dir="ltr">{code}</em>
                   {undoEntry ? (
                     <button
                       type="button"
@@ -7908,7 +7946,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         type="button"
                         className={`rooms-chip ${matrixBuildings.size ? "" : "on"}`}
                         aria-pressed={matrixBuildings.size === 0}
-                        onClick={() => setMatrixBuildings(new Set())}
+                        data-guide-ignore="مرشح بصري للمباني داخل لوحة القاعات؛ لا يغير بيانات الجدول"
+                        onClick={(e) => {
+                          setMatrixBuildings(new Set());
+                          requestAnimationFrame(() => e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
+                        }}
                       >
                         كل المباني <b className="num">{allBuildings.length}</b>
                       </button>
@@ -7918,12 +7960,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           key={building.key}
                           className={`rooms-chip ${matrixBuildings.has(building.key) ? "on" : ""}`}
                           aria-pressed={matrixBuildings.has(building.key)}
+                          data-guide-ignore="مرشح بصري لمبنى داخل لوحة القاعات؛ لا يغير بيانات الجدول"
                           title={`${matrixBuildings.has(building.key) ? "إخفاء" : "إظهار"} ${building.label}`}
-                          onClick={() => setMatrixBuildings(current => {
-                            const next = new Set(current);
-                            if (next.has(building.key)) next.delete(building.key); else next.add(building.key);
-                            return next;
-                          })}
+                          onClick={(e) => {
+                            setMatrixBuildings(current => {
+                              const next = new Set(current);
+                              if (next.has(building.key)) next.delete(building.key); else next.add(building.key);
+                              return next;
+                            });
+                            requestAnimationFrame(() => e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
+                          }}
                         >
                           <span dir="ltr">{building.label}</span>
                           <b className="num">{building.count}</b>
@@ -7943,7 +7989,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         type="button"
                         className={`rooms-chip ${matrixRooms.size ? "" : "on"}`}
                         aria-pressed={matrixRooms.size === 0}
-                        onClick={() => setMatrixRooms(new Set())}
+                        data-guide-ignore="مرشح بصري للقاعات داخل لوحة القاعات؛ لا يغير بيانات الجدول"
+                        onClick={(e) => {
+                          setMatrixRooms(new Set());
+                          requestAnimationFrame(() => e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
+                        }}
                       >
                         كل القاعات <b className="num">{buildingScopedRooms.length}</b>
                       </button>
@@ -7953,12 +8003,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           key={room.key}
                           className={`rooms-chip ${matrixRooms.has(room.key) ? "on" : ""}`}
                           aria-pressed={matrixRooms.has(room.key)}
+                          data-guide-ignore="مرشح بصري لقاعة داخل لوحة القاعات؛ لا يغير بيانات الجدول"
                           title={`${matrixRooms.has(room.key) ? "إخفاء" : "إظهار"} ${room.label}`}
-                          onClick={() => setMatrixRooms(current => {
-                            const next = new Set(current);
-                            if (next.has(room.key)) next.delete(room.key); else next.add(room.key);
-                            return next;
-                          })}
+                          onClick={(e) => {
+                            setMatrixRooms(current => {
+                              const next = new Set(current);
+                              if (next.has(room.key)) next.delete(room.key); else next.add(room.key);
+                              return next;
+                            });
+                            requestAnimationFrame(() => e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
+                          }}
                         >
                           <span dir="ltr">{room.label}</span>
                           <b className="num">{roomCounts.get(room.key) || 0}</b>
@@ -8226,7 +8280,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                announced something. The screen reader is already served by the
                «يقرأ الجدول…» status line in the filter strip. */
             data-guide-target="schedule.week.board"
-            className={`week-surface ${denseWeekStrips ? "week-strip-mode" : ""} ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
+            className={`week-surface ${denseWeekStrips ? "week-strip-mode" : ""} ${focusMode ? "week-focus-fullscreen" : ""} ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
           >
             {/* One question at a time, asked of the whole week. The controls
                 fold away; their answer remains visible on the toolbar button. */}
@@ -8270,15 +8324,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 (any drop that creates a conflict auto-reverts and is never saved),
                 so surfacing it only added noise. The enforcement itself is untouched.
               */}
-              {workspaceToolsOpen ? <button
-                type="button"
-                className="week-pick-toggle"
-                onClick={() => setHueBy(v => (v === "course" ? "instructor" : v === "instructor" ? "room" : "course"))}
-                title="بدّل معنى اللون: كل مقرر بلون، أو كل أستاذ، أو كل قاعة"
-              >
-                <Palette aria-hidden="true" />
-                {hueBy === "course" ? "التلوين حسب: المقرر" : hueBy === "instructor" ? "التلوين حسب: الأستاذ" : "التلوين حسب: القاعة"}
-              </button> : null}
               {/* The texture switch used to live here, beside the other tools.
                   It now sits inside the colour key, where the colours it
                   qualifies are actually being read. */}
@@ -8582,7 +8627,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     <div className="week-strip-ruler">
                       <div className="week-strip-ruler-label">
                         <span>الأسبوع</span>
-                        <small>الوقت أفقي · الازدحام رأسي</small>
                       </div>
                       <div
                         className="week-strip-ruler-track"

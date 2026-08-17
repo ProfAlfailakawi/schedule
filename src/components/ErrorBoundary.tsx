@@ -1,58 +1,80 @@
 import React from "react";
-import { AlertTriangle, RefreshCw, RotateCcw } from "lucide-react";
+import { RefreshCw, RotateCcw } from "lucide-react";
 
-/**
- * The last line before a blank screen.
- *
- * A render error anywhere in the tree used to unmount everything and leave the
- * page white, which tells the person nothing and tells whoever is called about
- * it even less. This catches the error, keeps the page readable in Arabic, and
- * offers the two things that actually help: try again, or clear the stored copy
- * and reload — the fix for a tab still holding a previous release.
- */
 interface State {
   error: Error | null;
+  exhausted: boolean;
 }
 
 interface Props {
   children: React.ReactNode;
 }
 
+/**
+ * Global render recovery.
+ *
+ * The old boundary replaced the whole product with a large fatal-error card.
+ * That was visually disruptive and, more importantly, turned a transient stale
+ * bundle/cache problem into a dead-end screen. The boundary now attempts staged
+ * recovery first and only exposes a compact rescue bar after repeated failures.
+ */
 export default class ErrorBoundary extends React.Component<Props, State> {
-  // React's type packages are not installed in this workspace, so the base
-  // class carries no member types. Declaring them keeps this file checked.
   declare props: Props;
   declare state: State;
 
+  private stableTimer: number | null = null;
+  private readonly recoveryKey = "schedule-render-recovery-v3";
+
   constructor(props: Props) {
     super(props);
-    this.state = { error: null };
+    this.state = { error: null, exhausted: false };
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { error };
+    return { error, exhausted: false };
+  }
+
+  componentDidMount() {
+    this.armStableReset();
+  }
+
+  componentDidUpdate(_prevProps: Props, prevState: State) {
+    if (prevState.error && !this.state.error) this.armStableReset();
+  }
+
+  componentWillUnmount() {
+    if (this.stableTimer) window.clearTimeout(this.stableTimer);
   }
 
   componentDidCatch(error: Error) {
-    // Keep technical diagnostics out of the user's screen. In development the
-    // console still receives the real exception; production attempts one quiet
-    // recovery before showing a small Arabic-only fallback.
-    try { (window as any).__scheduleBooted?.(); } catch { /* guard absent in tests */ }
-    if (import.meta.env?.DEV) console.error("Schedule crashed while rendering:", error);
-    try {
-      const key = "schedule-render-recovery-at";
-      const now = Date.now();
-      const previous = Number(sessionStorage.getItem(key) || 0);
-      if (!previous || now - previous > 15_000) {
-        sessionStorage.setItem(key, String(now));
-        window.location.reload();
-      }
-    } catch { /* storage can be blocked; fallback remains usable */ }
+    try { (window as any).__scheduleBooted?.(); } catch { /* optional boot hook */ }
+    if (import.meta.env?.DEV) console.error("Schedule render recovery:", error);
+    void this.recoverAutomatically();
   }
 
-  private retry = () => { window.location.reload(); };
+  private armStableReset = () => {
+    if (this.stableTimer) window.clearTimeout(this.stableTimer);
+    this.stableTimer = window.setTimeout(() => {
+      try { sessionStorage.removeItem(this.recoveryKey); } catch { /* storage may be blocked */ }
+    }, 20_000);
+  };
 
-  private hardReload = async () => {
+  private readAttempts = (): number[] => {
+    try {
+      const raw = JSON.parse(sessionStorage.getItem(this.recoveryKey) || "[]");
+      if (!Array.isArray(raw)) return [];
+      const floor = Date.now() - 60_000;
+      return raw.map(Number).filter(value => Number.isFinite(value) && value >= floor);
+    } catch {
+      return [];
+    }
+  };
+
+  private writeAttempt = (times: number[]) => {
+    try { sessionStorage.setItem(this.recoveryKey, JSON.stringify(times)); } catch { /* ignore */ }
+  };
+
+  private clearRuntimeCaches = async () => {
     try {
       if ("caches" in window) {
         const keys = await caches.keys();
@@ -60,24 +82,72 @@ export default class ErrorBoundary extends React.Component<Props, State> {
       }
       const registrations = await navigator.serviceWorker?.getRegistrations?.();
       await Promise.all((registrations || []).map(registration => registration.unregister()));
-    } catch { /* a blocked cache API must not stop the reload */ }
+    } catch {
+      // Cache APIs can be unavailable in private/restricted contexts.
+    }
+  };
+
+  private recoverAutomatically = async () => {
+    const attempts = this.readAttempts();
+    const next = [...attempts, Date.now()];
+    this.writeAttempt(next);
+
+    // First failure: most render crashes are a stale chunk or a one-off state
+    // mismatch. A normal reload is the least destructive recovery.
+    if (next.length === 1) {
+      window.setTimeout(() => window.location.reload(), 60);
+      return;
+    }
+
+    // Second failure in one minute: aggressively discard stale runtime assets,
+    // then reload. This handles old service-worker/cache combinations without
+    // asking the user to know what a "hard refresh" is.
+    if (next.length === 2) {
+      await this.clearRuntimeCaches();
+      window.setTimeout(() => window.location.reload(), 60);
+      return;
+    }
+
+    // A persistent programming/data error should not trap the browser in an
+    // infinite reload loop. Keep the fallback tiny and actionable instead of
+    // replacing the whole application with a fatal-error page.
+    this.setState({ exhausted: true });
+  };
+
+  private retry = () => {
+    try { sessionStorage.removeItem(this.recoveryKey); } catch { /* ignore */ }
+    window.location.reload();
+  };
+
+  private cleanRetry = async () => {
+    await this.clearRuntimeCaches();
+    try { sessionStorage.removeItem(this.recoveryKey); } catch { /* ignore */ }
     window.location.reload();
   };
 
   render() {
     if (!this.state.error) return this.props.children;
+
+    // During the automatic recovery window there is deliberately no large
+    // crash card. A quiet surface avoids flashing a scary full-page error for
+    // a failure that normally resolves itself in milliseconds.
+    if (!this.state.exhausted) {
+      return <div className="render-recovery-quiet" role="status" aria-label="جارٍ استعادة العرض" />;
+    }
+
     return (
-      <div className="crash-screen" role="status" aria-live="polite">
-        <div className="crash-card">
-          <div className="crash-mark"><AlertTriangle aria-hidden="true" /></div>
-          <h1>تعذّر إكمال العرض</h1>
-          <p>حصل خلل غير متوقع أثناء فتح هذه الشاشة. يمكنك إعادة المحاولة مباشرة، أو تنفيذ تحديث قوي إذا كانت هذه الصفحة تحتفظ بنسخة قديمة.</p>
-          <div className="crash-actions">
-            <button type="button" className="btn btn-secondary" data-guide-ignore="شاشة إنقاذ خارج تجربة المنتج المعتادة" onClick={this.retry}>
+      <div className="render-recovery-shell" role="status" aria-live="polite">
+        <div className="render-recovery-bar">
+          <div>
+            <strong>تعذّر تحديث هذه الشاشة</strong>
+            <span>حاولنا الاستعادة تلقائيًا. يمكنك المحاولة مرة أخرى دون فقد بياناتك المحفوظة.</span>
+          </div>
+          <div className="render-recovery-actions">
+            <button type="button" data-guide-ignore="أداة إنقاذ عامة بعد فشل الاستعادة التلقائية" onClick={this.retry}>
               <RotateCcw aria-hidden="true" /> إعادة المحاولة
             </button>
-            <button type="button" className="btn btn-primary" data-guide-ignore="شاشة إنقاذ خارج تجربة المنتج المعتادة" onClick={this.hardReload}>
-              <RefreshCw aria-hidden="true" /> تحديث قوي
+            <button type="button" className="primary" data-guide-ignore="أداة إنقاذ عامة تنظف ملفات التشغيل المؤقتة فقط" onClick={this.cleanRetry}>
+              <RefreshCw aria-hidden="true" /> تنظيف وإعادة فتح
             </button>
           </div>
         </div>

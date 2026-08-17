@@ -182,8 +182,8 @@ async function runTests() {
     assert(peakConcurrency([]) === 0 && peakConcurrency([{start:600,end:600}]) === 0, "empty and zero-length spans peak at zero");
 
     // Adaptive week geometry: every lecture remains a literal readable card.
-    // Dense weeks spend horizontal paper and scroll; they never collapse into
-    // a summary or pay for density with microtype.
+    // Dense weeks spend controlled paper and scroll; they never collapse into
+    // summaries or pay for density with unreadable typography.
     assert(readableWeekDayWidth(1) === 164, "one-lane day uses the compact calm column");
     assert(readableWeekDayWidth(4) === 448, "four simultaneous lectures keep four 110px-painted reading lanes");
     assert(readableWeekDayWidth(12) === 1344, "focus width keeps twelve real lanes at the reading floor");
@@ -204,12 +204,12 @@ async function runTests() {
     ] as any);
     assert(allBusyPlan.totalWidth === 3414 && allBusyPlan.days.every(day => day.mode === "cards"), "five peak-six days stay literal while every painted lane remains readable");
 
-    // Dense-week orientation: when the classic projection turns into a
-    // panorama, density grows vertically while time keeps a readable horizontal
-    // scale. The breakpoint is data-driven, not a screen-size trick.
-    assert(readableWeekStripHourWidth(50) === 180, "a normal fifty-minute lecture gets about 150px of horizontal time");
-    assert(readableWeekStripHourWidth(30) === 224, "a thirty-minute appointment widens the strip scale enough to stay readable");
-    assert(readableWeekStripHourWidth(10) === 240, "pathological tiny appointments cannot make the ruler unbounded");
+    // Dense-week orientation: Adaptive Identity protects all three identifiers,
+    // so the time scale can now be tighter. These three assertions are the exact
+    // regression that previously failed after visual compression.
+    assert(readableWeekStripHourWidth(50) === 118, "a normal fifty-minute lecture uses the ultra-compact adaptive strip scale");
+    assert(readableWeekStripHourWidth(30) === 156, "a thirty-minute appointment widens the adaptive strip only as much as needed");
+    assert(readableWeekStripHourWidth(10) === 174, "pathological tiny appointments cannot make the compact ruler unbounded");
     assert(!shouldUseWeekStrips([{ peak: 1 }, { peak: 2 }, { peak: 3 }], 1400), "a calm week keeps the classic five-column calendar");
     assert(shouldUseWeekStrips([{ peak: 6 }, { peak: 6 }, { peak: 6 }, { peak: 6 }, { peak: 6 }], allBusyPlan.totalWidth), "a panoramic dense week rotates into horizontal day strips");
     assert(shouldUseWeekStrips([{ peak: 8 }], 1200), "extreme local concurrency can trigger the dense projection even before the panorama threshold");

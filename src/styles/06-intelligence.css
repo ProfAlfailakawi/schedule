@@ -3677,7 +3677,17 @@ button.twin-delta{width:100%}
 .visual-minimal.intelligence-page .guide-simulation-flow>span{border-radius:18px;background:var(--surface-2)}
 
 /* Context selector uses field tiles, not a wall of form labels. */
-.intel-context.visual-minimal .intel-context-copy>span{inline-size:44px;block-size:44px;border-radius:15px;background:var(--accent-softer);color:var(--accent)}
+.intel-context.visual-minimal .intel-context-copy{display:flex;align-items:center;gap:12px;min-height:52px}
+.intel-context.visual-minimal .intel-context-copy>span{
+  inline-size:44px;block-size:44px;flex:0 0 44px;
+  display:grid;place-items:center;overflow:hidden;
+  border-radius:15px;background:var(--accent-softer);color:var(--accent)
+}
+.intel-context.visual-minimal .intel-context-copy>span>svg{
+  inline-size:20px;block-size:20px;display:block;
+  position:static!important;inset:auto!important;
+  margin:0!important;transform:none!important
+}
 .intel-context.visual-minimal .intel-context-fields{gap:8px}
 .intel-context.visual-minimal .intel-context-fields .field{padding:8px 10px;border:1px solid var(--line);background:var(--surface-2)}
 .intel-context.visual-minimal .intel-context-fields .field>label{font-size:.65rem;color:var(--muted)}

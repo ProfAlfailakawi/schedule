@@ -122,11 +122,10 @@ export function readableWeekStripHourWidth(minDurationMinutes: number): number {
   const duration = Number.isFinite(minDurationMinutes) && minDurationMinutes > 0
     ? minDurationMinutes
     : 50;
-  // The single-line identity bought back horizontal paper. Spend that gain by
-  // trimming the ruler a notch instead of squeezing text: a 50-minute lecture
-  // now lands around 130px rather than 150px, while short appointments still
-  // keep enough width to remain readable.
-  return Math.round(Math.min(200, Math.max(144, (92 * 60) / duration)));
+  // Adaptive Identity now carries the readability burden: normal cards stay on
+  // one line when they can, and compact ones become two-line nameplates. That
+  // lets the time ruler tighten once more without shrinking the typography.
+  return Math.round(Math.min(174, Math.max(118, (78 * 60) / duration)));
 }
 
 /**

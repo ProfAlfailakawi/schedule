@@ -58,31 +58,43 @@
 
 /* --- Page heading --------------------------------------------------------- */
 
-/* The screen shown instead of a blank page when a view fails to render. */
-.crash-screen{
-  min-height:70vh;display:grid;place-items:center;padding:var(--s6);
+/* Global render recovery: never replace the product with a giant crash card. */
+.render-recovery-quiet{
+  position:fixed;inset:0;z-index:9999;
+  background:var(--bg);
 }
-.crash-card{
-  width:min(460px,100%);
-  padding:clamp(24px,4vw,36px);
-  border:1px solid var(--line);border-radius:var(--r-2xl);
-  background:var(--surface);box-shadow:var(--shadow-md);
-  text-align:center;
+.render-recovery-shell{
+  position:fixed;inset:0;z-index:9999;
+  pointer-events:none;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:18px;
+  background:color-mix(in srgb,var(--bg) 94%,transparent);
 }
-.crash-mark{
-  width:44px;height:44px;margin:0 auto var(--s4);
-  display:grid;place-items:center;border-radius:var(--r-full);
-  background:var(--danger-soft);color:var(--danger);
-  font-size:22px;font-weight:700;line-height:1;
+.render-recovery-bar{
+  pointer-events:auto;
+  width:min(760px,calc(100vw - 36px));
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:12px 14px;
+  border:1px solid color-mix(in srgb,var(--danger) 18%,var(--line));
+  border-radius:18px;
+  background:color-mix(in srgb,var(--surface) 97%,var(--danger-soft));
+  box-shadow:var(--shadow-md);
 }
-.crash-card h1{font-size:var(--t-h2);font-weight:600}
-.crash-card p{margin-top:var(--s3);color:var(--muted);font-size:var(--t-sm);line-height:1.8}
-.crash-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:var(--s2);margin-top:var(--s5)}
-.crash-card code{
-  display:block;margin-top:var(--s5);padding-top:var(--s3);
-  border-top:1px solid var(--line);
-  color:var(--muted-2);font:400 var(--t-xs)/1.6 var(--font-mono);
-  word-break:break-word;
+.render-recovery-bar>div:first-child{min-width:0;display:grid;gap:2px}
+.render-recovery-bar strong{font-size:.9rem;font-weight:650;color:var(--ink)}
+.render-recovery-bar span{font-size:.76rem;color:var(--muted);line-height:1.45}
+.render-recovery-actions{display:flex;align-items:center;gap:8px;flex:none}
+.render-recovery-actions button{
+  min-height:36px;display:inline-flex;align-items:center;gap:7px;
+  padding:0 12px;border:1px solid var(--line-strong);border-radius:11px;
+  background:var(--surface);color:var(--ink-2);font-size:.78rem;font-weight:560
+}
+.render-recovery-actions button.primary{background:var(--accent);border-color:var(--accent);color:white}
+.render-recovery-actions svg{width:16px;height:16px}
+@media(max-width:680px){
+  .render-recovery-bar{align-items:stretch;flex-direction:column}
+  .render-recovery-actions{width:100%}
+  .render-recovery-actions button{flex:1;justify-content:center}
 }
 
 .page-heading{

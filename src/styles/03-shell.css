@@ -1036,3 +1036,66 @@ body.guide-point-mode .smart-guide{opacity:0;pointer-events:none;transform:trans
   .guide-ghost-card>small{font-size:10px}.guide-ghost-card>strong{font-size:11px}.guide-ghost-card button{font-size:10px}
   .schedule-guide-ghost-flow small,.guide-simulation-flow small{font-size:10px}.schedule-guide-ghost-flow em,.guide-simulation-flow em{font-size:10px}.schedule-guide-ghost-diff>p,.guide-simulation-brief>p{font-size:10px}.schedule-guide-ghost-diff footer button,.guide-simulation-brief footer button{font-size:10px}
 }
+
+/* SCHEDULE focus is a true canvas mode: the board owns the viewport. */
+html[data-schedule-workspace="focus"] .app-main{
+  margin:0!important;
+  padding:0!important;
+  min-height:100dvh!important;
+}
+html[data-schedule-workspace="focus"] .content-frame{
+  width:100vw!important;
+  max-width:none!important;
+  margin:0!important;
+}
+html[data-schedule-workspace="focus"] .schedule-page{
+  width:100vw!important;
+  height:100dvh!important;
+  min-height:100dvh!important;
+  margin:0!important;
+  padding:0!important;
+  gap:0!important;
+  overflow:hidden!important;
+}
+html[data-schedule-workspace="focus"] .schedule-page>.page-heading,
+html[data-schedule-workspace="focus"] .schedule-page>.schedule-practice-strip,
+html[data-schedule-workspace="focus"] .schedule-page>.schedule-guide-ghost-diff,
+html[data-schedule-workspace="focus"] .schedule-page>.historical-time-backdrop,
+html[data-schedule-workspace="focus"] .schedule-page>.mobile-desktop-gate,
+html[data-schedule-workspace="focus"] .schedule-page>.notice,
+html[data-schedule-workspace="focus"] .schedule-page>.schedule-ops-strip,
+html[data-schedule-workspace="focus"] .schedule-page>.schedule-control,
+html[data-schedule-workspace="focus"] .schedule-page>.schedule-mini-stats,
+html[data-schedule-workspace="focus"] .schedule-page>.sched-skeleton-surface,
+html[data-schedule-workspace="focus"] .living-pulse-shell,
+html[data-schedule-workspace="focus"] .living-command-deck,
+html[data-schedule-workspace="focus"] .schedule-experience-strip,
+html[data-schedule-workspace="focus"] .academic-xray{
+  display:none!important;
+}
+/* Focus never changes projection. Whatever board exists now owns the viewport. */
+html[data-schedule-workspace="focus"] .schedule-page>.week-surface,
+html[data-schedule-workspace="focus"] .schedule-page>.rooms-surface,
+html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
+  display:flex!important;
+  position:fixed!important;
+  inset:0!important;
+  z-index:1500!important;
+  width:100vw!important;
+  height:100dvh!important;
+  max-width:none!important;
+  margin:0!important;
+  border:0!important;
+  border-radius:0!important;
+  box-shadow:none!important;
+  background:var(--surface)!important;
+}
+html[data-schedule-workspace="focus"] .schedule-page>.rooms-surface{
+  display:block!important;
+  overflow:auto!important;
+  padding:12px!important;
+}
+html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
+  overflow:auto!important;
+  padding:16px!important;
+}
