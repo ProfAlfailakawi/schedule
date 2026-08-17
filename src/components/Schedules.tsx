@@ -3412,6 +3412,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       markChanged(row.id);
       leaveMoveTraces(moves);
       setPhysicsNotice(moveTimingNotes.join(" · "));
+
+      // Cleanup (Post-Move): Remove large status cards/banners at the top of the screen
+      // (Decision Cards/Timing Notes inside the editor) after a move operation
+      // to reduce visual pollution.
+      if (editor !== "index") {
+        setDecisionEditQueue(null);
+        back();
+      }
+
       const label = days.find(d => d.key === day)?.label || "";
       const movedIds = moves.map(m => m.before.id);
       const undoId = offerUndo(
@@ -7696,14 +7705,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
             const roomTraceStyle = (trace: { from: number; to: number }): React.CSSProperties => {
-              // The room board and its cards use physical `right`, not logical
-              // inline positioning. Clamp the ghost to the visible clock so a
-              // stale/legacy time can never pull «نُقل من هنا» outside its row.
-              const fromPct = Math.max(0, Math.min(100, pct(trace.from)));
-              const toPct = Math.max(0, Math.min(100, pct(trace.to)));
-              const minWidth = (SCHEDULE_SLOT_MINUTES / span) * 100;
-              const width = Math.max(0, Math.min(100 - fromPct, Math.max(minWidth, toPct - fromPct)));
-              return { right: `${fromPct}%`, left: "auto", width: `${width}%`, top: "3px", bottom: "3px", height: "auto" };
+              // Use the exact same positioning system as renderTrackCard
+              // to ensure the trace is always bound to the original slot geometry.
+              return {
+                right: `${pct(trace.from)}%`,
+                width: `${Math.max(3, pct(trace.to) - pct(trace.from))}%`,
+              };
             };
             const rowsFor = (day: DayKey, roomKey: string) => byDayRoom.get(`${day}|${roomKey}`) || [];
             const renderTrackCard = (row: FSchedule, sourceDay: DayKey, placement?: { lane: number; visualFrom: number; visualTo: number }) => {
