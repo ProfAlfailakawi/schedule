@@ -1,0 +1,15 @@
+السبب الجذري باختصار
+- Quick Create وطبقة Physics كانتا تُرسمان داخل فرع عرض الأسبوع فقط؛ لذلك في «المباني والقاعات» كانت حالة «موعد جديد» تتجهز لكن لا تظهر نافذتها إلا بعد الانتقال إلى الأسبوع.
+- مؤشر الفراغ كان crosshair مختلفاً عن الأسبوع.
+
+ما تم إصلاحه
+- نقل Quick Create وPeek وPhysics Overlay إلى طبقة مشتركة خارج فروع العرض، فتظهر فوراً في نفس الشاشة التي حدثت فيها الحركة.
+- تغيير مؤشر الفراغ في «المباني والقاعات» إلى cursor: copy، وهو نفس سهم + المستخدم في الأسبوع.
+- لا يوجد QuickCreate/PhysicsLayer مكرر؛ لكل منهما نسخة واحدة مشتركة.
+
+الملفات المعدلة فقط
+- src/components/Schedules.tsx
+- src/styles/05-schedule.css
+
+التحقق
+- نجح TypeScript transpile لملف Schedules.tsx وSchedulePhysicsLayer.tsx.

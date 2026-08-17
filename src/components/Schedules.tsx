@@ -588,6 +588,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [offlinePending, setOfflinePending] = useState(() => offlineQueueCount());
+  const syncFlushBusy = useRef(false);
   const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
   // The schedule itself stays quiet: help opens only when the question mark is
   // pressed. First-run onboarding belongs to the two decision/intelligence hubs.
@@ -1176,6 +1177,38 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (navigator.onLine && offlineQueueCount()) void up();
     return () => { window.removeEventListener("offline", down); window.removeEventListener("online", up); };
   }, []);
+  /*
+   * Fast sync pump: a transient campus-network hiccup should not leave the
+   * schedule saying «بانتظار المزامنة» for minutes. While there is queued work
+   * and the browser is online, retry quietly every 900ms. Only the rows are
+   * refreshed after a successful flush; the board itself never blocks.
+   */
+  useEffect(() => {
+    if (!networkOnline || !offlinePending) return;
+    let cancelled = false;
+    const pump = async () => {
+      if (cancelled || syncFlushBusy.current || !navigator.onLine || !offlineQueueCount()) return;
+      syncFlushBusy.current = true;
+      try {
+        const result = await flushOfflineScheduleQueue();
+        if (cancelled) return;
+        if (result.done) {
+          setOfflinePending(result.remaining);
+          setPhysicsNotice(result.remaining
+            ? `${result.remaining.toLocaleString("ar-KW-u-nu-latn")} تغيير ما زال بانتظار التثبيت.`
+            : "تم تثبيت التغييرات في الخلفية.");
+          void loadRows({ silent: true }).catch(() => undefined);
+        } else if (result.conflict) {
+          setPhysicsNotice("يوجد تغيير محلي اصطدم بنسخة أحدث؛ افتح الموعد للمقارنة قبل المتابعة.");
+        }
+      } finally {
+        syncFlushBusy.current = false;
+      }
+    };
+    void pump();
+    const timer = window.setInterval(() => void pump(), 900);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [networkOnline, offlinePending]);
   /**
    * One request opens the whole department.
    *
@@ -6981,7 +7014,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
             const rowsFor = (day: DayKey, roomKey: string) => byDayRoom.get(`${day}|${roomKey}`) || [];
-            const renderTrackCard = (row: FSchedule, placement?: { lane: number; visualFrom: number; visualTo: number }) => {
+            const renderTrackCard = (row: FSchedule, sourceDay: DayKey, placement?: { lane: number; visualFrom: number; visualTo: number }) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
               const code = String(course?.CourseCode || "").trim() || "—";
@@ -7016,13 +7049,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               // lifts, floats, is judged and lands with the identical behaviour
               // — not an imitation of it.
               const rowPending = pendingWriteIds.has(row.id);
-              const trackGrip = rowPending ? {} : physics.bindEvent(row, (activeRoomDays[0]?.key || "fsunday") as any);
+              const trackGrip = rowPending ? {} : physics.bindEvent(row, sourceDay as any);
               return (
                 <article
                   {...trackGrip}
                   key={row.id}
                   data-row-id={row.id}
-                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
+                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${lensClass(row)} ${xrayClass(row)} ${physicsRelationClass(row)} ${draggingId === row.id ? "ripple-source" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${keyMove?.rowId === row.id ? "week-keymove-source" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
                   style={cardStyle}
                   draggable={!physics.supported && !rowPending}
                   onDragStart={(e) => {
@@ -7060,6 +7093,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   }}
                 >
                   <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
+                  <button
+                    className="week-insight rooms-insight"
+                    type="button"
+                    title="السياق الذكي"
+                    data-no-physics="true"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); void openContext(row); }}
+                  >
+                    <BrainCircuit />
+                  </button>
                   <b>{placement ? compactTitle : courseLabel(title, 0.82).text}</b>
                   <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{placement ? <i>{compactWho}</i> : <><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</>}</span>
                   <em dir="ltr">{code}</em>
@@ -7320,11 +7363,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
                                 {paint?.trackKey === `${room.key}|${day.key}` ? (
                                   <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true">
-                                    <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b>
+                                    <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span>
                                   </div>
                                 ) : null}
                                 {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
-                                {inRoom.map(row => renderTrackCard(row))}
+                                {inRoom.map(row => renderTrackCard(row, day.key as DayKey))}
                               </div>
                             </div>
                           );
@@ -7370,8 +7413,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 />
                               ))}
                               {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
-                              {paint?.trackKey === `none|${day.key}` ? <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true"><b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b></div> : null}
-                              {(noRoomByDay.get(day.key as DayKey) || []).map(renderTrackCard)}
+                              {paint?.trackKey === `none|${day.key}` ? <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true"><b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span></div> : null}
+                              {(noRoomByDay.get(day.key as DayKey) || []).map(row => renderTrackCard(row, day.key as DayKey))}
                             </div>
                           </div>
                         ))}
@@ -8217,57 +8260,54 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </>
             );
           })() : null}
-          {peek ? (
-            <WeekPeek
-              anchor={{ x: peek.x, y: peek.y }}
-              title={peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "مقرر"}
-              who={`${instructorById.get(peek.row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(peek.row.AdInstructorId) ? " · منتدب" : ""}`}
-              code={courseById.get(peek.row.AdCourseId)?.CourseCode || "—"}
-              section={String(peek.row.SCode || "—")}
-              days={arabicDays(peek.row)}
-              from={peek.row.fstarttime}
-              to={peek.row.fendtime}
-              room={[peek.row.AdRoomCode, peek.row.AdRoomHall].filter(Boolean).join("/")}
-              hue={hueFor(
-                courseById.get(peek.row.AdCourseId)?.CourseCode || peek.row.AdCourseName || "—",
-                peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "",
-                instructorById.get(peek.row.AdInstructorId)?.AdInstructorName,
-                placeOf(peek.row),
-              )}
-            />
-          ) : null}
-          {quick ? (
-            <QuickCreatePopover
-              seed={quick}
-              courses={quickCourses}
-              instructors={instructors}
-              buildings={buildingOptions}
-              hallsFor={hallsOf}
-              conflictOf={quickConflict}
-              saving={saving}
-              error={quickError}
-              onCancel={() => { setQuick(null); setQuickError(null); }}
-              onExpand={expandQuick}
-              onCreate={createQuick}
-            />
-          ) : null}
-          <SchedulePhysicsLayer
-            state={physics.state}
-            overlayRef={physics.overlayRef}
-            course={
-              physics.state.row
-                ? courseById.get(physics.state.row.AdCourseId)
-                : undefined
-            }
-            instructor={
-              physics.state.row
-                ? instructorById.get(physics.state.row.AdInstructorId)
-                : undefined
-            }
-            isPowerAdmin={isPowerAdmin}
-          />
         </>
       )}
+      {/* Shared interaction overlays live outside the individual view branches.
+          Rooms and week now open the same Quick Create card, the same peek and
+          the same physics overlay immediately in the view where the gesture
+          happened; no state is left waiting for a later switch to week. */}
+      {peek ? (
+        <WeekPeek
+          anchor={{ x: peek.x, y: peek.y }}
+          title={peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "مقرر"}
+          who={`${instructorById.get(peek.row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(peek.row.AdInstructorId) ? " · منتدب" : ""}`}
+          code={courseById.get(peek.row.AdCourseId)?.CourseCode || "—"}
+          section={String(peek.row.SCode || "—")}
+          days={arabicDays(peek.row)}
+          from={peek.row.fstarttime}
+          to={peek.row.fendtime}
+          room={[peek.row.AdRoomCode, peek.row.AdRoomHall].filter(Boolean).join("/")}
+          hue={hueFor(
+            courseById.get(peek.row.AdCourseId)?.CourseCode || peek.row.AdCourseName || "—",
+            peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "",
+            instructorById.get(peek.row.AdInstructorId)?.AdInstructorName,
+            placeOf(peek.row),
+          )}
+        />
+      ) : null}
+      {quick ? (
+        <QuickCreatePopover
+          seed={quick}
+          courses={quickCourses}
+          instructors={instructors}
+          buildings={buildingOptions}
+          hallsFor={hallsOf}
+          conflictOf={quickConflict}
+          saving={saving}
+          error={quickError}
+          onCancel={() => { setQuick(null); setQuickError(null); }}
+          onExpand={expandQuick}
+          onCreate={createQuick}
+        />
+      ) : null}
+      <SchedulePhysicsLayer
+        state={physics.state}
+        overlayRef={physics.overlayRef}
+        course={physics.state.row ? courseById.get(physics.state.row.AdCourseId) : undefined}
+        instructor={physics.state.row ? instructorById.get(physics.state.row.AdInstructorId) : undefined}
+        isPowerAdmin={isPowerAdmin}
+        variant={viewMode === "rooms" ? "rooms" : viewMode === "list" ? "list" : "week"}
+      />
       {/*
         The dock.
 

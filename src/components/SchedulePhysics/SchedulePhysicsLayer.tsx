@@ -11,6 +11,7 @@ interface Props {
   course?: AdCourse;
   instructor?: AdInstructor;
   isPowerAdmin?: boolean;
+  variant?: "week" | "rooms" | "list";
 }
 
 const signed = (value: unknown, suffix = "") => {
@@ -18,7 +19,7 @@ const signed = (value: unknown, suffix = "") => {
   return `${n > 0 ? "+" : ""}${n}${suffix}`;
 };
 
-export default function SchedulePhysicsLayer({ state, overlayRef, course, instructor, isPowerAdmin = false }: Props) {
+export default function SchedulePhysicsLayer({ state, overlayRef, course, instructor, isPowerAdmin = false, variant = "week" }: Props) {
   /**
    * The reading panel measures itself.
    *
@@ -72,7 +73,7 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
   })() : undefined;
 
   return createPortal(<>
-    <div ref={overlayRef} className={`schedule-physics-float quality-${decision?.quality || "unknown"}`} aria-hidden="true">
+    <div ref={overlayRef} className={`schedule-physics-float physics-view-${variant} quality-${decision?.quality || "unknown"}`} aria-hidden="true">
       <div className="physics-float-handle"><GripVertical/></div>
       <div className="physics-float-copy">
         <strong>{course?.CourseCode || row.AdCourseName || "المقرر"}</strong>

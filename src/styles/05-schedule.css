@@ -4469,7 +4469,8 @@ html.schedule-physics-active .rooms-paint{display:none}
 .rooms-slot{
   position:absolute;inset-block:0;z-index:1;
   pointer-events:auto;
-  cursor:crosshair;
+  /* Same cursor the week uses: the native arrow with a small + badge. */
+  cursor:copy;
 }
 /* At rest the slot is invisible but remains the precise click target for creating
    a lecture. Cards sit above it, so drag always wins over add. */
@@ -5189,3 +5190,25 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .context-life-details-grid .context-life-wide strong{overflow:visible;text-overflow:clip;white-space:normal;direction:ltr;unicode-bidi:isolate}
 .context-life-details-grid section>div>strong[dir="ltr"]{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums lining-nums}
 .context-life-details-grid header b[dir="ltr"]{direction:ltr;unicode-bidi:isolate}.context-life-details-grid header b span{font-family:var(--font);font-weight:650}
+
+/* Rooms now borrows the week's exact interaction language.
+   Empty slots invite creation only at rest; the moment a lecture is lifted,
+   the add affordance disappears and the physics verdict owns the track. */
+html:not(.schedule-physics-active) .rooms-slot:hover::after{
+  content:"+";
+  position:absolute;inset:2px;
+  display:grid;place-items:center;
+  border:1px dashed color-mix(in srgb,var(--accent) 42%,transparent);
+  border-radius:5px;
+  color:color-mix(in srgb,var(--accent) 68%,transparent);
+  background:color-mix(in srgb,var(--accent) 3%,transparent);
+  font-size:14px;line-height:1;
+  pointer-events:none;
+}
+html.schedule-physics-active .rooms-slot:hover::after{content:none}
+.rooms-paint{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.rooms-paint span{font-size:9px;font-weight:650;color:var(--accent);white-space:nowrap}
+.rooms-drag-handle{display:none}
+.rooms-card .rooms-insight{opacity:0}
+.rooms-card:hover .rooms-insight,.rooms-card:focus-within .rooms-insight{opacity:1}
+.schedule-physics-float.physics-view-rooms{min-width:min(260px,70vw)}
