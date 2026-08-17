@@ -271,7 +271,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       </CatalogFormDrawer>
     ) : null;
   return (
-    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+    <div className={`content-stack library-page catalog-inspector-page visual-minimal ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
         <EmbeddedAction slot={actionSlot}>
           <AddButton onClick={create}>إضافة أستاذ</AddButton>

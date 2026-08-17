@@ -198,7 +198,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
       </CatalogFormDrawer>
     ) : null;
   return (
-    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+    <div className={`content-stack library-page catalog-inspector-page visual-minimal ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
         <EmbeddedAction slot={actionSlot}>
           <AddButton onClick={create}>إنشاء قسم</AddButton>

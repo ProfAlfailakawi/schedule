@@ -1712,7 +1712,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   };
 
   return (
-    <div className={`content-stack intelligence-page scene-${scene}`}>
+    <div className={`content-stack intelligence-page scene-${scene} visual-minimal`}>
       <PageTitle
         eyebrow="ذكاء الجدول"
         subtitle="افهم · جرّب · اعتمد"

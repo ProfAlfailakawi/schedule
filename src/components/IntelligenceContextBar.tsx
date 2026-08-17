@@ -38,7 +38,7 @@ export default function IntelligenceContextBar({
   onTermChange,
 }: Props) {
   return (
-    <Surface className="intel-context">
+    <Surface className="intel-context visual-minimal">
       <div className="intel-context-copy">
         <span><Target /></span>
         <div>

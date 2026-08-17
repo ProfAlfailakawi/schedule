@@ -2120,11 +2120,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const expectedMinute = active ? expectedStartMinuteForDay(form, day.key as DayKey) : null;
       let state: "inactive" | "match" | "off" | "active" = active ? "active" : "inactive";
       if (active && startMinute != null && expectedMinute != null) state = startMinute === expectedMinute ? "match" : "off";
-      const cue = !active ? "—" : expectedMinute == null ? "•" : expectedMinute === 0 ? "00" : "30";
-      const note = !active ? "غير مختار" : expectedMinute === 0 ? "رأس الساعة" : expectedMinute === 30 ? "عند النصف" : "مرن";
-      return { key: day.key, label: day.label, state, cue, note, active };
+      const preferredStart = active && form.fstarttime ? preferredStartForDrop(form, day.key as DayKey, String(form.fstarttime || "")) : "";
+      const cue = active ? displayClockCompact(preferredStart || String(form.fstarttime || "")) : "—";
+      const icon = !active ? "inactive" : state === "match" ? "match" : "off";
+      return { key: day.key, label: day.label, state, cue, icon, active };
     });
-  }, [form, expectedStartMinuteForDay]);
+  }, [form, expectedStartMinuteForDay, preferredStartForDrop]);
   const editorRegulationCards = useMemo(() => editorRegulation.slice(0, 4).map((finding, index) => {
     const detail = String(finding.detail || "").replace(/\s+/g, " ").trim();
     return {
@@ -6672,10 +6673,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   </div>
                   <div className="timing-pill-grid" aria-hidden="true">
                     {editorTimingVisualDays.map(day => (
-                      <div key={day.key} className={`timing-pill timing-pill--${day.state}`}>
-                        <span>{day.label}</span>
+                      <div key={day.key} className={`timing-pill timing-pill--${day.state} ${day.active ? "" : "timing-pill--empty"}`}>
+                        <span className="timing-pill-day">{day.label}</span>
+                        <div className="timing-pill-mark">
+                          {day.icon === "match" ? <CheckCircle2 /> : day.icon === "off" ? <Clock3 /> : <CalendarDays />}
+                        </div>
                         <strong>{day.cue}</strong>
-                        <small>{day.note}</small>
                       </div>
                     ))}
                   </div>
@@ -7197,9 +7200,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         <section className="schedule-guide-ghost-diff no-print" aria-label="معاينة التغيير دون حفظ">
           <header><Eye aria-hidden="true" /><div><small>معاينة فقط</small><strong>{guideGhostDiff.before.AdCourseName || "المقرر المحدد"}</strong></div><button type="button" onClick={() => setGuideGhostDiff(null)} aria-label="إلغاء المعاينة"><X /></button></header>
           <div className="schedule-guide-ghost-flow">
-            <span><small>قبل</small><b>{arabicDays(guideGhostDiff.before)} · {guideGhostDiff.before.fstarttime}</b><em>{[guideGhostDiff.before.AdRoomCode,guideGhostDiff.before.AdRoomHall].filter(Boolean).join("/")}</em></span>
+            <span><small>قبل</small><b>{arabicDays(guideGhostDiff.before)} · {formatScheduleTimeRange(guideGhostDiff.before.fstarttime, guideGhostDiff.before.fendtime)}</b><em>{[guideGhostDiff.before.AdRoomCode,guideGhostDiff.before.AdRoomHall].filter(Boolean).join("/")}</em></span>
             <ChevronLeft aria-hidden="true" />
-            <span className="after"><small>بعد</small><b>{arabicDays(guideGhostDiff.after)} · {guideGhostDiff.after.fstarttime}</b><em>{[guideGhostDiff.after.AdRoomCode,guideGhostDiff.after.AdRoomHall].filter(Boolean).join("/")}</em></span>
+            <span className="after"><small>بعد</small><b>{arabicDays(guideGhostDiff.after)} · {formatScheduleTimeRange(guideGhostDiff.after.fstarttime, guideGhostDiff.after.fendtime)}</b><em>{[guideGhostDiff.after.AdRoomCode,guideGhostDiff.after.AdRoomHall].filter(Boolean).join("/")}</em></span>
           </div>
           <p className={guideGhostDiff.conflicts ? "warn" : "ok"}>{guideGhostDiff.summary}</p>
           <footer><button type="button" onClick={() => setGuideGhostDiff(null)}>إلغاء</button><button type="button" data-guide-ignore="اعتماد يدوي من معاينة شبحية يفتح المحرر ولا يحفظ تلقائيًا" className="primary" onClick={() => { setGuideGhostDiff(null); const row=rows.find(item=>item.id===guideGhostDiff.before.id); if(row) openEdit(row); }}>اعتماد يدوي</button></footer>
@@ -9137,9 +9140,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     <strong>{move.before.AdCourseName || courseById.get(move.before.AdCourseId)?.CourseName || `موعد ${move.id}`}</strong>
                     <em>{move.because}</em>
                     <span className="repair-line">
-                      <bdi>{arabicDays(move.before) || "بلا يوم"} · {move.before.fstarttime}</bdi>
+                      <bdi>{arabicDays(move.before) || "بلا يوم"} · {formatScheduleTimeRange(move.before.fstarttime, move.before.fendtime)}</bdi>
                       {" ← "}
-                      <bdi>{days.find(d => d.key === move.day)?.label} · {move.start} · {move.roomCode}/{move.roomHall}</bdi>
+                      <bdi>{days.find(d => d.key === move.day)?.label} · {formatScheduleTimeRange(move.start, move.end)} · {move.roomCode}/{move.roomHall}</bdi>
                     </span>
                   </div>
                 </li>

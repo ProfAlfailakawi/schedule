@@ -209,7 +209,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
 
   return (
     <>
-      <GhostButton type="button" data-guide-target="schedule.publish" data-guide-feature-id="schedule.publish" onClick={openDialog} disabled={!scoped} title="رابط قراءة">
+      <GhostButton type="button" data-guide-target="schedule.publish" data-guide-feature-id="schedule.publish" onClick={openDialog} disabled={!scoped} title="رابط قراءة" aria-label="نشر الجدول">
         <Link2 />
         نشر
         {active.length ? <b className="tool-count">{active.length}</b> : null}
@@ -232,7 +232,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
           }}
         >
           <section
-            className="share-sheet"
+            className="share-sheet visual-minimal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="schedule-publish-title"
@@ -278,7 +278,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                       type="button"
                       onClick={() => setStep(item.id)}
                       aria-current={step === item.id ? "step" : undefined}
-                      aria-controls={`publish-step-${item.id}`}
+                      aria-controls={`publish-step-${item.id}`} title={item.label}
                     >
                       <span aria-hidden="true">{index < currentStep ? <Check /> : index + 1}</span>
                       <strong>{item.label}</strong>
@@ -307,7 +307,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   type="button"
                   className={kind === "department" ? "active" : ""}
                   onClick={() => setKind("department")}
-                  aria-pressed={kind === "department"}
+                  aria-pressed={kind === "department"} title="جدول القسم"
                 >
                   <Users aria-hidden="true" />
                   <span>جدول القسم</span>
@@ -317,7 +317,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   type="button"
                   className={kind === "staff" ? "active" : ""}
                   onClick={() => setKind("staff")}
-                  aria-pressed={kind === "staff"}
+                  aria-pressed={kind === "staff"} title="بطاقة الأستاذ"
                 >
                   <IdCard aria-hidden="true" />
                   <span>بطاقة الأستاذ</span>

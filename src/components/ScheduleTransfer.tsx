@@ -370,7 +370,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
   return (
     <div className="transfer-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="transfer-sheet" role="dialog" aria-modal="true" aria-label="نقل الجدول">
+      <section className="transfer-sheet visual-minimal" role="dialog" aria-modal="true" aria-label="نقل الجدول">
         <header>
           <div>
             <span className="surface-kicker">الجدول كوحدة واحدة</span>
@@ -380,10 +380,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         </header>
 
         <nav className="transfer-tabs">
-          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")}><Download />تصدير</button>
-          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")}><Upload />استيراد</button>
-          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")}><UserMinus />استبدال</button>
-          <button type="button" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")}><UserPlus />المنتدبون</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")} title="تصدير"><Download />تصدير</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")} title="استيراد"><Upload />استيراد</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")} title="استبدال"><UserMinus />استبدال</button>
+          <button type="button" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
         </nav>
 
         {!scopeReady ? (

@@ -358,7 +358,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       </CatalogFormDrawer>
     ) : null;
   return (
-    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+    <div className={`content-stack library-page catalog-inspector-page visual-minimal ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
         <EmbeddedAction slot={actionSlot}>
           <AddButton onClick={create}>إنشاء مقرر</AddButton>

@@ -1117,7 +1117,7 @@ export default function AdminUsers({
           .sort((a, b) => b[1] - a[1])
       : [];
     return (
-      <div className="content-stack admin-page system-vault-page">
+      <div className="content-stack admin-page system-vault-page visual-minimal">
         {consoleHead()}
         <PageTitle eyebrow="إدارة النظام" subtitle="حساب الإدارة الرئيسي فقط">خزنة النظام</PageTitle>
         {backupMessage ? <Notice type="success">{backupMessage}</Notice> : null}
@@ -1325,7 +1325,7 @@ export default function AdminUsers({
       );
     return (
       <>
-      <div className="content-stack admin-page master-detail-page">
+      <div className="content-stack admin-page master-detail-page visual-minimal">
         {consoleHead(
           <>
           <AddButton
@@ -1525,7 +1525,7 @@ export default function AdminUsers({
       null;
     return (
       <>
-      <div className="content-stack admin-page master-detail-page">
+      <div className="content-stack admin-page master-detail-page visual-minimal">
         {consoleHead(
           <AddButton
             onClick={() => {
@@ -1649,7 +1649,7 @@ export default function AdminUsers({
       selected = selectedIndex >= 0 ? assigns[selectedIndex] : null;
     return (
       <>
-      <div className="content-stack admin-page master-detail-page">
+      <div className="content-stack admin-page master-detail-page visual-minimal">
         {consoleHead(
           <AddButton
             onClick={() => {
@@ -1781,7 +1781,7 @@ export default function AdminUsers({
     selectedLog =
       logs.find((x) => String(x.id) === String(selectedLogId)) || null;
   return (
-    <div className="content-stack admin-page master-detail-page">
+    <div className="content-stack admin-page master-detail-page visual-minimal">
       {consoleHead(
         <SecondaryButton type="button" onClick={() => void load()}>
           تحديث السجل

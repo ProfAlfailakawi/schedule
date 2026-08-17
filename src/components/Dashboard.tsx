@@ -122,7 +122,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
   living?.health?{key:"ready",label:"الجاهزية",value:`${num(percent(living.health.quality))}٪`}:null,
  ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger"}>;
 
- return <div className="content-stack dashboard-page command-deck">
+ return <div className="content-stack dashboard-page command-deck visual-minimal">
   <header className="deck-bar" aria-label="ملخص الحساب والنطاق الحالي">
    <span className="deck-avatar" aria-hidden="true">{user?.Name?.trim()?.charAt(0)||"م"}</span>
    <div className="deck-identity">

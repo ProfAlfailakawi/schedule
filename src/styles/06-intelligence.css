@@ -3595,3 +3595,39 @@ button.twin-delta{width:100%}
 }
 .genesis-row-actions .genesis-delete{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 22%,var(--line));background:color-mix(in srgb,var(--danger-soft) 22%,var(--surface))}.genesis-row-actions .genesis-delete:hover{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 42%,var(--line))}
 .intel-context-idle>svg{width:28px;height:28px;margin-inline-end:12px;color:var(--accent);padding:5px;border-radius:10px;background:color-mix(in srgb,var(--accent) 9%,var(--surface))}
+
+
+/* --------------------------------------------------------------------------
+   ICON-FIRST POLISH — intelligence surfaces.
+   -------------------------------------------------------------------------- */
+.visual-minimal.intelligence-page .scene-caption,
+.visual-minimal.intelligence-page .guide-simulation-brief p{display:none}
+.visual-minimal.intelligence-page .intelligence-scenes .segmented button,
+.visual-minimal.intelligence-page .scene-subnav button{
+  min-width:54px;min-height:54px;padding:0 14px;border-radius:18px;justify-content:center;
+}
+.visual-minimal.intelligence-page .intelligence-scenes .segmented button,
+.visual-minimal.intelligence-page .scene-subnav button{font-size:0}
+.visual-minimal.intelligence-page .intelligence-scenes .segmented button svg,
+.visual-minimal.intelligence-page .scene-subnav button svg{width:20px;height:20px}
+.visual-minimal.intelligence-page .guide-simulation-brief footer button{min-width:52px;min-height:46px;padding:0 14px;border-radius:16px}
+.visual-minimal.intelligence-page .intel-context-idle{border-radius:24px}
+
+
+/* --------------------------------------------------------------------------
+   ICON-FIRST POLISH — intelligence and reports extras.
+   -------------------------------------------------------------------------- */
+.visual-minimal.query-page .query-bar,
+.visual-minimal.query-page .query-answer,
+.visual-minimal.query-page .lens-card,
+.visual-minimal.query-page .query-scope,
+.visual-minimal.query-page .query-more{border-radius:22px}
+.visual-minimal.query-page .query-ask-note,
+.visual-minimal.query-page .query-answer header p,
+.visual-minimal.query-page .lens-card p{opacity:.82}
+.visual-minimal.query-page .query-more .field,
+.visual-minimal.query-page .query-primary-filters .field{border-radius:16px}
+.visual-minimal.intelligence-page .guide-simulation-brief,
+.visual-minimal.intelligence-page .intel-context-idle,
+.visual-minimal.intelligence-page .scene-subnav,
+.visual-minimal.intelligence-page .intelligence-scenes{border-radius:22px}

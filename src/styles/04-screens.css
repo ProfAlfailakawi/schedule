@@ -1634,3 +1634,69 @@
   .apex-login-identity-trigger{width:36px;height:36px;border-radius:12px}
   .login-identity-backdrop{padding:16px}.rail-identity.login-identity-card{min-height:220px;padding:54px 30px 34px!important;border-radius:28px!important}
 }
+
+
+/* --------------------------------------------------------------------------
+   ICON-FIRST POLISH — general console/catalog surfaces.
+   -------------------------------------------------------------------------- */
+.visual-minimal .page-heading-action .btn,
+.console-action-slot .btn,
+.list-toolbar .btn,
+.list-toolbar .icon-action{border-radius:16px}
+.list-toolbar .count-chip{display:inline-flex;align-items:center;justify-content:center;min-height:34px;padding:0 12px;border-radius:999px;background:var(--surface-2)}
+.console-head{gap:12px}
+.console-tab{border-radius:18px}
+.console-tab-icon{inline-size:34px;block-size:34px;border-radius:12px;background:color-mix(in srgb,var(--surface-2) 92%,var(--surface));display:grid;place-items:center}
+.record-card,.surface,.catalog-form-drawer{border-radius:24px}
+
+
+/* --------------------------------------------------------------------------
+   ICON-FIRST POLISH — catalog, dashboard, admin, saved views.
+   -------------------------------------------------------------------------- */
+.visual-minimal.catalog-inspector-page .page-heading p,
+.visual-minimal.admin-page .page-heading p,
+.visual-minimal.dashboard-page .deck-identity small,
+.visual-minimal .record-card p,
+.visual-minimal .record-card small{display:none}
+.visual-minimal.catalog-inspector-page .catalog-workspace,
+.visual-minimal.admin-page .master-detail-shell{gap:16px}
+.visual-minimal.catalog-inspector-page .catalog-master,
+.visual-minimal.catalog-inspector-page .catalog-detail,
+.visual-minimal.admin-page .master-pane,
+.visual-minimal.admin-page .detail-pane,
+.visual-minimal.dashboard-page .deck-panel,
+.visual-minimal.dashboard-page .deck-card{border-radius:26px}
+.visual-minimal.catalog-inspector-page .page-heading-action .btn,
+.visual-minimal.admin-page .page-heading-action .btn,
+.visual-minimal.admin-page .console-action-slot .btn,
+.visual-minimal.catalog-inspector-page .list-toolbar .list-search,
+.visual-minimal.catalog-inspector-page .list-filter,
+.visual-minimal.admin-page .list-toolbar .list-search{border-radius:16px}
+.visual-minimal.catalog-inspector-page .record-card,
+.visual-minimal.catalog-inspector-page .meta-pill{border-radius:18px}
+.visual-minimal.catalog-inspector-page .record-card header,
+.visual-minimal.catalog-inspector-page .record-card footer{align-items:center}
+.visual-minimal.catalog-inspector-page .icon-action,
+.visual-minimal.admin-page .icon-action{width:42px;height:42px;border-radius:14px}
+.visual-minimal.dashboard-page .deck-bar{border-radius:26px}
+.visual-minimal.dashboard-page .deck-chip,
+.visual-minimal.dashboard-page .deck-live,
+.visual-minimal.dashboard-page .deck-action{border-radius:999px}
+.visual-minimal.dashboard-page .deck-card header p,
+.visual-minimal.dashboard-page .deck-card .deck-card-subtitle,
+.visual-minimal.dashboard-page .deck-summary-note{display:none}
+.visual-minimal.dashboard-page .deck-stat,
+.visual-minimal.dashboard-page .deck-kpi{border-radius:22px}
+.visual-minimal.admin-page .system-vault-seal,
+.visual-minimal.admin-page .vault-action-icon,
+.visual-minimal.admin-page .form-intro>span{border-radius:18px}
+.visual-minimal.admin-page .system-vault-hero p,
+.visual-minimal.admin-page .vault-safety-note p,
+.visual-minimal.admin-page .system-vault-action p{opacity:.88}
+.visual-minimal.schedule-views .views-trigger,
+.schedule-views.visual-minimal .views-trigger{border-radius:18px;min-height:46px}
+.schedule-views.visual-minimal .views-menu,
+.schedule-views.visual-minimal .views-dialog{border-radius:22px}
+.schedule-views.visual-minimal .views-current,
+.schedule-views.visual-minimal .views-item,
+.schedule-views.visual-minimal .views-manage-row{border-radius:14px}

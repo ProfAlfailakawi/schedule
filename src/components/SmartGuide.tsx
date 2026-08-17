@@ -1140,7 +1140,7 @@ export default function SmartGuide({
       {!drawerHidden && !pointMode && !located && !preview ? (
         <div className="smart-guide-outside-dismiss no-print" role="presentation" onPointerDown={onClose} />
       ) : null}
-      <aside className={`smart-guide no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal={!drawerHidden && !pointMode && !located && !preview} aria-hidden={drawerHidden || pointMode || located || preview ? true : undefined} tabIndex={-1} dir="rtl">
+      <aside className={`smart-guide visual-minimal no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal={!drawerHidden && !pointMode && !located && !preview} aria-hidden={drawerHidden || pointMode || located || preview ? true : undefined} tabIndex={-1} dir="rtl">
         <button type="button" className="smart-guide-sheet-handle" aria-label="تغيير ارتفاع المرشد" onPointerDown={onSheetPointerDown} onPointerUp={onSheetPointerUp}><i /></button>
         <header className="smart-guide-hero">
           <div>

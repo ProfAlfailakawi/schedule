@@ -238,7 +238,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
       </CatalogFormDrawer>
     ) : null;
   return (
-    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+    <div className={`content-stack library-page catalog-inspector-page visual-minimal ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
         <EmbeddedAction slot={actionSlot}>
           <AddButton onClick={openCreate}>إنشاء كلية</AddButton>

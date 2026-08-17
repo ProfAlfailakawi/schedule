@@ -221,7 +221,7 @@ export default function QuickCreatePopover({
 
   return (
     <div
-      className="quick-create"
+      className="quick-create visual-minimal"
       ref={ref}
       role="dialog"
       aria-modal="false"

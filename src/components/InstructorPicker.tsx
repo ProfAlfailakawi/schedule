@@ -180,7 +180,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
   };
 
   return (
-    <div className={`instructor-picker ${open ? "open" : ""}`} ref={boxRef}>
+    <div className={`instructor-picker visual-minimal ${open ? "open" : ""}`} ref={boxRef}>
       <button
         type="button"
         className="instructor-trigger"

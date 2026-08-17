@@ -173,7 +173,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     // never be `no-print` — doing so hid the very report the print button was
     // meant to produce. Only the on-screen dialog is suppressed on paper.
     <div className="review-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="review-sheet no-print" role="dialog" aria-modal="true" aria-label="مراجعة الاعتماد">
+      <section className="review-sheet no-print visual-minimal" role="dialog" aria-modal="true" aria-label="مراجعة الاعتماد">
         <header className={`review-head tone-${tone}`}>
           <svg className="review-ring" viewBox="0 0 64 64" role="img" aria-label={`مؤشر المطابقة ${score} من 100`}>
             <circle className="ring-track" cx="32" cy="32" r="26" />

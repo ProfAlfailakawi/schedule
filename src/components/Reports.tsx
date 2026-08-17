@@ -773,7 +773,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   };
 
   return (
-    <div className="content-stack query-page">
+    <div className="content-stack query-page visual-minimal">
       <PageTitle eyebrow="الاستعلامات والتقارير" subtitle={`سؤال واحد · ${shownLenses.length === 8 ? "ثماني عدسات" : "سبع عدسات"}`}>مركز الاستعلام</PageTitle>
 
       {error ? (

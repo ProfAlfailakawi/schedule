@@ -67,7 +67,7 @@ export default function ScheduleViewsMenu({
   const rest = views.filter(view => !view.favorite && view.id !== activeId);
 
   return (
-    <div className="schedule-views" ref={box}>
+    <div className="schedule-views visual-minimal" ref={box}>
       <button
         type="button"
         className={`views-trigger ${open ? "is-open" : ""} ${dirty ? "is-dirty" : ""}`}

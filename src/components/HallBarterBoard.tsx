@@ -166,7 +166,7 @@ export default function HallBarterBoard({
   );
 
   return (
-    <section className={`hall-barter-board ${open ? "is-open" : ""}`} aria-label="بورصة القاعات الساكنة بين الكليات">
+    <section className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="بورصة القاعات الساكنة بين الكليات">
       <button type="button" className="hall-barter-summary" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className="hall-barter-mark"><Building2 aria-hidden="true" /><ArrowLeftRight aria-hidden="true" /></span>
         <span className="hall-barter-summary-copy">
