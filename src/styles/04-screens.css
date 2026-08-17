@@ -1564,41 +1564,47 @@
 .apex-login-identity-trigger:hover{transform:translateY(-1px);border-color:color-mix(in srgb,#79a695 54%,transparent);background:#0d1714}
 .apex-login-identity-trigger:focus-visible{outline:3px solid color-mix(in srgb,#2b7d69 28%,transparent);outline-offset:3px}
 .apex-login-identity-trigger svg{width:18px;height:18px}
-.apex-login-identity-trigger--pulse{position:relative;isolation:isolate;animation:loginJourneyBreath 2.2s ease-in-out infinite}
-.apex-login-identity-trigger--pulse::before,
-.apex-login-identity-trigger--pulse::after{
+.apex-login-identity-trigger--pulse{position:relative;isolation:isolate;overflow:visible;animation:loginJourneyBreath 2.8s ease-in-out infinite}
+.apex-login-identity-trigger--pulse::before{
   content:"";position:absolute;pointer-events:none;border-radius:22px;
 }
 .apex-login-identity-trigger--pulse::before{
   inset:-3px;z-index:-1;
   background:radial-gradient(circle at 50% 50%,color-mix(in srgb,#7aa48f 16%,transparent),transparent 68%);
-  opacity:.58;filter:blur(3px);animation:loginJourneyGlow 2.2s ease-in-out infinite;
+  opacity:.58;filter:blur(3px);animation:loginJourneyGlow 2.8s ease-in-out infinite;
 }
-.apex-login-identity-trigger--pulse::after{
-  inset:-7px;border:1px solid color-mix(in srgb,#7aa48f 52%,transparent);
-  opacity:.62;animation:loginJourneyPulse 2.2s ease-out infinite;
+.apex-login-pulse-rings{
+  position:absolute;inset:0;z-index:-2;pointer-events:none;display:block;border-radius:inherit;
 }
+.apex-login-pulse-rings i{
+  position:absolute;inset:-5px;border:1px solid color-mix(in srgb,#8bb7a3 54%,transparent);border-radius:18px;
+  opacity:0;transform:scale(.92);animation:loginJourneyPulse 2.8s cubic-bezier(.2,.66,.26,1) infinite;
+}
+.apex-login-pulse-rings i:nth-child(2){animation-delay:.32s}
+.apex-login-pulse-rings i:nth-child(3){animation-delay:.64s}
 @keyframes loginJourneyBreath{
   0%,100%{transform:scale(1);box-shadow:0 8px 22px color-mix(in srgb,#000 16%,transparent),0 0 0 1px color-mix(in srgb,#fff 2%,transparent) inset}
-  35%{transform:scale(1.03);box-shadow:0 10px 28px color-mix(in srgb,#0b1714 24%,transparent),0 0 0 1px color-mix(in srgb,#9ecab6 12%,transparent) inset}
-  58%{transform:scale(1.05);box-shadow:0 12px 30px color-mix(in srgb,#0b1714 28%,transparent),0 0 0 1px color-mix(in srgb,#b7dccb 14%,transparent) inset}
+  30%{transform:scale(1.035);box-shadow:0 10px 28px color-mix(in srgb,#0b1714 24%,transparent),0 0 0 1px color-mix(in srgb,#9ecab6 12%,transparent) inset}
+  52%{transform:scale(1.055);box-shadow:0 12px 30px color-mix(in srgb,#0b1714 28%,transparent),0 0 0 1px color-mix(in srgb,#b7dccb 14%,transparent) inset}
+  72%{transform:scale(1.02);box-shadow:0 10px 25px color-mix(in srgb,#0b1714 21%,transparent),0 0 0 1px color-mix(in srgb,#9ecab6 8%,transparent) inset}
 }
 @keyframes loginJourneyGlow{
   0%,100%{opacity:.28;transform:scale(.96)}
-  40%{opacity:.58;transform:scale(1.06)}
-  70%{opacity:.36;transform:scale(1.12)}
+  34%{opacity:.62;transform:scale(1.07)}
+  66%{opacity:.42;transform:scale(1.13)}
 }
 @keyframes loginJourneyPulse{
-  0%{transform:scale(.92);opacity:.16}
-  22%{transform:scale(1);opacity:.62}
-  58%{transform:scale(1.1);opacity:.22}
-  100%{transform:scale(1.2);opacity:0}
+  0%{transform:scale(.9);opacity:0}
+  8%{transform:scale(.94);opacity:.2}
+  20%{transform:scale(1.02);opacity:.66}
+  45%{transform:scale(1.18);opacity:.25}
+  64%,100%{transform:scale(1.34);opacity:0}
 }
 @media (prefers-reduced-motion:reduce){
   .apex-login-identity-trigger--pulse{animation:none}
-  .apex-login-identity-trigger--pulse::before,.apex-login-identity-trigger--pulse::after{animation:none}
+  .apex-login-identity-trigger--pulse::before,.apex-login-pulse-rings i{animation:none}
   .apex-login-identity-trigger--pulse::before{opacity:.2;transform:none}
-  .apex-login-identity-trigger--pulse::after{opacity:.22;inset:-3px}
+  .apex-login-pulse-rings i{opacity:0}
 }
 .login-identity-backdrop{
   position:fixed;inset:0;z-index:1700;display:grid;place-items:center;padding:24px;

@@ -107,6 +107,11 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 aria-label="افتح رحلة SCHEDULE"
                 title="رحلة SCHEDULE"
               >
+                <span className="apex-login-pulse-rings" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
                 <Sparkles aria-hidden="true" />
               </button>
             </div>

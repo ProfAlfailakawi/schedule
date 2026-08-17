@@ -6259,32 +6259,36 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   <header><span>4</span><div><strong>الوقت والمكان</strong><small>الفترة والمبنى والقاعة</small></div></header>
                   <div className="form-grid">
                 <Field label="بداية الوقت" required>
-                  <input
-                    type="time"
-                    min={SCHEDULE_DAY_START_TIME}
-                    max={SCHEDULE_DAY_END_TIME}
-                    step={SCHEDULE_SLOT_MINUTES * 60}
-                    value={form.fstarttime}
-                    onChange={(e) => {
-                      setScheduleTouched(true);
-                      setForm((p) => ({ ...p, fstarttime: e.target.value }));
-                    }}
-                    required
-                  />
+                  <div className="schedule-time-control" dir="ltr">
+                    <input
+                      type="time"
+                      min={SCHEDULE_DAY_START_TIME}
+                      max={SCHEDULE_DAY_END_TIME}
+                      step={SCHEDULE_SLOT_MINUTES * 60}
+                      value={form.fstarttime}
+                      onChange={(e) => {
+                        setScheduleTouched(true);
+                        setForm((p) => ({ ...p, fstarttime: e.target.value }));
+                      }}
+                      required
+                    />
+                  </div>
                 </Field>
                 <Field label="نهاية الوقت" required>
-                  <input
-                    type="time"
-                    min={SCHEDULE_DAY_START_TIME}
-                    max={SCHEDULE_DAY_END_TIME}
-                    step={SCHEDULE_SLOT_MINUTES * 60}
-                    value={form.fendtime}
-                    onChange={(e) => {
-                      setScheduleTouched(true);
-                      setForm((p) => ({ ...p, fendtime: e.target.value }));
-                    }}
-                    required
-                  />
+                  <div className="schedule-time-control" dir="ltr">
+                    <input
+                      type="time"
+                      min={SCHEDULE_DAY_START_TIME}
+                      max={SCHEDULE_DAY_END_TIME}
+                      step={SCHEDULE_SLOT_MINUTES * 60}
+                      value={form.fendtime}
+                      onChange={(e) => {
+                        setScheduleTouched(true);
+                        setForm((p) => ({ ...p, fendtime: e.target.value }));
+                      }}
+                      required
+                    />
+                  </div>
                 </Field>
                 <Field label="رقم المبنى" required>
                   <input
@@ -6446,11 +6450,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   const toneClass = isScope ? "tone-scope" : c.type === "duplicate" ? "tone-warn" : "tone-danger";
                   return (
                     <article key={`${c.type}-${c.rowId}-${i}`} className={toneClass}>
-                      <span className="conflict-type-icon">{c.type === "room" || isScope ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <AlertTriangle />}</span>
+                      <div className="conflict-pictogram" aria-hidden="true">
+                        <span>{c.type === "room" || isScope ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <Layers />}</span>
+                        <i><ArrowLeftRight /></i>
+                        <span>{c.type === "room" || isScope ? <CalendarDays /> : c.type === "instructor" ? <Clock3 /> : <ClipboardCheck />}</span>
+                      </div>
                       <div>
                         <small>{typeLabel}</small>
                         <strong>{c.message}</strong>
-                        <span title={String(c.detail || "")}>{String(c.detail || "").replace(/\s+/g, " ").trim().slice(0, 88)}</span>
+                        {c.detail ? <span title={String(c.detail || "")}>{String(c.detail || "").replace(/\s+/g, " ").trim().slice(0, 56)}</span> : null}
                       </div>
                       <em>{isScope ? "تنبيه" : "مانع"}</em>
                     </article>
@@ -6478,11 +6486,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 </div>
                 <div className="regulation-advice-grid regulation-advice-grid-single">
                   <article className="regulation-advice-tile tone-timing">
-                    <span className="regulation-advice-icon"><Clock3 aria-hidden="true" /></span>
+                    <div className="regulation-visual-pair" aria-hidden="true">
+                      <span><CalendarDays /></span>
+                      <i />
+                      <span><Clock3 /></span>
+                    </div>
                     <div>
-                      <small>نمط الأيام</small>
                       <strong>بداية غير معتادة</strong>
-                      <p>{String(editorTimingNote).replace(/\s+/g, " ").trim().slice(0, 120)}</p>
+                      <p title={String(editorTimingNote)}>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/يمكنك المتابعة.*$/u, "").replace(/\s+/g, " ").trim().slice(0, 88)}</p>
                     </div>
                   </article>
                 </div>
@@ -6505,14 +6516,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 </div>
                 <div className="regulation-advice-grid">
                   {editorRegulation.slice(0, 4).map((finding, index) => (
-                    <article key={finding.rule} className={`regulation-advice-tile tone-${finding.severity}`}>
-                      <span className="regulation-advice-icon">
-                        {index % 3 === 0 ? <History aria-hidden="true" /> : index % 3 === 1 ? <Building2 aria-hidden="true" /> : <Lightbulb aria-hidden="true" />}
-                      </span>
+                    <article key={finding.rule} className={`regulation-advice-tile tone-${finding.severity}`} title={String(finding.detail || "")}>
+                      <div className="regulation-visual-pair" aria-hidden="true">
+                        <span>{index % 3 === 0 ? <History /> : index % 3 === 1 ? <Building2 /> : <Lightbulb />}</span>
+                        <i />
+                        <span><ClipboardCheck /></span>
+                      </div>
                       <div>
                         <small>{finding.article}</small>
                         <strong>{finding.title}</strong>
-                        <p>{String(finding.detail || "").replace(/\s+/g, " ").trim().slice(0, 110)}</p>
                       </div>
                     </article>
                   ))}
