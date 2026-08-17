@@ -4,7 +4,7 @@ import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
-import { clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../src/utils/weekVisual";
+import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth } from "../src/utils/weekVisual";
 import { findConflicts } from "../src/utils/scheduleIntelligence";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
@@ -180,6 +180,27 @@ async function runTests() {
     assert(peakConcurrency([{start:480,end:600},{start:600,end:720}]) === 1, "touching end and start do not overlap");
     assert(peakConcurrency([{start:480,end:840},{start:540,end:600},{start:660,end:720}]) === 2, "a long block under two short ones peaks at two");
     assert(peakConcurrency([]) === 0 && peakConcurrency([{start:600,end:600}]) === 0, "empty and zero-length spans peak at zero");
+
+    // Adaptive week geometry: readable cards first, semantic density only when
+    // the five-day overview would otherwise become an unbounded canvas.
+    assert(readableWeekDayWidth(1) === 224, "one-lane day keeps the calm 224px column");
+    assert(readableWeekDayWidth(4) === 480, "four simultaneous lectures receive four readable 112px lanes plus gaps");
+    assert(readableWeekDayWidth(12) === 1440, "focus width scales to twelve real lanes instead of microtext");
+    const quietPlan = buildWeekDensityPlan([
+      { key: "fsunday", peak: 1 }, { key: "fmonday", peak: 2 }, { key: "ftuesday", peak: 4 },
+      { key: "fwednesday", peak: 2 }, { key: "fthursday", peak: 1 },
+    ] as any);
+    assert(quietPlan.days.find(day => day.key === "ftuesday")?.mode === "cards", "one peak-four day stays as four real cards");
+    const extremePlan = buildWeekDensityPlan([
+      { key: "fsunday", peak: 12 }, { key: "fmonday", peak: 1 }, { key: "ftuesday", peak: 2 },
+      { key: "fwednesday", peak: 1 }, { key: "fthursday", peak: 1 },
+    ] as any);
+    assert(extremePlan.days.find(day => day.key === "fsunday")?.mode === "summary", "twelve-way collision is semantic in overview");
+    const allBusyPlan = buildWeekDensityPlan([
+      { key: "fsunday", peak: 6 }, { key: "fmonday", peak: 6 }, { key: "ftuesday", peak: 6 },
+      { key: "fwednesday", peak: 6 }, { key: "fthursday", peak: 6 },
+    ] as any);
+    assert(allBusyPlan.totalWidth <= 1880 && allBusyPlan.days.every(day => day.mode === "summary"), "five peak-six days stay inside the overview budget without shrinking cards");
   }
 
   await initDatabase();

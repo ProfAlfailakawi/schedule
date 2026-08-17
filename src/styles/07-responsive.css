@@ -351,16 +351,17 @@
   .agenda-time small,.agenda-place small{margin:0}
   .agenda-time strong,.agenda-place strong{margin:0}
 
-  /* Phones read one day at a time: wide, legible columns that snap into place. */
+  /* The phone inherits the desktop density arithmetic instead of forcing every
+     day back to 220px.  Horizontal travel is preferable to recreating the
+     4–8px cards this layout was built to remove. */
   .week-surface{padding:var(--s3);scroll-snap-type:x proximity}
-  .week-calendar{min-width:1148px;grid-template-columns:46px repeat(5,minmax(220px,1fr));--week-gutter:46px}
-  /* A folded week is one lane wide and must not inherit the five-lane minimum
-     above — that minimum is the entire reason a phone scrolled sideways to
-     reach Wednesday. Released here, the day fits the window exactly, and the
-     snap points have nothing left to snap between. */
+  .week-calendar{--week-gutter:46px}
+  /* A focused day may fit the phone when it is quiet, but a twelve-lane day
+     keeps its real readable width and scrolls intentionally instead of being
+     crushed into twelve slivers. */
   .week-calendar[data-expanded]{
-    min-width:0;
-    grid-template-columns:var(--week-gutter,46px) minmax(0,1fr);
+    min-width:calc(var(--week-gutter,46px) + var(--week-focus-width,224px));
+    grid-template-columns:var(--week-gutter,46px) minmax(var(--week-focus-width,224px),1fr);
   }
   .week-surface:has(.week-calendar[data-expanded]){scroll-snap-type:none}
   /* Five days across a phone: the label carries the day, the count rides below. */

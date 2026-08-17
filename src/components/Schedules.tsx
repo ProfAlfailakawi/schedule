@@ -134,7 +134,7 @@ import { GUIDE_ACTIONS, allAllowedGuideFeatures, canRunGuideAction, featureById,
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
 const PRESENCE_HUES = [200, 262, 38, 96, 288, 178];
-import { clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive } from "../utils/weekVisual";
+import { buildWeekDensityPlan, clusterSqueezed, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth } from "../utils/weekVisual";
 import {
   formatScheduleTimeRange,
   scheduleClockForDisplay,
@@ -3943,16 +3943,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     // One pass builds every room/day bucket. The full-week view therefore
     // costs one O(rows × five-days) index, not five complete room renders.
     const byDayRoom = new Map<string, FSchedule[]>();
-    const byRoom = new Map<string, FSchedule[]>();
     const noRoomByDay = new Map<DayKey, FSchedule[]>();
     const roomCounts = new Map<string, number>();
     filteredRows.forEach(row => {
       if (!row.fstarttime || !row.fendtime || mins(row.fendtime) <= mins(row.fstarttime)) return;
       const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
-      if (room.buildingKey || room.hallKey) {
-        const roomRows = byRoom.get(room.key);
-        if (roomRows) roomRows.push(row); else byRoom.set(room.key, [row]);
-      }
       days.forEach(day => {
         if (!Boolean((row as any)[day.key])) return;
         if (!room.buildingKey && !room.hallKey) {
@@ -3966,57 +3961,39 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         roomCounts.set(room.key, (roomCounts.get(room.key) || 0) + 1);
       });
     });
+    /* One room/day can contain genuine clashes.  Those clashes must grow the
+       row vertically instead of sitting on top of one another or forcing the
+       time axis to lie about duration.  The horizontal coordinate remains the
+       real clock; only a local vertical lane is added when two cards overlap. */
+    const layoutTrackRows = (trackRows: FSchedule[]) => {
+      const laneEnds: number[] = [];
+      const items = trackRows
+        .slice()
+        .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(a.fendtime) - mins(b.fendtime))
+        .map(row => {
+          const from = mins(row.fstarttime);
+          const to = mins(row.fendtime);
+          let lane = laneEnds.findIndex(endAt => endAt <= from);
+          if (lane < 0) { lane = laneEnds.length; laneEnds.push(to); }
+          else laneEnds[lane] = to;
+          return { row, lane };
+        });
+      return { items, lanes: Math.max(1, laneEnds.length) };
+    };
+    const byDayRoomLayout = new Map<string, { items: Array<{ row: FSchedule; lane: number }>; lanes: number }>();
+    byDayRoom.forEach((trackRows, key) => byDayRoomLayout.set(key, layoutTrackRows(trackRows)));
+    const noRoomLayout = new Map<DayKey, { items: Array<{ row: FSchedule; lane: number }>; lanes: number }>();
+    noRoomByDay.forEach((trackRows, key) => noRoomLayout.set(key, layoutTrackRows(trackRows)));
     const hourMarks: number[] = [];
     for (let m = gridWindow.start; m <= gridWindow.end; m += 60) hourMarks.push(m);
-    const compactByRoom = new Map<string, {
-      items: Array<{ row: FSchedule; lane: number; visualFrom: number; visualTo: number }>;
-      lanes: number;
-      laneDays: Array<{ key: string; dayKeys: DayKey[]; labels: string[] }>;
-    }>();
-    byRoom.forEach((roomRows, key) => {
-      /* A compact lane has one *day pattern*, not an unrelated union of room
-         days.  Thus الأحد/الثلاثاء/الخميس beside a lane describes every card
-         on that exact lane; one-, two- and three-day lectures remain obvious. */
-      const groups = new Map<string, { labels: string[]; rows: FSchedule[]; firstDay: number }>();
-      roomRows.forEach(row => {
-        const active = days.filter(day => Boolean((row as any)[day.key]));
-        const pattern = active.map(day => day.key).join("|") || "none";
-        const existing = groups.get(pattern);
-        if (existing) existing.rows.push(row);
-        else groups.set(pattern, {
-          labels: active.map(day => day.label),
-          rows: [row],
-          firstDay: active.length ? days.findIndex(day => day.key === active[0].key) : days.length,
-        });
-      });
-      const items: Array<{ row: FSchedule; lane: number; visualFrom: number; visualTo: number }> = [];
-      const laneDays: Array<{ key: string; dayKeys: DayKey[]; labels: string[] }> = [];
-      [...groups.entries()].sort((a, b) => a[1].firstDay - b[1].firstDay || a[0].localeCompare(b[0])).forEach(([pattern, group]) => {
-        const laneEnds: number[] = [];
-        group.rows.slice().sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(a.fendtime) - mins(b.fendtime)).forEach(row => {
-          const actualFrom = Math.max(SCHEDULE_DAY_START, mins(row.fstarttime));
-          const actualTo = Math.min(SCHEDULE_DAY_END, mins(row.fendtime));
-          const readableSpan = Math.max(60, actualTo - actualFrom);
-          const visualFrom = Math.min(actualFrom, SCHEDULE_DAY_END - readableSpan);
-          const visualTo = Math.min(SCHEDULE_DAY_END, visualFrom + readableSpan);
-          let localLane = laneEnds.findIndex(endAt => endAt <= visualFrom);
-          if (localLane < 0) {
-            localLane = laneEnds.length;
-            laneEnds.push(visualTo);
-            laneDays.push({ key: `${pattern}:${localLane}`, dayKeys: group.rows[0] ? days.filter(day => Boolean((group.rows[0] as any)[day.key])).map(day => day.key as DayKey) : [], labels: group.labels });
-          } else laneEnds[localLane] = visualTo;
-          const laneBase = laneDays.length - laneEnds.length;
-          items.push({ row, lane: laneBase + localLane, visualFrom, visualTo });
-        });
-      });
-      compactByRoom.set(key, { items, lanes: Math.max(1, laneDays.length), laneDays });
-    });
+    if (hourMarks[hourMarks.length - 1] !== gridWindow.end) hourMarks.push(gridWindow.end);
     return {
       displayDays,
       allRooms,
       allBuildings,
       byDayRoom,
-      compactByRoom,
+      byDayRoomLayout,
+      noRoomLayout,
       noRoomByDay,
       roomCounts,
       hourMarks,
@@ -4214,19 +4191,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * concurrent hour is split — which is what a person means when they say a
    * timetable is readable.
    */
-  /**
-   * The slim vertical rails are retired.
-   *
-   * Long workshops used to step out of the lanes into rotated slivers at the
-   * column's edge — and the field said no: this grid reads horizontally,
-   * always. With the threshold at infinity every workshop stays in the lane
-   * flow, and when a crowd of them collides the woven hour takes over and
-   * lays them as horizontal, named, draggable slices.
-   */
-  const LONG_BLOCK = 150;
   const weekLayout = useMemo(() => {
-    type Placed = { row: FSchedule; top: number; height: number; lane: number; span: number; lanes: number; spine?: number };
-    const layout: Record<string, { items: Placed[]; spine: Placed[]; busiest: number }> = {};
+    type Placed = { row: FSchedule; top: number; height: number; lane: number; span: number; lanes: number };
+    const layout: Record<string, { items: Placed[]; busiest: number }> = {};
 
     const geometry = (row: FSchedule) => ({
       top: ((mins(row.fstarttime) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
@@ -4239,39 +4206,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         .slice()
         .sort((a, b) => mins(a.fstarttime) - mins(b.fstarttime) || mins(b.fendtime) - mins(a.fendtime));
 
-      /**
-       * The four-hour workshop steps out of the way.
-       *
-       * A block that runs from eight to one is not competing with the ten
-       * o'clock lecture for attention — it is the background of the day. Left
-       * in the ordinary column flow it takes a quarter of the width for five
-       * hours and squeezes every lecture beside it into an unreadable sliver.
-       * So long single-day blocks get slim rails of their own at the edge of
-       * the column, and the day's teaching keeps its full width.
-       */
-      const spineRows = all.filter(item => {
-        const from = mins(item.fstarttime), to = mins(item.fendtime);
-        const isLongSingleDay =
-          days.filter(d => Boolean((item as any)[d.key])).length === 1 &&
-          to - from >= LONG_BLOCK;
-        if (!isLongSingleDay) return false;
-        // A long lecture only steps into the vertical companion column when it
-        // actually squeezes another lecture. Alone, it remains the normal full
-        // horizontal card. This keeps the finished row layout untouched.
-        return all.some(other =>
-          other.id !== item.id &&
-          mins(other.fstarttime) < to && mins(other.fendtime) > from);
-      });
-      const items = all.filter(item => !spineRows.includes(item));
-
-      const spineEnds: number[] = [];
-      const spine: Placed[] = spineRows.map(item => {
-        const from = mins(item.fstarttime);
-        let rail = spineEnds.findIndex(endAt => endAt <= from);
-        if (rail < 0) { rail = spineEnds.length; spineEnds.push(0); }
-        spineEnds[rail] = mins(item.fendtime);
-        return { row: item, ...geometry(item), lane: 0, span: 1, lanes: 1, spine: rail };
-      });
+      // Long workshops stay in the exact same horizontal card language as
+      // every other lecture.  A previous rail treatment removed them from the
+      // lane geometry and printed them vertically; that saved paper only by
+      // creating a second reading system.  The adaptive day width below is the
+      // place where density is solved now, so duration never changes identity.
+      const items = all;
 
       // Chains of overlap define who competes for columns…
       const groups: FSchedule[][] = [];
@@ -4287,7 +4227,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (current.length) groups.push(current);
 
       const placed: Placed[] = [];
-      let busiest = 1;
+      const busiest = Math.max(1, peakConcurrency(all.map(item => ({ start: mins(item.fstarttime), end: mins(item.fendtime) }))));
       for (const group of groups) {
         // …greedy column assignment inside the chain…
         const columns: FSchedule[][] = [];
@@ -4311,47 +4251,51 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               if (clash) break;
               span += 1;
             }
-            busiest = Math.max(busiest, lanes - span + 1);
             placed.push({ row: item, ...geometry(item), lane, span, lanes });
           }
         }
       }
-      layout[day.key] = { items: placed, spine, busiest: Math.max(busiest, spineEnds.length ? busiest + 1 : busiest) };
+      layout[day.key] = { items: placed, busiest };
     }
     return layout;
   }, [weekRows, gridWindow]);
 
   /**
-   * When an hour holds five lectures or more, lanes stop being an answer.
+   * When an hour exceeds the overview's readable lane budget, lanes stop being
+   * the answer for that local time block.
    *
    * Eight concurrent courses in a 212px column are eight slivers of 26 pixels —
-   * a bar chart of nothing. Past this threshold the cluster stops pretending to
-   * be eight readable cards and becomes one honest object: a woven band, one
-   * ribbon per course in the course's own hue, that says "this hour is dense"
-   * at a glance and names each thread on hover. Opening it fans the lectures
-   * into full-width cards that drag onto the grid like any other — the fan is
-   * the reading view, the weave is the map.
+   * a bar chart of nothing. Past the overview's density budget the collision
+   * becomes one honest object: a quiet summary that says how many are actually
+   * simultaneous and where the crowded block sits.  Opening it expands the day
+   * itself; no floating card ever covers the timetable it is explaining.
    *
    * Clusters are found by time-overlap connectivity on the already-laid-out
    * items, so the weave covers exactly the block the lanes would have covered.
    */
-  /* Four lanes was the old survival threshold; the readability floor says a
-     card under ~72px cannot say its name, and four lanes land there. From
-     four concurrent onward the hour weaves. */
-  const BUNDLE_LANES = 4;
+  const weekDensity = useMemo(
+    () => buildWeekDensityPlan(days.map(day => ({ key: day.key as DayKey, peak: weekLayout[day.key]?.busiest || 1 }))),
+    [weekLayout],
+  );
+  const weekDensityByDay = useMemo(
+    () => new Map(weekDensity.days.map(day => [day.key, day] as const)),
+    [weekDensity],
+  );
   const weekBundles = useMemo(() => {
     type Bundle = { key: string; top: number; height: number; from: string; to: string; rows: FSchedule[] };
     const byDay: Record<string, Bundle[]> = {};
     const bundled: Record<string, Set<number>> = {};
     for (const day of days) {
+      const density = weekDensityByDay.get(day.key as DayKey);
+      const bundleThreshold = density?.mode === "summary" ? density.bundleThreshold : 7;
       /* Membership and clustering live in utils/weekVisual (clusterSqueezed),
-         where the per-card rule — five-plus lanes, two spans or fewer — and
+         where the per-card rule — genuinely squeezed lanes, two spans or fewer — and
          the chain-tail exemption are documented and under test. */
       const items = weekLayout[day.key]?.items || [];
       const rowById = new Map(items.map(item => [item.row.id, item.row]));
       const clusters = clusterSqueezed(
         items.map(item => ({ id: item.row.id, top: item.top, height: item.height, lanes: item.lanes, span: item.span })),
-        BUNDLE_LANES,
+        bundleThreshold,
       );
       const dayBundles: Bundle[] = [];
       const ids = new Set<number>();
@@ -4377,26 +4321,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       bundled[day.key] = ids;
     }
     return { byDay, bundled };
-  }, [weekLayout]);
-  /** The one weave currently fanned open, with where to hang the panel. */
-  const [fanned, setFanned] = useState<{ key: string; x: number; y: number } | null>(null);
-  useEffect(() => {
-    if (!fanned) return;
-    const stillThere = days.some(day => (weekBundles.byDay[day.key] || []).some(b => b.key === fanned.key));
-    if (!stillThere) setFanned(null);
-  }, [weekBundles, fanned]);
+  }, [weekLayout, weekDensityByDay]);
 
   /**
    * Where a card sits across the width of its day.
    *
-   * An expanded day gives every lane the full grid, so nothing there needs to
-   * share. Everywhere else the card occupies the columns it earned.
+   * The day owns enough paper for every lane to keep its readable floor.  The
+   * same lane geometry is used in overview and focus; focus simply gives that
+   * one day all of the width it needs instead of changing the card language.
    */
-  const RAIL = 48;
-  const laneStyle = (placed: { lane: number; span: number; lanes: number }, rails: number): React.CSSProperties => {
-    const reserved = rails * RAIL;
-    if (placed.lanes <= 1) return reserved ? { insetInlineEnd: `${reserved + 5}px` } : {};
-    const unit = `((100% - ${reserved}px) / ${placed.lanes})`;
+  const laneStyle = (placed: { lane: number; span: number; lanes: number }): React.CSSProperties => {
+    if (placed.lanes <= 1) return {};
+    const unit = `(100% / ${placed.lanes})`;
     return {
       insetInlineStart: `calc(${placed.lane} * ${unit} + 4px)`,
       insetInlineEnd: "auto",
@@ -4404,6 +4340,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       zIndex: 20 + placed.lane,
     };
   };
+  const weekGridStyle = useMemo(() => {
+    const style: React.CSSProperties & Record<string, string | number> = {
+      ["--week-overview-width"]: `${weekDensity.totalWidth}px`,
+    };
+    weekDensity.days.forEach((day, index) => {
+      style[`--week-day-${index}`] = `${day.width}px`;
+    });
+    const focusPeak = expandedDay ? (weekLayout[expandedDay]?.busiest || 1) : 1;
+    style["--week-focus-width"] = `${readableWeekDayWidth(focusPeak)}px`;
+    return style;
+  }, [weekDensity, expandedDay, weekLayout]);
 
   /**
    * A single week card. Shared by ordinary hours and by opened days.
@@ -4876,15 +4823,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     physics.state.phase !== "idle" &&
     physics.state.phase !== "armed",
   );
-  useEffect(() => {
-    if (!fanned) return;
-    const onKey = (event: KeyboardEvent) => {
-      // Escape mid-drag belongs to the drag; the fan only closes when idle.
-      if (event.key === "Escape" && !physicsActive) setFanned(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [fanned, physicsActive]);
   /**
    * The grid walks with the drag.
    *
@@ -6827,7 +6765,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     context ||
     quick ||
     repair ||
-    fanned ||
     historicalChoice ||
     mobileViewGate
   );
@@ -7706,7 +7643,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                living lanes sharing one hour line. A reader can still fold it
                down to one day, but the default finally answers the real room
                question: what happens here across the whole week? */
-            const { displayDays, allBuildings, allRooms, byDayRoom, noRoomByDay, roomCounts, hourMarks, span } = roomsMatrix;
+            const { displayDays, allBuildings, allRooms, byDayRoom, byDayRoomLayout, noRoomByDay, noRoomLayout, roomCounts, hourMarks, span } = roomsMatrix;
             /* Pinning rooms narrows the matrix to the ones being worked on —
                a building's four labs instead of every room in the college. */
             const tracedRooms = moveTraces
@@ -7732,6 +7669,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               : roomsWithAfterglow;
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
+            const ROOM_HOUR_WIDTH = 136;
+            const ROOM_LABEL_WIDTH = 74;
+            const ROOM_LANE_HEIGHT = 62;
+            const timelineWidth = Math.max(ROOM_HOUR_WIDTH, Math.round((span / 60) * ROOM_HOUR_WIDTH));
+            const roomsCanvasWidth = ROOM_LABEL_WIDTH + timelineWidth;
+            const trackHeight = (lanes: number) => Math.max(54, 8 + Math.max(1, lanes) * ROOM_LANE_HEIGHT);
             const roomTraceStyle = (trace: { from: number; to: number }): React.CSSProperties => {
               // Use the exact same positioning system as renderTrackCard
               // to ensure the trace is always bound to the original slot geometry.
@@ -7740,15 +7683,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 width: `${Math.max(3, pct(trace.to) - pct(trace.from))}%`,
               };
             };
-            const rowsFor = (day: DayKey, roomKey: string) => byDayRoom.get(`${day}|${roomKey}`) || [];
-            const renderTrackCard = (row: FSchedule, sourceDay: DayKey, placement?: { lane: number; visualFrom: number; visualTo: number }) => {
+            const layoutFor = (day: DayKey, roomKey: string) => byDayRoomLayout.get(`${day}|${roomKey}`) || { items: [], lanes: 1 };
+            const renderTrackCard = (row: FSchedule, sourceDay: DayKey, placement?: { lane: number }) => {
               const course = courseById.get(row.AdCourseId);
               const instructor = instructorById.get(row.AdInstructorId);
               const code = String(course?.CourseCode || "").trim() || "—";
               const title = row.AdCourseName || course?.CourseName || code;
-              const compactTitle = courseLabel(title, 0.46).text;
               const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
-              const compactWho = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
               const whoWords = who.split(/\s+/).filter(Boolean);
               const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
               const whoGiven = whoWords.join(" ") || who;
@@ -7757,19 +7698,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               const undoId = recentMoves[row.id];
               const undoEntry = undoId ? undoLog.find(item => item.id === undoId && !item.usedAt) : null;
               const actualFrom = mins(row.fstarttime), actualTo = mins(row.fendtime);
-              const visualFrom = placement?.visualFrom ?? actualFrom;
-              const visualTo = placement?.visualTo ?? actualTo;
-              const visualSpan = Math.max(1, visualTo - visualFrom);
               const cardStyle: React.CSSProperties = {
                 ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName, placeOf(row)),
-                right: `${pct(visualFrom)}%`,
-                width: `${Math.max(3, pct(visualTo) - pct(visualFrom))}%`,
+                right: `${pct(actualFrom)}%`,
+                width: `${Math.max(3, pct(actualTo) - pct(actualFrom))}%`,
                 ...(placement ? {
-                  top: `${4 + placement.lane * 68}px`,
+                  top: `${4 + placement.lane * ROOM_LANE_HEIGHT}px`,
                   bottom: "auto",
-                  height: "64px",
-                  ["--actual-right" as any]: `${((actualFrom - visualFrom) / visualSpan) * 100}%`,
-                  ["--actual-width" as any]: `${Math.max(3, ((actualTo - actualFrom) / visualSpan) * 100)}%`,
+                  height: "56px",
                 } : {}),
               };
               // The card is bound to the same drag engine the week uses, so it
@@ -7782,7 +7718,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   {...trackGrip}
                   key={row.id}
                   data-row-id={row.id}
-                  className={`rooms-card ${placement ? "rooms-card-compact" : ""} ${lensClass(row)} ${xrayClass(row)} ${physicsRelationClass(row)} ${draggingId === row.id ? "ripple-source" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${keyMove?.rowId === row.id ? "week-keymove-source" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
+                  className={`rooms-card ${lensClass(row)} ${xrayClass(row)} ${physicsRelationClass(row)} ${draggingId === row.id ? "ripple-source" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${keyMove?.rowId === row.id ? "week-keymove-source" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
                   style={cardStyle}
                   draggable={!physics.supported && !rowPending}
                   onDragStart={(e) => {
@@ -7820,8 +7756,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   }}
                 >
                   <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
-                  <b>{placement ? compactTitle : courseLabel(title, 0.82).text}</b>
-                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{placement ? <i>{compactWho}</i> : <><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</>}</span>
+                  <b>{courseLabel(title, 0.82).text}</b>
+                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
                   <em dir="ltr">{code}</em>
                   {undoEntry ? (
                     <button
@@ -8017,15 +7953,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     ) : null}
                   </div>
                 ) : null}
-                <div className={`rooms-scale ${matrixDay === "week" ? "rooms-scale-week" : ""}`} aria-hidden="true">
+                <div
+                  className={`rooms-scale ${matrixDay === "week" ? "rooms-scale-week" : ""}`}
+                  style={{ ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px` }}
+                  aria-hidden="true"
+                >
                   {matrixDay === "week" ? <small>اليوم</small> : <small />}
                   <div>
-                    {hourMarks.slice(0, -1).map(mark => (
-                      <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{Math.floor(mark / 60)}</span>
+                    {hourMarks.map(mark => (
+                      <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark)}</span>
                     ))}
                   </div>
                 </div>
-                <div className="rooms-rows">
+                <div className="rooms-rows" style={{ ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px` }}>
                   {roomList.map(room => (
                     <section className="rooms-week-room" key={room.key}>
                       <header className="rooms-week-room-head">
@@ -8034,12 +7974,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       </header>
                       <div className="rooms-week-days">
                         {displayDays.map(day => {
-                          const inRoom = rowsFor(day.key as DayKey, room.key);
+                          const roomLayout = layoutFor(day.key as DayKey, room.key);
+                          const roomTrackHeight = trackHeight(roomLayout.lanes);
                           return (
-                            <div className="rooms-row" key={`${room.key}|${day.key}`}>
+                            <div className="rooms-row" key={`${room.key}|${day.key}`} style={{ minHeight: roomTrackHeight }}>
                               <small className="rooms-day-label">{day.label}</small>
                               <div
                                 className="rooms-track"
+                                style={{ height: roomTrackHeight }}
                                 data-physics-day-column="true"
                                 onDragOver={(e) => e.preventDefault()}
                                 onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}
@@ -8078,7 +8020,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                     }}
                                   />
                                 ))}
-                                {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                                {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
                                 {moveTraces
                                   .filter(trace => trace.dayKey === day.key && trace.roomKey === room.key)
                                   .map(trace => (
@@ -8098,7 +8040,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                   </div>
                                 ) : null}
                                 {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
-                                {inRoom.map(row => renderTrackCard(row, day.key as DayKey))}
+                                {roomLayout.items.map(({ row, lane }) => renderTrackCard(row, day.key as DayKey, { lane }))}
                               </div>
                             </div>
                           );
@@ -8110,10 +8052,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     <section className="rooms-week-room rooms-row-none">
                       <header className="rooms-week-room-head"><strong>بلا قاعة</strong></header>
                       <div className="rooms-week-days">
-                        {displayDays.map(day => (
-                          <div className="rooms-row" key={`none|${day.key}`}>
+                        {displayDays.map(day => {
+                          const homelessLayout = noRoomLayout.get(day.key as DayKey) || { items: [], lanes: 1 };
+                          const homelessTrackHeight = trackHeight(homelessLayout.lanes);
+                          return (
+                          <div className="rooms-row" key={`none|${day.key}`} style={{ minHeight: homelessTrackHeight }}>
                             <small className="rooms-day-label">{day.label}</small>
-                            <div className="rooms-track" data-physics-day-column="true" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop("", "", day.key as DayKey)}>
+                            <div className="rooms-track" style={{ height: homelessTrackHeight }} data-physics-day-column="true" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop("", "", day.key as DayKey)}>
                               {timeSlots.map(slot => (
                                 <i
                                   key={`none-slot-${slot}`}
@@ -8143,7 +8088,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                   }}
                                 />
                               ))}
-                              {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                              {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
                               {moveTraces
                                 .filter(trace => trace.dayKey === day.key && trace.roomKey === "|")
                                 .map(trace => (
@@ -8158,10 +8103,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                   </div>
                                 ))}
                               {paint?.trackKey === `none|${day.key}` ? <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true"><b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span></div> : null}
-                              {(noRoomByDay.get(day.key as DayKey) || []).map(row => renderTrackCard(row, day.key as DayKey))}
+                              {homelessLayout.items.map(({ row, lane }) => renderTrackCard(row, day.key as DayKey, { lane }))}
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </section>
                   ) : null}
@@ -8509,7 +8455,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             <div
               className={`week-calendar ${physicsActive ? "gravity-field-active" : ""}`}
               data-expanded={expandedDay || undefined}
-              style={{ ["--week-lane-min" as any]: `${Math.min(212, 118 + Math.max(...days.map(d => weekLayout[d.key]?.busiest || 1)) * 32)}px` }}
+              style={weekGridStyle}
             >
               <div className="week-time-head" />
               {days.map((d) => (
@@ -8738,160 +8684,49 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           <span><CornerUpRight aria-hidden="true" />نُقل من هنا</span>
                         </div>
                       ))}
-                    {(weekLayout[d.key]?.spine || []).map((placed) => {
-                      const c = courseById.get(placed.row.AdCourseId);
-                      const railInstructor = instructorById.get(placed.row.AdInstructorId);
-                      const code = c?.CourseCode || "—";
-                      const grip = physics.bindEvent(placed.row, d.key);
-                      return (
-                        <article
-                          {...grip}
-                          key={`rail-${d.key}-${placed.row.id}`}
-                          className={`week-rail ${lensClass(placed.row)} ${xrayClass(placed.row)} ${justChangedId === placed.row.id ? "just-changed" : ""}`}
-                          style={{
-                            top: placed.top,
-                            height: placed.height,
-                            insetInlineEnd: `${(placed.spine || 0) * RAIL + 4}px`,
-                            ["--hue" as any]: courseHue(code, placed.row.AdCourseName || c?.CourseName || ""),
-                          }}
-                          onPointerDown={(e) => { pressOrigin.current = { x: e.clientX, y: e.clientY }; grip.onPointerDown?.(e); }}
-                          onClick={(e) => {
-                            if (physics.didDrag() || physicsActive) return;
-                            const from = pressOrigin.current;
-                            if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
-                            if (picking) { toggleSelect(placed.row.id); return; }
-                            void openContext(placed.row);
-                          }}
-                          onPointerEnter={(e) => { if (!physicsActive) openPeek(placed.row, e.currentTarget); }}
-                          onPointerLeave={() => setPeek(current => (current?.row.id === placed.row.id ? null : current))}
-                          tabIndex={0}
-                          onKeyDown={(e) => { if (e.key === "Enter") void openContext(placed.row); }}
-                        >
-                          <b>{placed.row.AdCourseName || c?.CourseName || code}</b>
-                          <span>{railInstructor?.AdInstructorName ? firstLast(railInstructor.AdInstructorName) : "بدون أستاذ"}</span>
-                          <time dir="ltr">{code}</time>
-                        </article>
-                      );
-                    })}
                     {(weekLayout[d.key]?.items || [])
                       .filter((placed) => expandedDay === d.key || !weekBundles.bundled[d.key]?.has(placed.row.id))
                       .map((placed) =>
                         renderWeekCard(placed.row, d, {
                           top: placed.top,
                           height: placed.height,
-                          ...(expandedDay === d.key
-                            ? {}
-                            : laneStyle(placed, (weekLayout[d.key]?.spine || []).reduce((max, x) => Math.max(max, (x.spine || 0) + 1), 0))),
+                          ...laneStyle(placed),
                         }, placed.span / placed.lanes),
                       )}
                     {expandedDay === d.key ? null : (weekBundles.byDay[d.key] || []).map((bundle) => {
+                      const peak = peakConcurrency(bundle.rows.map(r => ({ start: mins(r.fstarttime), end: mins(r.fendtime) })));
                       const hits = lensActive ? bundle.rows.filter(lensMatches).length : bundle.rows.length;
-                      const openFan = (anchor: HTMLElement) => {
-                        const host = (anchor.closest(".week-bundle") as HTMLElement) || anchor;
-                        const rect = host.getBoundingClientRect();
-                        setFanned(current => current?.key === bundle.key
-                          ? null
-                          : { key: bundle.key, x: rect.left + rect.width / 2, y: rect.top });
-                      };
-                      // A flagged lecture folded into a weave was invisible — so
-                      // "أظهرها على الجدول" and the radar seemed to do nothing.
-                      // The band now lights when it holds any flagged row, and
-                      // fans itself open so the highlighted card is actually seen.
                       const flaggedHere = bundle.rows.filter(r => reviewFocus.has(r.id));
                       return (
-                        <div
-                          className={`week-bundle ${lensActive && !hits ? "lens-miss" : ""} ${flaggedHere.length ? "bundle-flagged" : ""}`}
+                        <button
+                          type="button"
+                          className={`week-density-block ${lensActive && !hits ? "lens-miss" : ""} ${flaggedHere.length ? "density-flagged" : ""}`}
+                          data-tight={bundle.height < 58 ? "true" : undefined}
                           key={bundle.key}
                           style={{ top: bundle.top, height: bundle.height }}
-                          role="group"
-                          aria-label={`${countOf(bundle.rows.length, AR.lecture)} متزامنة${flaggedHere.length ? ` · ${flaggedHere.length} مميّزة` : ""}`}
+                          aria-label={`ذروة ${peak} محاضرات متزامنة يوم ${d.label} من ${bundle.from} إلى ${bundle.to} — افتح اليوم لعرض كل المحاضرات`}
+                          title={`ذروة ${peak} معاً · ${formatScheduleTimeRange(bundle.from, bundle.to)} — افتح ${d.label} لعرض البطاقات كاملة`}
+                          onClick={() => setExpandedDay(d.key as DayKey)}
                         >
-                          <button
-                            type="button"
-                            className="week-bundle-head"
-                            aria-expanded={fanned?.key === bundle.key}
-                            title="فرد الساعة في مروحة"
-                            onClick={(e) => openFan(e.currentTarget)}
-                          >
-                            {(() => {
-                              /* "18 معاً" was a lie when the true simultaneous
-                                 peak was 9 — the count is the cluster, the
-                                 peak is the wall. Say both when they differ. */
-                              const peak = peakConcurrency(bundle.rows.map(r => ({ start: mins(r.fstarttime), end: mins(r.fendtime) })));
-                              return peak && peak < bundle.rows.length
-                                ? <><b className="num">{bundle.rows.length}</b> موعداً · ذروة <b className="num">{peak}</b> معاً</>
-                                : <><b className="num">{bundle.rows.length}</b> معاً</>;
-                            })()}
-                            {lensActive && hits > 0 && hits < bundle.rows.length ? (
-                              <i className="week-bundle-hits">{hits} مطابقة</i>
-                            ) : null}
+                          <span className="week-density-copy">
+                            <small>ازدحام زمني</small>
+                            <strong><b className="num">{peak}</b> محاضرات معاً</strong>
+                          </span>
+                          <span className="week-density-meta">
                             <time dir="ltr">{formatScheduleTimeRange(bundle.from, bundle.to)}</time>
-                            <Expand aria-hidden="true" />
-                          </button>
-                          <div
-                            className="week-bundle-bands"
-                            data-dense={(bundle.height - 22) / bundle.rows.length < 15 ? "true" : undefined}
-                            /* Below fourteen pixels a band cannot print a name at
-                               any size, so it stops trying and becomes a stripe.
-                               Measured: twenty in one hour gave 7px bands. */
-                            data-crush={(bundle.height - 22) / bundle.rows.length < 14 ? "true" : undefined}
-                            data-count={bundle.rows.length}
-                          >
-                            {bundle.rows.map((row) => {
+                            {bundle.rows.length !== peak ? <i><b className="num">{bundle.rows.length}</b> موعداً</i> : null}
+                            <em>افتح اليوم <Expand aria-hidden="true" /></em>
+                          </span>
+                          <span className="week-density-hues" aria-hidden="true">
+                            {bundle.rows.slice(0, 12).map(row => {
                               const course = courseById.get(row.AdCourseId);
-                              const bandInstructor = instructorById.get(row.AdInstructorId);
-                              const courseCode = String(course?.CourseCode || "").trim() || "—";
-                              const bandCode = courseCode || row.AdCourseName || "—";
-                              const rawBandTitle = row.AdCourseName || course?.CourseName || bandCode;
-                              const bandTitle = courseLabel(
-                                rawBandTitle,
-                                bundle.rows.length >= 8 ? 0.36 : bundle.rows.length >= 6 ? 0.44 : bundle.rows.length >= 5 ? 0.52 : 0.62,
-                              ).text;
-                              const bandWho = bandInstructor?.AdInstructorName
-                                ? firstLast(bandInstructor.AdInstructorName)
-                                : "بدون أستاذ";
-                              /* The slice is the lecture's real handle: the same grip the
-                                 full card carries, so a drag starts here exactly as it
-                                 would there — lift, conflicts, verdict, drop. A press
-                                 that stays put opens the fan instead. */
-                              const grip = physics.bindEvent(row, d.key);
-                              return (
-                                <div
-                                  {...grip}
-                                  key={row.id}
-                                  role="button"
-                                  tabIndex={0}
-                                  aria-label={`${rawBandTitle} · ${bandWho} · ${courseCode} — اسحبها أو افتح المروحة`}
-                                  data-row-id={row.id}
-                                  className={`week-bundle-band ${lensActive && !lensMatches(row) ? "lens-miss" : ""} ${hueFocusClass(row)}`}
-                                  style={(() => {
-                                    const bandHue = hueFor(bandCode, bandTitle, instructorById.get(row.AdInstructorId)?.AdInstructorName, placeOf(row));
-                                    return { ["--hue" as any]: bandHue, ...textureFor(bandHue) };
-                                  })()}
-                                  title={`${rawBandTitle} · ${bandWho} — اسحبها مباشرة أو اضغط للمروحة`}
-                                  onPointerDown={(e) => {
-                                    pressOrigin.current = { x: e.clientX, y: e.clientY };
-                                    grip.onPointerDown?.(e);
-                                  }}
-                                  onClick={(e) => {
-                                    if (physics.didDrag() || physicsActive) return;
-                                    const from = pressOrigin.current;
-                                    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
-                                    openFan(e.currentTarget);
-                                  }}
-                                  onPointerEnter={(ev) => { if (!physicsActive) openPeek(row, ev.currentTarget as unknown as HTMLElement); }}
-                                  onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
-                                >
-                                  <span className="week-band-identity">
-                                    <strong>{bandTitle}</strong>
-                                    <small>{bandWho}</small>
-                                  </span>
-                                  <em dir="ltr">{courseCode}</em>
-                                </div>
-                              );
+                              const title = row.AdCourseName || course?.CourseName || course?.CourseCode || "—";
+                              const code = String(course?.CourseCode || title);
+                              const hue = hueFor(code, title, instructorById.get(row.AdInstructorId)?.AdInstructorName, placeOf(row));
+                              return <i key={row.id} style={{ ["--hue" as any]: hue }} />;
                             })}
-                          </div>
-                        </div>
+                          </span>
+                        </button>
                       );
                     })}
                   </div>
@@ -8899,117 +8734,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               })}
             </div>
           </Surface>
-          {fanned ? (() => {
-            const bundle = days.flatMap(day => weekBundles.byDay[day.key] || []).find(b => b.key === fanned.key);
-            if (!bundle) return null;
-            const dayKey = fanned.key.split(":")[0] as DayKey;
-            const day = days.find(x => x.key === dayKey);
-            if (!day) return null;
-            const panelLeft = Math.max(12, Math.min(fanned.x - 160, window.innerWidth - 336));
-            /* The fan belongs to the touched stack, but when it sat too low the
-               last card kissed the viewport edge and looked cropped. Bias it a
-               little upward and reserve a touch more breathing room at the
-               bottom so the final card remains fully visible. */
-            const panelTop = Math.max(54, Math.min(fanned.y - 32, window.innerHeight - 486));
-            /* The crowd profile: sweep the bundle's own span into buckets and count
-               how many lectures are live in each. It draws the real wall — a nine
-               that all lands at noon spikes; a nine spread across the morning stays
-               flat. Pure read of the rows already in hand; touches no scheduling
-               state, so it can never move a lecture. */
-            const crowdSpans = bundle.rows
-              .map(r => ({ s: mins(r.fstarttime), e: mins(r.fendtime) }))
-              .filter(x => Number.isFinite(x.s) && Number.isFinite(x.e) && x.e > x.s);
-            const crowdLo = crowdSpans.length ? Math.min(...crowdSpans.map(x => x.s)) : 0;
-            const crowdHi = crowdSpans.length ? Math.max(...crowdSpans.map(x => x.e)) : 0;
-            const CROWD_BUCKETS = 32;
-            const crowd = crowdHi > crowdLo
-              ? Array.from({ length: CROWD_BUCKETS }, (_, k) => {
-                  const t = crowdLo + ((crowdHi - crowdLo) * (k + 0.5)) / CROWD_BUCKETS;
-                  return crowdSpans.filter(x => x.s <= t && t < x.e).length;
-                })
-              : [];
-            const crowdPeak = crowd.reduce((m, v) => Math.max(m, v), 1);
-            /* When the wall stands. The first bucket that reaches the peak, read
-               back as a clock time — so the strip says not just «how many» but
-               «at what hour», which is the number a coordinator acts on. */
-            const crowdPeakAt = (() => {
-              if (crowd.length < 2 || crowdPeak < 2) return "";
-              const k = crowd.indexOf(crowdPeak);
-              if (k < 0) return "";
-              const t = crowdLo + ((crowdHi - crowdLo) * (k + 0.5)) / CROWD_BUCKETS;
-              const h = Math.floor(t / 60), m = Math.round(t % 60);
-              return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-            })();
-            return (
-              <>
-                <div className="week-fan-backdrop" onClick={() => setFanned(null)} />
-                <div
-                  className="week-fan"
-                  role="dialog"
-                  aria-label={`المحاضرات المتزامنة يوم ${day.label}`}
-                  style={{ left: panelLeft, top: panelTop }}
-                >
-                  <header>
-                    <b>{bundle.rows.length} محاضرات معاً · {day.label}</b>
-                    <time dir="ltr">{formatScheduleTimeRange(bundle.from, bundle.to)}</time>
-                    <button type="button" onClick={() => setFanned(null)} aria-label="إغلاق المروحة"><X aria-hidden="true" /></button>
-                  </header>
-                  {crowd.length > 1 ? (
-                    <div className="fan-crowd" role="img" aria-label={`أعلى تزامن ${crowdPeak} محاضرات في وقت واحد`}>
-                      <span className="fan-crowd-cap">
-                        التزامن عبر الساعة
-                        {crowdPeakAt ? <i className="fan-crowd-at">الذروة <time dir="ltr">{crowdPeakAt}</time></i> : null}
-                        <b className="num">{crowdPeak}</b>
-                      </span>
-                      <div className="fan-crowd-bars">
-                        {crowd.map((v, k) => (
-                          <i
-                            key={k}
-                            data-peak={v === crowdPeak && crowdPeak > 1 ? "true" : undefined}
-                            style={{
-                              ["--h" as any]: `${Math.max(8, Math.round((v / crowdPeak) * 100))}%`,
-                              ["--lit" as any]: (0.35 + 0.65 * (v / crowdPeak)).toFixed(3),
-                              ["--i" as any]: k,
-                            }}
-                          />
-                        ))}
-                      </div>
-                      {/* The axis rides the same flex track as the bars — one slot
-                          per bucket — so the caret under the wall is aligned by
-                          construction, in either writing direction, with no maths. */}
-                      <div className="fan-crowd-axis" aria-hidden="true">
-                        {crowd.map((v, k) => (
-                          <i key={k} data-peak={v === crowdPeak && crowdPeak > 1 ? "true" : undefined} />
-                        ))}
-                      </div>
-                      <div className="fan-crowd-scale" aria-hidden="true">
-                        <time dir="ltr">{bundle.from}</time>
-                        <time dir="ltr">{bundle.to}</time>
-                      </div>
-                    </div>
-                  ) : null}
-                  <p>اسحب أي بطاقة من هنا إلى الشبكة مباشرة — المروحة تبقى مفتوحة حتى يهبط النقل.</p>
-                  <div className="week-fan-cards">
-                    {bundle.rows.map((row, index) => (
-                      <div className="week-fan-slot" style={{ ["--i" as any]: index }} key={row.id}>
-                        {renderWeekCard(row, day, {
-                          position: "relative",
-                          top: "auto",
-                          insetInline: "auto",
-                          width: "100%",
-                          /* The fan is a scrollable list, not the grid: a card is
-                             free to be as tall as its own name and instructor need.
-                             A fixed height clipped Arabic descenders from below and
-                             tripped the height container-query that hid the time. */
-                          minHeight: 58,
-                        }, 1)}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            );
-          })() : null}
         </>
       )}
       {/* Shared interaction overlays live outside the individual view branches.

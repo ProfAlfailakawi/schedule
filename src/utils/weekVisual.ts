@@ -89,6 +89,88 @@ export function peakConcurrency(spans: Array<{ start: number; end: number }>): n
   return peak;
 }
 
+/**
+ * The visual width one day needs before its lecture cards stop being labels
+ * and start becoming slivers.
+ *
+ * The important number is the *simultaneous* count, not the day's total.  A
+ * 112px lecture is the smallest card that can still carry the current course,
+ * instructor and code hierarchy without resorting to microtype.  The small
+ * gap and frame allowance keep neighbouring card borders from visually
+ * merging into one coloured strip.
+ */
+export function readableWeekDayWidth(peak: number): number {
+  const concurrency = Math.max(1, Math.floor(Number.isFinite(peak) ? peak : 1));
+  if (concurrency === 1) return 224;
+  if (concurrency === 2) return 246;
+  /* laneStyle keeps an 8px breathing gutter inside each lane.  120px of paper
+     therefore leaves exactly 112px of painted card — the readability floor. */
+  return concurrency * 120;
+}
+
+export interface WeekDensityPlanDay {
+  key: DayKey;
+  peak: number;
+  width: number;
+  mode: "cards" | "summary";
+  /** Concurrency at which a local time block folds into one density summary. */
+  bundleThreshold: number;
+}
+
+/**
+ * Allocate horizontal "paper" to a five-day overview without ever paying for
+ * that space by shrinking the cards.
+ *
+ * Normal days keep their real lanes.  Seven-plus concurrency is always a
+ * semantic summary in the overview.  If several merely-busy days together
+ * would make the week needlessly huge, the densest ones fold their four-plus
+ * collision windows too, until the overview returns to a bounded desktop
+ * canvas.  Opening that day restores every real lane at its readable width.
+ */
+export function buildWeekDensityPlan(
+  peaks: Array<{ key: DayKey; peak: number }>,
+  options: { budget?: number; gutter?: number; summaryWidth?: number } = {},
+): { days: WeekDensityPlanDay[]; totalWidth: number } {
+  const budget = options.budget ?? 1880;
+  const gutter = options.gutter ?? 58;
+  const summaryWidth = options.summaryWidth ?? 360;
+
+  const planned: WeekDensityPlanDay[] = peaks.map(({ key, peak }) => {
+    const cleanPeak = Math.max(1, Math.floor(Number.isFinite(peak) ? peak : 1));
+    const extreme = cleanPeak >= 7;
+    return {
+      key,
+      peak: cleanPeak,
+      width: extreme ? summaryWidth : readableWeekDayWidth(cleanPeak),
+      mode: extreme ? "summary" : "cards",
+      bundleThreshold: extreme ? 4 : 7,
+    };
+  });
+
+  let totalWidth = gutter + planned.reduce((sum, day) => sum + day.width, 0);
+  if (totalWidth > budget) {
+    // Converting a peak-six day saves far more paper than converting a
+    // peak-four day, so fold the largest useful saving first.  Peak <= 3 stays
+    // literal: three 112px lanes already fit the same footprint as a summary.
+    const candidates = planned
+      .filter(day => day.mode === "cards" && day.peak >= 4)
+      .sort((a, b) =>
+        (readableWeekDayWidth(b.peak) - summaryWidth) - (readableWeekDayWidth(a.peak) - summaryWidth) ||
+        b.peak - a.peak,
+      );
+    for (const day of candidates) {
+      if (totalWidth <= budget) break;
+      const before = day.width;
+      day.mode = "summary";
+      day.width = summaryWidth;
+      day.bundleThreshold = 4;
+      totalWidth -= Math.max(0, before - summaryWidth);
+    }
+  }
+
+  return { days: planned, totalWidth };
+}
+
 export interface SqueezedCandidate {
   id: number;
   top: number;
@@ -105,8 +187,8 @@ export interface SqueezedCluster {
 /**
  * Which crushed cards belong to one woven hour.
  *
- * Membership is per-card, not per-chain: a card qualifies when it sits in
- * five-plus lanes AND holds two lanes or fewer itself, so the solitary
+ * Membership is per-card, not per-chain: a card qualifies when it reaches the
+ * caller's lane threshold AND holds two lanes or fewer itself, so the solitary
  * lecture at a long chain's tail — which spans its lanes in full — stays an
  * ordinary readable card. Qualifiers are then clustered by vertical overlap,
  * and only a cluster with five or more members becomes a bundle.
