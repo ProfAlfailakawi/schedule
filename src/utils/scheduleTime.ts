@@ -35,5 +35,12 @@ export function formatScheduleTimeRange(
   if (from === "—" && to === "—") return "—";
   if (to === "—") return from;
   if (from === "—") return to;
-  return `${to} - ${from}`;
+  /*
+   * A Latin time range embedded inside Arabic prose needs its own bidi island.
+   * Without it, the browser may visually reorder the two clocks even though the
+   * source string is already end → start. LRI/PDI keep the institutional RTL
+   * convention visually stable everywhere, including plain text notices and
+   * aria labels, while remaining invisible to the reader.
+   */
+  return `⁦${to} - ${from}⁩`;
 }

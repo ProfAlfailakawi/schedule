@@ -277,6 +277,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                     <button
                       type="button"
                       onClick={() => setStep(item.id)}
+                      data-guide-feature-id="schedule.publish"
                       aria-current={step === item.id ? "step" : undefined}
                       aria-controls={`publish-step-${item.id}`} title={item.label}
                     >
@@ -307,6 +308,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   type="button"
                   className={kind === "department" ? "active" : ""}
                   onClick={() => setKind("department")}
+                  data-guide-feature-id="schedule.publish"
                   aria-pressed={kind === "department"} title="جدول القسم"
                 >
                   <Users aria-hidden="true" />
@@ -317,6 +319,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                   type="button"
                   className={kind === "staff" ? "active" : ""}
                   onClick={() => setKind("staff")}
+                  data-guide-feature-id="schedule.publish"
                   aria-pressed={kind === "staff"} title="بطاقة الأستاذ"
                 >
                   <IdCard aria-hidden="true" />
