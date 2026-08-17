@@ -280,7 +280,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
           >
             <Printer aria-hidden="true" />
           </PrimaryButton>
-          <SecondaryButton type="button" className="review-close-icon-button" onClick={onClose} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></SecondaryButton>
+          <SecondaryButton type="button" className="review-close-icon-button" data-guide-ignore="إغلاق نافذة مراجعة الاعتماد فقط" onClick={onClose} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></SecondaryButton>
         </footer>
       </section>
 

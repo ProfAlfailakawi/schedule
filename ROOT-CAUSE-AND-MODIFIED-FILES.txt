@@ -1,18 +1,17 @@
-تصحيح أخطاء lint الأخيرة
+إصلاح تدقيق مرشد SCHEDULE — schedule (14)
 
-1) server.ts
-- الخطأ: Cannot find name 'isPowerAdmin'.
-- السبب: دالة فحص صلاحية المرشد على الخادم كانت تستدعي اسماً غير موجود في server.ts.
-- الإصلاح: استخدام دالة الصلاحيات الموجودة فعلياً isPowerUser(req)، وهي المطابقة لمنطق الإدارة في الخادم.
+المشكلة الأخيرة:
+- guide-audit اعتبر زر X الجديد في ScheduleReview عنصرًا تفاعليًا بلا guideFeatureId/target أو ignore موثق.
 
-2) src/components/Schedules.tsx
-- الخطأ: Type 'boolean' is not assignable to type 'void | Promise<void>'.
-- السبب: execute كان يعيد نتيجة window.dispatchEvent مباشرة، وهي boolean.
-- الإصلاح: تحويل callback إلى block ينفذ dispatchEvent دون إرجاع قيمته، فيصبح النوع void كما يتطلب تعريف الأمر.
+الإصلاح:
+- إضافة data-guide-ignore موثق لزر إغلاق نافذة مراجعة الاعتماد، لأنه مجرد إجراء إغلاق محلي وليس ميزة من ميزات المرشد.
 
-هذه الحزمة تجمع أيضاً بقية ملفات التعديلات الأخيرة حتى تكون النسخة موحدة.
+تم التحقق فعليًا من داخل المشروع:
+- guide-audit: نجح — 57 ميزة، 21 هدفًا حيًا، 25 واجهة، 17 إجراءً، 10 رحلة.
+- guide-behavior-tests: نجح — 42 اختبارًا سلوكيًا.
+- guide-performance-audit: نجح.
 
-الملفات المعدلة:
+الملفات المضمّنة (كل تعديلات الحزمة السابقة + إصلاح التدقيق):
 - server.ts
 - src/components/ScheduleReview.tsx
 - src/components/Schedules.tsx
