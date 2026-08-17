@@ -149,7 +149,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     back();
   };
   const remove = async (id: number) => {
-    if (!(await visualConfirm({ title: "حذف أستاذ المقرر", message: "سيُحذف سجل أستاذ المقرر من النظام.", confirmLabel: "حذف", tone: "danger" }))) return;
+    if (!(await visualConfirm({ title: "حذف أستاذ المقرر", message: "سيُحذف سجل أستاذ المقرر من النظام.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
     const r = await fetch(`/api/instructors/${id}`, { method: "DELETE" }),
       d = await r.json();
     if (!r.ok) {

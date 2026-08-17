@@ -102,7 +102,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     back();
   };
   const remove = async (id: number) => {
-    if (!(await visualConfirm({ title: "حذف الفصل الدراسي", message: "سيُحذف سجل الفصل الدراسي من النظام.", confirmLabel: "حذف", tone: "danger" }))) return;
+    if (!(await visualConfirm({ title: "حذف الفصل الدراسي", message: "سيُحذف سجل الفصل الدراسي من النظام.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
     const r = await fetch(`/api/terms/${id}`, { method: "DELETE" }),
       d = await r.json();
     if (!r.ok) {

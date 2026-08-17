@@ -127,7 +127,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     back();
   };
   const remove = async (id: number) => {
-    if (!(await visualConfirm({ title: "حذف الكلية", message: "سيُحذف سجل الكلية من النظام.", confirmLabel: "حذف", tone: "danger" }))) return;
+    if (!(await visualConfirm({ title: "حذف الكلية", message: "سيُحذف سجل الكلية من النظام.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
     const r = await fetch(`/api/colleges/${id}`, { method: "DELETE" }),
       d = await r.json();
     if (!r.ok) {

@@ -753,7 +753,7 @@ export default function AdminUsers({
     setPage("edit");
   };
   const deletePermission = async (p: FormSecurity) => {
-    if (!(await visualConfirm({ title: "حذف الصلاحية", message: "سيُزال هذا الربط من المستخدم فورًا.", confirmLabel: "حذف", tone: "danger" }))) return;
+    if (!(await visualConfirm({ title: "حذف الصلاحية", message: "سيُزال هذا الربط من المستخدم فورًا.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
     try {
       if (!p.legacyId) throw new Error("الصلاحية غير موجودة");
       await api(`/api/permissions/${p.legacyId}`, { method: "DELETE" });
@@ -787,7 +787,7 @@ export default function AdminUsers({
     }
   };
   const deleteScope = async (a: AdCollegeUserAssign) => {
-    if (!(await visualConfirm({ title: "حذف الصلاحية", message: "سيُزال هذا الربط من المستخدم فورًا.", confirmLabel: "حذف", tone: "danger" }))) return;
+    if (!(await visualConfirm({ title: "حذف الصلاحية", message: "سيُزال هذا الربط من المستخدم فورًا.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
     try {
       if (!a.legacyId)
         throw new Error("صلاحية الكلية والقسم العلمي غير موجودة");

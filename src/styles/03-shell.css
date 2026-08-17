@@ -979,3 +979,60 @@ body.guide-point-mode .smart-guide{opacity:0;pointer-events:none;transform:trans
   .smart-guide-new-summary>article{padding:9px 10px;border-radius:14px}
   .smart-guide-mark-all{min-height:30px;padding-inline:10px}
 }
+
+/* ── Smart Guide · final visual lock --------------------------------------
+ * One launcher, one counter, one visual hierarchy. The day's undo log is a
+ * different system and is physically separated in schedule.css. */
+.smart-guide-fab-new{
+  inset-inline-start:-5px;inset-block-start:-5px;
+  min-width:25px;height:25px;padding:0 6px;border:2px solid var(--surface);
+  border-radius:999px;background:var(--accent);color:var(--accent-contrast);
+  box-shadow:0 8px 18px rgba(17,25,22,.15);font-size:9.5px;line-height:1;
+}
+.smart-guide-fab.icon-only .smart-guide-fab-new{
+  inset-inline-start:-5px;inset-block-start:-5px;min-width:24px;height:24px;padding:0 6px;border-width:2px;font-size:9px;
+}
+.smart-guide-fab.active{box-shadow:0 14px 34px rgba(17,24,39,.17)}
+.smart-guide-mark-all{display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.smart-guide-mark-all svg{width:13px;height:13px;flex:none}
+.smart-guide-new-summary>article{position:relative;overflow:hidden}
+.smart-guide-new-summary>article::after{
+  content:"";position:absolute;inset-block:0;inset-inline-start:0;width:3px;border-radius:999px;background:var(--accent);opacity:.65;
+}
+.smart-guide-new-summary>article.is-runtime::after{background:var(--brass)}
+.smart-guide-new-summary>article.is-runtime>svg{color:var(--brass)}
+.smart-guide-new-summary>article.is-product>svg{color:var(--accent)}
+.smart-guide-browse button{min-height:38px}
+.smart-guide-browse button>svg{width:14px;height:14px}
+.smart-guide-location,.smart-guide-search,.smart-guide-new-summary>article,.smart-guide-workflows article,.smart-guide-routines article{box-shadow:0 8px 22px rgba(17,25,22,.035)}
+.smart-guide-hero-tools>button,.smart-guide-close{box-shadow:0 2px 8px rgba(17,25,22,.035)}
+
+/* There is no useful information at 7–9px. On a phone, secondary prose either
+   disappears or remains genuinely readable; it never becomes visual texture. */
+@media(max-width:560px){
+  .smart-guide{padding:15px 13px calc(16px + env(safe-area-inset-bottom));gap:11px;border-radius:25px 25px 0 0}
+  .smart-guide-sheet-handle{height:15px;margin:-5px 0 0}
+  .smart-guide-sheet-handle>i{width:46px;height:5px}
+  .smart-guide-kicker{font-size:10.5px}
+  .smart-guide-hero{min-height:38px}.smart-guide-hero-tools>button{width:34px;height:34px;border-radius:12px}.smart-guide-hero-tools svg{width:15px}
+  .smart-guide-search{height:44px;border-radius:15px}.smart-guide-search input{font-size:13px}
+  .smart-guide-browse{padding:4px;border-radius:15px}.smart-guide-browse button{min-height:37px;border-radius:11px}.smart-guide-browse button span{font-size:10px}.smart-guide-browse button>svg{width:15px;height:15px}.smart-guide-browse i{font-size:9px}
+  .smart-guide-location{padding:10px 11px;border-radius:17px}.smart-guide-location small{font-size:10px}.smart-guide-location strong{font-size:13px}.smart-guide-location p{font-size:10.5px}.smart-guide-location>i{font-size:10px}
+  .smart-guide-section-head strong{font-size:13px}.smart-guide-section-head small{font-size:10px}
+  .smart-guide-results strong,.smart-guide-feature-grid strong,.smart-guide-new-grid strong,.smart-guide-live-controls strong,.smart-guide-workflows strong,.smart-guide-routines strong{font-size:11.5px}
+  .smart-guide-results small,.smart-guide-live-controls small,.smart-guide-workflows small,.smart-guide-routines small,.smart-guide-new-summary small,.smart-guide-new-scope small{font-size:10px;line-height:1.5}
+  .smart-guide-new-summary{gap:7px}.smart-guide-new-summary>article{padding:10px;border-radius:15px}.smart-guide-new-summary strong{font-size:14px}
+  .smart-guide-mark-all{min-height:34px;padding:0 10px;font-size:10px}
+  .smart-guide-hint strong,.smart-guide-next strong,.smart-guide-focus-card>header strong{font-size:11px}
+  .smart-guide-hint small,.smart-guide-focus-card>header p,.smart-guide-notice,.smart-guide-live-controls>p{font-size:10px;line-height:1.55}
+  .smart-guide-selected-context strong{font-size:11px}.smart-guide-selected-context span{font-size:10px}.smart-guide-selected-actions button{font-size:10px;padding:6px 9px}
+  .smart-guide-workflows article,.smart-guide-routines article{padding:10px;border-radius:16px}
+  .smart-guide-workflows button,.smart-guide-routines button{min-height:32px;font-size:10px;padding:6px 8px}
+  .smart-guide-footer button{font-size:10px}.smart-guide-footer>small{font-size:10px}.smart-guide-settings button{font-size:10px}
+  .smart-guide-fab-new{min-width:24px;height:24px;font-size:9px}
+  .guide-screen-handoff strong{font-size:11px}.guide-screen-handoff small{font-size:10px}
+  .guide-preview p{font-size:10.5px}.guide-preview button{font-size:10px}
+  .guide-point-banner span{font-size:10px}.guide-point-banner button{font-size:10px}
+  .guide-ghost-card>small{font-size:10px}.guide-ghost-card>strong{font-size:11px}.guide-ghost-card button{font-size:10px}
+  .schedule-guide-ghost-flow small,.guide-simulation-flow small{font-size:10px}.schedule-guide-ghost-flow em,.guide-simulation-flow em{font-size:10px}.schedule-guide-ghost-diff>p,.guide-simulation-brief>p{font-size:10px}.schedule-guide-ghost-diff footer button,.guide-simulation-brief footer button{font-size:10px}
+}

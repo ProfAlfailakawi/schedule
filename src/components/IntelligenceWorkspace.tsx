@@ -968,7 +968,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
        counts rooms, teachers, gaps and balance — it has never counted student
        clashes, so a move that removes one can read «+0» and look pointless. */
     setMessage(
-      `طُبِّقت النقلة داخل النسخة التجريبية فقط: «${fix.courseName}» ← ${fix.to.dayLabel} ${fix.to.start}. ` +
+      `طُبِّقت النقلة داخل النسخة التجريبية فقط: «${fix.courseName}» إلى ${fix.to.dayLabel} ${fix.to.start}. ` +
       `يزول تقاطع ${countOf(fix.shared, AR.student)}. ` +
       "درجة الجودة لا تحسب تقاطع الطلاب بعد، فقد تبقى كما هي — لا شيء منشور حتى تحفظها كمسودة وتنشرها.",
     );
@@ -1274,7 +1274,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }
   };
   const deleteConstraint = async (c: any) => {
-    if (!(await visualConfirm({ title: `حذف القاعدة «${c.label}»`, message: "ستُحذف هذه القاعدة من لوحة القيود.", confirmLabel: "حذف", tone: "danger" }))) return;
+    if (!(await visualConfirm({ title: `حذف القاعدة «${c.label}»`, message: "ستُحذف هذه القاعدة من لوحة القيود.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
     try {
       await fetchJson(`/api/intelligence/constraints/${c.id}`, {
         method: "DELETE",
@@ -3439,7 +3439,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               أثر الأستاذ
                             </span>
                             <span
-                              title={`${o.roomImpact?.from || "—"} ← ${o.roomImpact?.to || "—"}`}
+                              title={`من ${o.roomImpact?.from || "—"} إلى ${o.roomImpact?.to || "—"}`}
                             >
                               <b>{o.roomImpact?.changed ? "تغيير" : "ثابتة"}</b>{" "}
                               القاعة

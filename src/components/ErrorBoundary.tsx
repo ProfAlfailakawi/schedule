@@ -73,10 +73,10 @@ export default class ErrorBoundary extends React.Component<Props, State> {
           <h1>تعذّر إكمال العرض</h1>
           <p>حصل خلل غير متوقع أثناء فتح هذه الشاشة. يمكنك إعادة المحاولة مباشرة، أو تنفيذ تحديث قوي إذا كانت هذه الصفحة تحتفظ بنسخة قديمة.</p>
           <div className="crash-actions">
-            <button type="button" className="btn btn-secondary" onClick={this.retry}>
+            <button type="button" className="btn btn-secondary" data-guide-ignore="شاشة إنقاذ خارج تجربة المنتج المعتادة" onClick={this.retry}>
               <RotateCcw aria-hidden="true" /> إعادة المحاولة
             </button>
-            <button type="button" className="btn btn-primary" onClick={this.hardReload}>
+            <button type="button" className="btn btn-primary" data-guide-ignore="شاشة إنقاذ خارج تجربة المنتج المعتادة" onClick={this.hardReload}>
               <RefreshCw aria-hidden="true" /> تحديث قوي
             </button>
           </div>

@@ -2979,6 +2979,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       message: practiceMode ? "سيُحذف هذا الموعد من النسخة التجريبية فقط دون المساس بالجدول الحقيقي." : "سيُحذف هذا الموعد من الجدول الحالي.",
       confirmLabel: practiceMode ? "حذف تجريبي" : "حذف",
       tone: "danger",
+      compact: true,
     }))) return;
     if (practiceMode) {
       setRows(current => current.filter(item => item.id !== id));
@@ -3204,7 +3205,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         ? ripple
         : null);
     const forecastNote = decisionRipple?.headline
-      ? `\n\nRipple Forecast: ${decisionRipple.headline}${Array.isArray(decisionRipple.effects) ? `\n${decisionRipple.effects.map((x: any) => `• ${x.text}`).join("\n")}` : ""}`
+      ? `\n\nRipple Forecast: ${decisionRipple.headline}${Array.isArray(decisionRipple.effects) ? `\n${decisionRipple.effects.map((x: any) => x.text).join("\n")}` : ""}`
       : "";
     if (
       !options?.skipConfirm &&
@@ -5497,7 +5498,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         repair.moves.map(move => restoreStep(move.before)),
       );
       setRepair(null);
-      setMessage(`نُفِّذت السلسلة — ${countOf(repair.moves.length, AR.move)}، والتداخل ${repair.before} ← ${repair.after}.`);
+      setMessage(`نُفِّذت السلسلة — ${countOf(repair.moves.length, AR.move)}، والتداخل من ${repair.before} إلى ${repair.after}.`);
     } catch (e: any) {
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
       else setError(friendlyError(e));
@@ -7328,7 +7329,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             onSaveAs={() => setViewDialog({ mode: "create" })}
             onRename={view => setViewDialog({ mode: "rename", view })}
             onDelete={async view => {
-              if (!(await visualConfirm({ title: `حذف العرض «${view.name}»`, message: "سيُحذف هذا العرض المحفوظ من قائمتك.", confirmLabel: "حذف", tone: "danger" }))) return;
+              if (!(await visualConfirm({ title: `حذف العرض «${view.name}»`, message: "سيُحذف هذا العرض المحفوظ من قائمتك.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
               viewsStore.remove(view.id);
               setSavedViews(viewsStore.list());
               if (activeViewId === view.id) setActiveViewId(null);
@@ -8204,7 +8205,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   : undefined}
               >
                 {physicsActive && dragComparison
-                  ? `قبل: ${dragComparison.before} ← بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
+                  ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}${dragComparison.partyCount > 1 ? ` · قائد مجموعة من ${dragComparison.partyCount} مواعيد` : ""}`
                   : phoneReadOnly
                     ? "على الهاتف يمكنك التعديل والإضافة من «قائمة»، أما عرض الأسبوع فيبقى للقراءة فقط حتى لا يتحول اللمس إلى نقلٍ غير مقصود."
                   : picking
@@ -9314,7 +9315,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         >
           <History aria-hidden="true" />
           {logNamed ? null : <span>سجل اليوم</span>}
-          <b>{pendingUndo.length}</b>
+          <b dir="ltr">{pendingUndo.length > 99 ? "99+" : pendingUndo.length}</b>
         </button>
       ) : null}
       {undoLogOpen ? (
@@ -9551,11 +9552,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 <span><HelpCircle aria-hidden="true" /></span>
                 <div><small>{/مختلف|غير معتاد|تاريخ/i.test(context.whyHere || "") ? "خارج المعتاد" : "ضمن النمط"}</small><strong>{/مانع|تعارض/i.test(context.whyHere || "") ? "يحتاج تحقق" : "بدون مانع"}</strong></div>
               </article>
-              <article title={context.courseLife ? `${context.courseLife.firstTerm} ← ${context.courseLife.latestTerm} · ${context.courseLife.observations} حالة` : undefined}>
+              <article title={context.courseLife ? `من ${context.courseLife.firstTerm} إلى ${context.courseLife.latestTerm} · ${context.courseLife.observations} حالة` : undefined}>
                 <span><History aria-hidden="true" /></span>
                 <div><small>حياة المقرر</small><strong>{context.courseLife ? `${context.courseLife.terms} فصل · ${context.courseLife.stability}% ثبات` : "تاريخ قليل"}</strong></div>
               </article>
-              <article title={context.offeringLife ? `${context.offeringLife.firstTerm} ← ${context.offeringLife.latestTerm}` : undefined}>
+              <article title={context.offeringLife ? `من ${context.offeringLife.firstTerm} إلى ${context.offeringLife.latestTerm}` : undefined}>
                 <span><CalendarDays aria-hidden="true" /></span>
                 <div><small>حياة الشعبة</small><strong>{context.offeringLife ? (context.offeringLife.currentJourney ? `${context.offeringLife.currentJourney.snapshots} نسخة · ${context.offeringLife.currentJourney.changes} تغيّر` : `${context.offeringLife.terms} فصل · ${context.offeringLife.changes} تغيّر`) : "أول ظهور"}</strong></div>
               </article>

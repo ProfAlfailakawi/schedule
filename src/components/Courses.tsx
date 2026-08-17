@@ -200,7 +200,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     back();
   };
   const remove = async (id: number) => {
-    if (!(await visualConfirm({ title: "حذف المقرر الدراسي", message: "سيُحذف سجل المقرر الدراسي من النظام.", confirmLabel: "حذف", tone: "danger" }))) return;
+    if (!(await visualConfirm({ title: "حذف المقرر الدراسي", message: "سيُحذف سجل المقرر الدراسي من النظام.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
     const r = await fetch(`/api/courses/${id}`, { method: "DELETE" }),
       d = await r.json();
     if (!r.ok) {

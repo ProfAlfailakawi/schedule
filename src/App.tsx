@@ -2382,7 +2382,7 @@ export default function App() {
             <strong>كيف؟</strong>
           </span>
         ) : null}
-        {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : guideNewCount ? <i className="smart-guide-fab-new" dir="ltr" aria-hidden="true">{guideNewCount > 9 ? "9+" : guideNewCount}</i> : null}
+        {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : !guideOpen && guideNewCount ? <i className="smart-guide-fab-new" dir="ltr" aria-hidden="true">{guideNewCount > 9 ? "9+" : guideNewCount}</i> : null}
       </button>
 
       {searchOpen ? (

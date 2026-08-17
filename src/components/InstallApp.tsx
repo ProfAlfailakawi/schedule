@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Download, Share, X } from "lucide-react";
+import { Check, Download, Menu, Plus, Share, X } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
 
 const SEEN_KEY = "schedule-install-seen";
@@ -123,15 +123,15 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
               <ol className="install-steps install-steps-grid">
                 {isIos ? (
                   <>
-                    <li><b>افتح المشاركة</b><small>اضغط زر المشاركة <Share aria-hidden="true" /> في Safari.</small></li>
-                    <li><b>اختر الإضافة</b><small>اضغط «إضافة إلى الشاشة الرئيسية».</small></li>
-                    <li><b>ثبّت الأيقونة</b><small>أكّد باختيار «إضافة».</small></li>
+                    <li><span className="install-step-icon"><Share aria-hidden="true" /></span><div><b>افتح المشاركة</b><small>من Safari.</small></div></li>
+                    <li><span className="install-step-icon"><Plus aria-hidden="true" /></span><div><b>أضف للشاشة</b><small>اختر «إضافة إلى الشاشة الرئيسية».</small></div></li>
+                    <li><span className="install-step-icon"><Check aria-hidden="true" /></span><div><b>أكّد</b><small>اضغط «إضافة».</small></div></li>
                   </>
                 ) : (
                   <>
-                    <li><b>افتح القائمة</b><small>من قائمة المتصفح.</small></li>
-                    <li><b>اختر التثبيت</b><small>اضغط «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</small></li>
-                    <li><b>أكّد</b><small>سيظهر التطبيق مباشرة على جهازك.</small></li>
+                    <li><span className="install-step-icon"><Menu aria-hidden="true" /></span><div><b>افتح القائمة</b><small>من المتصفح.</small></div></li>
+                    <li><span className="install-step-icon"><Download aria-hidden="true" /></span><div><b>اختر التثبيت</b><small>«تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</small></div></li>
+                    <li><span className="install-step-icon"><Check aria-hidden="true" /></span><div><b>أكّد</b><small>سيظهر SCHEDULE كتطبيق.</small></div></li>
                   </>
                 )}
               </ol>

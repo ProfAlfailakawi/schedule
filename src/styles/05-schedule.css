@@ -5745,3 +5745,20 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .visual-minimal .spread-keys span.seg-medium svg{color:var(--warning)}
 .visual-minimal .spread-keys span.seg-low svg{color:var(--info)}
 .visual-minimal .spread-keys span.seg-clean svg{color:var(--success)}
+
+/* ── Floating utilities: never occupy the guide launcher's pixels ---------
+ * The screenshot that exposed this had the day's undo count sitting directly
+ * under the guide's unread badge. Desktop keeps the history button one row
+ * above the guide; phone keeps it below, because the guide itself moves upward
+ * over the bottom navigation. The week and building boards are untouched. */
+@media(min-width:901px){
+  .schedule-page .undo-log-open{
+    left:18px!important;right:auto!important;bottom:82px!important;
+  }
+}
+@media(max-width:900px){
+  .schedule-page .undo-log-open{
+    left:12px!important;right:auto!important;bottom:18px!important;
+  }
+}
+.undo-log-open b{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}

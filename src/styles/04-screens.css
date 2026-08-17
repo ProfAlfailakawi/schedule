@@ -1890,3 +1890,72 @@
 .journey-stage-copy{display:grid;gap:4px}.journey-stage-copy small{font-size:10px;font-weight:700;color:var(--muted)}.journey-stage-copy strong{font-size:13px}.journey-stage-copy p{margin:0;color:var(--ink-2);font-size:11px;line-height:1.7}
 @media (max-width:980px){.journey-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.journey-stage::after{display:none}}
 @media (max-width:640px){.schedule-confirm-card{width:min(94vw,390px);padding:18px;border-radius:22px}.schedule-confirm-copy strong{font-size:20px}.install-pop{width:min(92vw,320px)}.journey-stages{grid-template-columns:1fr}}
+
+/* ── Contextual delete confirmation ----------------------------------------
+ * Small deletes borrow the source button's position instead of opening a full
+ * modal. It is the same safety check, but the eye never loses the thing it was
+ * acting on. Larger restore/reset decisions keep the full decision sheet. */
+.schedule-confirm-inline-layer{
+  position:fixed;inset:0;z-index:1450;background:transparent;
+}
+.schedule-confirm-inline{
+  position:fixed;z-index:1;
+  transform:translateX(-50%);
+  display:flex;align-items:center;gap:6px;
+  min-height:48px;padding:5px 6px;
+  border:1px solid color-mix(in srgb,var(--danger) 28%,var(--line));
+  border-radius:18px;
+  background:color-mix(in srgb,var(--nav) 96%,transparent);
+  color:var(--nav-ink);
+  box-shadow:0 18px 48px rgba(8,15,13,.28);
+  backdrop-filter:blur(16px) saturate(1.08);
+  transform-origin:center;
+  animation:scheduleConfirmMorph .2s var(--ease-spring) both;
+}
+.schedule-confirm-inline-mark{
+  width:36px;height:36px;display:grid;place-items:center;flex:none;
+  border-radius:13px;background:color-mix(in srgb,var(--danger) 18%,transparent);color:#f5c3bf;
+}
+.schedule-confirm-inline-mark svg{width:16px;height:16px}
+.schedule-confirm-inline button{
+  width:36px;height:36px;padding:0;display:grid;place-items:center;flex:none;
+  border:1px solid color-mix(in srgb,#fff 11%,transparent);border-radius:12px;
+  background:color-mix(in srgb,#fff 6%,transparent);color:#dfe7e3;cursor:pointer;
+  transition:transform .14s var(--ease),background .14s var(--ease),border-color .14s var(--ease);
+}
+.schedule-confirm-inline button:hover{transform:translateY(-1px);background:color-mix(in srgb,#fff 11%,transparent)}
+.schedule-confirm-inline button:focus-visible{outline:2px solid color-mix(in srgb,#fff 70%,transparent);outline-offset:2px}
+.schedule-confirm-inline .schedule-confirm-inline-accept{
+  background:var(--danger);border-color:var(--danger);color:#fff;
+}
+.schedule-confirm-inline .schedule-confirm-inline-accept:hover{background:color-mix(in srgb,var(--danger) 88%,#000)}
+.schedule-confirm-inline .schedule-confirm-inline-cancel:hover{border-color:color-mix(in srgb,#fff 22%,transparent)}
+@keyframes scheduleConfirmMorph{
+  from{opacity:0;transform:translateX(-50%) scale(.72);filter:blur(2px)}
+  to{opacity:1;transform:translateX(-50%) scale(1);filter:none}
+}
+@media(max-width:640px){
+  .schedule-confirm-inline{min-height:54px;padding:6px 7px;border-radius:19px}
+  .schedule-confirm-inline-mark,.schedule-confirm-inline button{width:40px;height:40px;border-radius:13px}
+}
+@media(prefers-reduced-motion:reduce){.schedule-confirm-inline{animation:none}.schedule-confirm-inline button{transition:none}}
+
+/* Install prompt: three pictographic steps, not a numbered paragraph. */
+.install-pop{width:min(320px,calc(100vw - 28px))}
+.install-steps-grid{position:relative;gap:7px}
+.install-steps-grid li{
+  position:relative;display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;
+  min-height:58px;padding:9px 10px;border-radius:16px;
+}
+.install-steps-grid li::before{display:none}
+.install-steps-grid li+li::after{
+  content:"";position:absolute;inset-inline-start:27px;inset-block-start:-8px;width:1px;height:8px;background:color-mix(in srgb,var(--accent) 25%,var(--line));
+}
+.install-step-icon{
+  width:34px;height:34px;display:grid;place-items:center;flex:none;border-radius:12px;
+  background:var(--accent-soft);color:var(--accent);
+}
+.install-step-icon svg{width:16px!important;height:16px!important}
+.install-steps-grid li>div{min-width:0}.install-steps-grid li b{font-size:12px}.install-steps-grid li small{font-size:10.5px;line-height:1.45}
+.install-login .install-step-icon{background:#17231f;color:#b6d8cc}
+.install-login .install-steps-grid li{background:#0d1412;border-color:#2b3630}

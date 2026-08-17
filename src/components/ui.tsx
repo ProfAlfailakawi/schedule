@@ -52,17 +52,27 @@ export function visualConfirm({
   confirmLabel = "متابعة",
   cancelLabel = "إلغاء",
   tone = "warning",
+  compact = false,
 }: {
   title?: string;
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
   tone?: ConfirmTone;
+  /**
+   * Small, local delete actions confirm in place instead of opening a second
+   * sheet. The operation behind the button is unchanged; only the moment of
+   * confirmation is made lighter and more contextual.
+   */
+  compact?: boolean;
 }) {
   if (typeof document === "undefined") {
     return Promise.resolve(typeof window !== "undefined" ? window.confirm(message) : false);
   }
   return new Promise<boolean>((resolve) => {
+    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const triggerRect = trigger?.getBoundingClientRect?.();
+    const inlineConfirm = compact && tone === "danger";
     const host = document.createElement("div");
     document.body.appendChild(host);
     const root = createRoot(host);
@@ -82,11 +92,56 @@ export function visualConfirm({
           }
         };
         document.addEventListener("keydown", onKey);
-        return () => document.removeEventListener("keydown", onKey);
+        const expiry = inlineConfirm ? window.setTimeout(() => close(false), 4200) : 0;
+        return () => {
+          document.removeEventListener("keydown", onKey);
+          if (expiry) window.clearTimeout(expiry);
+        };
       }, []);
       const Icon = tone === "danger" ? Trash2 : tone === "info" ? Info : AlertTriangle;
       const eyebrow = tone === "danger" ? "إجراء حساس" : tone === "info" ? "تأكيد" : "راجع قبل المتابعة";
       const heading = title || (tone === "danger" ? "تأكيد الحذف" : "تأكيد الإجراء");
+
+      if (inlineConfirm) {
+        const center = triggerRect
+          ? Math.max(70, Math.min(window.innerWidth - 70, triggerRect.left + triggerRect.width / 2))
+          : window.innerWidth / 2;
+        const top = triggerRect
+          ? Math.max(12, Math.min(window.innerHeight - 64, triggerRect.top + triggerRect.height / 2 - 24))
+          : Math.max(12, window.innerHeight / 2 - 24);
+        return (
+          <div className="schedule-confirm-inline-layer no-print" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(false); }}>
+            <section
+              className="schedule-confirm-inline"
+              role="alertdialog"
+              aria-modal="true"
+              aria-label={`${heading}. ${message}`}
+              style={{ left: `${center}px`, top: `${top}px` }}
+            >
+              <span className="schedule-confirm-inline-mark" aria-hidden="true"><Trash2 /></span>
+              <span className="sr-only">{heading}. {message}</span>
+              <button
+                ref={cancelRef}
+                type="button"
+                className="schedule-confirm-inline-cancel"
+                data-guide-ignore="تأكيد بصري عام تابع لزر الحذف الذي فتحه"
+                onClick={() => close(false)}
+                aria-label={cancelLabel}
+                title={cancelLabel}
+              ><X aria-hidden="true" /></button>
+              <button
+                type="button"
+                className="schedule-confirm-inline-accept"
+                data-guide-ignore="تأكيد بصري عام تابع لزر الحذف الذي فتحه"
+                onClick={() => close(true)}
+                aria-label={confirmLabel}
+                title={confirmLabel}
+              ><Check aria-hidden="true" /></button>
+            </section>
+          </div>
+        );
+      }
+
       return (
         <div className="schedule-confirm-backdrop no-print" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(false); }}>
           <section className={`schedule-confirm-card tone-${tone}`} role="alertdialog" aria-modal="true" aria-labelledby="schedule-confirm-title" aria-describedby="schedule-confirm-message">
@@ -97,8 +152,8 @@ export function visualConfirm({
               <p id="schedule-confirm-message">{message}</p>
             </div>
             <div className="schedule-confirm-actions">
-              <button ref={cancelRef} type="button" className="btn btn-secondary" onClick={() => close(false)}>{cancelLabel}</button>
-              <button type="button" className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`} onClick={() => close(true)}>{confirmLabel}</button>
+              <button ref={cancelRef} type="button" className="btn btn-secondary" data-guide-ignore="حوار تأكيد عام لا يمثل ميزة مستقلة في المرشد" onClick={() => close(false)}>{cancelLabel}</button>
+              <button type="button" className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`} data-guide-ignore="حوار تأكيد عام لا يمثل ميزة مستقلة في المرشد" onClick={() => close(true)}>{confirmLabel}</button>
             </div>
           </section>
         </div>
