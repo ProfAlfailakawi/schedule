@@ -191,6 +191,19 @@ export default function useSchedulePhysics(options: Options) {
     session.decision = loading;
     setState(prev => ({ ...prev, target, decision: loading }));
     optionsRef.current.onDecision?.(loading, target);
+    // The drag HUD only answers the two operational questions the coordinator
+    // needs while moving: is the room busy, or is the instructor busy? The local
+    // preview already has both from the loaded schedule, so do not stall the
+    // pointer on remote intelligence. The authoritative server validation still
+    // runs on commit and remains the final gate.
+    if (immediate) {
+      const finalImmediate = { ...immediate, key, loading: false };
+      session.decision = finalImmediate;
+      cacheRef.current.set(key, finalImmediate);
+      setState(prev => ({ ...prev, target, decision: finalImmediate }));
+      optionsRef.current.onDecision?.(finalImmediate, target);
+      return;
+    }
     evalTimerRef.current = window.setTimeout(async () => {
       const controller = new AbortController();
       evalAbortRef.current = controller;

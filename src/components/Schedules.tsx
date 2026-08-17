@@ -4442,7 +4442,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       estimateArabicInlineWidth(instructor, 5.15) +
       estimateArabicInlineWidth(code, 5.1) +
       43;
-    return oneLineNeed <= available ? "single" : "double";
+    // Terminal-hour exception: after 19:00 the visual tail is intentionally
+    // non-linear. Give the code extra collision clearance there only; if the
+    // three identities still fit they stay on one line, otherwise the existing
+    // adaptive two-line nameplate takes over instead of letting code touch text.
+    const terminalClearance = from >= 19 * 60 ? 18 : 0;
+    return oneLineNeed + terminalClearance <= available ? "single" : "double";
   };
 
   const weekStripCardStyle = (placed: { row: FSchedule; lane: number }, identityMode: "single" | "double" = "single"): React.CSSProperties => {
@@ -8227,7 +8232,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                     }}
                                   />
                                 ))}
-                                {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                                {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mins(mark) % 60 === 0 ? "rooms-hourline-major" : "rooms-hourline-half"} ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
                                 {moveTraces
                                   .filter(trace => trace.dayKey === day.key && trace.roomKey === room.key)
                                   .map(trace => (
@@ -8295,7 +8300,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                   }}
                                 />
                               ))}
-                              {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                              {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mins(mark) % 60 === 0 ? "rooms-hourline-major" : "rooms-hourline-half"} ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
                               {moveTraces
                                 .filter(trace => trace.dayKey === day.key && trace.roomKey === "|")
                                 .map(trace => (

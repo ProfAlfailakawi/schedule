@@ -6978,3 +6978,78 @@ html.schedule-physics-active .week-strip-slot.physics-impossible::before{
 /* Dense strip slots already own ::after for the verdict. Keep the add mark on
    ::before only at rest; during a drag the target ring owns ::before. */
 html.schedule-physics-active .week-strip-slot.field-tier::before{pointer-events:none}
+
+/* === V25: operational rooms parity + instant conflict HUD ==================
+   The week is the visual source of truth. Rooms now uses the same solid-hour /
+   dashed-half-hour grammar, and the drag verdict answers only the two questions
+   needed before a drop: room and instructor availability. */
+.rooms-hourline{
+  opacity:1!important;
+  border-inline-start-width:1px!important;
+}
+.rooms-hourline-major{
+  border-inline-start-style:solid!important;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 92%,transparent)!important;
+}
+.rooms-hourline-half{
+  border-inline-start-style:dashed!important;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 58%,transparent)!important;
+}
+.rooms-hourline-terminal{
+  border-inline-start-style:solid!important;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 92%,transparent)!important;
+}
+.rooms-week-days .rooms-row+.rooms-row{
+  border-top:1px solid color-mix(in srgb,var(--line-strong) 92%,transparent)!important;
+}
+.rooms-week-days .rooms-track{
+  background:var(--surface)!important;
+}
+
+/* At the extreme RTL edge, reserve a real scroll-end gutter equal to the rail.
+   This moves the timeline's terminal edge into view instead of letting its last
+   cards finish behind the sticky day identity column. */
+.rooms-surface{
+  --rooms-rail-safe:72px;
+  padding-inline-start:calc(var(--s5) + var(--rooms-rail-safe))!important;
+}
+.rooms-surface>.rooms-head,
+.rooms-surface>.rooms-filter-block,
+.rooms-surface>.rooms-legend{
+  margin-inline-start:calc(-1 * var(--rooms-rail-safe));
+}
+
+.schedule-physics-hud{
+  width:min(300px,84vw)!important;
+  max-height:none!important;
+  overflow:visible!important;
+  padding:14px!important;
+  border-radius:16px!important;
+}
+.schedule-physics-hud>header{margin-bottom:10px!important}
+.schedule-physics-hud header strong{font-size:15px!important;line-height:1.3!important}
+.schedule-physics-hud>p,
+.physics-hud-reasons,
+.physics-hud-metrics,
+.physics-fingerprint-strip,
+.physics-stress-chip,
+.physics-horizon-chip,
+.physics-counterfactual,
+.physics-no-data{display:none!important}
+.physics-conflict-summary{display:grid;gap:7px}
+.physics-conflict-row,
+.physics-conflict-clear{
+  display:grid;grid-template-columns:20px minmax(0,1fr);align-items:center;gap:9px;
+  min-height:46px;padding:8px 10px;border:1px solid var(--line);border-radius:11px;
+  background:var(--surface-2);
+}
+.physics-conflict-row svg,.physics-conflict-clear svg{width:17px;height:17px}
+.physics-conflict-row small{display:block;color:var(--muted);font-size:10px;line-height:1.2}
+.physics-conflict-row strong,.physics-conflict-clear strong{display:block;margin-top:2px;font-size:12px;font-weight:600;line-height:1.35}
+.physics-conflict-row.is-room{border-color:color-mix(in srgb,var(--danger) 24%,var(--line));background:color-mix(in srgb,var(--danger) 6%,var(--surface))}
+.physics-conflict-row.is-room svg,.physics-conflict-row.is-room strong{color:var(--danger)}
+.physics-conflict-row.is-teacher{border-color:color-mix(in srgb,var(--warning) 26%,var(--line));background:color-mix(in srgb,var(--warning) 6%,var(--surface))}
+.physics-conflict-row.is-teacher svg,.physics-conflict-row.is-teacher strong{color:var(--warning)}
+.physics-conflict-clear{border-color:color-mix(in srgb,var(--success) 22%,var(--line));background:color-mix(in srgb,var(--success) 5%,var(--surface))}
+.physics-conflict-clear svg,.physics-conflict-clear strong{color:var(--success)}
+.physics-reading{margin-top:7px!important;font-size:10px!important}
