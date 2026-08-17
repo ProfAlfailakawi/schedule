@@ -191,6 +191,39 @@ const scheduleStartConventionNote = (row: Partial<FSchedule>): string | null => 
   return null;
 };
 
+
+const normalizeArabicDigits = (value: string) => String(value || "")
+  .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+  .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
+
+const displayClockCompact = (value: string) => {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return value || "—";
+  return `${Number(match[1])}:${match[2]}`;
+};
+
+type RegulationMetric = { kind: "minutes" | "meetings"; usual: number; current: number; delta: number; unit: string };
+const parseRegulationMetric = (value: string): RegulationMetric | null => {
+  const text = normalizeArabicDigits(String(value || ""));
+  let match = text.match(/المعتاد\s+(\d+)\s+دقيقة[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
+  if (match) {
+    const usual = Number(match[1]);
+    const current = Number(match[2]);
+    if (Number.isFinite(usual) && Number.isFinite(current)) {
+      return { kind: "minutes", usual, current, delta: current - usual, unit: "د" };
+    }
+  }
+  match = text.match(/المعتاد\s+(\d+)\s+لقاءات[^\d]*[^\d]+(?:وهذا|والحالي|وهذه)\s+(\d+)/);
+  if (match) {
+    const usual = Number(match[1]);
+    const current = Number(match[2]);
+    if (Number.isFinite(usual) && Number.isFinite(current)) {
+      return { kind: "meetings", usual, current, delta: current - usual, unit: "لقاءات" };
+    }
+  }
+  return null;
+};
+
 type DepartmentStartRhythm = HistoricalTimeModel;
 
 /**
@@ -1995,6 +2028,114 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   ].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
   const editorTimingNote = historicalTimingNote(form);
+  const formDurationMinutes = form.fstarttime && form.fendtime ? Math.max(0, mins(form.fendtime) - mins(form.fstarttime)) : 0;
+  const currentInstructorName = instructorById.get(Number(form.AdInstructorId || 0))?.AdInstructorName || "";
+  const currentRoomLabel = form.AdRoomCode && form.AdRoomHall ? `${form.AdRoomCode}/${form.AdRoomHall}` : "";
+  const selectedDaySummary = selectedFormDays.map(day => day.label).join(" / ");
+  const editorConflictCards = useMemo(() => conflicts.slice(0, 4).map((conflict: any, index: number) => {
+    const other = rows.find(row => Number(row.id) === Number(conflict.otherId || conflict.rowId || -1));
+    const detail = String(conflict?.detail || "").replace(/\s+/g, " ").trim();
+    const isScope = conflict.type === "roomScope";
+    const isRoom = conflict.type === "room" || isScope || conflict.type === "hallBarter" || conflict.type === "hallBarterWindow";
+    const isInstructor = conflict.type === "instructor";
+    const typeLabel = isRoom ? (isScope ? "نطاق القاعة" : "تعارض قاعة") : isInstructor ? "تعارض أستاذ" : conflict.type === "duplicate" ? "تكرار" : "ملاحظة";
+    const statusLabel = isScope ? "تنبيه" : "مانع";
+    const currentStart = form.fstarttime ? mins(form.fstarttime) : null;
+    const currentEnd = form.fendtime ? mins(form.fendtime) : null;
+    const otherStart = other?.fstarttime ? mins(other.fstarttime) : null;
+    const otherEnd = other?.fendtime ? mins(other.fendtime) : null;
+    const hasTimeline = currentStart != null && currentEnd != null && otherStart != null && otherEnd != null;
+    const axisStart = hasTimeline ? Math.min(currentStart as number, otherStart as number) : null;
+    const axisEnd = hasTimeline ? Math.max(currentEnd as number, otherEnd as number) : null;
+    const axisSpan = hasTimeline ? Math.max(30, (axisEnd as number) - (axisStart as number)) : 0;
+    const toPct = (value: number) => hasTimeline ? ((value - (axisStart as number)) / axisSpan) * 100 : 0;
+    const overlapStart = hasTimeline ? Math.max(currentStart as number, otherStart as number) : null;
+    const overlapEnd = hasTimeline ? Math.min(currentEnd as number, otherEnd as number) : null;
+    const overlap = overlapStart != null && overlapEnd != null && overlapEnd > overlapStart
+      ? { start: toPct(overlapStart), width: Math.max(toPct(overlapEnd) - toPct(overlapStart), 6) }
+      : null;
+    const otherCourse = other?.AdCourseName || (other ? courseById.get(Number(other.AdCourseId || 0))?.CourseName : "") || "";
+    const roomLabel = currentRoomLabel || (other?.AdRoomCode && other?.AdRoomHall ? `${other.AdRoomCode}/${other.AdRoomHall}` : "");
+    let title = conflict.message || "يوجد مانع للحفظ";
+    let titleSecondary = "";
+    let summary = detail;
+    if (isInstructor) {
+      title = `الأستاذ: ${currentInstructorName || other?.AdInstructorName || title.replace(/^الأستاذ\s*/, "").replace(/\s*لديه.*$/, "") || "—"}`;
+      titleSecondary = "لديه محاضرة متداخلة";
+      summary = otherCourse || detail;
+    } else if (conflict.type === "room") {
+      title = `القاعة ${roomLabel || "—"} مشغولة`;
+      summary = otherCourse || detail;
+    } else if (isScope) {
+      title = conflict.message || `القاعة ${roomLabel || "—"} خارج النطاق`;
+      summary = detail || "القاعة تخص نطاقاً آخر؛ المتابعة ممكنة بعد المراجعة.";
+    } else if (conflict.type === "duplicate") {
+      title = "يوجد موعد مطابق تماماً";
+      titleSecondary = "لنفس المقرر والشعبة";
+      summary = detail || "نفس الأيام ونفس الوقت.";
+    } else if (conflict.type === "hallBarter") {
+      title = `القاعة ${roomLabel || "—"} محجوزة رقمياً`;
+      titleSecondary = "عبر بورصة القاعات";
+      summary = detail;
+    } else if (conflict.type === "hallBarterWindow") {
+      title = conflict.message || "الموعد يتجاوز نافذة الاستعارة";
+      summary = detail;
+    }
+    const lines = hasTimeline ? [
+      {
+        label: isInstructor ? (otherCourse || "محاضرة أخرى") : "الحجز الآخر",
+        range: formatScheduleTimeRange(other?.fstarttime, other?.fendtime),
+        start: toPct(otherStart as number),
+        width: Math.max(toPct(otherEnd as number) - toPct(otherStart as number), 8),
+        tone: "other",
+      },
+      {
+        label: "المقرر الحالي",
+        range: formatScheduleTimeRange(form.fstarttime, form.fendtime),
+        start: toPct(currentStart as number),
+        width: Math.max(toPct(currentEnd as number) - toPct(currentStart as number), 8),
+        tone: "current",
+      },
+    ] : [];
+    return {
+      id: `${conflict.type}-${conflict.rowId || conflict.otherId || index}`,
+      toneClass: isScope ? "decision-card--scope" : conflict.type === "duplicate" ? "decision-card--warning" : "decision-card--danger",
+      typeLabel,
+      statusLabel,
+      icon: isRoom ? "room" : isInstructor ? "teacher" : "stack",
+      title,
+      titleSecondary,
+      summary,
+      supporting: selectedDaySummary || (other ? arabicDays(other) : ""),
+      axisStart: axisStart != null ? displayClockCompact(timeFromMins(axisStart)) : "",
+      axisEnd: axisEnd != null ? displayClockCompact(timeFromMins(axisEnd)) : "",
+      overlap,
+      lines,
+    };
+  }), [conflicts, rows, form.fstarttime, form.fendtime, currentInstructorName, currentRoomLabel, selectedDaySummary, courseById]);
+  const editorTimingVisualDays = useMemo(() => {
+    const startMinute = String(form.fstarttime || "").match(/^(\d{1,2}):(\d{2})$/) ? Number(String(form.fstarttime || "").split(":")[1]) : null;
+    return days.map(day => {
+      const active = Boolean((form as any)[day.key]);
+      const expectedMinute = active ? expectedStartMinuteForDay(form, day.key as DayKey) : null;
+      let state: "inactive" | "match" | "off" | "active" = active ? "active" : "inactive";
+      if (active && startMinute != null && expectedMinute != null) state = startMinute === expectedMinute ? "match" : "off";
+      const cue = !active ? "—" : expectedMinute == null ? "•" : expectedMinute === 0 ? "00" : "30";
+      const note = !active ? "غير مختار" : expectedMinute === 0 ? "رأس الساعة" : expectedMinute === 30 ? "عند النصف" : "مرن";
+      return { key: day.key, label: day.label, state, cue, note, active };
+    });
+  }, [form, expectedStartMinuteForDay]);
+  const editorRegulationCards = useMemo(() => editorRegulation.slice(0, 4).map((finding, index) => {
+    const detail = String(finding.detail || "").replace(/\s+/g, " ").trim();
+    return {
+      ...finding,
+      detail,
+      icon: index % 3 === 0 ? "history" : index % 3 === 1 ? "room" : "idea",
+      metric: parseRegulationMetric(`${finding.title} ${detail}`),
+      currentDurationLabel: formDurationMinutes ? `${formDurationMinutes.toLocaleString("ar-KW-u-nu-latn")} د` : "—",
+      selectedDaysLabel: selectedFormDays.length ? selectedFormDays.length.toLocaleString("ar-KW-u-nu-latn") : "0",
+    };
+  }), [editorRegulation, formDurationMinutes, selectedFormDays.length]);
   /* The keystroke updates the input; the two-hundred-card grid follows a beat
      behind. Deferring the query keeps typing at the keyboard's speed instead of
      the layout's — React drops the stale in-between renders entirely. */
@@ -6430,10 +6571,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               <FormActions onBack={back} loading={saving} submitDisabled={Boolean(validationIssues.length||blockingConflicts.length||checking)} />
             </form>
           </Surface>
-          <aside className="conflict-panel">
-            <div className="conflict-head">
+          <aside className={`conflict-panel ${validationIssues.length || blockingConflicts.length ? "conflict-panel--alert" : "conflict-panel--clear"}`}>
+            <div className={`conflict-head ${validationIssues.length || blockingConflicts.length ? "conflict-head--alert" : "conflict-head--clear"}`}>
               <span>
-                <AlertTriangle />
+                {validationIssues.length || blockingConflicts.length ? <AlertTriangle /> : <CheckCircle2 />}
               </span>
               <div>
                 <strong>فحص موانع الحفظ</strong>
@@ -6444,26 +6585,41 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             </div>
             {conflicts.length ? (
               <div className="decision-stack" aria-label="موانع الحفظ">
-                {conflicts.slice(0, 4).map((c, i) => {
-                  const isScope = c.type === "roomScope";
-                  const typeLabel = c.type === "room" ? "تعارض قاعة" : c.type === "instructor" ? "تعارض أستاذ" : isScope ? "نطاق القاعة" : "تكرار";
-                  const toneClass = isScope ? "decision-card--scope" : c.type === "duplicate" ? "decision-card--warning" : "decision-card--danger";
-                  return (
-                    <article key={`${c.type}-${c.rowId}-${i}`} className={`decision-card ${toneClass}`}>
-                      <div className="decision-card-icon" aria-hidden="true">
-                        {c.type === "room" || isScope ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <Layers />}
-                      </div>
+                {editorConflictCards.map(card => (
+                  <article key={card.id} className={`decision-card ${card.toneClass}`}>
+                    <div className="decision-card-topline">
+                      <span className="decision-card-kicker">{card.typeLabel}</span>
+                      <em className="decision-card-flag">{card.statusLabel}</em>
+                    </div>
+                    <div className="decision-card-hero">
                       <div className="decision-card-body">
-                        <div className="decision-card-meta">
-                          <span>{typeLabel}</span>
-                          <em>{isScope ? "تنبيه" : "مانع"}</em>
-                        </div>
-                        <strong className="decision-card-title">{c.message}</strong>
-                        {c.detail ? <p className="decision-card-copy">{String(c.detail || "").replace(/\s+/g, " ").trim()}</p> : null}
+                        <strong className="decision-card-title">{card.title}</strong>
+                        {card.titleSecondary ? <strong className="decision-card-title decision-card-title--sub">{card.titleSecondary}</strong> : null}
+                        {card.summary ? <p className="decision-card-copy">{card.summary}</p> : null}
+                        {card.supporting ? <span className="decision-card-support">{card.supporting}</span> : null}
                       </div>
-                    </article>
-                  );
-                })}
+                      <div className="decision-card-icon" aria-hidden="true">
+                        {card.icon === "room" ? <Building2 /> : card.icon === "teacher" ? <UsersRound /> : <Layers />}
+                      </div>
+                    </div>
+                    {card.lines.length ? (
+                      <div className="decision-compare" aria-hidden="true">
+                        <div className="decision-compare-axis"><span dir="ltr">{card.axisStart}</span><span dir="ltr">{card.axisEnd}</span></div>
+                        <div className="decision-compare-tracks">
+                          {card.lines.map(line => (
+                            <div key={`${card.id}-${line.label}`} className={`decision-line decision-line--${line.tone}`}>
+                              <div className="decision-line-head"><span>{line.label}</span><b dir="ltr">{line.range}</b></div>
+                              <div className="decision-line-track">
+                                <span className="decision-line-bar" style={{ insetInlineStart: `${line.start}%`, inlineSize: `${line.width}%` }} />
+                                {card.overlap ? <span className="decision-line-overlap" style={{ insetInlineStart: `${card.overlap.start}%`, inlineSize: `${card.overlap.width}%` }} /> : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
                 {conflicts.length > 4 ? (
                   <details className="decision-more">
                     <summary>عرض {conflicts.length - 4} ملاحظات إضافية</summary>
@@ -6493,11 +6649,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   </div>
                   <em>تنبيه فقط</em>
                 </header>
-                <article className="decision-note decision-note--timing">
-                  <div className="decision-note-icon" aria-hidden="true"><CalendarDays /></div>
-                  <div className="decision-note-body">
-                    <strong>بداية غير معتادة</strong>
-                    <p>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim()}</p>
+                <article className="decision-note decision-note--timing decision-note--feature">
+                  <div className="decision-feature-topline">
+                    <span className="decision-card-kicker">ملاحظة التوقيت</span>
+                    <em className="decision-card-flag">تنبيه</em>
+                  </div>
+                  <div className="decision-feature-hero">
+                    <div className="decision-note-body">
+                      <strong>بداية غير معتادة</strong>
+                      <p>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim()}</p>
+                    </div>
+                    <div className="decision-note-icon" aria-hidden="true"><CalendarDays /></div>
+                  </div>
+                  <div className="timing-pill-grid" aria-hidden="true">
+                    {editorTimingVisualDays.map(day => (
+                      <div key={day.key} className={`timing-pill timing-pill--${day.state}`}>
+                        <span>{day.label}</span>
+                        <strong>{day.cue}</strong>
+                        <small>{day.note}</small>
+                      </div>
+                    ))}
                   </div>
                 </article>
               </section>
@@ -6518,16 +6689,34 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   <em>{countOf(editorRegulation.length, AR.note)}</em>
                 </header>
                 <div className="decision-note-list">
-                  {editorRegulation.slice(0, 4).map((finding, index) => (
-                    <article key={finding.rule} className={`decision-note decision-note--${finding.severity}`}>
-                      <div className="decision-note-icon" aria-hidden="true">
-                        {index % 3 === 0 ? <History /> : index % 3 === 1 ? <Building2 /> : <Lightbulb />}
+                  {editorRegulationCards.map((finding) => (
+                    <article key={finding.rule} className={`decision-note decision-note--${finding.severity} decision-note--feature`}>
+                      <div className="decision-feature-topline">
+                        <span className="decision-card-kicker">ملاحظات اللائحة</span>
+                        <em className="decision-card-flag">{finding.article || "معلومة"}</em>
                       </div>
-                      <div className="decision-note-body">
-                        <small>{finding.article}</small>
-                        <strong>{finding.title}</strong>
-                        {finding.detail ? <p>{String(finding.detail).replace(/\s+/g, " ").trim()}</p> : null}
+                      <div className="decision-feature-hero">
+                        <div className="decision-note-body">
+                          <strong>{finding.title}</strong>
+                          {finding.detail ? <p>{finding.detail}</p> : null}
+                        </div>
+                        <div className="decision-note-icon" aria-hidden="true">
+                          {finding.icon === "history" ? <History /> : finding.icon === "room" ? <Building2 /> : <Lightbulb />}
+                        </div>
                       </div>
+                      {finding.metric ? (
+                        <div className="regulation-metric-strip" aria-hidden="true">
+                          <div><span>الحالي</span><strong>{finding.metric.current.toLocaleString("ar-KW-u-nu-latn")} {finding.metric.unit}</strong></div>
+                          <div className="regulation-metric-emphasis"><span>{finding.metric.delta > 0 ? "أكثر بـ" : finding.metric.delta < 0 ? "أقل بـ" : "مطابق"}</span><strong>{Math.abs(finding.metric.delta).toLocaleString("ar-KW-u-nu-latn")} {finding.metric.unit}</strong></div>
+                          <div><span>المعتاد</span><strong>{finding.metric.usual.toLocaleString("ar-KW-u-nu-latn")} {finding.metric.unit}</strong></div>
+                        </div>
+                      ) : (
+                        <div className="regulation-facts" aria-hidden="true">
+                          <div><span>مدة اللقاء</span><strong>{finding.currentDurationLabel}</strong></div>
+                          <div><span>الأيام</span><strong>{finding.selectedDaysLabel}</strong></div>
+                          <div><span>المرجع</span><strong>{finding.article || "لائحة"}</strong></div>
+                        </div>
+                      )}
                     </article>
                   ))}
                 </div>
