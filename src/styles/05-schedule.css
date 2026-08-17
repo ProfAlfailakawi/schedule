@@ -3483,10 +3483,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   background:color-mix(in srgb,var(--surface) 97%,var(--surface-2) 3%);
   font-family:var(--font-ui);font-size:10.5px;font-weight:620;color:var(--ink-2);
 }
-.rooms-row>.rooms-day-label::before{
-  content:"";position:absolute;inset-inline-start:var(--s2);top:50%;width:4px;height:4px;
-  border-radius:50%;background:var(--accent);transform:translateY(-50%);opacity:.72;
-}
+.rooms-row>.rooms-day-label::before{display:none}
 .rooms-row-none>small{font-family:var(--font-ui);color:var(--warning)}
 .rooms-track{
   position:relative;
@@ -3499,7 +3496,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .rooms-week-days .rooms-track{min-height:54px;border:0;border-radius:0;background:transparent}
 .rooms-compact-track{height:auto;border:0;border-radius:0;background:transparent}
-.rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line-strong) 84%,transparent)}
+.rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line) 78%,transparent)}
 .rooms-hourline-terminal{border-inline-start-style:solid;border-inline-start-color:var(--line-strong)}
 .rooms-slot-preview{
   position:absolute;inset-block:3px;z-index:2;pointer-events:none;border-radius:7px;
@@ -6732,3 +6729,15 @@ html[data-schedule-workspace="focus"] .schedule-agenda-surface{
   .rooms-surface>.rooms-filter-block,
   .rooms-surface>.rooms-legend{width:calc(100vw - 24px)!important;max-width:calc(100vw - 24px)!important}
 }
+
+/* V22 — week/rooms visual parity. The room card keeps the week identity order:
+   course + code on one line, instructor beneath; no microtext and no day dot. */
+.rooms-identity-line{display:flex;align-items:center;gap:6px;min-width:0;direction:rtl}
+.rooms-identity-line b{min-width:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rooms-identity-line em{position:static!important;flex:none;margin:0;font:430 10px/1 var(--font-mono)!important;font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent)}
+.rooms-week-days .rooms-card{height:42px!important;min-height:42px;padding:4px 7px;justify-content:center;gap:2px;border-radius:8px}
+.rooms-week-days .rooms-card span{font-size:10.5px;font-weight:390;line-height:1.08}
+.rooms-week-days .rooms-card b{font-size:11.5px;font-weight:540;line-height:1.15}
+.rooms-week-days .rooms-row>.rooms-day-label{font-size:10.5px;font-weight:620;color:var(--ink-2);padding-inline:10px 6px}
+.rooms-week-days .rooms-track{border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.rooms-week-days .rooms-row:first-child .rooms-track{border-top:0}

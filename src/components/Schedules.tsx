@@ -4357,8 +4357,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const terminalPad = 0;
     // Only the final academic hour gets a little more paper. 19:00–20:00 is
     // 14px wider than the other hours, but 20:00 stays a hard boundary.
-    const terminalHourBonus = 14;
-    const terminalHourStart = Math.max(gridWindow.start, visualEnd - 60);
+    const terminalHourBonus = 86;
+    const terminalHourStart = Math.max(gridWindow.start, visualEnd - 30);
     const spanMinutes = Math.max(SCHEDULE_SLOT_MINUTES, visualEnd - gridWindow.start);
     const timeWidth = Math.round((spanMinutes / 60) * hourWidth) + terminalHourBonus;
     const timelineWidth = timeWidth;
@@ -7819,19 +7819,30 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               ? roomsWithAfterglow.filter(room => matrixBuildings.has(room.buildingKey))
               : roomsWithAfterglow;
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
-            const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
-            const ROOM_HOUR_WIDTH = 136;
-            const ROOM_LABEL_WIDTH = 64;
-            const ROOM_LANE_HEIGHT = 62;
-            const timelineWidth = Math.max(ROOM_HOUR_WIDTH, Math.round((span / 60) * ROOM_HOUR_WIDTH));
+            const ROOM_HOUR_WIDTH = weekStripConfig.hourWidth;
+            const ROOM_LABEL_WIDTH = weekStripConfig.labelWidth;
+            const ROOM_LANE_HEIGHT = 48;
+            // Same nonlinear end-cap as the week: only 19:30–20:00 receives
+            // extra paper, so a short final lecture keeps its full identity.
+            const ROOM_TERMINAL_START = Math.max(gridWindow.start, SCHEDULE_DAY_END - 30);
+            const ROOM_TERMINAL_BONUS = weekStripConfig.terminalHourBonus;
+            const roomOffset = (minutesAt: number) => {
+              const clamped = Math.max(gridWindow.start, Math.min(SCHEDULE_DAY_END, minutesAt));
+              const base = ((clamped - gridWindow.start) / 60) * ROOM_HOUR_WIDTH;
+              if (clamped <= ROOM_TERMINAL_START) return base;
+              return base + ((clamped - ROOM_TERMINAL_START) / 30) * ROOM_TERMINAL_BONUS;
+            };
+            const timelineWidth = Math.max(ROOM_HOUR_WIDTH, roomOffset(SCHEDULE_DAY_END));
             const roomsCanvasWidth = ROOM_LABEL_WIDTH + timelineWidth;
+            const pct = (minutesAt: number) => (roomOffset(minutesAt) / timelineWidth) * 100;
+            const roomSpanPct = (from: number, to: number) => Math.max(0.18, ((roomOffset(to) - roomOffset(from)) / timelineWidth) * 100);
             const trackHeight = (lanes: number) => Math.max(54, 8 + Math.max(1, lanes) * ROOM_LANE_HEIGHT);
             const roomTraceStyle = (trace: { from: number; to: number }): React.CSSProperties => {
               // Use the exact same positioning system as renderTrackCard
               // to ensure the trace is always bound to the original slot geometry.
               return {
                 right: `${pct(trace.from)}%`,
-                width: `${Math.max(3, pct(trace.to) - pct(trace.from))}%`,
+                width: `${Math.max(0.18, roomSpanPct(trace.from, trace.to))}%`,
               };
             };
             const layoutFor = (day: DayKey, roomKey: string) => byDayRoomLayout.get(`${day}|${roomKey}`) || { items: [], lanes: 1 };
@@ -7849,7 +7860,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               const cardStyle: React.CSSProperties = {
                 ["--hue" as any]: hueFor(code, title, instructor?.AdInstructorName, placeOf(row)),
                 right: `${pct(actualFrom)}%`,
-                width: `${Math.max(3, pct(actualTo) - pct(actualFrom))}%`,
+                width: `${Math.max(0.18, roomSpanPct(actualFrom, actualTo))}%`,
                 ...(placement ? {
                   top: `${4 + placement.lane * ROOM_LANE_HEIGHT}px`,
                   bottom: "auto",
@@ -7904,9 +7915,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   }}
                 >
                   <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
-                  <b>{courseLabel(title, 0.82).text}</b>
+                  <div className="rooms-identity-line">
+                    <b>{courseLabel(title, 0.82).text}</b>
+                    <em dir="ltr">{code}</em>
+                  </div>
                   <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{who}</span>
-                  <em dir="ltr">{code}</em>
                   {undoEntry ? (
                     <button
                       type="button"
@@ -8159,7 +8172,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                     data-physics-start={slot}
                                     data-physics-label={`${day.label} · ${room.label}`}
                                     data-physics-room={`${room.building}|${room.hall}`}
-                                    style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
+                                    style={{ right: `${pct(mins(slot))}%`, width: `${roomSpanPct(mins(slot), mins(slot) + SCHEDULE_SLOT_MINUTES)}%` }}
                                     role="button"
                                     tabIndex={-1}
                                     title={`إضافة موعد · ${day.label} ${slot} · ${room.label}`}
@@ -8199,7 +8212,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                     </div>
                                   ))}
                                 {paint?.trackKey === `${room.key}|${day.key}` ? (
-                                  <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true">
+                                  <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max(roomSpanPct(mins(paint.from), mins(paint.to)), roomSpanPct(mins(paint.from), mins(paint.from) + SCHEDULE_SLOT_MINUTES))}%` }} aria-hidden="true">
                                     <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span>
                                   </div>
                                 ) : null}
@@ -8232,7 +8245,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                   data-physics-start={slot}
                                   data-physics-label={`${day.label} · بلا قاعة`}
                                   data-physics-room="|"
-                                  style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
+                                  style={{ right: `${pct(mins(slot))}%`, width: `${roomSpanPct(mins(slot), mins(slot) + SCHEDULE_SLOT_MINUTES)}%` }}
                                   role="button"
                                   tabIndex={-1}
                                   title={`إضافة موعد · ${day.label} ${slot} · بلا قاعة`}
@@ -8266,7 +8279,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                     <span><CornerUpRight aria-hidden="true" />نُقل من هنا</span>
                                   </div>
                                 ))}
-                              {paint?.trackKey === `none|${day.key}` ? <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true"><b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span></div> : null}
+                              {paint?.trackKey === `none|${day.key}` ? <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max(roomSpanPct(mins(paint.from), mins(paint.to)), roomSpanPct(mins(paint.from), mins(paint.from) + SCHEDULE_SLOT_MINUTES))}%` }} aria-hidden="true"><b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span></div> : null}
                               {homelessLayout.items.map(({ row, lane }) => renderTrackCard(row, day.key as DayKey, { lane }))}
                             </div>
                           </div>
