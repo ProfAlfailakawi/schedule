@@ -851,7 +851,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-clear strong{display:block;margin-top:var(--s3);font-size:var(--t-h3);font-weight:600}
 .review-clear span{display:block;margin-top:var(--s2);color:var(--muted);font-size:var(--t-sm)}
 .review-foot{
-  display:flex;gap:var(--s3);justify-content:flex-end;
+  display:flex;gap:var(--s3);justify-content:flex-end;align-items:center;
   padding:var(--s4) var(--s6);border-top:1px solid var(--line);background:var(--surface-2);
 }
 
@@ -1509,3 +1509,35 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .genesis-row-reason td>strong{font-size:12px;margin-inline-end:6px}.genesis-row-reason td>span{font-size:12px;color:var(--ink-2)}
 .genesis-days{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
 .genesis-days legend{padding:0 5px;color:var(--muted);font-size:11px}.genesis-days label{display:inline-flex!important;align-items:center;gap:5px!important;min-width:auto!important;padding:6px 9px;border-radius:999px;background:var(--surface-2);cursor:pointer}.genesis-days input{width:auto!important;height:auto!important;margin:0}.genesis-days span{font-size:12px!important;color:var(--ink)!important}
+
+/* Review actions: printing is a tool, not a sentence. */
+.review-print-icon-button{
+  width:52px!important;height:52px!important;min-width:52px!important;padding:0!important;
+  display:grid!important;place-items:center!important;border-radius:16px!important;
+}
+.review-print-icon-button svg{width:23px!important;height:23px!important;margin:0!important}
+.review-close-icon-button{
+  width:52px!important;height:52px!important;min-width:52px!important;padding:0!important;
+  display:grid!important;place-items:center!important;border-radius:16px!important;
+}
+.review-close-icon-button svg{width:22px!important;height:22px!important;margin:0!important}
+
+/* The journey keeps the original numeric arrival and adds only a quiet visual
+   cadence to the memory lines; the content itself remains complete. */
+.journey-strata i{
+  transform-origin:bottom center;
+  animation:journey-strata-arrive .62s var(--ease-out) both;
+  animation-delay:calc(var(--i) * 34ms);
+}
+@keyframes journey-strata-arrive{
+  from{transform:scaleY(.18);opacity:.08}
+  to{transform:scaleY(1);opacity:calc(.28 + var(--i) * .05)}
+}
+.journey-lifetime,.journey-current,.journey-timeline,.journey-philosophy,.journey-foot{
+  animation:journey-section-arrive .34s var(--ease-out) both;
+}
+.journey-current{animation-delay:.04s}.journey-timeline{animation-delay:.08s}.journey-philosophy{animation-delay:.12s}.journey-foot{animation-delay:.16s}
+@keyframes journey-section-arrive{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .journey-strata i,.journey-lifetime,.journey-current,.journey-timeline,.journey-philosophy,.journey-foot{animation:none!important}
+}

@@ -266,6 +266,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                   تعديل
                 </PrimaryButton>
                 <SecondaryButton
+                  data-guide-ignore="إجراء حذف حساس داخل شاشة الإدارة ويستخدم تأكيد الشاشة نفسه"
                   className="danger-action"
                   onClick={() => remove(selected.AdTermId)}
                 >

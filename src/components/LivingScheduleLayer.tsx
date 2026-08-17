@@ -1013,7 +1013,7 @@ export default function LivingScheduleLayer({
                           </header>
                           <div className="genesis-bulk-tools" role="toolbar" aria-label="إجراءات سريعة على المسودة">
                             <button type="button" onClick={() => { setGenesisBulkEdit(true); const first = genesis.previewRows?.[0]; if (first) beginGenesisEdit(first); }} disabled={busy || !genesis.previewRows?.length}><Save /> تعديل للجميع</button>
-                            {!genesisDeleteAllConfirm ? <button type="button" className="danger" onClick={() => setGenesisDeleteAllConfirm(true)} disabled={busy || !genesis.previewRows?.length}><Trash2 /> حذف للجميع</button> : <span className="genesis-delete-confirm"><b>حذف كل المواعيد من المسودة؟</b><button type="button" className="danger" onClick={() => void deleteAllGenesisRows()} disabled={busy}>نعم، احذف</button><button type="button" onClick={() => setGenesisDeleteAllConfirm(false)}>إلغاء</button></span>}
+                            {!genesisDeleteAllConfirm ? <button type="button" data-guide-ignore="حذف جماعي داخل مسودة بداية الفصل ويتطلب تأكيدًا صريحًا" className="danger" onClick={() => setGenesisDeleteAllConfirm(true)} disabled={busy || !genesis.previewRows?.length}><Trash2 /> حذف للجميع</button> : <span className="genesis-delete-confirm"><b>حذف كل المواعيد من المسودة؟</b><button type="button" data-guide-ignore="تأكيد حذف جماعي داخل المسودة فقط" className="danger" onClick={() => void deleteAllGenesisRows()} disabled={busy}>نعم، احذف</button><button type="button" onClick={() => setGenesisDeleteAllConfirm(false)}>إلغاء</button></span>}
                           </div>
                           <div className="genesis-preview-scroll">
                             <table>
@@ -1033,7 +1033,7 @@ export default function LivingScheduleLayer({
                                       <td dir="ltr">{formatScheduleTimeRange(row.start, row.end)}</td>
                                       <td dir="ltr">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
                                       <td><span>{row.instructor || "—"}</span></td>
-                                      <td><div className="genesis-row-actions"><button className="genesis-fix" type="button" onClick={() => beginGenesisEdit(row)}><Save /> تعديل</button><button className="genesis-delete" type="button" onClick={() => void deleteGenesisRow(Number(row.id))} disabled={busy}><Trash2 /> حذف</button></div></td>
+                                      <td><div className="genesis-row-actions"><button className="genesis-fix" type="button" onClick={() => beginGenesisEdit(row)}><Save /> تعديل</button><button className="genesis-delete" data-guide-ignore="حذف موعد واحد من مسودة بداية الفصل فقط" type="button" onClick={() => void deleteGenesisRow(Number(row.id))} disabled={busy}><Trash2 /> حذف</button></div></td>
                                     </tr>
                                     {flagged ? <tr className="genesis-row-reason"><td colSpan={8}><ShieldAlert /><strong>سبب المنع:</strong><span>{(genesis.rowIssues?.[String(row.id)] || [])[0] || "هذا الموعد مرتبط بمشكلة تمنع النشر."}</span></td></tr> : null}
                                     {editing ? <tr className="genesis-inline-editor"><td colSpan={8}><div>
@@ -1055,12 +1055,12 @@ export default function LivingScheduleLayer({
                             <p>{genesis.published ? "هذه المسودة منشورة الآن على الجدول الرسمي." : "راجع الجدول، ثم انشره من هنا مباشرة عندما يكون جاهزاً."}</p>
                             <div>
                               {!genesis.published ? (
-                                <PrimaryButton type="button" onClick={() => void publishGenesisDraft()} disabled={busy || !genesis?.draft?.id || !genesis?.previewRows?.length || Boolean(genesis?.issues?.length)} title={genesis?.issues?.length ? "عالج الملاحظات المعلّمة أولاً" : undefined}>
+                                <PrimaryButton type="button" data-guide-feature-id="schedule.publish" onClick={() => void publishGenesisDraft()} disabled={busy || !genesis?.draft?.id || !genesis?.previewRows?.length || Boolean(genesis?.issues?.length)} title={genesis?.issues?.length ? "عالج الملاحظات المعلّمة أولاً" : undefined}>
                                   <Upload /> انشر الآن
                                 </PrimaryButton>
                               ) : null}
                               {genesis.published && genesisUndoPoint ? (
-                                <SecondaryButton type="button" onClick={() => void undoGenesisPublish()} disabled={busy}>
+                                <SecondaryButton type="button" data-guide-feature-id="schedule.undo" onClick={() => void undoGenesisPublish()} disabled={busy}>
                                   <RotateCcw /> تراجع عن النشر
                                 </SecondaryButton>
                               ) : null}

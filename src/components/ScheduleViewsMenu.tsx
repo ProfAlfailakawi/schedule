@@ -144,7 +144,7 @@ export default function ScheduleViewsMenu({
                   <button type="button" onClick={() => onRename(view)} title="إعادة تسمية">
                     <Pencil aria-hidden="true" />
                   </button>
-                  <button type="button" onClick={() => onDelete(view)} title="حذف">
+                  <button type="button" data-guide-ignore="حذف عرض شخصي محفوظ ولا يغيّر بيانات الجدول" onClick={() => onDelete(view)} title="حذف">
                     <Trash2 aria-hidden="true" />
                   </button>
                 </div>

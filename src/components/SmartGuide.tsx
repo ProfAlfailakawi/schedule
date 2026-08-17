@@ -30,10 +30,12 @@ import {
   Zap,
 } from "lucide-react";
 import {
-  GUIDE_FEATURES,
   type DynamicGuideFeature,
   type GuideFeature,
+  type GuideCommand,
   allowedGuideFeatures,
+  allAllowedGuideFeatures,
+  canAccessGuideFeature,
   changedFeatures,
   commonWorkflows,
   dialectIntentTerms,
@@ -42,12 +44,31 @@ import {
   featureById,
   loadGuideProfile,
   markFeatureSeen,
+  markGuideIconHintSeen,
   markDiscoveredSeen,
   masteryScore,
   noteHint,
   noteDiscoveredControls,
   predictedNextFeature,
-  recordFeatureUse,
+  rankChangedFeatures,
+  recordFeatureEvent,
+  guideActionForFeature,
+  canRunGuideAction,
+  classifyGuideReason,
+  parseStructuredGuideIntent,
+  needsGuideAIFallback,
+  beginGuideTransaction,
+  appendGuideTransactionOperation,
+  completeGuideTransaction,
+  journeyForFeature,
+  startGuideJourney,
+  advanceGuideJourney,
+  completeGuideJourney,
+  failGuideJourney,
+  failGuideTransaction,
+  expireGuideJourneys,
+  transactionRollbackCommands,
+  markGuideTransactionRolledBack,
   removeGuideRoutine,
   saveGuideRoutine,
   setGuideTask,
@@ -57,14 +78,8 @@ import {
   touchGuideRoutine,
   type GuideProfile,
 } from "../guide/smartGuide";
+import { telemetryGuideJourney } from "../utils/clientTelemetry";
 
-type GuideCommand = {
-  scope?: string;
-  type: string;
-  value?: string;
-  target?: string;
-  task?: string;
-};
 type GuideHint = { key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" };
 type Props = {
   open: boolean;
@@ -173,6 +188,9 @@ export default function SmartGuide({
   const [profile, setProfile] = useState<GuideProfile>(() => loadGuideProfile(userId));
   const [query, setQuery] = useState("");
   const [pointMode, setPointMode] = useState(false);
+  const [drawerHidden, setDrawerHidden] = useState(false);
+  const [intentLoading, setIntentLoading] = useState(false);
+  const [aiIntent, setAiIntent] = useState<any>(null);
   const [dynamic, setDynamic] = useState<DynamicGuideFeature[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedDynamic, setSelectedDynamic] = useState<DynamicGuideFeature | null>(null);
@@ -180,38 +198,64 @@ export default function SmartGuide({
   const [pendingTourId, setPendingTourId] = useState<string | null>(null);
   const [pendingTourStep, setPendingTourStep] = useState(0);
   const [located, setLocated] = useState<LocatedStep>(null);
-  const [preview, setPreview] = useState<{ feature: GuideFeature; command: GuideCommand } | null>(null);
+  const [preview, setPreview] = useState<{ feature: GuideFeature; command: GuideCommand; transactionId?: string } | null>(null);
   const [notice, setNotice] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [browseMode, setBrowseMode] = useState<"forYou" | "here" | "new" | "all">("forYou");
+  const [sheetLevel, setSheetLevel] = useState<"peek" | "medium" | "full">("peek");
+  const [iconIntro, setIconIntro] = useState<{ key:string; title:string; summary:string } | null>(null);
   const [routineDraft, setRoutineDraft] = useState<{ sequence: string[]; name: string } | null>(null);
   const [collectiveFriction, setCollectiveFriction] = useState<Array<{ name: string; count: number }>>([]);
+  const [collectiveInsights, setCollectiveInsights] = useState<Array<{ featureId:string; version:number; step:string; attempts:number; failureRate:number; abandonRate:number; helpRate:number; helpToSuccessRate:number; changeVsPrevious:number }>>([]);
   const drawerRef = useRef<HTMLElement | null>(null);
   const lastEscalationRef = useRef("");
   const discoveredSignatureRef = useRef("");
+  const sheetDragStartRef = useRef<number | null>(null);
 
   const refreshProfile = useCallback(() => setProfile(loadGuideProfile(userId)), [userId]);
   const admin = Boolean(root || user?.IsAdminUser);
+  const permissionSession = useMemo(() => ({ permissions, root, admin }), [permissions, root, admin]);
   const known = useMemo(() => allowedGuideFeatures(activeView, permissions, root, admin), [activeView, permissions, root, admin]);
-  const allAllowed = useMemo(() => GUIDE_FEATURES.filter(feature => (!feature.permission || permissions.includes(feature.permission)) && (!feature.rootOnly || root) && (!feature.adminOnly || admin)), [permissions, root, admin]);
-  const pageFeature = useMemo(() => GUIDE_FEATURES.find((feature) => feature.id === `page.${activeView}`) || null, [activeView]);
+  const allAllowed = useMemo(() => allAllowedGuideFeatures(permissions, root, admin), [permissions, root, admin]);
+  const pageFeature = useMemo(() => {
+    const feature = featureById(`page.${activeView}`);
+    return feature && canAccessGuideFeature(feature, permissionSession) ? feature : null;
+  }, [activeView, permissionSession]);
   const pageMastery = masteryScore(profile, pageFeature);
   const isExpert = Boolean(context?.metrics?.isExpert) || pageMastery >= 0.72;
   const changed = useMemo(() => changedFeatures(profile, activeView, permissions, root, admin), [profile, activeView, permissions, root, admin]);
-  const allChanged = useMemo(() => allAllowed.filter(feature => profile.catalog?.[feature.id] == null || feature.version > Number(profile.catalog?.[feature.id] || 0)).sort((a,b) => b.version - a.version), [allAllowed, profile]);
+  const allChanged = useMemo(() => rankChangedFeatures(profile, allAllowed.filter(feature => profile.catalog?.[feature.id] == null || feature.version > Number(profile.catalog?.[feature.id] || 0))), [allAllowed, profile]);
   const discoveredChanged = useMemo(() => discoveredNew(profile), [profile]);
-  const workflows = useMemo(() => commonWorkflows(profile, activeView), [profile, activeView]);
-  const selected = selectedId ? featureById(selectedId) : null;
+  const workflows = useMemo(() => commonWorkflows(profile, activeView).map(workflow => ({ ...workflow, sequence:workflow.sequence.filter(id => { const feature=featureById(id); return Boolean(feature && canAccessGuideFeature(feature, permissionSession)); }) })).filter(workflow => workflow.sequence.length > 0), [profile, activeView, permissionSession]);
+  const selectedRaw = selectedId ? featureById(selectedId) : null;
+  const selected = selectedRaw && canAccessGuideFeature(selectedRaw, permissionSession) ? selectedRaw : null;
   const selectedMastery = selected ? masteryScore(profile, selected) : 0;
   const selectedHistory = selected ? profile.mastery[selected.id] : undefined;
   const selectedRecentlyHelped = Boolean(selectedHistory?.lastHelp && Date.now() - selectedHistory.lastHelp < 2 * 60 * 60 * 1000);
   const selectedUpdated = Boolean(selected && selectedHistory?.versionSeen && selectedHistory.versionSeen < selected.version);
-  const selectedExpert = selectedMastery >= .72;
-  const selectedConcise = selectedExpert || selectedRecentlyHelped;
+  const selectedForgotten = Boolean(selectedHistory?.uses && selectedHistory?.lastUsed && Date.now() - selectedHistory.lastUsed > 90 * 24 * 60 * 60 * 1000);
+  const selectedReason = classifyGuideReason({ mastery:selectedMastery, versionChanged:selectedUpdated, forgotten:selectedForgotten });
+  const selectedExpert = selectedReason === "NORMAL_EXPERT_BEHAVIOR";
+  const selectedConcise = selectedExpert || selectedRecentlyHelped || selectedReason === "FORGOTTEN";
   const currentFeatureId = context?.currentFeatureId || `page.${activeView}`;
   const predicted = useMemo(() => predictedNextFeature(profile, currentFeatureId), [profile, currentFeatureId]);
-  const predictedFeature = predicted ? featureById(predicted.id) : null;
+  const predictedRaw = predicted ? featureById(predicted.id) : null;
+  const predictedFeature = predictedRaw && canAccessGuideFeature(predictedRaw, permissionSession) ? predictedRaw : null;
   const routines = useMemo(() => (Object.values(profile.routines || {}) as Array<{id:string;name:string;sequence:string[];createdAt:number;lastUsed:number}>).sort((a, b) => b.lastUsed - a.lastUsed || b.createdAt - a.createdAt), [profile]);
+  const rollbackTransaction = useMemo(() => [...(profile.transactions || [])].reverse().find((item) => item.status === "completed" && transactionRollbackCommands(profile, item.id).length) || null, [profile]);
+  const undoGuideTransaction = useCallback(() => {
+    if (!rollbackTransaction) return;
+    const commands = transactionRollbackCommands(loadGuideProfile(userId), rollbackTransaction.id);
+    if (!commands.length) return;
+    setDrawerHidden(true);
+    commands.forEach((command, index) => window.setTimeout(() => runCommand(command), index * 180));
+    markGuideTransactionRolledBack(userId, rollbackTransaction.id);
+    setNotice(`تم إرسال التراجع عن «${rollbackTransaction.title}».`);
+    window.setTimeout(refreshProfile, commands.length * 180 + 260);
+  // runCommand is declared below and is stable for the current context at invocation time.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rollbackTransaction?.id, userId, refreshProfile]);
+
   const repeatSequence = useMemo(() => {
     const base = routines[0]?.sequence || workflows[0]?.sequence || [];
     const text = normalizeArabic(query);
@@ -226,6 +270,19 @@ export default function SmartGuide({
       return true;
     });
   }, [query, routines, workflows]);
+
+  const ruleIntent = useMemo(() => parseStructuredGuideIntent(query), [query]);
+  const resolvedIntent = aiIntent?.confidence > ruleIntent.confidence ? aiIntent : ruleIntent;
+  const intentFeature = useMemo(() => {
+    const map: Record<string,string> = {
+      "move-room":"schedule.action.move-room",
+      "change-time":"schedule.action.change-time",
+      "change-instructor":"schedule.action.change-instructor",
+      "find-room":"schedule.action.find-room",
+    };
+    const feature = featureById(map[String(resolvedIntent?.goal || "")] || "");
+    return feature && canAccessGuideFeature(feature, permissionSession) ? feature : null;
+  }, [resolvedIntent?.goal, permissionSession]);
 
   const specialIntent = useMemo(() => {
     const text = normalizeArabic(query);
@@ -259,6 +316,8 @@ export default function SmartGuide({
             collegeId: Number(context?.collegeId || 0),
             sectionId: Number(context?.sectionId || 0),
             termId: Number(context?.termId || 0),
+            query: String(query || "").slice(0,320),
+            intent: resolvedIntent,
             createdAt: Date.now(),
           }));
         } catch {}
@@ -270,9 +329,42 @@ export default function SmartGuide({
       return;
     }
     window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail: command }));
-  }, [context?.collegeId, context?.sectionId, context?.selected?.course, context?.selected?.id, context?.termId, onNavigate]);
+  }, [context?.collegeId, context?.sectionId, context?.selected?.course, context?.selected?.id, context?.termId, onNavigate, query, resolvedIntent]);
 
-  useEffect(() => setProfile(loadGuideProfile(userId)), [userId]);
+  useEffect(() => {
+    expireGuideJourneys(userId);
+    setProfile(loadGuideProfile(userId));
+  }, [userId, open]);
+  useEffect(() => {
+    const text = query.trim();
+    if (!text || !needsGuideAIFallback(ruleIntent, text)) { setAiIntent(null); setIntentLoading(false); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setIntentLoading(true);
+      fetch("/api/guide/intent", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          question: text,
+          context: {
+            view: activeView,
+            currentFeatureId: context?.currentFeatureId || `page.${activeView}`,
+            selected: context?.selected ? { id: Number(context.selected.id || 0), course: String(context.selected.course || "") } : null,
+            currentTask: context?.currentTask ? { title: String(context.currentTask.title || ""), featureId: String(context.currentTask.featureId || "") } : null,
+            currentError: String(context?.lastAction || context?.detectedHelp?.detail || "").slice(0,240),
+          },
+          allowedFeatureIds: allAllowed.map(feature => feature.id).slice(0,80),
+        }),
+      })
+        .then(response => response.ok ? response.json() : null)
+        .then(data => { if (data?.intent) setAiIntent(data.intent); })
+        .catch(() => undefined)
+        .finally(() => setIntentLoading(false));
+    }, 320);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, ruleIntent, activeView, context?.currentFeatureId, context?.currentTask?.featureId, context?.currentTask?.title, context?.detectedHelp?.detail, context?.lastAction, context?.selected?.course, context?.selected?.id, allAllowed]);
   useEffect(() => {
     const refresh = (event: Event) => {
       const detail = (event as CustomEvent).detail;
@@ -294,22 +386,24 @@ export default function SmartGuide({
       }
     };
     scan();
-    const id = window.setInterval(scan, 1400);
+    const id = window.setInterval(scan, 2200);
     return () => window.clearInterval(id);
   }, [open, activeView, context, userId]);
 
   useEffect(() => {
     if (!open || !hint?.featureId) return;
     const feature = featureById(hint.featureId);
-    if (!feature) return;
+    if (!feature || !canAccessGuideFeature(feature, permissionSession)) return;
     setSelectedId(feature.id);
     setSelectedDynamic(null);
     markFeatureSeen(userId, feature.id);
-  }, [hint?.featureId, open, userId]);
+  }, [hint?.featureId, open, permissionSession, userId]);
 
   useEffect(() => {
     if (!open) {
       setPointMode(false);
+      setDrawerHidden(false);
+      setAiIntent(null);
       setPendingTourId(null);
       setPendingTourStep(0);
       setSelectedId(null);
@@ -319,12 +413,45 @@ export default function SmartGuide({
       setSettingsOpen(false);
       setRoutineDraft(null);
       setBrowseMode("forYou");
+      setSheetLevel("peek");
+      setIconIntro(null);
     }
   }, [open]);
 
   useEffect(() => {
+    if (!open) return;
+    if (query.trim()) setSheetLevel("full");
+    else if (selectedId || selectedDynamic || preview) setSheetLevel("medium");
+  }, [open, query, selectedId, selectedDynamic, preview]);
+
+  const cycleSheet = (direction: "up" | "down") => {
+    setSheetLevel(current => {
+      if (direction === "up") return current === "peek" ? "medium" : "full";
+      return current === "full" ? "medium" : "peek";
+    });
+  };
+  const onSheetPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
+    sheetDragStartRef.current = event.clientY;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+  const onSheetPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    const start = sheetDragStartRef.current; sheetDragStartRef.current = null;
+    if (start == null) return;
+    const delta = event.clientY - start;
+    if (Math.abs(delta) < 18) { cycleSheet(sheetLevel === "peek" ? "up" : "down"); return; }
+    cycleSheet(delta < 0 ? "up" : "down");
+  };
+
+  useEffect(() => {
+    const restore = () => setDrawerHidden(false);
+    window.addEventListener("schedule-smart-guide-restore", restore);
+    return () => window.removeEventListener("schedule-smart-guide-restore", restore);
+  }, []);
+
+  useEffect(() => {
     if (!open || !root || !context?.collegeId || !context?.sectionId) {
       setCollectiveFriction([]);
+      setCollectiveInsights([]);
       return;
     }
     let alive = true;
@@ -332,7 +459,10 @@ export default function SmartGuide({
     fetch(`/api/intelligence/guide-friction?${params.toString()}`, { credentials: "include" })
       .then((response) => response.ok ? response.json() : null)
       .then((data) => {
-        if (alive) setCollectiveFriction(Array.isArray(data?.items) ? data.items.slice(0, 4) : []);
+        if (alive) {
+          setCollectiveFriction(Array.isArray(data?.items) ? data.items.slice(0, 4) : []);
+          setCollectiveInsights(Array.isArray(data?.insights) ? data.insights.slice(0, 4) : []);
+        }
       })
       .catch(() => undefined);
     return () => { alive = false; };
@@ -346,7 +476,7 @@ export default function SmartGuide({
     document.body.classList.add("guide-point-mode");
     const click = (event: MouseEvent) => {
       const raw = event.target instanceof HTMLElement ? event.target : null;
-      if (!raw || raw.closest(".smart-guide") || raw.closest("[data-guide-ignore='true']")) return;
+      if (!raw || raw.closest(".smart-guide") || raw.closest("[data-guide-ignore]")) return;
       const carrier = raw.closest<HTMLElement>("[data-guide-target],button,a,[role='button'],select,input");
       if (!carrier) return;
       event.preventDefault();
@@ -355,7 +485,7 @@ export default function SmartGuide({
       if (explicit && featureById(explicit)) {
         setSelectedId(explicit);
         setSelectedDynamic(null);
-        recordFeatureUse(userId, explicit, "help");
+        recordFeatureEvent(userId, explicit, "helped");
         markFeatureSeen(userId, explicit);
       } else {
         const title = String(carrier.getAttribute("aria-label") || carrier.getAttribute("title") || carrier.textContent || "")
@@ -366,6 +496,7 @@ export default function SmartGuide({
       carrier.setAttribute("data-guide-hot", "true");
       window.setTimeout(() => carrier.removeAttribute("data-guide-hot"), 2400);
       setPointMode(false);
+      setDrawerHidden(false);
       refreshProfile();
     };
     window.addEventListener("click", click, true);
@@ -374,6 +505,42 @@ export default function SmartGuide({
       window.removeEventListener("click", click, true);
     };
   }, [pointMode, userId, activeView, refreshProfile]);
+
+  useEffect(() => {
+    const onResult = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      const featureId = String(detail.featureId || "");
+      const feature = featureById(featureId);
+      if (!feature || !canAccessGuideFeature(feature, permissionSession)) return;
+      const journey = journeyForFeature(featureId);
+      if (detail.signal && journey) advanceGuideJourney(userId, journey.id, String(detail.signal));
+      if (detail.ok === true) {
+        if (detail.final === false) {
+          if (detail.transactionId && detail.rollbackCommand) appendGuideTransactionOperation(userId, String(detail.transactionId), { id:`prepare:${featureId}:${Date.now()}`, featureId, label:String(detail.label || feature.title), rollback:detail.rollbackCommand, verified:true });
+        } else {
+          const beforeCompletion=loadGuideProfile(userId).mastery[featureId];
+          const resolvedAfterHelp=Boolean(beforeCompletion?.lastHelp && Date.now()-Number(beforeCompletion.lastHelp)<10*60*1000);
+          recordFeatureEvent(userId, featureId, "completed", { durationMs:Number(detail.durationMs || 0) || undefined, stepCount:Number(detail.stepCount || 0) || undefined, retries:Number(detail.retries || 0) || undefined });
+          telemetryGuideJourney({ featureId, version:feature.version, step:String(detail.signal || "journey"), outcome:resolvedAfterHelp ? "resolvedAfterHelp" : "completed" });
+          if (journey) completeGuideJourney(userId, journey.id);
+          if (detail.transactionId) {
+            if (detail.rollbackCommand) appendGuideTransactionOperation(userId, String(detail.transactionId), { id:`rollback:${featureId}:${Date.now()}`, featureId, label:String(detail.label || feature.title), rollback:detail.rollbackCommand, verified:true });
+            completeGuideTransaction(userId, String(detail.transactionId));
+          }
+          setGuideTask(userId, undefined);
+        }
+      } else if (detail.ok === false) {
+        recordFeatureEvent(userId, featureId, "failed");
+        telemetryGuideJourney({ featureId, version:feature.version, step:String(detail.signal || "journey"), outcome:"failed" });
+        if (journey) failGuideJourney(userId, journey.id, String(detail.signal || "failed"));
+        if (detail.transactionId) failGuideTransaction(userId, String(detail.transactionId));
+      }
+      if (detail.ok === false) setGuideTask(userId, undefined);
+      refreshProfile();
+    };
+    window.addEventListener("schedule-smart-guide-action-result", onResult as EventListener);
+    return () => window.removeEventListener("schedule-smart-guide-action-result", onResult as EventListener);
+  }, [permissionSession, refreshProfile, userId]);
 
   const locateStep = useCallback((state: TourState | null) => {
     if (!state) {
@@ -421,6 +588,7 @@ export default function SmartGuide({
   }, [tour, locateStep]);
 
   const startTour = (feature: GuideFeature) => {
+    setDrawerHidden(true);
     if (feature.view && feature.view !== activeView) {
       setPendingTourStep(0);
       setPendingTourId(feature.id);
@@ -444,7 +612,8 @@ export default function SmartGuide({
       }
       return;
     }
-    recordFeatureUse(userId, feature.id, "help");
+    recordFeatureEvent(userId, feature.id, "helped");
+    telemetryGuideJourney({ featureId:feature.id, version:feature.version, step:"guide", outcome:"helped" });
     markFeatureSeen(userId, feature.id);
     setGuideTask(userId, {
       id: `tour:${feature.id}`,
@@ -475,8 +644,10 @@ export default function SmartGuide({
         steps = [steps[0], selectedStep, ...steps.slice(2)].filter(Boolean) as TourStep[];
       }
       if (!steps.length) { startTour(feature); return; }
-      recordFeatureUse(userId, feature.id, "help");
+      recordFeatureEvent(userId, feature.id, "helped");
+      telemetryGuideJourney({ featureId:feature.id, version:feature.version, step:"guide", outcome:"helped" });
       markFeatureSeen(userId, feature.id);
+      setDrawerHidden(true);
       setTour({ feature, steps, index: Math.min(Math.max(0, resumeAt), steps.length - 1) });
       refreshProfile();
     }, 80);
@@ -487,6 +658,7 @@ export default function SmartGuide({
   const stopTour = () => {
     setTour(null);
     setLocated(null);
+    setDrawerHidden(false);
     setGuideTask(userId, undefined);
     refreshProfile();
   };
@@ -494,9 +666,9 @@ export default function SmartGuide({
   const nextTour = () => setTour((current) => {
     if (!current) return null;
     if (current.index >= current.steps.length - 1) {
-      recordFeatureUse(userId, current.feature.id, "success");
       setGuideTask(userId, undefined);
       setLocated(null);
+      window.setTimeout(() => setDrawerHidden(false), 120);
       refreshProfile();
       return null;
     }
@@ -515,28 +687,51 @@ export default function SmartGuide({
   });
 
   const executeSafe = (feature: GuideFeature) => {
-    if (feature.view && feature.view !== activeView && !feature.safeAction) {
-      onNavigate(feature.view);
-      recordFeatureUse(userId, feature.id, "success");
-      markFeatureSeen(userId, feature.id);
+    if (!canAccessGuideFeature(feature, permissionSession)) {
+      setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية.");
       return;
     }
-    if (!feature.safeAction || isSensitive(feature)) {
-      setNotice("هذه العملية تحتاج قرارك داخل الشاشة. يمكنني تحديد مكانها وشرح النتيجة، لكنني لن أنفذ إجراءً حساسًا نيابةً عنك.");
+    const action = guideActionForFeature(feature.id);
+    if (action && !canRunGuideAction(action, permissionSession)) {
+      setNotice("هذه العملية غير متاحة ضمن صلاحياتك الحالية.");
+      return;
+    }
+    recordFeatureEvent(userId, feature.id, "attempt");
+    const journey = journeyForFeature(feature.id);
+    if (journey) startGuideJourney(userId, journey.id);
+    if (feature.view && feature.view !== activeView && !feature.safeAction && !action?.command && !action?.prepare) {
+      setDrawerHidden(true);
+      onNavigate(feature.view);
+      setGuideTask(userId, { id:`assist:${feature.id}`, title:`فتح ${feature.title}`, featureId:feature.id, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
+      return;
+    }
+    const command = action?.prepare || action?.command;
+    if (!command || isSensitive(feature) || action?.risk === "sensitive") {
+      setNotice(isSensitive(feature) ? "هذه العملية حساسة وتحتاج قرارك داخل الشاشة. سأحدد مكانها وأشرح النتيجة، لكنني لن أنفذها نيابةً عنك." : "هذه الميزة إرشادية فقط؛ سأحدد مكانها على الشاشة بدل تنفيذ ضغطات غير موثوقة.");
       startTour(feature);
       return;
     }
-    setPreview({ feature, command: feature.safeAction });
+    if (action?.risk === "read") {
+      recordFeatureEvent(userId, feature.id, "started");
+      setDrawerHidden(true);
+      runCommand({ ...command, featureId: feature.id });
+      setGuideTask(userId, { id:`assist:${feature.id}`, title:`مساعدة تنفيذية: ${feature.title}`, featureId:feature.id, target:feature.target, command, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
+      return;
+    }
+    const transactionId = beginGuideTransaction(userId, `مساعدة: ${feature.title}`);
+    appendGuideTransactionOperation(userId, transactionId, { id:`prepare:${feature.id}`, featureId:feature.id, label:feature.title, execute:command });
+    setPreview({ feature, command:{...command, transactionId, featureId:feature.id}, transactionId });
   };
 
   const confirmPreview = () => {
     if (!preview) return;
+    recordFeatureEvent(userId, preview.feature.id, "started");
+    const journey = journeyForFeature(preview.feature.id);
+    setDrawerHidden(true);
     if (preview.feature.view && preview.feature.view !== activeView) {
       onNavigate(preview.feature.view);
       window.setTimeout(() => runCommand(preview.command), 320);
     } else runCommand(preview.command);
-    recordFeatureUse(userId, preview.feature.id, "success");
-    markFeatureSeen(userId, preview.feature.id);
     setGuideTask(userId, {
       id: `assist:${preview.feature.id}`,
       title: `مساعدة تنفيذية: ${preview.feature.title}`,
@@ -545,21 +740,23 @@ export default function SmartGuide({
       command: preview.command,
       startedAt: Date.now(),
       updatedAt: Date.now(),
+      journeyId: journey?.id,
     });
-    window.setTimeout(() => setGuideTask(userId, undefined), 2600);
-    setNotice("تم تجهيز الخطوة الآمنة. أي تغيير مؤثر أو اعتماد نهائي سيبقى تحت قرارك المباشر.");
     setPreview(null);
     refreshProfile();
   };
 
   const simulateFeature = (feature: GuideFeature) => {
+    if (!canAccessGuideFeature(feature, permissionSession)) { setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية."); return; }
+    recordFeatureEvent(userId, feature.id, "attempt");
+    setDrawerHidden(true);
     if (feature.simulationAction) {
-      runCommand(feature.simulationAction);
+      runCommand({ ...feature.simulationAction, featureId:feature.id });
       setNotice("فتحت مساحة التجربة. لن يلمس هذا الاختبار الجدول الحقيقي حتى تعتمد أنت التغيير لاحقًا.");
       return;
     }
     if (activeView === "schedules") {
-      runCommand({ scope: "app", type: "simulate", value: "intelligence", task: feature.id });
+      runCommand({ scope: "app", type: "simulate", value: "intelligence", task: feature.id, featureId:feature.id });
       setNotice("سأحوّلك إلى مساحة «جرّب» لاختبار الفكرة دون تعديل الجدول الحقيقي.");
       return;
     }
@@ -567,10 +764,12 @@ export default function SmartGuide({
   };
 
   const resumeTask = () => {
+    setDrawerHidden(true);
     const current = profile.currentTask;
     const currentGeneric = Boolean(current?.id?.startsWith("work:page:") || current?.id === "work:schedule" || current?.id === "work:intelligence");
     const task = currentGeneric && profile.previousTask ? profile.previousTask : (current || profile.previousTask || context?.currentTask);
     if (!task) {
+      setDrawerHidden(false);
       setNotice("لا توجد مهمة معلقة حاليًا.");
       return;
     }
@@ -600,10 +799,15 @@ export default function SmartGuide({
   };
 
   const replayWorkflow = (sequence: string[]) => {
-    const safeFeatures = sequence.map(featureById).filter(Boolean) as GuideFeature[];
-    const commands = safeFeatures.map((feature) => feature.safeAction).filter(Boolean) as GuideCommand[];
+    setDrawerHidden(true);
+    const commands = sequence
+      .map(featureById)
+      .filter((feature): feature is GuideFeature => Boolean(feature && canAccessGuideFeature(feature, permissionSession)))
+      .map(feature => ({ feature, action:guideActionForFeature(feature.id) }))
+      .filter(item => Boolean(item.action && canRunGuideAction(item.action!, permissionSession) && item.action!.risk === "read" && item.action!.command))
+      .map(item => ({ ...item.action!.command!, featureId:item.feature.id }));
     if (!commands.length) {
-      setNotice("تعرّفت على هذا المسار كعادة لديك، لكن خطواته تحتاج قراراتك داخل الشاشة. سأستخدمه لترتيب الاقتراحات بدل تنفيذ ضغطات غير موثوقة.");
+      setNotice("تعرّفت على هذا المسار كعادة لديك، لكن خطواته الحالية تحتاج قراراتك داخل الشاشة. سأستخدمه لترتيب الاقتراحات بدل تنفيذ ضغطات غير موثوقة.");
       return;
     }
     let delay = 0;
@@ -611,7 +815,7 @@ export default function SmartGuide({
       window.setTimeout(() => runCommand(command), delay);
       delay += 300;
     });
-    setNotice("فتحت الأجزاء الآمنة من مسارك المعتاد. لم يتم تنفيذ أي تغيير على البيانات.");
+    setNotice("فتحت الأجزاء الآمنة فقط من مسارك المعتاد. لم يتم تنفيذ أي تغيير على البيانات.");
   };
 
   useEffect(() => {
@@ -631,8 +835,7 @@ export default function SmartGuide({
 
   const results = useMemo<SearchRow[]>(() => {
     if (!query.trim()) return [];
-    const knownRows: SearchRow[] = GUIDE_FEATURES
-      .filter((feature) => (!feature.permission || permissions.includes(feature.permission)) && (!feature.rootOnly || root))
+    const knownRows: SearchRow[] = allAllowed
       .map((feature) => ({ kind: "known", feature, score: queryScore(query, feature) }));
     const dynamicRows: SearchRow[] = dynamic.map((feature) => ({ kind: "dynamic", feature, score: queryScore(query, { ...feature, keywords: [] }) }));
     const routineRows: SearchRow[] = routines.map((routine) => ({
@@ -641,6 +844,7 @@ export default function SmartGuide({
       score: queryScore(query, { title: routine.name, summary: "اختصار لمسار عمل محفوظ", keywords: ["اختصار", "مسار", "روتين", "افتح"] }),
     }));
     const rows: SearchRow[] = [...knownRows, ...dynamicRows, ...routineRows];
+    if (intentFeature && resolvedIntent?.confidence >= .62) rows.push({ kind:"known", feature:intentFeature, score:40 + Math.round(Number(resolvedIntent.confidence || 0) * 10) });
     const normalized = normalizeArabic(query);
     if (/اسرع|اختصر|روتين|طريقتي/.test(normalized) && workflows[0]) {
       rows.push({ kind: "routine", feature: { id: "suggested-fast", name: "طريقة أسرع لمسارك المعتاد", sequence: workflows[0].sequence }, score: 30 });
@@ -650,9 +854,10 @@ export default function SmartGuide({
       if (helpFeature) rows.push({ kind: "known", feature: helpFeature, score: 35 });
     }
     return rows.filter((row) => row.score > 0).sort((a, b) => b.score - a.score).slice(0, 12);
-  }, [query, dynamic, permissions, root, routines, workflows, selected, context?.currentTask?.featureId, pageFeature]);
+  }, [query, dynamic, allAllowed, routines, workflows, selected, context?.currentTask?.featureId, pageFeature, intentFeature, resolvedIntent?.confidence]);
 
   const chooseKnown = (feature: GuideFeature) => {
+    if (!canAccessGuideFeature(feature, permissionSession)) { setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية."); return; }
     setSelectedId(feature.id);
     setSelectedDynamic(null);
     markFeatureSeen(userId, feature.id);
@@ -662,7 +867,7 @@ export default function SmartGuide({
   const chooseDynamic = (feature: DynamicGuideFeature) => {
     setSelectedDynamic(feature);
     setSelectedId(null);
-    recordFeatureUse(userId, feature.id, "help");
+    recordFeatureEvent(userId, feature.id, "helped");
     refreshProfile();
   };
 
@@ -681,7 +886,21 @@ export default function SmartGuide({
     refreshProfile();
   };
 
+  const runIconAction = (key:string, title:string, summary:string, action:()=>void) => {
+    const mobile = typeof window !== "undefined" && window.matchMedia?.("(max-width: 900px) and (pointer: coarse)").matches;
+    if (mobile && !profile.iconHints?.[key]) {
+      markGuideIconHintSeen(userId, key);
+      refreshProfile();
+      setIconIntro({ key, title, summary });
+      setNotice("");
+      return;
+    }
+    setIconIntro(null);
+    action();
+  };
+
   const onboardingChoose = (kind: "build" | "review" | "reports") => {
+    setDrawerHidden(true);
     setOnboardingDone(userId, true);
     refreshProfile();
     if (kind === "build") onNavigate("schedules");
@@ -703,15 +922,32 @@ export default function SmartGuide({
 
   return (
     <>
-      <aside className="smart-guide no-print" ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal="false" dir="rtl">
+      {!drawerHidden && !pointMode && !located && !preview ? (
+        <div className="smart-guide-outside-dismiss no-print" role="presentation" onPointerDown={onClose} />
+      ) : null}
+      <aside className={`smart-guide no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal="false" dir="rtl">
+        <button type="button" className="smart-guide-sheet-handle" aria-label="تغيير ارتفاع المرشد" onPointerDown={onSheetPointerDown} onPointerUp={onSheetPointerUp}><i /></button>
         <header className="smart-guide-hero">
           <div>
             <span className="smart-guide-kicker"><Bot aria-hidden="true" /> مرشد SCHEDULE <i aria-hidden="true">·</i> <b>{pageTitle}</b></span>
             <h2>كيف؟</h2>
-            <p>{isExpert ? "أعرف أنك متمكن في هذه المنطقة، لذلك سأبقى هادئًا ما لم تخرج العملية عن نمطك المعتاد." : what}</p>
+            <p>{isExpert ? "أنت متمكن هنا؛ سأبقى هادئًا ما لم تخرج العملية عن نمطك المعتاد." : what}</p>
           </div>
-          <button type="button" className="smart-guide-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
+          <div className="smart-guide-hero-tools">
+            <button type="button" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { setDrawerHidden(true); setPointMode(true); })} aria-label="أشر لي" title="أشر لي"><Target /></button>
+            <button type="button" onClick={() => runIconAction("now", "ماذا يحدث الآن؟", "ألخص حالة الشاشة الحالية وما يستحق الانتباه دون تغيير أي بيانات.", () => { setSelectedId(null); setSelectedDynamic(null); setNotice(what); })} aria-label="ماذا يحدث الآن؟" title="ماذا يحدث الآن؟"><BrainCircuit /></button>
+            <button type="button" onClick={() => runIconAction("resume", "أكمل من حيث توقفت", "أعيدك إلى آخر مهمة وخطوتها الحالية، ثم أترك القرار لك.", () => { setDrawerHidden(true); resumeTask(); })} aria-label="أكمل من حيث توقفت" title="أكمل من حيث توقفت"><History /></button>
+            <button type="button" className="smart-guide-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
+          </div>
         </header>
+
+        {iconIntro ? (
+          <section className="smart-guide-icon-intro" role="status" aria-live="polite">
+            <Lightbulb aria-hidden="true" />
+            <div><strong>{iconIntro.title}</strong><small>{iconIntro.summary} اضغط الأيقونة مرة أخرى للتنفيذ.</small></div>
+            <button type="button" onClick={() => setIconIntro(null)} aria-label="إخفاء التعريف"><X /></button>
+          </section>
+        ) : null}
 
         <section className="smart-guide-location">
           <span><CircleDot aria-hidden="true" /></span>
@@ -727,18 +963,18 @@ export default function SmartGuide({
           const current = profile.currentTask;
           const task = current?.id?.startsWith("work:page:") && profile.previousTask ? profile.previousTask : (current || profile.previousTask);
           if (!task || Date.now() - Number(task.updatedAt || 0) > 24 * 60 * 60 * 1000) return null;
-          return <button type="button" className="smart-guide-pending-task" onClick={resumeTask}><History /><span><small>مهمة معلقة</small><strong>{task.title}</strong></span><ChevronLeft /></button>;
+          return <button type="button" className="smart-guide-pending-task" onClick={() => { setDrawerHidden(true); resumeTask(); }}><History /><span><small>مهمة معلقة</small><strong>{task.title}</strong></span><ChevronLeft /></button>;
         })() : null}
 
-        {!profile.onboardingDone ? (
-          <section className="smart-guide-onboarding">
-            <header><Compass aria-hidden="true" /><div><small>أول استخدام</small><strong>ما الذي تريد إنجازه؟</strong></div></header>
+        {!profile.onboardingDone && !isExpert ? (
+          <details className="smart-guide-onboarding">
+            <summary><Compass aria-hidden="true" /><span>ابدأ حسب هدفك</span><ChevronLeft aria-hidden="true" /></summary>
             <div>
-              <button type="button" onClick={() => onboardingChoose("build")}><CalendarDays /><span><strong>أبني جدولًا</strong><small>ابدأ من مساحة الجدول</small></span></button>
-              <button type="button" onClick={() => onboardingChoose("review")}><ShieldCheck /><span><strong>أراجع جدولًا</strong><small>اذهب مباشرةً للمراجعة</small></span></button>
-              <button type="button" onClick={() => onboardingChoose("reports")}><BarChart3 /><span><strong>أبحث وأطلع تقارير</strong><small>اختر أقرب تقرير متاح لك</small></span></button>
+              <button type="button" onClick={() => onboardingChoose("build")}><CalendarDays /><span><strong>بناء جدول</strong></span></button>
+              <button type="button" onClick={() => onboardingChoose("review")}><ShieldCheck /><span><strong>مراجعة جدول</strong></span></button>
+              <button type="button" onClick={() => onboardingChoose("reports")}><BarChart3 /><span><strong>بحث وتقارير</strong></span></button>
             </div>
-          </section>
+          </details>
         ) : null}
 
         <label className="smart-guide-search" role="search">
@@ -755,15 +991,9 @@ export default function SmartGuide({
           </section>
         ) : null}
 
-        <div className="smart-guide-primary-actions">
-          <button type="button" aria-label="أشر لي على أي عنصر" onClick={() => setPointMode(true)}><Target /><span>أشر لي</span></button>
-          <button type="button" aria-label="ماذا يحدث الآن؟" onClick={() => { setSelectedId(null); setSelectedDynamic(null); setNotice(what); }}><BrainCircuit /><span>الآن</span></button>
-          <button type="button" aria-label="ماذا يمكنني أن أفعل هنا؟" onClick={() => { setSelectedId(null); setSelectedDynamic(null); setQuery(""); setNotice(""); setBrowseMode("here"); }}><Compass /><span>هنا</span></button>
-          <button type="button" aria-label="أكمل من حيث توقفت" onClick={resumeTask}><History /><span>أكمل</span></button>
-        </div>
         <nav className="smart-guide-browse" aria-label="أقسام المرشد">
           <button className={browseMode === "forYou" ? "active" : ""} type="button" onClick={() => setBrowseMode("forYou")}><Target /><span>لك</span></button>
-          <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => setBrowseMode("here")}><LayoutDashboard /><span>الشاشة</span></button>
+          <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => setBrowseMode("here")}><LayoutDashboard /><span>هنا</span></button>
           <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => setBrowseMode("new")}><Sparkles /><span>الجديد</span>{allChanged.length + discoveredChanged.length ? <i>{Math.min(99, allChanged.length + discoveredChanged.length)}</i> : null}</button>
           <button className={browseMode === "all" ? "active" : ""} type="button" onClick={() => setBrowseMode("all")}><Compass /><span>الكل</span></button>
         </nav>
@@ -774,9 +1004,9 @@ export default function SmartGuide({
             <div><small>العنصر المحدد</small><strong>{context.selected.course}</strong><span>{[context.selected.room, context.selected.start].filter(Boolean).join(" · ")}</span></div>
             <div className="smart-guide-selected-actions">
               <button type="button" onClick={() => chooseKnown(featureById("schedule.action.move-room")!)}>تغيير القاعة</button>
-              <button type="button" onClick={() => runCommand({ scope: "schedule", type: "openEditRow", value: String(context.selected.id) })}>تغيير الوقت</button>
-              <button type="button" onClick={() => runCommand({ scope: "schedule", type: "focusRow", value: String(context.selected.id) })}>{context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"}</button>
-              <button type="button" onClick={() => runCommand({ scope: "schedule", type: "findAlternative", value: String(context.selected.id) })}>ابحث عن بديل</button>
+              <button type="button" onClick={() => { setDrawerHidden(true); runCommand({ scope: "schedule", type: "openEditRow", value: String(context.selected.id) }); }}>تغيير الوقت</button>
+              <button type="button" onClick={() => { setDrawerHidden(true); runCommand({ scope: "schedule", type: "focusRow", value: String(context.selected.id) }); }}>{context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"}</button>
+              <button type="button" onClick={() => { setDrawerHidden(true); runCommand({ scope: "schedule", type: "findAlternative", value: String(context.selected.id) }); }}>ابحث عن بديل</button>
             </div>
           </section>
         ) : null}
@@ -788,7 +1018,24 @@ export default function SmartGuide({
         {query.trim() ? (
           <section className="smart-guide-results">
             <div className="smart-guide-section-head"><div><small>فهمت سؤالك</small><strong>{specialIntent || results.length ? "الأقرب إلى مقصدك" : "لم أجد تطابقًا مباشرًا"}</strong></div></div>
-            {specialIntent ? <article className="smart-guide-special-answer"><span><History /></span><div><strong>{specialIntent.title}</strong><small>{specialIntent.detail}</small></div>{specialIntent.kind === "resume" ? <button type="button" onClick={resumeTask}>أكمل</button> : specialIntent.kind === "repeat" ? <button type="button" onClick={() => repeatSequence.length ? replayWorkflow(repeatSequence) : routines[0] ? runRoutine(routines[0]) : workflows[0] ? replayWorkflow(workflows[0].sequence) : setBrowseMode("forYou")}>جهّز المسار</button> : specialIntent.kind === "faster" ? <button type="button" onClick={() => replayWorkflow(workflows[0].sequence)}>افتح الأقصر</button> : null}</article> : null}
+            {intentLoading ? <div className="smart-guide-intent-status"><Sparkles /><span>أفهم القيود التي ذكرتها…</span></div> : null}
+            {!specialIntent && resolvedIntent?.goal !== "unknown" && intentFeature ? (
+              <article className="smart-guide-intent-card">
+                <span><BrainCircuit /></span>
+                <div>
+                  <small>{resolvedIntent.source === "ai" ? "فهم مركب" : "فهم مباشر"}</small>
+                  <strong>{intentFeature.title}</strong>
+                  <em>{[
+                    resolvedIntent.entities?.day ? ({fsunday:"الأحد",fmonday:"الاثنين",ftuesday:"الثلاثاء",fwednesday:"الأربعاء",fthursday:"الخميس"} as Record<string,string>)[resolvedIntent.entities.day] : "",
+                    resolvedIntent.entities?.time || "",
+                    resolvedIntent.constraints?.keepInstructor ? "مع إبقاء الأستاذ الحالي" : "",
+                    resolvedIntent.constraints?.findAlternativeRoom ? "وابحث عن قاعة بديلة عند الحاجة" : "",
+                  ].filter(Boolean).join(" · ")}</em>
+                </div>
+                {Number(resolvedIntent.confidence || 0) < .62 ? <button type="button" onClick={() => chooseKnown(intentFeature)}>هل هذا ما تقصده؟</button> : resolvedIntent.requestedAction === "simulate" ? <button type="button" onClick={() => simulateFeature(intentFeature)}>جرّب بأمان</button> : <button type="button" onClick={() => chooseKnown(intentFeature)}>متابعة</button>}
+              </article>
+            ) : null}
+            {specialIntent ? <article className="smart-guide-special-answer"><span><History /></span><div><strong>{specialIntent.title}</strong><small>{specialIntent.detail}</small></div>{specialIntent.kind === "resume" ? <button type="button" onClick={() => { setDrawerHidden(true); resumeTask(); }}>أكمل</button> : specialIntent.kind === "repeat" ? <button type="button" onClick={() => repeatSequence.length ? replayWorkflow(repeatSequence) : routines[0] ? runRoutine(routines[0]) : workflows[0] ? replayWorkflow(workflows[0].sequence) : setBrowseMode("forYou")}>جهّز المسار</button> : specialIntent.kind === "faster" ? <button type="button" onClick={() => replayWorkflow(workflows[0].sequence)}>افتح الأقصر</button> : null}</article> : null}
             {results.map((row) => {
               if (row.kind === "known") return <button key={row.feature.id} type="button" onClick={() => chooseKnown(row.feature)}><span><Sparkles /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div></button>;
               if (row.kind === "dynamic") return <button key={row.feature.id} type="button" onClick={() => chooseDynamic(row.feature)}><span><MousePointer2 /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div></button>;
@@ -800,7 +1047,7 @@ export default function SmartGuide({
 
         {selected ? (
           <section className="smart-guide-focus-card">
-            <header><span><Sparkles /></span><div><small>{selectedUpdated ? "تغيّرت هذه الميزة منذ آخر استخدام لك" : selectedExpert ? "إجابة مختصرة لأنك تتقنها" : selectedRecentlyHelped ? "سبق أن شرحتها لك؛ سأختصر هذه المرة" : selected.group}</small><strong>{selected.title}</strong><p>{selected.summary}</p></div></header>
+            <header><span><Sparkles /></span><div><small>{selectedReason === "UI_CHANGED" ? "تغيّرت هذه الوظيفة منذ آخر استخدام لك. سأحدد موضعها الحالي." : selectedReason === "FORGOTTEN" ? "استخدمت هذه الوظيفة سابقًا. هذا تذكير سريع." : selectedExpert ? "إجابة مختصرة لأنك تتقنها" : selectedRecentlyHelped ? "سبق أن شرحتها لك؛ سأختصر هذه المرة" : selected.group}</small><strong>{selected.title}</strong><p>{selected.summary}</p></div></header>
             {!selectedConcise ? <div className="smart-guide-infographic" aria-hidden="true"><span><Eye /></span><i /><span><MousePointer2 /></span><i /><span><Check /></span></div> : null}
             {!selectedConcise && selected.steps?.length ? <ol className="smart-guide-steps">{selected.steps.slice(0, 4).map((step, index) => <li key={index}><b>{String(index + 1).padStart(2, "0")}</b><span>{step.text}</span></li>)}</ol> : null}
             {selectedConcise ? <div className="smart-guide-actions expert"><button type="button" onClick={() => executeSafe(selected)}><Zap />افتح مباشرةً</button><button type="button" onClick={() => startTour(selected)}><Eye />أرني المكان</button></div> : <div className="smart-guide-actions"><button type="button" onClick={() => startTour(selected)}><Eye />أرني على شاشتي</button><button type="button" onClick={() => executeSafe(selected)}><WandSparkles />أكمل عني</button><button type="button" onClick={() => simulateFeature(selected)}><ShieldCheck />جرّب دون تغيير</button></div>}
@@ -812,6 +1059,7 @@ export default function SmartGuide({
           <section className="smart-guide-focus-card">
             <header><span><MousePointer2 /></span><div><small>عنصر حي</small><strong>{selectedDynamic.title}</strong><p>{explainDynamic(selectedDynamic)}</p></div></header>
             <div className="smart-guide-actions one"><button type="button" onClick={() => {
+              setDrawerHidden(true);
               if (selectedDynamic.target) {
                 const element = targetNow(selectedDynamic.target);
                 element?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -866,8 +1114,11 @@ export default function SmartGuide({
             {routineDraft ? <section className="smart-guide-routine-editor"><Zap /><div><small>اسم الاختصار</small><input value={routineDraft.name} onChange={event => setRoutineDraft({...routineDraft,name:event.target.value})} maxLength={48}/></div><button type="button" onClick={saveRoutineDraft}>حفظ</button><button type="button" onClick={() => setRoutineDraft(null)}>إلغاء</button></section> : null}
 
             {root && collectiveFriction.length && browseMode === "forYou" ? <><section className="smart-guide-section-head"><div><small>تحسين المنتج</small><strong>أكثر نقاط التعثر جماعيًا</strong></div></section><div className="smart-guide-friction">{collectiveFriction.map((item,index) => <article key={`${item.name}-${index}`}><Gauge /><span><strong>{item.name}</strong><small>{item.count.toLocaleString("ar-KW-u-nu-latn")} إشارة مجهولة الهوية</small></span><i style={{"--guide-friction":`${Math.min(100,item.count*8)}%`} as React.CSSProperties}/></article>)}</div></> : null}
+            {root && collectiveInsights.length && browseMode === "forYou" ? <><section className="smart-guide-section-head"><div><small>مؤشر تجربة المنتج</small><strong>أماكن قد تحتاج تحسينًا في الواجهة</strong></div></section><div className="smart-guide-friction product-insights">{collectiveInsights.map((item,index) => { const feature=featureById(item.featureId); const change=Math.round(Number(item.changeVsPrevious||0)*100); return <article key={`${item.featureId}-${item.step}-${index}`}><Gauge /><span><strong>{feature?.title || item.featureId}</strong><small>{`فشل ${Math.round(item.failureRate*100)}٪ · نجاح بعد المساعدة ${Math.round(Number(item.helpToSuccessRate||0)*100)}٪${change ? ` · ${change>0?"↑":"↓"}${Math.abs(change)}٪ عن السابق` : ""}`}</small></span><i style={{"--guide-friction":`${Math.min(100,Math.round((item.failureRate+item.abandonRate)*100))}%`} as React.CSSProperties}/></article>; })}</div></> : null}
           </>
         ) : null}
+
+        {rollbackTransaction ? <button type="button" className="smart-guide-transaction-undo" onClick={undoGuideTransaction}><History /><span><small>آخر عملية نفذها المرشد</small><strong>{rollbackTransaction.title}</strong></span><b>تراجع</b></button> : null}
 
         <footer className="smart-guide-footer">
           <button type="button" onClick={() => setSettingsOpen((value) => !value)}><Settings2 />المساعدة الاستباقية</button>

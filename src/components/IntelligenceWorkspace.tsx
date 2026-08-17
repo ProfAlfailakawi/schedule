@@ -365,6 +365,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [scenarioEval, setScenarioEval] = useState<any>(null),
     [scenarioId, setScenarioId] = useState<number | "">(""),
     [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+  const [guideSimulationMeta, setGuideSimulationMeta] = useState<null | { before:FSchedule; after:FSchedule; request:any }>(null);
+  const intelligenceGuideOperationRef = useRef<null | { featureId:string; transactionId?:string; startedAt:number; expected:string }>(null);
   const [compareFrom, setCompareFrom] = useState(0),
     [compareTo, setCompareTo] = useState(0),
     [termCompare, setTermCompare] = useState<any>(null);
@@ -476,9 +478,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         // actually loaded is worse than an empty selector: it makes the page
         // look broken on first entry. Consume any old handoff and start clean.
         try { sessionStorage.removeItem("schedule-intelligence-scope"); } catch {}
-        setCollegeId(0);
-        setSectionId(0);
-        setTermId(0);
+        let guideRequest:any = null;
+        try { guideRequest = JSON.parse(sessionStorage.getItem("schedule-guide-simulation") || "null"); } catch {}
+        const guideFresh = guideRequest && Date.now() - Number(guideRequest.createdAt || 0) < 10 * 60 * 1000;
+        setCollegeId(guideFresh ? Number(guideRequest.collegeId || 0) : 0);
+        setSectionId(guideFresh ? Number(guideRequest.sectionId || 0) : 0);
+        setTermId(guideFresh ? Number(guideRequest.termId || 0) : 0);
         setCompareTo(sortedTerms[0]?.AdTermId || 0);
         setCompareFrom(sortedTerms[1]?.AdTermId || sortedTerms[0]?.AdTermId || 0);
       } catch (e: any) {
@@ -1433,12 +1438,29 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const onGuideCommand = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (detail.scope !== "intelligence") return;
-      if (detail.type === "scene" && detail.value) changeScene(String(detail.value));
-      if (detail.type === "tab" && detail.value && ["command","copilot","twin","history","import"].includes(String(detail.value))) setTab(String(detail.value) as Tab);
+      const featureId = String(detail.featureId || "");
+      if (detail.type === "scene" && detail.value) {
+        const value=String(detail.value);
+        if (featureId) intelligenceGuideOperationRef.current={ featureId, transactionId:detail.transactionId ? String(detail.transactionId) : undefined, startedAt:Date.now(), expected:value === "understand" ? "intelligence.scene.understand" : value === "try" ? "intelligence.scene.try" : "intelligence.scene.approve" };
+        changeScene(value);
+      }
+      if (detail.type === "tab" && detail.value && ["command","copilot","twin","history","import"].includes(String(detail.value))) {
+        const value=String(detail.value);
+        if (featureId) intelligenceGuideOperationRef.current={ featureId, transactionId:detail.transactionId ? String(detail.transactionId) : undefined, startedAt:Date.now(), expected:value === "copilot" ? "intelligence.ask-table" : featureId };
+        setTab(value as Tab);
+      }
     };
     window.addEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
     return () => window.removeEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
   }, []);
+  useEffect(() => {
+    const operation=intelligenceGuideOperationRef.current;
+    if(!operation)return;
+    const current=tab === "copilot" ? "intelligence.ask-table" : scene === "understand" ? "intelligence.scene.understand" : scene === "try" ? "intelligence.scene.try" : "intelligence.scene.approve";
+    if(current!==operation.expected)return;
+    intelligenceGuideOperationRef.current=null;
+    window.dispatchEvent(new CustomEvent("schedule-smart-guide-action-result",{detail:{featureId:operation.featureId,ok:true,signal:current,transactionId:operation.transactionId,durationMs:Date.now()-operation.startedAt,stepCount:1}}));
+  }, [scene,tab]);
   useEffect(() => {
     if (!rows.length || !collegeId || !termId) return;
     let request: any = null;
@@ -1447,20 +1469,77 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     try { sessionStorage.removeItem("schedule-guide-simulation"); } catch {}
     const run = async () => {
       const copy = rows.map((row) => ({ ...row }));
+      const requestedId = Number(request.selectedId || 0);
+      const selectedId = requestedId && copy.some(row => Number(row.id) === requestedId) ? requestedId : Number(copy[0]?.id || 0);
+      const index = copy.findIndex(row => Number(row.id) === selectedId);
+      const before = index >= 0 ? { ...copy[index] } : null;
+      const intent = request.intent || {};
+      if (before && index >= 0) {
+        const after:any = { ...before };
+        const day = String(intent?.entities?.day || "");
+        if (["fsunday","fmonday","ftuesday","fwednesday","fthursday"].includes(day)) {
+          ["fsunday","fmonday","ftuesday","fwednesday","fthursday"].forEach(key => { after[key] = key === day; });
+        }
+        const time = String(intent?.entities?.time || "");
+        if (/^\d{2}:\d{2}$/.test(time)) {
+          const toMinutes = (value:string) => { const [h,m]=String(value||"0:0").split(":").map(Number); return h*60+m; };
+          const fromMinutes = (value:number) => `${String(Math.floor(value/60)).padStart(2,"0")}:${String(value%60).padStart(2,"0")}`;
+          const duration = Math.max(30, toMinutes(before.fendtime) - toMinutes(before.fstarttime));
+          after.fstarttime = time;
+          after.fendtime = fromMinutes(Math.min(23*60+59, toMinutes(time) + duration));
+        }
+        if (intent?.entities?.room) after.AdRoomCode = String(intent.entities.room);
+        if (intent?.constraints?.findAlternativeRoom && !intent?.entities?.room) {
+          const activeDays = ["fsunday","fmonday","ftuesday","fwednesday","fthursday"].filter(key => Boolean(after[key]));
+          const toMinutes = (value:string) => { const [h,m]=String(value||"0:0").split(":").map(Number); return h*60+m; };
+          const start = toMinutes(after.fstarttime);
+          const end = toMinutes(after.fendtime);
+          const unique = new Map<string,{code:string;hall:string}>();
+          (overview?.rooms || []).forEach((room:any) => {
+            const code=String(room?.code||"").trim(), hall=String(room?.hall||"").trim();
+            if(code&&hall) unique.set(`${code}|${hall}`,{code,hall});
+          });
+          copy.forEach((row:any) => {
+            const code=String(row?.AdRoomCode||"").trim(), hall=String(row?.AdRoomHall||"").trim();
+            if(code&&hall) unique.set(`${code}|${hall}`,{code,hall});
+          });
+          const occupied = (room:{code:string;hall:string}) => copy.some((row:any,rowIndex:number) => {
+            if(rowIndex===index) return false;
+            if(String(row.AdRoomCode||"").trim()!==room.code || String(row.AdRoomHall||"").trim()!==room.hall) return false;
+            if(!activeDays.some(day => Boolean(row[day]))) return false;
+            const rowStart=toMinutes(row.fstarttime), rowEnd=toMinutes(row.fendtime);
+            return start < rowEnd && end > rowStart;
+          });
+          const candidates=[...unique.values()]
+            .filter(room => !(room.code===String(before.AdRoomCode||"").trim() && room.hall===String(before.AdRoomHall||"").trim()))
+            .filter(room => !occupied(room))
+            .sort((a,b) => {
+              const aSame=a.code===String(before.AdRoomCode||"").trim()?0:1;
+              const bSame=b.code===String(before.AdRoomCode||"").trim()?0:1;
+              return aSame-bSame || a.code.localeCompare(b.code,"ar") || a.hall.localeCompare(b.hall,"ar");
+            });
+          if(candidates[0]) {
+            after.AdRoomCode=candidates[0].code;
+            after.AdRoomHall=candidates[0].hall;
+          }
+        }
+        if (Number(intent?.entities?.instructorId || 0) && !intent?.constraints?.keepInstructor) after.AdInstructorId = Number(intent.entities.instructorId);
+        copy[index] = after;
+        setGuideSimulationMeta({ before, after:{...after}, request });
+        try { sessionStorage.setItem("schedule-guide-ghost-preview", JSON.stringify({ id:before.id, before, after, createdAt:Date.now() })); } catch {}
+      }
       setActiveDraftId(null);
       setScenario(copy);
-      const requestedId = Number(request.selectedId || 0);
-      const selected = requestedId && copy.some(row => Number(row.id) === requestedId) ? requestedId : Number(copy[0]?.id || 0);
-      setScenarioId(selected || "");
+      setScenarioId(selectedId || "");
       setTab("twin");
       setTwinCard("board");
       await evaluateScenario(copy);
       const subject = String(request.selectedCourse || "").trim();
-      const taskLabel = request.task === "move-room" ? "نقل القاعة" : request.task === "change-time" ? "تغيير الوقت" : request.task === "change-instructor" ? "تغيير الأستاذ" : "التغيير المطلوب";
-      setMessage(`${subject ? `فتحت نسخة تجريبية للمقرر «${subject}»` : "فتحت نسخة تجريبية من الجدول"} لتجربة ${taskLabel}. لن يتغير الجدول الحقيقي حتى تعتمد قرارًا بنفسك.`);
+      const taskLabel = request.task === "move-room" || request.task === "schedule.action.move-room" ? "نقل القاعة" : request.task === "change-time" || request.task === "schedule.action.change-time" ? "تغيير الوقت" : request.task === "change-instructor" || request.task === "schedule.action.change-instructor" ? "تغيير الأستاذ" : "التغيير المطلوب";
+      setMessage(`${subject ? `أنشأت نسخة تجريبية للمقرر «${subject}»` : "أنشأت نسخة تجريبية من الجدول"} وطبقت فيها ${taskLabel}. الجدول الحقيقي لم يتغير.`);
     };
     void run();
-  }, [collegeId, rows, sectionId, termId]);
+  }, [collegeId, overview?.rooms, rows, sectionId, termId]);
   const insightScenes: Array<{
     value: InsightScene;
     label: string;
@@ -1641,6 +1720,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         مركز الذكاء
       </PageTitle>
       <ContextBar />
+      {guideSimulationMeta ? (
+        <section className="guide-simulation-brief no-print">
+          <header><ShieldCheck aria-hidden="true" /><div><small>محاكاة حقيقية · لا حفظ</small><strong>{guideSimulationMeta.before.AdCourseName || "المقرر المحدد"}</strong></div></header>
+          <div className="guide-simulation-flow">
+            <span><small>قبل</small><b>{Object.keys(dayLabels).filter(key => (guideSimulationMeta.before as any)[key]).map(key => (dayLabels as any)[key]).join(" · ") || "—"}</b><em>{formatScheduleTimeRange(guideSimulationMeta.before.fstarttime, guideSimulationMeta.before.fendtime)}</em></span>
+            <ChevronLeft aria-hidden="true" />
+            <span className="after"><small>بعد</small><b>{Object.keys(dayLabels).filter(key => (guideSimulationMeta.after as any)[key]).map(key => (dayLabels as any)[key]).join(" · ") || "—"}</b><em>{formatScheduleTimeRange(guideSimulationMeta.after.fstarttime, guideSimulationMeta.after.fendtime)}</em></span>
+          </div>
+          <p>{scenarioEval?.scenario?.conflicts || scenarioEval?.scenario?.conflictCount ? "توجد آثار تحتاج مراجعة في النسخة التجريبية." : "النسخة التجريبية جاهزة للمقارنة، والجدول الحقيقي لم يتغير."}</p>
+          <footer>
+            <button type="button" onClick={async () => {
+              if (!scenario || !guideSimulationMeta) return;
+              const copy=scenario.map(item=>({...item})); const index=copy.findIndex(item=>item.id===guideSimulationMeta.after.id); if(index<0)return;
+              const before={...copy[index]}; const after:any={...before};
+              const toMinutes=(value:string)=>{const [h,m]=String(value||"0:0").split(":").map(Number);return h*60+m;}; const fromMinutes=(value:number)=>`${String(Math.floor(value/60)).padStart(2,"0")}:${String(value%60).padStart(2,"0")}`;
+              const duration=Math.max(30,toMinutes(before.fendtime)-toMinutes(before.fstarttime)); const nextStart=fromMinutes(Math.min(22*60,toMinutes(before.fstarttime)+30)); after.fstarttime=nextStart; after.fendtime=fromMinutes(toMinutes(nextStart)+duration); copy[index]=after; setScenario(copy); setGuideSimulationMeta(current=>current?{...current,after}:current); await evaluateScenario(copy);
+            }}>جرّب بديلًا</button>
+            <button type="button" onClick={() => { try { sessionStorage.setItem("schedule-guide-ghost-preview", JSON.stringify({ id:guideSimulationMeta.before.id, before:guideSimulationMeta.before, after:guideSimulationMeta.after, createdAt:Date.now() })); } catch {} openScheduleWorkspace("هذه معاينة من مساحة «جرّب». راجعها على الجدول ثم اعتمدها يدويًا إذا رغبت."); }}>معاينة على الجدول</button>
+            <button type="button" data-guide-ignore="يحفظ المحاكاة كمسودة تجريبية فقط ولا ينشر أي تغيير حقيقي" className="primary" onClick={async () => { if(!scenario)return; const draft=await saveDraft("guide-simulation",scenario,"محاكاة المرشد"); if(draft)setMessage("حُفظ الحل كمسودة فقط. راجعه في «اعتمد» قبل أي نشر."); }}>اعتماد كمسودة</button>
+          </footer>
+        </section>
+      ) : null}
       {!collegeId || !termId ? (
         <Surface className="intel-context-idle" aria-live="polite">
           <Target aria-hidden="true" />
@@ -1718,6 +1819,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           </button>
           <button
             type="button"
+            data-guide-ignore="تبويب فرعي داخل مساحة جرّب وتغطيه ميزة مركز الذكاء"
             className={tab === "import" ? "active" : ""}
             aria-pressed={tab === "import"}
             onClick={() => setTab("import")}
@@ -2743,7 +2845,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                 {mv.applied ? (
                                   <span className="nl-move-done"><CheckCircle2 aria-hidden="true" /> تم النقل بنجاح</span>
                                 ) : mv.canApply ? (
-                                  <button type="button" className="nl-move-apply" disabled={busy} onClick={() => applyMove(mv, i)}><WandSparkles aria-hidden="true" /> طبّق النقل</button>
+                                  <button type="button" data-guide-feature-id="schedule.action.move-room" className="nl-move-apply" disabled={busy} onClick={() => applyMove(mv, i)}><WandSparkles aria-hidden="true" /> طبّق النقل</button>
                                 ) : (
                                   <span className="nl-move-blocked"><ShieldAlert aria-hidden="true" /> {mv.blockedReason || "يوجد تعارض يمنع النقل"}</span>
                                 )}
@@ -3218,6 +3320,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           </small>
                         </div>
                         <button
+                          data-guide-ignore="حذف قاعدة محلية داخل النسخة التجريبية وله تأكيده الخاص"
                           className="constraint-delete"
                           onClick={() => deleteConstraint(c)}
                           title="حذف القاعدة"
@@ -3776,7 +3879,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <div className="surface-head">
               <div>
                 <span className="surface-kicker">مقارنة الفصول</span>
-                <h2>شنو تغيّر؟</h2>
+                <h2>ماذا تغيّر؟</h2>
               </div>
               <ArrowLeftRight />
             </div>
@@ -3936,6 +4039,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </GhostButton>
                       {d.status === "draft" ? (
                         <PrimaryButton
+                          data-guide-target="intelligence.publish-draft"
+                          data-guide-feature-id="intelligence.publish-draft"
                           onClick={() => publishDraft(d)}
                           disabled={!online || busy}
                         >

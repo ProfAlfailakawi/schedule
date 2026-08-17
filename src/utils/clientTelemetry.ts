@@ -78,6 +78,13 @@ export function telemetryError(name: string, error: unknown, durationMs?: number
 export function telemetryOffline(name = "offline") { enqueue({ kind: "offline", name, ok: false }); }
 export function telemetrySync(name: string, ok: boolean, message?: string) { enqueue({ kind: "sync", name, ok, message: String(message || "").slice(0, 320) || undefined }); }
 export function telemetryGuide(name: string, message?: string) { enqueue({ kind: "guide", name: String(name || "guide").slice(0, 140), ok: true, message: String(message || "").slice(0, 160) || undefined }); }
+export function telemetryGuideJourney(input: { featureId: string; version?: number; step?: string; outcome: "attempt" | "started" | "completed" | "failed" | "abandoned" | "helped" | "resolvedAfterHelp" }) {
+  const featureId = String(input.featureId || "unknown").replace(/[|\n\r]/g, "").slice(0, 80);
+  const version = Math.max(0, Number(input.version || 0) || 0);
+  const step = String(input.step || "journey").replace(/[|\n\r]/g, "").slice(0, 48);
+  const outcome = String(input.outcome || "attempt").replace(/[|\n\r]/g, "").slice(0, 32);
+  enqueue({ kind: "guide", name: `journey|${featureId}|${version}|${step}|${outcome}`, ok: outcome !== "failed" && outcome !== "abandoned" });
+}
 
 export async function flushTelemetry() {
   if (!navigator.onLine) return;

@@ -209,7 +209,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
 
   return (
     <>
-      <GhostButton type="button" onClick={openDialog} disabled={!scoped} title="رابط قراءة">
+      <GhostButton type="button" data-guide-target="schedule.publish" data-guide-feature-id="schedule.publish" onClick={openDialog} disabled={!scoped} title="رابط قراءة">
         <Link2 />
         نشر
         {active.length ? <b className="tool-count">{active.length}</b> : null}

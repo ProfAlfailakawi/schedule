@@ -49,6 +49,7 @@ import {
   SCHEDULE_SLOT_MINUTES,
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
+import { canAccessGuideFeature, featureById } from "./src/guide/smartGuide";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -1071,7 +1072,7 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
  * and a department coordinator is shown the same shape narrowed to what they
  * are allowed to see, with `scoped: true` saying which of the two it is.
  */
-app.get("/api/journey", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/journey", async (req: AuthenticatedRequest, res: Response) => {
   const terms = await Repository.getTerms();
   const currentTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const currentTerm = terms.find(term => Number(term.AdTermId) === currentTermId) || null;
@@ -1083,7 +1084,12 @@ app.get("/api/journey", requireAuth, async (req: AuthenticatedRequest, res: Resp
     Repository.countSchedules(),
     Repository.getSchedulesByScope({ termId: currentTermId }),
   ]);
-  const admin = Boolean(req.user.IsAdminUser);
+  /* The same journey is also available before sign-in from the login screen.
+     With no identity there is no personal scope to apply, so the reading is the
+     institution-wide aggregate. Once signed in, the existing scope rules remain
+     exactly as before. */
+  const authenticated = Boolean(req.user);
+  const admin = !authenticated || Boolean(req.user?.IsAdminUser);
   const visibleTermRows = admin ? termRows : filterByScope(req, termRows);
   const visibleSections = admin ? sections : filterByScope(req, sections);
   const visibleColleges = admin
@@ -1095,7 +1101,7 @@ app.get("/api/journey", requireAuth, async (req: AuthenticatedRequest, res: Resp
   const unique = (values: Array<number | string>) => new Set(values.filter(Boolean)).size;
 
   res.json({
-    scoped: !admin,
+    scoped: authenticated && !admin,
     lifetime: {
       terms: terms.length,
       schedules: admin ? lifetimeRows : null,
@@ -3459,16 +3465,195 @@ app.post("/api/telemetry/client", requireAuth, async (req: AuthenticatedRequest,
   res.json({ accepted });
 });
 
+type GuideIntentPayload = {
+  goal: string;
+  entities: { selectedId?: number; course?: string; day?: string; time?: string; room?: string; instructor?: string; instructorId?: number };
+  constraints: { keepInstructor?: boolean; keepRoom?: boolean; findAlternativeRoom?: boolean };
+  requestedAction: "explain" | "navigate" | "prepare" | "simulate" | "execute" | "unknown";
+  confidence: number;
+  compound: boolean;
+  source: "rules" | "ai";
+  clarification?: string;
+};
+
+function deterministicGuideIntent(question: string): GuideIntentPayload {
+  const text = String(question || "").toLowerCase().replace(/[إأآ]/g, "ا").replace(/ى/g, "ي").replace(/[ً-ْٰـ]/g, "");
+  const day = /اربعاء/.test(text) ? "fwednesday" : /ثلاثاء/.test(text) ? "ftuesday" : /اثنين/.test(text) ? "fmonday" : /احد/.test(text) ? "fsunday" : /خميس/.test(text) ? "fthursday" : undefined;
+  const timeMatch = text.match(/(?:الساعه|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?|(?:^|\s)(\d{1,2}):(\d{2})(?:\s|$)/);
+  const timeHour = timeMatch ? Number(timeMatch[1] || timeMatch[3]) : NaN;
+  const timeMinute = timeMatch ? Number(timeMatch[2] || timeMatch[4] || 0) : NaN;
+  const time = Number.isFinite(timeHour) ? `${String(Math.min(23, Math.max(0, timeHour))).padStart(2, "0")}:${String(Math.min(59, Math.max(0, timeMinute))).padStart(2, "0")}` : undefined;
+  const move = /(?:نقل|انقل|غير\s+(?:ال)?قاع|غير\s+قاع)/.test(text);
+  const timeChange = /غير.*وقت|تغيير.*وقت|يصير يوم|خله يوم|خليه يوم|موعد/.test(text);
+  const instructor = /غير.*دكتور|غير.*استاذ|تغيير.*استاذ/.test(text);
+  const findAlternativeRoom = /اذا.*قاع.*مشغ|دور.*قاع|قاعة.*بديل|قاعه.*بديل/.test(text);
+  const simulate = /جرب|جرّب|ماذا لو|بدون تغيير/.test(text);
+  const explain = /شلون|كيف|وضح|شرح|ليش/.test(text);
+  const keepInstructor = /لا.*(?:ابي|اريد).*غير.*(?:دكتور|استاذ)|خله.*(?:دكتور|استاذ)|ابق.*(?:الاستاذ|الأستاذ)/.test(text);
+  let goal = move ? "move-room" : timeChange ? "change-time" : instructor ? "change-instructor" : findAlternativeRoom ? "find-room" : "unknown";
+  if (goal === "unknown" && day && time) goal = "change-time";
+  const requestedAction: GuideIntentPayload["requestedAction"] = simulate ? "simulate" : move || timeChange || instructor ? "prepare" : explain ? "explain" : "unknown";
+  const compound = [day, time, keepInstructor, findAlternativeRoom].filter(Boolean).length >= 2;
+  let confidence = goal !== "unknown" ? .68 : .25;
+  if (day) confidence += .08;
+  if (time) confidence += .08;
+  if (move || timeChange || instructor) confidence += .08;
+  if (simulate) confidence += .05;
+  if (compound) confidence += .03;
+  const clarification = confidence < .62
+    ? "هل تقصد تنفيذ تغيير على المقرر المحدد مع إبقاء بقية بياناته كما هي؟"
+    : keepInstructor && day
+      ? `هل تقصد نقل هذا المقرر إلى ${day === "fwednesday" ? "الأربعاء" : day === "ftuesday" ? "الثلاثاء" : day === "fmonday" ? "الاثنين" : day === "fsunday" ? "الأحد" : "الخميس"} مع إبقاء الأستاذ الحالي؟`
+      : undefined;
+  return { goal, entities: { day, time }, constraints: { keepInstructor, findAlternativeRoom }, requestedAction, confidence: Math.min(.98, confidence), compound, source: "rules", clarification };
+}
+
+/**
+ * One permission predicate for every guide path, including the optional server
+ * intent fallback. The server resolves the same registry feature used by the
+ * drawer/search/routines, so adminOnly/rootOnly cannot drift between clients
+ * and the fallback endpoint after a permission change.
+ */
+function serverCanExposeGuideFeature(req: AuthenticatedRequest, id: string) {
+  const feature = featureById(String(id || ""));
+  if (!feature) return false;
+  return canAccessGuideFeature(feature, {
+    permissions: (req.permissions || []).map(Number),
+    root: Number(req.user?.SystemUserId || 0) === ROOT_ADMIN_USER_ID,
+    admin: isPowerAdmin(req),
+  });
+}
+
+
+async function requestGuideAIIntent(payload:{question:string;context:any;allowedFeatureIds:string[];fallback:any}) {
+  const customEndpoint = String(process.env.GUIDE_AI_ENDPOINT || "").trim();
+  const openAIKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!customEndpoint && !openAIKey) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  try {
+    if (customEndpoint) {
+      const response = await fetch(customEndpoint, {
+        method:"POST",
+        headers:{"Content-Type":"application/json",...(process.env.GUIDE_AI_BEARER_TOKEN?{Authorization:`Bearer ${process.env.GUIDE_AI_BEARER_TOKEN}`}:{})},
+        signal:controller.signal,
+        body:JSON.stringify({
+          model:String(process.env.GUIDE_AI_MODEL || "").trim() || undefined,
+          task:"استخرج نية استخدام SCHEDULE فقط. أعد JSON منظمًا دون تنفيذ أي إجراء. اجعل أي clarification باللغة العربية الفصحى.",
+          question:payload.question, context:payload.context, allowedFeatureIds:payload.allowedFeatureIds,
+          schema:{goal:"string",entities:"object",constraints:"object",requestedAction:"explain|navigate|prepare|simulate|execute|unknown",confidence:"0..1",clarification:"Arabic Fusha optional"},
+        }),
+      });
+      if (!response.ok) return null;
+      const data:any = await response.json().catch(()=>null);
+      return data?.intent || data || null;
+    }
+
+    const base = String(process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").trim().replace(/\/$/, "");
+    const model = String(process.env.OPENAI_GUIDE_MODEL || process.env.GUIDE_AI_MODEL || "gpt-5-mini").trim();
+    const system = [
+      "أنت محلل نية لمرشد استخدام نظام جامعي اسمه SCHEDULE.",
+      "افهم العربية الفصحى واللهجة الكويتية، لكن لا تكتب أي رد عامي.",
+      "لا تنفذ شيئًا ولا تخترع صلاحيات أو ميزات غير موجودة.",
+      "أعد كائن JSON فقط بالمفاتيح: goal, entities, constraints, requestedAction, confidence, compound, clarification.",
+      "requestedAction واحد من explain,navigate,prepare,simulate,execute,unknown.",
+      "confidence رقم بين 0 و1. إذا لم تكن متأكدًا استخدم clarification فصيحة ومختصرة.",
+    ].join("\n");
+    const userPayload = JSON.stringify({ question:payload.question, context:payload.context, allowedFeatureIds:payload.allowedFeatureIds, deterministicHint:payload.fallback });
+    const response = await fetch(`${base}/responses`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json",Authorization:`Bearer ${openAIKey}`},
+      signal:controller.signal,
+      body:JSON.stringify({ model, input:[{role:"system",content:[{type:"input_text",text:system}]},{role:"user",content:[{type:"input_text",text:userPayload}]}], max_output_tokens:450 }),
+    });
+    if (!response.ok) return null;
+    const data:any = await response.json().catch(()=>null);
+    const outputText = String(data?.output_text || (Array.isArray(data?.output) ? data.output.flatMap((item:any)=>Array.isArray(item?.content)?item.content:[]).map((part:any)=>part?.text||part?.output_text||"").join("") : "") || "").trim();
+    if (!outputText) return null;
+    const clean = outputText.replace(/^```(?:json)?\s*/i,"").replace(/\s*```$/i,"").trim();
+    return JSON.parse(clean);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+app.post("/api/guide/intent", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const question = String(req.body?.question || "").trim().slice(0, 420);
+  if (!question) { res.status(400).json({ error: "اكتب ما تريد إنجازه أولًا." }); return; }
+  const clientAllowed = Array.isArray(req.body?.allowedFeatureIds) ? req.body.allowedFeatureIds.map((id:any) => String(id)).slice(0, 100) : [];
+  const allowedFeatureIds = clientAllowed.filter(id => serverCanExposeGuideFeature(req, id));
+  const context = req.body?.context && typeof req.body.context === "object" ? {
+    view: String(req.body.context.view || "").slice(0, 60),
+    currentFeatureId: String(req.body.context.currentFeatureId || "").slice(0, 100),
+    selected: req.body.context.selected ? { id: Number(req.body.context.selected.id || 0), course: String(req.body.context.selected.course || "").slice(0, 100) } : null,
+    currentTask: req.body.context.currentTask ? { title: String(req.body.context.currentTask.title || "").slice(0, 120), featureId: String(req.body.context.currentTask.featureId || "").slice(0, 100) } : null,
+    currentError: String(req.body.context.currentError || "").slice(0, 220),
+  } : {};
+  let intent = deterministicGuideIntent(question);
+  if (intent.confidence < .72 || intent.compound) {
+    const candidate:any = await requestGuideAIIntent({ question, context, allowedFeatureIds, fallback:intent });
+    const allowedActions = new Set(["explain","navigate","prepare","simulate","execute","unknown"]);
+    if (candidate && typeof candidate === "object" && Number(candidate.confidence) >= Number(intent.confidence)) {
+      const requestedAction = allowedActions.has(String(candidate.requestedAction || "")) ? String(candidate.requestedAction) : intent.requestedAction;
+      intent = {
+        ...intent,
+        ...candidate,
+        requestedAction: requestedAction as any,
+        entities: { ...intent.entities, ...(candidate.entities || {}) },
+        constraints: { ...intent.constraints, ...(candidate.constraints || {}) },
+        confidence: Math.max(0, Math.min(1, Number(candidate.confidence || 0))),
+        compound: Boolean(candidate.compound ?? intent.compound),
+        source: "ai",
+        clarification: String(candidate.clarification || intent.clarification || "").slice(0, 220) || undefined,
+      };
+    }
+  }
+  const featureForGoal: Record<string,string> = { "move-room":"schedule.action.move-room", "change-time":"schedule.action.change-time", "change-instructor":"schedule.action.change-instructor", "find-room":"schedule.action.find-room" };
+  const proposedFeature = featureForGoal[intent.goal];
+  if (proposedFeature && !allowedFeatureIds.includes(proposedFeature)) intent = { ...intent, goal:"unknown", requestedAction:"explain", confidence:.35, clarification:"هذه العملية غير متاحة ضمن صلاحياتك الحالية.", source:intent.source };
+  res.json({ intent, minimalContext:true, rawHistorySent:false });
+});
+
 app.get("/api/intelligence/guide-friction", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   if (Number(req.user?.SystemUserId || 0) !== ROOT_ADMIN_USER_ID) { res.status(403).json({ error: "هذه القراءة مخصصة لإدارة النظام الرئيسية" }); return; }
   const collegeId=Number(req.query.collegeId||0), sectionId=Number(req.query.sectionId||0);
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج نطاقك المسموح"});return;}
-  const rows=await Repository.getClientTelemetry(collegeId,sectionId,1200).catch(()=>[]);
-  const cutoff=Date.now()-30*24*60*60*1000;
+  const rows=await Repository.getClientTelemetry(collegeId,sectionId,1800).catch(()=>[]);
+  const now=Date.now(), day=24*60*60*1000, cutoff=now-30*day, previousCutoff=now-60*day;
   const counts=new Map<string,number>();
-  rows.filter(item=>item.kind==="guide"&&Date.parse(item.timestamp)>=cutoff).forEach(item=>{const name=String(item.name||"نقطة تعثر").slice(0,120);counts.set(name,(counts.get(name)||0)+1);});
-  const items=[...counts.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,"ar")).slice(0,12);
-  res.json({items,windowDays:30,anonymous:true});
+  type FrictionAggregate={feature:string;version:number;step:string;attempt:number;completed:number;failed:number;abandoned:number;helped:number;resolvedAfterHelp:number;previousFailed:number;previousTotal:number};
+  const structured=new Map<string,FrictionAggregate>();
+  rows.filter(item=>item.kind==="guide"&&Date.parse(item.timestamp)>=previousCutoff).forEach(item=>{
+    const name=String(item.name||"نقطة تعثر").slice(0,140);
+    const stamp=Date.parse(item.timestamp);
+    if(stamp>=cutoff)counts.set(name,(counts.get(name)||0)+1);
+    if(!name.startsWith("journey|"))return;
+    const [,feature="unknown",versionText="0",step="journey",outcome="attempt"]=name.split("|");
+    const key=`${feature}|${versionText}|${step}`;
+    const value=structured.get(key)||{feature,version:Number(versionText)||0,step,attempt:0,completed:0,failed:0,abandoned:0,helped:0,resolvedAfterHelp:0,previousFailed:0,previousTotal:0};
+    if(stamp>=cutoff){
+      if(outcome==="attempt"||outcome==="started")value.attempt++;
+      if(outcome==="completed"||outcome==="resolvedAfterHelp")value.completed++;
+      if(outcome==="resolvedAfterHelp")value.resolvedAfterHelp++;
+      if(outcome==="failed")value.failed++;
+      if(outcome==="abandoned")value.abandoned++;
+      if(outcome==="helped")value.helped++;
+    } else {
+      value.previousTotal++;
+      if(outcome==="failed"||outcome==="abandoned")value.previousFailed++;
+    }
+    structured.set(key,value);
+  });
+  const insights=[...structured.values()].map(value=>{
+    const total=Math.max(1,value.attempt+value.completed+value.failed+value.abandoned);
+    const failureRate=(value.failed+value.abandoned)/total;
+    const previousRate=value.previousTotal?value.previousFailed/value.previousTotal:0;
+    return{featureId:value.feature,version:value.version,step:value.step,attempt:value.attempt,completed:value.completed,failed:value.failed,abandoned:value.abandoned,helped:value.helped,resolvedAfterHelp:value.resolvedAfterHelp,failureRate:Number(failureRate.toFixed(3)),abandonRate:Number((value.abandoned/total).toFixed(3)),helpRate:Number((value.helped/total).toFixed(3)),helpToSuccessRate:Number((value.resolvedAfterHelp/Math.max(1,value.helped)).toFixed(3)),changeVsPrevious:Number((failureRate-previousRate).toFixed(3))};
+  }).sort((a,b)=>(b.failureRate+b.helpRate*.35)-(a.failureRate+a.helpRate*.35)).slice(0,12);
+  const items=[...counts.entries()].map(([name,count])=>({name,count})).filter(item=>!item.name.startsWith("journey|")).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,"ar")).slice(0,8);
+  res.json({items,insights,windowDays:30,anonymous:true,interpretation:"ارتفاع التعثر الجماعي بعد إصدار جديد قد يعني أن الواجهة نفسها تحتاج إعادة تصميم، لا أن المستخدم يحتاج شرحًا أكثر."});
 });
 
 app.get("/api/intelligence/experience-health", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

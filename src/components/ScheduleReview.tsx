@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardCheck, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton } from "./ui";
@@ -118,6 +119,33 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   const ringLength = 2 * Math.PI * 26;
 
   const byId = useMemo(() => new Map(rows.map(row => [row.id, row])), [rows]);
+
+  const printReview = React.useCallback(() => {
+    if (typeof window === "undefined") return;
+    flushSync(() => {});
+    const ua = navigator.userAgent || "";
+    const isWebKitSafari = /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(ua);
+    let leftForPrint = false;
+    let resumed = false;
+    const resume = () => {
+      if (resumed) return;
+      resumed = true;
+      window.removeEventListener("afterprint", resume);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") leftForPrint = true;
+      else if (leftForPrint) resume();
+    };
+    window.addEventListener("afterprint", resume, { once: true });
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    let invoked = false;
+    if (isWebKitSafari && typeof document.execCommand === "function") {
+      try { invoked = document.execCommand("print"); } catch { invoked = false; }
+    }
+    if (!invoked) window.print();
+    window.setTimeout(() => { if (!leftForPrint) resume(); }, 2500);
+  }, []);
   const describe = (row?: FSchedule) => {
     if (!row) return "";
     const days = DAY_KEYS.filter(key => (row as any)[key]).map(key => DAY_NAMES[DAY_KEYS.indexOf(key)]).join("، ");
@@ -126,12 +154,12 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     return `${code} · شعبة ${row.SCode} · ${who} · ${days || "بلا أيام"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`;
   };
 
-  const printRowPreviewLimit = 8;
-  const firstPrintPage = findings.slice(0, Math.min(findings.length, 4));
+  const printRowPreviewLimit = 5;
+  const firstPrintPage = findings.slice(0, Math.min(findings.length, 3));
   const remainingFindings = findings.slice(firstPrintPage.length);
   const printFollowupPages: RegulationFinding[][] = [];
-  for (let index = 0; index < remainingFindings.length; index += 5) {
-    printFollowupPages.push(remainingFindings.slice(index, index + 5));
+  for (let index = 0; index < remainingFindings.length; index += 4) {
+    printFollowupPages.push(remainingFindings.slice(index, index + 4));
   }
   const renderPrintFinding = (finding: RegulationFinding) => (
     <article className={`print-review-finding severity-${finding.severity}`} key={finding.rule}>
@@ -242,10 +270,17 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
         </div>
 
         <footer className="review-foot">
-          <PrimaryButton type="button" onClick={() => window.print()}>
-            <Printer />طباعة تقرير الاعتماد
+          <PrimaryButton
+            type="button"
+            className="review-print-icon-button"
+            data-guide-ignore="طباعة تقرير المراجعة لا تغيّر الجدول ولا تحتاج ميزة مستقلة"
+            onClick={printReview}
+            aria-label="طباعة تقرير الاعتماد"
+            title="طباعة تقرير الاعتماد"
+          >
+            <Printer aria-hidden="true" />
           </PrimaryButton>
-          <SecondaryButton type="button" onClick={onClose}>إغلاق</SecondaryButton>
+          <SecondaryButton type="button" className="review-close-icon-button" onClick={onClose} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></SecondaryButton>
         </footer>
       </section>
 

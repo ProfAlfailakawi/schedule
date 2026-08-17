@@ -488,6 +488,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   تعديل
                 </PrimaryButton>
                 <SecondaryButton
+                  data-guide-ignore="إجراء حذف حساس داخل شاشة الإدارة ويستخدم تأكيد الشاشة نفسه"
                   className="danger-action"
                   onClick={() => remove(selected.AdCourseId)}
                 >

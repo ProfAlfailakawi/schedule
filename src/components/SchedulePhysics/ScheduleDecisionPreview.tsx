@@ -69,7 +69,7 @@ export default function ScheduleDecisionPreview({ request, course, instructor, b
 
     <div className="decision-preview-actions">
       <button type="button" className="decision-cancel" onClick={onCancel} disabled={busy}><RotateCcw/>إلغاء وإرجاع</button>
-      <button type="button" className="decision-confirm" onClick={onConfirm} disabled={busy || decision?.quality === "impossible"}>{busy ? "جارٍ الحفظ…" : "تأكيد النقل"}</button>
+      <button type="button" data-guide-feature-id="schedule.action.move-room" className="decision-confirm" onClick={onConfirm} disabled={busy || decision?.quality === "impossible"}>{busy ? "جارٍ الحفظ…" : "تأكيد النقل"}</button>
     </div>
   </div>;
 }

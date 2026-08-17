@@ -38,6 +38,7 @@ import {
   Plus,
   Radio,
   Search,
+  ShieldCheck,
   Sparkles,
   Table2,
   UsersRound,
@@ -127,7 +128,7 @@ import { claimWarmStart } from "../utils/warmStart";
 import { pickHistoricalDayModel, type HistoricalTimeModel } from "../utils/advancedIntelligence";
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryGuide, telemetryOffline, telemetryTiming } from "../utils/clientTelemetry";
 import { canQueueScheduleMutation, enqueueScheduleMutation, flushOfflineScheduleQueue, offlineQueueCount, queuedPseudoResponse, setOfflineQueueOwner, subscribeOfflineQueue } from "../utils/offlineScheduleQueue";
-import { featureById, loadGuideProfile, masteryScore, recordFeatureUse } from "../guide/smartGuide";
+import { GUIDE_ACTIONS, allAllowedGuideFeatures, canRunGuideAction, featureById, loadGuideProfile, masteryScore, recordFeatureEvent, evaluateGuideFriction, classifyGuideReason, ensureGuideJourney, advanceGuideJourney, completeGuideJourney, failGuideJourney, type GuideCommand } from "../guide/smartGuide";
 /* The same six hues the stylesheet paints from, so a chip and the ring it
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
@@ -148,6 +149,8 @@ interface Props {
   mode: ScheduleMode;
   user: any;
   scopes?: any[];
+  permissions?: number[];
+  onNavigate?: (view:string) => void;
 }
 type EditorMode = "index" | "create" | "edit";
 type CreateSeed = { day?: DayKey; start?: string; end?: string; roomCode?: string; roomHall?: string };
@@ -377,7 +380,7 @@ function isPhoneDevice() {
   return shortEdge <= 600 && (mobileUa || coarse);
 }
 
-export default function Schedules({ mode, user, scopes = [] }: Props) {
+export default function Schedules({ mode, user, scopes = [], permissions = [], onNavigate }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
   /** Where a press began, so a drag is never mistaken for a tap. */
@@ -481,7 +484,35 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [contextCommentsOpen, setContextCommentsOpen] = useState(false);
   const rippleTimer = useRef<number | undefined>(undefined),
     rippleKey = useRef("");
+  const guideOperationRef = useRef<{ featureId:string; transactionId?:string; startedAt:number; task?:string; expected?:string } | null>(null);
+  const normalReviewTrackedRef = useRef(false);
+  const normalSearchTrackedRef = useRef<{query:string;startedAt:number;completed?:boolean} | null>(null);
+  const practiceSnapshotRef = useRef<FSchedule[] | null>(null);
+  const [practiceMode, setPracticeMode] = useState(false);
+  const [guideGhostDiff, setGuideGhostDiff] = useState<null | { before:FSchedule; after:FSchedule; conflicts:number; summary:string }>(null);
+  const emitGuideResult = useCallback((detail: { featureId:string; ok:boolean; signal?:string; final?:boolean; transactionId?:string; rollbackCommand?:GuideCommand; label?:string; retries?:number; stepCount?:number }) => {
+    const operation = guideOperationRef.current;
+    const startedAt = operation?.featureId === detail.featureId ? operation.startedAt : Date.now();
+    window.dispatchEvent(new CustomEvent("schedule-smart-guide-action-result", { detail: { ...detail, durationMs: Math.max(0, Date.now() - startedAt) } }));
+    if (detail.final !== false && operation?.featureId === detail.featureId) guideOperationRef.current = null;
+  }, []);
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
+  useEffect(() => {
+    if (!rows.length) return;
+    let request:any = null;
+    try { request = JSON.parse(sessionStorage.getItem("schedule-guide-ghost-preview") || "null"); } catch {}
+    if (!request || Date.now() - Number(request.createdAt || 0) > 10 * 60 * 1000) return;
+    try { sessionStorage.removeItem("schedule-guide-ghost-preview"); } catch {}
+    const before = rows.find(item => Number(item.id) === Number(request.id || request.before?.id || 0)) || request.before;
+    const after = request.after;
+    if (!before || !after) return;
+    const issues = findConflicts([after], rows.filter(item => Number(item.id) !== Number(before.id)));
+    setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر ${issues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تعارض في هذه المعاينة.` : "لا يظهر تعارض مانع في هذه المعاينة." });
+    setReviewFocus(new Set([Number(before.id)]));
+    changeView("week");
+  // one-shot handoff from «جرّب»; consumed once the real board is ready.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows.length]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const pointer = window.matchMedia("(pointer: coarse)");
@@ -1486,6 +1517,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     startTransition(() => setViewMode(next));
     setMobileViewGate(null);
   }, [phoneReadOnly]);
+  const guideViewStartedRef = useRef({ view:viewMode, at:Date.now() });
+  useEffect(() => {
+    if (guideViewStartedRef.current.view === viewMode) return;
+    const now = Date.now();
+    const featureId = viewMode === "rooms" ? "schedule.view.rooms" : viewMode === "week" ? "schedule.view.week" : "schedule.view.list";
+    recordFeatureEvent(Number(user?.SystemUserId || 0), featureId, "completed", { durationMs: Math.max(1, now - guideViewStartedRef.current.at), stepCount:1 });
+    guideViewStartedRef.current = { view:viewMode, at:now };
+  }, [user?.SystemUserId, viewMode]);
   const showMobileReadOnlyGate = useCallback(() => {
     if (!phoneReadOnly || viewMode === "list") return false;
     setMobileViewGate(viewMode === "week" ? "week" : "rooms");
@@ -2536,11 +2575,48 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     if (!englishDigits(form.SCode)) { setError("الرجاء كتابة الأرقام بالانجليزي"); return; }
     if (validationIssues.length) { setScheduleTouched(true); setError(validationIssues[0]); return; }
     if (blockingConflicts.length) { setError(blockingConflicts[0]?.message || "لا يمكن الحفظ قبل معالجة التعارضات."); return; }
+    if (practiceMode) {
+      const before = editor === "edit" ? rows.find((row) => row.id === editId) : null;
+      const practiceId = editor === "edit" ? Number(editId || 0) : -Math.max(1, Date.now() % 1_000_000_000);
+      const nextRow = { ...(before || blank()), ...form, id: practiceId, AdCourseName: courseById.get(form.AdCourseId)?.CourseName || before?.AdCourseName || "" } as FSchedule;
+      setRows(current => editor === "edit" ? current.map(item => item.id === practiceId ? nextRow : item) : [...current, nextRow].sort((a,b)=>a.id-b.id));
+      setMessage("تم تطبيق التغيير داخل «وضع تجربة» فقط. لم يتغير جدولك الحقيقي.");
+      setPhysicsNotice("تجربة آمنة · لا حفظ على الخادم");
+      if (guideOperationRef.current?.featureId === "schedule.practice") emitGuideResult({ featureId:"schedule.practice", ok:true, signal:"schedule.practice.changed" });
+      else recordFeatureEvent(Number(user?.SystemUserId || 0), "schedule.practice", "completed", { stepCount: 1 });
+      back();
+      return;
+    }
+    const saveStartedAt = Date.now();
+    const guideOpAtSave = guideOperationRef.current;
+    const trackedSaveFeatures:string[] = [];
     setSaving(true);
     try {
       const url =
         editor === "edit" ? `/api/schedules/${editId}` : "/api/schedules";
       const before = editor === "edit" ? rows.find((row) => row.id === editId) : null;
+      if (before) {
+        const dayChanged = days.some(dayItem => Boolean((before as any)[dayItem.key]) !== Boolean((form as any)[dayItem.key]));
+        const timeChanged = dayChanged || String(before.fstarttime || "") !== String(form.fstarttime || "") || String(before.fendtime || "") !== String(form.fendtime || "");
+        const instructorChanged = Number(before.AdInstructorId || 0) !== Number(form.AdInstructorId || 0);
+        const roomChanged = String(before.AdRoomCode || "") !== String(form.AdRoomCode || "") || String(before.AdRoomHall || "") !== String(form.AdRoomHall || "");
+        if (timeChanged) trackedSaveFeatures.push("schedule.action.change-time");
+        if (instructorChanged) trackedSaveFeatures.push("schedule.action.change-instructor");
+        if (roomChanged) trackedSaveFeatures.push("schedule.action.move-room");
+        trackedSaveFeatures.forEach(featureId => {
+          if (guideOpAtSave?.featureId === featureId) return;
+          const trackingUserId = Number(user?.SystemUserId || 0);
+          recordFeatureEvent(trackingUserId, featureId, "attempt");
+          recordFeatureEvent(trackingUserId, featureId, "started");
+          const journeyId = featureId === "schedule.action.change-time" ? "journey.schedule.change-time" : featureId === "schedule.action.change-instructor" ? "journey.schedule.change-instructor" : "journey.schedule.move-room";
+          ensureGuideJourney(trackingUserId, journeyId);
+          advanceGuideJourney(trackingUserId, journeyId, "schedule.row.selected");
+          advanceGuideJourney(trackingUserId, journeyId, "schedule.editor.open");
+          if (featureId === "schedule.action.change-time") advanceGuideJourney(trackingUserId, journeyId, "schedule.time.changed");
+          else if (featureId === "schedule.action.change-instructor") advanceGuideJourney(trackingUserId, journeyId, "schedule.instructor.changed");
+          else advanceGuideJourney(trackingUserId, journeyId, "schedule.move.destination.selected");
+        });
+      }
       const saved = await fetchJson(url, {
         method: editor === "edit" ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
@@ -2548,16 +2624,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         // rather than overwriting a change someone else made meanwhile.
         body: JSON.stringify({ ...form, rev: editor === "edit" ? rows.find(row => row.id === editId)?.rev : undefined }),
       });
+      let guideUndoId = "";
       if (editor === "edit" && before) {
         const { id: _id, AdCourseName: _name, ...previousValues } = before as any;
-        offerUndo(
+        guideUndoId = offerUndo(
           `تعديل ${before.AdCourseName || courseById.get(before.AdCourseId)?.CourseName || "موعد"}`,
           [{ method: "PUT", url: `/api/schedules/${editId}`, body: previousValues }],
         );
       } else if (editor !== "edit") {
         const createdId = Number(saved?.id || 0);
         if (createdId) {
-          offerUndo(
+          guideUndoId = offerUndo(
             `إضافة ${courseById.get(form.AdCourseId)?.CourseName || "موعد"}`,
             [{ method: "DELETE", url: `/api/schedules/${createdId}` }],
           );
@@ -2594,6 +2671,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       const queuedOffline = Boolean((saved as any)?.queuedOffline);
       setMessage(queuedOffline ? "حُفظ التعديل محلياً وسيُزامن عند عودة الاتصال." : (editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد"));
       setPhysicsNotice([queuedOffline ? "بانتظار المزامنة" : "", editorTimingNote || ""].filter(Boolean).join(" · "));
+      const guideOp = guideOperationRef.current;
+      trackedSaveFeatures.forEach(featureId => {
+        if (guideOp?.featureId === featureId) return;
+        const trackingUserId = Number(user?.SystemUserId || 0);
+        recordFeatureEvent(trackingUserId, featureId, "completed", { durationMs:Date.now()-saveStartedAt, stepCount:4, retries:0 });
+        const journeyId = featureId === "schedule.action.change-time" ? "journey.schedule.change-time" : featureId === "schedule.action.change-instructor" ? "journey.schedule.change-instructor" : "journey.schedule.move-room";
+        advanceGuideJourney(trackingUserId, journeyId, featureId === "schedule.action.move-room" ? "schedule.move.completed" : "schedule.edit.completed");
+        completeGuideJourney(trackingUserId, journeyId);
+      });
+      if (guideOp && (guideOp.featureId === "schedule.action.change-time" || guideOp.featureId === "schedule.action.change-instructor")) {
+        emitGuideResult({
+          featureId: guideOp.featureId,
+          ok: true,
+          signal: "schedule.edit.completed",
+          transactionId: guideOp.transactionId,
+          rollbackCommand: guideUndoId ? { scope:"schedule", type:"undoById", value:guideUndoId } : undefined,
+          label: editor === "edit" ? "تعديل المقرر" : "إضافة الموعد",
+          stepCount: 4,
+        });
+      }
       if (!queuedOffline && editor === "edit" && decisionEditQueue && decisionEditQueue.ids[decisionEditQueue.index] === Number(editId)) {
         const nextIndex = decisionEditQueue.index + 1;
         const nextId = decisionEditQueue.ids[nextIndex];
@@ -2613,6 +2710,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       }
       back();
     } catch (e: any) {
+      const guideOp = guideOperationRef.current;
+      trackedSaveFeatures.forEach(featureId => {
+        if (guideOp?.featureId === featureId) return;
+        const trackingUserId = Number(user?.SystemUserId || 0);
+        recordFeatureEvent(trackingUserId, featureId, "failed", { durationMs:Date.now()-saveStartedAt, stepCount:4, retries:1 });
+        const journeyId = featureId === "schedule.action.change-time" ? "journey.schedule.change-time" : featureId === "schedule.action.change-instructor" ? "journey.schedule.change-instructor" : "journey.schedule.move-room";
+        failGuideJourney(trackingUserId, journeyId, featureId === "schedule.action.move-room" ? "schedule.move.failed" : "schedule.edit.failed");
+      });
+      if (guideOp && (guideOp.featureId === "schedule.action.change-time" || guideOp.featureId === "schedule.action.change-instructor")) {
+        emitGuideResult({ featureId:guideOp.featureId, ok:false, signal:"schedule.edit.failed", transactionId:guideOp.transactionId });
+      }
       // The row moved on under this editor: hand back both versions instead of
       // flattening the refusal into a sentence.
       if (e?.revisionConflict) { setClash({ current: e.current, yours: e.yours }); return; }
@@ -2717,7 +2825,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   };
   const remove = async (id: number) => {
     if (showMobileReadOnlyGate()) return;
-    if (!window.confirm("هل أنت متأكد من حذف بيانات المقرر الدراسي؟")) return;
+    if (!window.confirm(practiceMode ? "حذف هذا الموعد من النسخة التجريبية فقط؟" : "هل أنت متأكد من حذف بيانات المقرر الدراسي؟")) return;
+    if (practiceMode) {
+      setRows(current => current.filter(item => item.id !== id));
+      setMessage("تم الحذف داخل «وضع تجربة» فقط. لم يتغير جدولك الحقيقي.");
+      if (guideOperationRef.current?.featureId === "schedule.practice") emitGuideResult({ featureId:"schedule.practice", ok:true, signal:"schedule.practice.changed" });
+      else recordFeatureEvent(Number(user?.SystemUserId || 0), "schedule.practice", "completed", { stepCount: 1 });
+      return;
+    }
     setError(null);
     const before = rows.find((row) => row.id === id);
     // The card leaves the board the moment the choice is confirmed; the network
@@ -3096,6 +3211,30 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       return;
     }
 
+    if (practiceMode) {
+      const patched = new Map(moves.map(move => [move.before.id, move.after]));
+      setRows(current => current.map(item => patched.get(item.id) || item));
+      markChanged(row.id);
+      leaveMoveTraces(moves);
+      setPhysicsNotice("وضع تجربة · النقل محلي ومؤقت");
+      setMessage("نجحت التجربة. لم يتغير جدولك الحقيقي.");
+      if (guideOperationRef.current?.featureId === "schedule.practice") emitGuideResult({ featureId:"schedule.practice", ok:true, signal:"schedule.practice.changed" });
+      else recordFeatureEvent(Number(user?.SystemUserId || 0), "schedule.practice", "completed", { stepCount: 1 });
+      return;
+    }
+
+    const moveStartedAt = Date.now();
+    const guideMoveActive = guideOperationRef.current?.featureId === "schedule.action.move-room";
+    const guideUserId = Number(user?.SystemUserId || 0);
+    recordFeatureEvent(guideUserId, "schedule.action.move-room", "attempt");
+    recordFeatureEvent(guideUserId, "schedule.action.move-room", "started");
+    if (!guideMoveActive) {
+      ensureGuideJourney(guideUserId, "journey.schedule.move-room");
+      advanceGuideJourney(guideUserId, "journey.schedule.move-room", "schedule.row.selected");
+      if (viewMode === "rooms") advanceGuideJourney(guideUserId, "journey.schedule.move-room", "schedule.view.rooms.active");
+      advanceGuideJourney(guideUserId, "journey.schedule.move-room", "schedule.move.destination.selected");
+      advanceGuideJourney(guideUserId, "journey.schedule.move-room", "schedule.move.verified");
+    }
     setSaving(true);
     setError(null);
     markPendingWrites(moves.map(move => move.before.id), true);
@@ -3183,7 +3322,24 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           const confirmed = new Map<number, FSchedule>(outcome.rows.map((item: FSchedule) => [item.id, item]));
           setRows(current => current.map(item => confirmed.get(item.id) || item));
         }
-        recordFeatureUse(Number(user?.SystemUserId || 0), "schedule.action.move-room", "success");
+        const guideOp = guideOperationRef.current;
+        if (guideOp?.featureId === "schedule.action.move-room") {
+          emitGuideResult({
+            featureId:"schedule.action.move-room",
+            ok:true,
+            signal:"schedule.move.completed",
+            transactionId:guideOp.transactionId,
+            rollbackCommand:undoId ? { scope:"schedule", type:"undoById", value:undoId } : undefined,
+            label:moves.length > 1 ? "نقل جماعي" : "نقل المقرر",
+            stepCount:5,
+          });
+        } else {
+          recordFeatureEvent(guideUserId, "schedule.action.move-room", "completed", { durationMs:Date.now()-moveStartedAt, stepCount:5, retries:0 });
+          if (!guideMoveActive) {
+            advanceGuideJourney(guideUserId, "journey.schedule.move-room", "schedule.move.completed");
+            completeGuideJourney(guideUserId, "journey.schedule.move-room");
+          }
+        }
       } catch (refusal) {
         // Nothing was written — put the grid back, and take back the optimistic
         // marker and undo so a refused move leaves no trace of having happened.
@@ -3204,8 +3360,13 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         throw refusal;
       }
     } catch (e: any) {
-      recordFeatureUse(Number(user?.SystemUserId || 0), "schedule.action.move-room", "failure");
-      telemetryGuide("تعثر · نقل مقرر بين القاعات");
+      const guideOp = guideOperationRef.current;
+      if (guideOp?.featureId === "schedule.action.move-room") emitGuideResult({ featureId:"schedule.action.move-room", ok:false, signal:"schedule.move.failed", transactionId:guideOp.transactionId });
+      else {
+        recordFeatureEvent(guideUserId, "schedule.action.move-room", "failed", { durationMs:Date.now()-moveStartedAt, stepCount:5, retries:Math.max(0,guideFailureTimesRef.current.length) });
+        if (!guideMoveActive) failGuideJourney(guideUserId, "journey.schedule.move-room", "schedule.move.failed");
+      }
+      telemetryGuide("journey|schedule.action.move-room|5|commit|failed");
       // A refusal to overwrite is a decision to hand back, not a message to show.
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
       else {
@@ -5226,6 +5387,38 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       { id: "hue.reset", group: "العرض", label: "إظهار كل الطبقات", keywords: ["reset", "اظهار", "طبقات"], icon: <Eye />, enabled: hueHidden.size > 0 || hueFocus.size > 0, execute: () => { setHueHidden(new Set()); setHueFocus(new Set()); } },
       { id: "views.save", group: "العروض المحفوظة", label: "حفظ العرض الحالي", keywords: ["save", "view", "حفظ", "عرض"], icon: <Bookmark />, execute: () => setViewDialog({ mode: "create" }) },
     ];
+    const guideRoot = Boolean(user?.IsRootAdmin || user?.SystemUserId === 1);
+    const guideSession = { permissions, root: guideRoot, admin: isPowerAdmin };
+    const paletteCovered = new Set(["schedule.view.list","schedule.view.week","schedule.view.rooms","schedule.tool.review"]);
+    const allowedRegistry = allAllowedGuideFeatures(permissions, guideRoot, isPowerAdmin);
+    allowedRegistry.forEach(feature => {
+      const action = GUIDE_ACTIONS.find(item => item.featureId === feature.id) || null;
+      if (action && !canRunGuideAction(action, guideSession)) return;
+      if (feature.view === "schedules" && action && !paletteCovered.has(feature.id) && action.risk !== "sensitive") {
+        const command = action.prepare || action.command;
+        if (command) {
+          const needsSelection=["schedule.action.change-time","schedule.action.change-instructor","schedule.action.find-room"].includes(feature.id);
+          list.push({
+            id:`guide.${feature.id}`,
+            group:"المرشد",
+            label:feature.title,
+            keywords:[...feature.keywords,"مرشد","كيف"],
+            icon:<Sparkles />,
+            enabled:needsSelection ? Boolean(context?.selected?.id) : true,
+            execute:()=>window.dispatchEvent(new CustomEvent("schedule-smart-guide-command",{detail:{...command,featureId:feature.id}})),
+          });
+        }
+      } else if (feature.view && feature.view !== "schedules" && onNavigate && feature.id.startsWith("page.")) {
+        list.push({
+          id:`guide.navigate.${feature.id}`,
+          group:"وجهات المرشد",
+          label:`فتح ${feature.title}`,
+          keywords:[...feature.keywords,"افتح","انتقل","كيف"],
+          icon:<Sparkles />,
+          execute:()=>onNavigate(feature.view!),
+        });
+      }
+    });
     if (activeView) {
       list.push(
         { id: "views.update", group: "العروض المحفوظة", label: `تحديث «${activeView.name}»`, keywords: ["update", "تحديث"], icon: <Bookmark />, enabled: viewDirty, execute: () => { viewsStore.update(activeView.id, captureView(activeView.name)); setSavedViews(viewsStore.list()); setMessage("حُدِّث العرض"); } },
@@ -5251,7 +5444,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       if (phoneReadOnly && (phoneWrites.has(command.id) || phoneHiddenViews.has(command.id))) return { ...command, visible: false };
       return isPowerAdmin || !writes.has(command.id) ? command : { ...command, visible: false };
     });
-  }, [viewMode, todayKey, picking, pendingUndo, liveClash, focusMode, presentationMode, hueBy, hueHidden, hueFocus, savedViews, activeView, viewDirty, isPowerAdmin, phoneReadOnly, changeView, applyView, captureView, viewsStore]);
+  }, [viewMode, todayKey, picking, pendingUndo, liveClash, focusMode, presentationMode, hueBy, hueHidden, hueFocus, savedViews, activeView, viewDirty, isPowerAdmin, phoneReadOnly, context?.selected?.id, changeView, applyView, captureView, viewsStore, permissions, onNavigate, user?.IsRootAdmin, user?.SystemUserId]);
 
   /**
    * ── One keyboard, one place ───────────────────────────────────────────────
@@ -5631,8 +5824,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       </div>
     </Surface>
   );
-  if (mode === "copy")
-    return (
+  const copyView = (
       <div className="content-stack copy-page">
 <PageTitle
           eyebrow="أداة إدارية ذكية"
@@ -5817,8 +6009,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         </Surface>
       </div>
     );
-  if (editor !== "index")
-    return (
+  const editorView = (
       <div className="content-stack editor-page schedule-editor">
         {/* The way out, at the top where the eye already is. The only exit used
             to be a button at the far end of a four-section form, below the fold
@@ -6138,7 +6329,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         {roomOwner.share}٪ من حجوزاتها المسجلة لهذا القسم. يمكنك المتابعة إذا كان الحجز متفقاً عليه.
                       </span>
                     </div>
-                    <button type="button" onClick={() => setForm(p => ({ ...p, AdRoomCode: "", AdRoomHall: "" }))}>
+                    <button type="button" data-guide-feature-id="schedule.action.move-room" onClick={() => setForm(p => ({ ...p, AdRoomCode: "", AdRoomHall: "" }))}>
                       تغيير القاعة
                     </button>
                   </div>
@@ -6249,12 +6440,22 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             </div>
             {conflicts.length ? (
               <div className="conflict-list conflict-infographic">
-                {conflicts.slice(0, 4).map((c, i) => (
-                  <article key={`${c.type}-${c.rowId}-${i}`}>
-                    <span className="conflict-type-icon">{c.type === "room" || c.type === "roomScope" ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <AlertTriangle />}</span>
-                    <div><small>{c.type === "room" ? "تعارض قاعة" : c.type === "instructor" ? "تعارض أستاذ" : c.type === "roomScope" ? "نطاق القاعة" : "تكرار"}</small><strong>{c.message}</strong><span title={String(c.detail || "")}>{String(c.detail || "").replace(/\s+/g, " ").trim().slice(0, 66)}</span></div>
-                  </article>
-                ))}
+                {conflicts.slice(0, 4).map((c, i) => {
+                  const isScope = c.type === "roomScope";
+                  const typeLabel = c.type === "room" ? "تعارض قاعة" : c.type === "instructor" ? "تعارض أستاذ" : isScope ? "نطاق القاعة" : "تكرار";
+                  const toneClass = isScope ? "tone-scope" : c.type === "duplicate" ? "tone-warn" : "tone-danger";
+                  return (
+                    <article key={`${c.type}-${c.rowId}-${i}`} className={toneClass}>
+                      <span className="conflict-type-icon">{c.type === "room" || isScope ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <AlertTriangle />}</span>
+                      <div>
+                        <small>{typeLabel}</small>
+                        <strong>{c.message}</strong>
+                        <span title={String(c.detail || "")}>{String(c.detail || "").replace(/\s+/g, " ").trim().slice(0, 88)}</span>
+                      </div>
+                      <em>{isScope ? "تنبيه" : "مانع"}</em>
+                    </article>
+                  );
+                })}
                 {conflicts.length > 4 ? <details className="conflict-more"><summary>عرض {conflicts.length - 4} ملاحظات إضافية</summary>{conflicts.slice(4).map((c,i)=><p key={i}>{c.message}</p>)}</details> : null}
               </div>
             ) : (
@@ -6401,17 +6602,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const profile = loadGuideProfile(Number(user?.SystemUserId || 0));
     const moveFeature = featureById("schedule.action.move-room");
     const moveLike = /تعارض|موضع|قاعة|أستاذ|نقل|السحب|الوقت/.test(error);
-    const expert = moveLike && moveFeature ? masteryScore(profile, moveFeature) >= .72 : false;
-    const threshold = expert ? 3 : 2;
-    if (guideFailureTimesRef.current.length < threshold) return;
+    const feature = moveLike ? moveFeature || null : null;
+    const failureCount = guideFailureTimesRef.current.length;
+    const baseline = profile.mastery?.["schedule.action.move-room"]?.baseline;
+    const retryBaseline = Number(baseline?.averageRetries || 0);
+    const unusualRetry = moveLike && failureCount >= Math.max(2, Math.ceil(retryBaseline + 2));
+    const friction = evaluateGuideFriction(profile, feature, [
+      { type:"validation-repetition", count:failureCount, weight:1.35, knownFailure:/تعارض|تعذر|لا يمكن/.test(error) },
+      ...(moveLike ? [{ type:"journey-failure", count:Math.max(1,failureCount-1), weight:1.2, knownFailure:true }] : []),
+      ...(unusualRetry ? [{ type:"personal-baseline-anomaly", count:1, weight:2.1, knownFailure:true }] : []),
+    ]);
+    if (friction.confidence === "low") return;
+    const reason = classifyGuideReason({ mastery:friction.mastery, blocked:true, anomaly:failureCount >= (friction.mastery >= .72 ? 3 : 2) });
+    const expertAnomaly = friction.mastery >= .72 && failureCount >= 3;
     setGuideDetectedHelp({
       key: moveLike ? "schedule.move.repeated-failure" : "schedule.repeated-error",
       featureId: moveLike ? "schedule.action.move-room" : undefined,
-      title: expert ? "هذه العملية لا تسير كالمعتاد" : "تكررت المشكلة في هذه الخطوة",
+      title: expertAnomaly ? "هذه العملية لا تسير كالمعتاد" : reason === "BLOCKED" ? "هناك ما يمنع إكمال هذه الخطوة" : "تكررت المشكلة في هذه الخطوة",
       detail: error,
-      level: "strong",
+      level: friction.confidence === "high" ? "strong" : "soft",
     });
-    telemetryGuide(moveLike ? "تعثر متكرر · نقل مقرر" : "تعثر متكرر · الجدول");
+    telemetryGuide(`${moveLike ? "نقل مقرر" : "الجدول"}|${friction.confidence}|${reason}`);
   }, [error, user?.SystemUserId]);
   useEffect(() => {
     if (!mobileViewGate) return;
@@ -6522,18 +6733,28 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     const onGuideCommand = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (detail.scope && detail.scope !== "schedule") return;
+      const declaredFeatureId = String(detail.featureId || "");
+      const rememberGuideOperation = (featureId:string, expected?:string) => {
+        if (!featureId) return;
+        guideOperationRef.current = { featureId, transactionId: detail.transactionId ? String(detail.transactionId) : undefined, startedAt: Date.now(), task: String(detail.task || ""), expected };
+      };
       if (detail.type === "changeView" && detail.value) {
+        const featureId = declaredFeatureId || (detail.value === "rooms" ? "schedule.view.rooms" : detail.value === "week" ? "schedule.view.week" : "schedule.view.list");
+        rememberGuideOperation(featureId, `view:${String(detail.value)}`);
         changeView(String(detail.value));
         return;
       }
       if (detail.type === "openReview") {
+        rememberGuideOperation(declaredFeatureId || "schedule.tool.review", "review");
         setWorkspaceToolsOpen(true);
         setReviewOpen(true);
         return;
       }
       if (detail.type === "openTransfer") {
+        rememberGuideOperation(declaredFeatureId || "schedule.tool.data", "transfer");
         setWorkspaceToolsOpen(true);
         if (!showMobileReadOnlyGate()) setTransferOpen(true);
+        else emitGuideResult({ featureId:declaredFeatureId || "schedule.tool.data", ok:false, signal:"schedule.transfer.blocked", transactionId:detail.transactionId });
         return;
       }
       if (detail.type === "showTarget") {
@@ -6549,12 +6770,17 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         return;
       }
       if (detail.type === "openEditSelected") {
+        const featureId = declaredFeatureId || (detail.task === "instructor" ? "schedule.action.change-instructor" : "schedule.action.change-time");
+        rememberGuideOperation(featureId, "editor");
         const id = Number(detail.value || context?.selected?.id || 0);
         const row = rows.find(item => Number(item.id) === id);
         if (row) {
           openEdit(row);
           setMessage(detail.task === "instructor" ? "تم فتح المقرر المحدد. اختر الأستاذ الجديد ثم راجع التعارضات قبل الحفظ." : "تم فتح المقرر المحدد. عدّل الوقت ثم راجع النتيجة قبل الحفظ.");
-        } else setMessage("حدد مقررًا أولًا، ثم أعد طلب المساعدة.");
+        } else {
+          setMessage("حدد مقررًا أولًا، ثم أعد طلب المساعدة.");
+          emitGuideResult({ featureId, ok:false, signal:"schedule.editor.no-selection", transactionId:detail.transactionId });
+        }
         return;
       }
       if (detail.type === "focusRow" && detail.value) {
@@ -6580,19 +6806,29 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         return;
       }
       if (detail.type === "findAlternativeSelected") {
+        rememberGuideOperation(declaredFeatureId || "schedule.action.find-room", "alternatives");
         const id = Number(detail.value || context?.selected?.id || 0);
         const row = rows.find(item => Number(item.id) === id);
         changeView("rooms");
-        if (!row) { setMessage("تم فتح المباني والقاعات. حدد مقررًا لأبحث عن البدائل المناسبة له."); return; }
+        if (!row) {
+          setMessage("تم فتح المباني والقاعات. حدد مقررًا لأبحث عن البدائل المناسبة له.");
+          emitGuideResult({ featureId:"schedule.action.find-room", ok:false, signal:"schedule.alternatives.no-selection", transactionId:detail.transactionId });
+          return;
+        }
         setReviewFocus(new Set([id]));
         try {
           const chain = findRepairChain(row, rows);
           if (chain) { setRepairReason("بدائل مناسبة لهذا المقرر"); setRepair(chain); }
           else setMessage("لم أجد بديلًا مباشرًا دون إنشاء تعارض جديد. يمكنك مقارنة القاعات الظاهرة يدويًا دون تغيير الجدول.");
-        } catch { setMessage("تعذر تجهيز البدائل تلقائيًا؛ لم يتغير شيء في الجدول."); }
+          emitGuideResult({ featureId:"schedule.action.find-room", ok:true, signal:"schedule.alternatives.ready", transactionId:detail.transactionId, stepCount:2 });
+        } catch {
+          setMessage("تعذر تجهيز البدائل تلقائيًا؛ لم يتغير شيء في الجدول.");
+          emitGuideResult({ featureId:"schedule.action.find-room", ok:false, signal:"schedule.alternatives.failed", transactionId:detail.transactionId });
+        }
         return;
       }
       if (detail.type === "assistMoveRoom") {
+        rememberGuideOperation(declaredFeatureId || "schedule.action.move-room", "move-prepared");
         const id = Number(detail.value || context?.selected?.id || 0);
         changeView("rooms");
         if (id) {
@@ -6606,6 +6842,50 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           }
         }
         setMessage(id ? "تم تجهيز عرض المباني والقاعات وإبراز المقرر. اختر الوجهة المناسبة؛ لن يُعتمد أي تغيير قبل حركتك الفعلية." : "تم فتح عرض المباني والقاعات. حدّد المقرر المطلوب وسأبقى معك أثناء النقل.");
+        emitGuideResult({ featureId:"schedule.action.move-room", ok:true, signal:"schedule.move.prepared", final:false, transactionId:detail.transactionId, stepCount:2 });
+        return;
+      }
+      if (detail.type === "undoById" && detail.value) {
+        const entry = undoLog.find(item => item.id === String(detail.value) && !item.usedAt);
+        if (entry) void runUndoEntry(entry);
+        return;
+      }
+      if (detail.type === "practice.start") {
+        if (!practiceMode) {
+          practiceSnapshotRef.current = rows.map(item => ({ ...item }));
+          setPracticeMode(true);
+          setMessage("وضع تجربة مفعّل. يمكنك السحب والتعديل والحذف دون تغيير الجدول الحقيقي.");
+        }
+        rememberGuideOperation(declaredFeatureId || "schedule.practice", "practice");
+        window.setTimeout(() => emitGuideResult({ featureId:"schedule.practice", ok:true, signal:"schedule.practice.active", transactionId:detail.transactionId, rollbackCommand:{scope:"schedule",type:"practice.stop"}, label:"تجربة آمنة" }), 0);
+        return;
+      }
+      if (detail.type === "practice.stop") {
+        if (practiceSnapshotRef.current) setRows(practiceSnapshotRef.current.map(item => ({ ...item })));
+        practiceSnapshotRef.current = null;
+        setPracticeMode(false);
+        setGuideGhostDiff(null);
+        setMessage("انتهى وضع التجربة. لم يتغير جدولك الحقيقي.");
+        return;
+      }
+      if (detail.type === "previewSimulation" && detail.payload) {
+        const id = Number(detail.payload.id || context?.selected?.id || 0);
+        const before = rows.find(item => Number(item.id) === id);
+        if (!before) { setMessage("حدد مقررًا أولًا لمعاينة التغيير."); return; }
+        const after:any = { ...before };
+        if (detail.payload.day) days.forEach(dayItem => { after[dayItem.key] = dayItem.key === detail.payload.day; });
+        if (detail.payload.time) {
+          const duration = Math.max(30, mins(before.fendtime) - mins(before.fstarttime));
+          after.fstarttime = String(detail.payload.time);
+          after.fendtime = timeFromMins(mins(after.fstarttime) + duration);
+        }
+        if (detail.payload.roomCode) after.AdRoomCode = String(detail.payload.roomCode);
+        if (detail.payload.roomHall) after.AdRoomHall = String(detail.payload.roomHall);
+        if (detail.payload.instructorId) after.AdInstructorId = Number(detail.payload.instructorId);
+        const issues = findConflicts([after], rows.filter(item => item.id !== before.id));
+        setGuideGhostDiff({ before, after, conflicts:issues.length, summary:issues.length ? `ستظهر ${issues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تعارض في هذه المعاينة.` : "لا يظهر تعارض مانع في هذه المعاينة." });
+        setReviewFocus(new Set([id]));
+        changeView("week");
         return;
       }
       if (detail.type === "demo" && detail.task === "move-room") {
@@ -6620,7 +6900,69 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     };
     window.addEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
     return () => window.removeEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
-  }, [changeView, context?.selected?.id, rows, showMobileReadOnlyGate, viewMode]);
+  }, [changeView, context?.selected?.id, emitGuideResult, practiceMode, rows, showMobileReadOnlyGate, undoLog, viewMode]);
+  useEffect(() => {
+    const op = guideOperationRef.current;
+    if (!op?.expected?.startsWith("view:")) return;
+    const expected = op.expected.slice(5);
+    if (viewMode !== expected) return;
+    emitGuideResult({ featureId:op.featureId, ok:true, signal:`schedule.view.${expected}.active`, transactionId:op.transactionId, stepCount:1 });
+  }, [emitGuideResult, viewMode]);
+  useEffect(() => {
+    const op = guideOperationRef.current;
+    if (op?.expected === "review" && reviewOpen) emitGuideResult({ featureId:op.featureId, ok:true, signal:"schedule.review.open", transactionId:op.transactionId, stepCount:1 });
+  }, [emitGuideResult, reviewOpen]);
+  useEffect(() => {
+    if (!reviewOpen) { normalReviewTrackedRef.current = false; return; }
+    const op = guideOperationRef.current;
+    if (op?.expected === "review" || normalReviewTrackedRef.current) return;
+    normalReviewTrackedRef.current = true;
+    const trackingUserId = Number(user?.SystemUserId || 0);
+    recordFeatureEvent(trackingUserId, "schedule.tool.review", "attempt");
+    recordFeatureEvent(trackingUserId, "schedule.tool.review", "started");
+    ensureGuideJourney(trackingUserId, "journey.schedule.review");
+    advanceGuideJourney(trackingUserId, "journey.schedule.review", "schedule.review.open");
+    recordFeatureEvent(trackingUserId, "schedule.tool.review", "completed", { stepCount:1, retries:0 });
+    completeGuideJourney(trackingUserId, "journey.schedule.review");
+  }, [reviewOpen, user?.SystemUserId]);
+  useEffect(() => {
+    const q = quickSearch.trim();
+    if (!q) { normalSearchTrackedRef.current = null; return; }
+    const trackingUserId = Number(user?.SystemUserId || 0);
+    let state = normalSearchTrackedRef.current;
+    if (!state || state.query !== q) {
+      state = { query:q, startedAt:Date.now(), completed:false };
+      normalSearchTrackedRef.current = state;
+      recordFeatureEvent(trackingUserId, "schedule.search.quick", "attempt");
+      recordFeatureEvent(trackingUserId, "schedule.search.quick", "started");
+      ensureGuideJourney(trackingUserId, "journey.schedule.search");
+      advanceGuideJourney(trackingUserId, "journey.schedule.search", "schedule.search.query");
+    }
+    if (filteredRows.length > 0 && !state.completed) {
+      advanceGuideJourney(trackingUserId, "journey.schedule.search", "schedule.search.result");
+      recordFeatureEvent(trackingUserId, "schedule.search.quick", "completed", { durationMs:Date.now()-state.startedAt, stepCount:2, retries:0 });
+      completeGuideJourney(trackingUserId, "journey.schedule.search");
+      normalSearchTrackedRef.current = { ...state, completed:true };
+    }
+  }, [filteredRows.length, quickSearch, user?.SystemUserId]);
+  useEffect(() => {
+    const op = guideOperationRef.current;
+    if (op?.expected === "transfer" && transferOpen) emitGuideResult({ featureId:op.featureId, ok:true, signal:"schedule.transfer.open", transactionId:op.transactionId, stepCount:1 });
+  }, [emitGuideResult, transferOpen]);
+  useEffect(() => {
+    const op = guideOperationRef.current;
+    if (op?.expected !== "editor" || editor === "index") return;
+    emitGuideResult({ featureId:op.featureId, ok:true, signal:"schedule.editor.open", final:false, transactionId:op.transactionId, stepCount:2 });
+  }, [editor, emitGuideResult]);
+
+  /* Keep every hook above every mode-specific return. React #300 was caused by
+     create/edit (and copy) returning before the guide hooks below had a chance
+     to run, so switching from the index to the editor changed the hook count.
+     The views are prepared earlier, but selected only after the hook list is
+     complete. */
+  if (mode === "copy") return copyView;
+  if (editor !== "index") return editorView;
+
   return (
     <div className={`content-stack schedule-page ${phoneReadOnly ? "schedule-phone" : ""}`.trim()}>
       <PageTitle
@@ -6630,6 +6972,25 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       >
         الجدول الدراسي
       </PageTitle>
+      {practiceMode ? (
+        <div className="schedule-practice-strip no-print" data-guide-target="schedule.practice" role="status">
+          <ShieldCheck aria-hidden="true" />
+          <span><strong>وضع تجربة</strong><small>كل تغيير مؤقت على هذا الجهاز فقط.</small></span>
+          <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail:{ scope:"schedule", type:"practice.stop", featureId:"schedule.practice" } }))}>إنهاء</button>
+        </div>
+      ) : null}
+      {guideGhostDiff ? (
+        <section className="schedule-guide-ghost-diff no-print" aria-label="معاينة التغيير دون حفظ">
+          <header><Eye aria-hidden="true" /><div><small>معاينة فقط</small><strong>{guideGhostDiff.before.AdCourseName || "المقرر المحدد"}</strong></div><button type="button" onClick={() => setGuideGhostDiff(null)} aria-label="إلغاء المعاينة"><X /></button></header>
+          <div className="schedule-guide-ghost-flow">
+            <span><small>قبل</small><b>{arabicDays(guideGhostDiff.before)} · {guideGhostDiff.before.fstarttime}</b><em>{[guideGhostDiff.before.AdRoomCode,guideGhostDiff.before.AdRoomHall].filter(Boolean).join("/")}</em></span>
+            <ChevronLeft aria-hidden="true" />
+            <span className="after"><small>بعد</small><b>{arabicDays(guideGhostDiff.after)} · {guideGhostDiff.after.fstarttime}</b><em>{[guideGhostDiff.after.AdRoomCode,guideGhostDiff.after.AdRoomHall].filter(Boolean).join("/")}</em></span>
+          </div>
+          <p className={guideGhostDiff.conflicts ? "warn" : "ok"}>{guideGhostDiff.summary}</p>
+          <footer><button type="button" onClick={() => setGuideGhostDiff(null)}>إلغاء</button><button type="button" data-guide-ignore="اعتماد يدوي من معاينة شبحية يفتح المحرر ولا يحفظ تلقائيًا" className="primary" onClick={() => { setGuideGhostDiff(null); const row=rows.find(item=>item.id===guideGhostDiff.before.id); if(row) openEdit(row); }}>اعتماد يدوي</button></footer>
+        </section>
+      ) : null}
       {historicalChoice ? (
         <div className="historical-time-backdrop no-print" role="dialog" aria-modal="true" aria-label="تنبيه التوقيت التاريخي">
           <section className="historical-time-dialog">
@@ -7613,6 +7974,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </span>
               {(workspaceToolsOpen || picking || multiSelect.size > 0) ? <button
                 type="button"
+                data-guide-feature-id="schedule.action.move-room"
                 className={`week-pick-toggle ${picking ? "on" : ""}`}
                 onClick={() => { setPicking(v => !v); setMultiSelect(new Set()); }}
                 title="اختر أكثر من موعد ثم انقلها كلها بسحبة واحدة"

@@ -1178,7 +1178,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .schedule-editor-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,.5fr);gap:var(--s5)}
 .schedule-editor .form-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:var(--s5) var(--s4)}
 .schedule-editor .conflict-panel{position:sticky;top:var(--s5)}
-.schedule-form-sections{display:flex;flex-direction:column;gap:var(--s7)}
+.schedule-form-sections{display:flex;flex-direction:column;gap:var(--s7);margin-top:var(--s2)}
 .schedule-form-section{display:flex;flex-direction:column;gap:var(--s5)}
 .schedule-form-section>.surface-kicker{margin-bottom:0}
 .schedule-form-section>header{
@@ -1197,6 +1197,23 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .schedule-form-section>header strong{display:block;font-size:var(--t-h3);font-weight:600;line-height:1.35}
 .schedule-form-section>header small,
 .schedule-form-section>header p{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.5}
+.schedule-editor .field input[type="time"]{
+  min-width:0;max-width:100%;inline-size:100%;padding-inline:14px;
+  text-align:center;direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;
+}
+.schedule-editor .field input[type="time"]::-webkit-date-and-time-value{
+  text-align:center;
+}
+.schedule-editor .field input[type="time"]::-webkit-datetime-edit,
+.schedule-editor .field input[type="time"]::-webkit-datetime-edit-fields-wrapper{
+  display:flex;align-items:center;justify-content:center;min-width:0;max-width:100%;padding:0;
+}
+.schedule-editor .field input[type="time"]::-webkit-datetime-edit-hour-field,
+.schedule-editor .field input[type="time"]::-webkit-datetime-edit-minute-field,
+.schedule-editor .field input[type="time"]::-webkit-datetime-edit-ampm-field,
+.schedule-editor .field input[type="time"]::-webkit-datetime-edit-text{
+  padding:0 1px;
+}
 
 /* --- Editor side panel -----------------------------------------------------
    The live check is the second most important thing on this screen after the
@@ -5262,17 +5279,31 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 /* Save blockers are a decision infographic, not a wall of diagnostic prose. */
 .conflict-list.conflict-infographic{display:grid;gap:10px}
 .conflict-infographic article{
-  display:grid!important;grid-template-columns:42px minmax(0,1fr)!important;align-items:start!important;gap:12px!important;
-  padding:13px 14px!important;border-radius:18px!important;min-height:0!important;
-  background:linear-gradient(180deg,color-mix(in srgb,currentColor 3%,var(--surface)),var(--surface))!important;
-  box-shadow:0 8px 18px color-mix(in srgb,var(--ink) 3%,transparent);
+  position:relative;display:grid!important;grid-template-columns:42px minmax(0,1fr) auto!important;align-items:start!important;gap:12px!important;
+  padding:14px!important;border-radius:20px!important;min-height:0!important;
+  border:1px solid color-mix(in srgb,currentColor 18%,var(--line))!important;
+  background:linear-gradient(180deg,color-mix(in srgb,currentColor 4%,var(--surface)),var(--surface))!important;
+  box-shadow:0 10px 24px color-mix(in srgb,var(--ink) 4%,transparent);
 }
+.conflict-infographic article::before{
+  content:"";position:absolute;inset-inline:14px;top:0;height:3px;border-radius:0 0 999px 999px;background:color-mix(in srgb,currentColor 26%,transparent);
+}
+.conflict-infographic article.tone-danger{color:var(--danger)}
+.conflict-infographic article.tone-warn{color:var(--warning)}
+.conflict-infographic article.tone-scope{color:var(--brass)}
 .conflict-infographic .conflict-type-icon{
-  display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:color-mix(in srgb,currentColor 8%,var(--surface));
+  display:grid;place-items:center;width:42px;height:42px;border-radius:14px;background:color-mix(in srgb,currentColor 10%,var(--surface));
 }
 .conflict-infographic .conflict-type-icon svg{width:20px;height:20px}
-.conflict-infographic article>div{min-width:0}.conflict-infographic article strong{display:block;font-size:.88rem;line-height:1.42}
-.conflict-infographic article p{margin:4px 0 0!important;color:var(--muted);font-size:.78rem;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.conflict-infographic article>div{min-width:0;display:grid;gap:4px}
+.conflict-infographic article>div small{display:inline-flex;align-items:center;gap:6px;margin:0;color:color-mix(in srgb,currentColor 80%,var(--muted));font-size:.68rem;font-weight:800;letter-spacing:.02em}
+.conflict-infographic article>div small::before{content:"";width:7px;height:7px;border-radius:999px;background:currentColor;opacity:.55}
+.conflict-infographic article strong{display:block;font-size:.9rem;line-height:1.45;color:var(--ink)}
+.conflict-infographic article>div>span{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin:0;color:var(--muted);font-size:.76rem;line-height:1.62}
+.conflict-infographic article>em{
+  align-self:start;font-style:normal;font-size:.68rem;font-weight:800;letter-spacing:.01em;color:color-mix(in srgb,currentColor 78%,var(--muted));
+  background:color-mix(in srgb,currentColor 9%,var(--surface));border:1px solid color-mix(in srgb,currentColor 16%,var(--line));border-radius:999px;padding:5px 9px;white-space:nowrap;
+}
 .conflict-infographic .conflict-more{grid-column:1/-1;margin-top:2px;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent);padding-top:8px}
 
 /* The context reason card only answers the decision at a glance; full prose is
@@ -5290,9 +5321,9 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .historical-time-close svg{width:17px;height:17px}
 @media(max-width:720px){
   .filter-strip{min-height:0;contain:none}.field-label-line{align-items:flex-start}.field-inline-hint{white-space:normal;max-width:100%}
-  .conflict-infographic article{grid-template-columns:38px minmax(0,1fr)!important;padding:12px!important}.conflict-infographic .conflict-type-icon{width:38px;height:38px}
+  .conflict-infographic article{grid-template-columns:38px minmax(0,1fr)!important;padding:12px!important}.conflict-infographic .conflict-type-icon{width:38px;height:38px}.conflict-infographic article>em{grid-column:2/-1;justify-self:start}
 }
-.conflict-infographic article>div>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;color:var(--muted);font-size:.73rem;line-height:1.55}.conflict-infographic article strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.regulation-advice-tile{min-height:108px}
+.conflict-infographic article strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.regulation-advice-tile{min-height:92px}
 
 /* باب صغير إلى المرشد بجوار الخطأ؛ لا يعيد زر المساعدة العام القديم. */
 .inline-guide-explain{margin-inline-start:10px;border:0;background:transparent;color:var(--accent);font:inherit;font-weight:700;text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:3px;padding:2px 4px}

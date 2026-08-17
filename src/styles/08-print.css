@@ -1726,3 +1726,45 @@
 .print-review-findings--followup{margin-top:2px}
 .print-review-page .print-signatures{margin-top:auto}
 .print-review-page .print-signatures span{font-size:9px}
+
+/* ========================================================================== 
+   FINAL — approval review: one logical page = one physical A4 page
+   --------------------------------------------------------------------------
+   The generic explicit-page rules combine fixed page boxes with a sibling
+   `break-before`. In Chromium/WebKit that can reserve an empty page between two
+   portrait review pages. The approval report owns its A4 boxes explicitly and
+   advances with `break-after` only, so there is no phantom sheet between pages.
+   ========================================================================== */
+@media print{
+  body .print-report.print-review-report.print-upright{
+    page:upright !important;
+    width:auto !important;max-width:none !important;
+    margin:0 !important;padding:0 !important;
+  }
+  body .print-report.print-review-report .print-review-page{
+    page:upright !important;
+    box-sizing:border-box !important;
+    display:block !important;
+    width:auto !important;min-width:0 !important;max-width:none !important;
+    height:auto !important;min-height:0 !important;max-height:none !important;
+    margin:0 !important;padding:12mm 12mm 13mm !important;
+    overflow:visible !important;
+    break-inside:avoid-page !important;page-break-inside:avoid !important;
+    break-before:auto !important;page-break-before:auto !important;
+    break-after:page !important;page-break-after:always !important;
+  }
+  body .print-report.print-review-report .print-review-page:last-child{
+    break-after:auto !important;page-break-after:auto !important;
+  }
+  body .print-report.print-review-report .print-review-page + .print-review-page{
+    break-before:auto !important;page-break-before:auto !important;
+  }
+  body .print-report.print-review-report .print-review-findings{gap:2.1mm !important}
+  body .print-report.print-review-report .print-review-finding>header{padding:2mm 2.2mm !important}
+  body .print-report.print-review-report .print-review-rows{gap:1mm !important;padding:1.6mm 2.2mm 2mm !important}
+  body .print-report.print-review-report .print-review-rows span{font-size:7.8pt !important;padding:1mm 1.4mm !important;line-height:1.35 !important}
+  body .print-report.print-review-report .print-review-page .print-signatures{
+    margin-top:3mm !important;break-before:avoid !important;page-break-before:avoid !important;
+    break-inside:avoid !important;page-break-inside:avoid !important;
+  }
+}

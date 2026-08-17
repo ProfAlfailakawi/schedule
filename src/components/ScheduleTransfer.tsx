@@ -380,9 +380,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         </header>
 
         <nav className="transfer-tabs">
-          <button type="button" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")}><Download />تصدير</button>
-          <button type="button" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")}><Upload />استيراد</button>
-          <button type="button" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")}><UserMinus />استبدال</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")}><Download />تصدير</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")}><Upload />استيراد</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")}><UserMinus />استبدال</button>
           <button type="button" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")}><UserPlus />المنتدبون</button>
         </nav>
 
@@ -396,7 +396,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
             <>
               <p>تصدير الفصل الدراسي الحالي ببياناته الكاملة (المقررات، الأساتذة، الأوقات، القاعات، الأيام) مباشرة إلى ملف Excel أو JSON للأرشفة والمشاركة.</p>
               <div className="transfer-import-actions">
-                <PrimaryButton type="button" onClick={() => void exportTerm("xlsx")} disabled={!scopeReady || busy}>
+                <PrimaryButton type="button" data-guide-feature-id="schedule.tool.data" onClick={() => void exportTerm("xlsx")} disabled={!scopeReady || busy}>
                   <Download /> {busy ? "جاري التصدير…" : "تصدير إلى ملف Excel (.xlsx)"}
                 </PrimaryButton>
                 <SecondaryButton type="button" onClick={() => void exportTerm("json")} disabled={!scopeReady || busy}>
@@ -600,7 +600,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
               ) : null}
               {replacementCheck?.reasons?.length ? <ul className="replacement-conflicts">{replacementCheck.reasons.slice(0,4).map((reason:string,index:number)=><li key={index}>{reason}</li>)}</ul> : null}
               {retirePreview != null && retirePreview > 0 ? (
-                <PrimaryButton type="button" onClick={() => retire(true)} disabled={busy || replacementCheck?.compatible === false} title={replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "يوجد تعارض") : undefined}>
+                <PrimaryButton type="button" data-guide-ignore="تنفيذ استبدال أستاذ إجراء بيانات حساس وله فحص تعارض وتأكيد مستقل" onClick={() => retire(true)} disabled={busy || replacementCheck?.compatible === false} title={replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "يوجد تعارض") : undefined}>
                   {busy ? "ينفّذ…" : "نفّذ الاستبدال"}
                 </PrimaryButton>
               ) : null}

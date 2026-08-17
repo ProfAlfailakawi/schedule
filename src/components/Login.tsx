@@ -63,16 +63,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <small>أكثر من عقد من العمل الأكاديمي.</small>
         </div>
       </header>
-      <button
-        type="button"
-        className="apex-login-identity-trigger apex-login-identity-trigger--pulse"
-        onClick={() => setIdentityOpen(true)}
-        aria-label="رحلة SCHEDULE"
-        title="رحلة SCHEDULE"
-      >
-        <Sparkles aria-hidden="true" />
-      </button>
-      {identityOpen ? <ScheduleJourney onClose={() => setIdentityOpen(false)} /> : null}
       <section className="apex-login-stage">
         <div className="apex-login-story">
           <span className="apex-login-kicker">
@@ -108,7 +98,18 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         <div className="apex-login-access">
           <div className="apex-access-head">
             <span>دخول آمن</span>
-            <strong>أهلاً بعودتك</strong>
+            <div className="apex-access-title-row">
+              <strong>أهلاً بعودتك</strong>
+              <button
+                type="button"
+                className="apex-login-identity-trigger apex-login-identity-trigger--pulse"
+                onClick={() => setIdentityOpen(true)}
+                aria-label="افتح رحلة SCHEDULE"
+                title="رحلة SCHEDULE"
+              >
+                <Sparkles aria-hidden="true" />
+              </button>
+            </div>
             <p>أكمل من حيث توقفت</p>
           </div>
           {error ? (
@@ -154,6 +155,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           </footer>
         </div>
       </section>
+      {identityOpen ? <ScheduleJourney onClose={() => setIdentityOpen(false)} /> : null}
     </main>
   );
 }

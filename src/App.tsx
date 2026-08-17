@@ -100,7 +100,7 @@ const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
 import { PrimaryButton } from "./components/ui";
 import SmartGuide from "./components/SmartGuide";
-import { canProactivelyHint, changedFeatures, discoveredNew, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureUse, recordRoute, setGuideTask } from "./guide/smartGuide";
+import { canProactivelyHint, changedFeatures, discoveredNew, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureEvent, recordFeatureDwell, recordRoute, setGuideTask, setLauncherIntroduced, evaluateGuideFriction, classifyGuideReason, predictedNextFeature, canAccessGuideFeature } from "./guide/smartGuide";
 
 type View =
   | "dashboard"
@@ -426,6 +426,7 @@ export default function App() {
   const [guideContext, setGuideContext] = useState<any>(null);
   const [guideHint, setGuideHint] = useState<{ key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
   const [guideProfileRevision, setGuideProfileRevision] = useState(0);
+  const [ambientDismissedKey, setAmbientDismissedKey] = useState("");
   useEffect(() => { setTelemetryOwner(Number(user?.SystemUserId || 0)); }, [user?.SystemUserId]);
   useEffect(() => {
     const refresh = (event: Event) => {
@@ -508,15 +509,20 @@ export default function App() {
   }, [activeView, user?.SystemUserId]);
 
   const previousGuideView = useRef<View | null>(null);
+  const guideDwellStartedRef = useRef(Date.now());
   const recentGuideViews = useRef<Array<{ view: View; at: number }>>([]);
   useEffect(() => {
     const userId = Number(user?.SystemUserId || 0);
     if (!userId) { previousGuideView.current = activeView; return; }
     const previous = previousGuideView.current;
     const before = loadGuideProfile(userId);
-    if (previous && previous !== activeView) recordRoute(userId, previous, activeView);
-    previousGuideView.current = activeView;
     const now = Date.now();
+    if (previous && previous !== activeView) {
+      recordFeatureDwell(userId, `page.${previous}`, now - guideDwellStartedRef.current);
+      recordRoute(userId, previous, activeView);
+      guideDwellStartedRef.current = now;
+    }
+    previousGuideView.current = activeView;
     recentGuideViews.current = [...recentGuideViews.current.filter(item => now - item.at < 15000), { view: activeView, at: now }].slice(-8);
     const sequence = recentGuideViews.current.map(item => item.view);
     if (sequence.length >= 5) {
@@ -525,15 +531,16 @@ export default function App() {
         && new Set(sequence.slice(-5)).size <= 2;
       const historical = Number(before.routes[`${a}>${b}`] || 0) + Number(before.routes[`${b}>${a}`] || 0);
       const page = featureById(`page.${activeView}`);
-      const expert = page ? masteryScore(before, page) >= .72 : false;
-      // Familiar back-and-forth is a workflow, not confusion. Only unfamiliar
-      // bouncing earns a whisper, which is precisely how AB stops being asked
-      // once this becomes his normal way of working.
-      if (alternating && historical < 5 && !expert && canProactivelyHint(before, `route-bounce:${a}:${b}`, "soft")) {
+      const friction = evaluateGuideFriction(before, page, [{ type:"route-bounce", count:alternating ? 2 : 0, weight:1.45 }]);
+      const reason = classifyGuideReason({ mastery:friction.mastery, anomaly:alternating && historical < 5 });
+      // Familiar back-and-forth is a workflow, not confusion. Only an unfamiliar
+      // route anomaly can produce a hint; AB therefore becomes completely silent
+      // once week↔rooms is a proven successful habit.
+      if (alternating && historical < 5 && reason !== "NORMAL_EXPERT_BEHAVIOR" && friction.confidence !== "low" && canProactivelyHint(before, `route-bounce:${a}:${b}`, friction.confidence)) {
         noteHint(userId, `route-bounce:${a}:${b}`, false);
         noteFriction(userId, `تنقل متكرر · ${String(a)} ↔ ${String(b)}`);
-        telemetryBreadcrumb(`المرشد · تنقل متكرر ${String(a)}↔${String(b)}`); telemetryGuide(`تنقل متكرر · ${String(a)} ↔ ${String(b)}`);
-        setGuideHint({ key:`route-bounce:${a}:${b}`, title:"يبدو أنك تبحث بين شاشتين", detail:"إذا كنت تبحث عن وظيفة محددة، يمكن لزر «كيف؟» أن يوصلك إليها مباشرةً. وإذا كان هذا مسارك المعتاد فسأتعلمه ولن أكرر الاقتراح.", level:"soft" });
+        telemetryBreadcrumb(`المرشد · تنقل متكرر ${String(a)}↔${String(b)}`); telemetryGuide(`journey|page.${String(activeView)}|1|route-bounce|${friction.confidence}`);
+        setGuideHint({ key:`route-bounce:${a}:${b}`, title:"يبدو أنك تبحث بين شاشتين", detail:"إذا كنت تبحث عن وظيفة محددة، يمكن للمرشد أن يوصلك إليها مباشرةً. وإذا كان هذا مسارك المعتاد فسيتعلمه ولن يكرر الاقتراح.", level:friction.confidence === "high" ? "strong" : "soft" });
       }
     }
   }, [activeView, user?.SystemUserId]);
@@ -615,14 +622,16 @@ export default function App() {
             const profile = loadGuideProfile(userId);
             const pageMastery = page ? masteryScore(profile, page) : 0;
             const threshold = pageMastery >= .72 ? 7 : 4;
-            if (recent.length >= threshold && canProactivelyHint(profile, `menu-loop:${key}`, pageMastery >= .72 ? "strong" : "soft")) {
+            const friction = evaluateGuideFriction(profile, page, [{ type:"menu-loop", count:Math.max(0,recent.length-threshold+1), weight:1.7 }]);
+            const reason = classifyGuideReason({ mastery:friction.mastery, anomaly:recent.length >= threshold });
+            if (recent.length >= threshold && friction.confidence !== "low" && reason !== "NORMAL_EXPERT_BEHAVIOR" && canProactivelyHint(profile, `menu-loop:${key}`, friction.confidence)) {
               noteHint(userId, `menu-loop:${key}`, false);
               noteFriction(userId, `فتح وإغلاق متكرر · ${activeView}`);
               setGuideHint({
                 key: `menu-loop:${key}`,
-                title: pageMastery >= .72 ? "هذا المسار لا يسير كالمعتاد" : "يمكنني الوصول بك مباشرةً",
+                title: friction.confidence === "high" ? "هذا المسار لا يسير كالمعتاد" : "يمكنني الوصول بك مباشرةً",
                 detail: label ? `تكرر فتح «${label}» وإغلاقه دون إكمال خطوة. يمكنني تحديد المكان أو فتح الوظيفة المناسبة.` : "تكرر فتح القوائم دون إكمال خطوة واضحة.",
-                level: pageMastery >= .72 ? "strong" : "soft",
+                level: friction.confidence === "high" ? "strong" : "soft",
               });
             }
           }, 0);
@@ -632,7 +641,8 @@ export default function App() {
         explorationAfterError += 1;
         if (explorationAfterError >= 3) {
           const profile = loadGuideProfile(userId);
-          if (canProactivelyHint(profile, `after-error:${activeView}:${lastErrorText.slice(0,24)}`, "strong")) {
+          const friction = evaluateGuideFriction(profile, page, [{ type:"exploration-after-error", count:explorationAfterError, weight:1.4, knownFailure:true }]);
+          if (friction.confidence === "high" && canProactivelyHint(profile, `after-error:${activeView}:${lastErrorText.slice(0,24)}`, friction.confidence)) {
             noteHint(userId, `after-error:${activeView}:${lastErrorText.slice(0,24)}`, false);
             noteFriction(userId, `استكشاف بعد خطأ · ${activeView}`);
             setGuideHint({
@@ -648,7 +658,8 @@ export default function App() {
       publish();
     };
     const observer = new MutationObserver(() => publish());
-    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-expanded", "aria-invalid"] });
+    const observedRoot = document.querySelector(".app-main") || document.body;
+    observer.observe(observedRoot, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-expanded", "aria-invalid"] });
     document.addEventListener("input", onInput, true);
     document.addEventListener("change", onInput, true);
     document.addEventListener("click", onClick, true);
@@ -687,7 +698,7 @@ export default function App() {
       const controlLabel = labelOf(control);
       const naturallyRepeatable = /التالي|السابق|اليوم|الأسبوع التالي|الأسبوع السابق|تكبير|تصغير|تمرير|صفحة تالية|صفحة سابقة/.test(controlLabel);
       const explicit = control.getAttribute("data-guide-target") || control.closest<HTMLElement>("[data-guide-target]")?.getAttribute("data-guide-target") || "";
-      if (explicit && featureById(explicit)) recordFeatureUse(userId, explicit, "success");
+      if (explicit && featureById(explicit)) recordFeatureEvent(userId, explicit, "attempt");
       const key = explicit || `${activeView}:${controlLabel}`;
       if (naturallyRepeatable) return;
       const now = Date.now();
@@ -697,11 +708,13 @@ export default function App() {
       const feature = explicit ? featureById(explicit) : null;
       const expert = feature ? masteryScore(profile, feature) >= .72 : false;
       const threshold = expert ? 7 : 4;
-      if (list.length >= threshold && canProactivelyHint(profile, `repeat:${key}`, expert ? "strong" : "soft")) {
+      const friction = evaluateGuideFriction(profile, feature, [{ type:"repeated-control", count:list.length >= threshold ? list.length - threshold + 1 : 0, weight:1.8 }]);
+      const reason = classifyGuideReason({ mastery:friction.mastery, anomaly:list.length >= threshold, versionChanged:Boolean(feature && profile.mastery[feature.id]?.versionSeen && profile.mastery[feature.id].versionSeen < feature.version) });
+      if (list.length >= threshold && friction.confidence !== "low" && reason !== "NORMAL_EXPERT_BEHAVIOR" && canProactivelyHint(profile, `repeat:${key}`, friction.confidence)) {
         noteHint(userId, `repeat:${key}`, false);
         noteFriction(userId, explicit ? `تكرار · ${explicit}` : `تكرار · ${activeView}`);
-        telemetryBreadcrumb(`المرشد · تكرار ${explicit || activeView}`); telemetryGuide(`تكرار استخدام · ${explicit || activeView}`);
-        setGuideHint({ key:`repeat:${key}`, title: expert ? "هذه الخطوة لا تسير كالمعتاد" : "يمكنني مساعدتك هنا", detail: controlLabel ? `تكرر استخدام «${controlLabel}» دون انتقال واضح. يمكنني شرحها أو نقلك إلى المكان الصحيح.` : "تكررت المحاولة نفسها أكثر من المعتاد.", level: expert ? "strong" : "soft" });
+        telemetryBreadcrumb(`المرشد · تكرار ${explicit || activeView}`); telemetryGuide(`journey|${explicit || activeView}|1|control|repeat`);
+        setGuideHint({ key:`repeat:${key}`, title: friction.confidence === "high" ? "هذه الخطوة لا تسير كالمعتاد" : "يمكنني مساعدتك هنا", detail: controlLabel ? `تكرر استخدام «${controlLabel}» دون انتقال واضح. يمكنني شرحها أو نقلك إلى المكان الصحيح.` : "تكررت المحاولة نفسها أكثر من المعتاد.", level: friction.confidence === "high" ? "strong" : "soft" });
       }
     };
     const onPointerOver = (event: PointerEvent) => {
@@ -716,7 +729,11 @@ export default function App() {
         const count = Number(hesitation.get(hoverKey) || 0) + 1; hesitation.set(hoverKey, count);
         if (count < 2 || hoverClicked) return;
         const profile = loadGuideProfile(userId);
-        if (!canProactivelyHint(profile, `hesitate:${hoverKey}`, "soft")) return;
+        const featureId = control.getAttribute("data-guide-target") || "";
+        const feature = featureId ? featureById(featureId) : featureById(`page.${activeView}`);
+        const friction = evaluateGuideFriction(profile, feature, [{ type:"sensitive-hesitation", count, weight:1.35 }]);
+        const reason = classifyGuideReason({ mastery:friction.mastery, hesitation:true });
+        if (reason !== "HESITANT" || friction.confidence === "low" || !canProactivelyHint(profile, `hesitate:${hoverKey}`, friction.confidence)) return;
         noteHint(userId, `hesitate:${hoverKey}`, false);
         noteFriction(userId, `تردد · ${activeView}`);
         telemetryBreadcrumb(`المرشد · تردد ${activeView}`); telemetryGuide(`تردد قبل إجراء · ${activeView}`);
@@ -1350,13 +1367,13 @@ export default function App() {
         );
       case "schedules":
         return hasPerm(7) ? (
-          <Schedules mode="schedule" user={user} scopes={scopes} />
+          <Schedules mode="schedule" user={user} scopes={scopes} permissions={permissions} onNavigate={(view) => go(view as View)} />
         ) : (
           unauthorized()
         );
       case "scheduleCopy":
         return isPowerAdmin && hasPerm(7) && user.IsRootAdmin ? (
-          <Schedules mode="copy" user={user} scopes={scopes} />
+          <Schedules mode="copy" user={user} scopes={scopes} permissions={permissions} onNavigate={(view) => go(view as View)} />
         ) : (
           unauthorized()
         );
@@ -1876,10 +1893,15 @@ export default function App() {
           copy: "يتوقف البرنامج مؤقتاً عند انقطاع الاتصال، ويعود تلقائياً عندما يرجع الإنترنت.",
         },
       ];
-  const guideNewCount = user ? (() => {
-    const profile = loadGuideProfile(Number(user.SystemUserId));
-    return changedFeatures(profile, activeView, permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)).length + discoveredNew(profile).length;
-  })() : 0;
+  const guideProfile = user ? loadGuideProfile(Number(user.SystemUserId)) : null;
+  const guideIntroduced = Boolean(guideProfile?.launcherIntroduced);
+  const guideNewCount = user && guideProfile
+    ? changedFeatures(guideProfile, activeView, permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)).length + discoveredNew(guideProfile).length
+    : 0;
+  const ambientPrediction = user && guideProfile ? predictedNextFeature(guideProfile, guideContext?.currentFeatureId || `page.${activeView}`) : null;
+  const ambientFeature = ambientPrediction?.confidence >= .82 ? featureById(ambientPrediction.id) : null;
+  const ambientAllowed = Boolean(ambientFeature && user && canAccessGuideFeature(ambientFeature, { permissions, root:Boolean(user.IsRootAdmin), admin:Boolean(user.IsAdminUser || user.IsRootAdmin) }));
+  const ambientKey = ambientFeature ? `${activeView}:${guideContext?.currentFeatureId || ""}:${ambientFeature.id}` : "";
   void guideProfileRevision;
   const taskFamily =
     activeView === "dashboard"
@@ -2311,6 +2333,18 @@ export default function App() {
         </button>
       </nav>
 
+      {ambientAllowed && ambientFeature && ambientKey !== ambientDismissedKey && !guideOpen && !guideHint ? (
+        <button type="button" className="smart-guide-ambient-next no-print" onClick={() => {
+          setAmbientDismissedKey(ambientKey);
+          const command = ambientFeature.safeAction;
+          if (command?.scope === "app" && command.type === "navigate" && command.value) go(command.value as View);
+          else if (command) window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail:{ ...command, featureId:ambientFeature.id } }));
+          else if (ambientFeature.view) go(ambientFeature.view as View);
+          else setGuideOpen(true);
+        }} aria-label={`الخطوة التالية المقترحة: ${ambientFeature.title}`}>
+          <Sparkles aria-hidden="true" /><span>{ambientFeature.title}</span><ChevronLeft aria-hidden="true" />
+        </button>
+      ) : null}
       {guideOpen ? (
         <SmartGuide
           open={guideOpen}
@@ -2327,17 +2361,26 @@ export default function App() {
       ) : null}
       <button
         type="button"
-        data-guide-ignore="true"
-        className={`smart-guide-fab no-print ${guideHint ? "has-hint" : ""} ${guideOpen ? "active" : ""}`}
-        onClick={() => { setGuideOpen(true); }}
+        data-guide-ignore="زر المرشد نفسه لا يحتاج تعريفًا داخل المرشد"
+        className={`smart-guide-fab no-print ${guideIntroduced ? "icon-only" : ""} ${guideHint ? "has-hint" : ""} ${guideOpen ? "active" : ""}`}
+        onClick={() => {
+          if (guideOpen) {
+            window.dispatchEvent(new CustomEvent("schedule-smart-guide-restore"));
+            return;
+          }
+          if (!guideIntroduced && user) setLauncherIntroduced(Number(user.SystemUserId), true);
+          setGuideOpen(true);
+        }}
         aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : "افتح مرشد SCHEDULE"}
         title={guideHint ? `${guideHint.title}` : "مرشد SCHEDULE"}
       >
         <span className="smart-guide-fab-mark" aria-hidden="true"><Sparkles /></span>
-        <span className="smart-guide-fab-copy">
-          <small>{guideHint ? "مساعدة مقترحة" : guideNewCount ? `${guideNewCount.toLocaleString("ar-KW-u-nu-latn")} جديد` : "مرشد حي"}</small>
-          <strong>كيف؟</strong>
-        </span>
+        {!guideIntroduced ? (
+          <span className="smart-guide-fab-copy">
+            <small>{guideHint ? "مساعدة مقترحة" : guideNewCount ? `${guideNewCount.toLocaleString("ar-KW-u-nu-latn")} جديد` : "مرشد حي"}</small>
+            <strong>كيف؟</strong>
+          </span>
+        ) : null}
         {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : guideNewCount ? <i className="smart-guide-fab-new" aria-hidden="true">{guideNewCount > 9 ? "9+" : guideNewCount}</i> : null}
       </button>
 

@@ -1169,19 +1169,19 @@ export default function AdminUsers({
               </div>
             ) : exportJob?.status === "failed" ? (
               <div className="vault-inline-actions">
-                <PrimaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
+                <PrimaryButton type="button" data-guide-ignore="إجراء تصدير إداري حساس داخل خزنة النظام" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
                   <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${exportJob.documentCount} سجل)` : `استكمال من ${exportJob.completedUnits}/${exportJob.totalUnits}`}
                 </PrimaryButton>
-                <SecondaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(true)}>
+                <SecondaryButton type="button" data-guide-ignore="إجراء نسخ احتياطي إداري حساس له مسار تأكيد مستقل" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(true)}>
                   <RefreshCw /> بدء تصدير جديد
                 </SecondaryButton>
-                <SecondaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={resetExportJobs} title="إلغاء التصدير الحالي وتصفيره">
+                <SecondaryButton type="button" data-guide-ignore="إدارة مهمة تصدير إدارية وليست ميزة مستقلة للمرشد" disabled={importInProgress || Boolean(backupBusy)} onClick={resetExportJobs} title="إلغاء التصدير الحالي وتصفيره">
                   تصفير المهام
                 </SecondaryButton>
               </div>
             ) : (
               <div className="vault-inline-actions">
-                <PrimaryButton type="button" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
+                <PrimaryButton type="button" data-guide-ignore="إجراء تصدير إداري حساس داخل خزنة النظام" disabled={importInProgress || Boolean(backupBusy)} onClick={() => void exportFullBackup(false)}>
                   <DatabaseBackup /> {backupBusy === "export" ? `أتابع التصدير… (${exportJob?.documentCount || 0} سجل)` : exportInProgress ? "استكمال التصدير" : "تصدير النظام كاملًا"}
                 </PrimaryButton>
                 {exportJob && exportJob.status !== "ready" && (
@@ -1246,7 +1246,7 @@ export default function AdminUsers({
 
             <div className="vault-inline-actions">
               <SecondaryButton type="button" disabled={!backupFile || Boolean(backupBusy) || exportInProgress || importResumable} onClick={() => void previewBackup()}>{backupBusy === "preview" ? "أفحص…" : "فحص النسخة"}</SecondaryButton>
-              <PrimaryButton type="button" disabled={Boolean(backupBusy) || exportInProgress || (!importResumable && !backupPreview)} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أتابع الاستيراد…" : importResumable ? "استكمال الاستيراد" : "استيراد"}</PrimaryButton>
+              <PrimaryButton type="button" data-guide-ignore="إجراء استيراد إداري حساس وله معاينة وتأكيد مستقلان" disabled={Boolean(backupBusy) || exportInProgress || (!importResumable && !backupPreview)} onClick={() => void importFullBackup()}>{backupBusy === "import" ? "أتابع الاستيراد…" : importResumable ? "استكمال الاستيراد" : "استيراد"}</PrimaryButton>
             </div>
           </Surface>
 
@@ -1300,7 +1300,7 @@ export default function AdminUsers({
               </div>
               <div className="vault-confirm-actions">
                 <SecondaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => setBackupConfirm(null)}>إلغاء</SecondaryButton>
-                <PrimaryButton type="button" disabled={Boolean(backupBusy)} onClick={() => {
+                <PrimaryButton type="button" data-guide-ignore="تأكيد سيادي حساس لا ينفذه المرشد تلقائيًا" disabled={Boolean(backupBusy)} onClick={() => {
                   if (backupConfirm === "import") void importFullBackup(true);
                   else if (backupConfirm === "reset") void resetFullSystem(true);
                   else void undoSystemOperation(true);
@@ -1492,6 +1492,7 @@ export default function AdminUsers({
                     تعديل الحساب
                   </PrimaryButton>
                   <SecondaryButton
+                    data-guide-ignore="إجراء حذف حساس داخل شاشة الإدارة ويستخدم تأكيد الشاشة نفسه"
                     className="danger-action"
                     onClick={() => deleteUser(selected.SystemUserId)}
                   >
@@ -1615,6 +1616,7 @@ export default function AdminUsers({
                     تعديل
                   </PrimaryButton>
                   <SecondaryButton
+                    data-guide-ignore="إجراء حذف حساس داخل شاشة الإدارة ويستخدم تأكيد الشاشة نفسه"
                     className="danger-action"
                     onClick={() => deletePermission(selected)}
                   >
@@ -1749,6 +1751,7 @@ export default function AdminUsers({
                 </div>
                 <div className="inspector-actions">
                   <SecondaryButton
+                    data-guide-ignore="إجراء حذف حساس داخل شاشة الإدارة ويستخدم تأكيد الشاشة نفسه"
                     className="danger-action"
                     onClick={() => deleteScope(selected)}
                   >
@@ -1805,6 +1808,7 @@ export default function AdminUsers({
             {filteredLogs.map((x) => (
               <button
                 type="button"
+                data-guide-ignore="فتح سجل تدقيق للقراءة فقط وليس إجراء التغيير المسجل"
                 key={x.id}
                 className={
                   String(selectedLogId) === String(x.id) ? "active" : ""
