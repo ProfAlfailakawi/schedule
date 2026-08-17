@@ -6741,3 +6741,240 @@ html[data-schedule-workspace="focus"] .schedule-agenda-surface{
 .rooms-week-days .rooms-row>.rooms-day-label{font-size:10.5px;font-weight:620;color:var(--ink-2);padding-inline:10px 6px}
 .rooms-week-days .rooms-track{border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
 .rooms-week-days .rooms-row:first-child .rooms-track{border-top:0}
+
+
+/* === V23 parity pass: week ↔ rooms, focus overlays ========================
+   Keep V22's approved 19:30–20:00 geometry untouched. This pass only aligns
+   identity, grid language, sticky rails, and overlay stacking. */
+
+/* Rooms: the day rail is a true edge rail, exactly like the dense week rail.
+   It is opaque and isolated so cards can scroll behind it without visually
+   leaking through at the far-right edge. */
+.rooms-week-days{position:relative;isolation:isolate}
+.rooms-week-days .rooms-row{grid-template-columns:64px minmax(0,1fr)!important;position:relative;isolation:isolate}
+.rooms-week-days .rooms-row>.rooms-day-label{
+  position:sticky!important;
+  inset-inline-start:0!important;
+  z-index:140!important;
+  width:64px!important;
+  min-width:64px!important;
+  justify-content:flex-start!important;
+  padding-inline:7px 5px!important;
+  background:var(--surface)!important;
+  border-inline-end:1px solid color-mix(in srgb,var(--line-strong) 70%,var(--line))!important;
+  box-shadow:-5px 0 12px color-mix(in srgb,var(--ink) 3%,transparent)!important;
+  overflow:hidden!important;
+}
+.rooms-week-days .rooms-row>.rooms-day-label::before{
+  content:none!important;
+  display:none!important;
+}
+.rooms-week-days .rooms-track{position:relative;z-index:1;overflow:hidden}
+.rooms-week-room-head{
+  z-index:150!important;
+  background:var(--surface)!important;
+}
+
+/* Same line grammar as the week: major hours are solid, half-hour slot
+   divisions are dashed and quieter. Cards remain above both layers. */
+.rooms-hourline{
+  z-index:2!important;
+  pointer-events:none!important;
+  border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 78%,transparent)!important;
+  opacity:.72!important;
+}
+.rooms-hourline-terminal{opacity:1!important;border-inline-start-style:solid!important}
+.rooms-slot{
+  z-index:1!important;
+  border-inline-end:1px dashed color-mix(in srgb,var(--line) 62%,transparent);
+}
+.rooms-week-days .rooms-row+.rooms-row{
+  border-top:1px solid color-mix(in srgb,var(--line) 82%,transparent)!important;
+}
+.rooms-week-days .rooms-track{
+  border-top:0!important;
+  background:linear-gradient(to bottom,color-mix(in srgb,var(--surface-2) 26%,transparent),transparent 20px),var(--surface)!important;
+}
+
+/* Rooms cards: code shares the course row; instructor is a single calm line. */
+.rooms-identity-line{display:flex!important;align-items:center!important;gap:6px!important;min-width:0!important;direction:rtl!important}
+.rooms-identity-line b{flex:1 1 auto!important;min-width:0!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.rooms-identity-line em{flex:none!important;position:static!important;margin:0!important;white-space:nowrap!important}
+.rooms-week-days .rooms-card>span{
+  display:block!important;
+  min-width:0!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+
+/* Dense week two-line identity now mirrors rooms: course + code on row one,
+   full instructor alone on row two. No information is moved to a third line. */
+.week-strip-track .week-identity-line[data-mode="double"]{
+  grid-template-columns:minmax(0,1fr) auto!important;
+  grid-template-rows:1fr 1fr!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"] .week-title{
+  grid-column:1!important;
+  grid-row:1!important;
+  min-width:0!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"] .week-code{
+  grid-column:2!important;
+  grid-row:1!important;
+  align-self:end!important;
+  margin-inline-start:4px!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"] .week-who{
+  grid-column:1 / -1!important;
+  grid-row:2!important;
+  min-width:0!important;
+  white-space:nowrap!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+}
+
+/* Physics verdicts and conflict/revision sheets are part of the focused
+   workspace. Portals must sit above the fixed focus canvas, never behind it. */
+html[data-schedule-workspace="focus"] .schedule-physics-float{z-index:2100!important}
+html[data-schedule-workspace="focus"] .schedule-physics-hud{z-index:2110!important}
+html[data-schedule-workspace="focus"] .views-dialog-backdrop,
+html[data-schedule-workspace="focus"] .schedule-context-backdrop,
+html[data-schedule-workspace="focus"] .historical-time-backdrop,
+html[data-schedule-workspace="focus"] .context-loading{
+  z-index:2200!important;
+}
+html[data-schedule-workspace="focus"] .schedule-focus-exit{z-index:2300!important}
+
+/* === V24 interaction parity: rooms rail + week drag/add language ===========
+   19:30 geometry is intentionally untouched. This pass changes only the
+   interaction language and the physical separation of the sticky room rail. */
+
+/* The room-day rail gets its own permanent breathing seam. The timeline never
+   paints flush against the sticky identity column, so at the extreme RTL
+   scroll position no card can appear fused to, or visually beneath, the rail. */
+.rooms-scale,
+.rooms-scale-week,
+.rooms-week-days .rooms-row{
+  column-gap:7px!important;
+}
+.rooms-scale>small,
+.rooms-week-days .rooms-row>.rooms-day-label{
+  position:sticky!important;
+  inset-inline-start:0!important;
+  z-index:180!important;
+  background:var(--surface)!important;
+  box-shadow:
+    -1px 0 0 color-mix(in srgb,var(--line-strong) 72%,var(--line)),
+    -10px 0 18px -14px color-mix(in srgb,var(--ink) 18%,transparent)!important;
+}
+.rooms-week-days .rooms-track{
+  min-width:0!important;
+  overflow:hidden!important;
+  isolation:isolate!important;
+  border-radius:0!important;
+}
+.rooms-week-days .rooms-card{z-index:5!important}
+.rooms-week-days .rooms-slot{z-index:2!important}
+.rooms-week-days .rooms-hourline{z-index:3!important}
+
+/* Week creation affordance: identical native copy cursor + restrained + mark
+   in both classic and dense week views. Focus mode uses these exact same DOM
+   slots, so there is no focus-only interaction variant. */
+.week-slot,
+.week-strip-slot{cursor:copy!important}
+html:not(.schedule-physics-active) .week-strip-slot:hover::before{
+  content:"+";
+  position:absolute;
+  inset:3px;
+  display:grid;
+  place-items:center;
+  border:1px dashed color-mix(in srgb,var(--accent) 42%,transparent);
+  border-radius:5px;
+  color:color-mix(in srgb,var(--accent) 68%,transparent);
+  background:color-mix(in srgb,var(--accent) 3%,transparent);
+  font-size:14px;
+  font-weight:650;
+  line-height:1;
+  pointer-events:none;
+  z-index:7;
+}
+html.schedule-physics-active .week-strip-slot:hover::before{content:none}
+
+/* Live drag parity. The week now uses the same verdict washes as rooms: green
+   = clean landing, amber = usable with a room caveat, red hatch = blocked.
+   This is deliberately scoped to a live physics session so course colours are
+   never altered at rest. */
+html.schedule-physics-active .week-slot.field-tier::after,
+html.schedule-physics-active .week-strip-slot.field-tier::after{
+  content:"";
+  position:absolute;
+  inset:2px;
+  border-radius:4px;
+  pointer-events:none;
+  z-index:5;
+  box-shadow:none;
+}
+html.schedule-physics-active .week-slot.tier-free::after,
+html.schedule-physics-active .week-strip-slot.tier-free::after{
+  background:color-mix(in srgb,var(--success) 15%,transparent)!important;
+  background-image:none!important;
+}
+html.schedule-physics-active .week-slot.tier-room::after,
+html.schedule-physics-active .week-strip-slot.tier-room::after{
+  background:color-mix(in srgb,var(--warning) 16%,transparent)!important;
+  background-image:repeating-linear-gradient(
+    0deg,
+    color-mix(in srgb,var(--warning) 30%,transparent) 0 1px,
+    transparent 1px 6px
+  )!important;
+}
+html.schedule-physics-active .week-slot.tier-blocked::after,
+html.schedule-physics-active .week-strip-slot.tier-blocked::after{
+  background:color-mix(in srgb,var(--danger) 11%,transparent)!important;
+  background-image:repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb,var(--danger) 22%,transparent) 0 2px,
+    transparent 2px 6px
+  )!important;
+}
+
+/* The square actually under the pointer gets the same strong landing ring in
+   classic week and dense week. */
+html.schedule-physics-active .week-slot.physics-target::before,
+html.schedule-physics-active .week-strip-slot.physics-target::before{
+  content:"";
+  position:absolute;
+  inset:1px;
+  border-radius:5px;
+  pointer-events:none;
+  border:1.5px solid var(--accent);
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent);
+  z-index:8;
+}
+html.schedule-physics-active .week-slot.physics-excellent::before,
+html.schedule-physics-active .week-slot.physics-good::before,
+html.schedule-physics-active .week-strip-slot.physics-excellent::before,
+html.schedule-physics-active .week-strip-slot.physics-good::before{
+  border-color:var(--success);
+  background:color-mix(in srgb,var(--success) 14%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--success) 14%,transparent);
+}
+html.schedule-physics-active .week-slot.physics-suboptimal::before,
+html.schedule-physics-active .week-strip-slot.physics-suboptimal::before{
+  border-color:var(--warning);
+  background:color-mix(in srgb,var(--warning) 14%,transparent);
+  box-shadow:0 0 0 4px color-mix(in srgb,var(--warning) 14%,transparent);
+}
+html.schedule-physics-active .week-slot.physics-impossible::before,
+html.schedule-physics-active .week-strip-slot.physics-impossible::before{
+  border-color:var(--danger);
+  border-style:dashed;
+  background:color-mix(in srgb,var(--danger) 12%,transparent);
+  box-shadow:none;
+}
+
+/* Dense strip slots already own ::after for the verdict. Keep the add mark on
+   ::before only at rest; during a drag the target ring owns ::before. */
+html.schedule-physics-active .week-strip-slot.field-tier::before{pointer-events:none}

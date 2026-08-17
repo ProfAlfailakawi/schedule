@@ -495,6 +495,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     [solutions, setSolutions] = useState<any[]>([]),
     [solving, setSolving] = useState(false),
     [focusMode, setFocusMode] = useState(false),
+    [focusExitPending, setFocusExitPending] = useState(false),
     [presentationMode, setPresentationMode] = useState(false),
     [context, setContext] = useState<any>(null),
     [contextLoading, setContextLoading] = useState(false),
@@ -2560,10 +2561,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         // answers to, and it must answer here too.
         if (editorRef.current !== "index") { backRef.current?.(); return; }
         setContext(null);
-        if (focusMode || presentationMode) {
-          setFocusMode(false);
-          setPresentationMode(false);
+        if (focusMode) {
+          // Leaving focus is transactional: if a drag/write is settling, keep
+          // the focused canvas mounted until its verdict/conflict layer has had
+          // a chance to render above the same board.
+          setFocusExitPending(true);
         }
+        if (presentationMode) setPresentationMode(false);
         setXrayId(null);
       }
     };
@@ -4957,6 +4961,33 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     physics.state.phase !== "idle" &&
     physics.state.phase !== "armed",
   );
+  useEffect(() => {
+    if (!focusExitPending) return;
+    if (!focusMode) { setFocusExitPending(false); return; }
+
+    // First cancel any live/armed gesture. The physics layer is portal-based;
+    // keeping focus mounted here prevents its verdict from appearing against a
+    // different geometry while the gesture is unwinding.
+    if (physics.state.phase !== "idle") {
+      physics.cancel();
+      clearRipple();
+      setPhysicsField({});
+      presence.send({ holding: null, cell: null });
+      return;
+    }
+
+    // Writes can finish a few frames after pointer-up and may surface a revision
+    // clash. Give that response a short settlement window; if a clash appears,
+    // focus stays mounted until the dialog is resolved, so the dialog is truly
+    // above the focused board rather than "outside" it.
+    if (pendingWriteIds.size || clash) return;
+    const timer = window.setTimeout(() => {
+      if (pendingWriteIds.size || clash) return;
+      setFocusMode(false);
+      setFocusExitPending(false);
+    }, 240);
+    return () => window.clearTimeout(timer);
+  }, [focusExitPending, focusMode, physics.state.phase, physics.cancel, pendingWriteIds.size, clash, presence]);
   /**
    * The grid walks with the drag.
    *
@@ -7285,8 +7316,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           className="schedule-focus-exit no-print"
           data-guide-ignore="زر خروج خافت من وضع التركيز؛ Escape ينفذ الإجراء نفسه"
           onClick={() => {
-            physics.cancel();
-            setFocusMode(false);
+            setFocusExitPending(true);
           }}
           aria-label="إنهاء وضع التركيز"
           title="إنهاء التركيز · Esc"
