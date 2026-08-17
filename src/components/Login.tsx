@@ -58,7 +58,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         </span>
         <div>
           <strong>SCHEDULE</strong>
-          <small>التحكم الأكاديمي</small>
+          <small>أكثر من عقد من العمل الأكاديمي.</small>
         </div>
       </header>
       <section className="apex-login-stage">

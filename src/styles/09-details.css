@@ -1480,3 +1480,32 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .share-steps button{padding:9px 10px}
   .share-survey-shortcut{margin-top:12px !important;padding:9px 10px !important}
 }
+
+/* Transfer sheet: four jobs are always visible and replacement is a safe decision. */
+.transfer-sheet{width:min(880px,calc(100vw - 28px))}
+.transfer-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding-inline:20px}
+.transfer-tabs button{justify-content:center;min-width:0;white-space:nowrap}
+.replacement-compatibility{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2)}
+.replacement-compatibility>span{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:var(--surface)}
+.replacement-compatibility.ok{border-color:color-mix(in srgb,var(--primary) 38%,var(--line));background:color-mix(in srgb,var(--primary) 7%,var(--surface))}.replacement-compatibility.ok>span{color:var(--primary)}
+.replacement-compatibility.conflict{border-color:color-mix(in srgb,#b43b36 40%,var(--line));background:color-mix(in srgb,#b43b36 7%,var(--surface))}.replacement-compatibility.conflict>span{color:#a43a35}
+.replacement-compatibility div{display:grid;gap:3px}.replacement-compatibility small{color:var(--muted)}
+.replacement-conflicts{margin:0;padding:10px 24px 0 0;color:#8f302d;display:grid;gap:5px;font-size:.88rem}
+.replacement-history{margin-top:18px;padding-top:16px;border-top:1px solid var(--line);display:grid;gap:9px}.replacement-history>header{display:flex;align-items:center;gap:9px}.replacement-history>header svg{width:19px}.replacement-history>header div{display:grid}.replacement-history>header small{color:var(--muted)}
+.replacement-history article{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border:1px solid var(--line);border-radius:14px}.replacement-history article>div{display:grid;gap:3px}.replacement-history article small{color:var(--muted)}
+
+/* Beginning-of-term repairs happen where the problem is visible. */
+.genesis-preview tr.genesis-row-issue>td{background:color-mix(in srgb,#b33b36 7%,var(--surface));border-block-color:color-mix(in srgb,#b33b36 22%,var(--line))}
+.genesis-preview tr.genesis-row-issue>td:first-child{box-shadow:inset 3px 0 #aa3934}
+.genesis-fix{margin-inline-start:8px;border:1px solid color-mix(in srgb,#a73b36 28%,var(--line));background:var(--surface);color:#96352f;border-radius:10px;padding:5px 8px;font:inherit;font-size:.78rem;font-weight:800;cursor:pointer}
+.genesis-inline-editor td{padding:0!important}.genesis-inline-editor td>div{display:grid;grid-template-columns:1.4fr repeat(4,minmax(105px,.8fr)) auto auto;gap:9px;align-items:end;padding:14px;background:color-mix(in srgb,var(--primary) 5%,var(--surface))}
+.genesis-inline-editor label{display:grid;gap:5px}.genesis-inline-editor label span{font-size:.72rem;color:var(--muted);font-weight:700}.genesis-inline-editor input,.genesis-inline-editor select{min-width:0}
+
+/* Genesis repair: the blocking reason sits directly under the row that causes
+   it, and the inline editor can fix teacher, time, room or days without leaving
+   the draft preview. */
+.genesis-row-reason td{padding:0 14px 12px!important;background:color-mix(in srgb,var(--danger-soft) 52%,var(--surface));border-top:0!important;color:var(--danger)}
+.genesis-row-reason td>svg{width:16px;height:16px;vertical-align:-3px;margin-inline-end:7px}
+.genesis-row-reason td>strong{font-size:12px;margin-inline-end:6px}.genesis-row-reason td>span{font-size:12px;color:var(--ink-2)}
+.genesis-days{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0;padding:8px 10px;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.genesis-days legend{padding:0 5px;color:var(--muted);font-size:11px}.genesis-days label{display:inline-flex!important;align-items:center;gap:5px!important;min-width:auto!important;padding:6px 9px;border-radius:999px;background:var(--surface-2);cursor:pointer}.genesis-days input{width:auto!important;height:auto!important;margin:0}.genesis-days span{font-size:12px!important;color:var(--ink)!important}

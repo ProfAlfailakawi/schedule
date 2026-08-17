@@ -1,8 +1,10 @@
-import React, { useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, Check, Copy, Download, Plus, Upload, UserMinus, UserPlus, X } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle, ArrowLeftRight, Check, CheckCircle2, Copy, Download, History, Plus, RotateCcw, ShieldAlert, Upload, UserMinus, UserPlus, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
+import { sortByName } from "../utils/sorting";
+import { sortTermsNewest } from "../utils/termSequence";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -53,6 +55,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [fromId, setFromId] = useState(0);
   const [toId, setToId] = useState(0);
   const [retirePreview, setRetirePreview] = useState<number | null>(null);
+  const [replacementCheck, setReplacementCheck] = useState<any>(null);
+  const [replacementHistory, setReplacementHistory] = useState<any[]>([]);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [roster, setRoster] = useState<number[]>([]);
   const [rosterLoaded, setRosterLoaded] = useState(false);
@@ -133,9 +137,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const scopeReadyRef = useRef(scopeReady);
   scopeReadyRef.current = scopeReady;
   const named = (id: number) => instructors.find(x => x.AdInstructorId === id)?.AdInstructorName || "";
-  const departmentStaff = departmentIds
-    .map(id => instructors.find(x => x.AdInstructorId === id))
-    .filter(Boolean) as Instructor[];
+  const sortedInstructors = useMemo(() => sortByName(instructors, person => person.AdInstructorName), [instructors]);
+  const departmentStaff = useMemo(() => sortByName(
+    departmentIds.map(id => instructors.find(x => x.AdInstructorId === id)).filter(Boolean) as Instructor[],
+    person => person.AdInstructorName,
+  ), [departmentIds, instructors]);
+  const sortedTerms = useMemo(() => sortTermsNewest(terms), [terms]);
 
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();
@@ -307,6 +314,46 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     }
   };
 
+  const loadReplacementHistory = async () => {
+    if (!scopeReady || !canTransfer) return;
+    try {
+      const q = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
+      const response = await fetch(`/api/schedules/replace-instructor/history?${q}`);
+      if (response.ok) setReplacementHistory(await response.json());
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (tab === "retire") void loadReplacementHistory();
+  }, [tab, collegeId, sectionId, termId]);
+
+  useEffect(() => {
+    if (tab !== "retire" || !fromId || !scopeReady) { setReplacementCheck(null); setRetirePreview(null); return; }
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/schedules/replace-instructor", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fromInstructorId: fromId, toInstructorId: toId, collegeId, sectionId, termId, commit: false }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "تعذر فحص التوافق");
+        setReplacementCheck(data); setRetirePreview(Number(data.affected || 0)); setError(null);
+      } catch (e: any) { setReplacementCheck(null); setError(e.message || "تعذر فحص التوافق"); }
+    }, 220);
+    return () => window.clearTimeout(timer);
+  }, [tab, fromId, toId, collegeId, sectionId, termId]);
+
+  const undoReplacement = async (versionId: string) => {
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch(`/api/intelligence/versions/${encodeURIComponent(versionId)}/restore`, { method: "POST", headers: { "x-schedule-confirm": "restore" } });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر التراجع");
+      await loadReplacementHistory(); onChanged();
+    } catch (e: any) { setError(e.message || "تعذر التراجع"); }
+    finally { setBusy(false); }
+  };
+
   const retire = async (commit: boolean) => {
     if (!fromId) { setError("اختر الأستاذ المراد استبداله."); return; }
     setBusy(true); setError(null);
@@ -318,8 +365,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر التنفيذ");
-      if (commit) { setRetirePreview(null); setFromId(0); setToId(0); onChanged(); onClose(); }
-      else setRetirePreview(Number(data.affected || 0));
+      if (commit) {
+        setRetirePreview(null); setReplacementCheck(null); setFromId(0); setToId(0); onChanged(); await loadReplacementHistory();
+      } else { setRetirePreview(Number(data.affected || 0)); setReplacementCheck(data); }
     } catch (e: any) {
       setError(e.message || "تعذر التنفيذ");
     } finally {
@@ -333,7 +381,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         <header>
           <div>
             <span className="surface-kicker">{canTransfer ? "الجدول كوحدة واحدة" : "أساتذة الفصل"}</span>
-            <h2>{canTransfer ? "استيراد · تصدير · استبدال" : "المنتدبون"}</h2>
+            <h2>{canTransfer ? "تصدير · استيراد · استبدال · منتدبون" : "المنتدبون"}</h2>
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
@@ -343,7 +391,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
             <>
               <button type="button" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")}><Download />تصدير</button>
               <button type="button" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")}><Upload />استيراد</button>
-              <button type="button" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")}><UserMinus />استبدال أستاذ</button>
+              <button type="button" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")}><UserMinus />استبدال</button>
             </>
           ) : null}
           <button type="button" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")}><UserPlus />المنتدبون</button>
@@ -444,7 +492,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
               <div className="roster-copy">
                 <select value={copyFrom || ""} onChange={e => setCopyFrom(Number(e.target.value) || 0)}>
                   <option value="">انسخ من فصل…</option>
-                  {terms.filter(term => Number(term.AdTermId) !== termId).map(term => (
+                  {sortedTerms.filter(term => Number(term.AdTermId) !== termId).map(term => (
                     <option key={term.AdTermId} value={term.AdTermId}>{term.AdTermName}</option>
                   ))}
                 </select>
@@ -485,7 +533,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     definite article, hamza seats, taa marbuta, and the titles
                     that may or may not be written. */}
                 {(rosterQuery.trim()
-                  ? instructors
+                  ? sortedInstructors
                       .filter(person => {
                         const fold = (value: string) => String(value || "")
                           .replace(/[\u064B-\u0652\u0640]/g, "")
@@ -496,7 +544,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                           String(person.AdInstructorCivil || "").includes(rosterQuery.trim());
                       })
                       .slice(0, 25)
-                  : instructors.filter(person => roster.includes(person.AdInstructorId))
+                  : sortedInstructors.filter(person => roster.includes(person.AdInstructorId))
                 ).map(person => {
                   const on = roster.includes(person.AdInstructorId);
                   return (
@@ -546,31 +594,33 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   <span>إلى</span>
                   <select value={toId || ""} onChange={e => setToId(Number(e.target.value) || 0)}>
                     <option value="">اتركها بلا أستاذ</option>
-                    {instructors.map(person => (
+                    {sortedInstructors.map(person => (
                       <option key={person.AdInstructorId} value={person.AdInstructorId}>{person.AdInstructorName}</option>
                     ))}
                   </select>
                 </label>
               </div>
-              {retirePreview === null ? (
-                <SecondaryButton type="button" onClick={() => retire(false)} disabled={!fromId || busy}>
-                  كم موعداً سيتغيّر؟
-                </SecondaryButton>
-              ) : (
-                <div className="transfer-preview">
-                  <div className="transfer-counts">
-                    <span><b>{retirePreview.toLocaleString("ar-KW-u-nu-latn")}</b>موعد سينتقل</span>
+              {fromId ? (
+                <div className={`replacement-compatibility ${replacementCheck?.compatible === false ? "conflict" : replacementCheck?.compatible ? "ok" : "checking"}`}>
+                  <span>{replacementCheck?.compatible === false ? <ShieldAlert /> : <CheckCircle2 />}</span>
+                  <div>
+                    <strong>{replacementCheck?.compatible === false ? "يوجد تعارض" : replacementCheck?.compatible ? "متوافق مع جميع المواعيد" : "نفحص المواعيد…"}</strong>
+                    <small>{replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "الأستاذ البديل مرتبط بموعد متداخل.") : retirePreview != null ? `${retirePreview.toLocaleString("ar-KW-u-nu-latn")} موعد سيتأثر` : ""}</small>
                   </div>
-                  <p className="transfer-note">
-                    {toId ? `من ${named(fromId)} إلى ${named(toId)}.` : `من ${named(fromId)} إلى «بلا أستاذ» — ستظهر كمواعيد ناقصة في مراجعة الاعتماد.`}
-                  </p>
-                  {retirePreview ? (
-                    <PrimaryButton type="button" onClick={() => retire(true)} disabled={busy}>
-                      {busy ? "ينفّذ…" : "نفّذ الاستبدال"}
-                    </PrimaryButton>
-                  ) : null}
                 </div>
-              )}
+              ) : null}
+              {replacementCheck?.reasons?.length ? <ul className="replacement-conflicts">{replacementCheck.reasons.slice(0,4).map((reason:string,index:number)=><li key={index}>{reason}</li>)}</ul> : null}
+              {retirePreview != null && retirePreview > 0 ? (
+                <PrimaryButton type="button" onClick={() => retire(true)} disabled={busy || replacementCheck?.compatible === false} title={replacementCheck?.compatible === false ? (replacementCheck.reasons?.[0] || "يوجد تعارض") : undefined}>
+                  {busy ? "ينفّذ…" : "نفّذ الاستبدال"}
+                </PrimaryButton>
+              ) : null}
+              <section className="replacement-history">
+                <header><History /><div><strong>سجل الاستبدالات</strong><small>يمكن التراجع عن آخر القرارات بأمان.</small></div></header>
+                {replacementHistory.length ? replacementHistory.slice(0,8).map(item => (
+                  <article key={item.id}><div><strong>{String(item.label).replace("قبل استبدال الأستاذ: ", "")}</strong><small>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")} · {item.userName}</small></div><SecondaryButton type="button" onClick={() => void undoReplacement(item.id)} disabled={busy}><RotateCcw />تراجع</SecondaryButton></article>
+                )) : <p className="muted">لا توجد عمليات استبدال مسجلة لهذا الفصل.</p>}
+              </section>
             </>
           ) : null}
         </div>

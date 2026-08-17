@@ -239,29 +239,22 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       <PrintPortal>
         <div className="print-sheet-modal">
         <div className="print-report print-upright">
-          <PrintLetterhead title="تقرير مراجعة الجدول قبل الاعتماد" scope={scopeLine} />
-          <div className="print-summary">
-            <span>مؤشر المطابقة: <b>{score} / 100</b></span>
-            <span>عدد المواعيد: <b>{rows.length}</b></span>
-            <span>ملاحظات: <b>{findings.length}</b></span>
+          <PrintLetterhead title="مراجعة الاعتماد · قرار 1912/2016" scope={scopeLine} />
+          <section className={`print-review-hero tone-${tone}`}>
+            <div><small>قرار الاعتماد</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</strong><span>{scopeLine}</span></div>
+            <b>{score}<small>/100</small></b>
+          </section>
+          <div className="print-review-spread">
+            <span><b>{spread.high}</b> يمنع</span><span><b>{spread.medium}</b> يراجَع</span><span><b>{spread.low}</b> ملاحظة</span><span><b>{spread.clean}</b> سليم</span>
           </div>
-          <table>
-            <colgroup><col style={{ width: "7%" }} /><col style={{ width: "11%" }} /><col style={{ width: "13%" }} /><col /></colgroup>
-            <thead><tr><th>م</th><th>المادة</th><th>الدرجة</th><th>الملاحظة</th></tr></thead>
-            <tbody>
-              {findings.map((finding, index) => (
-                <tr key={finding.rule}>
-                  <td>{index + 1}</td>
-                  <td>{finding.article}</td>
-                  <td>{SEVERITY_LABEL[finding.severity]}</td>
-                  <td>{finding.title} — {finding.detail}</td>
-                </tr>
-              ))}
-              {findings.length ? null : (
-                <tr><td>1</td><td>—</td><td>مطابق</td><td>لا ملاحظات على الجدول.</td></tr>
-              )}
-            </tbody>
-          </table>
+          <section className="print-review-findings">
+            {findings.length ? findings.map((finding, index) => (
+              <article className={`print-review-finding severity-${finding.severity}`} key={finding.rule}>
+                <header><b>{index + 1}</b><div><strong>{finding.title}</strong><span>{finding.detail}</span></div><em>{finding.article}</em><i>{SEVERITY_LABEL[finding.severity]}</i></header>
+                {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, 18).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > 18 ? <small>+ {(finding.rowIds.length - 18).toLocaleString("ar-KW-u-nu-latn")} موعد آخر</small> : null}</div> : null}
+              </article>
+            )) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>مطابق لكل ما يمكن فحصه آلياً من اللائحة.</span></div>}
+          </section>
           <div className="print-signatures">
             <div><span>منسق الجدول</span><i /></div>
             <div><span>رئيس القسم العلمي</span><i /></div>

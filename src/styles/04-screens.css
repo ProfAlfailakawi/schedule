@@ -1536,3 +1536,13 @@
 .vault-preview-details{border-top:1px solid color-mix(in srgb,var(--success) 16%,var(--line));padding-top:10px}.vault-preview-details summary{cursor:pointer;color:var(--muted);font-size:var(--t-xs);font-weight:650;list-style:none}.vault-preview-details summary::-webkit-details-marker{display:none}.vault-preview-details summary::before{content:"+";display:inline-grid;place-items:center;width:18px;height:18px;margin-inline-end:7px;border-radius:50%;background:var(--surface-2);color:var(--accent);font-weight:700}.vault-preview-details[open] summary::before{content:"−"}.vault-preview-details .vault-preview-hash{margin-top:12px}.vault-preview-details .vault-counts{margin-top:10px;max-height:190px;overflow:auto;align-content:flex-start;padding-inline-end:2px}.vault-preview-details .vault-counts span{background:var(--surface);box-shadow:none}.vault-preview-details .vault-counts svg{width:13px;height:13px}
 .vault-import-progress{padding:14px 15px;gap:10px}.vault-import-progress .vault-export-current{font-family:var(--font)!important;direction:rtl!important;text-align:start!important;font-size:11px!important}.vault-import-progress .vault-export-progress-meta{justify-content:space-between}.vault-import-progress.status-ready{border-color:color-mix(in srgb,var(--success) 34%,var(--line));background:color-mix(in srgb,var(--success-soft) 34%,var(--surface))}
 @media(max-width:720px){.vault-preview-summary{grid-template-columns:1fr 1fr}.vault-preview-summary>span:last-child{grid-column:1/-1}.vault-preview-details .vault-preview-hash{grid-template-columns:1fr}.vault-preview-details .vault-preview-hash code{font-size:9px}.vault-import-progress .vault-export-progress-meta{align-items:flex-start;flex-direction:column}}
+
+/* Login carries the same restrained identity as the dark navigation mark. */
+.apex-login-brand>div{display:grid;gap:6px}.apex-login-brand strong{letter-spacing:.24em;font-weight:750}.apex-login-brand small{font-size:.92rem;letter-spacing:0;color:color-mix(in srgb,#fff 52%,transparent)}
+
+/* The login carries the same quiet SCHEDULE signature used in the dark menu:
+   spaced wordmark, then the decade line — no extra emblem competing with it. */
+.apex-login-brand{justify-content:center;text-align:center;gap:0}
+.apex-login-brand .apex-login-mark{display:none}
+.apex-login-brand strong{color:#909b95;font-size:14px;letter-spacing:.30em;font-weight:650}
+.apex-login-brand small{margin-top:7px;color:#748079;font-size:clamp(14px,1.3vw,19px);line-height:1.55}

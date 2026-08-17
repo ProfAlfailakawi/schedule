@@ -1,7 +1,8 @@
 import React from "react";
-import { CheckCircle2, CloudUpload, Target } from "lucide-react";
+import { CloudUpload, Target } from "lucide-react";
 import { Field, Surface } from "./ui";
 import type { AdCollege, AdSection, AdTerm } from "../types";
+import { sortTermsNewest } from "../utils/termSequence";
 
 interface Props {
   collegeId: number;
@@ -42,7 +43,6 @@ export default function IntelligenceContextBar({
         <span><Target /></span>
         <div>
           <strong>نطاق القرار</strong>
-          <small>محصور في القسم والفصل</small>
         </div>
       </div>
       <div className="intel-context-fields">
@@ -51,15 +51,15 @@ export default function IntelligenceContextBar({
         {!hideSection && !lockSection ? <Field label="القسم"><select value={sectionId || ""} onChange={(event)=>onSectionChange(Number(event.target.value)||0)}>{availableSections.map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select></Field> : null}
         <Field label="الفصل">
           <select value={termId || ""} onChange={(event) => onTermChange(Number(event.target.value) || 0)}>
-            {[...terms].sort((a, b) => b.AdTermId - a.AdTermId).map((term) => (
+            {sortTermsNewest(terms).map((term) => (
               <option key={term.AdTermId} value={term.AdTermId}>{term.AdTermName}</option>
             ))}
           </select>
         </Field>
       </div>
-      <span className={`connection-pill ${online ? "online" : "offline"}`}>
-        {online ? <><CheckCircle2 />متصل</> : <><CloudUpload />قراءة فقط</>}
-      </span>
+      {!online ? (
+        <span className="connection-pill offline"><CloudUpload />قراءة فقط</span>
+      ) : null}
     </Surface>
   );
 }

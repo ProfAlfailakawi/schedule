@@ -102,7 +102,7 @@ import {
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, sortByName } from "../utils/sorting";
-import { previousYearSameTermName, sameTermName } from "../utils/termSequence";
+import { previousYearSameTermName, sameTermName, sortTermsNewest } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
@@ -438,7 +438,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [recentMoves, setRecentMoves] = useState<Record<number, string>>({}),
     /* A fading dashed echo left where a card used to sit, so a move reads as a
        journey from one place to another and not a card that merely appeared. */
-    [moveTraces, setMoveTraces] = useState<Array<{ key: string; dayKey: DayKey; top: number; height: number; label: string }>>([]),
+    [moveTraces, setMoveTraces] = useState<Array<{ key: string; dayKey: DayKey; top: number; height: number; label: string; roomKey: string; roomBuilding: string; roomHall: string; roomBuildingKey: string; roomHallKey: string; roomLabel: string; from: number; to: number }>>([]),
     /* Which day the rooms matrix is reading, and which rooms are pinned. */
     [matrixDay, setMatrixDay] = useState<DayKey | "week">("week"),
     [matrixBuildings, setMatrixBuildings] = useState<Set<string>>(new Set()),
@@ -462,6 +462,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     [replay, setReplay] = useState<any>(null),
     [replayLoading, setReplayLoading] = useState(false),
     [quickSearch, setQuickSearch] = useState("");
+  const [decisionEditQueue, setDecisionEditQueue] = useState<{ ids: number[]; index: number } | null>(null);
   /* The timetable stays the main object. Secondary controls disclose only
      when they are being used, while an active lens keeps its result visible in
      the toolbar even after its fields are folded away. */
@@ -741,7 +742,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       fetchJson("/api/sections"),
       fetchJson("/api/terms"),
     ]);
-    const t = [...rawTerms].sort((a: AdTerm, b: AdTerm) => Number(b.AdTermId) - Number(a.AdTermId));
+    const t = sortTermsNewest<AdTerm>(rawTerms);
     setColleges(sortByName(c, (row:any)=>row.AdCollegeName));
     setSections(sortByName(s, (row:any)=>row.AdSectionName));
     setTerms(t);
@@ -1265,7 +1266,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       appliedScope.current = nextScopeKey;
       if (Array.isArray(data?.colleges) && data.colleges.length) setColleges(sortByName(data.colleges, (row: any) => row.AdCollegeName));
       if (Array.isArray(data?.sections) && data.sections.length) setSections(sortByName(data.sections, (row: any) => row.AdSectionName));
-      if (Array.isArray(data?.terms) && data.terms.length) setTerms([...data.terms].sort((a: AdTerm, b: AdTerm) => Number(b.AdTermId) - Number(a.AdTermId)));
+      if (Array.isArray(data?.terms) && data.terms.length) setTerms(sortTermsNewest<AdTerm>(data.terms));
       setRows(Array.isArray(data?.rows) ? data.rows : []);
       // A scope with no chosen section keeps the names it already knows —
       // parity with the old per-section lookups, which only ran once a
@@ -1474,7 +1475,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     copySections = sections.filter(
       (s) => !copyCollege || s.AdCollegeId === copyCollege,
     );
-  const latestTermId = useMemo(() => terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0), [terms]);
+  const latestTermId = useMemo(() => Number(sortTermsNewest(terms)[0]?.AdTermId || 0), [terms]);
   /* Stable lookup maps are essential here. Rebuilding them on every click made
      every dependent memo look changed and forced the week layout to start over. */
   const collegeById = useMemo(
@@ -1741,7 +1742,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       presence.send({ editing: { rowId: row.id, rev: Number((row as any).rev || 0) } });
       setEditor("edit");
     },
+    openDecisionRows = (queue: FSchedule[]) => {
+      const ids = [...new Set(queue.map(row => Number(row.id)).filter(Boolean))];
+      if (!ids.length) return;
+      setDecisionEditQueue({ ids, index: 0 });
+      const first = rows.find(row => row.id === ids[0]) || queue[0];
+      if (first) openEdit(first);
+    },
     back = () => {
+      setDecisionEditQueue(null);
       setEditor("index");
       presence.send({ editing: null });
       setEditId(null);
@@ -2461,8 +2470,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
      where it came from (a fading dashed echo) — a move reads as a journey rather
      than a card that merely appeared somewhere new (Notes 7 & 16). */
   const leaveMoveTraces = (moves: Array<{ before: FSchedule; after: FSchedule }>) => {
-    const traces: Array<{ key: string; dayKey: DayKey; top: number; height: number; label: string }> = [];
+    const traces: Array<{ key: string; dayKey: DayKey; top: number; height: number; label: string; roomKey: string; roomBuilding: string; roomHall: string; roomBuildingKey: string; roomHallKey: string; roomLabel: string; from: number; to: number }> = [];
     moves.forEach(({ before, after }) => {
+      const sourceRoom = roomIdentity(before.AdRoomCode, before.AdRoomHall);
+      const from = mins(before.fstarttime), to = mins(before.fendtime);
       days.forEach((d) => {
         if (!Boolean((before as any)[d.key])) return;
         // No echo where nothing moved. "Moved" has to include a change of hall:
@@ -2474,11 +2485,19 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           String((before as any).AdRoomHall || "") === String((after as any).AdRoomHall || "");
         if (Boolean((after as any)[d.key]) && before.fstarttime === after.fstarttime && sameRoom) return;
         traces.push({
-          key: `${d.key}-${before.id}-${before.fstarttime}`,
+          key: `${d.key}-${sourceRoom.key}-${before.id}-${before.fstarttime}`,
           dayKey: d.key as DayKey,
-          top: ((mins(before.fstarttime) - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
-          height: Math.max(SLOT_H - 4, ((mins(before.fendtime) - mins(before.fstarttime)) / SCHEDULE_SLOT_MINUTES) * SLOT_H - 3),
+          top: ((from - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H,
+          height: Math.max(SLOT_H - 4, ((to - from) / SCHEDULE_SLOT_MINUTES) * SLOT_H - 3),
           label: before.AdCourseName || courseById.get(before.AdCourseId)?.CourseName || "الموعد",
+          roomKey: sourceRoom.key,
+          roomBuilding: sourceRoom.building,
+          roomHall: sourceRoom.hall,
+          roomBuildingKey: sourceRoom.buildingKey,
+          roomHallKey: sourceRoom.hallKey,
+          roomLabel: sourceRoom.label,
+          from,
+          to,
         });
       });
     });
@@ -2581,6 +2600,23 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       const queuedOffline = Boolean((saved as any)?.queuedOffline);
       setMessage(queuedOffline ? "حُفظ التعديل محلياً وسيُزامن عند عودة الاتصال." : (editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد"));
       setPhysicsNotice([queuedOffline ? "بانتظار المزامنة" : "", editorTimingNote || ""].filter(Boolean).join(" · "));
+      if (!queuedOffline && editor === "edit" && decisionEditQueue && decisionEditQueue.ids[decisionEditQueue.index] === Number(editId)) {
+        const nextIndex = decisionEditQueue.index + 1;
+        const nextId = decisionEditQueue.ids[nextIndex];
+        if (nextId) {
+          const nextRow = rows.find(row => row.id === nextId);
+          if (nextRow) {
+            setDecisionEditQueue({ ...decisionEditQueue, index: nextIndex });
+            openEdit(nextRow);
+            requestAnimationFrame(() => setMessage(`تم الحفظ · التالي ${nextIndex + 1} من ${decisionEditQueue.ids.length}`));
+            return;
+          }
+        }
+        setDecisionEditQueue(null);
+        back();
+        requestAnimationFrame(() => setMessage("تمت معالجة جميع المواعيد المرتبطة بهذه المشكلة."));
+        return;
+      }
       back();
     } catch (e: any) {
       // The row moved on under this editor: hand back both versions instead of
@@ -3296,6 +3332,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           });
           revokeUndo(undoId);
         }
+        // The source echo is optimistic just like the moved card. A refused
+        // room drop must erase it too, otherwise the board claims a journey
+        // that never happened.
+        setMoveTraces([]);
         throw refusal;
       }
     } catch (e: any) {
@@ -3439,7 +3479,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         return now >= from && now < to;
       }
     }
-    const newest = Math.max(0, ...terms.map((item: any) => Number(item.AdTermId) || 0));
+    const newest = Number(sortTermsNewest(terms)[0]?.AdTermId || 0);
     return Number(filterTerm) === newest;
   }, [terms, filterTerm]);
 
@@ -4106,14 +4146,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         key={`${d.key}-${r.id}`}
       >
         <GripVertical data-physics-handle="true" className="week-drag-handle" />
-        <button
-          className="week-insight"
-          type="button"
-          title="السياق الذكي"
-          onClick={(e) => { e.stopPropagation(); openContext(r); }}
-        >
-          <BrainCircuit />
-        </button>
         <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
         <span className="week-who">{shortWho}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
         <small className="week-when"><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>{place ? <i>{place}</i> : null}</small>
@@ -5567,9 +5599,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       <article
                         key={r.id}
                         className={`${xrayClass(r)} ${conflictIds.has(r.id) ? "conflict" : ""}`}
-                        onClick={() =>
-                          setXrayId((v) => (v === r.id ? null : r.id))
-                        }
+                        onClick={() => void openContext(r)}
                       >
                         <time dir="ltr">
                           <b>{scheduleClockForDisplay(r.fendtime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fstarttime)}</small>
@@ -6717,91 +6747,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           </div>
         ) : null}
       </Surface>
-      {xraySelected ? (
-        <section ref={xraySectionRef} className="academic-xray no-print">
-          <div className="xray-beam">
-            <BrainCircuit />
-            <span>أشعة الجدول</span>
-          </div>
-          <div className="xray-main">
-            <strong>
-              {xraySelected.AdCourseName ||
-                courseById.get(xraySelected.AdCourseId)?.CourseName}
-            </strong>
-            <small>
-              شعبة {xraySelected.SCode} ·{" "}
-              {arabicDays(xraySelected) || "بدون أيام"} · اضغط الموعد مرة أخرى
-              لإلغاء الأشعة
-            </small>
-          </div>
-          <div className="xray-relations">
-            <span>
-              <UsersRound />
-              <b>
-                {
-                  rows.filter(
-                    (r) => r.AdInstructorId === xraySelected.AdInstructorId,
-                  ).length
-                }
-              </b>{" "}
-              للأستاذ
-            </span>
-            <span>
-              <CalendarDays />
-              <b>
-                {
-                  rows.filter((r) => r.AdCourseId === xraySelected.AdCourseId)
-                    .length
-                }
-              </b>{" "}
-              للمقرر
-            </span>
-            <span>
-              <Table2 />
-              <b>
-                {
-                  rows.filter((r) => sameRoom(r, xraySelected)).length
-                }
-              </b>{" "}
-              للقاعة
-            </span>
-            <span>
-              <CalendarDays />
-              <b>
-                {
-                  rows.filter(
-                    (r) =>
-                      r.id !== xraySelected.id &&
-                      xraySharedDay(r, xraySelected),
-                  ).length
-                }
-              </b>{" "}
-              في نفس الأيام
-            </span>
-            <span>
-              <Eye />
-              <b>
-                {
-                  rows.filter(
-                    (r) =>
-                      r.id !== xraySelected.id &&
-                      xrayTimeConnected(r, xraySelected),
-                  ).length
-                }
-              </b>{" "}
-              متصل زمنياً
-            </span>
-          </div>
-          <button
-            type="button"
-            aria-label="إغلاق أشعة الجدول"
-            title="إغلاق أشعة الجدول"
-            onClick={() => setXrayId(null)}
-          >
-            <X />
-          </button>
-        </section>
-      ) : null}
       <section className="schedule-mini-stats">
         <StatCard
           icon={<CalendarDays />}
@@ -6825,6 +6770,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         experience={experience}
         isPowerAdmin={isPowerAdmin}
         onOpenRow={openEdit}
+        onOpenRows={openDecisionRows}
         onEnsureWeek={() => setViewMode("week")}
         rows={filteredRows}
         headless
@@ -6874,11 +6820,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                        hover card. A variable only — every state colour the card
                        already owns (running, x-ray, just-changed) still wins. */
                     style={{ ["--hue" as any]: hueFor(c?.CourseCode || s.AdCourseName || "—", s.AdCourseName || c?.CourseName || "", i?.AdInstructorName, placeOf(s)) }}
-                    onClick={() => runVisualTransition(() => setXrayId(s.id))}
+                    onClick={() => void openContext(s)}
                     onDoubleClick={() => openEdit(s)}
                     tabIndex={0}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") { runVisualTransition(() => setXrayId(s.id)); return; }
+                      if (e.key === "Enter") { void openContext(s); return; }
                     }}
                   >
                     <div className="agenda-index">
@@ -6931,15 +6877,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       </span>
                     </div>
                     <div className="agenda-actions">
-                      <button
-                        className="icon-action icon-action-insight"
-                        type="button"
-                        title="افهم هذا الموعد"
-                        aria-label="افهم هذا الموعد"
-                        onClick={() => openContext(s)}
-                      >
-                        <BrainCircuit />
-                      </button>
                       <IconAction
                         label="تعديل"
                         kind="edit"
@@ -7008,9 +6945,27 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             const { displayDays, allBuildings, allRooms, byDayRoom, noRoomByDay, roomCounts, hourMarks, span } = roomsMatrix;
             /* Pinning rooms narrows the matrix to the ones being worked on —
                a building's four labs instead of every room in the college. */
+            const tracedRooms = moveTraces
+              .filter(trace => trace.roomKey !== "|")
+              .map(trace => ({
+                key: trace.roomKey,
+                building: trace.roomBuilding,
+                hall: trace.roomHall,
+                buildingKey: trace.roomBuildingKey,
+                hallKey: trace.roomHallKey,
+                label: trace.roomLabel,
+              }));
+            // Keep a room on screen for the seven-second afterglow even if the
+            // moved lecture was its last appointment. Without this merge the
+            // source row vanished at the exact instant we tried to say
+            // «نُقل من هنا», which made room-to-room moves feel less physical
+            // than the week view.
+            const roomsWithAfterglow = [...new Map(
+              [...allRooms, ...tracedRooms].map(room => [room.key, room] as const),
+            ).values()].sort((a, b) => byArabic(a.label, b.label));
             const buildingScopedRooms = matrixBuildings.size
-              ? allRooms.filter(room => matrixBuildings.has(room.buildingKey))
-              : allRooms;
+              ? roomsWithAfterglow.filter(room => matrixBuildings.has(room.buildingKey))
+              : roomsWithAfterglow;
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
             const rowsFor = (day: DayKey, roomKey: string) => byDayRoom.get(`${day}|${roomKey}`) || [];
@@ -7093,16 +7048,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   }}
                 >
                   <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
-                  <button
-                    className="week-insight rooms-insight"
-                    type="button"
-                    title="السياق الذكي"
-                    data-no-physics="true"
-                    onPointerDown={(e) => e.stopPropagation()}
-                    onClick={(e) => { e.stopPropagation(); void openContext(row); }}
-                  >
-                    <BrainCircuit />
-                  </button>
                   <b>{placement ? compactTitle : courseLabel(title, 0.82).text}</b>
                   <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{placement ? <i>{compactWho}</i> : <><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</>}</span>
                   <em dir="ltr">{code}</em>
@@ -7361,6 +7306,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   />
                                 ))}
                                 {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                                {moveTraces
+                                  .filter(trace => trace.dayKey === day.key && trace.roomKey === room.key)
+                                  .map(trace => (
+                                    <div
+                                      key={`room-trace-${trace.key}`}
+                                      className="week-move-trace rooms-move-trace"
+                                      style={{
+                                        insetInline: "auto",
+                                        insetInlineEnd: `${pct(trace.from)}%`,
+                                        insetInlineStart: "auto",
+                                        width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(trace.to) - pct(trace.from))}%`,
+                                        insetBlock: "3px",
+                                        height: "auto",
+                                      }}
+                                      aria-hidden="true"
+                                      title={`${trace.label} · نُقل من هنا`}
+                                    >
+                                      <span><CornerUpRight aria-hidden="true" />نُقل من هنا</span>
+                                    </div>
+                                  ))}
                                 {paint?.trackKey === `${room.key}|${day.key}` ? (
                                   <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true">
                                     <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span>
@@ -7375,7 +7340,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       </div>
                     </section>
                   ))}
-                  {displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length) ? (
+                  {displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length || moveTraces.some(trace => trace.roomKey === "|" && trace.dayKey === day.key)) ? (
                     <section className="rooms-week-room rooms-row-none">
                       <header className="rooms-week-room-head"><strong>بلا قاعة</strong></header>
                       <div className="rooms-week-days">
@@ -7413,6 +7378,26 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 />
                               ))}
                               {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                              {moveTraces
+                                .filter(trace => trace.dayKey === day.key && trace.roomKey === "|")
+                                .map(trace => (
+                                  <div
+                                    key={`room-trace-${trace.key}`}
+                                    className="week-move-trace rooms-move-trace"
+                                    style={{
+                                      insetInline: "auto",
+                                      insetInlineEnd: `${pct(trace.from)}%`,
+                                      insetInlineStart: "auto",
+                                      width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(trace.to) - pct(trace.from))}%`,
+                                      insetBlock: "3px",
+                                      height: "auto",
+                                    }}
+                                    aria-hidden="true"
+                                    title={`${trace.label} · نُقل من هنا`}
+                                  >
+                                    <span><CornerUpRight aria-hidden="true" />نُقل من هنا</span>
+                                  </div>
+                                ))}
                               {paint?.trackKey === `none|${day.key}` ? <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true"><b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span></div> : null}
                               {(noRoomByDay.get(day.key as DayKey) || []).map(row => renderTrackCard(row, day.key as DayKey))}
                             </div>
@@ -7421,7 +7406,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       </div>
                     </section>
                   ) : null}
-                  {!roomList.length && !displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length) ? (
+                  {!roomList.length && !displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length || moveTraces.some(trace => trace.roomKey === "|" && trace.dayKey === day.key)) ? (
                     <p className="rooms-empty">لا قاعات مسجلة في هذا النطاق بعد — أسنِد قاعة لأي محاضرة وستظهر هنا صفاً كاملاً.</p>
                   ) : null}
                 </div>
@@ -7695,10 +7680,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         onClick={(e) => {
                           const from = pressOrigin.current;
                           if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 6) return;
-                          openEdit(r);
+                          void openContext(r);
                         }}
                         tabIndex={0}
-                        onKeyDown={(e) => { if (e.key === "Enter") openEdit(r); }}
+                        onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
                       >
                         <strong>{r.AdCourseName || c?.CourseName || code}</strong>
                         <span>{i?.AdInstructorName || "بدون أستاذ"}</span>
@@ -8014,12 +7999,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                             const from = pressOrigin.current;
                             if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
                             if (picking) { toggleSelect(placed.row.id); return; }
-                            openEdit(placed.row);
+                            void openContext(placed.row);
                           }}
                           onPointerEnter={(e) => { if (!physicsActive) openPeek(placed.row, e.currentTarget); }}
                           onPointerLeave={() => setPeek(current => (current?.row.id === placed.row.id ? null : current))}
                           tabIndex={0}
-                          onKeyDown={(e) => { if (e.key === "Enter") openEdit(placed.row); }}
+                          onKeyDown={(e) => { if (e.key === "Enter") void openContext(placed.row); }}
                         >
                           <b>{placed.row.AdCourseName || c?.CourseName || code}</b>
                           <span>{railInstructor?.AdInstructorName ? firstLast(railInstructor.AdInstructorName) : "بدون أستاذ"}</span>

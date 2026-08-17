@@ -139,7 +139,7 @@ function computeSchedulePulse(rows:FSchedule[], universe:FSchedule[], courses:Ad
   analysis.alerts.filter((alert:any)=>alert.title!=="الوضع مستقر").forEach((alert:any)=>issues.push({type:"quality",severity:alert.severity,title:alert.title,detail:alert.detail,score:alert.severity==="critical"?100:alert.severity==="warning"?70:30}));
   const room=health.fragility.roomIntelligence.topRisk;if(room?.singlePoint)issues.push({type:"room",severity:"warning",title:`${room.code}/${room.hall} نقطة اعتماد حساسة`,detail:`ترتبط بـ${room.sessions} مواعيد، ويمكن استيعاب ${room.recoverabilityPct}% منها فقط في قاعات بديلة بنفس الوقت.`,score:82});
   if(health.fairness<75)issues.push({type:"fairness",severity:"warning",title:"عدالة التوزيع تحتاج مراجعة",detail:`مؤشر العدالة ${health.fairness}/100؛ يوجد تفاوت ملحوظ في الأيام والفراغات والأوقات الثقيلة.`,score:74});
-  if(health.resilience<70)issues.push({type:"fragility",severity:"warning",title:"الجدول جيد لكنه حساس للطوارئ",detail:`مؤشر المرونة ${health.resilience}/100. اختبر القاعات والأساتذة والأيام الأعلى تأثيرًا قبل الاعتماد.`,score:78});
+  if(health.resilience<70)issues.push({type:"fragility",severity:"warning",title:"الجدول جيد لكنه يحتاج مرونة أكبر",detail:`مؤشر المرونة ${health.resilience}/100. اختبر القاعات والأساتذة والأيام الأعلى تأثيرًا قبل الاعتماد.`,score:78});
   const unique=issues.filter((item,index,array)=>array.findIndex(other=>other.title===item.title)===index).sort((a,b)=>b.score-a.score).slice(0,3);
   return {count:unique.length,items:unique,health:{score:health.score,descriptor:health.descriptor,quality:health.quality,resilience:health.resilience,fairness:health.fairness},message:unique.length?`اليوم عندك ${unique.length} أمور تستحق القرار`:`لا يوجد أمر حرج؛ الجدول في حالة مستقرة`};
 }

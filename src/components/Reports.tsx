@@ -9,7 +9,8 @@ import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, Pri
 import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
-import { byArabic, sortByName } from "../utils/sorting";
+import { byArabic, sortByName, sortKey } from "../utils/sorting";
+import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 
@@ -39,7 +40,7 @@ interface Props {
 
 interface Filters {
   collegeId: number; sectionId: number; termId: number;
-  instructorId: number; civil: string;
+  instructorId: number; civil: string; instructorQuery: string;
   building: string; hall: string;
   courseId: number; courseCode: string;
   startTime: string; endTime: string;
@@ -47,7 +48,7 @@ interface Filters {
 }
 
 const fresh = (): Filters => ({
-  collegeId: 0, sectionId: 0, termId: 0, instructorId: 0, civil: "",
+  collegeId: 0, sectionId: 0, termId: 0, instructorId: 0, civil: "", instructorQuery: "",
   building: "", hall: "", courseId: 0, courseCode: "",
   startTime: "", endTime: "", sun: false, mon: false, tue: false, wed: false, thr: false
 });
@@ -208,7 +209,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         const responses = await Promise.all(["colleges", "sections", "terms", "instructors", "courses"].map(x => fetch(`/api/${x}`)));
         if (responses.some(r => !r.ok)) throw new Error("تعذر تحميل البيانات");
         const data = await Promise.all(responses.map(r => r.json()));
-        const sortedTerms = [...data[2]].sort((a: AdTerm, b: AdTerm) => Number(b.AdTermId) - Number(a.AdTermId));
+        const sortedTerms = sortTermsNewest<AdTerm>(data[2]);
         setColleges(sortByName(data[0], (row: AdCollege) => row.AdCollegeName));
         setSections(sortByName(data[1], (row: AdSection) => row.AdSectionName));
         setTerms(sortedTerms);
@@ -368,6 +369,17 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     if (filters.termId) rows = rows.filter(s => s.AdTermId === filters.termId);
     if (filters.instructorId) rows = rows.filter(s => s.AdInstructorId === filters.instructorId);
     if (filters.civil.trim()) rows = rows.filter(s => (instructorById.get(s.AdInstructorId)?.AdInstructorCivil || "").includes(filters.civil.trim()));
+    if (filters.instructorQuery.trim()) {
+      const raw = filters.instructorQuery.trim().replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d))).replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+      const numberQuery = /^\d+$/.test(raw);
+      const nameQuery = sortKey(raw).toLowerCase();
+      rows = rows.filter(s => {
+        const instructor = instructorById.get(s.AdInstructorId);
+        return numberQuery
+          ? String(instructor?.AdInstructorCivil || "").includes(raw)
+          : sortKey(instructor?.AdInstructorName || "").toLowerCase().includes(nameQuery);
+      });
+    }
     if (filters.building) rows = rows.filter(s => String(s.AdRoomCode || "").includes(filters.building));
     if (filters.hall) rows = rows.filter(s => String(s.AdRoomHall || "").includes(filters.hall));
     if (filters.startTime && filters.endTime) {
@@ -451,6 +463,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const selectedCourse = filters.courseId ? courseById.get(filters.courseId) : null;
   if (selectedInstructor) chips.push({ key: "instructor", label: `الأستاذ: ${selectedInstructor.AdInstructorName}`, clear: () => set("instructorId", 0) });
   if (filters.civil) chips.push({ key: "civil", label: `الرقم المدني: ${filters.civil}`, clear: () => set("civil", "") });
+  if (filters.instructorQuery) chips.push({ key: "instructor-query", label: `الأستاذ: ${filters.instructorQuery}`, clear: () => set("instructorQuery", "") });
   if (filters.building) chips.push({ key: "building", label: `المبنى: ${filters.building}`, clear: () => setFilters(prev => ({ ...prev, building: "", hall: "" })) });
   if (filters.hall) chips.push({ key: "hall", label: `القاعة: ${filters.hall}`, clear: () => set("hall", "") });
   if (selectedCourse) chips.push({ key: "course", label: `المقرر: ${selectedCourse.CourseName}`, clear: () => set("courseId", 0) });
@@ -862,14 +875,23 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
         {moreOpen ? (
           <div className="query-more query-advanced-filters" id="query-more-filters" role="group" aria-label="مرشحات إضافية">
-            <Field label="أستاذ">
-              <select value={filters.instructorId || ""} onChange={event => set("instructorId", Number(event.target.value) || 0)}>
-                <option value="">الكل</option>
-                {instructors.map(row => <option key={row.AdInstructorId} value={row.AdInstructorId}>{row.AdInstructorName}</option>)}
-              </select>
-            </Field>
-            <Field label="الرقم المدني">
-              <input value={filters.civil} inputMode="numeric" onChange={event => set("civil", event.target.value.replace(/\D/g, ""))} />
+            <Field label="الأستاذ أو الرقم المدني">
+              <div className="smart-instructor-query">
+                <Search aria-hidden="true" />
+                <input
+                  list="report-instructor-options"
+                  value={filters.instructorQuery}
+                  onChange={event => { set("instructorQuery", event.target.value); set("instructorId", 0); set("civil", ""); }}
+                  placeholder="اكتب الاسم أو الرقم المدني"
+                  autoComplete="off"
+                />
+                <datalist id="report-instructor-options">
+                  {instructors.flatMap(row => [
+                    <option key={`n-${row.AdInstructorId}`} value={row.AdInstructorName} />,
+                    row.AdInstructorCivil ? <option key={`c-${row.AdInstructorId}`} value={row.AdInstructorCivil}>{row.AdInstructorName}</option> : null,
+                  ])}
+                </datalist>
+              </div>
             </Field>
             <Field label="المبنى">
               <select value={filters.building} onChange={event => { set("building", event.target.value); set("hall", ""); }}>

@@ -3468,3 +3468,46 @@ button.twin-delta{width:100%}
 .insight-preview{min-height:92px;padding:15px 16px;border-radius:18px;box-shadow:0 1px 0 color-mix(in srgb,var(--line) 70%,transparent)}
 .insight-preview-copy strong{font-size:14px;line-height:1.5}.insight-preview-copy small{line-height:1.65;-webkit-line-clamp:3}
 @media(max-width:640px){.insight-preview-rail{padding:14px;border-radius:20px}.insight-preview{min-height:84px}}
+
+/* 2026-08 refinement — dense intelligence becomes glanceable instead of textual. */
+.smart-alerts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.smart-alert-card{display:flex!important;align-items:center;gap:12px;min-height:92px;padding:16px!important;border-radius:20px!important}
+.smart-alert-card .smart-alert-icon{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border-radius:14px;background:color-mix(in srgb,currentColor 9%,transparent)}
+.smart-alert-card .smart-alert-icon svg{width:22px;height:22px}
+.smart-alert-card div{min-width:0}.smart-alert-card strong{display:block;font-size:1rem}.smart-alert-card p{margin:4px 0 0!important;line-height:1.55;color:var(--muted);font-size:.88rem}
+
+.spatial-burnout-card .spatial-score-row{align-items:stretch;gap:18px}
+.spatial-burnout-card .spatial-score{min-width:260px;display:grid;place-items:center;align-content:center;border-radius:28px;padding:24px;background:linear-gradient(145deg,var(--surface-2),var(--surface))}
+.spatial-burnout-card .spatial-score small{margin-top:6px;font-weight:700}
+.spatial-burnout-card .spatial-metrics{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px;flex:1}
+.spatial-burnout-card .spatial-metrics article{position:relative;display:grid;align-content:center;gap:3px;min-height:128px;padding:18px;border-radius:22px}
+.spatial-metric-icon{position:absolute;inset-block-start:14px;inset-inline-end:14px;display:grid;place-items:center;width:34px;height:34px;border-radius:11px;background:var(--surface)}
+.spatial-metric-icon svg{width:18px;height:18px}.spatial-metrics article b{font-size:1.9rem}.spatial-metrics article>span:last-child{color:var(--muted)}
+.spatial-risk-list article{grid-template-columns:auto minmax(170px,1fr) auto auto;gap:12px;align-items:center}
+
+.change-list .change-card{align-items:center!important;gap:16px!important;padding:16px 18px!important}
+.change-card-main{display:grid;gap:12px;min-width:0;flex:1}.change-card-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.change-card-title strong{font-size:1rem}
+.change-time-flow{display:grid;grid-template-columns:minmax(110px,1fr) auto minmax(110px,1fr);align-items:center;gap:10px;direction:rtl}
+.change-time-flow>span{display:grid;gap:3px;padding:10px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.change-time-flow>span.after{border-color:color-mix(in srgb,var(--primary) 35%,var(--line));background:color-mix(in srgb,var(--primary) 7%,var(--surface))}
+.change-time-flow small{color:var(--muted);font-size:.72rem}.change-time-flow time{font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}.change-time-flow svg{width:18px;color:var(--muted)}
+
+.drawer-schedule-list{display:grid;gap:10px;padding-bottom:max(28px,env(safe-area-inset-bottom))}
+.drawer-schedule-card{display:grid!important;gap:12px!important;padding:15px 16px!important;border-radius:18px!important}
+.drawer-schedule-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.drawer-schedule-title strong{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drawer-schedule-meta{display:flex;align-items:center;justify-content:space-between;gap:12px;color:var(--muted)}
+.drawer-schedule-meta span{display:flex;align-items:center;gap:7px;min-width:0}.drawer-schedule-meta svg{width:16px;height:16px}.drawer-schedule-meta time{direction:ltr;white-space:nowrap;font-weight:750;color:var(--ink)}
+
+.genome-details .genome-patterns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.genome-details .genome-patterns>section{padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2)}
+.genome-details .genome-patterns>section>span{font-weight:800}.genome-details .genome-patterns>section>div{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.genome-details .genome-patterns b{display:inline-flex!important;align-items:center;gap:7px;padding:8px 10px;border-radius:12px;background:var(--surface);border:1px solid var(--line);white-space:nowrap}
+.genome-details .genome-patterns b small{font-weight:650}.genome-details .genome-patterns b strong{font-size:.88rem}
+.genome-details .genome-deviations{margin-top:12px}.genome-details .genome-deviations article{padding:12px 14px}.genome-details .genome-deviations p{margin:3px 0 0;line-height:1.5}
+
+.smart-instructor-query{position:relative;display:flex;align-items:center}.smart-instructor-query>svg{position:absolute;inset-inline-start:12px;width:17px;height:17px;color:var(--muted);pointer-events:none}.smart-instructor-query input{padding-inline-start:38px!important}
+
+/* Every long intelligence drawer keeps its last card above the browser/home
+   indicator instead of trapping it under the viewport edge. */
+.intel-drawer,.drawer-schedule-list{scroll-padding-bottom:max(28px,env(safe-area-inset-bottom));}
+.drawer-schedule-list{padding-bottom:max(32px,calc(env(safe-area-inset-bottom) + 18px));}

@@ -112,14 +112,14 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
           </header>
           {deferred ? (
             <>
-              <p>يفتح كبرنامج مستقل من الشاشة الرئيسية، بدون أن يقطع إرشادات البداية.</p>
+              <p>التثبيت يعني إضافة SCHEDULE إلى جهازك ليعمل كتطبيق مستقل وتفتحه مباشرة بسهولة.</p>
               <button type="button" className="install-go" onClick={install}>
                 <Download aria-hidden="true" /> ثبّت الآن
               </button>
             </>
           ) : (
             <>
-              <p>لن تظهر هذه التعليمات تلقائياً؛ افتحها فقط عندما تريد التثبيت.</p>
+              <p>أضف SCHEDULE إلى جهازك ليظهر كتطبيق مستقل وسهل الوصول.</p>
               <ol className="install-steps">
                 {isIos ? (
                   <>

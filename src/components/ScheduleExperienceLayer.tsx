@@ -16,6 +16,7 @@ import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import { Notice } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
+import { sortTermsNewest } from "../utils/termSequence";
 
 type DayKey = "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
 const dayKeys: DayKey[] = [
@@ -200,10 +201,9 @@ export function useScheduleExperience({
           AdTermName: String(first.termName || "الفصل السابق"),
         }
       );
-    const sorted = [...terms]
-      .filter((t) => t.AdTermId < termId)
-      .sort((a, b) => b.AdTermId - a.AdTermId);
-    return sorted[0] || null;
+    const ordered = sortTermsNewest(terms);
+    const currentIndex = ordered.findIndex(t => Number(t.AdTermId) === Number(termId));
+    return (currentIndex >= 0 ? ordered[currentIndex + 1] : ordered.find(t => Number(t.AdTermId) !== Number(termId))) || null;
   }, [genome, terms, termId]);
   const comparison = useMemo(
     () => ghostSummary(rows, ghostRows),
@@ -377,6 +377,7 @@ export default function ScheduleExperienceLayer({
   experience,
   isPowerAdmin,
   onOpenRow,
+  onOpenRows,
   onEnsureWeek,
   rows,
   headless = false,
@@ -384,6 +385,7 @@ export default function ScheduleExperienceLayer({
   experience: Experience;
   isPowerAdmin: boolean;
   onOpenRow: (row: FSchedule) => void;
+  onOpenRows?: (rows: FSchedule[]) => void;
   onEnsureWeek: () => void;
   rows: FSchedule[];
   headless?: boolean;
@@ -597,12 +599,21 @@ export default function ScheduleExperienceLayer({
                       <button
                         type="button"
                         onClick={() => {
-                          const row = rows.find(
-                            (r) => r.id === e.decision.issue.rowId,
-                          );
+                          const row = rows.find((r) => r.id === e.decision.issue.rowId);
                           if (row) {
+                            const sameDay = (a: FSchedule, b: FSchedule) => dayKeys.some(day => Boolean(a[day] && b[day]));
+                            const overlaps = (a: FSchedule, b: FSchedule) => String(a.fstarttime) < String(b.fendtime) && String(a.fendtime) > String(b.fstarttime);
+                            const sameRoom = (a: FSchedule, b: FSchedule) => roomKey(a) !== "|" && roomKey(a) === roomKey(b);
+                            const queue = [row, ...rows.filter(candidate =>
+                              candidate.id !== row.id && sameDay(candidate, row) && overlaps(candidate, row) && (
+                                Number(candidate.AdInstructorId) === Number(row.AdInstructorId) ||
+                                sameRoom(candidate, row) ||
+                                rowIdentity(candidate) === rowIdentity(row)
+                              )
+                            )];
                             e.setDecisionOpen(false);
-                            onOpenRow(row);
+                            if (onOpenRows && queue.length > 1) onOpenRows(queue);
+                            else onOpenRow(row);
                           }
                         }}
                       >

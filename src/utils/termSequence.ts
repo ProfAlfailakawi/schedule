@@ -51,3 +51,20 @@ export function sameTermName(a: unknown, b: unknown): boolean {
   const norm = (v: unknown) => String(v ?? "").replace(/\s+/g, "").trim();
   return norm(a) !== "" && norm(a) === norm(b);
 }
+
+
+/** Chronological rank for an academic term name. Higher means newer. */
+export function termChronology(term: { AdTermId?: number; AdTermName?: string } | undefined | null): number {
+  if (!term) return Number.NEGATIVE_INFINITY;
+  const name = String(term.AdTermName || "");
+  const years = name.match(/(\d{4})\s*\/\s*(\d{4})/);
+  const season = name.includes("الصيفي") ? 2 : name.includes("الثاني") ? 1 : name.includes("الأول") ? 0 : 0;
+  return years ? Number(years[1]) * 10 + season : Number(term.AdTermId || 0);
+}
+
+/** Always show academic terms from newest to oldest, independent of database id order. */
+export function sortTermsNewest<T extends { AdTermId?: number; AdTermName?: string }>(terms: readonly T[]): T[] {
+  return [...terms].sort((a, b) =>
+    termChronology(b) - termChronology(a) || Number(b.AdTermId || 0) - Number(a.AdTermId || 0)
+  );
+}

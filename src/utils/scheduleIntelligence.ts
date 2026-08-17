@@ -331,12 +331,12 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
 
   const alerts:Array<{severity:"critical"|"warning"|"info";title:string;detail:string}>=[];
   const critical=conflicts.filter(c=>c.severity==="high").length;
-  if(critical)alerts.push({severity:"critical",title:`${critical} مانع اعتماد`,detail:"اكتُشف حجز مزدوج لأستاذ مقرر أو قاعة؛ لا يمكن اعتماد الجدول قبل إزالته."});
-  const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${longGap} أستاذ لديهم فراغ طويل`,detail:"يوجد فراغ لا يقل عن 3 ساعات بين محاضرتين في يوم واحد."});
-  if(lateRows)alerts.push({severity:"info",title:`${lateRows} موعداً متأخراً`,detail:"تبدأ بعد الساعة 4:00 مساءً؛ راجعها إذا كان القسم يفضّل التوزيع المبكر."});
-  if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`الفارق النسبي بين أكثر وأقل الأيام حملاً يقارب ${imbalance}%.`});
-  if(invalidRows)alerts.push({severity:"critical",title:`${invalidRows} سجل يحتاج بيانات`,detail:"يوجد موعد ناقص أو وقت غير صالح أو بدون يوم/قاعة/أستاذ."});
-  if(!alerts.length)alerts.push({severity:"info",title:"الوضع مستقر",detail:"لا توجد ملاحظات حرجة ظاهرة في القراءة الحالية."});
+  if(critical)alerts.push({severity:"critical",title:`${critical} مانع اعتماد`,detail:"حجز مزدوج يجب معالجته قبل الاعتماد."});
+  const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${longGap} أستاذ لديهم فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
+  if(lateRows)alerts.push({severity:"info",title:`${lateRows} موعداً متأخراً`,detail:"بعد 4:00 مساءً."});
+  if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`تفاوت ملحوظ بين أحمال الأيام · ${imbalance}%.`});
+  if(invalidRows)alerts.push({severity:"critical",title:`${invalidRows} سجل يحتاج بيانات`,detail:"موعد ناقص أو غير صالح."});
+  if(!alerts.length)alerts.push({severity:"info",title:"الوضع مستقر",detail:"لا توجد ملاحظات حرجة."});
 
   const readiness=critical===0&&invalidRows===0? (score>=85?"ready":score>=70?"review":"needs-work") : "blocked";
   return {

@@ -56,6 +56,27 @@ configureRuntimeEnvironment();
 const app = express();
 const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
 
+
+// User-facing reference lists follow one ordering contract everywhere: Arabic
+// alphabetic order for names, and newest-to-oldest for academic terms. Keeping
+// it at the API boundary prevents one picker from silently drifting away from
+// another screen that consumes the same data.
+const arabicUiCollator = new Intl.Collator("ar", { numeric: true, sensitivity: "base", ignorePunctuation: true });
+const normalizeArabicSortName = (value: unknown) => String(value ?? "").trim()
+  .replace(/^\s*(?:(?:[أا]\s*\.\s*د)|(?:د)|(?:م))\s*\.\s*/i, "")
+  .replace(/[ً-ْـ]/g, "").replace(/[إأآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
+  .replace(/\s+/g, " ").trim();
+const sortArabicNamed = <T>(rows: readonly T[], pick: (row: T) => unknown): T[] =>
+  [...rows].sort((a, b) => arabicUiCollator.compare(normalizeArabicSortName(pick(a)), normalizeArabicSortName(pick(b))));
+const termChronologyServer = (term: any) => {
+  const name = String(term?.AdTermName || "");
+  const years = name.match(/(\d{4})\s*\/\s*(\d{4})/);
+  const season = name.includes("الصيفي") ? 3 : name.includes("الثاني") ? 2 : name.includes("الأول") ? 1 : 0;
+  return years ? Number(years[1]) * 10 + season : Number(term?.AdTermId || 0);
+};
+const sortTermsNewestServer = <T extends { AdTermId?: unknown; AdTermName?: unknown }>(rows: readonly T[]): T[] =>
+  [...rows].sort((a, b) => termChronologyServer(b) - termChronologyServer(a) || Number(b.AdTermId || 0) - Number(a.AdTermId || 0));
+
 /**
  * A rejected promise must reach the error handler, not the process.
  *
@@ -609,6 +630,29 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
   return [...new Set(errors)].slice(0, 30);
 }
 
+
+function mapSmartIssuesToRows(rows: any[], issues: string[], conflicts: any[] = []) {
+  const byId: Record<string, string[]> = {};
+  const add = (id: number, reason: string) => {
+    if (!rows.some(row => Number(row.id) === Number(id))) return;
+    const key = String(Number(id));
+    const clean = String(reason || "يحتاج مراجعة").trim();
+    byId[key] = [...new Set([...(byId[key] || []), clean])].slice(0, 4);
+  };
+  issues.forEach(issue => {
+    const match = String(issue).match(/السطر\s+(\d+)/);
+    if (!match) return;
+    const row = rows[Number(match[1]) - 1];
+    if (row) add(Number(row.id), String(issue).replace(/^السطر\s+\d+\s*:\s*/, ""));
+  });
+  conflicts.forEach((item: any) => {
+    const reason = [item?.message, item?.detail].filter(Boolean).join(" — ") || "يوجد تعارض يمنع النشر";
+    add(Number(item?.rowId), reason);
+    add(Number(item?.otherId), reason);
+  });
+  return byId;
+}
+
 function smartContextFrom(req: AuthenticatedRequest) {
   const source = req.method === "GET" ? req.query : req.body || {};
   return { collegeId: Number(source.collegeId || source.AdCollegeId || 0), sectionId: Number(source.sectionId || source.AdSectionId || 0), termId: Number(source.termId || source.AdTermId || 0) };
@@ -618,7 +662,7 @@ function smartContextFrom(req: AuthenticatedRequest) {
 async function resolveSmartContext(req: AuthenticatedRequest) {
   const requested = smartContextFrom(req);
   const [terms, sections] = await Promise.all([Repository.getTerms(), Repository.getSections()]);
-  const termId = requested.termId || terms.reduce((max,row)=>Math.max(max,Number(row.AdTermId)||0),0);
+  const termId = requested.termId || Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   let sectionId = requested.sectionId;
   if (!sectionId) {
     const schedules = await Repository.getSchedulesByScope({ termId });
@@ -822,7 +866,7 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   // Legacy Home/Index parity is intentionally preserved here, including the historical
   // Sunday/weekend day-name quirk and the difference between the displayed total and table rows.
   const terms = await Repository.getTerms();
-  const latestTermId = terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+  const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const latestTerm = terms.find(term => term.AdTermId === latestTermId);
   const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges, scheduleCount] = await Promise.all([
     Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.countSchedules()
@@ -1029,7 +1073,7 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
  */
 app.get("/api/journey", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const terms = await Repository.getTerms();
-  const currentTermId = terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+  const currentTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const currentTerm = terms.find(term => Number(term.AdTermId) === currentTermId) || null;
   const [courses, instructors, sections, colleges, lifetimeRows, termRows] = await Promise.all([
     Repository.getCourses(),
@@ -1078,7 +1122,7 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   const q = String(req.query.q || "").trim().toLocaleLowerCase("ar");
   if (q.length < 2) { res.json({ schedules: [], instructors: [], courses: [], rooms: [] }); return; }
   const terms = await Repository.getTerms();
-  const latestTermId = terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+  const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const scheduleRead = req.user.IsAdminUser
     ? Repository.getSchedulesByScope({ termId: latestTermId })
     : Promise.all([...new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)).filter(Boolean))].map(sectionId => Repository.getSchedulesByScope({ sectionId, termId: latestTermId }))).then(groups => groups.flat());
@@ -1108,7 +1152,7 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
     subtitle: `${canInstructor || canSchedule || canAdvanced ? instructorById.get(row.AdInstructorId)?.AdInstructorName || "" : ""}${canRoom || canSchedule || canAdvanced ? ` — ${row.AdRoomCode}/${row.AdRoomHall}` : ""} — ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`,
     meta: `${courseById.get(row.AdCourseId)?.CourseCode || ""} / شعبة ${row.SCode}`
   })) : [];
-  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? instructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || matches(item.AdInstructorCivil))).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
+  const instructorResults = (canInstructor || canSchedule || canAdvanced) ? sortArabicNamed(instructors.filter(item => visibleInstructorIds.has(item.AdInstructorId) && (matches(item.AdInstructorName) || matches(item.AdInstructorCivil))), item => item.AdInstructorName).slice(0, 8).map(item => ({ id: item.AdInstructorId, kind: "instructor", title: item.AdInstructorName, subtitle: item.AdInstructorCivil, meta: "أستاذ مقرر" })) : [];
   const courseResults = (canSchedule || canAdvanced) ? sortCoursesByName(courses.filter(item => visibleCourseIds.has(item.AdCourseId) && (matches(item.CourseName) || matches(item.CourseCode)))).slice(0, 8).map(item => ({ id: item.AdCourseId, kind: "course", title: item.CourseName, subtitle: item.CourseCode, meta: sectionById.get(item.AdSectionId)?.AdSectionName || "" })) : [];
   const roomMap = new Map<string, {building:string;hall:string;count:number}>();
   schedules.forEach(row => { const key=`${row.AdRoomCode}|${row.AdRoomHall}`; const prev=roomMap.get(key); roomMap.set(key,{building:row.AdRoomCode,hall:row.AdRoomHall,count:(prev?.count||0)+1}); });
@@ -1121,13 +1165,13 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
 app.get("/api/colleges", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const colleges = await Repository.getColleges();
   if (req.user.IsAdminUser) {
-    res.json(colleges);
+    res.json(sortArabicNamed(colleges, row => row.AdCollegeName));
     return;
   }
   // Filter colleges based on user sections scope
   const allowedCollegeIds = new Set(req.scopes?.map(s => s.AdCollegeId) || []);
   const filtered = colleges.filter(c => allowedCollegeIds.has(c.AdCollegeId));
-  res.json(filtered);
+  res.json(sortArabicNamed(filtered, row => row.AdCollegeName));
 });
 
 app.post("/api/colleges", requirePermission(2), async (req: Request, res: Response) => {
@@ -1204,7 +1248,7 @@ app.get("/api/sections", requireAuth, async (req: AuthenticatedRequest, res: Res
   const collegeId = req.query.collegeId ? parseInt(req.query.collegeId as string) : undefined;
   let sections = collegeId ? await Repository.getSectionsByCollege(collegeId) : await Repository.getSections();
   sections = filterByScope(req, sections);
-  res.json(sections);
+  res.json(sortArabicNamed(sections, row => row.AdSectionName));
 });
 
 app.post("/api/sections", requirePermission(4), async (req: AuthenticatedRequest, res: Response) => {
@@ -1268,7 +1312,7 @@ app.delete("/api/sections/:id", requirePermission(4), async (req: AuthenticatedR
 
 app.get("/api/terms", requireAuth, async (req: Request, res: Response) => {
   const terms = await Repository.getTerms();
-  res.json(terms);
+  res.json(sortTermsNewestServer(terms));
 });
 
 app.post("/api/terms", requirePermission(5), async (req: Request, res: Response) => {
@@ -1323,7 +1367,8 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   if (sectionId) {
     const canReadSection = Boolean(req.user?.IsAdminUser || req.scopes?.some(scope => scope.AdSectionId === sectionId));
     if (!canReadSection) { res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" }); return; }
-    res.json(await Repository.getInstructorsByScope(sectionId, termId));
+    const scopedInstructors = await Repository.getInstructorsByScope(sectionId, termId);
+    res.json(sortArabicNamed(scopedInstructors, row => row.AdInstructorName));
     return;
   }
 
@@ -1337,15 +1382,15 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const instructors = collegeId
     ? await Repository.getInstructorsByScheduleScope({ collegeId, termId })
     : await Repository.getInstructors();
-  if (!query) { res.json(instructors); return; }
+  if (!query) { res.json(sortArabicNamed(instructors, row => row.AdInstructorName)); return; }
   const fold = (value: string) => String(value || "")
     .replace(/[ً-ْـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
     .replace(/[^ء-ي0-9a-zA-Z ]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
   const needle = fold(query);
-  res.json(instructors.filter(person => {
+  res.json(sortArabicNamed(instructors.filter(person => {
     const name = fold(person.AdInstructorName);
     return name.includes(needle) || String(person.AdInstructorCivil || "").includes(needle);
-  }).slice(0, limit));
+  }), row => row.AdInstructorName).slice(0, limit));
 });
 
 app.post("/api/instructors", requirePermission(3), async (req: Request, res: Response) => {
@@ -2351,7 +2396,7 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
   const sections = filterByScope(req, allSections);
   const termId = requestedTerm && terms.some(term => Number(term.AdTermId) === requestedTerm)
     ? requestedTerm
-    : terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+    : Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
 
   let collegeId = requestedCollege, sectionId = requestedSection;
   if (!req.user.IsAdminUser) {
@@ -2413,7 +2458,7 @@ app.get("/api/schedules", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]), async
   // Operational screens default to the newest term. Historical reads are still
   // available by sending termId explicitly, but a blank filter can no longer scan
   // the university's entire ten-year schedule collection.
-  if(!termId){const terms=await Repository.getTerms();termId=terms.reduce((max,t)=>Math.max(max,Number(t.AdTermId)||0),0);}
+  if(!termId){const terms=await Repository.getTerms();termId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
   let list = await readSchedulesForRequest(req, collegeId, sectionId, termId);
 
   if (req.query.instructorId) {
@@ -2933,14 +2978,50 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), requirePower
   const sectionId = Number(req.body?.sectionId || 0);
   const termId = Number(req.body?.termId || 0);
   const commit = req.body?.commit === true;
-  if (!fromId || !termId) { res.status(400).json({ error: "حدد الأستاذ والفصل." }); return; }
+  if (!fromId || !termId || !collegeId || !sectionId) { res.status(400).json({ error: "حدد الأستاذ والفصل." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (fromId === toId) { res.status(400).json({ error: "اختر أستاذاً بديلاً مختلفاً." }); return; }
 
-  const rows = filterByScope(req, await Repository.getSchedulesByScope({ collegeId, sectionId, termId }))
-    .filter(row => Number(row.AdInstructorId) === fromId);
-  if (!commit) { res.json({ preview: true, affected: rows.length }); return; }
-
+  const [scopeRows, termRows, instructors] = await Promise.all([
+    Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getInstructors(),
+  ]);
+  const rows = filterByScope(req, scopeRows).filter(row => Number(row.AdInstructorId) === fromId);
+  const movedIds = new Set(rows.map(row => Number(row.id)));
+  const candidates = rows.map(row => ({ ...row, AdInstructorId: toId || 0 }));
+  const remaining = termRows.filter(row => !movedIds.has(Number(row.id)));
+  const conflicts = toId
+    ? findConflicts(candidates as any, [...remaining, ...candidates] as any)
+        .filter((item:any) => item.severity === "high" || item.type === "duplicate")
+        .filter((item:any) => movedIds.has(Number(item.rowId)) || movedIds.has(Number(item.otherId)))
+        .slice(0, 20)
+    : [];
+  const reasons = [...new Set(conflicts.map((item:any) => String(item.message || item.detail || "يوجد تعارض زمني")))];
+  const compatible = conflicts.length === 0;
+  if (!commit) {
+    res.json({ preview: true, affected: rows.length, compatible, conflicts, reasons, cleared: !toId });
+    return;
+  }
+  if (!compatible) {
+    res.status(409).json({ error: "لا يمكن الاستبدال بسبب تعارض في مواعيد الأستاذ البديل.", compatible: false, conflicts, issues: reasons });
+    return;
+  }
+  const fromName = instructors.find(i => Number(i.AdInstructorId) === fromId)?.AdInstructorName || `أستاذ ${fromId}`;
+  const toName = toId ? (instructors.find(i => Number(i.AdInstructorId) === toId)?.AdInstructorName || `أستاذ ${toId}`) : "بلا أستاذ";
+  const undoVersion = await captureScopeVersion(req, collegeId, sectionId, termId, `قبل استبدال الأستاذ: ${fromName} ← ${toName}`, "manual");
   for (const row of rows) await Repository.updateSchedule(row.id, { AdInstructorId: toId || 0 } as any);
-  res.json({ preview: false, moved: rows.length, cleared: !toId });
+  res.json({ preview: false, moved: rows.length, cleared: !toId, compatible: true, undoVersionId: undoVersion?.id });
+});
+
+app.get("/api/schedules/replace-instructor/history", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
+  if (!collegeId || !sectionId || !termId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const versions = await Repository.getScheduleVersions(collegeId, sectionId, termId, 80);
+  res.json(versions
+    .filter(v => String(v.label || "").startsWith("قبل استبدال الأستاذ:"))
+    .slice(0, 20)
+    .map(v => ({ id: v.id, label: v.label, createdAt: v.createdAt, userName: v.userName, rowCount: Number(v.rowCount ?? v.rows.length) })));
 });
 
 /**
@@ -3831,6 +3912,30 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
 app.put("/api/intelligence/drafts/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
 });
+app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const draft = await Repository.getScheduleDraftById(String(req.params.id));
+  if (!draft) { res.status(404).json({ error: "المسودة غير موجودة" }); return; }
+  if (!isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const rowId = Number(req.params.rowId);
+  const index = draft.rows.findIndex((row:any) => Number(row.id) === rowId);
+  if (index < 0) { res.status(404).json({ error: "الموعد غير موجود داخل المسودة" }); return; }
+  const allowed = ["AdInstructorId","fstarttime","fendtime","AdRoomCode","AdRoomHall","fsunday","fmonday","ftuesday","fwednesday","fthursday"] as const;
+  const nextRaw:any = { ...draft.rows[index] };
+  allowed.forEach(key => { if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) nextRaw[key] = req.body[key]; });
+  const candidate = safeDraftRows([nextRaw], draft.AdCollegeId, draft.AdSectionId, draft.AdTermId)[0];
+  const structural = await validateSmartRows([candidate], draft.AdCollegeId, draft.AdSectionId, { checkConflicts: false });
+  if (structural.length) { res.status(400).json({ error: structural[0], issues: structural }); return; }
+  const rows = safeDraftRows(draft.rows.map((row:any, i:number) => i === index ? candidate : row), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  const issues = await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId);
+  const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
+  const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
+  const conflictRows = findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate");
+  const rowIssues = mapSmartIssuesToRows(rows, issues, conflictRows);
+  const issueRowIds = Object.keys(rowIssues).map(Number);
+  const updated = await Repository.updateScheduleDraft(draft.id, { rows });
+  res.json({ success: true, row: rows[index], rows: updated.rows, issues, issueRowIds, rowIssues, ready: issues.length === 0 });
+});
+
 app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="publish"){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
@@ -3856,7 +3961,14 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
     adjusted=publishRows.filter(row=>original.get(Number(row.id))!==`${row.fstarttime}|${row.fendtime}`).length;
     issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId);
   }
-  if(issues.length){res.status(400).json({error:"لا يمكن نشر المسودة قبل معالجة البيانات",issues});return;}
+  if(issues.length){
+    const termRows=await Repository.getSchedulesByScope({termId:draft.AdTermId});
+    const externalRows=termRows.filter(row=>!(Number(row.AdCollegeId)===draft.AdCollegeId&&Number(row.AdSectionId)===draft.AdSectionId));
+    const conflictRows=findConflicts(publishRows as any,[...externalRows,...publishRows] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+    const rowIssues=mapSmartIssuesToRows(publishRows,issues,conflictRows);
+    const issueRowIds=Object.keys(rowIssues).map(Number);
+    res.status(400).json({error:"لا يمكن نشر المسودة قبل معالجة البيانات",issues,issueRowIds,rowIssues});return;
+  }
 
   await captureScopeVersion(req,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish");
   const rows=await Repository.replaceScheduleScope(draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,publishRows);
@@ -4072,7 +4184,7 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
 
   const terms = await Repository.getTerms();
   const { term } = settledTerm(terms);
-  const newest = [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId))[0];
+  const newest = sortTermsNewestServer(terms)[0];
 
   /* What the system has worked out about this department, so the board can
      show it rather than ask for it. It is a statement, not an offer — there is
@@ -4224,6 +4336,9 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
   }
   const adjustedRows=rows.filter((row,index)=>row.fstarttime!==initialRows[index]?.fstarttime||row.fendtime!==initialRows[index]?.fendtime).length;
   const issues=await validateSmartRows(rows,collegeId,sectionId);
+  const genesisConflicts=findConflicts(rows as any,[...external,...rows] as any).filter((item:any)=>item.severity==="high"||item.type==="duplicate");
+  const rowIssues=mapSmartIssuesToRows(rows,issues,genesisConflicts);
+  const issueRowIds=Object.keys(rowIssues).map(Number);
   const universe=external.concat(rows); const analysis=analyzeSchedule(rows,universe,courses,instructors); const rules=evaluateScheduleConstraints(rows,constraints); const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:targetTermId,name:`بداية الفصل · ${terms.find(t=>t.AdTermId===sourceTermId)?.AdTermName||sourceTermId} → ${terms.find(t=>t.AdTermId===targetTermId)?.AdTermName||targetTermId}`,source:"auto",rows});
   const courseById=new Map(courses.map(course=>[Number(course.AdCourseId),course]));
   const instructorById=new Map(instructors.map(instructor=>[Number(instructor.AdInstructorId),instructor]));
@@ -4231,9 +4346,10 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
     index:index+1,id:row.id,courseCode:courseById.get(Number(row.AdCourseId))?.CourseCode||"",courseName:row.AdCourseName||courseById.get(Number(row.AdCourseId))?.CourseName||"مقرر",
     section:row.SCode||"",instructor:instructorById.get(Number(row.AdInstructorId))?.AdInstructorName||"بدون أستاذ",
     days:SCHEDULE_DAY_KEYS.map((key,i)=>row[key]?DAY_LABELS[i]:null).filter(Boolean).join(" · "),start:row.fstarttime,end:row.fendtime,
+    fsunday:Boolean(row.fsunday),fmonday:Boolean(row.fmonday),ftuesday:Boolean(row.ftuesday),fwednesday:Boolean(row.fwednesday),fthursday:Boolean(row.fthursday),
     building:row.AdRoomCode||"",hall:row.AdRoomHall||"",
   }));
-  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
+  res.status(201).json({draft:{id:draft.id,name:draft.name,status:draft.status,rowCount:draft.rows.length},analysis:{score:analysis.score,conflicts:analysis.metrics.criticalConflicts,avgGap:analysis.metrics.avgInstructorGap,constraintViolations:rules.total},coverage:{sourceRows:source.length,copiedRows:rows.length,skippedRows:source.length-rows.length,adjustedRows},reviewRequired:issues.length,issues:issues.slice(0,24),issueRowIds,rowIssues,previewRows,guardrail:issues.length?`أُنشئت المسودة بنجاح وبها ${issues.length} ملاحظة للمراجعة قبل النشر؛ الجدول الحقيقي لم يتغير.`:"بداية الفصل أنشأت مسودة كاملة قابلة للمراجعة؛ الجدول الرسمي لم يتغير بعد."});
 });
 
 app.get("/api/intelligence/brief", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -4629,7 +4745,7 @@ app.get("/api/reports/excel/:type", requireAuth, async (req: AuthenticatedReques
    */
   const { termId, collegeId, sectionId, instructorId, building, hall, courseId, courseCode, civil, startTime, endTime } = req.query;
   let resolvedTermId=Number(termId||0);
-  if(!resolvedTermId){const terms=await Repository.getTerms();resolvedTermId=terms.reduce((max,t)=>Math.max(max,Number(t.AdTermId)||0),0);}
+  if(!resolvedTermId){const terms=await Repository.getTerms();resolvedTermId=Number(sortTermsNewestServer(terms)[0]?.AdTermId||0);}
   let schedules = await Repository.getSchedulesByScope({termId:resolvedTermId,collegeId:Number(collegeId||0),sectionId:Number(sectionId||0)});
   schedules = filterByScope(req, schedules);
 
@@ -4858,7 +4974,7 @@ app.get("/api/search/natural", requireAnyPermission([7, 8, 9, 10, 16, 17]), asyn
 app.get("/api/reports/department-balance", requirePermission(14), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
   let termId = Number(req.query.termId || 0);
   const terms = await Repository.getTerms();
-  if (!termId) termId = terms.reduce((max, term) => Math.max(max, Number(term.AdTermId) || 0), 0);
+  if (!termId) termId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const [termRows, sections, colleges, instructors, courses] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
     Repository.getSections(), Repository.getColleges(), Repository.getInstructors(), Repository.getCourses(),
@@ -4913,7 +5029,7 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   let termId = Number(req.query.termId || 0);
-  if (!termId) { const terms = await Repository.getTerms(); termId = terms.reduce((max, t) => Math.max(max, Number(t.AdTermId) || 0), 0); }
+  if (!termId) { const terms = await Repository.getTerms(); termId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0); }
 
   const { rows, universe } = await scopedScheduleUniverse(collegeId, sectionId, termId);
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
@@ -5095,13 +5211,13 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
     term: terms.find(row => row.AdTermId === displayTermId)?.AdTermName || "",
     termId: displayTermId,
     // Newest first, so the instructor can pin any semester from the card (Idea 2).
-    availableTerms: [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId)).map(t => ({ id: t.AdTermId, name: t.AdTermName })),
+    availableTerms: sortTermsNewestServer(terms).map(t => ({ id: t.AdTermId, name: t.AdTermName })),
     /* Only the newest term is LIVE. An older one is a record: reporting an
        apology against a semester that has ended asks the department to act on
        something already past, and subscribing a phone to it fills a calendar
        with lectures that will never happen again. Both are offered on the
        current term alone. */
-    liveTermId: [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId))[0]?.AdTermId || 0,
+    liveTermId: sortTermsNewestServer(terms)[0]?.AdTermId || 0,
     expiresAt: link.expiresAt,
     // The subscription key. Handed out only here — after the card has already
     // established who is holding it — so the civil ID never reaches a URL.

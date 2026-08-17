@@ -17,6 +17,7 @@ import {
   Network,
   RotateCcw,
   Save,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Upload,
@@ -38,6 +39,7 @@ import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import type { ScheduleExperience } from "./ScheduleExperienceLayer";
 import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
+import { sortByName } from "../utils/sorting";
 
 type Scene =
   | "pulse"
@@ -120,6 +122,8 @@ export default function LivingScheduleLayer({
   const [sourceTerm, setSourceTerm] = useState(0),
     [genesis, setGenesis] = useState<any>(null),
     [genesisUndoPoint, setGenesisUndoPoint] = useState<any>(null),
+    [genesisEditId, setGenesisEditId] = useState<number | null>(null),
+    [genesisEdit, setGenesisEdit] = useState<any>(null),
     [memoryReason, setMemoryReason] = useState(""),
     [memory, setMemory] = useState<any>(null),
     [safety, setSafety] = useState<any[]>([]),
@@ -209,7 +213,9 @@ export default function LivingScheduleLayer({
       telemetryApi(`decision:${url.split("?")[0]}`, performance.now() - started, r.status, r.ok);
       if (!r.ok) {
         const issues = Array.isArray(d?.issues) ? d.issues.filter(Boolean).slice(0, 5) : [];
-        throw new Error(issues.length ? `${d.error || "تعذر تنفيذ الطلب"}: ${issues.join(" · ")}` : (d.error || "تعذر تنفيذ الطلب"));
+        const failure:any = new Error(issues.length ? `${d.error || "تعذر تنفيذ الطلب"}: ${issues.join(" · ")}` : (d.error || "تعذر تنفيذ الطلب"));
+        failure.data = d;
+        throw failure;
       }
       return d;
     } catch (error) {
@@ -383,6 +389,54 @@ export default function LivingScheduleLayer({
       setBusy(false);
     }
   };
+  const beginGenesisEdit = (row: any) => {
+    setGenesisEditId(Number(row.id));
+    const source = genesis?.draftRows?.find?.((item:any) => Number(item.id) === Number(row.id));
+    setGenesisEdit({
+      AdInstructorId: Number(source?.AdInstructorId || instructors.find(i => i.AdInstructorName === row.instructor)?.AdInstructorId || 0),
+      fstarttime: row.start || source?.fstarttime || "",
+      fendtime: row.end || source?.fendtime || "",
+      AdRoomCode: row.building || source?.AdRoomCode || "",
+      AdRoomHall: row.hall || source?.AdRoomHall || "",
+      fsunday: Boolean(row.fsunday ?? source?.fsunday),
+      fmonday: Boolean(row.fmonday ?? source?.fmonday),
+      ftuesday: Boolean(row.ftuesday ?? source?.ftuesday),
+      fwednesday: Boolean(row.fwednesday ?? source?.fwednesday),
+      fthursday: Boolean(row.fthursday ?? source?.fthursday),
+    });
+  };
+  const saveGenesisRow = async () => {
+    const draftId = String(genesis?.draft?.id || "").trim();
+    if (!draftId || genesisEditId == null || !genesisEdit) return;
+    setBusy(true); setError("");
+    try {
+      const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/rows/${encodeURIComponent(String(genesisEditId))}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(genesisEdit),
+      });
+      const instructor = instructors.find(i => Number(i.AdInstructorId) === Number(genesisEdit.AdInstructorId));
+      setGenesis((current:any) => current ? {
+        ...current,
+        issues: result.issues || [], issueRowIds: result.issueRowIds || [], rowIssues: result.rowIssues || {}, reviewRequired: (result.issues || []).length,
+        previewRows: (current.previewRows || []).map((row:any) => Number(row.id) === genesisEditId ? {
+          ...row, start: genesisEdit.fstarttime, end: genesisEdit.fendtime, building: genesisEdit.AdRoomCode, hall: genesisEdit.AdRoomHall,
+          instructor: instructor?.AdInstructorName || row.instructor,
+          fsunday:Boolean(genesisEdit.fsunday),fmonday:Boolean(genesisEdit.fmonday),ftuesday:Boolean(genesisEdit.ftuesday),fwednesday:Boolean(genesisEdit.fwednesday),fthursday:Boolean(genesisEdit.fthursday),
+          days:[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]].filter(([key]) => Boolean(genesisEdit[key])).map(([,label]) => label).join(" · "),
+        } : row),
+      } : current);
+      setGenesisEditId(null); setGenesisEdit(null);
+      setMessage(result.ready ? "تمت معالجة الموانع. المسودة جاهزة للنشر." : `تم حفظ التعديل. بقيت ${(result.issues || []).length} ملاحظة.`);
+    } catch (e:any) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  useEffect(() => {
+    if (!genesis?.issueRowIds?.length || genesisEditId != null) return;
+    const timer = window.setTimeout(() => {
+      document.querySelector<HTMLElement>(".genesis-row-issue")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 90);
+    return () => window.clearTimeout(timer);
+  }, [genesis?.draft?.id, genesis?.issueRowIds, genesisEditId]);
+
   const publishGenesisDraft = async () => {
     const draftId = String(genesis?.draft?.id || "").trim();
     if (!draftId) return;
@@ -405,6 +459,7 @@ export default function LivingScheduleLayer({
       await loadLiving();
       onRefresh?.();
     } catch (e: any) {
+      if (e?.data) setGenesis((current: any) => current ? { ...current, issues: e.data.issues || current.issues, issueRowIds: e.data.issueRowIds || current.issueRowIds, rowIssues: e.data.rowIssues || current.rowIssues, reviewRequired: (e.data.issues || []).length } : current);
       setError(e.message);
     } finally {
       setBusy(false);
@@ -927,17 +982,32 @@ export default function LivingScheduleLayer({
                                 <tr><th>م</th><th>المقرر</th><th>الشعبة</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الأستاذ</th></tr>
                               </thead>
                               <tbody>
-                                {genesis.previewRows.map((row: any) => (
-                                  <tr key={`${row.id}-${row.index}`}>
-                                    <td>{row.index}</td>
-                                    <td><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode || "—"}</small></td>
-                                    <td dir="ltr">{row.section || "—"}</td>
-                                    <td>{row.days || "—"}</td>
-                                    <td dir="ltr">{formatScheduleTimeRange(row.start, row.end)}</td>
-                                    <td dir="ltr">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
-                                    <td>{row.instructor || "—"}</td>
-                                  </tr>
-                                ))}
+                                {genesis.previewRows.map((row: any) => {
+                                  const flagged = (genesis.issueRowIds || []).map(Number).includes(Number(row.id));
+                                  const editing = genesisEditId === Number(row.id);
+                                  return <React.Fragment key={`${row.id}-${row.index}`}>
+                                    <tr className={flagged ? "genesis-row-issue" : ""}>
+                                      <td>{row.index}</td>
+                                      <td><strong>{row.courseName}</strong><small dir="ltr">{row.courseCode || "—"}</small></td>
+                                      <td dir="ltr">{row.section || "—"}</td>
+                                      <td>{row.days || "—"}</td>
+                                      <td dir="ltr">{formatScheduleTimeRange(row.start, row.end)}</td>
+                                      <td dir="ltr">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
+                                      <td><span>{row.instructor || "—"}</span>{flagged ? <button className="genesis-fix" type="button" onClick={() => beginGenesisEdit(row)}>تعديل هنا</button> : null}</td>
+                                    </tr>
+                                    {flagged ? <tr className="genesis-row-reason"><td colSpan={7}><ShieldAlert /><strong>سبب المنع:</strong><span>{(genesis.rowIssues?.[String(row.id)] || [])[0] || "هذا الموعد مرتبط بمشكلة تمنع النشر."}</span></td></tr> : null}
+                                    {editing ? <tr className="genesis-inline-editor"><td colSpan={7}><div>
+                                      <label><span>الأستاذ</span><select value={genesisEdit?.AdInstructorId || ""} onChange={e => setGenesisEdit((v:any)=>({...v,AdInstructorId:Number(e.target.value)||0}))}><option value="">اختر</option>{sortByName(instructors, i => i.AdInstructorName).map(i=><option key={i.AdInstructorId} value={i.AdInstructorId}>{i.AdInstructorName}</option>)}</select></label>
+                                      <label><span>من</span><input type="time" value={genesisEdit?.fstarttime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fstarttime:e.target.value}))}/></label>
+                                      <label><span>إلى</span><input type="time" value={genesisEdit?.fendtime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fendtime:e.target.value}))}/></label>
+                                      <label><span>المبنى</span><input value={genesisEdit?.AdRoomCode || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,AdRoomCode:e.target.value}))}/></label>
+                                      <label><span>القاعة</span><input value={genesisEdit?.AdRoomHall || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,AdRoomHall:e.target.value}))}/></label>
+                                      <fieldset className="genesis-days"><legend>الأيام</legend>{[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]].map(([key,label]) => <label key={key}><input type="checkbox" checked={Boolean(genesisEdit?.[key])} onChange={e=>setGenesisEdit((v:any)=>({...v,[key]:e.target.checked}))}/><span>{label}</span></label>)}</fieldset>
+                                      <PrimaryButton type="button" onClick={() => void saveGenesisRow()} disabled={busy}><Save />حفظ وفحص</PrimaryButton>
+                                      <GhostButton type="button" onClick={() => {setGenesisEditId(null);setGenesisEdit(null);}}>إلغاء</GhostButton>
+                                    </div></td></tr> : null}
+                                  </React.Fragment>;
+                                })}
                               </tbody>
                             </table>
                           </div>
@@ -945,7 +1015,7 @@ export default function LivingScheduleLayer({
                             <p>{genesis.published ? "هذه المسودة منشورة الآن على الجدول الرسمي." : "راجع الجدول، ثم انشره من هنا مباشرة عندما يكون جاهزاً."}</p>
                             <div>
                               {!genesis.published ? (
-                                <PrimaryButton type="button" onClick={() => void publishGenesisDraft()} disabled={busy || !genesis?.draft?.id}>
+                                <PrimaryButton type="button" onClick={() => void publishGenesisDraft()} disabled={busy || !genesis?.draft?.id || Boolean(genesis?.issues?.length)} title={genesis?.issues?.length ? "عالج الملاحظات المعلّمة أولاً" : undefined}>
                                   <Upload /> انشر الآن
                                 </PrimaryButton>
                               ) : null}

@@ -359,7 +359,7 @@ export function discoverUnwrittenRules(history: FSchedule[], terms: AdTerm[], co
   for (const day of SCHEDULE_DAYS) {
     const data = model.department.days[day.key as DayKey];
     if (data && data.samples >= 30 && data.share >= .82) {
-      rules.push({ id:`minute:${day.key}`, kind:"start-minute", confidence:Math.round(data.share*100), title:`${day.label} يبدأ غالباً عند :${String(data.minute).padStart(2,"0")}`, detail:`${data.samples} حالة تاريخية`, });
+      rules.push({ id:`minute:${day.key}`, kind:"start-minute", confidence:Math.round(data.share*100), title:`${day.label} يبدأ غالباً عند ${data.ladder.find((time:string)=>time.endsWith(`:${String(data.minute).padStart(2,"0")}`)) || data.ladder[0] || `12:${String(data.minute).padStart(2,"0")}`}`, detail:`${data.samples} حالة تاريخية`, });
     }
     const dayRows = rows.filter(row => Boolean((row as any)[day.key]));
     const share = rows.length ? dayRows.length / rows.length : 0;

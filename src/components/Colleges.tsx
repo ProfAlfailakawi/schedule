@@ -19,6 +19,7 @@ import {
   CatalogFormDrawer,
 } from "./ui";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
+import { sortByName } from "../utils/sorting";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
 export default function Colleges({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
@@ -46,7 +47,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     try {
       const r = await fetch("/api/colleges");
       if (!r.ok) throw new Error();
-      const data = await r.json();
+      const data = sortByName(await r.json(), (row: any) => row.AdCollegeName);
       setItems(data);
       setSelectedId((v) =>
         v && data.some((x: any) => x.AdCollegeId === v)
@@ -176,12 +177,12 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
   const filtered = useMemo(() => {
       const q = query.trim().toLowerCase();
       return q
-        ? items.filter(
+        ? sortByName(items.filter(
             (x) =>
               String(x.AdCollegeCode).toLowerCase().includes(q) ||
               String(x.AdCollegeName).toLowerCase().includes(q),
-          )
-        : items;
+          ), (x: any) => x.AdCollegeName)
+        : sortByName(items, (x: any) => x.AdCollegeName);
     }, [items, query]),
     selected =
       filtered.find((x) => x.AdCollegeId === selectedId) || filtered[0] || null,

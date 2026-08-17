@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Sparkles, Trash2 } from "lucide-react";
-import { suggestNextTermName } from "../utils/termSequence";
+import { sortTermsNewest, suggestNextTermName } from "../utils/termSequence";
 import {
   AddButton,
   EmbeddedAction,
@@ -30,7 +30,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false);
-  // The list is sorted by descending id, so items[0] is the most recent term.
+  // The list is sorted chronologically from newest to oldest.
   const suggestedTerm = useMemo(() => suggestNextTermName(items[0]?.AdTermName), [items]);
   /* When teaching begins, and for how long. Both optional — a decade of terms
      exists with neither — but without them the subscribable calendar has to
@@ -42,7 +42,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     try {
       const r = await fetch("/api/terms");
       if (!r.ok) throw 0;
-      const data = (await r.json()).slice().sort((a: any, b: any) => Number(b.AdTermId) - Number(a.AdTermId));
+      const data = sortTermsNewest(await r.json());
       setItems(data);
       setSelectedId((v) =>
         v && data.some((x: any) => x.AdTermId === v)

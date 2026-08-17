@@ -66,6 +66,7 @@ import IntelligenceContextBar from "./IntelligenceContextBar";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName } from "../utils/sorting";
+import { sortTermsNewest } from "../utils/termSequence";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
@@ -465,10 +466,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         ]);
         setColleges(sortByName(c, (row:any)=>row.AdCollegeName));
         setSections(sortByName(s, (row:any)=>row.AdSectionName));
-        setTerms(t);
+        const sortedTerms = sortTermsNewest<AdTerm>(t);
+        setTerms(sortedTerms);
         setCourses(sortByName(lookups?.courses || [], (row:any)=>row.CourseName));
         setInstructors(sortByName(lookups?.instructors || [], (row:any)=>row.AdInstructorName));
-        const latest = [...t].sort((a: any, b: any) => b.AdTermId - a.AdTermId)[0]?.AdTermId || 0;
+        const latest = sortedTerms[0]?.AdTermId || 0;
         let handoff: { collegeId?: number; sectionId?: number; termId?: number } | null = null;
         try {
           const raw = sessionStorage.getItem("schedule-intelligence-scope");
@@ -486,19 +488,25 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           ? requestedCollege
           : fallbackCollege;
         const scopedForCollege = resolveScopeSelection(scopes, defaultCollege, isPowerAdmin);
-        const allowedSection = s.find((item:any)=>Number(item.AdSectionId)===requestedSection && Number(item.AdCollegeId)===defaultCollege);
+        const allowedIds = new Set((scopedForCollege.sectionIds || []).map((id: any) => Number(id)));
+        const allowedSection = s.find((item:any)=>
+          Number(item.AdSectionId)===requestedSection &&
+          Number(item.AdCollegeId)===defaultCollege &&
+          (isPowerAdmin || allowedIds.has(Number(item.AdSectionId)))
+        );
+        const firstAllowedSection = s.find((item:any)=>
+          Number(item.AdCollegeId)===defaultCollege &&
+          (isPowerAdmin || allowedIds.has(Number(item.AdSectionId)))
+        )?.AdSectionId || 0;
         const defaultSection = allowedSection
           ? requestedSection
-          : isPowerAdmin
-            ? (s.find((item:any)=>item.AdCollegeId===defaultCollege)?.AdSectionId || 0)
-            : scopedForCollege.defaultSectionId;
+          : (scopedForCollege.defaultSectionId || firstAllowedSection);
         const defaultTerm = t.some((item:any)=>Number(item.AdTermId)===requestedTerm) ? requestedTerm : latest;
         setCollegeId(defaultCollege);
         setSectionId(defaultSection);
         setTermId(defaultTerm);
-        const sorted = [...t].sort((a: any, b: any) => b.AdTermId - a.AdTermId);
-        setCompareTo(sorted[0]?.AdTermId || 0);
-        setCompareFrom(sorted[1]?.AdTermId || sorted[0]?.AdTermId || 0);
+        setCompareTo(sortedTerms[0]?.AdTermId || 0);
+        setCompareFrom(sortedTerms[1]?.AdTermId || sortedTerms[0]?.AdTermId || 0);
       } catch (e: any) {
         setError(smartMessage(e));
       } finally {
@@ -1449,15 +1457,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           metric: String(overview.professorLoads?.length || 0),
           icon: <UsersRound />,
         },
-        {
-          value: "health",
+        ...(isPowerAdmin ? [{
+          value: "health" as const,
           label: "صحة البيانات",
           detail: "النواقص والتكرار قبل أن تصبح مشكلة",
           metric: overview.dataHealth?.healthy
             ? "سليمة"
             : String(overview.dataHealth?.invalidRows || 0),
           icon: <CheckCircle2 />,
-        },
+        }] : []),
         ...(demand && (demand.respondents || demand.prediction?.courses?.length || demand.openings?.proposals?.length || demand.survey?.length || isPowerAdmin)
           ? [
               {
@@ -1875,15 +1883,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <AlertTriangle />
             </div>
             <div className="smart-alerts">
-              {overview.alerts.slice(0, 3).map((a: any, i: number) => (
-                <article key={i} className={a.severity}>
-                  <span />
-                  <div>
-                    <strong>{a.title}</strong>
-                    <p>{a.detail}</p>
-                  </div>
-                </article>
-              ))}
+              {overview.alerts.slice(0, 3).map((a: any, i: number) => {
+                const icon = /اعتماد|تعارض|حجز|مزدوج/.test(a.title) ? <ShieldAlert />
+                  : /فراغ|موعد|وقت/.test(a.title) ? <CalendarClock />
+                  : /توزيع|أيام/.test(a.title) ? <BarChart3 />
+                  : a.severity === "ok" ? <CheckCircle2 /> : <AlertTriangle />;
+                return (
+                  <article key={i} className={`smart-alert-card ${a.severity}`}>
+                    <span className="smart-alert-icon">{icon}</span>
+                    <div><strong>{a.title}</strong><p>{a.detail}</p></div>
+                  </article>
+                );
+              })}
             </div>
             {overview.alerts.length > 3 ? (
               <details className="insight-disclosure alert-disclosure">
@@ -1892,12 +1903,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </summary>
                 <div className="smart-alerts">
                   {overview.alerts.slice(3).map((a: any, i: number) => (
-                    <article key={i + 3} className={a.severity}>
-                      <span />
-                      <div>
-                        <strong>{a.title}</strong>
-                        <p>{a.detail}</p>
-                      </div>
+                    <article key={i + 3} className={`smart-alert-card ${a.severity}`}>
+                      <span className="smart-alert-icon"><AlertTriangle /></span>
+                      <div><strong>{a.title}</strong><p>{a.detail}</p></div>
                     </article>
                   ))}
                 </div>
@@ -1988,20 +1996,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <Surface className="spatial-burnout-card">
               <div className="surface-head">
                 <div>
-                  <span className="surface-kicker">الرادار الجغرافي</span>
-                  <h2>الاحتراق الوظيفي المكاني</h2>
+                  <span className="surface-kicker">الحركة المكانية</span>
+                  <h2>راحة الحركة</h2>
                 </div>
                 <Building2 />
               </div>
               <div className="spatial-score-row">
                 <div className={`spatial-score ${overview.spatialBurnout.highRisk ? "danger" : overview.spatialBurnout.guardedRisk ? "guarded" : "safe"}`}>
                   <Num value={overview.spatialBurnout.score} suffix=" / 100" className="spatial-score-value" />
-                  <small>راحة الحركة</small>
+                  <small>{overview.spatialBurnout.highRisk ? "الحركة مرهقة" : overview.spatialBurnout.guardedRisk ? "تحتاج مراجعة" : "حركة مريحة"}</small>
                 </div>
                 <div className="spatial-metrics">
-                  <article><b><Num value={overview.spatialBurnout.highRisk} /></b><span>خطر إرهاق جسدي</span></article>
-                  <article><b><Num value={overview.spatialBurnout.guardedRisk} /></b><span>انتقال ضيق</span></article>
-                  <article><b><Num value={overview.roomCastling?.length || 0} /></b><span>تبديل شطرنجي آمن</span></article>
+                  <article><span className="spatial-metric-icon"><AlertTriangle /></span><b><Num value={overview.spatialBurnout.highRisk} /></b><span>انتقال مرهق</span></article>
+                  <article><span className="spatial-metric-icon"><CalendarClock /></span><b><Num value={overview.spatialBurnout.guardedRisk} /></b><span>انتقال ضيق</span></article>
+                  <article><span className="spatial-metric-icon"><Building2 /></span><b><Num value={overview.roomCastling?.length || 0} /></b><span>تبديل آمن</span></article>
                 </div>
               </div>
               {overview.spatialBurnout.risks?.length ? (
@@ -2035,7 +2043,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               ) : null}
               <details className="insight-disclosure">
                 <summary>كيف وصلنا لهذه النتيجة؟</summary>
-                <p className="insight-method">تنظر الدرجة إلى كل انتقال بين مبنيين لأستاذٍ في اليوم نفسه، وتقارن الفراغ المتاح بالزمن اللازم للتنقّل؛ كل انتقال أضيق من اللازم يخفض «راحة الحركة».</p>
+                <p className="insight-method">نقارن الفراغ المتاح بزمن الانتقال المطلوب بين المباني؛ كل انتقال أضيق من اللازم يخفض راحة الحركة.</p>
               </details>
             </Surface>
             </div>
@@ -2100,7 +2108,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <UsersRound />
             </div>
             <div className="professor-load-list">
-              {overview.professorLoads.map((p: any) => (
+              {[...overview.professorLoads].sort((a: any, b: any) => new Intl.Collator("ar", { sensitivity: "base" }).compare(String(a.name || ""), String(b.name || ""))).map((p: any) => (
                 <button key={p.id} onClick={() => loadProfessor(p)}>
                   <span className="prof-avatar">{p.name.trim().charAt(0)}</span>
                   <div>
@@ -2124,7 +2132,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </details>
           </Surface>
             </div>
-            <div
+            {isPowerAdmin ? <div
               className="content-stack insight-scene-panel"
               id="insight-panel-health"
               role="tabpanel"
@@ -2178,7 +2186,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <p className="insight-method">الفحص يعدّ الصفوف الناقصة، والتكرارات (نفس المقرر والشعبة والوقت)، والمقررات بلا موعد داخل النطاق المختار — دون أي تعديل تلقائي.</p>
             </details>
           </Surface>
-            </div>
+            </div> : null}
           {demand && (demand.respondents || demand.prediction?.courses?.length || demand.openings?.proposals?.length || demand.survey?.length || isPowerAdmin) ? (
             <div
               className="content-stack insight-scene-panel"
@@ -2495,14 +2503,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
               <details className="insight-disclosure">
                 <summary>كيف وصلنا إلى هذه النقلات؟</summary>
-                <p className="insight-method">
-                  كل نقلة جُرّبت فعلياً على أسبوع هذا الفصل: تُنقل المحاضرة إلى ساعات
-                  البداية التي يستخدمها قسمك أصلاً، ثم يُعاد فحص الأسبوع كاملاً. لا
-                  تُعرض النقلة إلا إذا أزالت تقاطعاً على الطلاب ولم تُنشئ شيئاً —
-                  لا تعارض أستاذ، ولا قاعة محجوزة، ولا فترة تبديل أقصر من المعتاد،
-                  ولا تقاطعاً جديداً مع مقرر ثالث. والأرقام كلها مبنية على من أجاب
-                  الاستبيان فقط، لا على بيانات التسجيل.
-                </p>
+                <p className="insight-method">فحصنا أسبوع الفصل كاملًا واخترنا النقلات التي تزيل التقاطع دون إنشاء تعارض جديد.</p>
               </details>
             </Surface>
             </div>
@@ -2563,12 +2564,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </div>
               </div>
               <details className="insight-disclosure genome-details">
-                <summary>كيف وصلنا إلى هذه القراءة؟</summary>
+                <summary>تفاصيل القراءة</summary>
               <div className="genome-patterns">
                 <section>
                   <span>نمط ساعات البداية</span>
                   <div>
-                    {Object.entries(genome.dna?.timeShares || {}).map(
+                    {Object.entries(genome.dna?.timeShares || {}).sort((a:any,b:any)=>Number(b[1])-Number(a[1])).slice(0, 4).map(
                       ([key, value]: any) => (
                         <b key={key}>
                           <small>{/^(\d{2})-(\d{2})$/.test(key) ? formatScheduleTimeRange(`${key.slice(0, 2)}:00`, `${key.slice(3, 5)}:00`) : key.replace(/^0/, "")}</small>
@@ -2582,7 +2583,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <span>أماكن الاختناق التاريخية</span>
                   <div>
                     {(genome.dna?.bottlenecks || [])
-                      .slice(0, 5)
+                      .slice(0, 3)
                       .map((b: any) => (
                         <b key={`${b.day}-${b.time}`}>
                           <small>
@@ -2596,7 +2597,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
               <div className="genome-deviations">
                 {(genome.deviations || [])
-                  .slice(0, 5)
+                  .slice(0, 2)
                   .map((d: any, i: number) => (
                     <article className={d.severity || "info"} key={i}>
                       <i />
@@ -3662,8 +3663,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <Surface className="change-ledger">
                   <div className="surface-head">
                     <div>
-                      <span className="surface-kicker">التغييرات</span>
-                      <h2>{changedRows.length} تعديل</h2>
+                      <span className="surface-kicker">سجل التعديلات</span>
+                      <h2>{changedRows.length === 1 ? "تعديل واحد" : `${changedRows.length} تعديلات`}</h2>
                     </div>
                     <FileClock />
                   </div>
@@ -3672,14 +3673,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       changedRows.slice(0, 30).map((r) => {
                         const o = originalById.get(r.id);
                         return (
-                          <article key={r.id}>
-                            <div>
-                              <strong>
-                                {r.AdCourseName} · {r.SCode}
-                              </strong>
-                              <span>
-                                {formatScheduleTimeRange(o?.fstarttime, o?.fendtime)} ← {formatScheduleTimeRange(r.fstarttime, r.fendtime)}
-                              </span>
+                          <article key={r.id} className="change-card">
+                            <div className="change-card-main">
+                              <div className="change-card-title"><strong>{r.AdCourseName}</strong><Badge tone="neutral">شعبة {r.SCode}</Badge></div>
+                              <div className="change-time-flow">
+                                <span><small>قبل</small><time dir="ltr">{formatScheduleTimeRange(o?.fstarttime, o?.fendtime)}</time></span>
+                                <ArrowLeftRight aria-hidden="true" />
+                                <span className="after"><small>بعد</small><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time></span>
+                              </div>
                             </div>
                             {o?.AdRoomCode !== r.AdRoomCode ||
                             o?.AdRoomHall !== r.AdRoomHall ? (
@@ -4109,12 +4110,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <div className="import-icon">
               <Upload />
             </div>
-            <span className="surface-kicker">معالج استيراد Excel</span>
-            <h2>اسحب جدولاً… وافحصه قبل الإدخال</h2>
-            <p>
-              يدعم ملف Excel بنفس أعمدة تقارير البرنامج: رمز المقرر، الشعبة،
-              الأستاذ/الرقم المدني، الوقت، الأيام، المبنى والقاعة.
-            </p>
+            <span className="surface-kicker">استيراد Excel</span>
+            <h2>ارفع الجدول وراجعه قبل الحفظ</h2>
+            <p>يدعم تنسيق تقارير SCHEDULE.</p>
             <label className="file-button">
               <input
                 type="file"
@@ -4128,8 +4126,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               {importFile || "اختر ملف Excel"}
             </label>
             <small>
-              <ShieldCheck /> الاستيراد لا يكتب على الجدول. ينتج معاينة ثم
-              مسودة فقط.
+              <ShieldCheck /> معاينة أولاً، دون تعديل الجدول.
             </small>
           </Surface>
           {importPreview ? (
@@ -4342,19 +4339,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <h3>المواعيد الظاهرة ضمن صلاحياتك</h3>
                 <div className="drawer-schedule-list">
                   {detail.data.visibleRows.map((r: any) => (
-                    <article key={r.id}>
-                      <strong>
-                        {r.AdCourseName} · {r.SCode}
-                      </strong>
-                      <span>
-                        {Object.keys(dayLabels)
-                          .filter((k) => r[k])
-                          .map((k) => dayLabels[k])
-                          .join(" - ")}
-                      </span>
-                      <small dir="ltr">
-                        {formatScheduleTimeRange(r.fstarttime, r.fendtime)}
-                      </small>
+                    <article key={r.id} className="drawer-schedule-card">
+                      <div className="drawer-schedule-title"><strong>{r.AdCourseName}</strong><Badge tone="neutral">شعبة {r.SCode}</Badge></div>
+                      <div className="drawer-schedule-meta">
+                        <span><CalendarClock />{Object.keys(dayLabels).filter((k) => r[k]).map((k) => dayLabels[k]).join(" · ") || "—"}</span>
+                        <time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>
+                      </div>
                     </article>
                   ))}
                 </div>
