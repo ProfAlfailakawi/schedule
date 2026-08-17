@@ -7053,3 +7053,54 @@ html.schedule-physics-active .week-strip-slot.field-tier::before{pointer-events:
 .physics-conflict-clear{border-color:color-mix(in srgb,var(--success) 22%,var(--line));background:color-mix(in srgb,var(--success) 5%,var(--surface))}
 .physics-conflict-clear svg,.physics-conflict-clear strong{color:var(--success)}
 .physics-reading{margin-top:7px!important;font-size:10px!important}
+
+/* === V26: sticky hour rulers + week/rooms parity ==========================
+   Keep the time rulers visible while scrolling the page, and let rooms borrow
+   the same readable hour grid language the dense week view already uses. */
+.week-scroll-main{
+  overflow-y:visible!important;
+}
+.week-strips{
+  overflow:visible!important;
+}
+.week-strip-ruler{
+  position:sticky!important;
+  top:0!important;
+  z-index:120!important;
+}
+
+.rooms-scale{
+  position:sticky!important;
+  top:0!important;
+  z-index:160!important;
+  padding-block:4px 6px;
+  background:color-mix(in srgb,var(--surface) 96%,transparent)!important;
+  box-shadow:0 8px 18px color-mix(in srgb,var(--ink) 4%,transparent);
+}
+.rooms-scale>div{
+  overflow:hidden;
+  background:linear-gradient(to bottom,color-mix(in srgb,var(--surface-2) 26%,transparent),transparent 18px),var(--surface)!important;
+}
+.rooms-scale-line{
+  position:absolute;
+  inset-block:0;
+  width:0;
+  pointer-events:none;
+  border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 58%,transparent);
+  opacity:.9;
+}
+.rooms-scale-line-major{
+  border-inline-start-style:solid;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 92%,transparent);
+}
+.rooms-scale-line-half{
+  border-inline-start-style:dashed;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 56%,transparent);
+}
+.rooms-scale-line-terminal{
+  border-inline-start-style:solid;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 96%,transparent);
+}
+.rooms-scale span{
+  z-index:1;
+}

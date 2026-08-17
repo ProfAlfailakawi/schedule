@@ -1665,26 +1665,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     return () => { alive = false; };
   }, [mode, editor, form.AdCollegeId, form.AdSectionId, form.AdTermId, filterCollege, filterSection, filterTerm, departmentStartRhythm, liveFeedSerial]);
 
-  const historicalChoiceResolver = useRef<((keepPicked: boolean) => void) | null>(null);
+  const historicalChoiceResolver = useRef<((decision: "picked" | "preferred" | "cancel") => void) | null>(null);
   const askHistoricalTimeChoice = useCallback((data: { dayLabel: string; picked: string; preferred: string; source: string }) =>
-    new Promise<boolean>(resolve => {
-      historicalChoiceResolver.current?.(true);
+    new Promise<"picked" | "preferred" | "cancel">(resolve => {
+      historicalChoiceResolver.current?.("cancel");
       historicalChoiceResolver.current = resolve;
       setHistoricalChoice(data);
     }), []);
-  const settleHistoricalTimeChoice = useCallback((keepPicked: boolean) => {
+  const settleHistoricalTimeChoice = useCallback((decision: "picked" | "preferred" | "cancel") => {
     const resolve = historicalChoiceResolver.current;
     historicalChoiceResolver.current = null;
     setHistoricalChoice(null);
-    resolve?.(keepPicked);
+    resolve?.(decision);
   }, []);
   useEffect(() => () => {
-    historicalChoiceResolver.current?.(true);
+    historicalChoiceResolver.current?.("cancel");
     historicalChoiceResolver.current = null;
   }, []);
   useEffect(() => {
     if (!historicalChoice) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") settleHistoricalTimeChoice(true); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") settleHistoricalTimeChoice("cancel"); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [historicalChoice, settleHistoricalTimeChoice]);
@@ -1754,8 +1754,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const source = reading.data
       ? (reading.basis === "course-pattern" ? "المقرر + نمط الأيام" : reading.basis === "course" ? "سجل المقرر" : reading.basis === "pattern" ? "نمط الأيام" : "سجل القسم الحديث")
       : "القاعدة المؤسسية";
-    const keepPicked = await askHistoricalTimeChoice({ dayLabel, picked, preferred, source });
-    return keepPicked ? picked : preferred;
+    const decision = await askHistoricalTimeChoice({ dayLabel, picked, preferred, source });
+    if (decision === "cancel") return null;
+    return decision === "picked" ? picked : preferred;
   }, [preferredStartForDrop, historicalReadingFor, askHistoricalTimeChoice]);
   useEffect(() => {
     if (mode !== "copy" || isPowerAdmin || !sections.length) return;
@@ -3336,6 +3337,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const day = target.day as DayKey;
     const pickedStart = target.start;
     const chosenStart = await chooseHistoricalDropTime(row, day, pickedStart);
+    if (!chosenStart) {
+      setPhysicsNotice("");
+      return;
+    }
     const effectiveTarget = chosenStart === pickedStart ? target : { ...target, start: chosenStart };
     // A whole selection travels together, keeping the shape it already had.
     const party = multiSelect.has(row.id)
@@ -3601,6 +3606,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const commitRoomMove = async (row: FSchedule, day: DayKey, start: string, building: string, hall: string) => {
     if (showMobileReadOnlyGate()) return;
     start = await chooseHistoricalDropTime(row, day, start);
+    if (!start) {
+      setPhysicsNotice("");
+      return;
+    }
     const duration = Math.max(30, mins(row.fendtime) - mins(row.fstarttime));
     const end = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(start) + duration));
     const unchanged = row.fstarttime === start &&
@@ -7358,11 +7367,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       {historicalChoice ? (
         <div className="historical-time-backdrop no-print" role="dialog" aria-modal="true" aria-label="تنبيه التوقيت التاريخي">
           <section className="historical-time-dialog">
-            <button type="button" className="historical-time-close" onClick={() => settleHistoricalTimeChoice(true)} aria-label="إغلاق الاقتراح" title="إغلاق"><X /></button>
+            <button type="button" className="historical-time-close" onClick={() => settleHistoricalTimeChoice("cancel")} aria-label="إلغاء النقل والعودة للوضع السابق" title="إلغاء"><X /></button>
             <header><span><Clock3 aria-hidden="true" /></span><div><small>{historicalChoice.source}</small><strong>{historicalChoice.dayLabel} · وقت غير معتاد</strong></div></header>
             <div className="historical-time-compare" dir="ltr"><b>{historicalChoice.picked}</b><ChevronLeft aria-hidden="true" /><strong>{historicalChoice.preferred}</strong></div>
             <p>النمط الأقرب يشير إلى <b dir="ltr">{historicalChoice.preferred}</b>. الوقت الذي اخترته <b dir="ltr">{historicalChoice.picked}</b> يبقى مسموحاً.</p>
-            <footer><button type="button" onClick={() => settleHistoricalTimeChoice(true)}>ثبّت {historicalChoice.picked}</button><button type="button" className="primary" onClick={() => settleHistoricalTimeChoice(false)}>استخدم {historicalChoice.preferred}</button></footer>
+            <footer><button type="button" onClick={() => settleHistoricalTimeChoice("picked")}>ثبّت {historicalChoice.picked}</button><button type="button" className="primary" onClick={() => settleHistoricalTimeChoice("preferred")}>استخدم {historicalChoice.preferred}</button></footer>
           </section>
         </div>
       ) : null}
@@ -8172,6 +8181,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 >
                   {matrixDay === "week" ? <small>اليوم</small> : <small />}
                   <div>
+                    {timeSlots.map(slot => (
+                      <i
+                        key={`rooms-scale-line-${slot}`}
+                        className={`rooms-scale-line ${mins(slot) % 60 === 0 ? "rooms-scale-line-major" : "rooms-scale-line-half"} ${slot === SCHEDULE_DAY_END_TIME ? "rooms-scale-line-terminal" : ""}`}
+                        style={{ right: `${pct(mins(slot))}%` }}
+                      />
+                    ))}
                     {hourMarks.map(mark => (
                       <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark)}</span>
                     ))}
@@ -8232,7 +8248,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                     }}
                                   />
                                 ))}
-                                {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mins(mark) % 60 === 0 ? "rooms-hourline-major" : "rooms-hourline-half"} ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                                {timeSlots.map(slot => <i key={slot} className={`rooms-hourline ${mins(slot) % 60 === 0 ? "rooms-hourline-major" : "rooms-hourline-half"} ${slot === SCHEDULE_DAY_END_TIME ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mins(slot))}%` }} />)}
                                 {moveTraces
                                   .filter(trace => trace.dayKey === day.key && trace.roomKey === room.key)
                                   .map(trace => (
@@ -8300,7 +8316,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                   }}
                                 />
                               ))}
-                              {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mins(mark) % 60 === 0 ? "rooms-hourline-major" : "rooms-hourline-half"} ${mark === gridWindow.end ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                              {timeSlots.map(slot => <i key={slot} className={`rooms-hourline ${mins(slot) % 60 === 0 ? "rooms-hourline-major" : "rooms-hourline-half"} ${slot === SCHEDULE_DAY_END_TIME ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mins(slot))}%` }} />)}
                               {moveTraces
                                 .filter(trace => trace.dayKey === day.key && trace.roomKey === "|")
                                 .map(trace => (
