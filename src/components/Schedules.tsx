@@ -7821,9 +7821,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               const code = String(course?.CourseCode || "").trim() || "—";
               const title = row.AdCourseName || course?.CourseName || code;
               const who = instructor?.AdInstructorName ? firstLast(instructor.AdInstructorName) : "بدون أستاذ";
-              const whoWords = who.split(/\s+/).filter(Boolean);
-              const whoFamily = whoWords.length > 1 ? whoWords.pop()! : "";
-              const whoGiven = whoWords.join(" ") || who;
               const activeRoomDays = days.filter(day => Boolean((row as any)[day.key]));
               const dayNames = activeRoomDays.map(day => day.label).join(" · ") || "بلا يوم";
               const undoId = recentMoves[row.id];
@@ -7888,7 +7885,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 >
                   <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
                   <b>{courseLabel(title, 0.82).text}</b>
-                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</span>
+                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{who}</span>
                   <em dir="ltr">{code}</em>
                   {undoEntry ? (
                     <button
