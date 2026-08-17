@@ -3508,6 +3508,22 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
 .rooms-card .week-moved-pill{top:2px;inset-inline-end:2px}
 
+.rooms-drag-handle{
+  position:absolute;top:5px;inset-inline-end:5px;width:13px;height:13px;
+  color:color-mix(in srgb,var(--label) 58%,transparent);opacity:.45;pointer-events:none;
+  transition:opacity .14s var(--ease),transform .14s var(--ease);
+}
+.rooms-card:hover .rooms-drag-handle,.rooms-card:focus-visible .rooms-drag-handle{opacity:.92;transform:translateY(-1px)}
+.rooms-paint{
+  position:absolute;inset-block:3px;z-index:2;pointer-events:none;
+  display:grid;place-items:center;border-radius:7px;
+  background:color-mix(in srgb,var(--accent) 12%,transparent);
+  border:1px dashed color-mix(in srgb,var(--accent) 58%,transparent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 8%,transparent);
+}
+.rooms-paint b{font:700 9px/1 var(--font-mono);color:var(--accent);white-space:nowrap}
+html.schedule-physics-active .rooms-paint{display:none}
+
 .transfer-import-actions{display:flex;flex-wrap:wrap;gap:var(--s2)}
 .transfer-done{display:flex;align-items:center;gap:var(--s2);color:var(--success);font-size:var(--t-sm);line-height:1.6}
 .transfer-done svg{width:15px;height:15px;flex:none}
@@ -4453,11 +4469,12 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .rooms-slot{
   position:absolute;inset-block:0;z-index:1;
   pointer-events:auto;
+  cursor:crosshair;
 }
-/* At rest they are nothing at all. */
+/* At rest the slot is invisible but remains the precise click target for creating
+   a lecture. Cards sit above it, so drag always wins over add. */
 .rooms-slot::after{content:none}
-.rooms-track:not(.gravity-field-active) .rooms-slot{pointer-events:none}
-html.schedule-physics-active .rooms-slot{pointer-events:auto}
+html.schedule-physics-active .rooms-slot{pointer-events:auto;cursor:grabbing}
 /* In the air: the same three answers, drawn along the track. */
 html.schedule-physics-active .rooms-slot.field-tier::after{
   content:"";position:absolute;inset:2px 0;border-radius:3px;pointer-events:none;

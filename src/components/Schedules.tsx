@@ -150,7 +150,6 @@ interface Props {
 }
 type EditorMode = "index" | "create" | "edit";
 type CreateSeed = { day?: DayKey; start?: string; end?: string; roomCode?: string; roomHall?: string };
-type RoomHoverSeed = { trackKey: string; day: DayKey; start: string; roomCode: string; roomHall: string; label: string };
 type DecisionFingerprint = { summary: string; before: string; after: string; place: string; quality: string; count: number; when: number };
 const AGENDA_PAGE_SIZE = 60;
 
@@ -518,7 +517,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [physicsNotice, setPhysicsNotice] = useState(""),
     [undoPoint, setUndoPoint] = useState<any>(null),
     [pendingWriteIds, setPendingWriteIds] = useState<Set<number>>(() => new Set()),
-    [roomHover, setRoomHover] = useState<RoomHoverSeed | null>(null),
     [decisionFingerprint, setDecisionFingerprint] = useState<DecisionFingerprint | null>(null),
     [historicalChoice, setHistoricalChoice] = useState<null | { dayLabel: string; picked: string; preferred: string; source: string }>(null),
     // What the server has said about squares the pointer has actually visited
@@ -565,8 +563,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * gesture, and the form opens already knowing all three. A single tap is the
    * same stroke of one square, so nothing was taken away.
    */
-  const [paint, setPaint] = useState<{ day: DayKey; from: string; to: string } | null>(null);
-  const paintRef = useRef<{ day: DayKey; anchor: number } | null>(null);
+  const [paint, setPaint] = useState<{ day: DayKey; from: string; to: string; roomCode?: string; roomHall?: string; trackKey?: string } | null>(null);
+  const paintRef = useRef<{ day: DayKey; anchor: number; roomCode?: string; roomHall?: string; trackKey?: string } | null>(null);
   /* Where the stroke ended, held open as a card until it is answered or
      dismissed. Saving from here is a deliberate press like any other; nothing
      is written by the gesture itself. */
@@ -610,7 +608,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    * no default, because choosing for them is exactly the thing that went wrong.
    */
   const [clash, setClash] = useState<{ current: FSchedule; yours: any } | null>(null);
-  const paintOpen = useRef<((seed: { day: DayKey; start: string; end: string; x: number; y: number }) => void) | null>(null);
+  const paintOpen = useRef<((seed: { day: DayKey; start: string; end: string; x: number; y: number; roomCode?: string; roomHall?: string }) => void) | null>(null);
   useEffect(() => {
     const finish = (event: PointerEvent) => {
       const stroke = paintRef.current;
@@ -626,6 +624,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             // fixed corner, so the answer appears where the question was asked.
             x: event.clientX,
             y: event.clientY,
+            roomCode: current.roomCode,
+            roomHall: current.roomHall,
           });
         return null;
       });
@@ -1371,7 +1371,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     })();
   }, [mode, user?.SystemUserId]);
   useEffect(() => {
-    setRoomHover(null);
     setDecisionFingerprint(null);
   }, [filterCollege, filterSection, filterTerm, viewMode]);
 
@@ -1774,8 +1773,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       x: seed.x,
       y: seed.y,
       instructorId: Number(last?.AdInstructorId) || 0,
-      room: String(last?.AdRoomCode || savedPrefs.lastRoomCode || ""),
-      hall: String(last?.AdRoomHall || savedPrefs.lastRoomHall || ""),
+      room: String(seed.roomCode ?? last?.AdRoomCode ?? savedPrefs.lastRoomCode ?? ""),
+      hall: String(seed.roomHall ?? last?.AdRoomHall ?? savedPrefs.lastRoomHall ?? ""),
     });
   };
   /**
@@ -7029,25 +7028,38 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   onDragStart={(e) => {
                     e.dataTransfer.setData("text/schedule-id", String(row.id));
                     e.dataTransfer.effectAllowed = "move";
+                    beginRipple(row);
                   }}
+                  onDragEnd={clearRipple}
                   title={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   aria-label={`${title} · ${instructor?.AdInstructorName || "بدون أستاذ"} · ${dayNames} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`}
                   onPointerDown={(e) => {
+                    pressOrigin.current = { x: e.clientX, y: e.clientY };
                     if (rowPending) {
                       e.preventDefault();
                       e.stopPropagation();
                       setPhysicsNotice("هذا الموعد ما زال بانتظار تثبيت نقله السابق. يمكنك سحب بقية المواعيد الآن، ثم العودة إليه بعد اكتمال الحفظ.");
                       return;
                     }
+                    trackGrip.onPointerDown?.(e);
                   }}
-                  onClick={() => { if (!rowPending) void openContext(row); }}
+                  onClick={(e) => {
+                    if (rowPending || physics.didDrag() || physicsActive) return;
+                    const from = pressOrigin.current;
+                    if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4) return;
+                    void openContext(row);
+                  }}
                   onPointerEnter={(e) => { if (!physicsActive) openPeek(row, e.currentTarget); }}
                   onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                   onFocus={(e) => openPeek(row, e.currentTarget)}
                   onBlur={() => setPeek(current => (current?.row.id === row.id ? null : current))}
                   tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === "Enter") void openContext(row); }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { void openContext(row); return; }
+                    if (e.key === " " || e.key === "Spacebar") { e.preventDefault(); pickUpWithKeyboard(row); }
+                  }}
                 >
+                  <GripVertical data-physics-handle="true" className="rooms-drag-handle" aria-hidden="true" />
                   <b>{placement ? compactTitle : courseLabel(title, 0.82).text}</b>
                   <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{placement ? <i>{compactWho}</i> : <><i>{whoGiven}</i>{whoFamily ? <i>{whoFamily}</i> : null}</>}</span>
                   <em dir="ltr">{code}</em>
@@ -7065,40 +7077,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 </article>
               );
             };
-            const roomPreviewKey = roomHover?.trackKey || "";
-            const trackSeedFromPoint = (track: DOMRect, clientX: number, meta: { day: DayKey; roomCode: string; roomHall: string; label: string; trackKey: string }) => {
-              const share = Math.min(1, Math.max(0, (track.right - clientX) / Math.max(1, track.width)));
-              const raw = gridWindow.start + share * span;
-              const snapped = Math.max(gridWindow.start, Math.min(gridWindow.end - SCHEDULE_SLOT_MINUTES, Math.round(raw / SCHEDULE_SLOT_MINUTES) * SCHEDULE_SLOT_MINUTES));
-              return {
-                trackKey: meta.trackKey,
-                day: meta.day,
-                start: timeFromMins(snapped),
-                roomCode: meta.roomCode,
-                roomHall: meta.roomHall,
-                label: meta.label,
-              } as RoomHoverSeed;
-            };
-            const previewTrack = (meta: { day: DayKey; roomCode: string; roomHall: string; label: string; trackKey: string }) => (e: React.PointerEvent<HTMLDivElement>) => {
-              if (phoneReadOnly || physicsActive || e.target !== e.currentTarget) return;
-              setRoomHover(trackSeedFromPoint(e.currentTarget.getBoundingClientRect(), e.clientX, meta));
-            };
-            const clearTrackPreview = (trackKey: string) => () => {
-              setRoomHover(current => current?.trackKey === trackKey ? null : current);
-            };
-            const createFromTrack = (meta: { day: DayKey; roomCode: string; roomHall: string; label: string; trackKey: string }) => (e: React.MouseEvent<HTMLDivElement>) => {
-              if (phoneReadOnly || physicsActive || e.target !== e.currentTarget) return;
-              const seed = trackSeedFromPoint(e.currentTarget.getBoundingClientRect(), e.clientX, meta);
-              setRoomHover(seed);
-              openCreate({
-                day: seed.day,
-                start: seed.start,
-                end: timeFromMins(Math.min(gridWindow.end, mins(seed.start) + 60)),
-                roomCode: seed.roomCode,
-                roomHall: seed.roomHall,
-              });
-            };
-
             const trackDrop = (building: string, hall: string, day: DayKey) => async (e: React.DragEvent<HTMLDivElement>) => {
               e.preventDefault();
               const id = Number(e.dataTransfer.getData("text/schedule-id"));
@@ -7303,9 +7281,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                 className="rooms-track"
                                 data-physics-day-column="true"
                                 onDragOver={(e) => e.preventDefault()}
-                                onPointerMove={previewTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
-                                onPointerLeave={clearTrackPreview(`${room.key}|${day.key}`)}
-                                onClick={createFromTrack({ day: day.key as DayKey, roomCode: room.building, roomHall: room.hall, label: `${day.label} · ${room.label}`, trackKey: `${room.key}|${day.key}` })}
                                 onDrop={trackDrop(room.building, room.hall, day.key as DayKey)}
                               >
                                 {timeSlots.map(slot => (
@@ -7318,10 +7293,36 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                     data-physics-label={`${day.label} · ${room.label}`}
                                     data-physics-room={`${room.building}|${room.hall}`}
                                     style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
+                                    role="button"
+                                    tabIndex={-1}
+                                    title={`إضافة موعد · ${day.label} ${slot} · ${room.label}`}
+                                    onPointerDown={(e) => {
+                                      if (physicsActive || e.target !== e.currentTarget || e.button !== 0) return;
+                                      const trackKey = `${room.key}|${day.key}`;
+                                      paintRef.current = { day: day.key as DayKey, anchor: mins(slot), roomCode: room.building, roomHall: room.hall, trackKey };
+                                      setPaint({ day: day.key as DayKey, from: slot, to: timeFromMins(mins(slot) + SCHEDULE_SLOT_MINUTES), roomCode: room.building, roomHall: room.hall, trackKey });
+                                    }}
+                                    onPointerEnter={() => {
+                                      if (physicsActive) return;
+                                      const stroke = paintRef.current;
+                                      const trackKey = `${room.key}|${day.key}`;
+                                      if (!stroke || stroke.day !== day.key || stroke.trackKey !== trackKey) return;
+                                      const here = mins(slot);
+                                      setPaint({
+                                        day: day.key as DayKey,
+                                        from: timeFromMins(Math.min(stroke.anchor, here)),
+                                        to: timeFromMins(Math.max(stroke.anchor, here) + SCHEDULE_SLOT_MINUTES),
+                                        roomCode: room.building, roomHall: room.hall, trackKey,
+                                      });
+                                    }}
                                   />
                                 ))}
                                 {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
-                                {roomPreviewKey === `${room.key}|${day.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
+                                {paint?.trackKey === `${room.key}|${day.key}` ? (
+                                  <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true">
+                                    <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b>
+                                  </div>
+                                ) : null}
                                 {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
                                 {inRoom.map(row => renderTrackCard(row))}
                               </div>
@@ -7338,8 +7339,38 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                         {displayDays.map(day => (
                           <div className="rooms-row" key={`none|${day.key}`}>
                             <small className="rooms-day-label">{day.label}</small>
-                            <div className="rooms-track" onDragOver={(e) => e.preventDefault()} onPointerMove={previewTrack({ day: day.key as DayKey, roomCode: "", roomHall: "", label: `${day.label} · بلا قاعة`, trackKey: `none|${day.key}` })} onPointerLeave={clearTrackPreview(`none|${day.key}`)} onClick={createFromTrack({ day: day.key as DayKey, roomCode: "", roomHall: "", label: `${day.label} · بلا قاعة`, trackKey: `none|${day.key}` })} onDrop={trackDrop("", "", day.key as DayKey)}>
-                              {roomPreviewKey === `none|${day.key}` && roomHover ? <i className="rooms-slot-preview" style={{ right: `${pct(mins(roomHover.start))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }} /> : null}
+                            <div className="rooms-track" data-physics-day-column="true" onDragOver={(e) => e.preventDefault()} onDrop={trackDrop("", "", day.key as DayKey)}>
+                              {timeSlots.map(slot => (
+                                <i
+                                  key={`none-slot-${slot}`}
+                                  className={`rooms-slot ${physicsSlotClass(day.key as DayKey, slot, "|")}`}
+                                  data-physics-slot="true"
+                                  data-physics-day={day.key}
+                                  data-physics-start={slot}
+                                  data-physics-label={`${day.label} · بلا قاعة`}
+                                  data-physics-room="|"
+                                  style={{ right: `${pct(mins(slot))}%`, width: `${(SCHEDULE_SLOT_MINUTES / span) * 100}%` }}
+                                  role="button"
+                                  tabIndex={-1}
+                                  title={`إضافة موعد · ${day.label} ${slot} · بلا قاعة`}
+                                  onPointerDown={(e) => {
+                                    if (physicsActive || e.target !== e.currentTarget || e.button !== 0) return;
+                                    const trackKey = `none|${day.key}`;
+                                    paintRef.current = { day: day.key as DayKey, anchor: mins(slot), roomCode: "", roomHall: "", trackKey };
+                                    setPaint({ day: day.key as DayKey, from: slot, to: timeFromMins(mins(slot) + SCHEDULE_SLOT_MINUTES), roomCode: "", roomHall: "", trackKey });
+                                  }}
+                                  onPointerEnter={() => {
+                                    if (physicsActive) return;
+                                    const stroke = paintRef.current;
+                                    const trackKey = `none|${day.key}`;
+                                    if (!stroke || stroke.day !== day.key || stroke.trackKey !== trackKey) return;
+                                    const here = mins(slot);
+                                    setPaint({ day: day.key as DayKey, from: timeFromMins(Math.min(stroke.anchor, here)), to: timeFromMins(Math.max(stroke.anchor, here) + SCHEDULE_SLOT_MINUTES), roomCode: "", roomHall: "", trackKey });
+                                  }}
+                                />
+                              ))}
+                              {hourMarks.map(mark => <i key={mark} className={`rooms-hourline ${mark === SCHEDULE_DAY_END ? "rooms-hourline-terminal" : ""}`} style={{ right: `${pct(mark)}%` }} />)}
+                              {paint?.trackKey === `none|${day.key}` ? <div className="rooms-paint" style={{ right: `${pct(mins(paint.from))}%`, width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(mins(paint.to)) - pct(mins(paint.from)))}%` }} aria-hidden="true"><b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b></div> : null}
                               {(noRoomByDay.get(day.key as DayKey) || []).map(renderTrackCard)}
                             </div>
                           </div>
