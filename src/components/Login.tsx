@@ -6,10 +6,10 @@ import {
   LockKeyhole,
   ShieldCheck,
   Sparkles,
-  X,
 } from "lucide-react";
 import { Field, Notice, PrimaryButton } from "./ui";
 import InstallApp from "./InstallApp";
+import ScheduleJourney from "./ScheduleJourney";
 interface LoginProps {
   onLoginSuccess: (data: {
     user: any;
@@ -65,25 +65,14 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       </header>
       <button
         type="button"
-        className="apex-login-identity-trigger"
+        className="apex-login-identity-trigger apex-login-identity-trigger--pulse"
         onClick={() => setIdentityOpen(true)}
-        aria-label="هوية SCHEDULE"
-        title="هوية SCHEDULE"
+        aria-label="رحلة SCHEDULE"
+        title="رحلة SCHEDULE"
       >
         <Sparkles aria-hidden="true" />
       </button>
-      {identityOpen ? (
-        <div className="login-identity-backdrop" role="dialog" aria-modal="true" aria-label="هوية SCHEDULE" onMouseDown={(event) => { if (event.target === event.currentTarget) setIdentityOpen(false); }}>
-          <section className="login-identity-popover">
-            <button type="button" className="login-identity-close" onClick={() => setIdentityOpen(false)} aria-label="إغلاق"><X /></button>
-            <div className="rail-identity login-identity-card">
-              <span className="rail-identity-name">SCHEDULE</span>
-              <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
-              <span className="rail-identity-go" aria-hidden="true">←</span>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      {identityOpen ? <ScheduleJourney onClose={() => setIdentityOpen(false)} /> : null}
       <section className="apex-login-stage">
         <div className="apex-login-story">
           <span className="apex-login-kicker">

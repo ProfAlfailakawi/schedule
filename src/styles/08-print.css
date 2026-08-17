@@ -1713,3 +1713,16 @@
 .print-spread-keys{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}.print-spread-keys span{display:flex;align-items:center;justify-content:center;gap:5px;padding:5px 6px;border:1px solid #e1e5e1;border-radius:7px;font-size:8.5px;color:#68736e}.print-spread-keys b{font-size:11px;color:#17201c}
 .print-review-finding.severity-high{border-color:#e8c8c5;background:#fffafa}.print-review-finding.severity-medium{border-color:#eadbb8;background:#fffdf7}.print-review-finding.severity-low{border-color:#dde2de;background:#fbfcfb}
 .print-review-finding>header>b svg{width:13px;height:13px}.print-review-finding.severity-high>header>b{color:#a64039;background:#f8e8e6}.print-review-finding.severity-medium>header>b{color:#9d7012;background:#f8f0dc}.print-review-finding.severity-low>header>b{color:#69746e;background:#edf0ed}
+.print-review-report{display:block}
+.print-review-page{display:flex;flex-direction:column;gap:8px}
+.print-review-page .print-letterhead{margin-bottom:2px}
+.print-review-page-kicker{
+  display:grid;gap:2px;padding:8px 10px;border:1px solid #dde2de;border-radius:10px;
+  background:#fbfcfb;margin-bottom:2px;
+}
+.print-review-page-kicker small{font-size:9px;color:#8d6423;font-weight:700}
+.print-review-page-kicker strong{font-size:14px;color:#17201c}
+.print-review-page-kicker span{font-size:9px;color:#68736e}
+.print-review-findings--followup{margin-top:2px}
+.print-review-page .print-signatures{margin-top:auto}
+.print-review-page .print-signatures span{font-size:9px}

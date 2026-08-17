@@ -6252,7 +6252,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 {conflicts.slice(0, 4).map((c, i) => (
                   <article key={`${c.type}-${c.rowId}-${i}`}>
                     <span className="conflict-type-icon">{c.type === "room" || c.type === "roomScope" ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <AlertTriangle />}</span>
-                    <div><small>{c.type === "room" ? "تعارض قاعة" : c.type === "instructor" ? "تعارض أستاذ" : c.type === "roomScope" ? "نطاق القاعة" : "تكرار"}</small><strong>{c.message}</strong><span title={String(c.detail || "")}>{String(c.detail || "").slice(0, 92)}</span></div>
+                    <div><small>{c.type === "room" ? "تعارض قاعة" : c.type === "instructor" ? "تعارض أستاذ" : c.type === "roomScope" ? "نطاق القاعة" : "تكرار"}</small><strong>{c.message}</strong><span title={String(c.detail || "")}>{String(c.detail || "").replace(/\s+/g, " ").trim().slice(0, 66)}</span></div>
                   </article>
                 ))}
                 {conflicts.length > 4 ? <details className="conflict-more"><summary>عرض {conflicts.length - 4} ملاحظات إضافية</summary>{conflicts.slice(4).map((c,i)=><p key={i}>{c.message}</p>)}</details> : null}
@@ -6281,7 +6281,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     <div>
                       <small>نمط الأيام</small>
                       <strong>بداية غير معتادة</strong>
-                      <p>{editorTimingNote}</p>
+                      <p>{String(editorTimingNote).replace(/\s+/g, " ").trim().slice(0, 120)}</p>
                     </div>
                   </article>
                 </div>
@@ -6311,7 +6311,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                       <div>
                         <small>{finding.article}</small>
                         <strong>{finding.title}</strong>
-                        <p>{finding.detail}</p>
+                        <p>{String(finding.detail || "").replace(/\s+/g, " ").trim().slice(0, 110)}</p>
                       </div>
                     </article>
                   ))}
@@ -8304,7 +8304,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             const day = days.find(x => x.key === dayKey);
             if (!day) return null;
             const panelLeft = Math.max(12, Math.min(fanned.x - 160, window.innerWidth - 336));
-            const panelTop = Math.max(66, Math.min(fanned.y - 8, window.innerHeight - 440));
+            /* The fan belongs to the touched stack, but when it sat too low the
+               last card kissed the viewport edge and looked cropped. Bias it a
+               little upward and reserve a touch more breathing room at the
+               bottom so the final card remains fully visible. */
+            const panelTop = Math.max(54, Math.min(fanned.y - 32, window.innerHeight - 486));
             /* The crowd profile: sweep the bundle's own span into buckets and count
                how many lectures are live in each. It draws the real wall — a nine
                that all lands at noon spikes; a nine spread across the morning stays
