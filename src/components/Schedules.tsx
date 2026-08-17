@@ -6443,28 +6443,37 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               </div>
             </div>
             {conflicts.length ? (
-              <div className="conflict-list conflict-infographic">
+              <div className="decision-stack" aria-label="موانع الحفظ">
                 {conflicts.slice(0, 4).map((c, i) => {
                   const isScope = c.type === "roomScope";
                   const typeLabel = c.type === "room" ? "تعارض قاعة" : c.type === "instructor" ? "تعارض أستاذ" : isScope ? "نطاق القاعة" : "تكرار";
-                  const toneClass = isScope ? "tone-scope" : c.type === "duplicate" ? "tone-warn" : "tone-danger";
+                  const toneClass = isScope ? "decision-card--scope" : c.type === "duplicate" ? "decision-card--warning" : "decision-card--danger";
                   return (
-                    <article key={`${c.type}-${c.rowId}-${i}`} className={toneClass}>
-                      <div className="conflict-pictogram" aria-hidden="true">
-                        <span>{c.type === "room" || isScope ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <Layers />}</span>
-                        <i><ArrowLeftRight /></i>
-                        <span>{c.type === "room" || isScope ? <CalendarDays /> : c.type === "instructor" ? <Clock3 /> : <ClipboardCheck />}</span>
+                    <article key={`${c.type}-${c.rowId}-${i}`} className={`decision-card ${toneClass}`}>
+                      <div className="decision-card-icon" aria-hidden="true">
+                        {c.type === "room" || isScope ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <Layers />}
                       </div>
-                      <div>
-                        <small>{typeLabel}</small>
-                        <strong>{c.message}</strong>
-                        {c.detail ? <span title={String(c.detail || "")}>{String(c.detail || "").replace(/\s+/g, " ").trim().slice(0, 56)}</span> : null}
+                      <div className="decision-card-body">
+                        <div className="decision-card-meta">
+                          <span>{typeLabel}</span>
+                          <em>{isScope ? "تنبيه" : "مانع"}</em>
+                        </div>
+                        <strong className="decision-card-title">{c.message}</strong>
+                        {c.detail ? <p className="decision-card-copy">{String(c.detail || "").replace(/\s+/g, " ").trim()}</p> : null}
                       </div>
-                      <em>{isScope ? "تنبيه" : "مانع"}</em>
                     </article>
                   );
                 })}
-                {conflicts.length > 4 ? <details className="conflict-more"><summary>عرض {conflicts.length - 4} ملاحظات إضافية</summary>{conflicts.slice(4).map((c,i)=><p key={i}>{c.message}</p>)}</details> : null}
+                {conflicts.length > 4 ? (
+                  <details className="decision-more">
+                    <summary>عرض {conflicts.length - 4} ملاحظات إضافية</summary>
+                    <div>
+                      {conflicts.slice(4).map((c, i) => (
+                        <p key={i}>{c.message}{c.detail ? ` — ${String(c.detail).replace(/\s+/g, " ").trim()}` : ""}</p>
+                      ))}
+                    </div>
+                  </details>
+                ) : null}
               </div>
             ) : (
               <div className="conflict-clear">
@@ -6476,28 +6485,22 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               </div>
             )}
             {editorTimingNote ? (
-              <div className="regulation-advice regulation-advice--visual" role="status">
-                <div className="regulation-advice-head">
+              <section className="decision-section decision-section--timing" role="status" aria-label="ملاحظة التوقيت">
+                <header className="decision-section-head">
                   <div>
                     <Clock3 aria-hidden="true" />
                     <strong>ملاحظة التوقيت</strong>
                   </div>
                   <em>تنبيه فقط</em>
-                </div>
-                <div className="regulation-advice-grid regulation-advice-grid-single">
-                  <article className="regulation-advice-tile tone-timing">
-                    <div className="regulation-visual-pair" aria-hidden="true">
-                      <span><CalendarDays /></span>
-                      <i />
-                      <span><Clock3 /></span>
-                    </div>
-                    <div>
-                      <strong>بداية غير معتادة</strong>
-                      <p title={String(editorTimingNote)}>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/يمكنك المتابعة.*$/u, "").replace(/\s+/g, " ").trim().slice(0, 88)}</p>
-                    </div>
-                  </article>
-                </div>
-              </div>
+                </header>
+                <article className="decision-note decision-note--timing">
+                  <div className="decision-note-icon" aria-hidden="true"><CalendarDays /></div>
+                  <div className="decision-note-body">
+                    <strong>بداية غير معتادة</strong>
+                    <p>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim()}</p>
+                  </div>
+                </article>
+              </section>
             ) : null}
             {/*
               The articles, read on the draft. Deliberately below the blocking
@@ -6506,35 +6509,34 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               department is told about, not prevented from doing.
             */}
             {editorRegulation.length ? (
-              <div className="regulation-advice regulation-advice--visual" role="status">
-                <div className="regulation-advice-head">
+              <section className="decision-section decision-section--regulation" role="status" aria-label="ملاحظات اللائحة">
+                <header className="decision-section-head">
                   <div>
                     <ClipboardCheck aria-hidden="true" />
                     <strong>ملاحظات اللائحة</strong>
                   </div>
                   <em>{countOf(editorRegulation.length, AR.note)}</em>
-                </div>
-                <div className="regulation-advice-grid">
+                </header>
+                <div className="decision-note-list">
                   {editorRegulation.slice(0, 4).map((finding, index) => (
-                    <article key={finding.rule} className={`regulation-advice-tile tone-${finding.severity}`} title={String(finding.detail || "")}>
-                      <div className="regulation-visual-pair" aria-hidden="true">
-                        <span>{index % 3 === 0 ? <History /> : index % 3 === 1 ? <Building2 /> : <Lightbulb />}</span>
-                        <i />
-                        <span><ClipboardCheck /></span>
+                    <article key={finding.rule} className={`decision-note decision-note--${finding.severity}`}>
+                      <div className="decision-note-icon" aria-hidden="true">
+                        {index % 3 === 0 ? <History /> : index % 3 === 1 ? <Building2 /> : <Lightbulb />}
                       </div>
-                      <div>
+                      <div className="decision-note-body">
                         <small>{finding.article}</small>
                         <strong>{finding.title}</strong>
+                        {finding.detail ? <p>{String(finding.detail).replace(/\s+/g, " ").trim()}</p> : null}
                       </div>
                     </article>
                   ))}
                 </div>
                 {editorRegulation.length > 4 ? (
-                  <small className="regulation-advice-more">
+                  <small className="decision-section-more">
                     +{(editorRegulation.length - 4).toLocaleString("ar-KW-u-nu-latn")} داخل مراجعة الاعتماد
                   </small>
                 ) : null}
-              </div>
+              </section>
             ) : null}
             {conflicts.length ? (
               <div className="solver-box">
@@ -6840,21 +6842,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         return;
       }
       if (detail.type === "assistMoveRoom") {
-        rememberGuideOperation(declaredFeatureId || "schedule.action.move-room", "move-prepared");
+        const featureId=declaredFeatureId || "schedule.action.move-room";
+        rememberGuideOperation(featureId, "move-prepared");
         const id = Number(detail.value || context?.selected?.id || 0);
+        const row = rows.find(item => Number(item.id) === id);
         changeView("rooms");
-        if (id) {
-          setReviewFocus(new Set([id]));
-          const row = rows.find(item => Number(item.id) === id);
-          if (row) {
-            try {
-              const chain = findRepairChain(row, rows);
-              if (chain) { setRepairReason("اقتراحات آمنة قبل النقل"); setRepair(chain); }
-            } catch {}
-          }
+        if (!id || !row) {
+          setMessage(!id ? "تم فتح عرض المباني والقاعات. حدّد مقررًا أولًا ثم أعد طلب النقل؛ لم تبدأ أي معاملة." : "المقرر المحدد لم يعد موجودًا في البيانات الحالية. حدّد مقررًا ظاهرًا ثم أعد طلب النقل.");
+          emitGuideResult({ featureId, ok:false, signal:!id ? "schedule.move.no-selection" : "schedule.move.row-missing", transactionId:detail.transactionId });
+          return;
         }
-        setMessage(id ? "تم تجهيز عرض المباني والقاعات وإبراز المقرر. اختر الوجهة المناسبة؛ لن يُعتمد أي تغيير قبل حركتك الفعلية." : "تم فتح عرض المباني والقاعات. حدّد المقرر المطلوب وسأبقى معك أثناء النقل.");
-        emitGuideResult({ featureId:"schedule.action.move-room", ok:true, signal:"schedule.move.prepared", final:false, transactionId:detail.transactionId, stepCount:2 });
+        setReviewFocus(new Set([id]));
+        try {
+          const chain = findRepairChain(row, rows);
+          if (chain) { setRepairReason("اقتراحات آمنة قبل النقل"); setRepair(chain); }
+        } catch {}
+        setMessage("تم تجهيز عرض المباني والقاعات وإبراز المقرر. اختر الوجهة المناسبة؛ لن يُعتمد أي تغيير قبل حركتك الفعلية.");
+        emitGuideResult({ featureId, ok:true, signal:"schedule.move.prepared", final:false, transactionId:detail.transactionId, stepCount:2 });
         return;
       }
       if (detail.type === "undoById" && detail.value) {

@@ -100,7 +100,7 @@ const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
 import { PrimaryButton } from "./components/ui";
 import SmartGuide from "./components/SmartGuide";
-import { canProactivelyHint, changedFeatures, discoveredNew, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureEvent, recordFeatureDwell, recordRoute, setGuideTask, setLauncherIntroduced, evaluateGuideFriction, classifyGuideReason, predictedNextFeature, canAccessGuideFeature } from "./guide/smartGuide";
+import { canProactivelyHint, allAllowedGuideFeatures, guideUnreadSummary, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureEvent, recordFeatureDwell, recordRoute, setGuideTask, setLauncherIntroduced, evaluateGuideFriction, classifyGuideReason, predictedNextFeature, canAccessGuideFeature } from "./guide/smartGuide";
 
 type View =
   | "dashboard"
@@ -1895,12 +1895,13 @@ export default function App() {
       ];
   const guideProfile = user ? loadGuideProfile(Number(user.SystemUserId)) : null;
   const guideIntroduced = Boolean(guideProfile?.launcherIntroduced);
-  const guideNewCount = user && guideProfile
-    ? changedFeatures(guideProfile, activeView, permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)).length + discoveredNew(guideProfile).length
-    : 0;
-  const ambientPrediction = user && guideProfile ? predictedNextFeature(guideProfile, guideContext?.currentFeatureId || `page.${activeView}`) : null;
-  const ambientFeature = ambientPrediction?.confidence >= .82 ? featureById(ambientPrediction.id) : null;
-  const ambientAllowed = Boolean(ambientFeature && user && canAccessGuideFeature(ambientFeature, { permissions, root:Boolean(user.IsRootAdmin), admin:Boolean(user.IsAdminUser || user.IsRootAdmin) }));
+  const guideAllowedFeatures = user ? allAllowedGuideFeatures(permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)) : [];
+  const guideUnread = user && guideProfile ? guideUnreadSummary(guideProfile, guideAllowedFeatures, activeView) : { product:[], runtime:[], total:0 };
+  const guideNewCount = guideUnread.total;
+  const ambientPrediction = user && guideProfile && guideProfile.hintMode !== "off" ? predictedNextFeature(guideProfile, guideContext?.currentFeatureId || `page.${activeView}`) : null;
+  const ambientThreshold = guideProfile?.hintMode === "quiet" ? .92 : .86;
+  const ambientFeature = ambientPrediction?.confidence >= ambientThreshold ? featureById(ambientPrediction.id) : null;
+  const ambientAllowed = Boolean(guideProfile?.hintMode !== "off" && ambientFeature && user && canAccessGuideFeature(ambientFeature, { permissions, root:Boolean(user.IsRootAdmin), admin:Boolean(user.IsAdminUser || user.IsRootAdmin) }));
   const ambientKey = ambientFeature ? `${activeView}:${guideContext?.currentFeatureId || ""}:${ambientFeature.id}` : "";
   void guideProfileRevision;
   const taskFamily =
@@ -2371,7 +2372,7 @@ export default function App() {
           if (!guideIntroduced && user) setLauncherIntroduced(Number(user.SystemUserId), true);
           setGuideOpen(true);
         }}
-        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : "افتح مرشد SCHEDULE"}
+        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : guideNewCount ? `افتح مرشد SCHEDULE — ${guideUnread.product.length} تحديث منتج و${guideUnread.runtime.length} جديد في هذه الشاشة` : "افتح مرشد SCHEDULE"}
         title={guideHint ? `${guideHint.title}` : "مرشد SCHEDULE"}
       >
         <span className="smart-guide-fab-mark" aria-hidden="true"><Sparkles /></span>
@@ -2381,7 +2382,7 @@ export default function App() {
             <strong>كيف؟</strong>
           </span>
         ) : null}
-        {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : guideNewCount ? <i className="smart-guide-fab-new" aria-hidden="true">{guideNewCount > 9 ? "9+" : guideNewCount}</i> : null}
+        {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : guideNewCount ? <i className="smart-guide-fab-new" dir="ltr" aria-hidden="true">{guideNewCount > 9 ? "9+" : guideNewCount}</i> : null}
       </button>
 
       {searchOpen ? (

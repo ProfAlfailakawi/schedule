@@ -7,9 +7,10 @@ import { pathToFileURL } from "node:url";
 
 const root=process.cwd();
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"schedule-guide-perf-"));
+const isolatedTypes=path.join(tmp,"types");fs.mkdirSync(isolatedTypes,{recursive:true});
 const candidates=[path.join(root,"node_modules/.bin/tsc"),"/opt/nvm/versions/node/v22.16.0/bin/tsc","tsc"];
 let compiled=null;
-for(const bin of candidates){const result=spawnSync(bin,["src/guide/smartGuide.ts","--target","ES2022","--module","ESNext","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","bundler","--outDir",tmp],{cwd:root,encoding:"utf8"});if(!result.error){compiled=result;break;}}
+for(const bin of candidates){const result=spawnSync(bin,["src/guide/smartGuide.ts","--target","ES2022","--module","ESNext","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","bundler","--typeRoots",isolatedTypes,"--outDir",tmp],{cwd:root,encoding:"utf8"});if(!result.error){compiled=result;break;}}
 if(!compiled||compiled.status!==0){console.error("تعذر تشغيل فحص أداء المرشد:\n"+String(compiled?.stderr||compiled?.stdout||"لم يوجد tsc"));process.exit(1);}
 const guide=await import(pathToFileURL(path.join(tmp,"smartGuide.js")).href+`?t=${Date.now()}`);
 const query="أبي هذا المقرر يصير يوم الأربعاء الساعة 11 بس لا أبي أغير الدكتور وإذا القاعة مشغولة دور لي أقرب قاعة";

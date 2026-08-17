@@ -40,7 +40,7 @@ export type GuidePermissionSession = {
   admin: boolean;
 };
 
-export const GUIDE_SCHEMA_VERSION = 11;
+export const GUIDE_SCHEMA_VERSION = 12;
 
 export const GUIDE_FEATURES: GuideFeature[] = [
   { id:"page.dashboard", title:"الرئيسية", summary:"ملخص سريع للعمل الأكاديمي والوجهات الأكثر استخدامًا.", view:"dashboard", group:"العمل اليومي", keywords:["الرئيسية","بداية","لوحة"], version:1 },
@@ -123,7 +123,35 @@ export function allAllowedGuideFeatures(permissions: number[], root: boolean, ad
   return GUIDE_FEATURES.filter(feature => canAccessGuideFeature(feature, session));
 }
 
-export type DynamicGuideFeature = { id:string; title:string; summary:string; target?:string; kind:string };
+export type DynamicGuideFeature = { id:string; title:string; summary:string; target?:string; kind:string; stableKey?:string };
+
+function slug(value:string) {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-|-$/g,"").slice(0,28) || "control";
+}
+function stableHash(value:string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+export function stableDynamicControlId(activeView:string, descriptor:{title:string;kind?:string;target?:string;featureId?:string;stableKey?:string;name?:string;href?:string;role?:string;parentKey?:string}) {
+  const explicit = String(descriptor.featureId || descriptor.target || "").trim();
+  if (explicit) return explicit;
+  const declaredStable = String(descriptor.stableKey || "").trim();
+  if (declaredStable) return `runtime.${slug(activeView)}.${slug(declaredStable)}.${stableHash(`${activeView}|${declaredStable}`)}`;
+  const title = String(descriptor.title || "").replace(/\s+/g," ").trim();
+  // Ignore only badge-like counters. Meaningful numbers such as «قاعة 101» must remain
+  // part of the identity so sibling controls do not collapse into one runtime feature.
+  const stableTitle = title
+    .replace(/(?:\d+|[٠-٩]+)\s*\+\s*$/u,"#")
+    .replace(/((?:الجديد|جديد|إشعارات?|اشعارات?|تنبيهات?|رسائل?|غير\s*مقروء|updates?|notifications?|unread)\s*[:：·-]?\s*)(?:\d+|[٠-٩]+)\s*$/iu,"$1#")
+    .replace(/\s+/g," ").trim();
+  const strongAnchor = String(descriptor.name || descriptor.href || "").trim();
+  const fingerprint = [activeView, descriptor.kind || "control", strongAnchor || stableTitle, descriptor.role || "", descriptor.parentKey || ""].join("|");
+  return `runtime.${slug(activeView)}.${slug(strongAnchor || stableTitle)}.${stableHash(fingerprint)}`;
+}
 
 /** Runtime discovery is a safety net, not a replacement for registry metadata. */
 export function discoverVisibleControls(activeView: string): DynamicGuideFeature[] {
@@ -131,30 +159,42 @@ export function discoverVisibleControls(activeView: string): DynamicGuideFeature
   const seen = new Set<string>();
   const result: DynamicGuideFeature[] = [];
   const controls = document.querySelectorAll<HTMLElement>(
-    '[data-guide-target],[data-guide-feature-id],button:not([aria-hidden="true"]),a[href],[role="button"],select,input[type="search"]',
+    '[data-guide-target],[data-guide-feature-id],[data-guide-stable-id],button:not([aria-hidden="true"]),a[href],[role="button"],select,input[type="search"]',
   );
-  controls.forEach((element, index) => {
+  controls.forEach((element) => {
     if (element.offsetParent === null) return;
-    if (element.closest(".smart-guide") || element.closest("[data-guide-ignore]")) return;
-    const explicit = element.getAttribute("data-guide-feature-id") || element.getAttribute("data-guide-target") || element.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target]")?.getAttribute("data-guide-feature-id") || element.closest<HTMLElement>("[data-guide-target]")?.getAttribute("data-guide-target") || "";
+    if (element.closest(".smart-guide,.guide-point-banner,.guide-screen-handoff") || element.closest("[data-guide-ignore]")) return;
+    const owner = element.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target]");
+    const featureId = element.getAttribute("data-guide-feature-id") || owner?.getAttribute("data-guide-feature-id") || "";
+    const target = element.getAttribute("data-guide-target") || owner?.getAttribute("data-guide-target") || "";
+    const stableKey = element.getAttribute("data-guide-stable-id") || "";
     const label = String(element.getAttribute("data-guide-title") || element.getAttribute("aria-label") || element.getAttribute("title") || element.textContent || "").replace(/\s+/g," ").trim().slice(0,72);
     if (!label || label.length < 2) return;
-    const id = explicit || `auto.${activeView}.${slug(label)}.${index}`;
+    const parent = element.parentElement?.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target],[data-guide-stable-id],[aria-label],section,nav,header,footer");
+    const parentKey = String(parent?.getAttribute("data-guide-feature-id") || parent?.getAttribute("data-guide-target") || parent?.getAttribute("data-guide-stable-id") || parent?.getAttribute("aria-label") || parent?.tagName || "");
+    const id = stableDynamicControlId(activeView, {
+      title:label,
+      kind:element.tagName.toLowerCase(),
+      featureId,
+      target,
+      stableKey,
+      name:element.getAttribute("name") || element.getAttribute("type") || "",
+      href:element.getAttribute("href") || "",
+      role:element.getAttribute("role") || "",
+      parentKey,
+    });
     if (seen.has(id)) return;
     seen.add(id);
     result.push({
       id,
-      target: explicit || undefined,
+      target: featureId || target || undefined,
+      stableKey: stableKey || undefined,
       title: label,
-      summary: explicit ? "عنصر حي في هذه الشاشة؛ يمكنك الإشارة إليه وسيشرح المرشد وظيفته ضمن السياق الحالي." : "عنصر متاح الآن في الشاشة الحالية.",
+      summary: featureId || target ? "عنصر حي في هذه الشاشة؛ يمكنك الإشارة إليه وسيشرح المرشد وظيفته ضمن السياق الحالي." : "عنصر متاح الآن في الشاشة الحالية.",
       kind: element.tagName.toLowerCase(),
     });
   });
   return result.slice(0,80);
-}
-
-function slug(value:string) {
-  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,"-").replace(/^-|-$/g,"").slice(0,28) || "control";
 }
 
 export type GuideBaseline = {
@@ -272,7 +312,8 @@ export type GuideProfile = {
   routines?:Record<string,{id:string;name:string;sequence:string[];createdAt:number;lastUsed:number}>;
   friction?:Record<string,{count:number;last:number}>;
   catalog?:Record<string,number>;
-  discovered?:Record<string,{id:string;title:string;view:string;target?:string;kind:string;firstSeen:number;lastSeen:number;seen:boolean}>;
+  discovered?:Record<string,{id:string;title:string;view:string;target?:string;kind:string;stableKey?:string;firstSeen:number;lastSeen:number;seen:boolean;source?:"runtime"}>;
+  discoveryInitializedViews?:Record<string,boolean>;
   currentTask?: { id:string; title:string; featureId?:string; target?:string; command?:any; startedAt:number; updatedAt:number; step?:number; journeyId?:string };
   previousTask?: { id:string; title:string; featureId?:string; target?:string; command?:any; startedAt:number; updatedAt:number; step?:number; journeyId?:string };
   journeys?:Record<string,GuideJourneyState>;
@@ -307,18 +348,19 @@ function normalizeMastery(row:any):GuideMastery {
 }
 
 export function loadGuideProfile(userId:number):GuideProfile {
-  const blank:GuideProfile={schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,mastery:{},routes:{},workflows:{},sequence:[],ignored:{},hintMode:"auto",lastHintAt:0,onboardingDone:false,launcherIntroduced:false,iconHints:{},routines:{},friction:{},catalog:currentGuideCatalog(),discovered:{},journeys:{},transactions:[]};
+  const blank:GuideProfile={schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,mastery:{},routes:{},workflows:{},sequence:[],ignored:{},hintMode:"auto",lastHintAt:0,onboardingDone:false,launcherIntroduced:false,iconHints:{},routines:{},friction:{},catalog:currentGuideCatalog(),discovered:{},discoveryInitializedViews:{},journeys:{},transactions:[]};
   try {
     const exact=JSON.parse(localStorage.getItem(profileKey(userId))||"null");
     if(exact && exact.schema===GUIDE_SCHEMA_VERSION){
       const mastery=Object.fromEntries(Object.entries(exact.mastery||{}).map(([id,row])=>[id,normalizeMastery(row)]));
-      return {...blank,...exact,mastery,routines:exact.routines||{},friction:exact.friction||{},catalog:exact.catalog||currentGuideCatalog(),discovered:exact.discovered||{},journeys:exact.journeys||{},transactions:Array.isArray(exact.transactions)?exact.transactions.slice(-8):[],iconHints:exact.iconHints||{}};
+      return {...blank,...exact,mastery,routines:exact.routines||{},friction:exact.friction||{},catalog:exact.catalog||currentGuideCatalog(),discovered:exact.discovered||{},discoveryInitializedViews:exact.discoveryInitializedViews||{},journeys:exact.journeys||{},transactions:Array.isArray(exact.transactions)?exact.transactions.slice(-8):[],iconHints:exact.iconHints||{}};
     }
     for(let version=GUIDE_SCHEMA_VERSION-1;version>=1;version--){
       const legacy=JSON.parse(localStorage.getItem(`schedule-smart-guide-v${version}:${Number(userId)||0}`)||"null");
       if(legacy){
         const mastery=Object.fromEntries(Object.entries(legacy.mastery||{}).map(([id,row])=>[id,normalizeMastery(row)]));
-        const migrated={...blank,...legacy,mastery,schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,routines:legacy.routines||{},friction:legacy.friction||{},catalog:legacy.catalog||currentGuideCatalog(),discovered:legacy.discovered||{},journeys:legacy.journeys||{},transactions:Array.isArray(legacy.transactions)?legacy.transactions.slice(-8):[],iconHints:legacy.iconHints||{}};
+        const legacyDiscovered=Object.fromEntries(Object.entries(legacy.discovered||{}).filter(([id])=>!String(id).startsWith("auto.")).map(([id,row]:any)=>[id,{...row,seen:true,source:"runtime"}]));
+        const migrated={...blank,...legacy,mastery,schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,routines:legacy.routines||{},friction:legacy.friction||{},catalog:legacy.catalog||currentGuideCatalog(),discovered:legacyDiscovered,discoveryInitializedViews:{},journeys:legacy.journeys||{},transactions:Array.isArray(legacy.transactions)?legacy.transactions.slice(-8):[],iconHints:legacy.iconHints||{}};
         saveGuideProfile(migrated);return migrated;
       }
     }
@@ -466,14 +508,117 @@ export function removeGuideRoutine(userId:number,id:string){return mutateGuidePr
 export function noteFriction(userId:number,key:string){return mutateGuideProfile(userId,p=>{if(!p.friction)p.friction={};const item=p.friction[key]||{count:0,last:0};item.count+=1;item.last=Date.now();p.friction[key]=item;});}
 
 export function commonDestination(profile:GuideProfile,currentId:string){const from=String(currentId||"").replace(/^page\./,"");const rows=Object.entries(profile.routes||{}).filter(([key])=>key.startsWith(`${from}>`)).map(([key,count])=>({id:`page.${key.split(">")[1]}`,count:Number(count||0)})).filter(item=>item.count>=5).sort((a,b)=>b.count-a.count);const total=rows.reduce((sum,item)=>sum+item.count,0);return rows[0]?{...rows[0],confidence:Math.min(1,rows[0].count/Math.max(1,total))}:null;}
-export function predictedNextFeature(profile:GuideProfile,currentId:string){const candidates=new Map<string,{id:string;count:number;last:number;confidence:number}>();Object.values(profile.workflows||{}).forEach(workflow=>{const sequence=workflow.sequence||[];for(let i=0;i<sequence.length-1;i++){if(sequence[i]!==currentId)continue;const next=sequence[i+1];const current=candidates.get(next)||{id:next,count:0,last:0,confidence:0};current.count+=workflow.count;current.last=Math.max(current.last,workflow.last);current.confidence+=Number(workflow.successful||0);candidates.set(next,current);}});const workflow=[...candidates.values()].filter(item=>item.count>=5).map(item=>({...item,confidence:Math.min(1,(item.confidence+item.count*.35)/10)})).sort((a,b)=>b.confidence-a.confidence||b.count-a.count||b.last-a.last)[0];if(workflow)return workflow;const route=commonDestination(profile,currentId);return route?{...route,last:0}:null;}
+export function predictedNextFeature(profile:GuideProfile,currentId:string){
+  const candidates=new Map<string,{id:string;count:number;successful:number;last:number}>();
+  Object.values(profile.workflows||{}).forEach(workflow=>{
+    const sequence=workflow.sequence||[];
+    for(let i=0;i<sequence.length-1;i++){
+      if(sequence[i]!==currentId)continue;
+      const next=sequence[i+1];
+      const current=candidates.get(next)||{id:next,count:0,successful:0,last:0};
+      current.count+=Number(workflow.count||0);
+      current.successful+=Number(workflow.successful||0);
+      current.last=Math.max(current.last,Number(workflow.last||0));
+      candidates.set(next,current);
+    }
+  });
+  const workflow=[...candidates.values()]
+    .filter(item=>item.count>=5&&item.successful>=3)
+    .map(item=>{
+      const successRate=Math.min(1,item.successful/Math.max(1,item.count));
+      const evidence=Math.min(1,Math.log2(item.successful+1)/4);
+      const confidence=Math.min(.97,successRate*.72+evidence*.28);
+      return {...item,successRate,confidence};
+    })
+    .filter(item=>item.successRate>=.6)
+    .sort((a,b)=>b.confidence-a.confidence||b.successful-a.successful||b.last-a.last)[0];
+  if(workflow)return workflow;
+  const route=commonDestination(profile,currentId);
+  return route?{...route,last:0,confidence:Math.min(.64,Number(route.confidence||0)*.64),successful:0,successRate:0}:null;
+}
 
 export function dialectIntentTerms(value:string):string[]{const text=String(value||"").toLowerCase().replace(/[إأآ]/g,"ا").replace(/ى/g,"ي").replace(/[ً-ْٰـ]/g,"");const terms=new Set(text.split(/\s+/).filter(Boolean));const add=(...items:string[])=>items.forEach(item=>terms.add(item));if(/شلون|كيف/.test(text))add("كيف","طريقة","شرح");if(/شنو|ماذا/.test(text))add("ماذا","شرح");if(/وين|اين|وين القى|وين احصل|ما لقيت/.test(text))add("اين","مكان","افتح","بحث");if(/ليش|لماذا/.test(text))add("لماذا","سبب","تعارض","مشكلة");if(/ابي|اريد|ودي|سوي|سو لي|خلني|خله/.test(text))add("اريد","تنفيذ");if(/مادري|ما ادري|ما اعرف|مو عارف|متوهق/.test(text))add("شرح","مساعدة","طريقة");if(/طلع لي|ظهر لي|قاعد يطلع/.test(text))add("رسالة","مشكلة","سبب");if(/ضيعت|ضاع|راح علي|رجع لي/.test(text))add("تراجع","سجل","اخر تعديل");if(/ماده|الماده/.test(text))add("مقرر","نقل");if(/دكتور|الدكتور/.test(text))add("استاذ","عضو هيئة تدريس");if(/مو راضي|ما يرضى|ما يقبل|مو قابل|علق|متوهق/.test(text))add("مشكلة","تعارض","لا يقبل","نقل");if(/قاعه|قاعات|مبنى|مباني/.test(text))add("قاعة","قاعات","مبنى","نقل");if(/اسرع|اختصر|روتين|طريقتي/.test(text))add("مسار","اختصار","روتين");if(/وين كنت|شنو كنت|كنت اسوي|كنت اسوي شنو|ماذا كنت|اين توقفت|وين وقفت/.test(text))add("مهمة","اكمل","سابق");if(/نفس اللي|نفس الي|مثل امس|مثل أمس|سويته امس|سويته أمس|كرر السابق/.test(text))add("مسار","روتين","سابق","كرر");if(/جديد|شنو الجديد|ما الجديد/.test(text))add("جديد","تحديث");if(/الاربعاء|الأربعاء/.test(text))add("fwednesday","الأربعاء");if(/الثلاثاء/.test(text))add("ftuesday","الثلاثاء");if(/الاثنين|الإثنين/.test(text))add("fmonday","الاثنين");if(/الاحد|الأحد/.test(text))add("fsunday","الأحد");if(/الخميس/.test(text))add("fthursday","الخميس");return [...terms];}
 
-export type StructuredGuideIntent={goal:string;entities:{selectedId?:number;course?:string;day?:string;time?:string;room?:string;instructor?:string};constraints:{keepInstructor?:boolean;keepRoom?:boolean;findAlternativeRoom?:boolean};requestedAction:"explain"|"navigate"|"prepare"|"simulate"|"execute"|"unknown";confidence:number;compound:boolean;source:"rules"|"ai"};
-export function parseStructuredGuideIntent(value:string):StructuredGuideIntent{const raw=String(value||"");const text=raw.toLowerCase().replace(/[إأآ]/g,"ا").replace(/ى/g,"ي").replace(/[ً-ْٰـ]/g,"");const day=/اربعاء/.test(text)?"fwednesday":/ثلاثاء/.test(text)?"ftuesday":/اثنين/.test(text)?"fmonday":/احد/.test(text)?"fsunday":/خميس/.test(text)?"fthursday":undefined;const timeMatch=text.match(/(?:الساعه|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?|(?:^|\s)(\d{1,2}):(\d{2})(?:\s|$)/);const timeHour=timeMatch?Number(timeMatch[1]||timeMatch[3]):NaN;const timeMinute=timeMatch?Number(timeMatch[2]||timeMatch[4]||0):NaN;const time=Number.isFinite(timeHour)?`${String(Math.min(23,Math.max(0,timeHour))).padStart(2,"0")}:${String(Math.min(59,Math.max(0,timeMinute))).padStart(2,"0")}`:undefined;const move=/(?:نقل|انقل|غير\s+(?:ال)?قاع|غير\s+قاع)/.test(text);const timeChange=/غير.*وقت|تغيير.*وقت|يصير يوم|خله يوم|خليه يوم|موعد/.test(text);const instructor=/غير.*دكتور|غير.*استاذ|تغيير.*استاذ/.test(text);const simulate=/جرب|جرّب|ماذا لو|بدون تغيير/.test(text);const explain=/شلون|كيف|وضح|شرح/.test(text);const keepInstructor=/لا.*(?:ابي|اريد).*غير.*(?:دكتور|استاذ)|خله.*(?:دكتور|استاذ)|ابق.*(?:الاستاذ|الأستاذ)/.test(text);const findAlternativeRoom=/اذا.*قاع.*مشغ|دور.*قاع|قاعة.*بديل|قاعه.*بديل/.test(text);let goal=move?"move-room":timeChange?"change-time":instructor?"change-instructor":findAlternativeRoom?"find-room":"unknown";if(goal==="unknown"&&day&&time)goal="change-time";const requestedAction=simulate?"simulate":move||timeChange||instructor?"prepare":explain?"explain":"unknown";const compound=[day,time,keepInstructor,findAlternativeRoom].filter(Boolean).length>=2;let confidence=goal!=="unknown"?.68:.25;if(day)confidence+=.08;if(time)confidence+=.08;if(move||timeChange||instructor)confidence+=.08;if(simulate)confidence+=.05;if(compound)confidence+=.03;return{goal,entities:{day,time},constraints:{keepInstructor,findAlternativeRoom},requestedAction,confidence:Math.min(.98,confidence),compound,source:"rules"};}
+export const GUIDE_INTENT_FEATURES:Record<string,string>={
+  "move-room":"schedule.action.move-room","change-time":"schedule.action.change-time","change-instructor":"schedule.action.change-instructor","find-room":"schedule.action.find-room",
+  "view-list":"schedule.view.list","view-week":"schedule.view.week","view-rooms":"schedule.view.rooms","quick-search":"schedule.search.quick","undo":"schedule.undo","undo-log":"schedule.undo.log","review":"schedule.tool.review","data-tools":"schedule.tool.data","publish":"schedule.publish","practice":"schedule.practice",
+  "dashboard":"page.dashboard","schedules":"page.schedules","intelligence":"page.intelligence","intelligence-understand":"intelligence.scene.understand","ask-table":"intelligence.ask-table","intelligence-try":"intelligence.scene.try","intelligence-approve":"intelligence.scene.approve",
+  "search-instructor":"page.searchInstructor","search-room":"page.searchRoom","search-time":"page.searchTime","search-room-time":"page.searchRoomTime","search-advanced":"page.searchAdvanced",
+  "report-department":"page.reportDepartment","report-instructor":"page.reportInstructor","report-room":"page.reportRoom","report-time":"page.reportTime","report-room-time":"page.reportRoomTime",
+  "terms":"page.terms","colleges":"page.colleges","sections":"page.sections","instructors":"page.instructors","courses":"page.courses","users":"page.users","permissions":"page.permissions","scopes":"page.scopes","audit":"page.audit","backup":"page.backup","about":"page.about",
+};
+export function featureIdForGuideIntentGoal(goal:string){
+  const clean=String(goal||"").trim();
+  if(clean.startsWith("feature:")){const id=clean.slice(8);return featureById(id)?id:"";}
+  return GUIDE_INTENT_FEATURES[clean]||"";
+}
+
+export type StructuredGuideIntent={goal:string;entities:{selectedId?:number;course?:string;day?:string;time?:string;room?:string;instructor?:string};constraints:{keepInstructor?:boolean;keepRoom?:boolean;findAlternativeRoom?:boolean};requestedAction:"explain"|"navigate"|"prepare"|"simulate"|"execute"|"unknown";confidence:number;compound:boolean;source:"rules"|"ai";clarification?:string};
+function genericGuideIntentFeature(text:string){
+  const needle=String(text||"").trim();
+  if(!needle)return null;
+  const terms=dialectIntentTerms(needle).map(term=>term.trim()).filter(term=>term.length>1);
+  let best:{feature:GuideFeature;score:number}|null=null;
+  for(const feature of GUIDE_FEATURES){
+    const title=feature.title.toLowerCase().replace(/[إأآ]/g,"ا").replace(/ى/g,"ي");
+    const hay=[feature.title,feature.summary,feature.group,...(feature.keywords||[])].join(" ").toLowerCase().replace(/[إأآ]/g,"ا").replace(/ى/g,"ي");
+    let score=0;
+    if(needle.includes(title)||title.includes(needle))score+=12;
+    for(const term of terms){if(title.includes(term))score+=5;else if(hay.includes(term))score+=2;}
+    if(!best||score>best.score)best={feature,score};
+  }
+  return best&&best.score>=6?best:null;
+}
+export function parseStructuredGuideIntent(value:string):StructuredGuideIntent{
+  const raw=String(value||"");const text=raw.toLowerCase().replace(/[إأآ]/g,"ا").replace(/ى/g,"ي").replace(/[ً-ْٰـ]/g,"");
+  const day=/اربعاء/.test(text)?"fwednesday":/ثلاثاء/.test(text)?"ftuesday":/اثنين/.test(text)?"fmonday":/احد/.test(text)?"fsunday":/خميس/.test(text)?"fthursday":undefined;
+  const timeMatch=text.match(/(?:الساعه|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?|(?:^|\s)(\d{1,2}):(\d{2})(?:\s|$)/);const timeHour=timeMatch?Number(timeMatch[1]||timeMatch[3]):NaN;const timeMinute=timeMatch?Number(timeMatch[2]||timeMatch[4]||0):NaN;const time=Number.isFinite(timeHour)?`${String(Math.min(23,Math.max(0,timeHour))).padStart(2,"0")}:${String(Math.min(59,Math.max(0,timeMinute))).padStart(2,"0")}`:undefined;
+  const move=/(?:نقل|انقل|غير\s+(?:ال)?قاع|غير\s+قاع)/.test(text);const timeChange=/غير.*وقت|تغيير.*وقت|يصير يوم|خله يوم|خليه يوم|موعد/.test(text);const instructor=/غير.*دكتور|غير.*استاذ|تغيير.*استاذ/.test(text);const simulate=/جرب|جرّب|ماذا لو|بدون تغيير/.test(text);const explain=/شلون|كيف|وضح|شرح|ليش/.test(text);const navigate=/افتح|روح|اذهب|وين|اين|ابي اشوف|ارني/.test(text);const keepInstructor=/لا.*(?:ابي|اريد).*غير.*(?:دكتور|استاذ)|خله.*(?:دكتور|استاذ)|ابق.*(?:الاستاذ|الأستاذ)/.test(text);const findAlternativeRoom=/اذا.*قاع.*مشغ|دور.*قاع|قاعة.*بديل|قاعه.*بديل/.test(text);
+  let goal=move?"move-room":timeChange?"change-time":instructor?"change-instructor":findAlternativeRoom?"find-room":"unknown";if(goal==="unknown"&&day&&time)goal="change-time";
+  let generic:{feature:GuideFeature;score:number}|null=null;if(goal==="unknown"){generic=genericGuideIntentFeature(text);if(generic)goal=`feature:${generic.feature.id}`;}
+  let requestedAction:StructuredGuideIntent["requestedAction"]=simulate?"simulate":move||timeChange||instructor?"prepare":findAlternativeRoom?"navigate":explain?"explain":navigate?"navigate":"unknown";
+  if(generic&&requestedAction==="unknown")requestedAction=generic.feature.risk==="prepare"||generic.feature.risk==="write"?"prepare":generic.feature.view?"navigate":"explain";
+  const compound=[day,time,keepInstructor,findAlternativeRoom].filter(Boolean).length>=2;
+  let confidence=goal!=="unknown"?.68:.25;if(day)confidence+=.08;if(time)confidence+=.08;if(move||timeChange||instructor)confidence+=.08;if(simulate)confidence+=.05;if(compound)confidence+=.03;if(generic)confidence=Math.max(confidence,Math.min(.9,.56+generic.score*.025));
+  const clarification=confidence<.62?"هل تقصد أن أشرح لك مكان الوظيفة، أم أجهز الخطوة الآمنة داخل الشاشة؟":undefined;
+  return{goal,entities:{day,time},constraints:{keepInstructor,findAlternativeRoom},requestedAction,confidence:Math.min(.98,confidence),compound,source:"rules",clarification};
+}
 export function needsGuideAIFallback(intent:StructuredGuideIntent,query:string){return intent.confidence<.72||intent.compound||dialectIntentTerms(query).length>=10;}
 
-export function noteDiscoveredControls(userId:number,activeView:string,items:DynamicGuideFeature[]){const current=loadGuideProfile(userId);const shelf={...(current.discovered||{})};let changed=false;const now=Date.now();for(const item of items){if(featureById(item.id)||(item.target&&featureById(item.target)))continue;const id=String(item.id||"");if(!id)continue;const previous=shelf[id];if(!previous){shelf[id]={id,title:item.title,view:activeView,target:item.target,kind:item.kind,firstSeen:now,lastSeen:now,seen:false};changed=true;continue;}const titleChanged=previous.title!==item.title||previous.target!==item.target||previous.view!==activeView;const needsTouch=now-Number(previous.lastSeen||0)>60_000;if(titleChanged||needsTouch){shelf[id]={...previous,title:item.title,view:activeView,target:item.target,kind:item.kind,lastSeen:now,seen:titleChanged?false:previous.seen};changed=true;}}const trimmed=Object.fromEntries(Object.entries(shelf).sort((a,b)=>Number(b[1].lastSeen)-Number(a[1].lastSeen)).slice(0,160));if(changed){current.discovered=trimmed;saveGuideProfile(current);return current;}return current;}
-export function discoveredNew(profile:GuideProfile,activeView?:string){return Object.values(profile.discovered||{}).filter(item=>!item.seen&&(!activeView||item.view===activeView)).sort((a,b)=>b.firstSeen-a.firstSeen);}
+export function noteDiscoveredControls(userId:number,activeView:string,items:DynamicGuideFeature[]){
+  const p=loadGuideProfile(userId);
+  if(!p.discovered)p.discovered={};
+  if(!p.discoveryInitializedViews)p.discoveryInitializedViews={};
+  const baseline=!p.discoveryInitializedViews[activeView];
+  const now=Date.now();
+  let changed=false;
+  for(const item of items){
+    if(featureById(item.id)||(item.target&&featureById(item.target)))continue;
+    const id=String(item.id||"");
+    if(!id)continue;
+    const previous=p.discovered[id];
+    if(!previous){
+      p.discovered[id]={id,title:item.title,view:activeView,target:item.target,kind:item.kind,stableKey:item.stableKey,firstSeen:now,lastSeen:now,seen:baseline,source:"runtime"};
+      changed=true;
+      continue;
+    }
+    const materiallyChanged=previous.title!==item.title||previous.view!==activeView||previous.target!==item.target||previous.kind!==item.kind||String(previous.stableKey||"")!==String(item.stableKey||"");
+    const refreshTimestamp=now-Number(previous.lastSeen||0)>60_000;
+    if(materiallyChanged||refreshTimestamp){
+      p.discovered[id]={...previous,title:item.title,view:activeView,target:item.target,kind:item.kind,stableKey:item.stableKey||previous.stableKey,lastSeen:now,seen:previous.seen,source:"runtime"};
+      changed=true;
+    }
+  }
+  if(baseline){p.discoveryInitializedViews[activeView]=true;changed=true;}
+  const entries=Object.entries(p.discovered);
+  const retained=entries.filter(([,item])=>now-Number(item.lastSeen||0)<120*24*60*60*1000).sort((a,b)=>Number(b[1].lastSeen)-Number(a[1].lastSeen)).slice(0,120);
+  if(retained.length!==entries.length){p.discovered=Object.fromEntries(retained);changed=true;}
+  if(changed)saveGuideProfile(p);
+  return p;
+}
+export function discoveredNew(profile:GuideProfile,activeView?:string){const cutoff=Date.now()-60*24*60*60*1000;return Object.values(profile.discovered||{}).filter(item=>!item.seen&&Number(item.lastSeen||0)>=cutoff&&(!activeView||item.view===activeView)).sort((a,b)=>b.firstSeen-a.firstSeen);}
 export function markDiscoveredSeen(userId:number,id:string){return mutateGuideProfile(userId,p=>{if(p.discovered?.[id])p.discovered[id].seen=true;});}
+export function markAllDiscoveredSeen(userId:number,activeView?:string){return mutateGuideProfile(userId,p=>{Object.values(p.discovered||{}).forEach(item=>{if(!activeView||item.view===activeView)item.seen=true;});});}
+export function unreadGuideProductUpdates(profile:GuideProfile,features:GuideFeature[]){const catalog=profile.catalog||{};return features.filter(feature=>catalog[feature.id]==null||feature.version>Number(catalog[feature.id]||0));}
+export function markAllGuideProductUpdatesSeen(userId:number,features:GuideFeature[]){return mutateGuideProfile(userId,p=>{if(!p.catalog)p.catalog={};for(const feature of features){const m=normalizeMastery(p.mastery[feature.id]);m.versionSeen=Math.max(m.versionSeen,feature.version);p.mastery[feature.id]=m;p.catalog[feature.id]=feature.version;}});}
+export function guideUnreadSummary(profile:GuideProfile,features:GuideFeature[],activeView:string){const product=unreadGuideProductUpdates(profile,features);const runtime=discoveredNew(profile,activeView);return{product,runtime,total:product.length+runtime.length};}

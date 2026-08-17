@@ -14,10 +14,12 @@ const assert = (condition, label, detail="") => {
 const read = file => fs.readFileSync(path.join(root,file),"utf8");
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-guide-test-"));
+const isolatedTypes = path.join(tmp,"types");
+fs.mkdirSync(isolatedTypes,{recursive:true});
 const tscCandidates = [path.join(root,"node_modules/.bin/tsc"), "/opt/nvm/versions/node/v22.16.0/bin/tsc", "tsc"];
 let compile = null;
 for (const bin of tscCandidates) {
-  const result = spawnSync(bin, ["src/guide/smartGuide.ts","--target","ES2022","--module","ESNext","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","bundler","--outDir",tmp], {cwd:root,encoding:"utf8"});
+  const result = spawnSync(bin, ["src/guide/smartGuide.ts","--target","ES2022","--module","ESNext","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","bundler","--typeRoots",isolatedTypes,"--outDir",tmp], {cwd:root,encoding:"utf8"});
   if (!result.error) { compile=result; break; }
 }
 if (!compile || compile.status !== 0) {
@@ -153,6 +155,69 @@ assert(schedulesSource.includes("allAllowedGuideFeatures(permissions") && schedu
 assert(serverSource.includes("OPENAI_API_KEY") && serverSource.includes("/responses") && serverSource.includes("requestGuideAIIntent"), "AI fallback الفعلي متصل من الخادم عند ضبط المفتاح، مع بقاء المحرك الحتمي أولًا");
 assert(smart.includes("smart-guide-outside-dismiss") && smart.includes("onPointerDown={onClose}"), "الضغط خارج بطاقة «كيف؟» يغلق المرشد فورًا");
 assert(smart.includes("markGuideIconHintSeen") && smart.includes('runIconAction("point"') && smart.includes('runIconAction("now"') && smart.includes('runIconAction("resume"'), "أول ضغطة على أيقونات الهاتف تعرض تعريفًا مختصرًا مرة واحدة");
+
+
+// 21–38 — إصلاحات جذرية للأخطاء الثمانية عشر + طبقة الكمال المطلوبة.
+reset();
+const stableA=engine.stableDynamicControlId("schedules",{title:"إشعارات 9",kind:"button",parentKey:"toolbar"});
+const stableB=engine.stableDynamicControlId("schedules",{title:"إشعارات 10",kind:"button",parentKey:"toolbar"});
+assert(stableA===stableB && stableA.startsWith("runtime.schedules."), "هوية العنصر المكتشف ثابتة ولا تتغير مع العدادات الرقمية");
+const room101=engine.stableDynamicControlId("schedules",{title:"قاعة 101",kind:"button",parentKey:"rooms"});
+const room102=engine.stableDynamicControlId("schedules",{title:"قاعة 102",kind:"button",parentKey:"rooms"});
+assert(room101!==room102, "الأرقام الدلالية مثل أرقام القاعات تبقى جزءًا من الهوية ولا تتصادم بسبب تنقية العدادات");
+const engineSource=read("src/guide/smartGuide.ts");
+assert(!/forEach\(\(element,\s*index\)/.test(engineSource) && !/auto\.\$\{activeView\}.*index/.test(engineSource), "هوية الاكتشاف لا تعتمد على DOM index إطلاقًا");
+
+reset();
+const first=engine.stableDynamicControlId("schedules",{title:"زر أول",kind:"button",parentKey:"toolbar"});
+engine.noteDiscoveredControls(201,"schedules",[{id:first,title:"زر أول",summary:"",kind:"button"}]);
+p=engine.loadGuideProfile(201);
+assert(engine.discoveredNew(p,"schedules").length===0, "أول مسح للشاشة يبني خط أساس ولا يحول الواجهة الحالية إلى 99 عنصرًا جديدًا");
+const second=engine.stableDynamicControlId("schedules",{title:"زر جديد",kind:"button",parentKey:"toolbar"});
+engine.noteDiscoveredControls(201,"schedules",[{id:first,title:"زر أول",summary:"",kind:"button"},{id:second,title:"زر جديد",summary:"",kind:"button"}]);
+p=engine.loadGuideProfile(201);
+assert(engine.discoveredNew(p,"schedules").length===1 && engine.discoveredNew(p,"schedules")[0].id===second, "بعد خط الأساس يظهر فقط العنصر المكتشف فعلًا كجديد");
+const productFeature=engine.featureById("page.schedules");
+p.catalog[productFeature.id]=Math.max(0,productFeature.version-1); engine.saveGuideProfile(p); p=engine.loadGuideProfile(201);
+let unread=engine.guideUnreadSummary(p,[productFeature],"schedules");
+assert(unread.product.length===1 && unread.runtime.length===1 && unread.total===2, "تحديثات المنتج منفصلة منطقيًا عن عناصر الواجهة المكتشفة مع مجموع واضح");
+engine.markAllGuideProductUpdatesSeen(201,[productFeature]); engine.markAllDiscoveredSeen(201,"schedules"); p=engine.loadGuideProfile(201); unread=engine.guideUnreadSummary(p,[productFeature],"schedules");
+assert(unread.total===0, "«اعتبر الكل مقروءًا» يصفر المصدرين ضمن النطاق الصحيح");
+
+const reportIntent=engine.parseStructuredGuideIntent("افتح تقرير القاعة");
+const advancedIntent=engine.parseStructuredGuideIntent("أبي الاستعلام المتقدم");
+const pressureIntent=engine.parseStructuredGuideIntent("ورني خريطة الضغط");
+assert(engine.featureIdForGuideIntentGoal(reportIntent.goal)==="page.reportRoom" && engine.featureIdForGuideIntentGoal(advancedIntent.goal)==="page.searchAdvanced" && engine.featureIdForGuideIntentGoal(pressureIntent.goal)==="living.scene.topology", "Structured intents تمتد إلى سجل الميزات العام لا أربع وظائف فقط");
+
+reset();
+p=engine.loadGuideProfile(202);
+p.workflows={bad:{count:40,successful:0,last:Date.now(),sequence:["page.schedules","page.intelligence"]}}; engine.saveGuideProfile(p);
+let prediction=engine.predictedNextFeature(engine.loadGuideProfile(202),"page.schedules");
+assert(!prediction || prediction.confidence<.82, "التكرار بلا نجاح لا ينتج اقتراحًا استباقيًا عالي الثقة");
+p=engine.loadGuideProfile(202); p.workflows={good:{count:12,successful:12,last:Date.now(),sequence:["page.schedules","page.intelligence"]}}; engine.saveGuideProfile(p);
+prediction=engine.predictedNextFeature(engine.loadGuideProfile(202),"page.schedules");
+assert(prediction?.id==="page.intelligence" && prediction.confidence>.82, "نجاح متكرر موثق يرفع ثقة الخطوة التالية");
+
+assert(smart.includes('raw.closest(".smart-guide,.guide-point-banner,.guide-screen-handoff")') && smart.includes('[data-guide-feature-id],[data-guide-target],[data-guide-stable-id]'), "«أشر لي» يستثني شريط الإلغاء ويفهم featureId وtarget معًا");
+assert(smart.includes('data-guide-ignore="زر إلغاء أشر لي يجب أن يبقى إجراء تحكم بالمرشد"'), "زر إلغاء «أشر لي» محمي من الالتقاط نفسه");
+assert(smart.includes('if (!feature.target)') && smart.includes('صفحة أو وظيفة عامة لا تملك نقطة واحدة ثابتة') && smart.includes('setDrawerHidden(false)'), "«أرني» لا يخفي المرشد بصمت عندما لا يوجد target/steps");
+assert(app.includes('dir="ltr"') && app.includes('guideNewCount > 9 ? "9+"') && css.includes('unicode-bidi:isolate'), "شارة 9+ معزولة LTR ولا تنقلب إلى +9 في RTL");
+assert(smart.includes('formatBadgeCount(unreadSummary.total,99)') && smart.includes('تحديثات المنتج ضمن صلاحياتك') && smart.includes('عناصر جديدة في هذه الشاشة فقط'), "تبويب الجديد يستخدم 99+ ويفصح بوضوح عن نطاق المصدرين");
+assert(smart.includes('const deduped = new Map<string,SearchRow>()') && smart.includes('row.feature.id === intentFeature.id'), "نتائج البحث تُزال منها التكرارات وتمنع تكرار بطاقة intent");
+assert(smart.includes('setAiIntent(null)') && smart.includes('const requestId = ++intentRequestRef.current') && smart.includes('requestId === intentRequestRef.current'), "تغيير السؤال يصفر intent القديم ويحمي من وصول استجابة AI متأخرة");
+assert(smart.includes('resolvedIntent?.clarification') && smart.includes('smart-guide-clarification'), "توضيح AI/Rules يظهر فعليًا في الواجهة بدل إسقاطه");
+assert(app.includes('guideProfile.hintMode !== "off" ? predictedNextFeature') && app.includes('guideProfile?.hintMode !== "off" && ambientFeature'), "إيقاف المساعدة الاستباقية يوقف اقتراح الخطوة التالية الخارجي فعلًا");
+assert(!smart.includes('allAllowed.slice(0,36)') && !smart.includes('known.filter(feature => !feature.id.startsWith("page.")).slice(0,12)'), "«الكل» و«هنا» لا يخفيان الميزات خلف حدود 36/12 صامتة");
+assert(smart.includes('preSearchSheetRef.current=sheetLevel') && smart.includes('setSheetLevel(selectedId || selectedDynamic || preview ? "medium" : preSearchSheetRef.current)'), "مسح البحث يعيد ارتفاع الورقة السابق بدل إبقائها Full");
+assert(smart.includes('current === "peek" ? "medium" : current === "medium" ? "full" : "medium"'), "النقر على المقبض يتدرج Peek → Medium → Full بشكل متوقع");
+assert(schedulesSource.includes('signal:!id ? "schedule.move.no-selection" : "schedule.move.row-missing"') && schedulesSource.includes('ok:false'), "نقل القاعة بلا مقرر يفشل العملية صراحة ولا يترك Transaction مفتوحة");
+assert(smart.includes('event.key === "Escape"') && smart.includes('aria-modal={!drawerHidden') && smart.includes('previousFocusRef') && smart.includes('querySelectorAll<HTMLElement>') && smart.includes('drawer.setAttribute("inert","")'), "سطح المرشد يدعم Escape وحبس التركيز واستعادته ويعزل الدرج المخفي عن Tab على سطح المكتب");
+assert(smart.includes('className="primary" onClick={startIntroducedIconAction}') && smart.includes('<Play />ابدأ') && !smart.includes('اضغط الأيقونة مرة أخرى للتنفيذ'), "أول ضغطة هاتف تعرض تعريفًا مع زر «ابدأ» بدل مطالبة المستخدم بضغطة ثانية غامضة");
+assert(smart.includes('showScreenHandoff') && smart.includes('guide-screen-handoff') && css.includes('@keyframes guideHandoffIn'), "كل تسليم مهم من المرشد إلى الشاشة له انتقال بصري واضح");
+assert(smart.includes('التعلّم عن نمط استخدامك محفوظ على هذا الجهاز') && smart.includes('قد يُرسل نص السؤال وسياق محدود'), "نص الخصوصية يفرق بين التعلم المحلي وفهم السؤال عبر خدمة AI");
+assert(smart.includes('markAllGuideProductUpdatesSeen(userId, allAllowed)') && smart.includes('markAllDiscoveredSeen(userId, activeView)'), "زر «اعتبر الكل مقروءًا» يحترم صلاحيات المنتج ونطاق الشاشة للعناصر المكتشفة");
+assert(!/setPreview\(null\)>إلغاء/.test(smart) && smart.includes('onClick={cancelPreview}>إلغاء'), "إلغاء معاينة «أكمل عني» يغلق Transaction بدل تركها معلقة");
+assert(serverSource.includes('featureIdForGuideIntentGoal(intent.goal)') && serverSource.includes('goal بصيغة feature:<id>'), "الخادم يقبل intents لكل Registry مع تحقق صلاحية موحد بدل خريطة أربع وظائف");
 
 // اختبار CI فعلي: أي زر جديد بلا metadata/ignore يجب أن يفشل التدقيق.
 const probe=path.join(root,"src/__guide_ci_probe__.tsx");

@@ -49,7 +49,7 @@ import {
   SCHEDULE_SLOT_MINUTES,
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
-import { canAccessGuideFeature, featureById } from "./src/guide/smartGuide";
+import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -3477,35 +3477,17 @@ type GuideIntentPayload = {
 };
 
 function deterministicGuideIntent(question: string): GuideIntentPayload {
-  const text = String(question || "").toLowerCase().replace(/[إأآ]/g, "ا").replace(/ى/g, "ي").replace(/[ً-ْٰـ]/g, "");
-  const day = /اربعاء/.test(text) ? "fwednesday" : /ثلاثاء/.test(text) ? "ftuesday" : /اثنين/.test(text) ? "fmonday" : /احد/.test(text) ? "fsunday" : /خميس/.test(text) ? "fthursday" : undefined;
-  const timeMatch = text.match(/(?:الساعه|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?|(?:^|\s)(\d{1,2}):(\d{2})(?:\s|$)/);
-  const timeHour = timeMatch ? Number(timeMatch[1] || timeMatch[3]) : NaN;
-  const timeMinute = timeMatch ? Number(timeMatch[2] || timeMatch[4] || 0) : NaN;
-  const time = Number.isFinite(timeHour) ? `${String(Math.min(23, Math.max(0, timeHour))).padStart(2, "0")}:${String(Math.min(59, Math.max(0, timeMinute))).padStart(2, "0")}` : undefined;
-  const move = /(?:نقل|انقل|غير\s+(?:ال)?قاع|غير\s+قاع)/.test(text);
-  const timeChange = /غير.*وقت|تغيير.*وقت|يصير يوم|خله يوم|خليه يوم|موعد/.test(text);
-  const instructor = /غير.*دكتور|غير.*استاذ|تغيير.*استاذ/.test(text);
-  const findAlternativeRoom = /اذا.*قاع.*مشغ|دور.*قاع|قاعة.*بديل|قاعه.*بديل/.test(text);
-  const simulate = /جرب|جرّب|ماذا لو|بدون تغيير/.test(text);
-  const explain = /شلون|كيف|وضح|شرح|ليش/.test(text);
-  const keepInstructor = /لا.*(?:ابي|اريد).*غير.*(?:دكتور|استاذ)|خله.*(?:دكتور|استاذ)|ابق.*(?:الاستاذ|الأستاذ)/.test(text);
-  let goal = move ? "move-room" : timeChange ? "change-time" : instructor ? "change-instructor" : findAlternativeRoom ? "find-room" : "unknown";
-  if (goal === "unknown" && day && time) goal = "change-time";
-  const requestedAction: GuideIntentPayload["requestedAction"] = simulate ? "simulate" : move || timeChange || instructor ? "prepare" : explain ? "explain" : "unknown";
-  const compound = [day, time, keepInstructor, findAlternativeRoom].filter(Boolean).length >= 2;
-  let confidence = goal !== "unknown" ? .68 : .25;
-  if (day) confidence += .08;
-  if (time) confidence += .08;
-  if (move || timeChange || instructor) confidence += .08;
-  if (simulate) confidence += .05;
-  if (compound) confidence += .03;
-  const clarification = confidence < .62
-    ? "هل تقصد تنفيذ تغيير على المقرر المحدد مع إبقاء بقية بياناته كما هي؟"
-    : keepInstructor && day
-      ? `هل تقصد نقل هذا المقرر إلى ${day === "fwednesday" ? "الأربعاء" : day === "ftuesday" ? "الثلاثاء" : day === "fmonday" ? "الاثنين" : day === "fsunday" ? "الأحد" : "الخميس"} مع إبقاء الأستاذ الحالي؟`
-      : undefined;
-  return { goal, entities: { day, time }, constraints: { keepInstructor, findAlternativeRoom }, requestedAction, confidence: Math.min(.98, confidence), compound, source: "rules", clarification };
+  const parsed = parseStructuredGuideIntent(question);
+  return {
+    goal: parsed.goal,
+    entities: { ...parsed.entities },
+    constraints: { ...parsed.constraints },
+    requestedAction: parsed.requestedAction,
+    confidence: parsed.confidence,
+    compound: parsed.compound,
+    source: "rules",
+    clarification: parsed.clarification,
+  };
 }
 
 /**
@@ -3539,7 +3521,7 @@ async function requestGuideAIIntent(payload:{question:string;context:any;allowed
         signal:controller.signal,
         body:JSON.stringify({
           model:String(process.env.GUIDE_AI_MODEL || "").trim() || undefined,
-          task:"استخرج نية استخدام SCHEDULE فقط. أعد JSON منظمًا دون تنفيذ أي إجراء. اجعل أي clarification باللغة العربية الفصحى.",
+          task:"استخرج نية استخدام SCHEDULE فقط. أعد JSON منظمًا دون تنفيذ أي إجراء. للميزات العامة استخدم goal بصيغة feature:<allowedFeatureId> فقط من القائمة المسموحة. اجعل أي clarification باللغة العربية الفصحى.",
           question:payload.question, context:payload.context, allowedFeatureIds:payload.allowedFeatureIds,
           schema:{goal:"string",entities:"object",constraints:"object",requestedAction:"explain|navigate|prepare|simulate|execute|unknown",confidence:"0..1",clarification:"Arabic Fusha optional"},
         }),
@@ -3557,6 +3539,7 @@ async function requestGuideAIIntent(payload:{question:string;context:any;allowed
       "لا تنفذ شيئًا ولا تخترع صلاحيات أو ميزات غير موجودة.",
       "أعد كائن JSON فقط بالمفاتيح: goal, entities, constraints, requestedAction, confidence, compound, clarification.",
       "requestedAction واحد من explain,navigate,prepare,simulate,execute,unknown.",
+      "للأهداف غير الأربعة المتخصصة استخدم goal بصيغة feature:<id>، ويجب أن يكون id موجودًا حرفيًا في allowedFeatureIds.",
       "confidence رقم بين 0 و1. إذا لم تكن متأكدًا استخدم clarification فصيحة ومختصرة.",
     ].join("\n");
     const userPayload = JSON.stringify({ question:payload.question, context:payload.context, allowedFeatureIds:payload.allowedFeatureIds, deterministicHint:payload.fallback });
@@ -3610,9 +3593,12 @@ app.post("/api/guide/intent", requireAuth, async (req: AuthenticatedRequest, res
       };
     }
   }
-  const featureForGoal: Record<string,string> = { "move-room":"schedule.action.move-room", "change-time":"schedule.action.change-time", "change-instructor":"schedule.action.change-instructor", "find-room":"schedule.action.find-room" };
-  const proposedFeature = featureForGoal[intent.goal];
-  if (proposedFeature && !allowedFeatureIds.includes(proposedFeature)) intent = { ...intent, goal:"unknown", requestedAction:"explain", confidence:.35, clarification:"هذه العملية غير متاحة ضمن صلاحياتك الحالية.", source:intent.source };
+  const proposedFeature = featureIdForGuideIntentGoal(intent.goal);
+  if (intent.goal !== "unknown" && !proposedFeature) {
+    intent = { ...intent, goal:"unknown", requestedAction:"explain", confidence:.35, clarification:"لم أتمكن من ربط الطلب بميزة معروفة في SCHEDULE. حدّد ما تريد الوصول إليه وسأقترح الأقرب.", source:intent.source };
+  } else if (proposedFeature && !allowedFeatureIds.includes(proposedFeature)) {
+    intent = { ...intent, goal:"unknown", requestedAction:"explain", confidence:.35, clarification:"هذه العملية غير متاحة ضمن صلاحياتك الحالية.", source:intent.source };
+  }
   res.json({ intent, minimalContext:true, rawHistorySent:false });
 });
 

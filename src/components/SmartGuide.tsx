@@ -36,16 +36,16 @@ import {
   allowedGuideFeatures,
   allAllowedGuideFeatures,
   canAccessGuideFeature,
-  changedFeatures,
   commonWorkflows,
   dialectIntentTerms,
   discoverVisibleControls,
-  discoveredNew,
   featureById,
   loadGuideProfile,
   markFeatureSeen,
   markGuideIconHintSeen,
   markDiscoveredSeen,
+  markAllDiscoveredSeen,
+  markAllGuideProductUpdatesSeen,
   masteryScore,
   noteHint,
   noteDiscoveredControls,
@@ -56,6 +56,9 @@ import {
   canRunGuideAction,
   classifyGuideReason,
   parseStructuredGuideIntent,
+  featureIdForGuideIntentGoal,
+  guideUnreadSummary,
+  stableDynamicControlId,
   needsGuideAIFallback,
   beginGuideTransaction,
   appendGuideTransactionOperation,
@@ -101,6 +104,9 @@ type SearchRow =
   | { kind: "dynamic"; feature: DynamicGuideFeature; score: number }
   | { kind: "routine"; feature: { id: string; name: string; sequence: string[] }; score: number };
 
+const formatBadgeCount = (count:number, cap:number) => count > cap ? `${cap}+` : String(Math.max(0,count));
+const searchRowKey = (row:SearchRow) => `${row.kind}:${row.feature.id}`;
+
 const normalizeArabic = (value: string) => String(value || "")
   .toLowerCase()
   .replace(/[إأآ]/g, "ا")
@@ -112,14 +118,14 @@ const normalizeArabic = (value: string) => String(value || "")
   .trim();
 
 function targetElement(step: TourStep): HTMLElement | null {
-  if (step.target) return document.querySelector<HTMLElement>(`[data-guide-target="${step.target}"]`);
+  if (step.target) return document.querySelector<HTMLElement>(`[data-guide-target="${step.target}"],[data-guide-feature-id="${step.target}"]`);
   if (step.selector) return document.querySelector<HTMLElement>(step.selector);
   return null;
 }
 
 function targetNow(id?: string) {
   if (!id) return null;
-  return document.querySelector<HTMLElement>(`[data-guide-target="${id}"]`);
+  return document.querySelector<HTMLElement>(`[data-guide-target="${id}"],[data-guide-feature-id="${id}"]`);
 }
 
 function liveTargetLabel(id?: string) {
@@ -204,6 +210,7 @@ export default function SmartGuide({
   const [browseMode, setBrowseMode] = useState<"forYou" | "here" | "new" | "all">("forYou");
   const [sheetLevel, setSheetLevel] = useState<"peek" | "medium" | "full">("peek");
   const [iconIntro, setIconIntro] = useState<{ key:string; title:string; summary:string } | null>(null);
+  const [screenHandoff, setScreenHandoff] = useState<{ title:string; detail:string } | null>(null);
   const [routineDraft, setRoutineDraft] = useState<{ sequence: string[]; name: string } | null>(null);
   const [collectiveFriction, setCollectiveFriction] = useState<Array<{ name: string; count: number }>>([]);
   const [collectiveInsights, setCollectiveInsights] = useState<Array<{ featureId:string; version:number; step:string; attempts:number; failureRate:number; abandonRate:number; helpRate:number; helpToSuccessRate:number; changeVsPrevious:number }>>([]);
@@ -211,6 +218,17 @@ export default function SmartGuide({
   const lastEscalationRef = useRef("");
   const discoveredSignatureRef = useRef("");
   const sheetDragStartRef = useRef<number | null>(null);
+  const preSearchSheetRef = useRef<"peek" | "medium" | "full">("peek");
+  const intentRequestRef = useRef(0);
+  const iconActionRef = useRef<{ key:string; action:()=>void } | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const handoffTimerRef = useRef<number | null>(null);
+
+  const showScreenHandoff = useCallback((title:string, detail:string) => {
+    if (handoffTimerRef.current) window.clearTimeout(handoffTimerRef.current);
+    setScreenHandoff({ title, detail });
+    handoffTimerRef.current = window.setTimeout(() => setScreenHandoff(null), 2600);
+  }, []);
 
   const refreshProfile = useCallback(() => setProfile(loadGuideProfile(userId)), [userId]);
   const admin = Boolean(root || user?.IsAdminUser);
@@ -223,9 +241,9 @@ export default function SmartGuide({
   }, [activeView, permissionSession]);
   const pageMastery = masteryScore(profile, pageFeature);
   const isExpert = Boolean(context?.metrics?.isExpert) || pageMastery >= 0.72;
-  const changed = useMemo(() => changedFeatures(profile, activeView, permissions, root, admin), [profile, activeView, permissions, root, admin]);
-  const allChanged = useMemo(() => rankChangedFeatures(profile, allAllowed.filter(feature => profile.catalog?.[feature.id] == null || feature.version > Number(profile.catalog?.[feature.id] || 0))), [allAllowed, profile]);
-  const discoveredChanged = useMemo(() => discoveredNew(profile), [profile]);
+  const unreadSummary = useMemo(() => guideUnreadSummary(profile, allAllowed, activeView), [profile, allAllowed, activeView]);
+  const allChanged = useMemo(() => rankChangedFeatures(profile, unreadSummary.product), [profile, unreadSummary.product]);
+  const discoveredChanged = unreadSummary.runtime;
   const workflows = useMemo(() => commonWorkflows(profile, activeView).map(workflow => ({ ...workflow, sequence:workflow.sequence.filter(id => { const feature=featureById(id); return Boolean(feature && canAccessGuideFeature(feature, permissionSession)); }) })).filter(workflow => workflow.sequence.length > 0), [profile, activeView, permissionSession]);
   const selectedRaw = selectedId ? featureById(selectedId) : null;
   const selected = selectedRaw && canAccessGuideFeature(selectedRaw, permissionSession) ? selectedRaw : null;
@@ -247,6 +265,7 @@ export default function SmartGuide({
     if (!rollbackTransaction) return;
     const commands = transactionRollbackCommands(loadGuideProfile(userId), rollbackTransaction.id);
     if (!commands.length) return;
+    showScreenHandoff("أعيد آخر عملية", `سأتراجع عن «${rollbackTransaction.title}» باستخدام أوامر التراجع الموثقة.`);
     setDrawerHidden(true);
     commands.forEach((command, index) => window.setTimeout(() => runCommand(command), index * 180));
     markGuideTransactionRolledBack(userId, rollbackTransaction.id);
@@ -254,7 +273,7 @@ export default function SmartGuide({
     window.setTimeout(refreshProfile, commands.length * 180 + 260);
   // runCommand is declared below and is stable for the current context at invocation time.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rollbackTransaction?.id, userId, refreshProfile]);
+  }, [rollbackTransaction?.id, userId, refreshProfile, showScreenHandoff]);
 
   const repeatSequence = useMemo(() => {
     const base = routines[0]?.sequence || workflows[0]?.sequence || [];
@@ -274,13 +293,7 @@ export default function SmartGuide({
   const ruleIntent = useMemo(() => parseStructuredGuideIntent(query), [query]);
   const resolvedIntent = aiIntent?.confidence > ruleIntent.confidence ? aiIntent : ruleIntent;
   const intentFeature = useMemo(() => {
-    const map: Record<string,string> = {
-      "move-room":"schedule.action.move-room",
-      "change-time":"schedule.action.change-time",
-      "change-instructor":"schedule.action.change-instructor",
-      "find-room":"schedule.action.find-room",
-    };
-    const feature = featureById(map[String(resolvedIntent?.goal || "")] || "");
+    const feature = featureById(featureIdForGuideIntentGoal(String(resolvedIntent?.goal || "")));
     return feature && canAccessGuideFeature(feature, permissionSession) ? feature : null;
   }, [resolvedIntent?.goal, permissionSession]);
 
@@ -337,9 +350,13 @@ export default function SmartGuide({
   }, [userId, open]);
   useEffect(() => {
     const text = query.trim();
-    if (!text || !needsGuideAIFallback(ruleIntent, text)) { setAiIntent(null); setIntentLoading(false); return; }
+    const requestId = ++intentRequestRef.current;
+    setAiIntent(null);
+    setIntentLoading(false);
+    if (!text || !needsGuideAIFallback(ruleIntent, text)) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      if (requestId !== intentRequestRef.current) return;
       setIntentLoading(true);
       fetch("/api/guide/intent", {
         method: "POST",
@@ -355,13 +372,13 @@ export default function SmartGuide({
             currentTask: context?.currentTask ? { title: String(context.currentTask.title || ""), featureId: String(context.currentTask.featureId || "") } : null,
             currentError: String(context?.lastAction || context?.detectedHelp?.detail || "").slice(0,240),
           },
-          allowedFeatureIds: allAllowed.map(feature => feature.id).slice(0,80),
+          allowedFeatureIds: allAllowed.map(feature => feature.id).slice(0,100),
         }),
       })
         .then(response => response.ok ? response.json() : null)
-        .then(data => { if (data?.intent) setAiIntent(data.intent); })
+        .then(data => { if (requestId === intentRequestRef.current && data?.intent) setAiIntent(data.intent); })
         .catch(() => undefined)
-        .finally(() => setIntentLoading(false));
+        .finally(() => { if (requestId === intentRequestRef.current) setIntentLoading(false); });
     }, 320);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query, ruleIntent, activeView, context?.currentFeatureId, context?.currentTask?.featureId, context?.currentTask?.title, context?.detectedHelp?.detail, context?.lastAction, context?.selected?.course, context?.selected?.id, allAllowed]);
@@ -415,17 +432,19 @@ export default function SmartGuide({
       setBrowseMode("forYou");
       setSheetLevel("peek");
       setIconIntro(null);
+      setScreenHandoff(null);
+      iconActionRef.current = null;
     }
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
-    if (query.trim()) setSheetLevel("full");
-    else if (selectedId || selectedDynamic || preview) setSheetLevel("medium");
+    if (!open || query.trim()) return;
+    if (selectedId || selectedDynamic || preview) setSheetLevel("medium");
   }, [open, query, selectedId, selectedDynamic, preview]);
 
-  const cycleSheet = (direction: "up" | "down") => {
+  const cycleSheet = (direction: "up" | "down" | "tap") => {
     setSheetLevel(current => {
+      if (direction === "tap") return current === "peek" ? "medium" : current === "medium" ? "full" : "medium";
       if (direction === "up") return current === "peek" ? "medium" : "full";
       return current === "full" ? "medium" : "peek";
     });
@@ -438,7 +457,7 @@ export default function SmartGuide({
     const start = sheetDragStartRef.current; sheetDragStartRef.current = null;
     if (start == null) return;
     const delta = event.clientY - start;
-    if (Math.abs(delta) < 18) { cycleSheet(sheetLevel === "peek" ? "up" : "down"); return; }
+    if (Math.abs(delta) < 18) { cycleSheet("tap"); return; }
     cycleSheet(delta < 0 ? "up" : "down");
   };
 
@@ -446,6 +465,10 @@ export default function SmartGuide({
     const restore = () => setDrawerHidden(false);
     window.addEventListener("schedule-smart-guide-restore", restore);
     return () => window.removeEventListener("schedule-smart-guide-restore", restore);
+  }, []);
+
+  useEffect(() => () => {
+    if (handoffTimerRef.current) window.clearTimeout(handoffTimerRef.current);
   }, []);
 
   useEffect(() => {
@@ -476,27 +499,43 @@ export default function SmartGuide({
     document.body.classList.add("guide-point-mode");
     const click = (event: MouseEvent) => {
       const raw = event.target instanceof HTMLElement ? event.target : null;
-      if (!raw || raw.closest(".smart-guide") || raw.closest("[data-guide-ignore]")) return;
-      const carrier = raw.closest<HTMLElement>("[data-guide-target],button,a,[role='button'],select,input");
+      if (!raw || raw.closest(".smart-guide,.guide-point-banner,.guide-screen-handoff") || raw.closest("[data-guide-ignore]")) return;
+      const carrier = raw.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target],[data-guide-stable-id],button,a,[role='button'],select,input");
       if (!carrier) return;
       event.preventDefault();
       event.stopPropagation();
-      const explicit = carrier.getAttribute("data-guide-target") || carrier.closest<HTMLElement>("[data-guide-target]")?.getAttribute("data-guide-target") || "";
-      if (explicit && featureById(explicit)) {
-        setSelectedId(explicit);
+      event.stopImmediatePropagation();
+      const owner = carrier.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target]");
+      const featureId = carrier.getAttribute("data-guide-feature-id") || owner?.getAttribute("data-guide-feature-id") || "";
+      const target = carrier.getAttribute("data-guide-target") || owner?.getAttribute("data-guide-target") || "";
+      const knownFeature = featureById(featureId) || featureById(target);
+      if (knownFeature && canAccessGuideFeature(knownFeature, permissionSession)) {
+        setSelectedId(knownFeature.id);
         setSelectedDynamic(null);
-        recordFeatureEvent(userId, explicit, "helped");
-        markFeatureSeen(userId, explicit);
+        recordFeatureEvent(userId, knownFeature.id, "helped");
+        markFeatureSeen(userId, knownFeature.id);
       } else {
-        const title = String(carrier.getAttribute("aria-label") || carrier.getAttribute("title") || carrier.textContent || "")
+        const title = String(carrier.getAttribute("data-guide-title") || carrier.getAttribute("aria-label") || carrier.getAttribute("title") || carrier.textContent || "")
           .replace(/\s+/g, " ").trim().slice(0, 72) || "هذا العنصر";
-        setSelectedDynamic({ id: explicit || `point.${activeView}`, title, summary: "عنصر حي في الشاشة الحالية.", target: explicit || undefined, kind: carrier.tagName.toLowerCase() });
+        const stableKey = carrier.getAttribute("data-guide-stable-id") || "";
+        const id = stableDynamicControlId(activeView, {
+          title,
+          kind:carrier.tagName.toLowerCase(),
+          featureId,
+          target,
+          stableKey,
+          name:carrier.getAttribute("name") || carrier.getAttribute("type") || "",
+          href:carrier.getAttribute("href") || "",
+          role:carrier.getAttribute("role") || "",
+        });
+        setSelectedDynamic({ id, title, summary: "عنصر حي في الشاشة الحالية.", target: featureId || target || undefined, stableKey:stableKey || undefined, kind: carrier.tagName.toLowerCase() });
         setSelectedId(null);
       }
       carrier.setAttribute("data-guide-hot", "true");
       window.setTimeout(() => carrier.removeAttribute("data-guide-hot"), 2400);
       setPointMode(false);
       setDrawerHidden(false);
+      setScreenHandoff(null);
       refreshProfile();
     };
     window.addEventListener("click", click, true);
@@ -504,8 +543,7 @@ export default function SmartGuide({
       document.body.classList.remove("guide-point-mode");
       window.removeEventListener("click", click, true);
     };
-  }, [pointMode, userId, activeView, refreshProfile]);
-
+  }, [pointMode, userId, activeView, permissionSession, refreshProfile]);
   useEffect(() => {
     const onResult = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -588,10 +626,16 @@ export default function SmartGuide({
   }, [tour, locateStep]);
 
   const startTour = (feature: GuideFeature) => {
-    setDrawerHidden(true);
+    if (!canAccessGuideFeature(feature, permissionSession)) {
+      setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية.");
+      setDrawerHidden(false);
+      return;
+    }
     if (feature.view && feature.view !== activeView) {
       setPendingTourStep(0);
       setPendingTourId(feature.id);
+      showScreenHandoff("أنتقل إلى الشاشة المطلوبة", `سأفتح «${feature.title}» ثم أحدد مكانها لك.`);
+      setDrawerHidden(true);
       onNavigate(feature.view);
       return;
     }
@@ -604,12 +648,30 @@ export default function SmartGuide({
       steps = [steps[0], selectedStep, ...steps.slice(2)].filter(Boolean) as TourStep[];
     }
     if (!steps.length) {
-      if (feature.target) {
-        const element = targetNow(feature.target);
-        element?.scrollIntoView({ behavior: "smooth", block: "center" });
-        element?.setAttribute("data-guide-hot", "true");
-        window.setTimeout(() => element?.removeAttribute("data-guide-hot"), 2400);
+      if (!feature.target) {
+        setDrawerHidden(false);
+        setNotice(`«${feature.title}» صفحة أو وظيفة عامة لا تملك نقطة واحدة ثابتة على الشاشة. هذا شرحها المختصر: ${feature.summary}`);
+        return;
       }
+      const element = targetNow(feature.target);
+      if (!element) {
+        setDrawerHidden(false);
+        setNotice(`أعرف وظيفة «${feature.title}»، لكن عنصرها غير ظاهر في الحالة الحالية. غيّر حالة الشاشة أو استخدم «أشر لي» لتحديد العنصر مباشرةً.`);
+        return;
+      }
+      recordFeatureEvent(userId, feature.id, "helped");
+      telemetryGuideJourney({ featureId:feature.id, version:feature.version, step:"guide", outcome:"helped" });
+      markFeatureSeen(userId, feature.id);
+      showScreenHandoff("هذا هو المكان", `سأبرز «${feature.title}» لثوانٍ ثم أعيد المرشد تلقائيًا.`);
+      setDrawerHidden(true);
+      element.scrollIntoView({ behavior: "smooth", block: "center", inline:"center" });
+      element.setAttribute("data-guide-hot", "true");
+      window.setTimeout(() => {
+        element.removeAttribute("data-guide-hot");
+        setDrawerHidden(false);
+        setScreenHandoff(null);
+      }, 2400);
+      refreshProfile();
       return;
     }
     recordFeatureEvent(userId, feature.id, "helped");
@@ -625,6 +687,8 @@ export default function SmartGuide({
       updatedAt: Date.now(),
       step: 0,
     });
+    showScreenHandoff("إرشاد حي على الشاشة", `سأحدد الآن أول خطوة في «${feature.title}».`);
+    setDrawerHidden(true);
     setTour({ feature, steps, index: 0 });
     setNotice("");
     refreshProfile();
@@ -647,6 +711,7 @@ export default function SmartGuide({
       recordFeatureEvent(userId, feature.id, "helped");
       telemetryGuideJourney({ featureId:feature.id, version:feature.version, step:"guide", outcome:"helped" });
       markFeatureSeen(userId, feature.id);
+      showScreenHandoff("أكمل من نفس الخطوة", `عدت إلى «${feature.title}» وسأبرز الخطوة التالية.`);
       setDrawerHidden(true);
       setTour({ feature, steps, index: Math.min(Math.max(0, resumeAt), steps.length - 1) });
       refreshProfile();
@@ -659,6 +724,7 @@ export default function SmartGuide({
     setTour(null);
     setLocated(null);
     setDrawerHidden(false);
+    setScreenHandoff(null);
     setGuideTask(userId, undefined);
     refreshProfile();
   };
@@ -696,10 +762,24 @@ export default function SmartGuide({
       setNotice("هذه العملية غير متاحة ضمن صلاحياتك الحالية.");
       return;
     }
+    const needsSelection = new Set(["schedule.action.move-room","schedule.action.change-time","schedule.action.change-instructor","schedule.action.find-room"]).has(feature.id);
+    if (needsSelection && !Number(context?.selected?.id || 0)) {
+      setPreview(null);
+      setDrawerHidden(false);
+      setNotice(`قبل «${feature.title}» حدّد مقررًا واحدًا من الجدول. لن أبدأ معاملة أو تغييرًا قبل وجود مقرر محدد.`);
+      if (feature.id === "schedule.action.move-room" || feature.id === "schedule.action.find-room") {
+        showScreenHandoff("خطوة مطلوبة أولًا", "سأفتح عرض المباني والقاعات فقط؛ حدّد المقرر ثم اطلب المتابعة.");
+        setDrawerHidden(true);
+        runCommand({ scope:"schedule", type:"changeView", value:"rooms", featureId:"schedule.view.rooms" });
+        window.setTimeout(() => setDrawerHidden(false), 1400);
+      }
+      return;
+    }
     recordFeatureEvent(userId, feature.id, "attempt");
     const journey = journeyForFeature(feature.id);
     if (journey) startGuideJourney(userId, journey.id);
     if (feature.view && feature.view !== activeView && !feature.safeAction && !action?.command && !action?.prepare) {
+      showScreenHandoff("أفتح الوجهة", `سأنتقل إلى «${feature.title}» دون تنفيذ أي تغيير.`);
       setDrawerHidden(true);
       onNavigate(feature.view);
       setGuideTask(userId, { id:`assist:${feature.id}`, title:`فتح ${feature.title}`, featureId:feature.id, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
@@ -713,6 +793,7 @@ export default function SmartGuide({
     }
     if (action?.risk === "read") {
       recordFeatureEvent(userId, feature.id, "started");
+      showScreenHandoff("أجهز الخطوة الآمنة", `سأفتح «${feature.title}» دون تعديل البيانات.`);
       setDrawerHidden(true);
       runCommand({ ...command, featureId: feature.id });
       setGuideTask(userId, { id:`assist:${feature.id}`, title:`مساعدة تنفيذية: ${feature.title}`, featureId:feature.id, target:feature.target, command, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
@@ -723,10 +804,79 @@ export default function SmartGuide({
     setPreview({ feature, command:{...command, transactionId, featureId:feature.id}, transactionId });
   };
 
+  const cancelPreview = () => {
+    if (preview?.transactionId) failGuideTransaction(userId, preview.transactionId);
+    setPreview(null);
+    refreshProfile();
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    if (!previousFocusRef.current) previousFocusRef.current=document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    return () => {
+      const previous=previousFocusRef.current;
+      previousFocusRef.current=null;
+      window.setTimeout(()=>previous?.focus?.(),0);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    const drawer=drawerRef.current;
+    if (!drawer) return;
+    const inactive=Boolean(drawerHidden || pointMode || located || preview);
+    if (inactive) drawer.setAttribute("inert","");
+    else drawer.removeAttribute("inert");
+    return () => drawer.removeAttribute("inert");
+  }, [drawerHidden, pointMode, located, preview]);
+
+  useEffect(() => {
+    if (!open) return;
+    const focusSurface = () => {
+      if (preview) return document.querySelector<HTMLElement>(".guide-preview");
+      if (located) return document.querySelector<HTMLElement>(".guide-ghost-card");
+      if (!drawerHidden && !pointMode) return drawerRef.current;
+      return null;
+    };
+    const onKeyDown=(event:KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (preview) { cancelPreview(); return; }
+        if (pointMode) { setPointMode(false); setDrawerHidden(false); return; }
+        if (tour || located) { stopTour(); return; }
+        if (iconIntro) { iconActionRef.current=null; setIconIntro(null); return; }
+        if (settingsOpen) { setSettingsOpen(false); return; }
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const surface=focusSurface();
+      if (!surface) return;
+      const focusables=[...surface.querySelectorAll<HTMLElement>('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex]:not([tabindex="-1"])')].filter(element=>element.offsetParent!==null);
+      if (!focusables.length) { event.preventDefault(); surface.focus?.(); return; }
+      const first=focusables[0], last=focusables[focusables.length-1], active=document.activeElement;
+      if (event.shiftKey && (active===first || !surface.contains(active))) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (active===last || !surface.contains(active))) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown",onKeyDown,true);
+    window.setTimeout(()=>{
+      const surface=focusSurface();
+      if (!surface) {
+        if (drawerHidden && drawerRef.current?.contains(document.activeElement)) (document.activeElement as HTMLElement)?.blur?.();
+        return;
+      }
+      if (!surface.contains(document.activeElement)) {
+        const first=surface.querySelector<HTMLElement>('button:not([disabled]),input:not([disabled]),[tabindex]:not([tabindex="-1"])');
+        (first || surface).focus?.();
+      }
+    },0);
+    return()=>document.removeEventListener("keydown",onKeyDown,true);
+  }, [open, preview, pointMode, tour, located, iconIntro, settingsOpen, drawerHidden, onClose]);
+
   const confirmPreview = () => {
     if (!preview) return;
     recordFeatureEvent(userId, preview.feature.id, "started");
     const journey = journeyForFeature(preview.feature.id);
+    showScreenHandoff("سلمتك الخطوة إلى الشاشة", `جهزت «${preview.feature.title}». القرار النهائي والحفظ يبقيان بيدك.`);
     setDrawerHidden(true);
     if (preview.feature.view && preview.feature.view !== activeView) {
       onNavigate(preview.feature.view);
@@ -749,6 +899,7 @@ export default function SmartGuide({
   const simulateFeature = (feature: GuideFeature) => {
     if (!canAccessGuideFeature(feature, permissionSession)) { setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية."); return; }
     recordFeatureEvent(userId, feature.id, "attempt");
+    showScreenHandoff("تجربة آمنة", `سأفتح مساحة تجربة لـ«${feature.title}» دون لمس الجدول الحقيقي.`);
     setDrawerHidden(true);
     if (feature.simulationAction) {
       runCommand({ ...feature.simulationAction, featureId:feature.id });
@@ -760,10 +911,13 @@ export default function SmartGuide({
       setNotice("سأحوّلك إلى مساحة «جرّب» لاختبار الفكرة دون تعديل الجدول الحقيقي.");
       return;
     }
+    setDrawerHidden(false);
+    setScreenHandoff(null);
     setNotice("هذه الميزة لا تحتاج محاكاة مستقلة؛ يمكنني عرضها على الشاشة أو تجهيز خطوتها الآمنة.");
   };
 
   const resumeTask = () => {
+    showScreenHandoff("أستعيد آخر موضع", "سأعيدك إلى المهمة السابقة وخطوتها الحالية.");
     setDrawerHidden(true);
     const current = profile.currentTask;
     const currentGeneric = Boolean(current?.id?.startsWith("work:page:") || current?.id === "work:schedule" || current?.id === "work:intelligence");
@@ -799,6 +953,7 @@ export default function SmartGuide({
   };
 
   const replayWorkflow = (sequence: string[]) => {
+    showScreenHandoff("أفتح مسارك المعتاد", "سأنفذ خطوات القراءة والفتح الآمنة فقط، وأترك القرارات المؤثرة لك.");
     setDrawerHidden(true);
     const commands = sequence
       .map(featureById)
@@ -807,6 +962,8 @@ export default function SmartGuide({
       .filter(item => Boolean(item.action && canRunGuideAction(item.action!, permissionSession) && item.action!.risk === "read" && item.action!.command))
       .map(item => ({ ...item.action!.command!, featureId:item.feature.id }));
     if (!commands.length) {
+      setDrawerHidden(false);
+      setScreenHandoff(null);
       setNotice("تعرّفت على هذا المسار كعادة لديك، لكن خطواته الحالية تحتاج قراراتك داخل الشاشة. سأستخدمه لترتيب الاقتراحات بدل تنفيذ ضغطات غير موثوقة.");
       return;
     }
@@ -835,16 +992,16 @@ export default function SmartGuide({
 
   const results = useMemo<SearchRow[]>(() => {
     if (!query.trim()) return [];
-    const knownRows: SearchRow[] = allAllowed
-      .map((feature) => ({ kind: "known", feature, score: queryScore(query, feature) }));
-    const dynamicRows: SearchRow[] = dynamic.map((feature) => ({ kind: "dynamic", feature, score: queryScore(query, { ...feature, keywords: [] }) }));
+    const knownRows: SearchRow[] = allAllowed.map((feature) => ({ kind: "known", feature, score: queryScore(query, feature) }));
+    const dynamicRows: SearchRow[] = dynamic
+      .filter(feature => !featureById(feature.id) && !(feature.target && featureById(feature.target)))
+      .map((feature) => ({ kind: "dynamic", feature, score: queryScore(query, { ...feature, keywords: [] }) }));
     const routineRows: SearchRow[] = routines.map((routine) => ({
       kind: "routine",
       feature: { id: routine.id, name: routine.name, sequence: routine.sequence },
       score: queryScore(query, { title: routine.name, summary: "اختصار لمسار عمل محفوظ", keywords: ["اختصار", "مسار", "روتين", "افتح"] }),
     }));
     const rows: SearchRow[] = [...knownRows, ...dynamicRows, ...routineRows];
-    if (intentFeature && resolvedIntent?.confidence >= .62) rows.push({ kind:"known", feature:intentFeature, score:40 + Math.round(Number(resolvedIntent.confidence || 0) * 10) });
     const normalized = normalizeArabic(query);
     if (/اسرع|اختصر|روتين|طريقتي/.test(normalized) && workflows[0]) {
       rows.push({ kind: "routine", feature: { id: "suggested-fast", name: "طريقة أسرع لمسارك المعتاد", sequence: workflows[0].sequence }, score: 30 });
@@ -853,8 +1010,15 @@ export default function SmartGuide({
       const helpFeature = selected || featureById(context?.currentTask?.featureId || "") || pageFeature;
       if (helpFeature) rows.push({ kind: "known", feature: helpFeature, score: 35 });
     }
-    return rows.filter((row) => row.score > 0).sort((a, b) => b.score - a.score).slice(0, 12);
-  }, [query, dynamic, allAllowed, routines, workflows, selected, context?.currentTask?.featureId, pageFeature, intentFeature, resolvedIntent?.confidence]);
+    const deduped = new Map<string,SearchRow>();
+    rows.filter((row) => row.score > 0).sort((a,b) => b.score-a.score).forEach(row => {
+      if (row.kind === "known" && intentFeature && row.feature.id === intentFeature.id && resolvedIntent?.goal !== "unknown") return;
+      const key=searchRowKey(row);
+      const previous=deduped.get(key);
+      if (!previous || row.score > previous.score) deduped.set(key,row);
+    });
+    return [...deduped.values()].sort((a,b)=>b.score-a.score).slice(0,12);
+  }, [query, dynamic, allAllowed, routines, workflows, selected, context?.currentTask?.featureId, pageFeature, intentFeature, resolvedIntent?.goal]);
 
   const chooseKnown = (feature: GuideFeature) => {
     if (!canAccessGuideFeature(feature, permissionSession)) { setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية."); return; }
@@ -891,15 +1055,26 @@ export default function SmartGuide({
     if (mobile && !profile.iconHints?.[key]) {
       markGuideIconHintSeen(userId, key);
       refreshProfile();
+      iconActionRef.current={key,action};
       setIconIntro({ key, title, summary });
       setNotice("");
       return;
     }
+    iconActionRef.current=null;
     setIconIntro(null);
     action();
   };
 
+  const startIntroducedIconAction = () => {
+    const pending=iconActionRef.current;
+    if (!pending || pending.key !== iconIntro?.key) { setIconIntro(null); return; }
+    iconActionRef.current=null;
+    setIconIntro(null);
+    pending.action();
+  };
+
   const onboardingChoose = (kind: "build" | "review" | "reports") => {
+    showScreenHandoff("أفتح وجهتك", kind === "build" ? "سأفتح مساحة بناء الجدول." : kind === "review" ? "سأفتح الجدول ثم أجهز المراجعة." : "سأفتح التقرير المتاح ضمن صلاحياتك.");
     setDrawerHidden(true);
     setOnboardingDone(userId, true);
     refreshProfile();
@@ -911,6 +1086,46 @@ export default function SmartGuide({
       const next = permissions.includes(14) ? "reportDepartment" : permissions.includes(8) ? "reportInstructor" : permissions.includes(9) ? "reportRoom" : "dashboard";
       onNavigate(next);
     }
+  };
+
+  const handleSearchChange = (value:string) => {
+    if (!query.trim() && value.trim()) preSearchSheetRef.current=sheetLevel;
+    if (value.trim()) setSheetLevel("full");
+    setQuery(value);
+  };
+
+  const clearSearch = () => {
+    setQuery("");
+    setAiIntent(null);
+    setIntentLoading(false);
+    intentRequestRef.current+=1;
+    setSheetLevel(selectedId || selectedDynamic || preview ? "medium" : preSearchSheetRef.current);
+  };
+
+  const markAllNewSeen = () => {
+    markAllGuideProductUpdatesSeen(userId, allAllowed);
+    markAllDiscoveredSeen(userId, activeView);
+    refreshProfile();
+    setNotice("اعتبرت تحديثات المنتج والعناصر الجديدة في هذه الشاشة مقروءة.");
+  };
+
+  const showDynamicOnScreen = (feature:DynamicGuideFeature) => {
+    if (!feature.target) {
+      setDrawerHidden(false);
+      setNotice("اكتشفت هذا العنصر تلقائيًا، لكنه لا يملك هدفًا ثابتًا بعد. استخدم «أشر لي» وسأبقى معه بصريًا دون تنفيذ الضغط.");
+      return;
+    }
+    const element=targetNow(feature.target);
+    if (!element) {
+      setDrawerHidden(false);
+      setNotice("العنصر معروف، لكنه غير ظاهر في حالة الشاشة الحالية. افتح الجزء الذي يحتويه أو استخدم «أشر لي».");
+      return;
+    }
+    showScreenHandoff("هذا هو العنصر", `سأبرز «${feature.title}» ثم أعيد المرشد تلقائيًا.`);
+    setDrawerHidden(true);
+    element.scrollIntoView({ behavior:"smooth", block:"center", inline:"center" });
+    element.setAttribute("data-guide-hot","true");
+    window.setTimeout(()=>{element.removeAttribute("data-guide-hot");setDrawerHidden(false);setScreenHandoff(null);},2400);
   };
 
   const pageTitle = context?.view === activeView ? (context?.title || pageFeature?.title || "هذه الشاشة") : (pageFeature?.title || "هذه الشاشة");
@@ -925,7 +1140,7 @@ export default function SmartGuide({
       {!drawerHidden && !pointMode && !located && !preview ? (
         <div className="smart-guide-outside-dismiss no-print" role="presentation" onPointerDown={onClose} />
       ) : null}
-      <aside className={`smart-guide no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal="false" dir="rtl">
+      <aside className={`smart-guide no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal={!drawerHidden && !pointMode && !located && !preview} aria-hidden={drawerHidden || pointMode || located || preview ? true : undefined} tabIndex={-1} dir="rtl">
         <button type="button" className="smart-guide-sheet-handle" aria-label="تغيير ارتفاع المرشد" onPointerDown={onSheetPointerDown} onPointerUp={onSheetPointerUp}><i /></button>
         <header className="smart-guide-hero">
           <div>
@@ -934,9 +1149,9 @@ export default function SmartGuide({
             <p>{isExpert ? "أنت متمكن هنا؛ سأبقى هادئًا ما لم تخرج العملية عن نمطك المعتاد." : what}</p>
           </div>
           <div className="smart-guide-hero-tools">
-            <button type="button" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { setDrawerHidden(true); setPointMode(true); })} aria-label="أشر لي" title="أشر لي"><Target /></button>
+            <button type="button" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { showScreenHandoff("وضع أشر لي", "سأخفي المرشد وأنتظر اختيارك؛ الضغط لن يُنفذ العنصر."); setDrawerHidden(true); setPointMode(true); })} aria-label="أشر لي" title="أشر لي"><Target /></button>
             <button type="button" onClick={() => runIconAction("now", "ماذا يحدث الآن؟", "ألخص حالة الشاشة الحالية وما يستحق الانتباه دون تغيير أي بيانات.", () => { setSelectedId(null); setSelectedDynamic(null); setNotice(what); })} aria-label="ماذا يحدث الآن؟" title="ماذا يحدث الآن؟"><BrainCircuit /></button>
-            <button type="button" onClick={() => runIconAction("resume", "أكمل من حيث توقفت", "أعيدك إلى آخر مهمة وخطوتها الحالية، ثم أترك القرار لك.", () => { setDrawerHidden(true); resumeTask(); })} aria-label="أكمل من حيث توقفت" title="أكمل من حيث توقفت"><History /></button>
+            <button type="button" onClick={() => runIconAction("resume", "أكمل من حيث توقفت", "أعيدك إلى آخر مهمة وخطوتها الحالية، ثم أترك القرار لك.", resumeTask)} aria-label="أكمل من حيث توقفت" title="أكمل من حيث توقفت"><History /></button>
             <button type="button" className="smart-guide-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
           </div>
         </header>
@@ -944,8 +1159,8 @@ export default function SmartGuide({
         {iconIntro ? (
           <section className="smart-guide-icon-intro" role="status" aria-live="polite">
             <Lightbulb aria-hidden="true" />
-            <div><strong>{iconIntro.title}</strong><small>{iconIntro.summary} اضغط الأيقونة مرة أخرى للتنفيذ.</small></div>
-            <button type="button" onClick={() => setIconIntro(null)} aria-label="إخفاء التعريف"><X /></button>
+            <div><strong>{iconIntro.title}</strong><small>{iconIntro.summary}</small></div>
+            <div className="smart-guide-icon-intro-actions"><button type="button" className="primary" onClick={startIntroducedIconAction}><Play />ابدأ</button><button type="button" onClick={() => { iconActionRef.current=null; setIconIntro(null); }} aria-label="إخفاء التعريف"><X /></button></div>
           </section>
         ) : null}
 
@@ -963,7 +1178,7 @@ export default function SmartGuide({
           const current = profile.currentTask;
           const task = current?.id?.startsWith("work:page:") && profile.previousTask ? profile.previousTask : (current || profile.previousTask);
           if (!task || Date.now() - Number(task.updatedAt || 0) > 24 * 60 * 60 * 1000) return null;
-          return <button type="button" className="smart-guide-pending-task" onClick={() => { setDrawerHidden(true); resumeTask(); }}><History /><span><small>مهمة معلقة</small><strong>{task.title}</strong></span><ChevronLeft /></button>;
+          return <button type="button" className="smart-guide-pending-task" onClick={resumeTask}><History /><span><small>مهمة معلقة</small><strong>{task.title}</strong></span><ChevronLeft /></button>;
         })() : null}
 
         {!profile.onboardingDone && !isExpert ? (
@@ -979,8 +1194,8 @@ export default function SmartGuide({
 
         <label className="smart-guide-search" role="search">
           <Search aria-hidden="true" />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="اسأل بطريقتك… مثل: شلون أنقل المادة؟" aria-label="اسأل المرشد" />
-          {query ? <button type="button" onClick={() => setQuery("")} aria-label="مسح السؤال">×</button> : null}
+          <input value={query} onChange={(event) => handleSearchChange(event.target.value)} placeholder="اسأل بطريقتك… مثل: شلون أنقل المادة؟" aria-label="اسأل المرشد" />
+          {query ? <button type="button" onClick={clearSearch} aria-label="مسح السؤال">×</button> : null}
         </label>
 
         {hint ? (
@@ -994,7 +1209,7 @@ export default function SmartGuide({
         <nav className="smart-guide-browse" aria-label="أقسام المرشد">
           <button className={browseMode === "forYou" ? "active" : ""} type="button" onClick={() => setBrowseMode("forYou")}><Target /><span>لك</span></button>
           <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => setBrowseMode("here")}><LayoutDashboard /><span>هنا</span></button>
-          <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => setBrowseMode("new")}><Sparkles /><span>الجديد</span>{allChanged.length + discoveredChanged.length ? <i>{Math.min(99, allChanged.length + discoveredChanged.length)}</i> : null}</button>
+          <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => setBrowseMode("new")}><Sparkles /><span>الجديد</span>{unreadSummary.total ? <i dir="ltr">{formatBadgeCount(unreadSummary.total,99)}</i> : null}</button>
           <button className={browseMode === "all" ? "active" : ""} type="button" onClick={() => setBrowseMode("all")}><Compass /><span>الكل</span></button>
         </nav>
 
@@ -1004,9 +1219,9 @@ export default function SmartGuide({
             <div><small>العنصر المحدد</small><strong>{context.selected.course}</strong><span>{[context.selected.room, context.selected.start].filter(Boolean).join(" · ")}</span></div>
             <div className="smart-guide-selected-actions">
               <button type="button" onClick={() => chooseKnown(featureById("schedule.action.move-room")!)}>تغيير القاعة</button>
-              <button type="button" onClick={() => { setDrawerHidden(true); runCommand({ scope: "schedule", type: "openEditRow", value: String(context.selected.id) }); }}>تغيير الوقت</button>
-              <button type="button" onClick={() => { setDrawerHidden(true); runCommand({ scope: "schedule", type: "focusRow", value: String(context.selected.id) }); }}>{context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"}</button>
-              <button type="button" onClick={() => { setDrawerHidden(true); runCommand({ scope: "schedule", type: "findAlternative", value: String(context.selected.id) }); }}>ابحث عن بديل</button>
+              <button type="button" onClick={() => { showScreenHandoff("أفتح محرر المقرر","سأفتح المقرر المحدد لتغيير الوقت؛ لن أحفظ نيابةً عنك."); setDrawerHidden(true); runCommand({ scope: "schedule", type: "openEditRow", value: String(context.selected.id) }); }}>تغيير الوقت</button>
+              <button type="button" onClick={() => { showScreenHandoff("أحدد المقرر على الشاشة", context.selected.conflict ? "سأبرز مكان التعارض الحالي." : "سأبرز بطاقة المقرر على الجدول."); setDrawerHidden(true); runCommand({ scope: "schedule", type: "focusRow", value: String(context.selected.id) }); }}>{context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"}</button>
+              <button type="button" onClick={() => { showScreenHandoff("أبحث عن بديل","سأفتح البدائل للمقرر المحدد دون اعتماد تغيير."); setDrawerHidden(true); runCommand({ scope: "schedule", type: "findAlternative", value: String(context.selected.id) }); }}>ابحث عن بديل</button>
             </div>
           </section>
         ) : null}
@@ -1019,6 +1234,7 @@ export default function SmartGuide({
           <section className="smart-guide-results">
             <div className="smart-guide-section-head"><div><small>فهمت سؤالك</small><strong>{specialIntent || results.length ? "الأقرب إلى مقصدك" : "لم أجد تطابقًا مباشرًا"}</strong></div></div>
             {intentLoading ? <div className="smart-guide-intent-status"><Sparkles /><span>أفهم القيود التي ذكرتها…</span></div> : null}
+            {!specialIntent && resolvedIntent?.clarification ? <div className="smart-guide-clarification" role="status"><Lightbulb /><span>{resolvedIntent.clarification}</span>{intentFeature ? <button type="button" onClick={() => chooseKnown(intentFeature)}>اعرض الأقرب</button> : null}</div> : null}
             {!specialIntent && resolvedIntent?.goal !== "unknown" && intentFeature ? (
               <article className="smart-guide-intent-card">
                 <span><BrainCircuit /></span>
@@ -1035,7 +1251,7 @@ export default function SmartGuide({
                 {Number(resolvedIntent.confidence || 0) < .62 ? <button type="button" onClick={() => chooseKnown(intentFeature)}>هل هذا ما تقصده؟</button> : resolvedIntent.requestedAction === "simulate" ? <button type="button" onClick={() => simulateFeature(intentFeature)}>جرّب بأمان</button> : <button type="button" onClick={() => chooseKnown(intentFeature)}>متابعة</button>}
               </article>
             ) : null}
-            {specialIntent ? <article className="smart-guide-special-answer"><span><History /></span><div><strong>{specialIntent.title}</strong><small>{specialIntent.detail}</small></div>{specialIntent.kind === "resume" ? <button type="button" onClick={() => { setDrawerHidden(true); resumeTask(); }}>أكمل</button> : specialIntent.kind === "repeat" ? <button type="button" onClick={() => repeatSequence.length ? replayWorkflow(repeatSequence) : routines[0] ? runRoutine(routines[0]) : workflows[0] ? replayWorkflow(workflows[0].sequence) : setBrowseMode("forYou")}>جهّز المسار</button> : specialIntent.kind === "faster" ? <button type="button" onClick={() => replayWorkflow(workflows[0].sequence)}>افتح الأقصر</button> : null}</article> : null}
+            {specialIntent ? <article className="smart-guide-special-answer"><span><History /></span><div><strong>{specialIntent.title}</strong><small>{specialIntent.detail}</small></div>{specialIntent.kind === "resume" ? <button type="button" onClick={resumeTask}>أكمل</button> : specialIntent.kind === "repeat" ? <button type="button" onClick={() => repeatSequence.length ? replayWorkflow(repeatSequence) : routines[0] ? runRoutine(routines[0]) : workflows[0] ? replayWorkflow(workflows[0].sequence) : setBrowseMode("forYou")}>جهّز المسار</button> : specialIntent.kind === "faster" ? <button type="button" onClick={() => replayWorkflow(workflows[0].sequence)}>افتح الأقصر</button> : null}</article> : null}
             {results.map((row) => {
               if (row.kind === "known") return <button key={row.feature.id} type="button" onClick={() => chooseKnown(row.feature)}><span><Sparkles /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div></button>;
               if (row.kind === "dynamic") return <button key={row.feature.id} type="button" onClick={() => chooseDynamic(row.feature)}><span><MousePointer2 /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div></button>;
@@ -1058,15 +1274,7 @@ export default function SmartGuide({
         {selectedDynamic ? (
           <section className="smart-guide-focus-card">
             <header><span><MousePointer2 /></span><div><small>عنصر حي</small><strong>{selectedDynamic.title}</strong><p>{explainDynamic(selectedDynamic)}</p></div></header>
-            <div className="smart-guide-actions one"><button type="button" onClick={() => {
-              setDrawerHidden(true);
-              if (selectedDynamic.target) {
-                const element = targetNow(selectedDynamic.target);
-                element?.scrollIntoView({ behavior: "smooth", block: "center" });
-                element?.setAttribute("data-guide-hot", "true");
-                window.setTimeout(() => element?.removeAttribute("data-guide-hot"), 2400);
-              } else setNotice("اكتشفت هذا العنصر تلقائيًا، لكنه لا يملك هدفًا ثابتًا بعد. استخدم «أشر لي» وسأبقى معه بصريًا دون تنفيذ الضغط.");
-            }}><Eye />أرني مكانه</button></div>
+            <div className="smart-guide-actions one"><button type="button" onClick={() => showDynamicOnScreen(selectedDynamic)}><Eye />أرني مكانه</button></div>
             <button className="smart-guide-back-link" type="button" onClick={() => setSelectedDynamic(null)}><ArrowLeft />العودة</button>
           </section>
         ) : null}
@@ -1085,19 +1293,21 @@ export default function SmartGuide({
             {browseMode === "here" ? (
               <>
                 <section className="smart-guide-section-head"><div><small>هذه الشاشة</small><strong>الأدوات المتاحة الآن</strong></div></section>
-                <div className="smart-guide-feature-grid">{known.filter(feature => !feature.id.startsWith("page.")).slice(0,12).map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.summary}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}</div>
+                <div className="smart-guide-feature-grid">{known.filter(feature => !feature.id.startsWith("page.")).map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.summary}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}</div>
                 <section className="smart-guide-section-head"><div><small>اكتشاف حي</small><strong>عناصر ظهرت في الشاشة</strong></div></section>
-                <div className="smart-guide-live-controls">{dynamic.filter(item => !item.target || !featureById(item.target)).slice(0,8).map(item => <button type="button" key={item.id} onClick={() => chooseDynamic(item)}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}{!dynamic.filter(item => !item.target || !featureById(item.target)).length?<p>كل العناصر الظاهرة حاليًا معرّفة داخل المرشد.</p>:null}</div>
+                <div className="smart-guide-live-controls">{dynamic.filter(item => !item.target || !featureById(item.target)).map(item => <button type="button" key={item.id} onClick={() => chooseDynamic(item)}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}{!dynamic.filter(item => !item.target || !featureById(item.target)).length?<p>كل العناصر الظاهرة حاليًا معرّفة داخل المرشد.</p>:null}</div>
               </>
             ) : null}
 
             {browseMode === "new" ? (
               <>
-                <section className="smart-guide-section-head"><div><small>ما الجديد لك</small><strong>{allChanged.length || discoveredChanged.length ? "ميزات جديدة أو متغيرة منذ آخر زيارة" : "أنت مطّلع على التحديثات المتاحة"}</strong></div></section>
-                <div className="smart-guide-new-grid">
-                  {allChanged.slice(0,14).map(feature => <button type="button" key={feature.id} onClick={() => chooseKnown(feature)}><Sparkles /><span><strong>{feature.title}</strong><small>{profile.mastery[feature.id]?.versionSeen ? "تغيّرت منذ آخر استخدام لك" : "أضيفت بعد آخر زيارة لك"}</small></span></button>)}
-                  {discoveredChanged.slice(0,8).map(item => <button type="button" key={item.id} onClick={() => { markDiscoveredSeen(userId,item.id); refreshProfile(); const live=dynamic.find(value=>value.id===item.id); if(live) chooseDynamic(live); else setNotice(`ظهرت «${item.title}» مؤخرًا في ${item.view}. سأحددها لك عندما تكون في تلك الشاشة.`); }}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}
+                <section className="smart-guide-section-head smart-guide-new-head"><div><small>ما الجديد لك</small><strong>{unreadSummary.total ? "تحديثات واضحة ومفصولة حسب مصدرها" : "أنت مطّلع على التحديثات المتاحة"}</strong></div>{unreadSummary.total ? <button type="button" className="smart-guide-mark-all" onClick={markAllNewSeen}>اعتبر الكل مقروءًا</button> : null}</section>
+                <div className="smart-guide-new-summary" aria-label="نطاق عداد الجديد">
+                  <article><Sparkles /><span><strong>{unreadSummary.product.length.toLocaleString("ar-KW-u-nu-latn")}</strong><small>تحديثات المنتج ضمن صلاحياتك</small></span></article>
+                  <article><MousePointer2 /><span><strong>{unreadSummary.runtime.length.toLocaleString("ar-KW-u-nu-latn")}</strong><small>عناصر جديدة في هذه الشاشة فقط</small></span></article>
                 </div>
+                {allChanged.length ? <><section className="smart-guide-new-scope"><strong>تحديثات المنتج</strong><small>ميزات مسجلة تغيّر إصدارها أو أضيفت منذ آخر قراءة لك.</small></section><div className="smart-guide-new-grid">{allChanged.map(feature => <button type="button" key={feature.id} onClick={() => chooseKnown(feature)}><Sparkles /><span><strong>{feature.title}</strong><small>{profile.mastery[feature.id]?.versionSeen ? "تغيّرت منذ آخر استخدام لك" : "تحديث منتج لم تقرأه بعد"}</small></span></button>)}</div></> : null}
+                {discoveredChanged.length ? <><section className="smart-guide-new-scope"><strong>جديد في {pageTitle}</strong><small>عناصر واجهة اكتشفها المرشد في هذه الشاشة بعد خط الأساس الأول.</small></section><div className="smart-guide-new-grid">{discoveredChanged.map(item => <button type="button" key={item.id} onClick={() => { markDiscoveredSeen(userId,item.id); refreshProfile(); const live=dynamic.find(value=>value.id===item.id); if(live) chooseDynamic(live); else setNotice(`ظهر «${item.title}» مؤخرًا هنا. سأحدده لك عندما يعود للظهور.`); }}><MousePointer2 /><span><strong>{item.title}</strong><small>عنصر واجهة جديد في هذه الشاشة</small></span></button>)}</div></> : null}
               </>
             ) : null}
 
@@ -1105,8 +1315,8 @@ export default function SmartGuide({
               <>
                 <section className="smart-guide-section-head"><div><small>كل الميزات</small><strong>ضمن صلاحياتك فقط</strong></div></section>
                 <div className="smart-guide-feature-grid">
-                  {allAllowed.slice(0,36).map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.group}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}
-                  {dynamic.filter(item => !featureById(item.id)).slice(0,12).map(item => <button key={item.id} type="button" onClick={() => chooseDynamic(item)}><span><MousePointer2 /></span><div><strong>{item.title}</strong><small>مكتشفة تلقائيًا</small></div></button>)}
+                  {allAllowed.map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.group}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}
+                  {dynamic.filter(item => !featureById(item.id)).map(item => <button key={item.id} type="button" onClick={() => chooseDynamic(item)}><span><MousePointer2 /></span><div><strong>{item.title}</strong><small>مكتشفة تلقائيًا</small></div></button>)}
                 </div>
               </>
             ) : null}
@@ -1123,7 +1333,7 @@ export default function SmartGuide({
         <footer className="smart-guide-footer">
           <button type="button" onClick={() => setSettingsOpen((value) => !value)}><Settings2 />المساعدة الاستباقية</button>
           <small>{profile.hintMode === "off" ? "متوقفة" : profile.hintMode === "quiet" ? "قليلة" : "تلقائية"}</small>
-          <em>يتعلم نمط الاستخدام على هذا الجهاز، ويستخدم أقل قدر من البيانات اللازمة للإرشاد.</em>
+          <em>التعلّم عن نمط استخدامك محفوظ على هذا الجهاز. وعند الحاجة فقط لفهم سؤال مركّب قد يُرسل نص السؤال وسياق محدود إلى خدمة الذكاء المهيأة للنظام.</em>
         </footer>
         {settingsOpen ? (
           <div className="smart-guide-settings">
@@ -1134,15 +1344,17 @@ export default function SmartGuide({
         ) : null}
       </aside>
 
+      {screenHandoff ? <div className="guide-screen-handoff no-print" role="status" aria-live="assertive"><span><Sparkles /></span><div><strong>{screenHandoff.title}</strong><small>{screenHandoff.detail}</small></div></div> : null}
+
       {pointMode ? (
-        <div className="guide-point-banner no-print"><Hand /><span><strong>أشر لي</strong> اضغط أي عنصر داخل SCHEDULE؛ لن أنفذ الضغط، بل سأشرح العنصر فقط.</span><button type="button" onClick={() => setPointMode(false)}>إلغاء</button></div>
+        <div className="guide-point-banner no-print" data-guide-ignore="شريط وضع أشر لي جزء من المرشد وليس هدفًا للشرح"><Hand /><span><strong>أشر لي</strong> اضغط أي عنصر داخل SCHEDULE؛ لن أنفذ الضغط، بل سأشرح العنصر فقط.</span><button type="button" data-guide-ignore="زر إلغاء أشر لي يجب أن يبقى إجراء تحكم بالمرشد" onClick={(event) => { event.stopPropagation(); setPointMode(false); setDrawerHidden(false); }}>إلغاء</button></div>
       ) : null}
 
       {located ? (
         <div className="guide-ghost-layer no-print" aria-live="polite">
           <div className="guide-ghost-ring" style={{ top: Math.max(4, located.rect.top - 7), left: Math.max(4, located.rect.left - 7), width: located.rect.width + 14, height: located.rect.height + 14 }} />
           <MousePointer2 className="guide-ghost-hand" style={{ top: Math.max(12, located.rect.top + Math.min(located.rect.height * 0.45, 36)), left: Math.max(12, located.rect.left + Math.min(located.rect.width * 0.55, 90)) }} />
-          <div className="guide-ghost-card" style={{ top: Math.min(window.innerHeight - 170, Math.max(16, located.rect.bottom + 14)), left: Math.min(window.innerWidth - 330, Math.max(16, located.rect.left)) }}>
+          <div className="guide-ghost-card" role="dialog" aria-modal="true" aria-label="خطوات الإرشاد الحي" tabIndex={-1} style={{ top: Math.min(window.innerHeight - 170, Math.max(16, located.rect.bottom + 14)), left: Math.min(window.innerWidth - 330, Math.max(16, located.rect.left)) }}>
             <small>{located.index + 1} من {located.total}</small><strong>{located.text}</strong>
             <div><button type="button" onClick={stopTour}>إيقاف</button><button type="button" className="primary" onClick={nextTour}>{located.index + 1 >= located.total ? <><Check />تم</> : <>التالي<ChevronLeft /></>}</button></div>
           </div>
@@ -1151,10 +1363,10 @@ export default function SmartGuide({
 
       {preview ? (
         <div className="guide-preview-backdrop no-print">
-          <section className="guide-preview">
+          <section className="guide-preview" role="dialog" aria-modal="true" aria-label="معاينة أكمل عني" tabIndex={-1}>
             <span><ShieldCheck /></span><h3>معاينة «أكمل عني»</h3>
             <p>سأنفذ فقط خطوة واجهة آمنة مرتبطة بـ«{preview.feature.title}». لن أحذف أو أنشر أو أعتمد تغييرًا حساسًا دون قرارك.</p>
-            <div><button type="button" onClick={() => setPreview(null)}>إلغاء</button><button type="button" className="primary" onClick={confirmPreview}><WandSparkles />جهّزها لي</button></div>
+            <div><button type="button" onClick={cancelPreview}>إلغاء</button><button type="button" className="primary" onClick={confirmPreview}><WandSparkles />جهّزها لي</button></div>
           </section>
         </div>
       ) : null}
