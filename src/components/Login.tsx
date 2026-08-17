@@ -106,6 +106,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 onClick={() => setIdentityOpen(true)}
                 aria-label="افتح رحلة SCHEDULE"
                 title="رحلة SCHEDULE"
+                data-guide-ignore="زر تعريفي قبل تسجيل الدخول يفتح رحلة SCHEDULE فقط ولا ينفذ إجراءً داخل النظام"
               >
                 <span className="apex-login-pulse-rings" aria-hidden="true">
                   <i />
