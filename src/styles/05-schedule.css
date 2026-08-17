@@ -973,12 +973,23 @@ button.schedule-radar:hover{filter:brightness(.96)}
   margin:0;
   min-width:0;
   max-width:none;
-  z-index:2;
+  z-index:4;
+  overflow:visible;
 }
+/* In rooms/buildings the vacated slot can be very narrow. Centering the pill
+   inside the dashed trace made «نُقل من هنا» clip or look detached from its
+   source. Anchor the pill to the source edge and let it breathe outside the
+   slot while keeping the trace itself locked to the original time range. */
 .rooms-track>.rooms-move-trace>span{
-  max-width:calc(100% - 6px);
+  position:absolute;
+  top:50%;
+  inset-inline-start:8px;
+  transform:translateY(-50%);
+  min-width:max-content;
+  max-width:min(15rem, calc(100vw - 56px));
   overflow:hidden;
   text-overflow:ellipsis;
+  white-space:nowrap;
 }
 
 .week-drag-handle{display:none}

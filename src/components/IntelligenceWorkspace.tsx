@@ -1439,6 +1439,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     window.addEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
     return () => window.removeEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
   }, []);
+  useEffect(() => {
+    if (!rows.length || !collegeId || !termId) return;
+    let request: any = null;
+    try { request = JSON.parse(sessionStorage.getItem("schedule-guide-simulation") || "null"); } catch {}
+    if (!request || Date.now() - Number(request.createdAt || 0) > 10 * 60 * 1000) return;
+    try { sessionStorage.removeItem("schedule-guide-simulation"); } catch {}
+    const run = async () => {
+      const copy = rows.map((row) => ({ ...row }));
+      setActiveDraftId(null);
+      setScenario(copy);
+      const requestedId = Number(request.selectedId || 0);
+      const selected = requestedId && copy.some(row => Number(row.id) === requestedId) ? requestedId : Number(copy[0]?.id || 0);
+      setScenarioId(selected || "");
+      setTab("twin");
+      setTwinCard("board");
+      await evaluateScenario(copy);
+      const subject = String(request.selectedCourse || "").trim();
+      const taskLabel = request.task === "move-room" ? "نقل القاعة" : request.task === "change-time" ? "تغيير الوقت" : request.task === "change-instructor" ? "تغيير الأستاذ" : "التغيير المطلوب";
+      setMessage(`${subject ? `فتحت نسخة تجريبية للمقرر «${subject}»` : "فتحت نسخة تجريبية من الجدول"} لتجربة ${taskLabel}. لن يتغير الجدول الحقيقي حتى تعتمد قرارًا بنفسك.`);
+    };
+    void run();
+  }, [collegeId, rows, sectionId, termId]);
   const insightScenes: Array<{
     value: InsightScene;
     label: string;

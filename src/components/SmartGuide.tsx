@@ -38,11 +38,14 @@ import {
   commonWorkflows,
   dialectIntentTerms,
   discoverVisibleControls,
+  discoveredNew,
   featureById,
   loadGuideProfile,
   markFeatureSeen,
+  markDiscoveredSeen,
   masteryScore,
   noteHint,
+  noteDiscoveredControls,
   predictedNextFeature,
   recordFeatureUse,
   removeGuideRoutine,
@@ -62,7 +65,7 @@ type GuideCommand = {
   target?: string;
   task?: string;
 };
-type GuideHint = { key?: string; title: string; detail?: string; level?: "soft" | "strong" };
+type GuideHint = { key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" };
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -185,6 +188,7 @@ export default function SmartGuide({
   const [collectiveFriction, setCollectiveFriction] = useState<Array<{ name: string; count: number }>>([]);
   const drawerRef = useRef<HTMLElement | null>(null);
   const lastEscalationRef = useRef("");
+  const discoveredSignatureRef = useRef("");
 
   const refreshProfile = useCallback(() => setProfile(loadGuideProfile(userId)), [userId]);
   const admin = Boolean(root || user?.IsAdminUser);
@@ -195,6 +199,7 @@ export default function SmartGuide({
   const isExpert = Boolean(context?.metrics?.isExpert) || pageMastery >= 0.72;
   const changed = useMemo(() => changedFeatures(profile, activeView, permissions, root, admin), [profile, activeView, permissions, root, admin]);
   const allChanged = useMemo(() => allAllowed.filter(feature => profile.catalog?.[feature.id] == null || feature.version > Number(profile.catalog?.[feature.id] || 0)).sort((a,b) => b.version - a.version), [allAllowed, profile]);
+  const discoveredChanged = useMemo(() => discoveredNew(profile), [profile]);
   const workflows = useMemo(() => commonWorkflows(profile, activeView), [profile, activeView]);
   const selected = selectedId ? featureById(selectedId) : null;
   const selectedMastery = selected ? masteryScore(profile, selected) : 0;
@@ -246,6 +251,17 @@ export default function SmartGuide({
     if (command.scope === "app") {
       if (command.type === "navigate" && command.value) onNavigate(command.value);
       if (command.type === "simulate") {
+        try {
+          sessionStorage.setItem("schedule-guide-simulation", JSON.stringify({
+            task: command.task || "scenario",
+            selectedId: Number(context?.selected?.id || 0),
+            selectedCourse: String(context?.selected?.course || ""),
+            collegeId: Number(context?.collegeId || 0),
+            sectionId: Number(context?.sectionId || 0),
+            termId: Number(context?.termId || 0),
+            createdAt: Date.now(),
+          }));
+        } catch {}
         onNavigate(command.value || "intelligence");
         window.setTimeout(() => {
           window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail: { scope: "intelligence", type: "scene", value: "try", task: command.task } }));
@@ -254,7 +270,7 @@ export default function SmartGuide({
       return;
     }
     window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail: command }));
-  }, [onNavigate]);
+  }, [context?.collegeId, context?.sectionId, context?.selected?.course, context?.selected?.id, context?.termId, onNavigate]);
 
   useEffect(() => setProfile(loadGuideProfile(userId)), [userId]);
   useEffect(() => {
@@ -268,11 +284,28 @@ export default function SmartGuide({
 
   useEffect(() => {
     if (!open) return;
-    const scan = () => setDynamic(discoverVisibleControls(activeView));
+    const scan = () => {
+      const items = discoverVisibleControls(activeView);
+      setDynamic(items);
+      const signature = items.map(item => `${item.id}:${item.title}:${item.target || ""}`).join("|");
+      if (signature !== discoveredSignatureRef.current) {
+        discoveredSignatureRef.current = signature;
+        noteDiscoveredControls(userId, activeView, items);
+      }
+    };
     scan();
-    const id = window.setInterval(scan, 1000);
+    const id = window.setInterval(scan, 1400);
     return () => window.clearInterval(id);
-  }, [open, activeView, context]);
+  }, [open, activeView, context, userId]);
+
+  useEffect(() => {
+    if (!open || !hint?.featureId) return;
+    const feature = featureById(hint.featureId);
+    if (!feature) return;
+    setSelectedId(feature.id);
+    setSelectedDynamic(null);
+    markFeatureSeen(userId, feature.id);
+  }, [hint?.featureId, open, userId]);
 
   useEffect(() => {
     if (!open) {
@@ -673,7 +706,7 @@ export default function SmartGuide({
       <aside className="smart-guide no-print" ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal="false" dir="rtl">
         <header className="smart-guide-hero">
           <div>
-            <span className="smart-guide-kicker"><Bot aria-hidden="true" /> مرشد SCHEDULE</span>
+            <span className="smart-guide-kicker"><Bot aria-hidden="true" /> مرشد SCHEDULE <i aria-hidden="true">·</i> <b>{pageTitle}</b></span>
             <h2>كيف؟</h2>
             <p>{isExpert ? "أعرف أنك متمكن في هذه المنطقة، لذلك سأبقى هادئًا ما لم تخرج العملية عن نمطك المعتاد." : what}</p>
           </div>
@@ -723,16 +756,16 @@ export default function SmartGuide({
         ) : null}
 
         <div className="smart-guide-primary-actions">
-          <button type="button" onClick={() => setPointMode(true)}><Target />أشر لي</button>
-          <button type="button" onClick={() => { setSelectedId(null); setSelectedDynamic(null); setNotice(what); }}><BrainCircuit />ماذا يحدث الآن؟</button>
-          <button type="button" onClick={() => { setSelectedId(null); setSelectedDynamic(null); setQuery(""); setNotice(""); setBrowseMode("here"); }}><Compass />ماذا يمكنني أن أفعل هنا؟</button>
-          <button type="button" onClick={resumeTask}><History />أكمل من حيث توقفت</button>
+          <button type="button" aria-label="أشر لي على أي عنصر" onClick={() => setPointMode(true)}><Target /><span>أشر لي</span></button>
+          <button type="button" aria-label="ماذا يحدث الآن؟" onClick={() => { setSelectedId(null); setSelectedDynamic(null); setNotice(what); }}><BrainCircuit /><span>الآن</span></button>
+          <button type="button" aria-label="ماذا يمكنني أن أفعل هنا؟" onClick={() => { setSelectedId(null); setSelectedDynamic(null); setQuery(""); setNotice(""); setBrowseMode("here"); }}><Compass /><span>هنا</span></button>
+          <button type="button" aria-label="أكمل من حيث توقفت" onClick={resumeTask}><History /><span>أكمل</span></button>
         </div>
         <nav className="smart-guide-browse" aria-label="أقسام المرشد">
-          <button className={browseMode === "forYou" ? "active" : ""} type="button" onClick={() => setBrowseMode("forYou")}>لك</button>
-          <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => setBrowseMode("here")}>هذه الشاشة</button>
-          <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => setBrowseMode("new")}>ما الجديد{allChanged.length ? <i>{Math.min(99, allChanged.length)}</i> : null}</button>
-          <button className={browseMode === "all" ? "active" : ""} type="button" onClick={() => setBrowseMode("all")}>كل الميزات</button>
+          <button className={browseMode === "forYou" ? "active" : ""} type="button" onClick={() => setBrowseMode("forYou")}><Target /><span>لك</span></button>
+          <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => setBrowseMode("here")}><LayoutDashboard /><span>الشاشة</span></button>
+          <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => setBrowseMode("new")}><Sparkles /><span>الجديد</span>{allChanged.length + discoveredChanged.length ? <i>{Math.min(99, allChanged.length + discoveredChanged.length)}</i> : null}</button>
+          <button className={browseMode === "all" ? "active" : ""} type="button" onClick={() => setBrowseMode("all")}><Compass /><span>الكل</span></button>
         </nav>
 
         {context?.view === activeView && context?.selected ? (
@@ -812,9 +845,10 @@ export default function SmartGuide({
 
             {browseMode === "new" ? (
               <>
-                <section className="smart-guide-section-head"><div><small>ما الجديد لك</small><strong>{allChanged.length ? "ميزات جديدة أو متغيرة منذ آخر زيارة" : "أنت مطّلع على التحديثات المتاحة"}</strong></div></section>
+                <section className="smart-guide-section-head"><div><small>ما الجديد لك</small><strong>{allChanged.length || discoveredChanged.length ? "ميزات جديدة أو متغيرة منذ آخر زيارة" : "أنت مطّلع على التحديثات المتاحة"}</strong></div></section>
                 <div className="smart-guide-new-grid">
-                  {allChanged.slice(0,18).map(feature => <button type="button" key={feature.id} onClick={() => chooseKnown(feature)}><Sparkles /><span><strong>{feature.title}</strong><small>{profile.mastery[feature.id]?.versionSeen ? "تغيّرت منذ آخر استخدام لك" : "أضيفت بعد آخر زيارة لك"}</small></span></button>)}
+                  {allChanged.slice(0,14).map(feature => <button type="button" key={feature.id} onClick={() => chooseKnown(feature)}><Sparkles /><span><strong>{feature.title}</strong><small>{profile.mastery[feature.id]?.versionSeen ? "تغيّرت منذ آخر استخدام لك" : "أضيفت بعد آخر زيارة لك"}</small></span></button>)}
+                  {discoveredChanged.slice(0,8).map(item => <button type="button" key={item.id} onClick={() => { markDiscoveredSeen(userId,item.id); refreshProfile(); const live=dynamic.find(value=>value.id===item.id); if(live) chooseDynamic(live); else setNotice(`ظهرت «${item.title}» مؤخرًا في ${item.view}. سأحددها لك عندما تكون في تلك الشاشة.`); }}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}
                 </div>
               </>
             ) : null}

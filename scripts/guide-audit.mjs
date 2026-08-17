@@ -67,6 +67,8 @@ const requiredFeatures = [
 for (const id of requiredFeatures) if (!featureIds.has(id)) failures.push(`ميزة أساسية مفقودة من المرشد: ${id}`);
 const requiredMechanisms = [
   [registry, "discoverVisibleControls", "الاكتشاف التلقائي للميزات"],
+  [registry, "noteDiscoveredControls", "إضافة العناصر الجديدة تلقائيًا إلى ذاكرة المرشد"],
+  [registry, "discoveredNew", "إظهار العناصر المكتشفة تلقائيًا ضمن ما الجديد"],
   [registry, "masteryScore", "تعلم إتقان المستخدم"],
   [registry, "commonWorkflows", "تعلم المسارات المعتادة"],
   [registry, "changedFeatures", "ما الجديد لكل مستخدم"],
@@ -84,6 +86,21 @@ const requiredMechanisms = [
 ];
 for (const [text, token, label] of requiredMechanisms) if (!text.includes(token)) failures.push(`آلية المرشد مفقودة: ${label}`);
 if (/فيديو|<video\b/i.test(smartGuide)) failures.push("المرشد يحتوي على فيديو رغم اعتماد الإرشاد الحي بدل الفيديو");
+
+const guideCss = read("src/styles/03-shell.css");
+const featureBlocks = [...registry.matchAll(/\{\s*id:\s*"([^"]+)"([\s\S]*?)\},/g)];
+for (const match of featureBlocks) {
+  const [_, id, block] = match;
+  if (!/title:\s*"/.test(block)) failures.push(`ميزة بلا عنوان عربي: ${id}`);
+  if (!/summary:\s*"/.test(block)) failures.push(`ميزة بلا شرح مختصر: ${id}`);
+  if (!/group:\s*"/.test(block)) failures.push(`ميزة بلا تصنيف: ${id}`);
+  if (!/keywords:\s*\[/.test(block)) failures.push(`ميزة بلا كلمات فهم: ${id}`);
+  if (!/version:\s*\d+/.test(block)) failures.push(`ميزة بلا رقم إصدار: ${id}`);
+}
+if (!guideCss.includes('body.guide-point-mode .smart-guide')) failures.push("وضع «أشر لي» لا يخفي درج المرشد أثناء الإشارة");
+if (!/smart-guide-browse[\s\S]{0,250}grid-template-columns:repeat\(4/.test(guideCss)) failures.push("تبويبات المرشد لا تستخدم أربعة أقسام مضغوطة");
+if (!guideCss.includes('smart-guide-infographic,.smart-guide-steps{display:none}')) failures.push("نسخة الهاتف ما زالت تعرض خطوات ورسومًا كبيرة داخل البطاقة بدل الإرشاد الحي");
+if (!smartGuide.includes('schedule-guide-simulation')) failures.push("المحاكاة لا تحفظ سياق المهمة قبل فتح مساحة «جرّب»");
 
 if (failures.length) {
   console.error("فشل تدقيق مرشد SCHEDULE:\n- " + failures.join("\n- "));

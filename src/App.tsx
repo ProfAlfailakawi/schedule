@@ -100,7 +100,7 @@ const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
 import { PrimaryButton } from "./components/ui";
 import SmartGuide from "./components/SmartGuide";
-import { canProactivelyHint, changedFeatures, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureUse, recordRoute, setGuideTask } from "./guide/smartGuide";
+import { canProactivelyHint, changedFeatures, discoveredNew, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureUse, recordRoute, setGuideTask } from "./guide/smartGuide";
 
 type View =
   | "dashboard"
@@ -424,7 +424,7 @@ export default function App() {
     [loading, setLoading] = useState(true);
   const [guideOpen, setGuideOpen] = useState(false);
   const [guideContext, setGuideContext] = useState<any>(null);
-  const [guideHint, setGuideHint] = useState<{ key?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
+  const [guideHint, setGuideHint] = useState<{ key?: string; featureId?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
   const [guideProfileRevision, setGuideProfileRevision] = useState(0);
   useEffect(() => { setTelemetryOwner(Number(user?.SystemUserId || 0)); }, [user?.SystemUserId]);
   useEffect(() => {
@@ -466,6 +466,7 @@ export default function App() {
       noteHint(Number(user.SystemUserId), key, false);
       setGuideHint({
         key,
+        featureId: detail.detectedHelp.featureId || undefined,
         title: detail.detectedHelp.title,
         detail: detail.detectedHelp.detail || "",
         level: severity,
@@ -478,7 +479,7 @@ export default function App() {
     const openGuide = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
       if (detail.context) setGuideContext((current:any) => ({ ...(current || {}), ...detail.context }));
-      if (detail.hint?.title) setGuideHint({ key:detail.hint.key, title:detail.hint.title, detail:detail.hint.detail || "", level:detail.hint.level === "strong" ? "strong" : "soft" });
+      if (detail.hint?.title) setGuideHint({ key:detail.hint.key, featureId:detail.hint.featureId, title:detail.hint.title, detail:detail.hint.detail || "", level:detail.hint.level === "strong" ? "strong" : "soft" });
       setGuideOpen(true);
     };
     window.addEventListener("schedule-smart-guide-open", openGuide as EventListener);
@@ -535,6 +536,130 @@ export default function App() {
         setGuideHint({ key:`route-bounce:${a}:${b}`, title:"يبدو أنك تبحث بين شاشتين", detail:"إذا كنت تبحث عن وظيفة محددة، يمكن لزر «كيف؟» أن يوصلك إليها مباشرةً. وإذا كان هذا مسارك المعتاد فسأتعلمه ولن أكرر الاقتراح.", level:"soft" });
       }
     }
+  }, [activeView, user?.SystemUserId]);
+
+  useEffect(() => {
+    const userId = Number(user?.SystemUserId || 0);
+    if (!userId || activeView === "schedules" || activeView === "intelligence") return;
+    const page = featureById(`page.${activeView}`);
+    const dirty = new Set<HTMLElement>();
+    const menuToggles = new Map<string, number[]>();
+    let selectedLabel = "";
+    let lastErrorText = "";
+    let lastErrorAt = 0;
+    let explorationAfterError = 0;
+    let publishTimer = 0;
+
+    const visible = (element: Element | null): element is HTMLElement => {
+      if (!(element instanceof HTMLElement)) return false;
+      const rect = element.getBoundingClientRect();
+      const style = window.getComputedStyle(element);
+      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
+    };
+    const labelOf = (element: HTMLElement | null) => String(element?.getAttribute("aria-label") || element?.getAttribute("title") || element?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 110);
+    const currentDialog = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"],.modal,.dialog,.drawer')].find(visible) || null;
+    const currentError = () => [...document.querySelectorAll<HTMLElement>('[role="alert"],.notice,.error,.field-error,.validation-error')].filter(visible).map(labelOf).find(text => /تعذر|خطأ|غير صالح|مطلوب|لا يمكن|فشل|تعارض/.test(text)) || "";
+    const publish = () => {
+      window.clearTimeout(publishTimer);
+      publishTimer = window.setTimeout(() => {
+        const dialog = currentDialog();
+        const activeTarget = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>("[data-guide-target]")?.getAttribute("data-guide-target") || "";
+        const errorText = currentError();
+        if (errorText && errorText !== lastErrorText) {
+          lastErrorText = errorText;
+          lastErrorAt = Date.now();
+          explorationAfterError = 0;
+        }
+        const pieces = [
+          dialog ? `نافذة مفتوحة: ${labelOf(dialog).slice(0, 64)}` : "",
+          dirty.size ? "توجد تغييرات لم تُحفظ بعد" : "",
+          errorText ? `يوجد تنبيه: ${errorText.slice(0, 82)}` : "",
+        ].filter(Boolean);
+        setGuideContext((current: any) => ({
+          ...(current?.view === activeView ? current : {}),
+          view: activeView,
+          scope: "app",
+          title: page?.title || "هذه الشاشة",
+          summary: page?.summary || "",
+          whatHappens: pieces.join(" · ") || page?.summary || "أقرأ الشاشة الحالية وأحدد ما تحتاجه دون إزعاجك.",
+          currentFeatureId: activeTarget && featureById(activeTarget) ? activeTarget : page?.id,
+          selected: selectedLabel ? { course: selectedLabel } : null,
+          openDialog: dialog ? labelOf(dialog).slice(0, 90) : "",
+          unsaved: dirty.size > 0,
+          error: errorText,
+        }));
+      }, 60);
+    };
+    const onInput = (event: Event) => {
+      const element = event.target instanceof HTMLElement ? event.target : null;
+      if (!element || element.closest(".smart-guide") || !element.closest("form,.content-stack,.inspector-pane,.academic-inspector")) return;
+      if (element.matches('input[type="search"],input[role="searchbox"]')) return;
+      dirty.add(element);
+      publish();
+    };
+    const onClick = (event: MouseEvent) => {
+      const raw = event.target instanceof HTMLElement ? event.target : null;
+      if (!raw || raw.closest(".smart-guide")) return;
+      const card = raw.closest<HTMLElement>(".record-card,.master-list button,.catalog-master button,[aria-selected='true']");
+      if (card) selectedLabel = labelOf(card);
+      const control = raw.closest<HTMLElement>("button,a,[role='button']");
+      if (control) {
+        const label = labelOf(control);
+        if (/حفظ|تطبيق|موافق|اعتماد|نشر|تحديث/.test(label)) dirty.clear();
+        if (control.hasAttribute("aria-expanded")) {
+          const key = control.getAttribute("data-guide-target") || `${activeView}:${label}`;
+          window.setTimeout(() => {
+            const now = Date.now();
+            const recent = [...(menuToggles.get(key) || []).filter(value => now - value < 14000), now];
+            menuToggles.set(key, recent);
+            const profile = loadGuideProfile(userId);
+            const pageMastery = page ? masteryScore(profile, page) : 0;
+            const threshold = pageMastery >= .72 ? 7 : 4;
+            if (recent.length >= threshold && canProactivelyHint(profile, `menu-loop:${key}`, pageMastery >= .72 ? "strong" : "soft")) {
+              noteHint(userId, `menu-loop:${key}`, false);
+              noteFriction(userId, `فتح وإغلاق متكرر · ${activeView}`);
+              setGuideHint({
+                key: `menu-loop:${key}`,
+                title: pageMastery >= .72 ? "هذا المسار لا يسير كالمعتاد" : "يمكنني الوصول بك مباشرةً",
+                detail: label ? `تكرر فتح «${label}» وإغلاقه دون إكمال خطوة. يمكنني تحديد المكان أو فتح الوظيفة المناسبة.` : "تكرر فتح القوائم دون إكمال خطوة واضحة.",
+                level: pageMastery >= .72 ? "strong" : "soft",
+              });
+            }
+          }, 0);
+        }
+      }
+      if (lastErrorAt && Date.now() - lastErrorAt < 22000) {
+        explorationAfterError += 1;
+        if (explorationAfterError >= 3) {
+          const profile = loadGuideProfile(userId);
+          if (canProactivelyHint(profile, `after-error:${activeView}:${lastErrorText.slice(0,24)}`, "strong")) {
+            noteHint(userId, `after-error:${activeView}:${lastErrorText.slice(0,24)}`, false);
+            noteFriction(userId, `استكشاف بعد خطأ · ${activeView}`);
+            setGuideHint({
+              key: `after-error:${activeView}:${lastErrorText.slice(0,24)}`,
+              title: "أستطيع تفسير سبب المشكلة",
+              detail: lastErrorText ? `ظهر تنبيه ثم استمر البحث داخل الشاشة. يمكنني شرح «${lastErrorText.slice(0,70)}» وتحديد الخطوة الصحيحة.` : "ظهر خطأ قبل قليل ويمكنني تفسيره وتحديد الخطوة الصحيحة.",
+              level: "strong",
+            });
+            explorationAfterError = 0;
+          }
+        }
+      }
+      publish();
+    };
+    const observer = new MutationObserver(() => publish());
+    observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["aria-expanded", "aria-invalid"] });
+    document.addEventListener("input", onInput, true);
+    document.addEventListener("change", onInput, true);
+    document.addEventListener("click", onClick, true);
+    publish();
+    return () => {
+      window.clearTimeout(publishTimer);
+      observer.disconnect();
+      document.removeEventListener("input", onInput, true);
+      document.removeEventListener("change", onInput, true);
+      document.removeEventListener("click", onClick, true);
+    };
   }, [activeView, user?.SystemUserId]);
 
   useEffect(() => {
@@ -1751,7 +1876,10 @@ export default function App() {
           copy: "يتوقف البرنامج مؤقتاً عند انقطاع الاتصال، ويعود تلقائياً عندما يرجع الإنترنت.",
         },
       ];
-  const guideNewCount = user ? changedFeatures(loadGuideProfile(Number(user.SystemUserId)), activeView, permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)).length : 0;
+  const guideNewCount = user ? (() => {
+    const profile = loadGuideProfile(Number(user.SystemUserId));
+    return changedFeatures(profile, activeView, permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)).length + discoveredNew(profile).length;
+  })() : 0;
   void guideProfileRevision;
   const taskFamily =
     activeView === "dashboard"

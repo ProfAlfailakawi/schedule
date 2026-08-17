@@ -18,7 +18,7 @@ export type GuideFeature = {
   steps?: Array<{ target?: string; selector?: string; text: string; command?: { scope: string; type: string; value?: string; target?: string; task?: string } }>;
 };
 
-export const GUIDE_SCHEMA_VERSION = 6;
+export const GUIDE_SCHEMA_VERSION = 7;
 
 export const GUIDE_FEATURES: GuideFeature[] = [
   { id:"page.dashboard", title:"الرئيسية", summary:"ملخص سريع للعمل الأكاديمي والوجهات الأكثر استخدامًا.", view:"dashboard", group:"العمل اليومي", keywords:["الرئيسية","بداية","لوحة"], version:1 },
@@ -157,6 +157,7 @@ export type GuideProfile = {
   routines?:Record<string,{id:string;name:string;sequence:string[];createdAt:number;lastUsed:number}>;
   friction?:Record<string,{count:number;last:number}>;
   catalog?:Record<string,number>;
+  discovered?:Record<string,{id:string;title:string;view:string;target?:string;kind:string;firstSeen:number;lastSeen:number;seen:boolean}>;
   currentTask?: { id:string; title:string; featureId?:string; target?:string; command?:any; startedAt:number; updatedAt:number; step?:number };
   previousTask?: { id:string; title:string; featureId?:string; target?:string; command?:any; startedAt:number; updatedAt:number; step?:number };
 };
@@ -166,14 +167,14 @@ const blankMastery = ():GuideMastery => ({uses:0,successes:0,failures:0,helps:0,
 const profileKey = (userId:number) => `schedule-smart-guide-v${GUIDE_SCHEMA_VERSION}:${Number(userId)||0}`;
 
 export function loadGuideProfile(userId:number):GuideProfile {
-  const blank:GuideProfile={schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,mastery:{},routes:{},workflows:{},sequence:[],ignored:{},hintMode:"auto",lastHintAt:0,onboardingDone:false,routines:{},friction:{},catalog:currentGuideCatalog()};
+  const blank:GuideProfile={schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,mastery:{},routes:{},workflows:{},sequence:[],ignored:{},hintMode:"auto",lastHintAt:0,onboardingDone:false,routines:{},friction:{},catalog:currentGuideCatalog(),discovered:{}};
   try {
     const exact=JSON.parse(localStorage.getItem(profileKey(userId))||"null");
-    if(exact && exact.schema===GUIDE_SCHEMA_VERSION) return {...blank,...exact,routines:exact.routines||{},friction:exact.friction||{},catalog:exact.catalog||currentGuideCatalog()};
+    if(exact && exact.schema===GUIDE_SCHEMA_VERSION) return {...blank,...exact,routines:exact.routines||{},friction:exact.friction||{},catalog:exact.catalog||currentGuideCatalog(),discovered:exact.discovered||{}};
     for(let version=GUIDE_SCHEMA_VERSION-1;version>=1;version--){
       const legacy=JSON.parse(localStorage.getItem(`schedule-smart-guide-v${version}:${Number(userId)||0}`)||"null");
       if(legacy){
-        const migrated={...blank,...legacy,schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,routines:legacy.routines||{},friction:legacy.friction||{},catalog:legacy.catalog||currentGuideCatalog()};
+        const migrated={...blank,...legacy,schema:GUIDE_SCHEMA_VERSION,userId:Number(userId)||0,routines:legacy.routines||{},friction:legacy.friction||{},catalog:legacy.catalog||currentGuideCatalog(),discovered:legacy.discovered||{}};
         Object.values(migrated.mastery||{}).forEach((row:any)=>{if(row && typeof row.resolvedAfterHelp!=="number")row.resolvedAfterHelp=0;});
         saveGuideProfile(migrated);return migrated;
       }
@@ -347,4 +348,41 @@ export function dialectIntentTerms(value:string):string[]{
 
 export function silenceHint(userId:number,key:string){
   return mutateGuideProfile(userId,p=>{p.ignored[key]=Number.MAX_SAFE_INTEGER;p.lastHintAt=Date.now();});
+}
+
+
+export function noteDiscoveredControls(userId:number,activeView:string,items:DynamicGuideFeature[]){
+  const current=loadGuideProfile(userId);
+  const shelf={...(current.discovered||{})};
+  let changed=false;
+  const now=Date.now();
+  for(const item of items){
+    if(featureById(item.id) || (item.target && featureById(item.target))) continue;
+    const id=String(item.id||""); if(!id) continue;
+    const previous=shelf[id];
+    if(!previous){
+      shelf[id]={id,title:item.title,view:activeView,target:item.target,kind:item.kind,firstSeen:now,lastSeen:now,seen:false};
+      changed=true;
+      continue;
+    }
+    const titleChanged=previous.title!==item.title || previous.target!==item.target || previous.view!==activeView;
+    const needsTouch=now-Number(previous.lastSeen||0)>60_000;
+    if(titleChanged || needsTouch){
+      shelf[id]={...previous,title:item.title,view:activeView,target:item.target,kind:item.kind,lastSeen:now,seen:titleChanged?false:previous.seen};
+      changed=true;
+    }
+  }
+  const trimmed=Object.fromEntries(Object.entries(shelf).sort((a,b)=>Number(b[1].lastSeen)-Number(a[1].lastSeen)).slice(0,160));
+  if(changed){current.discovered=trimmed;saveGuideProfile(current);return current;}
+  return current;
+}
+
+export function discoveredNew(profile:GuideProfile,activeView?:string){
+  return Object.values(profile.discovered||{})
+    .filter(item=>!item.seen && (!activeView || item.view===activeView))
+    .sort((a,b)=>b.firstSeen-a.firstSeen);
+}
+
+export function markDiscoveredSeen(userId:number,id:string){
+  return mutateGuideProfile(userId,p=>{if(p.discovered?.[id])p.discovered[id].seen=true;});
 }
