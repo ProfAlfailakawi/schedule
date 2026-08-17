@@ -5405,7 +5405,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             keywords:[...feature.keywords,"مرشد","كيف"],
             icon:<Sparkles />,
             enabled:needsSelection ? Boolean(context?.selected?.id) : true,
-            execute:()=>window.dispatchEvent(new CustomEvent("schedule-smart-guide-command",{detail:{...command,featureId:feature.id}})),
+            execute:()=>{ window.dispatchEvent(new CustomEvent("schedule-smart-guide-command",{detail:{...command,featureId:feature.id}})); },
           });
         }
       } else if (feature.view && feature.view !== "schedules" && onNavigate && feature.id.startsWith("page.")) {

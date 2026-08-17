@@ -3520,7 +3520,7 @@ function serverCanExposeGuideFeature(req: AuthenticatedRequest, id: string) {
   return canAccessGuideFeature(feature, {
     permissions: (req.permissions || []).map(Number),
     root: Number(req.user?.SystemUserId || 0) === ROOT_ADMIN_USER_ID,
-    admin: isPowerAdmin(req),
+    admin: isPowerUser(req),
   });
 }
 

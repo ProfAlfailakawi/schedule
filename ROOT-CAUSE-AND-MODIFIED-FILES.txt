@@ -1,13 +1,19 @@
-التعديلات المنفذة على schedule (14)
+تصحيح أخطاء lint الأخيرة
 
-- تقوية نبض أيقونة المرشد في شاشة الدخول.
-- ضبط حقول الوقت على الهاتف حتى لا تخرج خارج الإطار.
-- إضافة فراغ بسيط فوق قسم النطاق الأكاديمي.
-- تحسين فحص موانع الحفظ بصريًا بأسلوب إنفوجرافيك أوضح.
-- تحويل زر الإغلاق السفلي في مراجعة الاعتماد إلى X.
-- تحسين مسار الطباعة في Safari.
+1) server.ts
+- الخطأ: Cannot find name 'isPowerAdmin'.
+- السبب: دالة فحص صلاحية المرشد على الخادم كانت تستدعي اسماً غير موجود في server.ts.
+- الإصلاح: استخدام دالة الصلاحيات الموجودة فعلياً isPowerUser(req)، وهي المطابقة لمنطق الإدارة في الخادم.
 
-الملفات المعدلة فقط:
+2) src/components/Schedules.tsx
+- الخطأ: Type 'boolean' is not assignable to type 'void | Promise<void>'.
+- السبب: execute كان يعيد نتيجة window.dispatchEvent مباشرة، وهي boolean.
+- الإصلاح: تحويل callback إلى block ينفذ dispatchEvent دون إرجاع قيمته، فيصبح النوع void كما يتطلب تعريف الأمر.
+
+هذه الحزمة تجمع أيضاً بقية ملفات التعديلات الأخيرة حتى تكون النسخة موحدة.
+
+الملفات المعدلة:
+- server.ts
 - src/components/ScheduleReview.tsx
 - src/components/Schedules.tsx
 - src/styles/04-screens.css
