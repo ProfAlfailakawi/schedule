@@ -31,7 +31,20 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: Error): State {
-    return { error, exhausted: false };
+    let exhausted = false;
+    try {
+      const raw = JSON.parse(sessionStorage.getItem("schedule-render-recovery-v3") || "[]");
+      const floor = Date.now() - 60_000;
+      const recent = Array.isArray(raw)
+        ? raw.map(Number).filter(value => Number.isFinite(value) && value >= floor)
+        : [];
+      // componentDidCatch records the current failure immediately after this
+      // render. Two recent failures therefore mean this is the third attempt.
+      exhausted = recent.length >= 2;
+    } catch {
+      exhausted = false;
+    }
+    return { error, exhausted };
   }
 
   componentDidMount() {
@@ -109,9 +122,11 @@ export default class ErrorBoundary extends React.Component<Props, State> {
     }
 
     // A persistent programming/data error should not trap the browser in an
-    // infinite reload loop. Keep the fallback tiny and actionable instead of
-    // replacing the whole application with a fatal-error page.
-    this.setState({ exhausted: true });
+    // infinite reload loop. getDerivedStateFromError has already rendered the
+    // compact rescue state for the third attempt, so no imperative setState is
+    // needed here (and the boundary stays compatible with the project's React
+    // typing setup).
+    return;
   };
 
   private retry = () => {

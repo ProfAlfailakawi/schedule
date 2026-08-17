@@ -6503,12 +6503,13 @@ html[data-schedule-workspace="focus"] .week-surface.week-focus-fullscreen{
   gap:0!important;
   overflow:hidden!important;
 }
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-note,
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-legend,
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-daystrip,
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-unplaced,
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.ripple-forecast,
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-scroll-top{
+/* Legacy `.week-focus-fullscreen` is no longer emitted. Focus preserves all
+   live timetable feedback layers; only shell chrome is removed in 03-shell. */
+/* Focus removes furniture, never interaction. The scrollbar, ripple forecast,
+   live conflict markings, slots and physics targets remain the exact same DOM. */
+html[data-schedule-workspace="focus"] .week-surface>.week-note,
+html[data-schedule-workspace="focus"] .week-surface>.week-legend,
+html[data-schedule-workspace="focus"] .week-surface>.week-daystrip{
   display:none!important;
 }
 html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-scroll-main{

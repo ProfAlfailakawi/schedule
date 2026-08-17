@@ -486,8 +486,13 @@ export default function useSchedulePhysics(options: Options) {
 
   const cancel = useCallback(() => {
     const session = sessionRef.current;
-    if (session?.active) finishReturn("escape");
-  }, [finishReturn]);
+    if (!session) return;
+    // Layout mode changes (focus on/off, view changes) can happen while a card
+    // is merely armed as well as while it is actively moving. An armed session
+    // still owns a sourceRect from the old geometry, so clear it too.
+    if (session.active) finishReturn("escape");
+    else reset();
+  }, [finishReturn, reset]);
 
   /**
    * Did the press that just finished move a card?

@@ -1077,7 +1077,8 @@ html[data-schedule-workspace="focus"] .academic-xray{
 html[data-schedule-workspace="focus"] .schedule-page>.week-surface,
 html[data-schedule-workspace="focus"] .schedule-page>.rooms-surface,
 html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
-  display:flex!important;
+  /* Same live surface, same children, same hit targets. Focus removes only the
+     application shell; it never switches the timetable to a second layout. */
   position:fixed!important;
   inset:0!important;
   z-index:1500!important;
@@ -1090,10 +1091,13 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
   box-shadow:none!important;
   background:var(--surface)!important;
 }
-html[data-schedule-workspace="focus"] .schedule-page>.rooms-surface{
-  display:block!important;
+html[data-schedule-workspace="focus"] .schedule-page>.week-surface{
   overflow:auto!important;
-  padding:12px!important;
+  padding:0!important;
+}
+html[data-schedule-workspace="focus"] .schedule-page>.rooms-surface{
+  overflow:auto!important;
+  padding:0!important;
 }
 html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
   overflow:auto!important;

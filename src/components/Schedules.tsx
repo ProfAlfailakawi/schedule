@@ -2580,8 +2580,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     sessionStorage.removeItem("schedule-command");
     if (command === "new") openCreate();
     if (command === "focus") {
+      // Focus magnifies the current workspace. It must never change the active
+      // projection or discard room/day filters.
+      setPresentationMode(false);
       setFocusMode(true);
-      setViewMode("week");
     }
     if (command === "presentation") {
       setPresentationMode(true);
@@ -4926,6 +4928,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       setPhysicsNotice(`رفض النقل: ${reason}`);
     },
   });
+  const focusGeometryRef = useRef(focusMode);
+  useEffect(() => {
+    if (focusGeometryRef.current === focusMode) return;
+    // Focus changes only the shell, but that still changes viewport geometry.
+    // A pointer session must never carry source/target rects across that switch.
+    // Cancel once, then every new gesture is measured from the current canvas.
+    physics.cancel();
+    clearRipple();
+    setPhysicsField({});
+    presence.send({ holding: null, cell: null });
+    focusGeometryRef.current = focusMode;
+  }, [focusMode, physics.cancel, presence]);
+
   const physicsOrigin = physics.state.row;
   /**
    * Whether a card is in the air.
@@ -5612,7 +5627,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         execute: proposeRepair,
       },
       { id: "schedule.review", group: "الجدول", label: "مراجعة الاعتماد", keywords: ["review", "اعتماد", "مراجعة"], icon: <ClipboardCheck />, execute: () => setReviewOpen(true) },
-      { id: "schedule.focus", group: "العرض", label: focusMode ? "إنهاء التركيز" : "وضع التركيز", keywords: ["focus", "تركيز"], icon: <Focus />, execute: () => { setFocusMode(!focusMode); setPresentationMode(false); } },
+      { id: "schedule.focus", group: "العرض", label: focusMode ? "إنهاء التركيز" : "وضع التركيز", keywords: ["focus", "تركيز"], icon: <Focus />, execute: () => { physics.cancel(); setFocusMode(!focusMode); setPresentationMode(false); } },
       { id: "schedule.present", group: "العرض", label: presentationMode ? "إنهاء العرض" : "وضع العرض", keywords: ["present", "عرض", "شاشة"], icon: <Expand />, execute: () => { setPresentationMode(!presentationMode); setFocusMode(false); if (!presentationMode) changeView("week"); } },
       { id: "hue.course", group: "العرض", label: "التلوين حسب المقرر", keywords: ["colour", "color", "لون", "مقرر"], icon: <Palette />, enabled: hueBy !== "course", execute: () => setHueBy("course") },
       { id: "hue.instructor", group: "العرض", label: "التلوين حسب الأستاذ", keywords: ["colour", "color", "لون", "استاذ"], icon: <Palette />, enabled: hueBy !== "instructor", execute: () => setHueBy("instructor") },
@@ -6867,6 +6882,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       </div>
     );
   const dockSuppressed = Boolean(
+    focusMode ||
     presentationMode ||
     livingPanelOpen ||
     experience.decisionOpen ||
@@ -7268,7 +7284,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           type="button"
           className="schedule-focus-exit no-print"
           data-guide-ignore="زر خروج خافت من وضع التركيز؛ Escape ينفذ الإجراء نفسه"
-          onClick={() => setFocusMode(false)}
+          onClick={() => {
+            physics.cancel();
+            setFocusMode(false);
+          }}
           aria-label="إنهاء وضع التركيز"
           title="إنهاء التركيز · Esc"
         >
@@ -7519,6 +7538,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               type="button"
               data-guide-ignore="تبديل وضع التركيز فقط؛ لا يغير بيانات الجدول"
               onClick={() => {
+                physics.cancel();
                 setFocusMode(!focusMode);
                 setPresentationMode(false);
               }}
@@ -8277,7 +8297,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                announced something. The screen reader is already served by the
                «يقرأ الجدول…» status line in the filter strip. */
             data-guide-target="schedule.week.board"
-            className={`week-surface ${denseWeekStrips ? "week-strip-mode" : ""} ${focusMode ? "week-focus-fullscreen" : ""} ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
+            className={`week-surface ${denseWeekStrips ? "week-strip-mode" : ""} ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
           >
             {/* One question at a time, asked of the whole week. The controls
                 fold away; their answer remains visible on the toolbar button. */}
