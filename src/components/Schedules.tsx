@@ -514,7 +514,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [physicsNotice, setPhysicsNotice] = useState(""),
     [undoPoint, setUndoPoint] = useState<any>(null),
     [pendingWriteIds, setPendingWriteIds] = useState<Set<number>>(() => new Set()),
-    [decisionFingerprint, setDecisionFingerprint] = useState<DecisionFingerprint | null>(null),
+    [, setDecisionFingerprint] = useState<DecisionFingerprint | null>(null),
     [historicalChoice, setHistoricalChoice] = useState<null | { dayLabel: string; picked: string; preferred: string; source: string }>(null),
     // What the server has said about squares the pointer has actually visited
     // during this drag. It refines the local reading; it does not replace it.
@@ -6469,40 +6469,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>{(liveEditors + liveHolders).toLocaleString("ar-KW-u-nu-latn")} بطاقة تحت التحرير</b></span> : null}
         </div>
       ) : null}
-      {physicsNotice || undoPoint ? (
-        <div className="schedule-physics-status no-print">
-          <div>
-            <span className="physics-status-dot" />
-            <strong>
-              {physicsNotice || "شبكة أمان القرار جاهزة لهذا التغيير."}
-            </strong>
-          </div>
-          {isPowerAdmin && undoPoint ? (
-            <button
-              type="button"
-              onClick={() => void undoPhysicsDecision()}
-              disabled={saving}
-            >
-              <History />
-              {undoPoint.decisionLabel || "استرجاع القرار"}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-      {decisionFingerprint ? (
-        <div className="decision-fingerprint no-print" aria-label="بصمة القرار">
-          <header>
-            <span><Sparkles aria-hidden="true" /> بصمة القرار</span>
-            <small>{decisionFingerprint.count > 1 ? `${decisionFingerprint.count.toLocaleString("ar-KW-u-nu-latn")} مواعيد` : "موعد واحد"}</small>
-          </header>
-          <strong>{decisionFingerprint.summary}</strong>
-          <div className="decision-fingerprint-grid">
-            <span><b>قبل</b><small>{decisionFingerprint.before}</small></span>
-            <span><b>بعد</b><small>{decisionFingerprint.after}</small></span>
-            <span><b>المكان</b><small>{decisionFingerprint.place}</small></span>
-          </div>
-        </div>
-      ) : null}
+      {/* Silent intelligence: routine timing/physics feedback no longer owns
+          vertical space above the timetable. The same state is kept for assistive
+          technology and diagnostics; blocking problems still use the existing
+          conflict/error UI, and undo remains in the compact undo bar. */}
+      {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
       <Surface className="schedule-control">
         <div className="filter-strip">
           <Field label="الكلية"><select value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
@@ -6956,6 +6927,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               : roomsWithAfterglow;
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const pct = (minutesAt: number) => ((minutesAt - gridWindow.start) / span) * 100;
+            const roomTraceStyle = (trace: { from: number; to: number }): React.CSSProperties => {
+              // The room board and its cards use physical `right`, not logical
+              // inline positioning. Clamp the ghost to the visible clock so a
+              // stale/legacy time can never pull «نُقل من هنا» outside its row.
+              const fromPct = Math.max(0, Math.min(100, pct(trace.from)));
+              const toPct = Math.max(0, Math.min(100, pct(trace.to)));
+              const minWidth = (SCHEDULE_SLOT_MINUTES / span) * 100;
+              const width = Math.max(0, Math.min(100 - fromPct, Math.max(minWidth, toPct - fromPct)));
+              return { right: `${fromPct}%`, left: "auto", width: `${width}%`, top: "3px", bottom: "3px", height: "auto" };
+            };
             const rowsFor = (day: DayKey, roomKey: string) => byDayRoom.get(`${day}|${roomKey}`) || [];
             const renderTrackCard = (row: FSchedule, sourceDay: DayKey, placement?: { lane: number; visualFrom: number; visualTo: number }) => {
               const course = courseById.get(row.AdCourseId);
@@ -7300,14 +7281,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                     <div
                                       key={`room-trace-${trace.key}`}
                                       className="week-move-trace rooms-move-trace"
-                                      style={{
-                                        insetInline: "auto",
-                                        insetInlineEnd: `${pct(trace.from)}%`,
-                                        insetInlineStart: "auto",
-                                        width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(trace.to) - pct(trace.from))}%`,
-                                        insetBlock: "3px",
-                                        height: "auto",
-                                      }}
+                                      style={roomTraceStyle(trace)}
                                       aria-hidden="true"
                                       title={`${trace.label} · نُقل من هنا`}
                                     >
@@ -7372,14 +7346,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                                   <div
                                     key={`room-trace-${trace.key}`}
                                     className="week-move-trace rooms-move-trace"
-                                    style={{
-                                      insetInline: "auto",
-                                      insetInlineEnd: `${pct(trace.from)}%`,
-                                      insetInlineStart: "auto",
-                                      width: `${Math.max((SCHEDULE_SLOT_MINUTES / span) * 100, pct(trace.to) - pct(trace.from))}%`,
-                                      insetBlock: "3px",
-                                      height: "auto",
-                                    }}
+                                    style={roomTraceStyle(trace)}
                                     aria-hidden="true"
                                     title={`${trace.label} · نُقل من هنا`}
                                   >
