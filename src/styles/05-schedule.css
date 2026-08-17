@@ -5735,3 +5735,13 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   .share-sheet.visual-minimal .share-kind button{min-inline-size:72px;min-block-size:72px}
   .smart-guide.visual-minimal .smart-guide-workflows article>div>strong{gap:4px}
 }
+
+
+/* --- Review legend icon polish ------------------------------------------ */
+.visual-minimal .spread-keys span{gap:7px;padding-inline:12px;font-size:inherit}
+.visual-minimal .spread-keys span svg{width:14px;height:14px;flex:none}
+.visual-minimal .spread-keys span small{font-size:.72rem;font-weight:700;color:var(--muted)}
+.visual-minimal .spread-keys span.seg-high svg{color:var(--danger)}
+.visual-minimal .spread-keys span.seg-medium svg{color:var(--warning)}
+.visual-minimal .spread-keys span.seg-low svg{color:var(--info)}
+.visual-minimal .spread-keys span.seg-clean svg{color:var(--success)}

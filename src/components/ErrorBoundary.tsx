@@ -1,4 +1,5 @@
 import React from "react";
+import { AlertTriangle, RefreshCw, RotateCcw } from "lucide-react";
 
 /**
  * The last line before a blank screen.
@@ -49,6 +50,8 @@ export default class ErrorBoundary extends React.Component<Props, State> {
     } catch { /* storage can be blocked; fallback remains usable */ }
   }
 
+  private retry = () => { window.location.reload(); };
+
   private hardReload = async () => {
     try {
       if ("caches" in window) {
@@ -64,13 +67,19 @@ export default class ErrorBoundary extends React.Component<Props, State> {
   render() {
     if (!this.state.error) return this.props.children;
     return (
-      <div className="crash-screen crash-screen-quiet" role="status" aria-live="polite">
-        <div className="crash-card crash-card-quiet">
-          <span className="button-spinner" aria-hidden="true" />
-          <p>تعذّر إكمال العرض. يمكنك إعادة المحاولة الآن.</p>
-          <button type="button" className="btn btn-primary" onClick={this.hardReload}>
-            إعادة المحاولة
-          </button>
+      <div className="crash-screen" role="status" aria-live="polite">
+        <div className="crash-card">
+          <div className="crash-mark"><AlertTriangle aria-hidden="true" /></div>
+          <h1>تعذّر إكمال العرض</h1>
+          <p>حصل خلل غير متوقع أثناء فتح هذه الشاشة. يمكنك إعادة المحاولة مباشرة، أو تنفيذ تحديث قوي إذا كانت هذه الصفحة تحتفظ بنسخة قديمة.</p>
+          <div className="crash-actions">
+            <button type="button" className="btn btn-secondary" onClick={this.retry}>
+              <RotateCcw aria-hidden="true" /> إعادة المحاولة
+            </button>
+            <button type="button" className="btn btn-primary" onClick={this.hardReload}>
+              <RefreshCw aria-hidden="true" /> تحديث قوي
+            </button>
+          </div>
         </div>
       </div>
     );

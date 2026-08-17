@@ -19,6 +19,7 @@ import {
   SkeletonDeck,
   Surface,
   CatalogFormDrawer,
+  visualConfirm,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
@@ -148,7 +149,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     back();
   };
   const remove = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف بيانات أستاذ المقرر؟")) return;
+    if (!(await visualConfirm({ title: "حذف أستاذ المقرر", message: "سيُحذف سجل أستاذ المقرر من النظام.", confirmLabel: "حذف", tone: "danger" }))) return;
     const r = await fetch(`/api/instructors/${id}`, { method: "DELETE" }),
       d = await r.json();
     if (!r.ok) {

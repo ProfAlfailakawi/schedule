@@ -18,6 +18,7 @@ import {
   SkeletonDeck,
   Surface,
   CatalogFormDrawer,
+  visualConfirm,
 } from "./ui";
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
@@ -106,7 +107,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
     back();
   };
   const remove = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف بيانات القسم العلمي؟")) return;
+    if (!(await visualConfirm({ title: "حذف القسم العلمي", message: "سيُحذف سجل القسم العلمي من النظام.", confirmLabel: "حذف", tone: "danger" }))) return;
     const r = await fetch(`/api/sections/${id}`, { method: "DELETE" }),
       d = await r.json();
     if (!r.ok) {

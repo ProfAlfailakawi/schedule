@@ -202,10 +202,10 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
             {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
           </div>
           <div className="spread-keys">
-            <span className="seg-high"><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b>يمنع</span>
-            <span className="seg-medium"><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b>يراجَع</span>
-            <span className="seg-low"><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>
-            <span className="seg-clean"><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b>سليم</span>
+            <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
+            <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
+            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>
+            <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
           </div>
         </div>
 

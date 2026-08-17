@@ -17,6 +17,7 @@ import {
   SkeletonDeck,
   Surface,
   CatalogFormDrawer,
+  visualConfirm,
 } from "./ui";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
@@ -126,7 +127,7 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
     back();
   };
   const remove = async (id: number) => {
-    if (!confirm("هل أنت متأكد من حذف بيانات الكلية؟")) return;
+    if (!(await visualConfirm({ title: "حذف الكلية", message: "سيُحذف سجل الكلية من النظام.", confirmLabel: "حذف", tone: "danger" }))) return;
     const r = await fetch(`/api/colleges/${id}`, { method: "DELETE" }),
       d = await r.json();
     if (!r.ok) {

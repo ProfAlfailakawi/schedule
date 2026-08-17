@@ -112,26 +112,26 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
           </header>
           {deferred ? (
             <>
-              <p>التثبيت يعني إضافة SCHEDULE إلى جهازك ليعمل كتطبيق مستقل وتفتحه مباشرة بسهولة.</p>
+              <p>أصبح التثبيت جاهزًا. أضف SCHEDULE إلى جهازك ليعمل كتطبيق مستقل وتفتحه مباشرة من الشاشة الرئيسية.</p>
               <button type="button" className="install-go" onClick={install}>
                 <Download aria-hidden="true" /> ثبّت الآن
               </button>
             </>
           ) : (
             <>
-              <p>أضف SCHEDULE إلى جهازك ليظهر كتطبيق مستقل وسهل الوصول.</p>
-              <ol className="install-steps">
+              <p>ثلاث خطوات سريعة فقط، ثم يظهر SCHEDULE كتطبيق مستقل على جهازك.</p>
+              <ol className="install-steps install-steps-grid">
                 {isIos ? (
                   <>
-                    <li>زر المشاركة <Share aria-hidden="true" /></li>
-                    <li>«إضافة إلى الشاشة الرئيسية»</li>
-                    <li>«إضافة»</li>
+                    <li><b>افتح المشاركة</b><small>اضغط زر المشاركة <Share aria-hidden="true" /> في Safari.</small></li>
+                    <li><b>اختر الإضافة</b><small>اضغط «إضافة إلى الشاشة الرئيسية».</small></li>
+                    <li><b>ثبّت الأيقونة</b><small>أكّد باختيار «إضافة».</small></li>
                   </>
                 ) : (
                   <>
-                    <li>قائمة المتصفح</li>
-                    <li>«تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»</li>
-                    <li>أكّد</li>
+                    <li><b>افتح القائمة</b><small>من قائمة المتصفح.</small></li>
+                    <li><b>اختر التثبيت</b><small>اضغط «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</small></li>
+                    <li><b>أكّد</b><small>سيظهر التطبيق مباشرة على جهازك.</small></li>
                   </>
                 )}
               </ol>

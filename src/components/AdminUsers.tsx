@@ -34,6 +34,7 @@ import {
   SecondaryButton,
   Surface,
   CatalogFormDrawer,
+  visualConfirm,
 } from "./ui";
 import {
   AdCollege,
@@ -364,7 +365,7 @@ export default function AdminUsers({
     }
   };
   const resetExportJobs = async () => {
-    if (!window.confirm("هل أنت متأكد من رغبتك في تصفير التصدير الحالي؟")) return;
+    if (!(await visualConfirm({ title: "تصفير عملية التصدير", message: "سيُلغى التصدير الجاري وتُمسح حالته الحالية.", confirmLabel: "تصفير", tone: "warning" }))) return;
     setError(null);
     setBackupBusy("export");
     try {
@@ -695,9 +696,12 @@ export default function AdminUsers({
     // so the sentence says so — a confirmation that hides half the consequence
     // is not a confirmation.
     const who = users.find(user => user.SystemUserId === id);
-    if (!confirm(
-      `حذف «${who?.Name || "المستخدم"}»؟\nستُحذف معه صلاحياته وارتباطه بالأقسام العلمية، ولا يمكن التراجع.`,
-    )) return;
+    if (!(await visualConfirm({
+      title: `حذف «${who?.Name || "المستخدم"}»`,
+      message: "ستُحذف معه صلاحياته وارتباطه بالأقسام العلمية، ولا يمكن التراجع.",
+      confirmLabel: "حذف المستخدم",
+      tone: "danger",
+    }))) return;
     try {
       await api(`/api/users/${id}`, { method: "DELETE" });
       setSelectedUserId(null);
@@ -749,7 +753,7 @@ export default function AdminUsers({
     setPage("edit");
   };
   const deletePermission = async (p: FormSecurity) => {
-    if (!confirm("هل أنت متأكد من حذف صلاحية المستخدم؟")) return;
+    if (!(await visualConfirm({ title: "حذف الصلاحية", message: "سيُزال هذا الربط من المستخدم فورًا.", confirmLabel: "حذف", tone: "danger" }))) return;
     try {
       if (!p.legacyId) throw new Error("الصلاحية غير موجودة");
       await api(`/api/permissions/${p.legacyId}`, { method: "DELETE" });
@@ -783,7 +787,7 @@ export default function AdminUsers({
     }
   };
   const deleteScope = async (a: AdCollegeUserAssign) => {
-    if (!confirm("هل أنت متأكد من حذف صلاحية المستخدم؟")) return;
+    if (!(await visualConfirm({ title: "حذف الصلاحية", message: "سيُزال هذا الربط من المستخدم فورًا.", confirmLabel: "حذف", tone: "danger" }))) return;
     try {
       if (!a.legacyId)
         throw new Error("صلاحية الكلية والقسم العلمي غير موجودة");

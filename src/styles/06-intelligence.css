@@ -3689,3 +3689,15 @@ button.twin-delta{width:100%}
   .visual-minimal.intelligence-page .intelligence-scenes .segmented button,
   .visual-minimal.intelligence-page .scene-subnav button{min-inline-size:50px;min-block-size:50px}
 }
+
+
+/* --- Intelligence polish: desktop gate and room-flow badges ------------- */
+.change-room-flow{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}.change-room-flow small{font-size:10px;font-weight:700;color:currentColor;opacity:.82}.change-room-flow bdi{direction:ltr;unicode-bidi:isolate;font-weight:700}.change-room-flow svg{width:13px;height:13px;opacity:.82}
+.mobile-desktop-gate-card{width:min(92vw,500px);grid-template-columns:auto minmax(0,1fr)}
+.mobile-desktop-gate-copy{display:grid;gap:8px}
+.mobile-desktop-gate-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:2px}
+.mobile-desktop-gate-steps span{display:grid;justify-items:start;gap:6px;padding:10px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
+.mobile-desktop-gate-steps svg{width:16px;height:16px;color:var(--accent)}
+.mobile-desktop-gate-steps b{font-size:11px;line-height:1.55;color:var(--ink)}
+.mobile-desktop-gate-card>button{margin-top:4px}
+@media (max-width:640px){.mobile-desktop-gate-steps{grid-template-columns:1fr}}

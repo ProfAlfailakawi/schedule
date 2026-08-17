@@ -55,6 +55,7 @@ import {
   SecondaryButton,
   Segmented,
   Surface,
+  visualConfirm,
 } from "./ui";
 import type {
   AdCollege,
@@ -1273,7 +1274,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }
   };
   const deleteConstraint = async (c: any) => {
-    if (!confirm(`حذف القاعدة «${c.label}»؟`)) return;
+    if (!(await visualConfirm({ title: `حذف القاعدة «${c.label}»`, message: "ستُحذف هذه القاعدة من لوحة القيود.", confirmLabel: "حذف", tone: "danger" }))) return;
     try {
       await fetchJson(`/api/intelligence/constraints/${c.id}`, {
         method: "DELETE",
@@ -3841,8 +3842,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             {o?.AdRoomCode !== r.AdRoomCode ||
                             o?.AdRoomHall !== r.AdRoomHall ? (
                               <Badge tone="info">
-                                قاعة {o?.AdRoomCode}/{o?.AdRoomHall} ←{" "}
-                                {r.AdRoomCode}/{r.AdRoomHall}
+                                <span className="change-room-flow">
+                                  <small>قاعة</small>
+                                  <bdi>{o?.AdRoomCode}/{o?.AdRoomHall}</bdi>
+                                  <ArrowLeftRight aria-hidden="true" />
+                                  <bdi>{r.AdRoomCode}/{r.AdRoomHall}</bdi>
+                                </span>
                               </Badge>
                             ) : null}
                           </article>

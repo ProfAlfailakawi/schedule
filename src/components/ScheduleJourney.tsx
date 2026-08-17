@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { X } from "lucide-react";
+import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
 
 /**
@@ -146,6 +146,14 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
   const now = reading?.current;
   const headline = useMemo(() => readingSentence(life?.terms || 0, life?.schedules ?? null), [life]);
   const note = useMemo(() => milestone(life?.terms || 0, life?.schedules ?? null), [life]);
+
+  const steps = [
+    { title: "البداية", detail: "حلّ مشكلة إعداد الجدول.", Icon: Sparkles },
+    { title: "النمو", detail: "المقررات وأعضاء هيئة التدريس والأقسام والكليات في مكان واحد.", Icon: Layers },
+    { title: "النضج", detail: "مراجعة واعتماد، واكتشاف التعارضات، وتقارير تُطبع كوثائق.", Icon: ShieldCheck },
+    { title: "اليوم", detail: "منظومة تساعد على بناء القرار، لا بناء الجدول فقط.", Icon: BrainCircuit },
+    { title: "القادم", detail: "تتطوّر مع كل فصل، دون أن تفقد بساطة العمل التي اعتادها المستخدم.", Icon: CalendarDays },
+  ];
   /* An installation with no history is told so, rather than shown a wall of zeroes. */
   const empty = Boolean(reading && (life?.terms || 0) === 0);
 
@@ -217,13 +225,18 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
 
         <section className="journey-timeline">
           <h3>من البداية إلى اليوم</h3>
-          <ol>
-            <li><strong>البداية</strong><span>حلّ مشكلة إعداد الجدول.</span></li>
-            <li><strong>النمو</strong><span>المقررات وأعضاء هيئة التدريس والأقسام والكليات في مكان واحد.</span></li>
-            <li><strong>النضج</strong><span>مراجعة واعتماد، واكتشاف التعارضات، وتقارير تُطبع كوثائق.</span></li>
-            <li><strong>اليوم</strong><span>منظومة تساعد على بناء القرار، لا بناء الجدول فقط.</span></li>
-            <li><strong>القادم</strong><span>تتطوّر مع كل فصل، دون أن تفقد بساطة العمل التي اعتادها المستخدم.</span></li>
-          </ol>
+          <div className="journey-stages" role="list">
+            {steps.map(({ title, detail, Icon }, index) => (
+              <article key={title} className="journey-stage" role="listitem">
+                <span className="journey-stage-mark" aria-hidden="true"><Icon /></span>
+                <div className="journey-stage-copy">
+                  <small>المحطة {ar(index + 1)}</small>
+                  <strong>{title}</strong>
+                  <p>{detail}</p>
+                </div>
+              </article>
+            ))}
+          </div>
         </section>
 
         <section className="journey-philosophy">

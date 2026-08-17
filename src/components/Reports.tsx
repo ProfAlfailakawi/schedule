@@ -954,7 +954,15 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         <div className="mobile-desktop-gate no-print" role="dialog" aria-modal="true" aria-label="هذا العرض يحتاج كمبيوتر">
           <div className="mobile-desktop-gate-card">
             <span className="mobile-desktop-gate-icon"><Table2 aria-hidden="true" /></span>
-            <div><strong>{mobileWideNotice === "week" ? "عرض الأسبوع" : mobileWideNotice === "room" ? "إشغال القاعات" : "القاعات × الأوقات"}</strong><p>هذا العرض يعتمد على مساحة أفقية كبيرة. على الهاتف ثبّتناه بدل أن نضغطه أو نجعلك تطارد أعمدة صغيرة. افتحه من الكمبيوتر لتظهر البيانات كاملة وبوضوح.</p></div>
+            <div className="mobile-desktop-gate-copy">
+              <strong>{mobileWideNotice === "week" ? "عرض الأسبوع" : mobileWideNotice === "room" ? "إشغال القاعات" : "القاعات × الأوقات"}</strong>
+              <p>هذا العرض يعتمد على مساحة أفقية كبيرة. على الهاتف ثبّتناه بدل أن نضغطه أو نجعلك تطارد أعمدة صغيرة.</p>
+              <div className="mobile-desktop-gate-steps" aria-hidden="true">
+                <span><Search /><b>افتحه من الكمبيوتر</b></span>
+                <span><Table2 /><b>شاهد الأعمدة كاملة</b></span>
+                <span><Printer /><b>اطبع أو صدّر بوضوح</b></span>
+              </div>
+            </div>
             <button type="button" onClick={() => setMobileWideNotice(null)}>حسنًا</button>
           </div>
         </div>
@@ -1856,7 +1864,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                   <thead><tr><th>القاعة</th>{roomLoad.slots.map((point: number) => <th key={point} className="print-ltr">{clock(point)}</th>)}<th>الإشغال</th></tr></thead>
                   <tbody>{pageRooms.map((room: any) => <tr key={room.key}>
                     <th className="print-ltr">{room.name}</th>
-                    {room.cells.map((cell: any) => <td key={cell.point} className={`print-heat print-heat-${Math.min(5, cell.taken)}`}>{cell.taken > 1 ? cell.taken : cell.taken ? "•" : ""}</td>)}
+                    {room.cells.map((cell: any) => <td key={cell.point} className={`print-heat print-heat-${Math.min(5, cell.taken)}`}>{cell.taken > 1 ? cell.taken : ""}</td>)}
                     <td className="print-ltr"><strong>{room.rate}%</strong></td>
                   </tr>)}</tbody>
                 </table>

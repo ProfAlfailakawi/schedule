@@ -1,5 +1,6 @@
 import React from "react";
 import { createPortal } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { runVisualTransition } from "../utils/visualTransition";
 import { AlertTriangle, Check, Edit2, Plus, Search, Trash2, X, Inbox, ChevronLeft, CalendarDays, Clock3, Hash, Hourglass, Layers, ListOrdered, MapPin, Tag, Info, ShieldAlert } from "lucide-react";
 
@@ -42,6 +43,70 @@ export function Surface({ children, className = "" }: { children?: React.ReactNo
  * optional single `action` is the one thing the reader can do about it.
  */
 const NOTICE_ICON = { success: Check, info: Info, warning: AlertTriangle, block: ShieldAlert, error: ShieldAlert } as const;
+
+
+type ConfirmTone = "danger" | "warning" | "info";
+export function visualConfirm({
+  title,
+  message,
+  confirmLabel = "متابعة",
+  cancelLabel = "إلغاء",
+  tone = "warning",
+}: {
+  title?: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  tone?: ConfirmTone;
+}) {
+  if (typeof document === "undefined") {
+    return Promise.resolve(typeof window !== "undefined" ? window.confirm(message) : false);
+  }
+  return new Promise<boolean>((resolve) => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const root = createRoot(host);
+    const close = (value: boolean) => {
+      root.unmount();
+      host.remove();
+      resolve(value);
+    };
+    function ConfirmDialog() {
+      const cancelRef = React.useRef<HTMLButtonElement>(null);
+      React.useEffect(() => {
+        cancelRef.current?.focus();
+        const onKey = (event: KeyboardEvent) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            close(false);
+          }
+        };
+        document.addEventListener("keydown", onKey);
+        return () => document.removeEventListener("keydown", onKey);
+      }, []);
+      const Icon = tone === "danger" ? Trash2 : tone === "info" ? Info : AlertTriangle;
+      const eyebrow = tone === "danger" ? "إجراء حساس" : tone === "info" ? "تأكيد" : "راجع قبل المتابعة";
+      const heading = title || (tone === "danger" ? "تأكيد الحذف" : "تأكيد الإجراء");
+      return (
+        <div className="schedule-confirm-backdrop no-print" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(false); }}>
+          <section className={`schedule-confirm-card tone-${tone}`} role="alertdialog" aria-modal="true" aria-labelledby="schedule-confirm-title" aria-describedby="schedule-confirm-message">
+            <span className="schedule-confirm-mark" aria-hidden="true"><Icon /></span>
+            <div className="schedule-confirm-copy">
+              <small>{eyebrow}</small>
+              <strong id="schedule-confirm-title">{heading}</strong>
+              <p id="schedule-confirm-message">{message}</p>
+            </div>
+            <div className="schedule-confirm-actions">
+              <button ref={cancelRef} type="button" className="btn btn-secondary" onClick={() => close(false)}>{cancelLabel}</button>
+              <button type="button" className={`btn ${tone === "danger" ? "btn-danger" : "btn-primary"}`} onClick={() => close(true)}>{confirmLabel}</button>
+            </div>
+          </section>
+        </div>
+      );
+    }
+    root.render(<ConfirmDialog />);
+  });
+}
 export function Notice({ type = "error", children, inline = false, onDismiss, action }: {
   type?: "success" | "info" | "warning" | "block" | "error";
   children: React.ReactNode;

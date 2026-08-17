@@ -63,6 +63,7 @@ import {
   Segmented,
   StatCard,
   Surface,
+  visualConfirm,
 } from "./ui";
 import {
   AdCollege,
@@ -980,9 +981,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     // Anything but the newest change may sit under later edits to the same row,
     // so what the reversal will actually do is stated plainly before it runs.
     const newest = pendingUndo[0];
-    if (newest && newest.id !== entry.id && !window.confirm(
-      `«${entry.label}» ليس آخر تغيير.\nالتراجع عنه يعيد الصفوف المعنية إلى حالتها قبله ويلغي ما جرى عليها بعده.\nمتابعة؟`,
-    )) return;
+    if (newest && newest.id !== entry.id && !(await visualConfirm({
+      title: "تراجع عن تغيير أقدم",
+      message: `«${entry.label}» ليس آخر تغيير.
+التراجع عنه يعيد الصفوف المعنية إلى حالتها قبله ويلغي ما جرى عليها بعده.`,
+      confirmLabel: "تراجع",
+      tone: "warning",
+    }))) return;
     setUndoBusy(entry.id);
     setError(null);
     try {
@@ -2969,7 +2974,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   };
   const remove = async (id: number) => {
     if (showMobileReadOnlyGate()) return;
-    if (!window.confirm(practiceMode ? "حذف هذا الموعد من النسخة التجريبية فقط؟" : "هل أنت متأكد من حذف بيانات المقرر الدراسي؟")) return;
+    if (!(await visualConfirm({
+      title: practiceMode ? "حذف من النسخة التجريبية" : "حذف الموعد",
+      message: practiceMode ? "سيُحذف هذا الموعد من النسخة التجريبية فقط دون المساس بالجدول الحقيقي." : "سيُحذف هذا الموعد من الجدول الحالي.",
+      confirmLabel: practiceMode ? "حذف تجريبي" : "حذف",
+      tone: "danger",
+    }))) return;
     if (practiceMode) {
       setRows(current => current.filter(item => item.id !== id));
       setMessage("تم الحذف داخل «وضع تجربة» فقط. لم يتغير جدولك الحقيقي.");
@@ -3132,7 +3142,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   };
   const undoCopy = async () => {
     if (!copyUndoPoint?.id) return;
-    if (!window.confirm("سيتم استرجاع جدول الفصل الوجهة إلى حالته قبل آخر عملية نسخ. هل تريد المتابعة؟")) return;
+    if (!(await visualConfirm({
+      title: "استرجاع ما قبل النسخ",
+      message: "سيتم استرجاع جدول الفصل الوجهة إلى حالته قبل آخر عملية نسخ.",
+      confirmLabel: "استرجاع",
+      tone: "warning",
+    }))) return;
     setError(null);
     setMessage(null);
     setSaving(true);
@@ -3193,9 +3208,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       : "";
     if (
       !options?.skipConfirm &&
-      !confirm(
-        `نقل موعد ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "المقرر"}${dayText} والوقت ${targetStart}؟${forecastNote}`,
-      )
+      !(await visualConfirm({
+        title: "تأكيد نقل الموعد",
+        message: `نقل موعد ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "المقرر"}${dayText} والوقت ${targetStart}؟${forecastNote}`,
+        confirmLabel: "نقل",
+        tone: "warning",
+      }))
     )
       return;
     try {
@@ -3316,7 +3334,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const fromLabels = carriedDays.map(k => days.find(d => d.key === k)?.label).join(" - ");
       const toLabels = rhythmSwitch.map(k => days.find(d => d.key === k)?.label).join(" - ");
       const title = row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "المحاضرة";
-      if (!window.confirm(`«${title}» تُدرَّس ${fromLabels}.\nنقلها إلى ${days.find(d => d.key === day)?.label} يحوّل أيامها كلها إلى نمط ${toLabels} بنفس الوقت والمدة.\nمتابعة؟`)) {
+      if (!(await visualConfirm({ title: `تحويل نمط «${title}»`, message: `تُدرَّس ${fromLabels}.
+نقلها إلى ${days.find(d => d.key === day)?.label} يحوّل أيامها كلها إلى نمط ${toLabels} بنفس الوقت والمدة.`, confirmLabel: "تحويل", tone: "warning" }))) {
         setPhysicsNotice("");
         return;
       }
@@ -3683,9 +3702,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (showMobileReadOnlyGate()) return;
     if (!isPowerAdmin || !undoPoint) return;
     if (
-      !window.confirm(
-        `${undoPoint.decisionLabel || "استرجاع قرار النقل"}؟\nسيحفظ النظام نقطة أمان جديدة قبل التراجع.`,
-      )
+      !(await visualConfirm({
+        title: undoPoint.decisionLabel || "استرجاع قرار النقل",
+        message: "سيحفظ النظام نقطة أمان جديدة قبل التراجع.",
+        confirmLabel: "استرجاع",
+        tone: "warning",
+      }))
     )
       return;
     try {
@@ -7305,8 +7327,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             onRestoreActive={() => { if (activeView) applyView(activeView); }}
             onSaveAs={() => setViewDialog({ mode: "create" })}
             onRename={view => setViewDialog({ mode: "rename", view })}
-            onDelete={view => {
-              if (!window.confirm(`حذف العرض «${view.name}»؟`)) return;
+            onDelete={async view => {
+              if (!(await visualConfirm({ title: `حذف العرض «${view.name}»`, message: "سيُحذف هذا العرض المحفوظ من قائمتك.", confirmLabel: "حذف", tone: "danger" }))) return;
               viewsStore.remove(view.id);
               setSavedViews(viewsStore.list());
               if (activeViewId === view.id) setActiveViewId(null);

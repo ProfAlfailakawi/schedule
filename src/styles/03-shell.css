@@ -944,3 +944,38 @@ body.guide-point-mode .smart-guide{opacity:0;pointer-events:none;transform:trans
   .guide-point-banner span{white-space:normal;min-width:0}
 }
 @media(prefers-reduced-motion:reduce){.guide-screen-handoff{animation:none!important}}
+
+
+/* --- Final smart-guide polish --------------------------------------------
+   Clearer launcher, safer counters, and larger mobile rhythm. */
+.smart-guide-fab{overflow:visible;position:fixed}
+.smart-guide-fab-new{
+  position:absolute;inset-inline-start:-10px;inset-block-start:-10px;z-index:3;
+  min-width:30px;height:30px;padding:0 8px;border:3px solid var(--surface);
+  box-shadow:0 12px 24px rgba(17,25,22,.16);background:var(--accent);font-size:11px;font-weight:800;
+}
+.smart-guide-fab:not(.icon-only){padding-inline-start:16px}
+.smart-guide-fab.icon-only .smart-guide-fab-new{inset-inline-start:-6px;inset-block-start:-6px;min-width:22px;height:22px;padding:0 5px;border-width:2px;font-size:9px}
+.smart-guide-browse i{top:-6px;left:-5px;min-width:20px;height:20px;padding:0 5px;border:2px solid var(--surface);box-shadow:0 8px 18px rgba(17,25,22,.12);font-size:8px}
+.smart-guide-new-summary>article{padding:10px 11px;border-radius:16px;background:linear-gradient(145deg,color-mix(in srgb,var(--accent) 6%,var(--surface)),var(--surface))}
+.smart-guide-new-summary strong{font-size:15px;font-weight:800}
+.smart-guide-new-summary small{font-size:9px}
+.smart-guide-mark-all{padding:8px 12px;border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line));border-radius:999px;background:var(--surface);color:var(--accent-strong,var(--accent));font:700 10px/1 var(--font)}
+.smart-guide-mark-all:hover{background:var(--accent-softer)}
+.smart-guide-workflows article,.smart-guide-routines article{padding:12px;border-radius:18px;background:linear-gradient(160deg,var(--surface),color-mix(in srgb,var(--accent) 4%,var(--surface)))}
+.smart-guide-workflows strong,.smart-guide-routines strong{font-size:11.5px;line-height:1.5}
+.smart-guide-workflows small,.smart-guide-routines small{font-size:10px;line-height:1.55}
+.smart-guide-workflows button,.smart-guide-routines button{min-height:31px;padding:7px 10px;border-radius:12px;font-size:9.5px;font-weight:700}
+.smart-guide-pending-task,.smart-guide-transaction-undo{box-shadow:var(--shadow-sm)}
+@media (max-width:560px){
+  .smart-guide{padding:16px 14px 18px;gap:13px}
+  .smart-guide-hero h2{font-size:29px}
+  .smart-guide-hero p,.smart-guide-search input{font-size:13px}
+  .smart-guide-location strong,.smart-guide-section-head strong{font-size:13.5px}
+  .smart-guide-results strong,.smart-guide-feature-grid strong,.smart-guide-new-grid strong,.smart-guide-live-controls strong,.smart-guide-workflows strong,.smart-guide-routines strong{font-size:12px}
+  .smart-guide-results small,.smart-guide-feature-grid small,.smart-guide-new-grid small,.smart-guide-live-controls small,.smart-guide-workflows small,.smart-guide-routines small{font-size:10px}
+  .smart-guide-browse button{font-size:9.5px}
+  .smart-guide-new-summary{grid-template-columns:1fr 1fr}
+  .smart-guide-new-summary>article{padding:9px 10px;border-radius:14px}
+  .smart-guide-mark-all{min-height:30px;padding-inline:10px}
+}
