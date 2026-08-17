@@ -110,7 +110,6 @@ export default function LivingScheduleLayer({
     [error, setError] = useState(""),
     [message, setMessage] = useState("");
   // Help is intentionally manual: it opens only when the user asks for it.
-  const [decisionGuideOpen, setDecisionGuideOpen] = useState(false);
   const livingRequest = useRef(0);
   const sourceTargetRef = useRef(0);
   const [selectedId, setSelectedId] = useState<number>(sourceRows[0]?.id || 0),
@@ -304,7 +303,7 @@ export default function LivingScheduleLayer({
         body: JSON.stringify({
           rowId: selected.id,
           candidate: candidate(),
-          question: kind === "why-not" ? "ليش مو هذا الحل؟" : "ليش هذا أفضل؟",
+          question: kind === "why-not" ? "لماذا ليس هذا الحل؟" : "لماذا هذا أفضل؟",
         }),
       });
       setWhyResult({ ...d, kind });
@@ -756,7 +755,6 @@ export default function LivingScheduleLayer({
                   <p>{living.context?.sectionName} · {living.context?.termName}</p>
                 </div>
               </div>
-              <button className="living-panel-help" type="button" onClick={() => setDecisionGuideOpen(true)} aria-label="شرح مركز الذكاء"><CircleHelp /></button>
               <button onClick={() => setScene(null)} aria-label="إغلاق">
                 <X />
               </button>
@@ -766,6 +764,7 @@ export default function LivingScheduleLayer({
                 <button
                   key={item.id}
                   className={scene === item.id ? "active" : ""}
+                  data-guide-target={`living.scene.${item.id}`}
                   onClick={() => open(item.id)}
                   aria-pressed={scene === item.id}
                 >
@@ -890,14 +889,14 @@ export default function LivingScheduleLayer({
                           onClick={() => runWhy("why")}
                         >
                           <Sparkles />
-                          ليش هذا أفضل؟
+                          لماذا هذا أفضل؟
                         </PrimaryButton>
                         <SecondaryButton
                           disabled={busy}
                           onClick={() => runWhy("why-not")}
                         >
                           <CircleHelp />
-                          ليش مو هذا الحل؟
+                          لماذا ليس هذا الحل؟
                         </SecondaryButton>
                       </div>
                     </div>
@@ -1368,24 +1367,6 @@ export default function LivingScheduleLayer({
               ) : null}
             </div>
           </aside>
-        </div>
-      ) : null}
-      {decisionGuideOpen ? (
-        <div className="decision-guide-backdrop no-print" role="dialog" aria-modal="true" aria-label="شرح مركز الذكاء" onMouseDown={(event) => { if (event.target === event.currentTarget) setDecisionGuideOpen(false); }}>
-          <section className="decision-guide-modal">
-            <header>
-              <span><CircleHelp aria-hidden="true" /></span>
-              <div><small>خريطة سريعة</small><strong>مركز الذكاء في أربع إشارات</strong></div>
-              <button type="button" onClick={() => setDecisionGuideOpen(false)} aria-label="إغلاق"><X /></button>
-            </header>
-            <div className="decision-guide-modal-grid">
-              <article><BrainCircuit /><div><strong>القرار الأهم</strong><small>ما الذي يستحق تدخلك الآن.</small></div></article>
-              <article><Activity /><div><strong>خريطة الضغط</strong><small>أين تتجمع المشكلة ولماذا.</small></div></article>
-              <article><ShieldCheck /><div><strong>شبكة الأمان</strong><small>تراجع وإصلاح بلا فقدان.</small></div></article>
-              <article><Gauge /><div><strong>بصمة القسم</strong><small>كيف يختلف الحاضر عن تاريخه.</small></div></article>
-            </div>
-            <footer><span>افتح القراءة التي تحتاجها فقط؛ البقية تبقى صامتة.</span><button type="button" onClick={() => setDecisionGuideOpen(false)}>فهمت</button></footer>
-          </section>
         </div>
       ) : null}
 

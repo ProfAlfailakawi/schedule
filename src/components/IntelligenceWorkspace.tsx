@@ -376,7 +376,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
   // Help never opens on its own; one deliberate question mark owns it.
-  const [showWorkspaceGuide, setShowWorkspaceGuide] = useState(false);
   const [decisionCompose, setDecisionCompose] = useState(false);
   const [decisionTitle, setDecisionTitle] = useState("");
   const [versionScrubIndex, setVersionScrubIndex] = useState(0);
@@ -1384,6 +1383,62 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setTab(
       value === "understand" ? "command" : value === "try" ? "twin" : "history",
     );
+
+  const intelligenceGuideTask = useMemo(() => tab === "copilot" ? ({
+    title: "اسأل الجدول",
+    featureId: "intelligence.ask-table",
+    target: "intelligence.ask-table",
+    command: { scope: "intelligence", type: "tab", value: "copilot" },
+  }) : ({
+    title: scene === "understand" ? "فهم حالة الجدول" : scene === "try" ? "تجربة السيناريو" : "اعتماد القرار",
+    featureId: scene === "understand" ? "intelligence.scene.understand" : scene === "try" ? "intelligence.scene.try" : "intelligence.scene.approve",
+    target: scene === "understand" ? "intelligence.scene.understand" : scene === "try" ? "intelligence.scene.try" : "intelligence.scene.approve",
+    command: { scope: "intelligence", type: "scene", value: scene },
+  }), [scene, tab]);
+  const intelligenceGuideSummary = !collegeId || !termId
+    ? "اختر الكلية والفصل أولًا ليبدأ مركز الذكاء في القراءة والتجربة والاعتماد."
+    : scene === "understand"
+      ? "أنت الآن داخل «افهم» لقراءة الجودة والضغط والأسئلة الذكية."
+      : scene === "try"
+        ? "أنت الآن داخل «جرّب» لتجربة ماذا لو؟ دون لمس الجدول الحقيقي."
+        : "أنت الآن داخل «اعتمد» لمقارنة النسخ وتثبيت القرار النهائي.";
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("schedule-smart-guide-context", {
+      detail: {
+        scope: "intelligence",
+        view: "intelligence",
+        title: "مركز الذكاء",
+        collegeId: collegeId || undefined,
+        sectionId: sectionId || undefined,
+        termId: termId || undefined,
+        currentFeatureId: tab === "copilot" ? "intelligence.ask-table" : scene === "understand" ? "intelligence.scene.understand" : scene === "try" ? "intelligence.scene.try" : "intelligence.scene.approve",
+        summary: intelligenceGuideSummary,
+        placeLabel: scene === "understand" ? "افهم" : scene === "try" ? "جرّب" : "اعتمد",
+        stageLabel: scene === "understand" ? "افهم" : scene === "try" ? "جرّب" : "اعتمد",
+        scopeLabel: [colleges.find(item => item.AdCollegeId === collegeId)?.AdCollegeName, terms.find(item => item.AdTermId === termId)?.AdTermName].filter(Boolean).join(" · "),
+        whatHappens: intelligenceGuideSummary,
+        currentTask: intelligenceGuideTask,
+        metrics: { isExpert: false },
+        detectedHelp: !collegeId || !termId
+          ? {
+              title: "ابدأ من النطاق أولًا",
+              detail: "اختر الكلية والفصل، وبعد ذلك سيعرف المرشد ما الذي يعرضه لك في هذا المركز.",
+              level: "soft",
+            }
+          : null,
+      },
+    }));
+  }, [collegeId, colleges, intelligenceGuideSummary, intelligenceGuideTask, scene, sectionId, tab, termId, terms]);
+  useEffect(() => {
+    const onGuideCommand = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.scope !== "intelligence") return;
+      if (detail.type === "scene" && detail.value) changeScene(String(detail.value));
+      if (detail.type === "tab" && detail.value && ["command","copilot","twin","history","import"].includes(String(detail.value))) setTab(String(detail.value) as Tab);
+    };
+    window.addEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
+    return () => window.removeEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
+  }, []);
   const insightScenes: Array<{
     value: InsightScene;
     label: string;
@@ -1506,7 +1561,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const max=Math.max(0,...counts.values());
     return{labels,hours,max,cells:labels.map((label,day)=>({label,hours:hours.map(hour=>({hour,count:counts.get(`${day}-${hour}`)||0}))}))};
   },[versions]);
-  const closeWorkspaceGuide = () => setShowWorkspaceGuide(false);
 
   const handleDividerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -1561,7 +1615,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       <PageTitle
         eyebrow="ذكاء الجدول"
         subtitle="افهم · جرّب · اعتمد"
-        action={<GhostButton type="button" className="page-help-action" onClick={() => setShowWorkspaceGuide(true)} title="شرح مركز الذكاء" aria-label="شرح مركز الذكاء"><CircleHelp aria-hidden="true" /></GhostButton>}
       >
         مركز الذكاء
       </PageTitle>
@@ -1572,23 +1625,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           <div><strong>اختر الكلية والفصل</strong><span>تبدأ القراءات بعد تحديد النطاق؛ لا يوجد اختيار تلقائي.</span></div>
         </Surface>
       ) : null}
-      {showWorkspaceGuide ? (
-        <div className="intel-guide-backdrop no-print" role="dialog" aria-modal="true" aria-label="شرح مركز الذكاء" onMouseDown={(event) => { if (event.target === event.currentTarget) closeWorkspaceGuide(); }}>
-          <section className="intel-guide-modal">
-            <header>
-              <span><CircleHelp aria-hidden="true" /></span>
-              <div><small>ثلاث خطوات</small><strong>كيف تستخدم مركز الذكاء؟</strong></div>
-              <button type="button" onClick={closeWorkspaceGuide} aria-label="إغلاق"><X /></button>
-            </header>
-            <div className="intel-guide-steps">
-              <article><b>01</b><BrainCircuit /><div><strong>افهم</strong><small>الجودة والضغط واسأل الجدول.</small></div></article>
-              <article><b>02</b><Network /><div><strong>جرّب</strong><small>ماذا لو والسياسات خارج الجدول الحقيقي.</small></div></article>
-              <article><b>03</b><ShieldCheck /><div><strong>اعتمد</strong><small>قارن النسخ والخط الزمني ثم انشر.</small></div></article>
-            </div>
-            <footer><span>لا يظهر هذا الشرح إلا عندما تطلبه.</span><button type="button" onClick={closeWorkspaceGuide}>فهمت</button></footer>
-          </section>
-        </div>
-      ) : null}
       <nav className="intelligence-scenes no-print" aria-label="مراحل مركز الذكاء">
         <Segmented
           value={scene}
@@ -1597,25 +1633,25 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             {
               value: "understand",
               label: (
-                <>
+                <span data-guide-target="intelligence.scene.understand">
                   <BrainCircuit /> افهم
-                </>
+                </span>
               ),
             },
             {
               value: "try",
               label: (
-                <>
+                <span data-guide-target="intelligence.scene.try">
                   <Network /> جرّب
-                </>
+                </span>
               ),
             },
             {
               value: "approve",
               label: (
-                <>
+                <span data-guide-target="intelligence.scene.approve">
                   <ShieldCheck /> اعتمد
-                </>
+                </span>
               ),
             },
           ]}
@@ -1640,6 +1676,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           </button>
           <button
             type="button"
+            data-guide-target="intelligence.ask-table"
             className={tab === "copilot" ? "active" : ""}
             aria-pressed={tab === "copilot"}
             onClick={() => setTab("copilot")}

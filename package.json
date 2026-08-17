@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "npm run audit:guide && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "NODE_ENV=production node dist/server.cjs",
     "test": "npm run test:behavior && npm run test:data && npm run test:credentials && npm run test:parity",
     "test:behavior": "tsx tests/run-tests.ts",
@@ -19,7 +19,8 @@
     "migrate:firestore": "tsx scripts/import-legacy-json.ts database/db.json.gz",
     "migrate:firestore:replace": "tsx scripts/import-legacy-json.ts database/db.json.gz --replace",
     "audit:deploy": "node scripts/deployment-audit.mjs",
-    "gcp-build": "npm run build"
+    "gcp-build": "npm run build",
+    "audit:guide": "node scripts/guide-audit.mjs"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.7.1",

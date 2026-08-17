@@ -1,7 +1,7 @@
 type TelemetryScope = { collegeId?: number; sectionId?: number; termId?: number };
 type Breadcrumb = { at: string; action: string };
 type Pending = {
-  kind: "api" | "error" | "offline" | "sync";
+  kind: "api" | "error" | "offline" | "sync" | "guide";
   name: string;
   durationMs?: number;
   status?: number;
@@ -77,6 +77,7 @@ export function telemetryError(name: string, error: unknown, durationMs?: number
 }
 export function telemetryOffline(name = "offline") { enqueue({ kind: "offline", name, ok: false }); }
 export function telemetrySync(name: string, ok: boolean, message?: string) { enqueue({ kind: "sync", name, ok, message: String(message || "").slice(0, 320) || undefined }); }
+export function telemetryGuide(name: string, message?: string) { enqueue({ kind: "guide", name: String(name || "guide").slice(0, 140), ok: true, message: String(message || "").slice(0, 160) || undefined }); }
 
 export async function flushTelemetry() {
   if (!navigator.onLine) return;

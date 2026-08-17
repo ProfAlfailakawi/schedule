@@ -35,7 +35,7 @@ import type { AcademicTab } from "./components/AcademicConsole";
 import { safeStorage } from "./utils/safeStorage";
 import { warmStart } from "./utils/warmStart";
 import { formatScheduleTimeRange } from "./utils/scheduleTime";
-import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb } from "./utils/clientTelemetry";
+import { installClientTelemetry, setTelemetryOwner, telemetryBreadcrumb, telemetryGuide } from "./utils/clientTelemetry";
 
 function safeLazy<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
   return lazy(() =>
@@ -99,6 +99,8 @@ const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
 import { PrimaryButton } from "./components/ui";
+import SmartGuide from "./components/SmartGuide";
+import { canProactivelyHint, changedFeatures, featureById, loadGuideProfile, masteryScore, noteFriction, noteHint, recordFeatureUse, recordRoute, setGuideTask } from "./guide/smartGuide";
 
 type View =
   | "dashboard"
@@ -420,11 +422,210 @@ export default function App() {
     [permissions, setPermissions] = useState<number[]>([]),
     [scopes, setScopes] = useState<any[]>([]),
     [loading, setLoading] = useState(true);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideContext, setGuideContext] = useState<any>(null);
+  const [guideHint, setGuideHint] = useState<{ key?: string; title: string; detail?: string; level?: "soft" | "strong" } | null>(null);
+  const [guideProfileRevision, setGuideProfileRevision] = useState(0);
   useEffect(() => { setTelemetryOwner(Number(user?.SystemUserId || 0)); }, [user?.SystemUserId]);
+  useEffect(() => {
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (!detail?.userId || Number(detail.userId) === Number(user?.SystemUserId || 0)) setGuideProfileRevision(value => value + 1);
+    };
+    window.addEventListener("schedule-smart-guide-profile", refresh as EventListener);
+    return () => window.removeEventListener("schedule-smart-guide-profile", refresh as EventListener);
+  }, [user?.SystemUserId]);
+
+  useEffect(() => {
+    const onContext = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      setGuideContext(detail);
+      if (user?.SystemUserId && detail?.currentTask) {
+        const currentProfile = loadGuideProfile(Number(user.SystemUserId));
+        const activeGuideTask = currentProfile.currentTask?.id?.startsWith("tour:") || currentProfile.currentTask?.id?.startsWith("assist:");
+        if (!activeGuideTask) {
+          setGuideTask(Number(user.SystemUserId), {
+            ...detail.currentTask,
+            id: detail.currentTask.id || `work:${detail.scope || "app"}`,
+            startedAt: Number(currentProfile.currentTask?.startedAt || Date.now()),
+            updatedAt: Date.now(),
+          });
+        }
+      }
+      if (!detail?.detectedHelp?.title || !user?.SystemUserId) return;
+      const severity = detail.detectedHelp.level === "strong" ? "strong" : "soft";
+      const key = String(detail.detectedHelp.key || `${detail.scope || "app"}:${detail.detectedHelp.title}`);
+      const profile = loadGuideProfile(Number(user.SystemUserId));
+      const feature = featureById(detail.detectedHelp.featureId || "");
+      const mastery = feature ? masteryScore(profile, feature) : 0;
+      // Expert users only get a soft interruption when the event is genuinely
+      // unusual. Strong errors still surface because expertise does not make a
+      // broken operation normal.
+      if (severity === "soft" && mastery >= .72) return;
+      if (!canProactivelyHint(profile, key, severity)) return;
+      noteHint(Number(user.SystemUserId), key, false);
+      setGuideHint({
+        key,
+        title: detail.detectedHelp.title,
+        detail: detail.detectedHelp.detail || "",
+        level: severity,
+      });
+    };
+    window.addEventListener("schedule-smart-guide-context", onContext as EventListener);
+    return () => window.removeEventListener("schedule-smart-guide-context", onContext as EventListener);
+  }, [user?.SystemUserId]);
+  useEffect(() => {
+    const openGuide = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.context) setGuideContext((current:any) => ({ ...(current || {}), ...detail.context }));
+      if (detail.hint?.title) setGuideHint({ key:detail.hint.key, title:detail.hint.title, detail:detail.hint.detail || "", level:detail.hint.level === "strong" ? "strong" : "soft" });
+      setGuideOpen(true);
+    };
+    window.addEventListener("schedule-smart-guide-open", openGuide as EventListener);
+    return () => window.removeEventListener("schedule-smart-guide-open", openGuide as EventListener);
+  }, []);
   const [activeView, setActiveView] = useState<View>(
     () => viewByPath.get(window.location.pathname.toLowerCase()) || "dashboard",
   );
-  useEffect(() => { telemetryBreadcrumb(`واجهة: ${activeView}`); }, [activeView]);
+  useEffect(() => { telemetryBreadcrumb(`واجهة: ${activeView}`); setGuideContext(null); setGuideHint(null); }, [activeView]);
+  useEffect(() => {
+    const userId = Number(user?.SystemUserId || 0);
+    if (!userId || activeView === "schedules" || activeView === "intelligence") return;
+    const profile = loadGuideProfile(userId);
+    const activeGuideTask = profile.currentTask?.id?.startsWith("tour:") || profile.currentTask?.id?.startsWith("assist:");
+    const recentTask = profile.currentTask && Date.now() - Number(profile.currentTask.updatedAt || 0) < 24 * 60 * 60 * 1000;
+    if (activeGuideTask || (recentTask && profile.currentTask?.id !== `work:page:${activeView}`)) return;
+    const page = featureById(`page.${activeView}`);
+    setGuideTask(userId, {
+      id: `work:page:${activeView}`,
+      title: page?.title || "متابعة الشاشة الحالية",
+      featureId: page?.id,
+      command: { scope: "app", type: "navigate", value: activeView },
+      startedAt: Number(profile.currentTask?.startedAt || Date.now()),
+      updatedAt: Date.now(),
+    });
+  }, [activeView, user?.SystemUserId]);
+
+  const previousGuideView = useRef<View | null>(null);
+  const recentGuideViews = useRef<Array<{ view: View; at: number }>>([]);
+  useEffect(() => {
+    const userId = Number(user?.SystemUserId || 0);
+    if (!userId) { previousGuideView.current = activeView; return; }
+    const previous = previousGuideView.current;
+    const before = loadGuideProfile(userId);
+    if (previous && previous !== activeView) recordRoute(userId, previous, activeView);
+    previousGuideView.current = activeView;
+    const now = Date.now();
+    recentGuideViews.current = [...recentGuideViews.current.filter(item => now - item.at < 15000), { view: activeView, at: now }].slice(-8);
+    const sequence = recentGuideViews.current.map(item => item.view);
+    if (sequence.length >= 5) {
+      const a = sequence[sequence.length - 1], b = sequence[sequence.length - 2];
+      const alternating = sequence.slice(-5).every((view, index, arr) => index === 0 || view !== arr[index - 1])
+        && new Set(sequence.slice(-5)).size <= 2;
+      const historical = Number(before.routes[`${a}>${b}`] || 0) + Number(before.routes[`${b}>${a}`] || 0);
+      const page = featureById(`page.${activeView}`);
+      const expert = page ? masteryScore(before, page) >= .72 : false;
+      // Familiar back-and-forth is a workflow, not confusion. Only unfamiliar
+      // bouncing earns a whisper, which is precisely how AB stops being asked
+      // once this becomes his normal way of working.
+      if (alternating && historical < 5 && !expert && canProactivelyHint(before, `route-bounce:${a}:${b}`, "soft")) {
+        noteHint(userId, `route-bounce:${a}:${b}`, false);
+        noteFriction(userId, `تنقل متكرر · ${String(a)} ↔ ${String(b)}`);
+        telemetryBreadcrumb(`المرشد · تنقل متكرر ${String(a)}↔${String(b)}`); telemetryGuide(`تنقل متكرر · ${String(a)} ↔ ${String(b)}`);
+        setGuideHint({ key:`route-bounce:${a}:${b}`, title:"يبدو أنك تبحث بين شاشتين", detail:"إذا كنت تبحث عن وظيفة محددة، يمكن لزر «كيف؟» أن يوصلك إليها مباشرةً. وإذا كان هذا مسارك المعتاد فسأتعلمه ولن أكرر الاقتراح.", level:"soft" });
+      }
+    }
+  }, [activeView, user?.SystemUserId]);
+
+  useEffect(() => {
+    const userId = Number(user?.SystemUserId || 0);
+    if (!userId) return;
+    const repeated = new Map<string, number[]>();
+    const hesitation = new Map<string, number>();
+    let hoverTimer: number | null = null;
+    let hoverKey = "";
+    let hoverClicked = false;
+    const labelOf = (element: HTMLElement) => String(element.getAttribute("aria-label") || element.getAttribute("title") || element.textContent || "").replace(/\s+/g," ").trim().slice(0,72);
+    const onClick = (event: MouseEvent) => {
+      const raw = event.target instanceof HTMLElement ? event.target : null;
+      const control = raw?.closest<HTMLElement>("[data-guide-target],button,a,[role='button']");
+      if (!control || control.closest(".smart-guide")) return;
+      if (activeView !== "schedules" && activeView !== "intelligence") {
+        const card = raw?.closest<HTMLElement>(".record-card,.catalog-master button,.master-list button");
+        if (card) {
+          const label = String(card.getAttribute("aria-label") || card.getAttribute("title") || card.textContent || "").replace(/\s+/g," ").trim().slice(0,96);
+          const page = featureById(`page.${activeView}`);
+          setGuideContext({ view: activeView, title: page?.title || "هذه الشاشة", summary: page?.summary || "", currentFeatureId: page?.id, selected: label ? { course: label } : null, whatHappens: page?.summary || "" });
+        }
+      }
+      hoverClicked = true;
+      const controlLabel = labelOf(control);
+      const naturallyRepeatable = /التالي|السابق|اليوم|الأسبوع التالي|الأسبوع السابق|تكبير|تصغير|تمرير|صفحة تالية|صفحة سابقة/.test(controlLabel);
+      const explicit = control.getAttribute("data-guide-target") || control.closest<HTMLElement>("[data-guide-target]")?.getAttribute("data-guide-target") || "";
+      if (explicit && featureById(explicit)) recordFeatureUse(userId, explicit, "success");
+      const key = explicit || `${activeView}:${controlLabel}`;
+      if (naturallyRepeatable) return;
+      const now = Date.now();
+      const list = [...(repeated.get(key) || []).filter(value => now - value < 8000), now];
+      repeated.set(key, list);
+      const profile = loadGuideProfile(userId);
+      const feature = explicit ? featureById(explicit) : null;
+      const expert = feature ? masteryScore(profile, feature) >= .72 : false;
+      const threshold = expert ? 7 : 4;
+      if (list.length >= threshold && canProactivelyHint(profile, `repeat:${key}`, expert ? "strong" : "soft")) {
+        noteHint(userId, `repeat:${key}`, false);
+        noteFriction(userId, explicit ? `تكرار · ${explicit}` : `تكرار · ${activeView}`);
+        telemetryBreadcrumb(`المرشد · تكرار ${explicit || activeView}`); telemetryGuide(`تكرار استخدام · ${explicit || activeView}`);
+        setGuideHint({ key:`repeat:${key}`, title: expert ? "هذه الخطوة لا تسير كالمعتاد" : "يمكنني مساعدتك هنا", detail: controlLabel ? `تكرر استخدام «${controlLabel}» دون انتقال واضح. يمكنني شرحها أو نقلك إلى المكان الصحيح.` : "تكررت المحاولة نفسها أكثر من المعتاد.", level: expert ? "strong" : "soft" });
+      }
+    };
+    const onPointerOver = (event: PointerEvent) => {
+      const raw = event.target instanceof HTMLElement ? event.target : null;
+      const control = raw?.closest<HTMLElement>("button,[role='button']");
+      if (!control || control.closest(".smart-guide")) return;
+      const label = labelOf(control);
+      if (!/حذف|نشر|اعتماد|استعادة|استعاده|استبدال|مسح/.test(label)) return;
+      if (hoverTimer != null) window.clearTimeout(hoverTimer);
+      hoverKey = `${activeView}:${label}`; hoverClicked = false;
+      hoverTimer = window.setTimeout(() => {
+        const count = Number(hesitation.get(hoverKey) || 0) + 1; hesitation.set(hoverKey, count);
+        if (count < 2 || hoverClicked) return;
+        const profile = loadGuideProfile(userId);
+        if (!canProactivelyHint(profile, `hesitate:${hoverKey}`, "soft")) return;
+        noteHint(userId, `hesitate:${hoverKey}`, false);
+        noteFriction(userId, `تردد · ${activeView}`);
+        telemetryBreadcrumb(`المرشد · تردد ${activeView}`); telemetryGuide(`تردد قبل إجراء · ${activeView}`);
+        setGuideHint({ key:`hesitate:${hoverKey}`, title:"إذا كنت مترددًا، يمكنني توضيح النتيجة قبل الضغط", detail:`«${label}» إجراء مؤثر. المرشد يشرح لك ما سيحدث أولًا ولا ينفذ إجراءً حساسًا بدون قرارك.`, level:"soft" });
+      }, 1600);
+    };
+    const onGeneralHover = (event: PointerEvent) => {
+      const raw = event.target instanceof HTMLElement ? event.target : null;
+      const control = raw?.closest<HTMLElement>("[data-guide-target]");
+      if (!control || control.closest(".smart-guide")) return;
+      const explicit = control.getAttribute("data-guide-target") || "";
+      const feature = featureById(explicit);
+      if (!feature) return;
+      const current = loadGuideProfile(userId);
+      if (masteryScore(current, feature) >= .25) return;
+      const label = labelOf(control);
+      if (/حذف|نشر|اعتماد|استعادة|استعاده|استبدال|مسح/.test(label)) return;
+      if (hoverTimer != null) window.clearTimeout(hoverTimer);
+      hoverClicked = false;
+      hoverTimer = window.setTimeout(() => {
+        if (hoverClicked) return;
+        const profile = loadGuideProfile(userId);
+        if (!canProactivelyHint(profile, `hover:${explicit}`, "soft")) return;
+        noteHint(userId, `hover:${explicit}`, false);
+        setGuideHint({ key:`hover:${explicit}`, title:`هل تريد شرح «${feature.title}»؟`, detail:"يمكنني تحديدها على الشاشة وشرحها بخطوات قصيرة.", level:"soft" });
+      }, 3600);
+    };
+    const onPointerOut = () => { if (hoverTimer != null) window.clearTimeout(hoverTimer); hoverTimer = null; };
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("pointerover", onPointerOver, true);
+    document.addEventListener("pointerover", onGeneralHover, true);
+    document.addEventListener("pointerout", onPointerOut, true);
+    return () => { if (hoverTimer != null) window.clearTimeout(hoverTimer); document.removeEventListener("click", onClick, true); document.removeEventListener("pointerover", onPointerOver, true); document.removeEventListener("pointerover", onGeneralHover, true); document.removeEventListener("pointerout", onPointerOut, true); };
+  }, [activeView, user?.SystemUserId]);
   /** Which nav groups the reader has pressed open or shut, by group id. */
   // The primary workspace group opens by default so the daily destinations —
   // dashboard, schedule, queries — are one press away; the secondary groups
@@ -1550,6 +1751,8 @@ export default function App() {
           copy: "يتوقف البرنامج مؤقتاً عند انقطاع الاتصال، ويعود تلقائياً عندما يرجع الإنترنت.",
         },
       ];
+  const guideNewCount = user ? changedFeatures(loadGuideProfile(Number(user.SystemUserId)), activeView, permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)).length : 0;
+  void guideProfileRevision;
   const taskFamily =
     activeView === "dashboard"
       ? "home"
@@ -1979,6 +2182,36 @@ export default function App() {
           <span className="mobile-dock-label">المزيد</span>
         </button>
       </nav>
+
+      {guideOpen ? (
+        <SmartGuide
+          open={guideOpen}
+          onClose={() => setGuideOpen(false)}
+          activeView={activeView}
+          user={user}
+          permissions={permissions}
+          root={Boolean(user.IsRootAdmin)}
+          hint={guideHint}
+          onDismissHint={() => setGuideHint(null)}
+          context={guideContext}
+          onNavigate={(view) => go(view as View)}
+        />
+      ) : null}
+      <button
+        type="button"
+        data-guide-ignore="true"
+        className={`smart-guide-fab no-print ${guideHint ? "has-hint" : ""} ${guideOpen ? "active" : ""}`}
+        onClick={() => { setGuideOpen(true); }}
+        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : "افتح مرشد SCHEDULE"}
+        title={guideHint ? `${guideHint.title}` : "مرشد SCHEDULE"}
+      >
+        <span className="smart-guide-fab-mark" aria-hidden="true"><Sparkles /></span>
+        <span className="smart-guide-fab-copy">
+          <small>{guideHint ? "مساعدة مقترحة" : guideNewCount ? `${guideNewCount.toLocaleString("ar-KW-u-nu-latn")} جديد` : "مرشد حي"}</small>
+          <strong>كيف؟</strong>
+        </span>
+        {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : guideNewCount ? <i className="smart-guide-fab-new" aria-hidden="true">{guideNewCount > 9 ? "9+" : guideNewCount}</i> : null}
+      </button>
 
       {searchOpen ? (
         <div

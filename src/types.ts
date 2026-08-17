@@ -227,7 +227,7 @@ export interface ClientTelemetryEntry {
   AdCollegeId?: number;
   AdSectionId?: number;
   AdTermId?: number;
-  kind: "api" | "error" | "offline" | "sync";
+  kind: "api" | "error" | "offline" | "sync" | "guide";
   name: string;
   durationMs?: number;
   status?: number;

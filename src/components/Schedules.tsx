@@ -125,8 +125,9 @@ import { AR, countOf } from "../utils/arabicCount";
 import { createPresenceClient, createPresencePainter, presenceHue, type PresencePeer } from "./schedulePresence";
 import { claimWarmStart } from "../utils/warmStart";
 import { pickHistoricalDayModel, type HistoricalTimeModel } from "../utils/advancedIntelligence";
-import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryOffline, telemetryTiming } from "../utils/clientTelemetry";
+import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryGuide, telemetryOffline, telemetryTiming } from "../utils/clientTelemetry";
 import { canQueueScheduleMutation, enqueueScheduleMutation, flushOfflineScheduleQueue, offlineQueueCount, queuedPseudoResponse, setOfflineQueueOwner, subscribeOfflineQueue } from "../utils/offlineScheduleQueue";
+import { featureById, loadGuideProfile, masteryScore, recordFeatureUse } from "../guide/smartGuide";
 /* The same six hues the stylesheet paints from, so a chip and the ring it
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
@@ -587,9 +588,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const [offlinePending, setOfflinePending] = useState(() => offlineQueueCount());
   const syncFlushBusy = useRef(false);
   const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
-  // The schedule itself stays quiet: help opens only when the question mark is
-  // pressed. First-run onboarding belongs to the two decision/intelligence hubs.
-  const [scheduleGuideOpen, setScheduleGuideOpen] = useState(false);
     /* The dock's search button has nothing of its own to search with — it brings
      the reader to the one field that already exists, rather than owning a
      second one that could disagree with it. */
@@ -1506,6 +1504,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const copyScope = resolveScopeSelection(scopes, copyCollege, isPowerAdmin);
   const formScopeLabel = describeScopeSelection(colleges, sections, form.AdCollegeId || formScope.defaultCollegeId, form.AdSectionId || formScope.defaultSectionId);
   const filterScopeLabel = describeScopeSelection(colleges, sections, filterCollege || filterScope.defaultCollegeId, filterSection || filterScope.defaultSectionId);
+
+  const [guideDetectedHelp, setGuideDetectedHelp] = useState<{ key?: string; featureId?: string; title: string; detail: string; level: "soft" | "strong" } | null>(null);
+  const guideFailureTimesRef = useRef<number[]>([]);
   const experience = useScheduleExperience({
     rows,
     courses,
@@ -3182,6 +3183,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           const confirmed = new Map<number, FSchedule>(outcome.rows.map((item: FSchedule) => [item.id, item]));
           setRows(current => current.map(item => confirmed.get(item.id) || item));
         }
+        recordFeatureUse(Number(user?.SystemUserId || 0), "schedule.action.move-room", "success");
       } catch (refusal) {
         // Nothing was written — put the grid back, and take back the optimistic
         // marker and undo so a refused move leaves no trace of having happened.
@@ -3202,6 +3204,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         throw refusal;
       }
     } catch (e: any) {
+      recordFeatureUse(Number(user?.SystemUserId || 0), "schedule.action.move-room", "failure");
+      telemetryGuide("تعثر · نقل مقرر بين القاعات");
       // A refusal to overwrite is a decision to hand back, not a message to show.
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
       else {
@@ -4157,6 +4161,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             <button
               type="button"
               className="week-moved-pill"
+              data-guide-target="schedule.undo"
               title={`${entry.label} — اضغط للتراجع`}
               onPointerDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -5635,7 +5640,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         >
           نسخ جدول فصل دراسي
         </PageTitle>
-        {error ? <Notice>{error}</Notice> : null}
+        {error ? <Notice>{error}<button type="button" className="inline-guide-explain no-print" onClick={() => window.dispatchEvent(new CustomEvent("schedule-smart-guide-open", { detail: { hint: { key: "schedule:error:explain", title: "سأوضح سبب المشكلة", detail: error, level: "strong" }, context: { currentFeatureId: "schedule.action.move-room", whatHappens: error } } }))}>اشرح السبب</button></Notice> : null}
         {message ? <Notice type="success">{message}</Notice> : null}
         <Surface className="copy-workspace">
           <div className="form-intro">
@@ -6385,28 +6390,243 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     historicalChoice ||
     mobileViewGate
   );
-  const closeScheduleGuide = (remember = true) => {
-    if (remember) {
-      try { localStorage.setItem("schedule-guide-v3", "1"); } catch {}
-    }
-    setScheduleGuideOpen(false);
-  };
   const liveEditors = peers.filter(peer => peer.editing).length;
   const liveHolders = peers.filter(peer => peer.holding).length;
   const liveCollaborators = peers.filter(peer => peer.cell || peer.holding || peer.editing).length;
+
+  useEffect(() => {
+    if (!error) return;
+    const now = Date.now();
+    guideFailureTimesRef.current = [...guideFailureTimesRef.current.filter(value => now - value < 45_000), now].slice(-6);
+    const profile = loadGuideProfile(Number(user?.SystemUserId || 0));
+    const moveFeature = featureById("schedule.action.move-room");
+    const moveLike = /تعارض|موضع|قاعة|أستاذ|نقل|السحب|الوقت/.test(error);
+    const expert = moveLike && moveFeature ? masteryScore(profile, moveFeature) >= .72 : false;
+    const threshold = expert ? 3 : 2;
+    if (guideFailureTimesRef.current.length < threshold) return;
+    setGuideDetectedHelp({
+      key: moveLike ? "schedule.move.repeated-failure" : "schedule.repeated-error",
+      featureId: moveLike ? "schedule.action.move-room" : undefined,
+      title: expert ? "هذه العملية لا تسير كالمعتاد" : "تكررت المشكلة في هذه الخطوة",
+      detail: error,
+      level: "strong",
+    });
+    telemetryGuide(moveLike ? "تعثر متكرر · نقل مقرر" : "تعثر متكرر · الجدول");
+  }, [error, user?.SystemUserId]);
+  useEffect(() => {
+    if (!mobileViewGate) return;
+    setGuideDetectedHelp({
+      title: "هذا العرض للقراءة فقط على الهاتف",
+      detail: "إذا أردت التعديل الآن استخدم «قائمة»، أو أكمل من الكمبيوتر للسحب والنقل المباشر.",
+      level: "soft",
+    });
+  }, [mobileViewGate]);
+  useEffect(() => {
+    if (error || mobileViewGate || rowsLoading) return;
+    setGuideDetectedHelp(null);
+  }, [error, mobileViewGate, rowsLoading, viewMode, filterCollege, filterSection, filterTerm]);
+  const currentGuideTask = useMemo(() => {
+    const selectedRow = context?.selected || null;
+    if (selectedRow) {
+      return {
+        id: `work:schedule-row:${Number(selectedRow.id || 0)}`,
+        title: `متابعة «${selectedRow.AdCourseName || selectedRow.CourseName || "المقرر المحدد"}»`,
+        featureId: "schedule.action.move-room",
+        command: { scope: "schedule", type: "focusRow", value: String(Number(selectedRow.id || 0)) },
+      };
+    }
+    if (transferOpen) {
+      return {
+        title: "أدوات البيانات",
+        target: "schedule.tool.data",
+        command: { scope: "schedule", type: "openTransfer" },
+      };
+    }
+    if (reviewOpen) {
+      return {
+        title: "مراجعة الاعتماد",
+        target: "schedule.tool.review",
+        command: { scope: "schedule", type: "openReview" },
+      };
+    }
+    if (viewMode === "rooms") {
+      return {
+        title: "العمل داخل المباني والقاعات",
+        target: "schedule.view.rooms",
+        command: { scope: "schedule", type: "changeView", value: "rooms" },
+      };
+    }
+    if (viewMode === "week") {
+      return {
+        title: "العمل داخل عرض الأسبوع",
+        target: "schedule.view.week",
+        command: { scope: "schedule", type: "changeView", value: "week" },
+      };
+    }
+    return {
+      title: "العمل داخل القائمة",
+      target: "schedule.view.list",
+      command: { scope: "schedule", type: "changeView", value: "list" },
+    };
+  }, [context?.selected?.id, reviewOpen, transferOpen, viewMode]);
+  const scheduleGuideSummary = useMemo(() => {
+    if (rowsLoading) return "يقرأ الجدول الآن ويجهز العناصر الظاهرة على الشاشة.";
+    if (error) return error;
+    if (liveClash.pairs) return `يوجد ${countOf(liveClash.pairs, AR.clash)} تحتاج إلى مراجعة قبل الاعتماد.`;
+    if (mobileViewGate) return "أنت على الهاتف داخل عرض للقراءة فقط؛ التعديل المباشر متاح من القائمة أو من الكمبيوتر.";
+    if (viewMode === "rooms") return "أنت الآن داخل المباني والقاعات — أفضل عرض لنقل المقررات ومقارنة الإشغال.";
+    if (viewMode === "week") return "أنت الآن داخل عرض الأسبوع — الخريطة الزمنية الكاملة للنطاق المفتوح.";
+    return "أنت الآن داخل القائمة — أفضل نقطة للبحث السريع والتحرير المباشر.";
+  }, [rowsLoading, error, liveClash.pairs, mobileViewGate, viewMode]);
+  useEffect(() => {
+    const userId = Number(user?.SystemUserId || 0);
+    const profile = loadGuideProfile(userId);
+    const featureId = viewMode === "rooms" ? "schedule.view.rooms" : viewMode === "week" ? "schedule.view.week" : "schedule.view.list";
+    const feature = featureById(featureId);
+    const expert = feature ? masteryScore(profile, feature) >= .72 : false;
+    const termLabel = terms.find(term => term.AdTermId === filterTerm)?.AdTermName || "";
+    const selected = context?.selected || null;
+    window.dispatchEvent(new CustomEvent("schedule-smart-guide-context", {
+      detail: {
+        scope: "schedule",
+        view: "schedules",
+        title: "الجدول الدراسي",
+        collegeId: filterCollege || undefined,
+        sectionId: filterSection || undefined,
+        termId: filterTerm || undefined,
+        currentFeatureId: viewMode === "rooms" ? "schedule.view.rooms" : viewMode === "week" ? "schedule.view.week" : "schedule.view.list",
+        summary: scheduleGuideSummary,
+        placeLabel: viewMode === "rooms" ? "المباني والقاعات" : viewMode === "week" ? "عرض الأسبوع" : "عرض القائمة",
+        stageLabel: filterScopeLabel || "بدون نطاق",
+        scopeLabel: [filterScopeLabel, termLabel].filter(Boolean).join(" · "),
+        whatHappens: scheduleGuideSummary,
+        lastAction: error || message || returnNote || "",
+        unsaved: Boolean(saving || offlinePending),
+        currentTask: currentGuideTask,
+        selected: selected ? {
+          id: Number(selected.id || 0),
+          course: String(selected.AdCourseName || selected.CourseName || "المقرر المحدد"),
+          room: [selected.AdRoomCode, selected.AdRoomHall].filter(Boolean).join(" · "),
+          start: String(selected.fstarttime || ""),
+          conflict: liveClash.ids.has(Number(selected.id || 0)),
+        } : null,
+        metrics: {
+          isExpert: expert,
+          mastery: feature ? masteryScore(profile, feature) : 0,
+        },
+        detectedHelp: guideDetectedHelp,
+      },
+    }));
+  }, [context?.selected?.id, currentGuideTask, error, filterCollege, filterScopeLabel, filterSection, filterTerm, guideDetectedHelp, liveClash.pairs, message, offlinePending, returnNote, saving, scheduleGuideSummary, terms, user?.SystemUserId, viewMode]);
+  useEffect(() => {
+    const onGuideCommand = (event: Event) => {
+      const detail = (event as CustomEvent).detail || {};
+      if (detail.scope && detail.scope !== "schedule") return;
+      if (detail.type === "changeView" && detail.value) {
+        changeView(String(detail.value));
+        return;
+      }
+      if (detail.type === "openReview") {
+        setWorkspaceToolsOpen(true);
+        setReviewOpen(true);
+        return;
+      }
+      if (detail.type === "openTransfer") {
+        setWorkspaceToolsOpen(true);
+        if (!showMobileReadOnlyGate()) setTransferOpen(true);
+        return;
+      }
+      if (detail.type === "showTarget") {
+        if (detail.target === "schedule.tool.review" || detail.target === "schedule.tool.data") {
+          setWorkspaceToolsOpen(true);
+        }
+        return;
+      }
+      if (detail.type === "openEditRow" && detail.value) {
+        const id = Number(detail.value || 0);
+        const row = rows.find(item => Number(item.id) === id);
+        if (row) openEdit(row);
+        return;
+      }
+      if (detail.type === "openEditSelected") {
+        const id = Number(detail.value || context?.selected?.id || 0);
+        const row = rows.find(item => Number(item.id) === id);
+        if (row) {
+          openEdit(row);
+          setMessage(detail.task === "instructor" ? "تم فتح المقرر المحدد. اختر الأستاذ الجديد ثم راجع التعارضات قبل الحفظ." : "تم فتح المقرر المحدد. عدّل الوقت ثم راجع النتيجة قبل الحفظ.");
+        } else setMessage("حدد مقررًا أولًا، ثم أعد طلب المساعدة.");
+        return;
+      }
+      if (detail.type === "focusRow" && detail.value) {
+        const id = Number(detail.value || 0);
+        const row = rows.find(item => Number(item.id) === id);
+        if (!row) return;
+        if (viewMode === "list") changeView("week");
+        setReviewFocus(new Set([id]));
+        window.setTimeout(() => {
+          document.querySelector<HTMLElement>(`[data-row-id="${id}"]`)?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+        }, 180);
+        return;
+      }
+      if (detail.type === "findAlternative" && detail.value) {
+        const id = Number(detail.value || 0);
+        const row = rows.find(item => Number(item.id) === id);
+        if (!row) return;
+        try {
+          const chain = findRepairChain(row, rows);
+          if (chain) { setRepairReason("بدائل مناسبة لهذا المقرر"); setRepair(chain); }
+          else setMessage("لم أجد بديلًا مباشرًا دون إنشاء تعارض جديد. افتح المباني والقاعات لمقارنة الخيارات يدويًا.");
+        } catch { setMessage("تعذر تجهيز البدائل تلقائيًا؛ لم يتغير شيء في الجدول."); }
+        return;
+      }
+      if (detail.type === "findAlternativeSelected") {
+        const id = Number(detail.value || context?.selected?.id || 0);
+        const row = rows.find(item => Number(item.id) === id);
+        changeView("rooms");
+        if (!row) { setMessage("تم فتح المباني والقاعات. حدد مقررًا لأبحث عن البدائل المناسبة له."); return; }
+        setReviewFocus(new Set([id]));
+        try {
+          const chain = findRepairChain(row, rows);
+          if (chain) { setRepairReason("بدائل مناسبة لهذا المقرر"); setRepair(chain); }
+          else setMessage("لم أجد بديلًا مباشرًا دون إنشاء تعارض جديد. يمكنك مقارنة القاعات الظاهرة يدويًا دون تغيير الجدول.");
+        } catch { setMessage("تعذر تجهيز البدائل تلقائيًا؛ لم يتغير شيء في الجدول."); }
+        return;
+      }
+      if (detail.type === "assistMoveRoom") {
+        const id = Number(detail.value || context?.selected?.id || 0);
+        changeView("rooms");
+        if (id) {
+          setReviewFocus(new Set([id]));
+          const row = rows.find(item => Number(item.id) === id);
+          if (row) {
+            try {
+              const chain = findRepairChain(row, rows);
+              if (chain) { setRepairReason("اقتراحات آمنة قبل النقل"); setRepair(chain); }
+            } catch {}
+          }
+        }
+        setMessage(id ? "تم تجهيز عرض المباني والقاعات وإبراز المقرر. اختر الوجهة المناسبة؛ لن يُعتمد أي تغيير قبل حركتك الفعلية." : "تم فتح عرض المباني والقاعات. حدّد المقرر المطلوب وسأبقى معك أثناء النقل.");
+        return;
+      }
+      if (detail.type === "demo" && detail.task === "move-room") {
+        changeView("rooms");
+        setMessage("تم تجهيز عرض المباني والقاعات. هنا تستطيع نقل المقرر أو مقارنة القاعات بصريًا.");
+        return;
+      }
+      if (detail.type === "assist" && detail.task === "move-room") {
+        changeView("rooms");
+        setMessage("تم تجهيز عرض المباني والقاعات. اختر القاعة الجديدة أو اسحب البطاقة؛ وسيبقى الاعتماد النهائي تحت قرارك.");
+      }
+    };
+    window.addEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
+    return () => window.removeEventListener("schedule-smart-guide-command", onGuideCommand as EventListener);
+  }, [changeView, context?.selected?.id, rows, showMobileReadOnlyGate, viewMode]);
   return (
     <div className={`content-stack schedule-page ${phoneReadOnly ? "schedule-phone" : ""}`.trim()}>
       <PageTitle
         eyebrow="مركز الجدول"
         subtitle="نطاق · مراجعة · نشر"
-        action={
-          <div className="page-title-actions no-print">
-            <GhostButton type="button" className="page-help-action" onClick={() => setScheduleGuideOpen(true)} title="تعريف سريع بأهم المزايا" aria-label="تعريف سريع بأهم مزايا الجدول">
-              <HelpCircle aria-hidden="true" />
-            </GhostButton>
-            <AddButton onClick={openCreate}>إضافة موعد</AddButton>
-          </div>
-        }
+        action={<AddButton onClick={openCreate}>إضافة موعد</AddButton>}
       >
         الجدول الدراسي
       </PageTitle>
@@ -6418,27 +6638,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             <div className="historical-time-compare" dir="ltr"><b>{historicalChoice.picked}</b><ChevronLeft aria-hidden="true" /><strong>{historicalChoice.preferred}</strong></div>
             <p>النمط الأقرب يشير إلى <b dir="ltr">{historicalChoice.preferred}</b>. الوقت الذي اخترته <b dir="ltr">{historicalChoice.picked}</b> يبقى مسموحاً.</p>
             <footer><button type="button" onClick={() => settleHistoricalTimeChoice(true)}>ثبّت {historicalChoice.picked}</button><button type="button" className="primary" onClick={() => settleHistoricalTimeChoice(false)}>استخدم {historicalChoice.preferred}</button></footer>
-          </section>
-        </div>
-      ) : null}
-      {scheduleGuideOpen ? (
-        <div className="schedule-guide-backdrop no-print" role="dialog" aria-modal="true" aria-label="تعريف سريع بأهم مزايا الجدول" onMouseDown={event => { if (event.target === event.currentTarget) closeScheduleGuide(false); }}>
-          <section className="schedule-guide-card">
-            <header>
-              <span className="schedule-guide-mark"><HelpCircle aria-hidden="true" /></span>
-              <div><small>خريطة سريعة</small><strong>أين تجد الأشياء المهمة؟</strong></div>
-              <button type="button" onClick={() => closeScheduleGuide(false)} aria-label="إغلاق"><X /></button>
-            </header>
-            <div className="schedule-guide-grid">
-              <article><Clock3/><span><strong>وقت ذكي</strong><small>التاريخ ينبه فقط؛ لا يمنع.</small></span></article>
-              <article><BrainCircuit/><span><strong>قرار الآن</strong><small>أفضل ما يستحق انتباهك.</small></span></article>
-              <article><UsersRound/><span><strong>تعاون مباشر</strong><small>من يعمل على البطاقة الآن.</small></span></article>
-              <article><History/><span><strong>لماذا؟ وReplay</strong><small>افتح البطاقة لترى قصتها.</small></span></article>
-            </div>
-            <footer>
-              <span>السحب آمن · النسخة القديمة محمية · الاتصال الضعيف لا يضيع التعديل الآمن</span>
-              <button type="button" onClick={() => closeScheduleGuide(true)}>فهمت</button>
-            </footer>
           </section>
         </div>
       ) : null}
@@ -6476,10 +6675,11 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
       <Surface className="schedule-control">
         <div className="filter-strip">
-          <Field label="الكلية"><select value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
-          {isPowerAdmin || !filterScope.lockSection ? <Field label="القسم العلمي"><select value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
+          <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
+          {isPowerAdmin || !filterScope.lockSection ? <Field label="القسم العلمي"><select data-guide-target="schedule.filter.section" value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
           <Field label="الفصل الدراسي">
             <select
+              data-guide-target="schedule.filter.term"
               value={filterTerm || ""}
               onChange={(e) => setFilterTerm(Number(e.target.value) || 0)}
             >
@@ -6496,14 +6696,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <div className="schedule-tools" role="toolbar" aria-label="أدوات عرض الجدول">
           <div className="schedule-view-cluster">
           <div className="segmented" role="group" aria-label="طريقة عرض الجدول">
-            <button type="button" className={viewMode === "list" ? "active" : ""} aria-pressed={viewMode === "list"} onClick={() => changeView("list")}>
+            <button data-guide-target="schedule.view.list" type="button" className={viewMode === "list" ? "active" : ""} aria-pressed={viewMode === "list"} onClick={() => changeView("list")}>
               <LayoutList aria-hidden="true" /> قائمة
             </button>
             {!phoneReadOnly ? (<>
-              <button type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => changeView("week")}>
+              <button data-guide-target="schedule.view.week" type="button" className={viewMode === "week" ? "active" : ""} aria-pressed={viewMode === "week"} onClick={() => changeView("week")}>
                 <CalendarDays aria-hidden="true" /> أسبوع
               </button>
-              <button type="button" className={viewMode === "rooms" ? "active" : ""} aria-pressed={viewMode === "rooms"} onClick={() => changeView("rooms")}>
+              <button data-guide-target="schedule.view.rooms" type="button" className={viewMode === "rooms" ? "active" : ""} aria-pressed={viewMode === "rooms"} onClick={() => changeView("rooms")}>
                 <MapPin aria-hidden="true" /> المباني والقاعات
               </button>
             </>) : null}
@@ -6618,7 +6818,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             </span>
           ) : null}
           </div>
-          <label className="schedule-quick-search" role="search">
+          <label className="schedule-quick-search" role="search" data-guide-target="schedule.search.quick">
             <Search aria-hidden="true" />
             <input
               type="search"
@@ -6637,6 +6837,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                 and the query centre covers the structured cases in full. */}
             <GhostButton
               type="button"
+              data-guide-target="schedule.tool.more"
               onClick={() => setWorkspaceToolsOpen(open => !open)}
               aria-expanded={workspaceToolsOpen}
               title="إظهار أدوات التركيز والمراجعة والنشر"
@@ -6672,11 +6873,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             >
               <Bookmark aria-hidden="true" /> حفظ العرض الحالي
             </GhostButton> : null}
-            {workspaceToolsOpen ? <GhostButton type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
+            {workspaceToolsOpen ? <GhostButton data-guide-target="schedule.tool.review" type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
               <ClipboardCheck /> مراجعة الاعتماد
             </GhostButton> : null}
             {workspaceToolsOpen ? <GhostButton
               type="button"
+              data-guide-target="schedule.tool.data"
               onClick={() => { if (!showMobileReadOnlyGate()) setTransferOpen(true); }}
               title="استيراد وتصدير واستبدال أستاذ والمنتدبون"
             >
@@ -6892,7 +7094,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           ) : null}
         </Surface>
       ) : viewMode === "rooms" ? (
-        <Surface className="rooms-surface">
+        <Surface className="rooms-surface" data-guide-target="schedule.rooms.board">
           {(() => {
             /* --- The paper timetable, alive -----------------------------------
                The sheet this program replaces lists rooms as rows and the day
@@ -7024,6 +7226,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                     <button
                       type="button"
                       className="week-moved-pill"
+                      data-guide-target="schedule.undo"
                       title={`${undoEntry.label} — اضغط للتراجع`}
                       onClick={(e) => { e.stopPropagation(); void runUndoEntry(undoEntry); setRecentMoves(current => { const next = { ...current }; delete next[row.id]; return next; }); }}
                       onPointerDown={(e) => e.stopPropagation()}
@@ -7382,6 +7585,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                attribute would be dropped and the code would merely look like it
                announced something. The screen reader is already served by the
                «يقرأ الجدول…» status line in the filter strip. */
+            data-guide-target="schedule.week.board"
             className={`week-surface ${physicsActive ? "physics-lens-active" : ""} ${picking ? "week-picking" : ""} ${rowsLoading && rows.length ? "week-refreshing" : ""}`}
           >
             {/* One question at a time, asked of the whole week. The controls
@@ -8483,7 +8687,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <div className="undo-bar no-print" role="status">
           <History aria-hidden="true" />
           <span>{undoAction.label}</span>
-          <button type="button" onClick={() => void runUndoEntry(undoAction)} disabled={Boolean(undoBusy)}>
+          <button data-guide-target="schedule.undo" type="button" onClick={() => void runUndoEntry(undoAction)} disabled={Boolean(undoBusy)}>
             {undoBusy === undoAction.id ? "يتراجع…" : "تراجع"}
           </button>
           <button type="button" className="undo-dismiss" onClick={() => setUndoBarId(null)} aria-label="إخفاء"><X /></button>
@@ -8499,6 +8703,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         <button
           type="button"
           className="undo-log-open no-print"
+          data-guide-target="schedule.undo.log"
           onClick={() => setUndoLogOpen(true)}
           title="سجل تغييرات اليوم"
         >

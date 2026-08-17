@@ -3438,10 +3438,10 @@ app.post("/api/telemetry/client", requireAuth, async (req: AuthenticatedRequest,
     const sectionId = Number(item?.sectionId || item?.AdSectionId || 0);
     const termId = Number(item?.termId || item?.AdTermId || 0);
     if (collegeId && sectionId && !isScopeAllowed(req, collegeId, sectionId)) return null;
-    const kind = ["api","error","offline","sync"].includes(String(item?.kind)) ? String(item.kind) : "error";
+    const kind = ["api","error","offline","sync","guide"].includes(String(item?.kind)) ? String(item.kind) : "error";
     return {
-      SystemUserId: Number(req.user.SystemUserId),
-      userName: String(req.user.Name || req.user.SystemUserLogin || ""),
+      SystemUserId: kind === "guide" ? 0 : Number(req.user.SystemUserId),
+      userName: kind === "guide" ? "" : String(req.user.Name || req.user.SystemUserLogin || ""),
       AdCollegeId: collegeId || undefined,
       AdSectionId: sectionId || undefined,
       AdTermId: termId || undefined,
@@ -3459,12 +3459,24 @@ app.post("/api/telemetry/client", requireAuth, async (req: AuthenticatedRequest,
   res.json({ accepted });
 });
 
+app.get("/api/intelligence/guide-friction", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  if (Number(req.user?.SystemUserId || 0) !== ROOT_ADMIN_USER_ID) { res.status(403).json({ error: "هذه القراءة مخصصة لإدارة النظام الرئيسية" }); return; }
+  const collegeId=Number(req.query.collegeId||0), sectionId=Number(req.query.sectionId||0);
+  if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج نطاقك المسموح"});return;}
+  const rows=await Repository.getClientTelemetry(collegeId,sectionId,1200).catch(()=>[]);
+  const cutoff=Date.now()-30*24*60*60*1000;
+  const counts=new Map<string,number>();
+  rows.filter(item=>item.kind==="guide"&&Date.parse(item.timestamp)>=cutoff).forEach(item=>{const name=String(item.name||"نقطة تعثر").slice(0,120);counts.set(name,(counts.get(name)||0)+1);});
+  const items=[...counts.entries()].map(([name,count])=>({name,count})).sort((a,b)=>b.count-a.count||a.name.localeCompare(b.name,"ar")).slice(0,12);
+  res.json({items,windowDays:30,anonymous:true});
+});
+
 app.get("/api/intelligence/experience-health", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const telemetry=await Repository.getClientTelemetry(collegeId,sectionId,1000).catch(()=>[]);
   const cutoff=Date.now()-14*24*60*60*1000;
-  const recent=telemetry.filter(item=>Date.parse(item.timestamp)>=cutoff);
+  const recent=telemetry.filter(item=>item.kind!=="guide"&&Date.parse(item.timestamp)>=cutoff);
   const perf=apiPerformanceSamples.filter(item=>item.at>=Date.now()-2*60*60*1000 && (item.sectionId===sectionId||(!item.sectionId&&item.userId===Number(req.user?.SystemUserId||0))) && (!item.collegeId||item.collegeId===collegeId));
   const durations=[...perf.map(item=>item.durationMs),...recent.filter(item=>item.kind==="api"&&item.durationMs).map(item=>Number(item.durationMs))].filter(Number.isFinite).sort((a,b)=>a-b);
   const p=(share:number)=>durations.length?durations[Math.min(durations.length-1,Math.floor((durations.length-1)*share))]:0;
