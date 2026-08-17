@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, Check, CheckCircle2, Copy, Download, History, Plus, RotateCcw, ShieldAlert, Upload, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, Check, CheckCircle2, ChevronLeft, Copy, Download, History, Plus, RotateCcw, ShieldAlert, Upload, UserMinus, UserPlus, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
@@ -440,7 +440,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     </ul>
                   ) : null}
                   {xlsxDraft ? (
-                    <p className="transfer-done"><Check /> حُفظت مسودة الاستيراد. راجعها وانشرها من <b>مركز الذكاء → الاستيراد</b> — النشر يحل محل جدول القسم لهذا الفصل بعد نقطة أمان تلقائية.</p>
+                    <p className="transfer-done"><Check /> حُفظت مسودة الاستيراد. راجعها وانشرها من <b className="visual-flow-inline">مركز الذكاء <ChevronLeft aria-hidden="true" /> الاستيراد</b> — النشر يحل محل جدول القسم لهذا الفصل بعد نقطة أمان تلقائية.</p>
                   ) : xlsxPreview.valid ? (
                     <PrimaryButton type="button" onClick={() => void saveExcelDraft()} disabled={busy}>
                       {busy ? "يحفظ…" : `احفظ ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} كمسودة للنشر`}

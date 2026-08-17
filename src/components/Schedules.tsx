@@ -202,6 +202,8 @@ const displayClockCompact = (value: string) => {
   return `${Number(match[1])}:${match[2]}`;
 };
 
+const isolateLtrText = (value: string) => `\u2066${String(value || "")}\u2069`;
+
 type RegulationMetric = { kind: "minutes" | "meetings"; usual: number; current: number; delta: number; unit: string };
 const parseRegulationMetric = (value: string): RegulationMetric | null => {
   const text = normalizeArabicDigits(String(value || ""));
@@ -1703,7 +1705,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           : reading.basis === "pattern" ? "سجل نمط الأيام في القسم"
           : reading.basis === "department" ? "سجل القسم الحديث"
           : "القاعدة المؤسسية";
-        return `${source}: ${day.label} يبدأ عادةً ${preferred}، بينما اخترت ${start}. تنبيه فقط — يمكنك تثبيت الوقت الجديد إذا كان مقصوداً.`;
+        return `${source}: ${day.label} يبدأ عادةً ${isolateLtrText(preferred)}، بينما اخترت ${isolateLtrText(start)}. تنبيه فقط — يمكنك تثبيت الوقت الجديد إذا كان مقصوداً.`;
       }
       const learned = reading.data;
       const duration = endMinutes > startMinutes ? endMinutes - startMinutes : 0;
@@ -1711,7 +1713,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         const [low, high] = learned.durationRange || [0, 0];
         if (low && high && (duration < low || duration > high)) {
           const expectedEnd = timeFromMins(startMinutes + learned.durationMinutes);
-          return `${day.label}: التاريخ الأقرب لهذا المقرر/النمط يشير غالباً إلى ${formatScheduleTimeRange(start, expectedEnd)}، بينما أدخلت ${formatScheduleTimeRange(start, end)}. تنبيه فقط — لا يمنع الحفظ.`;
+          return `${day.label}: التاريخ الأقرب لهذا المقرر/النمط يشير غالباً إلى ${isolateLtrText(formatScheduleTimeRange(start, expectedEnd))}، بينما أدخلت ${isolateLtrText(formatScheduleTimeRange(start, end))}. تنبيه فقط — لا يمنع الحفظ.`;
         }
       }
     }
@@ -7406,7 +7408,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               placeholder="بحث سريع"
               aria-label="بحث سريع داخل مواعيد الجدول"
             />
-            {quickSearch ? <button type="button" onClick={() => setQuickSearch("")} aria-label="مسح البحث السريع">×</button> : null}
+            {quickSearch ? <button type="button" data-guide-ignore="مسح البحث السريع فقط" onClick={() => setQuickSearch("")} aria-label="مسح البحث السريع" title="مسح"><X aria-hidden="true" /></button> : null}
           </label>
           <div className="schedule-tool-actions" role="group" aria-label="أدوات الجدول الإضافية">
             {/* The schedule lens was retired: its one distinct trick — dimming
@@ -9128,7 +9130,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             </header>
             <div className="repair-cost">
               <span><b>{repair.moves.length.toLocaleString("ar-KW-u-nu-latn")}</b> حركات</span>
-              <span><b>{repair.before.toLocaleString("ar-KW-u-nu-latn")} ← {repair.after.toLocaleString("ar-KW-u-nu-latn")}</b> تداخل</span>
+              <span><b className="visual-metric-flow"><span>{repair.before.toLocaleString("ar-KW-u-nu-latn")}</span><ChevronLeft aria-hidden="true" /><span>{repair.after.toLocaleString("ar-KW-u-nu-latn")}</span></b> تداخل</span>
               <span><b>{repair.instructorsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> أساتذة متأثرون</span>
               <span><b>{repair.roomsAffected.toLocaleString("ar-KW-u-nu-latn")}</b> قاعات</span>
             </div>
@@ -9141,7 +9143,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     <em>{move.because}</em>
                     <span className="repair-line">
                       <bdi>{arabicDays(move.before) || "بلا يوم"} · {formatScheduleTimeRange(move.before.fstarttime, move.before.fendtime)}</bdi>
-                      {" ← "}
+                      <ChevronLeft className="visual-inline-arrow" aria-hidden="true" />
                       <bdi>{days.find(d => d.key === move.day)?.label} · {formatScheduleTimeRange(move.start, move.end)} · {move.roomCode}/{move.roomHall}</bdi>
                     </span>
                   </div>

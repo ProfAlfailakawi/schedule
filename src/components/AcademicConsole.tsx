@@ -132,7 +132,7 @@ export default function AcademicConsole({
   const [actionSlot, setActionSlot] = useState<HTMLElement | null>(null);
 
   return (
-    <div className="content-stack academic-console">
+    <div className="content-stack academic-console visual-minimal">
       <h1 className="sr-only">البيانات الأكاديمية</h1>
       <div className="console-head">
         <ConsoleRail

@@ -193,7 +193,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
       </CatalogFormDrawer>
     ) : null;
   return (
-    <div className={`content-stack library-page catalog-inspector-page ${embedded ? "embedded-catalog" : ""}`}>
+    <div className={`content-stack library-page catalog-inspector-page visual-minimal ${embedded ? "embedded-catalog" : ""}`}>
       {embedded ? (
         <EmbeddedAction slot={actionSlot}>
           <AddButton onClick={create}>إنشاء فصل</AddButton>

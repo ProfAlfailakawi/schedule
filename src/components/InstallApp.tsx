@@ -91,7 +91,7 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
   };
 
   return (
-    <div className={`install install-${variant}`} ref={ref}>
+    <div className={`install visual-minimal install-${variant}`} ref={ref}>
       <button
         type="button"
         className={`install-trigger ${open ? "active" : ""} ${!seen ? "discoverable" : ""}`}

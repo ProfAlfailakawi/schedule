@@ -56,7 +56,7 @@ const Person = ({
 
 export default function About() {
   return (
-    <div className="about-editorial">
+    <div className="about-editorial visual-minimal">
       <header className="about-editorial-hero">
         <span>SCHEDULE · التحكم الأكاديمي</span>
         <h1>

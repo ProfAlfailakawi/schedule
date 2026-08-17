@@ -361,7 +361,7 @@ export function RecordCard({icon,title,subtitle,meta,actions,onClick,className="
 const PILL_GLYPHS:Record<string,React.ReactNode>={
   "الوقت":<Clock3/>,"الأيام":<CalendarDays/>,"المكان":<MapPin/>,
   "الوحدات":<Layers/>,"الساعات":<Hourglass/>,"الترتيب":<ListOrdered/>,
-  "الرمز":<Tag/>,"رمز القسم":<Tag/>,"السعة":<Hash/>
+  "الرمز":<Tag/>,"رمز القسم":<Tag/>,"الرقم الأكاديمي":<Hash/>,"السعة":<Hash/>
 };
 export function MetaPill({label,value,dir}:{label:React.ReactNode;value:React.ReactNode;dir?:"ltr"|"rtl"}){
   const key=typeof label==="string"?label:"";

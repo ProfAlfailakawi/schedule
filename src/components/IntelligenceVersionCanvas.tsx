@@ -1,4 +1,5 @@
 import React from "react";
+import { ArrowLeftRight } from "lucide-react";
 import type { FSchedule } from "../types";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
@@ -133,7 +134,7 @@ export function IntelligenceVersionDiffTable({ comparison }: { comparison: any }
                     <td dir="ltr">{row.SCode || "—"}</td>
                     <td>{versionRowWhen(item.before)}<small dir="ltr">{versionRowRoom(item.before)}</small></td>
                     <td>{versionRowWhen(item.after)}<small dir="ltr">{versionRowRoom(item.after)}</small></td>
-                    <td dir="ltr">{item.before && item.after && versionRowRoom(item.before) !== versionRowRoom(item.after) ? `${versionRowRoom(item.before)} ← ${versionRowRoom(item.after)}` : versionRowRoom(item.after || item.before)}</td>
+                    <td dir="ltr">{item.before && item.after && versionRowRoom(item.before) !== versionRowRoom(item.after) ? <span className="visual-metric-flow"><b>{versionRowRoom(item.before)}</b><ArrowLeftRight aria-hidden="true" /><b>{versionRowRoom(item.after)}</b></span> : versionRowRoom(item.after || item.before)}</td>
                   </tr>
                 );
               })}

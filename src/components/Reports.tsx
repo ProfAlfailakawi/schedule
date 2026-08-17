@@ -1253,7 +1253,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       <strong>{roomPick.room}</strong>
                     </div>
                     <span className="occupancy-pick-count">{num(picked.length)} موعد</span>
-                    <button type="button" onClick={() => setRoomPick(null)} aria-label="إغلاق">✕</button>
+                    <button type="button" data-guide-ignore="إغلاق تفاصيل إشغال القاعة فقط" onClick={() => setRoomPick(null)} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></button>
                   </header>
                   {picked.length ? (
                     <div className="occupancy-pick-rows">

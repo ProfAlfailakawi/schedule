@@ -2202,7 +2202,7 @@ export default function App() {
           >
             <span className="rail-identity-name">SCHEDULE</span>
             <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
-            <span className="rail-identity-go" aria-hidden="true">←</span>
+            <span className="rail-identity-go" aria-hidden="true"><ChevronLeft /></span>
           </button>
           <div className="user-card">
             <div

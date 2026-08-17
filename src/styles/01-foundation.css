@@ -301,3 +301,53 @@ time,.num,.code-chip{
  * here, for the whole program.
  */
 [hidden]{display:none !important}
+
+/* ========================================================================== 
+   VISUAL SYSTEM CONSOLIDATION — presentation only.
+   These aliases do not alter any behaviour; they give the later screen rules a
+   single, quieter vocabulary for icon buttons, cards and compact data blocks.
+   ========================================================================== */
+:root{
+  --control-h:44px;
+  --icon-btn:42px;
+  --icon-sm:15px;
+  --icon-md:18px;
+  --icon-lg:24px;
+  --radius-control:var(--r-md);
+  --radius-card:var(--r-xl);
+  --radius-sheet:var(--r-2xl);
+  --card-pad:clamp(14px,1.4vw,20px);
+}
+
+/* Latin numbers and time ranges must keep their visual order when they sit in
+   Arabic sentences. `dir=ltr` already carries the semantics; isolation stops a
+   neighbouring Arabic phrase from reordering the glyphs on screen. */
+time,[dir="ltr"],bdi{unicode-bidi:isolate;font-variant-numeric:tabular-nums}
+
+/* One optical language for icon-only controls. */
+.icon-action,.drawer-close,.notice-close,.qc-close,.share-close,
+.master-search>button,.travel-search>button,.smart-guide-search>button,
+.occupancy-pick header>button{
+  display:inline-grid;place-items:center;inline-size:var(--icon-btn);block-size:var(--icon-btn);
+  min-inline-size:var(--icon-btn);padding:0;border-radius:var(--radius-control);
+}
+.icon-action svg,.drawer-close svg,.notice-close svg,.qc-close svg,.share-close svg,
+.master-search>button svg,.travel-search>button svg,.smart-guide-search>button svg,
+.occupancy-pick header>button svg{inline-size:var(--icon-md);block-size:var(--icon-md)}
+
+/* Empty screens should read as a visual state before they read as prose. */
+.empty-state,.master-empty{
+  min-block-size:210px;display:grid;place-items:center;align-content:center;gap:10px;
+  text-align:center;border-radius:var(--radius-card);
+}
+.empty-state-icon,.master-empty>svg{
+  inline-size:58px;block-size:58px;display:grid;place-items:center;padding:15px;
+  border:1px solid var(--line);border-radius:20px;background:var(--surface-2);color:var(--accent);
+}
+.empty-state p,.master-empty span{max-inline-size:34ch;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+
+/* Small visual transitions between two values/places. Use an icon, never a text
+   arrow, so RTL does not invert the intended comparison. */
+.visual-flow-inline,.visual-metric-flow{display:inline-flex;align-items:center;gap:6px;min-inline-size:0}
+.visual-flow-inline>svg,.visual-metric-flow>svg,.visual-inline-arrow{inline-size:14px;block-size:14px;flex:none;color:var(--muted)}
+.visual-metric-flow>b,.visual-metric-flow>span{font-variant-numeric:tabular-nums}

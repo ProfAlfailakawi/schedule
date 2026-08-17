@@ -48,7 +48,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
   };
   return (
-    <main className="apex-login" dir="rtl">
+    <main className="apex-login visual-minimal" dir="rtl">
       <div className="apex-login-ambient" aria-hidden="true">
         <i />
         <i />

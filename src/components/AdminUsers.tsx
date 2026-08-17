@@ -20,6 +20,7 @@ import {
   UserCog,
   UsersRound,
   RefreshCw,
+  X,
 } from "lucide-react";
 import {
   AddButton,
@@ -147,8 +148,8 @@ function SearchBox({
         placeholder={placeholder}
       />
       {value ? (
-        <button type="button" onClick={() => onChange("")} aria-label="مسح">
-          ×
+        <button type="button" data-guide-ignore="مسح حقل البحث فقط" onClick={() => onChange("")} aria-label="مسح" title="مسح">
+          <X aria-hidden="true" />
         </button>
       ) : null}
     </label>

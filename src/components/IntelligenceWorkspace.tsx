@@ -2173,7 +2173,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {overview.spatialBurnout.risks.slice(0, 5).map((risk: any) => (
                     <article key={`${risk.instructorId}-${risk.day}-${risk.fromRowId}-${risk.toRowId}`} className={risk.level}>
                       <span className="risk-mark"><AlertTriangle /></span>
-                      <div><strong>{risk.instructorName}</strong><small>{risk.dayLabel} · {risk.fromBuilding} → {risk.toBuilding}</small></div>
+                      <div><strong>{risk.instructorName}</strong><small className="visual-flow-inline">{risk.dayLabel} · <b>{risk.fromBuilding}</b><ArrowLeftRight aria-hidden="true" /><b>{risk.toBuilding}</b></small></div>
                       <b>{risk.gapMinutes}د <small>متاح</small></b>
                       <span>{risk.requiredMinutes}د مطلوبة</span>
                     </article>
@@ -3456,11 +3456,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               افتح في Twin
                             </SecondaryButton>
                             <PrimaryButton
+                              data-guide-ignore="يحفظ خيار اللجنة كمسودة تجريبية فقط"
                               onClick={() =>
                                 saveOptionAsDraft(o, `خيار اللجنة ${o.rank}`)
                               }
                             >
-                              <Save /> اختيار اللجنة → مسودة
+                              <Save /> اختيار اللجنة <ChevronLeft className="visual-inline-arrow" aria-hidden="true" /> مسودة
                             </PrimaryButton>
                           </div>
                         </article>
@@ -3911,13 +3912,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="compare-result">
                 <article>
                   <strong>
-                    {termCompare.fromCount} ← {termCompare.toCount}
+                    <span className="visual-metric-flow"><b>{termCompare.fromCount}</b><ArrowLeftRight aria-hidden="true" /><b>{termCompare.toCount}</b></span>
                   </strong>
                   <span>عدد المواعيد</span>
                 </article>
                 <article>
                   <strong>
-                    {termCompare.fromScore} ← {termCompare.toScore}
+                    <span className="visual-metric-flow"><b>{termCompare.fromScore}</b><ArrowLeftRight aria-hidden="true" /><b>{termCompare.toScore}</b></span>
                   </strong>
                   <span>مؤشر الجودة</span>
                 </article>
@@ -3929,7 +3930,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </article>
                 <article>
                   <strong>
-                    {termCompare.uniqueRoomsFrom} ← {termCompare.uniqueRoomsTo}
+                    <span className="visual-metric-flow"><b>{termCompare.uniqueRoomsFrom}</b><ArrowLeftRight aria-hidden="true" /><b>{termCompare.uniqueRoomsTo}</b></span>
                   </strong>
                   <span>القاعات المستخدمة</span>
                 </article>

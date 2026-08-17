@@ -151,7 +151,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
 
   return (
     <div className="journey-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="journey" role="dialog" aria-modal="true" aria-label="رحلة SCHEDULE" ref={sheet}>
+      <div className="journey visual-minimal" role="dialog" aria-modal="true" aria-label="رحلة SCHEDULE" ref={sheet}>
         <button type="button" className="journey-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
 
         <header className="journey-hero">

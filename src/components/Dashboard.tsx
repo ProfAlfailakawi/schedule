@@ -279,7 +279,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    {data.history&&data.history.length>1?<p className="deck-compare-note">
      <span>الخط يغطي</span>
      <b>{data.history[0]?.termName}</b>
-     <i aria-hidden="true">←</i>
+     <i aria-hidden="true"><ArrowLeft /></i>
      <b>{data.history[data.history.length-1]?.termName}</b>
      <em>{num(data.history.length)} فصول</em>
    </p>:data.previous?.termName?<p className="deck-compare-note"><span>المقارنة مع</span><b>{data.previous.termName}</b></p>:null}

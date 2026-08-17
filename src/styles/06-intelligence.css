@@ -3631,3 +3631,61 @@ button.twin-delta{width:100%}
 .visual-minimal.intelligence-page .intel-context-idle,
 .visual-minimal.intelligence-page .scene-subnav,
 .visual-minimal.intelligence-page .intelligence-scenes{border-radius:22px}
+
+/* ========================================================================== 
+   EXHAUSTIVE VISUAL PASS — intelligence + reports.
+   ========================================================================== */
+
+/* Reports: the question is primary; filters visually recede into a compact data
+   strip and expand without looking like a second form. */
+.visual-minimal.query-page .query-bar{box-shadow:var(--shadow-xs)}
+.visual-minimal.query-page .query-ask{border-radius:18px;min-block-size:52px}
+.visual-minimal.query-page .query-ask>svg{inline-size:20px;block-size:20px;color:var(--accent)}
+.visual-minimal.query-page .query-primary-filters{gap:8px}
+.visual-minimal.query-page .query-primary-filters .field,
+.visual-minimal.query-page .query-more .field{padding:9px 10px;border:1px solid var(--line);background:var(--surface-2)}
+.visual-minimal.query-page .query-primary-filters .field>label,
+.visual-minimal.query-page .query-more .field>label{font-size:.66rem;color:var(--muted);font-weight:740}
+.visual-minimal.query-page .query-primary-filters select,
+.visual-minimal.query-page .query-more select,
+.visual-minimal.query-page .query-more input{background:var(--surface);border-radius:12px}
+.visual-minimal.query-page .query-live-nudge{border-radius:999px;box-shadow:var(--shadow-xs)}
+.visual-minimal.query-page .query-answer{overflow:hidden}
+.visual-minimal.query-page .lens-card{position:relative;overflow:hidden}
+.visual-minimal.query-page .lens-card>header svg{inline-size:19px;block-size:19px;color:var(--accent)}
+.visual-minimal.query-page .occupancy-pick{border-radius:24px;box-shadow:var(--shadow-lg)}
+.visual-minimal.query-page .occupancy-pick header>button{border:0;background:transparent;color:var(--muted);cursor:pointer}
+.visual-minimal.query-page .occupancy-pick header>button:hover{color:var(--ink)}
+.visual-minimal.query-page .occupancy-pick-rows article{border-radius:16px}
+
+/* Intelligence: only one hierarchy level should visually shout at a time. */
+.visual-minimal.intelligence-page .intelligence-scenes{padding:6px;background:var(--surface-2)}
+.visual-minimal.intelligence-page .intelligence-scenes .segmented{gap:6px}
+.visual-minimal.intelligence-page .intelligence-scenes .segmented button{position:relative;background:transparent;border-color:transparent}
+.visual-minimal.intelligence-page .intelligence-scenes .segmented button.active{background:var(--surface);box-shadow:var(--shadow-sm);color:var(--accent)}
+.visual-minimal.intelligence-page .scene-subnav{display:flex;gap:8px;padding:6px;background:var(--surface-2)}
+.visual-minimal.intelligence-page .scene-subnav button{border-color:transparent;background:transparent}
+.visual-minimal.intelligence-page .scene-subnav button.active{background:var(--surface);box-shadow:var(--shadow-xs);color:var(--accent)}
+.visual-minimal.intelligence-page .insight-card,
+.visual-minimal.intelligence-page .intel-card,
+.visual-minimal.intelligence-page .decision-card,
+.visual-minimal.intelligence-page .room-window-days>article,
+.visual-minimal.intelligence-page .approval-status-grid>article{border-radius:22px}
+.visual-minimal.intelligence-page .insight-card>header svg,
+.visual-minimal.intelligence-page .intel-card>header svg{color:var(--accent)}
+.visual-minimal.intelligence-page .insight-method{font-size:.72rem;color:var(--muted);line-height:1.65}
+.visual-minimal.intelligence-page .guide-simulation-flow>span{border-radius:18px;background:var(--surface-2)}
+
+/* Context selector uses field tiles, not a wall of form labels. */
+.intel-context.visual-minimal .intel-context-copy>span{inline-size:44px;block-size:44px;border-radius:15px;background:var(--accent-softer);color:var(--accent)}
+.intel-context.visual-minimal .intel-context-fields{gap:8px}
+.intel-context.visual-minimal .intel-context-fields .field{padding:8px 10px;border:1px solid var(--line);background:var(--surface-2)}
+.intel-context.visual-minimal .intel-context-fields .field>label{font-size:.65rem;color:var(--muted)}
+.intel-context.visual-minimal .intel-context-fields select{border-radius:12px;background:var(--surface)}
+
+@media(max-width:760px){
+  .visual-minimal.query-page .query-primary-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .visual-minimal.query-page .query-primary-filters .field:first-child{grid-column:1/-1}
+  .visual-minimal.intelligence-page .intelligence-scenes .segmented button,
+  .visual-minimal.intelligence-page .scene-subnav button{min-inline-size:50px;min-block-size:50px}
+}

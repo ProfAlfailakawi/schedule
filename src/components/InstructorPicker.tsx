@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Plus, Search, UserRound, X } from "lucide-react";
+import { Check, CircleDot, Plus, Search, UserRound, X } from "lucide-react";
 import { byArabic } from "../utils/sorting";
 import { validateCivilId } from "../utils/civilId";
 
@@ -219,6 +219,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
               <button
                 type="button"
                 key={person.AdInstructorId}
+                data-guide-feature-id="schedule.action.change-instructor"
                 className={person.AdInstructorId === value ? "chosen" : ""}
                 role="option"
                 aria-selected={person.AdInstructorId === value}
@@ -231,7 +232,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
                   <b>{person.AdInstructorName}</b>
                   <small dir="ltr">{person.AdInstructorCivil || "—"}</small>
                 </span>
-                {departmentRank.has(person.AdInstructorId) ? <i title="يدرّس في هذا القسم">•</i> : null}
+                {departmentRank.has(person.AdInstructorId) ? <i className="instructor-department-mark" title="يدرّس في هذا القسم" aria-label="يدرّس في هذا القسم"><CircleDot aria-hidden="true" /></i> : null}
                 {person.AdInstructorId === value ? <Check aria-hidden="true" /> : null}
               </button>
             )) : (

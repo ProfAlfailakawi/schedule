@@ -1700,3 +1700,159 @@
 .schedule-views.visual-minimal .views-current,
 .schedule-views.visual-minimal .views-item,
 .schedule-views.visual-minimal .views-manage-row{border-radius:14px}
+
+/* ========================================================================== 
+   EXHAUSTIVE VISUAL PASS — catalog / dashboard / admin / common screens.
+   Functionality is untouched. The goal is icon-first hierarchy without hiding
+   identifiers or forcing a reader through decorative copy.
+   ========================================================================== */
+
+/* The previous broad minimal rule hid every `small` inside every record card,
+   including useful identifiers. Keep the card clean, but preserve structured
+   metadata and paths. */
+.visual-minimal .record-card p{display:none}
+.visual-minimal .record-card small{display:inline}
+.visual-minimal .record-card .meta-pill small{display:none}
+.visual-minimal.catalog-inspector-page .record-card-copy>span{
+  display:flex;align-items:center;gap:7px;color:var(--muted);font-size:.74rem;line-height:1.45;
+}
+.record-path{display:inline-flex;align-items:center;gap:7px;min-inline-size:0}
+.record-path svg{inline-size:13px;block-size:13px;color:var(--accent);flex:none}
+.record-path-dot{inline-size:4px;block-size:4px;border-radius:999px;background:var(--line-strong);flex:none}
+
+.visual-minimal.catalog-inspector-page .record-card{
+  position:relative;overflow:hidden;padding:var(--card-pad);border-radius:var(--radius-card);
+  transition:border-color .18s var(--ease),box-shadow .18s var(--ease),transform .18s var(--ease),background .18s var(--ease);
+}
+.visual-minimal.catalog-inspector-page .record-card::before{
+  content:"";position:absolute;inset-block:10px;inset-inline-start:0;inline-size:3px;border-radius:999px;
+  background:transparent;transition:background .18s var(--ease);
+}
+.visual-minimal.catalog-inspector-page .record-card.selected::before,
+.visual-minimal.catalog-inspector-page .record-card:focus-visible::before{background:var(--accent)}
+.visual-minimal.catalog-inspector-page .record-card:hover{transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.visual-minimal.catalog-inspector-page .record-card-icon{
+  inline-size:46px;block-size:46px;border-radius:16px;border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface),var(--surface-2));color:var(--accent);
+}
+.visual-minimal.catalog-inspector-page .record-card-icon svg{inline-size:20px;block-size:20px}
+.visual-minimal.catalog-inspector-page .record-card-meta{gap:6px;margin-top:8px}
+.visual-minimal.catalog-inspector-page .meta-pill{
+  min-block-size:30px;padding-inline:9px;border-radius:999px;background:var(--surface-2);border-color:color-mix(in srgb,var(--line) 84%,transparent);
+}
+.visual-minimal.catalog-inspector-page .meta-pill-glyph{display:grid;place-items:center;color:var(--muted)}
+.visual-minimal.catalog-inspector-page .meta-pill-glyph svg{inline-size:13px;block-size:13px}
+.visual-minimal.catalog-inspector-page .meta-pill b{font-size:.72rem;font-weight:760}
+
+/* Academic mobility becomes an infographic rather than a text separator. */
+.travel-matrix label{border-radius:18px}
+.travel-pair-name{display:inline-flex!important;align-items:center;gap:8px;min-inline-size:0}
+.travel-pair-name>b{font:700 .78rem/1 var(--font-mono);direction:ltr;unicode-bidi:isolate}
+.travel-pair-name>svg{inline-size:15px;block-size:15px;color:var(--accent);flex:none}
+.travel-search>button{border:0;background:transparent;color:var(--muted);cursor:pointer}
+.travel-search>button:hover{color:var(--ink)}
+
+/* Dashboard: keep the information, remove the feeling of competing rectangles. */
+.visual-minimal.dashboard-page .deck-bar{box-shadow:var(--shadow-xs)}
+.visual-minimal.dashboard-page .deck-chip{gap:7px;padding-inline:11px}
+.visual-minimal.dashboard-page .deck-chip svg{inline-size:15px;block-size:15px;color:var(--accent)}
+.visual-minimal.dashboard-page .deck-card,
+.visual-minimal.dashboard-page .deck-chart{overflow:hidden;border-color:color-mix(in srgb,var(--line) 88%,transparent)}
+.visual-minimal.dashboard-page .deck-card>header svg,
+.visual-minimal.dashboard-page .deck-chart>header svg{inline-size:18px;block-size:18px;color:var(--accent)}
+.visual-minimal.dashboard-page .deck-compare-note{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap}
+.visual-minimal.dashboard-page .deck-compare-note i{display:grid;place-items:center;color:var(--muted)}
+.visual-minimal.dashboard-page .deck-compare-note i svg{inline-size:14px;block-size:14px}
+
+/* Admin vault: the icon is the first read; prose becomes secondary and bounded. */
+.visual-minimal.admin-page .system-vault-hero,
+.visual-minimal.admin-page .system-vault-action,
+.visual-minimal.admin-page .vault-safety-note,
+.visual-minimal.admin-page .vault-history,
+.visual-minimal.admin-page .vault-preview-card{
+  border-radius:var(--radius-card);box-shadow:var(--shadow-xs);overflow:hidden;
+}
+.visual-minimal.admin-page .system-vault-seal,
+.visual-minimal.admin-page .vault-action-icon{
+  inline-size:56px;block-size:56px;display:grid;place-items:center;border:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface),var(--surface-2));
+}
+.visual-minimal.admin-page .system-vault-seal svg,
+.visual-minimal.admin-page .vault-action-icon svg{inline-size:23px;block-size:23px}
+.visual-minimal.admin-page .system-vault-action p,
+.visual-minimal.admin-page .system-vault-hero p,
+.visual-minimal.admin-page .vault-safety-note p{
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;line-height:1.75;
+}
+.visual-minimal.admin-page .vault-inline-actions .btn,
+.visual-minimal.admin-page .system-vault-action .btn,
+.visual-minimal.admin-page .vault-confirm-actions .btn{border-radius:16px}
+.visual-minimal.admin-page .vault-export-progress-track{border-radius:999px;overflow:hidden}
+.visual-minimal.admin-page .vault-preview-summary>span{border-radius:16px;background:var(--surface-2)}
+.visual-minimal.admin-page .master-search>button{border:0;background:transparent;color:var(--muted);cursor:pointer}
+.visual-minimal.admin-page .master-search>button:hover{color:var(--ink)}
+
+/* Saved views: icons carry the actions, the name is the only persistent text. */
+.schedule-views.visual-minimal .views-trigger{gap:8px;padding-inline:11px}
+.schedule-views.visual-minimal .views-trigger>svg{inline-size:17px;block-size:17px;color:var(--accent)}
+.schedule-views.visual-minimal .views-menu{padding:8px;box-shadow:var(--shadow-lg)}
+.schedule-views.visual-minimal .views-item{min-block-size:42px}
+.schedule-views.visual-minimal .views-manage-row>button{inline-size:38px;block-size:38px;border-radius:12px}
+
+@media(max-width:760px){
+  .visual-minimal.catalog-inspector-page .record-card{padding:13px}
+  .visual-minimal.catalog-inspector-page .record-card-icon{inline-size:42px;block-size:42px;border-radius:14px}
+  .visual-minimal.admin-page .system-vault-action{grid-template-columns:48px minmax(0,1fr)}
+  .visual-minimal.admin-page .system-vault-seal,.visual-minimal.admin-page .vault-action-icon{inline-size:48px;block-size:48px;border-radius:16px}
+}
+
+/* ========================================================================== 
+   SECONDARY SURFACES — the rest of the application receives the same visual
+   grammar without changing any workflow.
+   ========================================================================== */
+
+/* Academic console / terms */
+.academic-console.visual-minimal .console-head{border-radius:20px}
+.academic-console.visual-minimal .console-tab{min-block-size:56px}
+.academic-console.visual-minimal .console-tab-icon{inline-size:38px;block-size:38px;border-radius:13px}
+.academic-console.visual-minimal .console-tab-label{font-size:.72rem}
+.visual-minimal .term-deck .record-card{border-radius:20px}
+.visual-minimal .academic-inspector{border-radius:var(--radius-card);overflow:hidden}
+.visual-minimal .academic-inspector-icon{inline-size:56px;block-size:56px;border-radius:18px;background:var(--accent-softer);color:var(--accent)}
+.visual-minimal .inspector-facts{gap:8px}
+.visual-minimal .inspector-facts>div{border-radius:16px;background:var(--surface-2)}
+
+/* Command palette: search first, groups and shortcuts visually secondary. */
+.cmdk.visual-minimal{border-radius:28px;box-shadow:var(--shadow-lg);overflow:hidden}
+.cmdk.visual-minimal .cmdk-field{min-block-size:62px}
+.cmdk.visual-minimal .cmdk-field>svg{inline-size:21px;block-size:21px;color:var(--accent)}
+.cmdk.visual-minimal .cmdk-row{min-block-size:48px;border-radius:14px}
+.cmdk.visual-minimal .cmdk-row[aria-selected="true"]{background:var(--accent-softer)}
+.cmdk.visual-minimal .cmdk-icon{inline-size:36px;block-size:36px;border-radius:12px;background:var(--surface-2);color:var(--accent)}
+.cmdk.visual-minimal .cmdk-group-name{font-size:.65rem;letter-spacing:.04em;color:var(--muted)}
+.cmdk.visual-minimal .cmdk-shortcut{border-radius:9px;background:var(--surface-2)}
+.cmdk.visual-minimal .cmdk-foot{opacity:.78}
+
+/* Product journey / about: editorial, not dashboard-like. */
+.journey.visual-minimal{border-radius:34px;box-shadow:var(--shadow-lg)}
+.journey.visual-minimal .journey-close{inline-size:44px;block-size:44px;border-radius:15px}
+.journey.visual-minimal .journey-figure,
+.journey.visual-minimal .journey-grid>article,
+.journey.visual-minimal .journey-current,
+.journey.visual-minimal .journey-lifetime{border-radius:22px}
+.journey.visual-minimal .journey-strata i{border-radius:999px}
+.about-editorial.visual-minimal .editorial-person{border-radius:26px;overflow:hidden}
+.about-editorial.visual-minimal .editorial-photo{border-radius:22px;overflow:hidden}
+.about-editorial.visual-minimal .editorial-contact a,
+.about-editorial.visual-minimal .editorial-social a{inline-size:42px;block-size:42px;border-radius:14px}
+
+/* Login is already intentionally sparse; only unify control geometry. */
+.apex-login.visual-minimal .apex-login-access{border-radius:30px}
+.apex-login.visual-minimal .apex-login-form input{border-radius:15px}
+.apex-login.visual-minimal .apex-login-form button{border-radius:16px}
+.apex-login.visual-minimal .login-error{border-radius:16px}
+
+/* Install prompt: one pictographic entry point, details only once opened. */
+.install.visual-minimal .install-trigger{border-radius:15px}
+.install.visual-minimal .install-pop{border-radius:22px;box-shadow:var(--shadow-lg)}
+.install.visual-minimal .install-go{border-radius:15px}

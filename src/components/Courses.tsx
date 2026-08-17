@@ -422,7 +422,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                   subtitle={
                     <span className="record-path">
                       <Building2 />
-                      {sec(x.AdSectionId)} <i>•</i> {coll(x.AdCollegeId)}
+                      {sec(x.AdSectionId)} <i className="record-path-dot" aria-hidden="true" /> {coll(x.AdCollegeId)}
                     </span>
                   }
                   meta={

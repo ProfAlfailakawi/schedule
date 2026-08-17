@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, ChevronDown, Landmark, Route, Save, Search, Trash2 } from "lucide-react";
+import { ArrowLeftRight, Building2, ChevronDown, Landmark, Route, Save, Search, Trash2, X } from "lucide-react";
 import {
   AddButton,
   EmbeddedAction,
@@ -359,12 +359,12 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                           />
                           <b>{shown.length}/{mobilityPairs.length}</b>
                           {mobilityFind ? (
-                            <button type="button" onClick={() => setMobilityFind("")} aria-label="مسح البحث">✕</button>
+                            <button type="button" data-guide-ignore="مسح بحث حركة المباني فقط" onClick={() => setMobilityFind("")} aria-label="مسح البحث" title="مسح"><X aria-hidden="true" /></button>
                           ) : null}
                         </label>
                         {shown.length ? (
                           <div className="travel-matrix">
-                            {shown.map(pair => <label key={`${pair.fromBuilding}-${pair.toBuilding}`}><span>{pair.fromBuilding} ↔ {pair.toBuilding}</span><div><input aria-label={`زمن الانتقال بين ${pair.fromBuilding} و${pair.toBuilding}`} type="number" min="1" max="120" value={pair.minutes} onChange={e=>updateTravelPair(pair.fromBuilding,pair.toBuilding,Number(e.target.value))}/><b>دقيقة</b></div></label>)}
+                            {shown.map(pair => <label key={`${pair.fromBuilding}-${pair.toBuilding}`}><span className="travel-pair-name"><b>{pair.fromBuilding}</b><ArrowLeftRight aria-hidden="true" /><b>{pair.toBuilding}</b></span><div><input aria-label={`زمن الانتقال بين ${pair.fromBuilding} و${pair.toBuilding}`} type="number" min="1" max="120" value={pair.minutes} onChange={e=>updateTravelPair(pair.fromBuilding,pair.toBuilding,Number(e.target.value))}/><b>دقيقة</b></div></label>)}
                           </div>
                         ) : <p className="mobility-empty">لا مبنى يطابق «{mobilityFind}».</p>}
                       </>

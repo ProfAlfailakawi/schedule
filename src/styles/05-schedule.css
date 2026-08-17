@@ -5640,3 +5640,98 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .smart-guide.visual-minimal .smart-guide-special-answer,
 .smart-guide.visual-minimal .smart-guide-intent-card,
 .smart-guide.visual-minimal .smart-guide-clarification{border-radius:20px}
+
+/* ========================================================================== 
+   EXHAUSTIVE VISUAL PASS — schedule ecosystem.
+   ========================================================================== */
+
+/* Compact icon actions are visually consistent in every schedule popover. */
+.quick-create.visual-minimal,.share-sheet.visual-minimal,.transfer-sheet.visual-minimal,
+.review-sheet.visual-minimal,.hall-barter-board.visual-minimal,.smart-guide.visual-minimal{
+  --local-radius:var(--radius-card);
+}
+.quick-create.visual-minimal{border-radius:var(--radius-card);box-shadow:var(--shadow-lg)}
+.quick-create.visual-minimal .qc-head{padding:13px 14px;border-radius:var(--radius-card) var(--radius-card) 0 0}
+.quick-create.visual-minimal .qc-wheels{gap:8px}
+.quick-create.visual-minimal .qc-field>span{font-size:.68rem;color:var(--muted);font-weight:730}
+.quick-create.visual-minimal .qc-field input,
+.quick-create.visual-minimal .qc-field select{border-radius:14px}
+
+/* Instructor scope marker: a real glyph, never a textual bullet. */
+.instructor-department-mark{display:grid;place-items:center;color:var(--accent);font-style:normal;flex:none}
+.instructor-department-mark svg{inline-size:15px;block-size:15px}
+.instructor-picker.visual-minimal .instructor-results>button{border-radius:15px}
+.instructor-picker.visual-minimal .instructor-results>button.chosen{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 28%,var(--line))}
+.instructor-picker.visual-minimal .instructor-trigger{border-radius:16px}
+
+/* Publication is a visual three-step flow. Labels remain accessible via title
+   and aria-label while the persistent chrome stays icon-first. */
+.share-sheet.visual-minimal{border-radius:var(--radius-sheet)}
+.share-sheet.visual-minimal>header{padding-inline-end:56px}
+.share-sheet.visual-minimal .share-glyph{inline-size:54px;block-size:54px;border-radius:18px}
+.share-sheet.visual-minimal .share-progress{display:grid;place-items:center}
+.share-sheet.visual-minimal .share-steps{position:relative;justify-content:center;gap:18px}
+.share-sheet.visual-minimal .share-steps::before{content:"";position:absolute;inset-inline:22px;inset-block-start:22px;block-size:1px;background:var(--line);z-index:0}
+.share-sheet.visual-minimal .share-steps li{position:relative;z-index:1}
+.share-sheet.visual-minimal .share-steps li button{background:var(--surface);box-shadow:0 0 0 6px var(--surface)}
+.share-sheet.visual-minimal .share-steps li.active button{background:var(--accent);color:var(--accent-contrast);border-color:var(--accent)}
+.share-sheet.visual-minimal .share-kind{justify-content:center}
+.share-sheet.visual-minimal .share-kind button{border-radius:22px;background:var(--surface-2)}
+.share-sheet.visual-minimal .share-kind button.active{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 34%,var(--line));box-shadow:var(--ring)}
+.share-sheet.visual-minimal .share-row-actions{justify-content:flex-end}
+.share-sheet.visual-minimal .share-row-actions button,
+.share-sheet.visual-minimal .share-row-actions a{border-radius:15px}
+
+/* Transfer becomes four pictographic tools at the top; long import diagnostics
+   stay readable only where they carry actual data. */
+.transfer-sheet.visual-minimal{border-radius:var(--radius-sheet)}
+.transfer-sheet.visual-minimal .transfer-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;padding:8px;background:var(--surface-2);border-radius:20px}
+.transfer-sheet.visual-minimal .transfer-tabs button{inline-size:100%;min-block-size:54px;border-radius:15px}
+.transfer-sheet.visual-minimal .transfer-tabs button svg{inline-size:21px;block-size:21px}
+.transfer-sheet.visual-minimal .transfer-tabs button.active{background:var(--surface);box-shadow:var(--shadow-sm);color:var(--accent)}
+.transfer-sheet.visual-minimal .transfer-preview{border-radius:20px}
+.transfer-sheet.visual-minimal .transfer-counts>span{border-radius:16px;background:var(--surface-2)}
+
+/* Review keeps legal detail on demand while its default view is visual. */
+.review-sheet.visual-minimal{border-radius:var(--radius-sheet)}
+.review-sheet.visual-minimal .review-head{border-radius:var(--radius-sheet) var(--radius-sheet) 0 0}
+.review-sheet.visual-minimal .review-spread{padding-block:14px}
+.review-sheet.visual-minimal .spread-bar{block-size:10px;border-radius:999px;overflow:hidden}
+.review-sheet.visual-minimal .spread-keys{justify-content:center}
+.review-sheet.visual-minimal .review-finding{border-radius:20px;overflow:hidden}
+.review-sheet.visual-minimal .review-mark{inline-size:42px;block-size:42px;border-radius:14px}
+.review-sheet.visual-minimal .review-person,.review-sheet.visual-minimal .review-row-card{border-radius:16px}
+
+/* Hall barter keeps state counts visible and pushes explanatory prose behind the
+   opened body instead of repeating it in the closed summary. */
+.hall-barter-board.visual-minimal .hall-barter-summary-mark,
+.hall-barter-board.visual-minimal .hall-barter-mark{border-radius:16px}
+.hall-barter-board.visual-minimal .hall-barter-summary-stats{gap:7px}
+.hall-barter-board.visual-minimal .hall-barter-summary-stats b{padding:7px 10px;border:1px solid var(--line);background:var(--surface-2)}
+.hall-barter-board.visual-minimal .hall-barter-confidence{border-radius:16px;background:var(--surface-2)}
+
+/* Guide: screen chrome is icon-first while explanation text remains where it is
+   the product itself, not decoration. */
+.smart-guide.visual-minimal .smart-guide-hero-tools button,
+.smart-guide.visual-minimal .smart-guide-browse button{border-radius:14px}
+.smart-guide.visual-minimal .smart-guide-search>button{border:0;background:transparent;color:var(--muted);cursor:pointer}
+.smart-guide.visual-minimal .smart-guide-search>button:hover{color:var(--ink)}
+.smart-guide.visual-minimal .smart-guide-workflows article{border-radius:20px}
+.smart-guide.visual-minimal .smart-guide-workflows article>div>strong{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.smart-guide.visual-minimal .guide-flow-arrow{inline-size:13px;block-size:13px;color:var(--muted);flex:none}
+.smart-guide.visual-minimal .smart-guide-selected-visual{background:linear-gradient(180deg,var(--accent-softer),var(--surface))}
+
+/* Search clears and other icon-only controls no longer look like stray text. */
+.schedule-toolbar button[aria-label*="مسح"],
+.filter-strip button[aria-label*="مسح"],
+.schedule-search button[aria-label*="مسح"]{display:grid;place-items:center}
+.schedule-toolbar button[aria-label*="مسح"] svg,
+.filter-strip button[aria-label*="مسح"] svg,
+.schedule-search button[aria-label*="مسح"] svg{inline-size:16px;block-size:16px}
+
+@media(max-width:720px){
+  .share-sheet.visual-minimal,.transfer-sheet.visual-minimal,.review-sheet.visual-minimal{border-radius:24px 24px 0 0}
+  .transfer-sheet.visual-minimal .transfer-tabs{grid-template-columns:repeat(4,minmax(52px,1fr));gap:6px}
+  .share-sheet.visual-minimal .share-kind button{min-inline-size:72px;min-block-size:72px}
+  .smart-guide.visual-minimal .smart-guide-workflows article>div>strong{gap:4px}
+}

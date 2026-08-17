@@ -129,7 +129,7 @@ export default function CommandPalette({ commands, onClose }: {
       onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}
     >
       <div
-        className="cmdk"
+        className="cmdk visual-minimal"
         role="dialog"
         aria-modal="true"
         aria-label="أوامر الجدول"
