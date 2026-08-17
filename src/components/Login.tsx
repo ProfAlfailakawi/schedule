@@ -6,6 +6,7 @@ import {
   LockKeyhole,
   ShieldCheck,
   Sparkles,
+  X,
 } from "lucide-react";
 import { Field, Notice, PrimaryButton } from "./ui";
 import InstallApp from "./InstallApp";
@@ -20,7 +21,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState(""),
     [loading, setLoading] = useState(false),
-    [error, setError] = useState<string | null>(null);
+    [error, setError] = useState<string | null>(null),
+    [identityOpen, setIdentityOpen] = useState(false);
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -61,6 +63,27 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <small>أكثر من عقد من العمل الأكاديمي.</small>
         </div>
       </header>
+      <button
+        type="button"
+        className="apex-login-identity-trigger"
+        onClick={() => setIdentityOpen(true)}
+        aria-label="هوية SCHEDULE"
+        title="هوية SCHEDULE"
+      >
+        <Sparkles aria-hidden="true" />
+      </button>
+      {identityOpen ? (
+        <div className="login-identity-backdrop" role="dialog" aria-modal="true" aria-label="هوية SCHEDULE" onMouseDown={(event) => { if (event.target === event.currentTarget) setIdentityOpen(false); }}>
+          <section className="login-identity-popover">
+            <button type="button" className="login-identity-close" onClick={() => setIdentityOpen(false)} aria-label="إغلاق"><X /></button>
+            <div className="rail-identity login-identity-card">
+              <span className="rail-identity-name">SCHEDULE</span>
+              <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
+              <span className="rail-identity-go" aria-hidden="true">←</span>
+            </div>
+          </section>
+        </div>
+      ) : null}
       <section className="apex-login-stage">
         <div className="apex-login-story">
           <span className="apex-login-kicker">

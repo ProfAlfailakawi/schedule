@@ -46,11 +46,11 @@ export default function IntelligenceContextBar({
         </div>
       </div>
       <div className="intel-context-fields">
-        {lockCollege ? <div className="intel-fixed-scope"><small>نطاقك</small><strong>{colleges.find(c=>c.AdCollegeId===collegeId)?.AdCollegeName}</strong>{!hideSection ? <span>{sections.find(s=>s.AdSectionId===sectionId)?.AdSectionName}</span> : null}</div> : null}
-        {!lockCollege ? <Field label="الكلية"><select value={collegeId || ""} onChange={(event)=>{const id=Number(event.target.value)||0;const first=sections.find(section=>section.AdCollegeId===id);onCollegeChange(id,first?.AdSectionId||0)}}>{colleges.map(college=><option key={college.AdCollegeId} value={college.AdCollegeId}>{college.AdCollegeName}</option>)}</select></Field> : null}
-        {!hideSection && !lockSection ? <Field label="القسم"><select value={sectionId || ""} onChange={(event)=>onSectionChange(Number(event.target.value)||0)}>{availableSections.map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select></Field> : null}
+        <Field label="الكلية"><select value={collegeId || ""} onChange={(event)=>{const id=Number(event.target.value)||0;const first=sections.find(section=>Number(section.AdCollegeId)===id);onCollegeChange(id,first?.AdSectionId||0)}}><option value="">اختر الكلية</option>{colleges.map(college=><option key={college.AdCollegeId} value={college.AdCollegeId}>{college.AdCollegeName}</option>)}</select></Field>
+        {!hideSection && !lockSection ? <Field label="القسم"><select value={sectionId || ""} disabled={!collegeId} onChange={(event)=>onSectionChange(Number(event.target.value)||0)}><option value="">كل الأقسام</option>{availableSections.map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select></Field> : null}
         <Field label="الفصل">
           <select value={termId || ""} onChange={(event) => onTermChange(Number(event.target.value) || 0)}>
+            <option value="">اختر الفصل</option>
             {sortTermsNewest(terms).map((term) => (
               <option key={term.AdTermId} value={term.AdTermId}>{term.AdTermName}</option>
             ))}

@@ -31,21 +31,14 @@ interface Props {
   departmentIds: number[];
   /** Every term, so the roster can be started from another one. */
   terms: Array<{ AdTermId: number; AdTermName: string }>;
-  /**
-   * Carrying a whole term in or out, and reassigning a member of staff across
-   * it, are administrator work. A department manages its own visiting roster
-   * and nothing else here, so the other three tabs are simply absent for them —
-   * a disabled tab still invites the question of why.
-   */
-  canTransfer: boolean;
   onChanged: () => void;
   onClose: () => void;
 }
 
 type Tab = "export" | "import" | "retire" | "visiting";
 
-export default function ScheduleTransfer({ collegeId, sectionId, termId, instructors, departmentIds, terms, canTransfer, onChanged, onClose }: Props) {
-  const [tab, setTab] = useState<Tab>(canTransfer ? "export" : "visiting");
+export default function ScheduleTransfer({ collegeId, sectionId, termId, instructors, departmentIds, terms, onChanged, onClose }: Props) {
+  const [tab, setTab] = useState<Tab>("export");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<any>(null);
@@ -315,7 +308,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const loadReplacementHistory = async () => {
-    if (!scopeReady || !canTransfer) return;
+    if (!scopeReady) return;
     try {
       const q = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
       const response = await fetch(`/api/schedules/replace-instructor/history?${q}`);
@@ -380,20 +373,16 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       <section className="transfer-sheet" role="dialog" aria-modal="true" aria-label="نقل الجدول">
         <header>
           <div>
-            <span className="surface-kicker">{canTransfer ? "الجدول كوحدة واحدة" : "أساتذة الفصل"}</span>
-            <h2>{canTransfer ? "تصدير · استيراد · استبدال · منتدبون" : "المنتدبون"}</h2>
+            <span className="surface-kicker">الجدول كوحدة واحدة</span>
+            <h2>تصدير · استيراد · استبدال · منتدبون</h2>
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
 
         <nav className="transfer-tabs">
-          {canTransfer ? (
-            <>
-              <button type="button" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")}><Download />تصدير</button>
-              <button type="button" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")}><Upload />استيراد</button>
-              <button type="button" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")}><UserMinus />استبدال</button>
-            </>
-          ) : null}
+          <button type="button" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")}><Download />تصدير</button>
+          <button type="button" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")}><Upload />استيراد</button>
+          <button type="button" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")}><UserMinus />استبدال</button>
           <button type="button" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")}><UserPlus />المنتدبون</button>
         </nav>
 
@@ -403,7 +392,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         {error ? <p className="transfer-error"><AlertTriangle />{error}</p> : null}
 
         <div className="transfer-body">
-          {canTransfer && tab === "export" ? (
+          {tab === "export" ? (
             <>
               <p>تصدير الفصل الدراسي الحالي ببياناته الكاملة (المقررات، الأساتذة، الأوقات، القاعات، الأيام) مباشرة إلى ملف Excel أو JSON للأرشفة والمشاركة.</p>
               <div className="transfer-import-actions">
@@ -417,7 +406,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
             </>
           ) : null}
 
-          {canTransfer && tab === "import" ? (
+          {tab === "import" ? (
             <>
               <p>يُطابَق كل صف بـ <b>رمز المقرر</b> و<b>الرقم المدني للأستاذ</b>، لا بالمعرّفات الداخلية. لا يُكتب شيء قبل أن ترى الحصيلة وتوافق.</p>
               <input
@@ -576,7 +565,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
             </>
           ) : null}
 
-          {canTransfer && tab === "retire" ? (
+          {tab === "retire" ? (
             <>
               <p>لأستاذ تقاعد أو استقال أو تفرّغ: تنتقل كل مواعيده في هذا الفصل إلى بديل بضغطة واحدة، أو تُترك بلا أستاذ لتوزَّع لاحقاً. لا يُحذف أي موعد.</p>
               <div className="transfer-swap">

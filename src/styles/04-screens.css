@@ -1546,3 +1546,48 @@
 .apex-login-brand .apex-login-mark{display:none}
 .apex-login-brand strong{color:#909b95;font-size:14px;letter-spacing:.30em;font-weight:650}
 .apex-login-brand small{margin-top:7px;color:#748079;font-size:clamp(14px,1.3vw,19px);line-height:1.55}
+
+/* Login identity reveal: the exact dark navigation signature is available from
+   a quiet, deliberate trigger instead of opening a separate journey screen. */
+.apex-login-identity-trigger{
+  position:absolute;inset-block-start:22px;inset-inline-start:22px;z-index:8;
+  display:grid;place-items:center;width:46px;height:46px;padding:0;
+  border:1px solid color-mix(in srgb,#8fa49a 28%,transparent);border-radius:16px;
+  background:color-mix(in srgb,#0d1714 88%,transparent);color:#8ea097;
+  box-shadow:0 12px 34px color-mix(in srgb,#000 22%,transparent);
+  cursor:pointer;transition:transform .18s var(--ease),border-color .18s var(--ease),background .18s var(--ease);
+}
+.apex-login-identity-trigger:hover{transform:translateY(-1px);border-color:color-mix(in srgb,#79a695 54%,transparent);background:#0d1714}
+.apex-login-identity-trigger:focus-visible{outline:3px solid color-mix(in srgb,#2b7d69 28%,transparent);outline-offset:3px}
+.apex-login-identity-trigger svg{width:20px;height:20px}
+.login-identity-backdrop{
+  position:fixed;inset:0;z-index:1700;display:grid;place-items:center;padding:24px;
+  background:color-mix(in srgb,#07100d 58%,transparent);backdrop-filter:blur(12px) saturate(.86);
+  -webkit-backdrop-filter:blur(12px) saturate(.86);
+  animation:loginIdentityIn .18s var(--ease) both;
+}
+@keyframes loginIdentityIn{from{opacity:0}to{opacity:1}}
+.login-identity-popover{position:relative;width:min(520px,calc(100vw - 32px));animation:loginIdentityCard .22s var(--ease) both}
+@keyframes loginIdentityCard{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+.login-identity-close{
+  position:absolute;inset-block-start:16px;inset-inline-start:16px;z-index:2;
+  display:grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:14px;
+  background:rgba(255,255,255,.055);color:#a8b1ad;cursor:pointer;transition:background .16s var(--ease),color .16s var(--ease);
+}
+.login-identity-close:hover{background:rgba(255,255,255,.1);color:#fff}.login-identity-close svg{width:18px;height:18px}
+.rail-identity.login-identity-card{
+  min-height:248px;padding:58px 46px 42px!important;border:1px solid rgba(255,255,255,.06)!important;border-radius:34px!important;
+  background:#0d1714!important;box-shadow:0 32px 90px rgba(0,0,0,.38)!important;
+  display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;text-align:center!important;gap:10px!important;
+}
+.login-identity-card .rail-identity-name{
+  color:#919c96!important;font-size:clamp(21px,4.5vw,31px)!important;font-weight:650!important;letter-spacing:.29em!important;line-height:1.2!important;
+}
+.login-identity-card .rail-identity-line{
+  color:#737f79!important;font-size:clamp(17px,3vw,24px)!important;font-weight:450!important;line-height:1.65!important;letter-spacing:0!important;
+}
+.login-identity-card .rail-identity-go{margin-top:8px!important;color:#8e7b51!important;opacity:.72!important}
+@media(max-width:680px){
+  .apex-login-identity-trigger{inset-block-start:16px;inset-inline-start:16px;width:43px;height:43px;border-radius:14px}
+  .login-identity-backdrop{padding:16px}.rail-identity.login-identity-card{min-height:220px;padding:54px 30px 34px!important;border-radius:28px!important}
+}

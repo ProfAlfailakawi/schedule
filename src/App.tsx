@@ -1702,7 +1702,7 @@ export default function App() {
                 onGo={go}
                 view="schedules"
                 icon={<CalendarDays />}
-                label="فتح الجدول"
+                label="الجدول الدراسي"
               />
             ) : null}
             {smartSearchView || smartReportView ? (

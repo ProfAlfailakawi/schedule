@@ -13,6 +13,7 @@ import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
+import InstructorPicker from "./InstructorPicker";
 
 /**
  * One question, seven lenses.
@@ -171,7 +172,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
-  const [filters, setFilters] = useState<Filters>(() => ({ ...fresh(), ...(saved.filters || {}) }));
+  const [filters, setFilters] = useState<Filters>(() => ({ ...fresh(), ...(saved.filters || {}), collegeId: 0, sectionId: 0, termId: 0, instructorId: 0, instructorQuery: "", civil: "" }));
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   const [error, setError] = useState<string | null>(null);
@@ -215,16 +216,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         setTerms(sortedTerms);
         setInstructors(sortByName(data[3], (row: AdInstructor) => row.AdInstructorName));
         setCourses(sortByName(data[4], (row: AdCourse) => row.CourseName));
-        const latestTermId = Number(sortedTerms[0]?.AdTermId || 0);
-        let collegeId = Number(saved?.filters?.collegeId || 0), sectionId = Number(saved?.filters?.sectionId || 0);
-        if (isPowerAdmin) {
-          if (!collegeId || !data[0].some((c: AdCollege) => c.AdCollegeId === collegeId)) collegeId = Number(data[1][0]?.AdCollegeId || data[0][0]?.AdCollegeId || 0);
-          if (!sectionId || data[1].find((s: AdSection) => s.AdSectionId === sectionId)?.AdCollegeId !== collegeId) sectionId = Number(data[1].find((s: AdSection) => s.AdCollegeId === collegeId)?.AdSectionId || 0);
-        } else {
-          const scoped = coerceScopeValues(scopes, collegeId, sectionId, false);
-          collegeId = scoped.collegeId; sectionId = scoped.sectionId;
-        }
-        setFilters(prev => ({ ...prev, collegeId, sectionId, termId: prev.termId || latestTermId }));
+        setFilters(prev => ({ ...prev, collegeId: 0, sectionId: 0, termId: 0, instructorId: 0, instructorQuery: "", civil: "" }));
       } catch (e: any) { setError(e.message); } finally { setLoading(false); }
     })();
   }, []);
@@ -265,7 +257,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [balance, setBalance] = useState<any>(null);
   const [balanceSort, setBalanceSort] = useState<{ key: string; desc: boolean }>({ key: "rows", desc: true });
   const readScope = useCallback((signal?: AbortSignal, quiet = false) => {
-    if (!filters.termId) return Promise.resolve();
+    if (!filters.collegeId || !filters.termId) { setAll([]); return Promise.resolve(); }
     const query = new URLSearchParams({ termId: String(filters.termId) });
     if (filters.collegeId) query.set("collegeId", String(filters.collegeId));
     if (filters.sectionId) query.set("sectionId", String(filters.sectionId));
@@ -288,7 +280,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   }, [filters.collegeId, filters.sectionId, filters.termId]);
 
   useEffect(() => {
-    if (!filters.termId) return;
+    if (!filters.collegeId || !filters.termId) { setAll([]); return; }
     const controller = new AbortController();
     void readScope(controller.signal);
     return () => controller.abort();
@@ -341,22 +333,25 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   }, [openReportEvents, closeReportEvents]);
 
   useEffect(() => {
-    if (!sections.length || isPowerAdmin) return;
+    if (!sections.length || isPowerAdmin || !filters.collegeId) return;
     setFilters(prev => {
       const next = coerceScopeValues(scopes, prev.collegeId, prev.sectionId, false);
       if (next.collegeId === prev.collegeId && next.sectionId === prev.sectionId) return prev;
       return { ...prev, collegeId: next.collegeId, sectionId: next.sectionId };
     });
-  }, [sections.length, scopes, isPowerAdmin]);
+  }, [sections.length, scopes, isPowerAdmin, filters.collegeId]);
 
   const scopeState = resolveScopeSelection(scopes, filters.collegeId, isPowerAdmin);
-  const sectionOptions = useMemo(() => sortByName(sections.filter(s => !filters.collegeId || s.AdCollegeId === filters.collegeId), (s: AdSection) => s.AdSectionName), [sections, filters.collegeId]);
+  const baseScope = resolveScopeSelection(scopes, 0, isPowerAdmin);
+  const collegeOptions = useMemo(() => sortByName(isPowerAdmin ? colleges : colleges.filter(c => baseScope.collegeIds.includes(Number(c.AdCollegeId))), (c: AdCollege) => c.AdCollegeName), [colleges, isPowerAdmin, baseScope.collegeIds.join("|")]);
+  const sectionOptions = useMemo(() => sortByName(sections.filter(s => (!filters.collegeId || s.AdCollegeId === filters.collegeId) && (isPowerAdmin || scopeState.sectionIds.includes(Number(s.AdSectionId)))), (s: AdSection) => s.AdSectionName), [sections, filters.collegeId, isPowerAdmin, scopeState.sectionIds.join("|")]);
   const courseOptions = useMemo(() => sortByName(courses.filter(c => !filters.sectionId || c.AdSectionId === filters.sectionId), (c: AdCourse) => c.CourseName), [courses, filters.sectionId]);
   const instructorById = useMemo(() => new Map(instructors.map(x => [x.AdInstructorId, x])), [instructors]);
   const courseById = useMemo(() => new Map(courses.map(x => [x.AdCourseId, x])), [courses]);
   const collegeById = useMemo(() => new Map(colleges.map(x => [x.AdCollegeId, x])), [colleges]);
   const sectionById = useMemo(() => new Map(sections.map(x => [x.AdSectionId, x])), [sections]);
   const termById = useMemo(() => new Map(terms.map(x => [x.AdTermId, x])), [terms]);
+  const departmentInstructorIds = useMemo(() => Array.from(new Set(all.filter(row => (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) && (!filters.termId || Number(row.AdTermId) === Number(filters.termId))).map(row => Number(row.AdInstructorId)).filter(Boolean))), [all, filters.sectionId, filters.termId]);
 
   const buildings = useMemo(() => Array.from(new Set(all.map(s => s.AdRoomCode).filter(Boolean))).sort(byArabic), [all]);
   const halls = useMemo(() => Array.from(new Set(all.filter(s => !filters.building || s.AdRoomCode === filters.building).map(s => s.AdRoomHall).filter(Boolean))).sort(byArabic), [all, filters.building]);
@@ -829,33 +824,29 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         {askNote ? <p className="query-ask-note" id="query-ask-note" role="status">{askNote}</p> : null}
 
         <div className="query-scope query-primary-filters" aria-label="المرشحات الأساسية">
-          {!scopeState.lockCollege ? (
-            <Field label="الكلية">
-              <select
-                value={filters.collegeId || ""}
-                onChange={event => {
-                  const id = Number(event.target.value) || 0;
-                  set("collegeId", id);
-                  set("sectionId", isPowerAdmin
-                    ? (sections.find(s => s.AdCollegeId === id)?.AdSectionId || 0)
-                    : (resolveScopeSelection(scopes, id, false).defaultSectionId || 0));
-                }}
-              >
-                <option value="">الكل</option>
-                {colleges.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{row.AdCollegeName}</option>)}
-              </select>
-            </Field>
-          ) : null}
-          {!scopeState.lockSection ? (
+          <Field label="الكلية">
+            <select
+              value={filters.collegeId || ""}
+              onChange={event => {
+                const id = Number(event.target.value) || 0;
+                setFilters(prev => ({ ...prev, collegeId: id, sectionId: id && !isPowerAdmin ? (resolveScopeSelection(scopes, id, false).defaultSectionId || 0) : 0 }));
+              }}
+            >
+              <option value="">اختر الكلية</option>
+              {collegeOptions.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{row.AdCollegeName}</option>)}
+            </select>
+          </Field>
+          {isPowerAdmin || !scopeState.lockSection ? (
             <Field label="القسم">
               <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => set("sectionId", Number(event.target.value) || 0)}>
-                <option value="">الكل</option>
+                <option value="">كل الأقسام</option>
                 {sectionOptions.map(row => <option key={row.AdSectionId} value={row.AdSectionId}>{row.AdSectionName}</option>)}
               </select>
             </Field>
           ) : null}
           <Field label="الفصل">
             <select value={filters.termId || ""} onChange={event => set("termId", Number(event.target.value) || 0)}>
+              <option value="">اختر الفصل</option>
               {terms.map(row => <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>)}
             </select>
           </Field>
@@ -876,22 +867,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         {moreOpen ? (
           <div className="query-more query-advanced-filters" id="query-more-filters" role="group" aria-label="مرشحات إضافية">
             <Field label="الأستاذ أو الرقم المدني">
-              <div className="smart-instructor-query">
-                <Search aria-hidden="true" />
-                <input
-                  list="report-instructor-options"
-                  value={filters.instructorQuery}
-                  onChange={event => { set("instructorQuery", event.target.value); set("instructorId", 0); set("civil", ""); }}
-                  placeholder="اكتب الاسم أو الرقم المدني"
-                  autoComplete="off"
-                />
-                <datalist id="report-instructor-options">
-                  {instructors.flatMap(row => [
-                    <option key={`n-${row.AdInstructorId}`} value={row.AdInstructorName} />,
-                    row.AdInstructorCivil ? <option key={`c-${row.AdInstructorId}`} value={row.AdInstructorCivil}>{row.AdInstructorName}</option> : null,
-                  ])}
-                </datalist>
-              </div>
+              <InstructorPicker
+                value={filters.instructorId}
+                onChange={(id) => setFilters(prev => ({ ...prev, instructorId: id, instructorQuery: "", civil: "" }))}
+                instructors={instructors}
+                departmentIds={departmentInstructorIds}
+                collegeId={filters.collegeId}
+                termId={filters.termId}
+              />
             </Field>
             <Field label="المبنى">
               <select value={filters.building} onChange={event => { set("building", event.target.value); set("hall", ""); }}>

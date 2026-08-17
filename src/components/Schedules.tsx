@@ -495,13 +495,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       pointer.removeEventListener?.("change", sync);
     };
   }, []);
-  const [filterCollege, setFilterCollege] = useState(
-      Number(savedPrefs.filterCollege) || 0,
-    ),
-    [filterSection, setFilterSection] = useState(
-      Number(savedPrefs.filterSection) || 0,
-    ),
-    [filterTerm, setFilterTerm] = useState(Number(savedPrefs.filterTerm) || 0),
+  const [filterCollege, setFilterCollege] = useState(0),
+    [filterSection, setFilterSection] = useState(0),
+    [filterTerm, setFilterTerm] = useState(0),
     [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
   const [departmentStartRhythm, setDepartmentStartRhythm] = useState<DepartmentStartRhythm | null>(null);
   const [formStartRhythm, setFormStartRhythm] = useState<DepartmentStartRhythm | null>(null);
@@ -1362,22 +1358,15 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         const savedCollege = Number(pref.filterCollege) || 0;
         const savedSection = Number(pref.filterSection) || 0;
         if (mode === "schedule") {
-          // The server validates the saved scope, locks a coordinator inside
-          // their own department, and answers with that department alone.
-          const scoped = isPowerAdmin
-            ? { collegeId: savedCollege, sectionId: savedSection }
-            : coerceScopeValues(scopes, savedCollege, savedSection, false);
+          // Do not paint a value the user did not choose. First entry loads only
+          // the catalogues; the board activates after college + term are explicit.
           setViewMode(pref.viewMode === "week" ? "week" : pref.viewMode === "rooms" ? "rooms" : "list");
-          // The context callback runs on the warm snapshot first, so the board
-          // is alive in milliseconds; the network answer re-runs it with the
-          // authoritative scope moments later.
-          await loadWorkspace(scoped.collegeId, scoped.sectionId, 0, true, (context) => {
-            setFilterCollege(context.collegeId);
-            setFilterSection(context.sectionId);
-            // A stale preference must never silently reopen a decade-old term.
-            setFilterTerm(context.termId);
-            setWorkspaceReady(true);
-          });
+          await loadLookups();
+          setFilterCollege(0);
+          setFilterSection(0);
+          setFilterTerm(0);
+          setRows([]);
+          setWorkspaceReady(true);
           return;
         }
         // The copy screen is a rare admin maintenance task; it keeps the
@@ -1395,10 +1384,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           defaultCollege = scoped.collegeId;
           defaultSection = scoped.sectionId;
         }
-        setCopyCollege(defaultCollege);
-        setCopySection(defaultSection);
-        setCopyToTerm(latestTermId);
-        setCopyFromTerm(Number(lookup.terms.find(term => term.AdTermId !== latestTermId)?.AdTermId || 0));
+        setCopyCollege(0);
+        setCopySection(0);
+        setCopyToTerm(0);
+        setCopyFromTerm(0);
       } catch (e: any) {
         setError(friendlyError(e));
       }
@@ -1469,8 +1458,10 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
         formCourses.filter((c) => !courseName || c.CourseName === courseName),
       [formCourses, courseName],
     );
+  const filterCollegeScope = resolveScopeSelection(scopes, 0, isPowerAdmin);
+  const filterColleges = isPowerAdmin ? colleges : colleges.filter((c) => filterCollegeScope.collegeIds.includes(Number(c.AdCollegeId)));
   const filterSections = sections.filter(
-      (s) => !filterCollege || s.AdCollegeId === filterCollege,
+      (s) => (!filterCollege || s.AdCollegeId === filterCollege) && (isPowerAdmin || resolveScopeSelection(scopes, filterCollege, false).sectionIds.includes(Number(s.AdSectionId))),
     ),
     copySections = sections.filter(
       (s) => !copyCollege || s.AdCollegeId === copyCollege,
@@ -1526,7 +1517,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     isPowerAdmin,
   });
   useEffect(() => {
-    if (isPowerAdmin || !sections.length) return;
+    if (isPowerAdmin || !sections.length || !filterCollege) return;
     const next = coerceScopeValues(scopes, filterCollege, filterSection, false);
     if (next.collegeId !== filterCollege) setFilterCollege(next.collegeId);
     if (next.sectionId !== filterSection) setFilterSection(next.sectionId);
@@ -1576,7 +1567,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
   const historicalChoiceResolver = useRef<((keepPicked: boolean) => void) | null>(null);
   const askHistoricalTimeChoice = useCallback((data: { dayLabel: string; picked: string; preferred: string; source: string }) =>
     new Promise<boolean>(resolve => {
-      historicalChoiceResolver.current?.(false);
+      historicalChoiceResolver.current?.(true);
       historicalChoiceResolver.current = resolve;
       setHistoricalChoice(data);
     }), []);
@@ -1587,12 +1578,12 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
     resolve?.(keepPicked);
   }, []);
   useEffect(() => () => {
-    historicalChoiceResolver.current?.(false);
+    historicalChoiceResolver.current?.(true);
     historicalChoiceResolver.current = null;
   }, []);
   useEffect(() => {
     if (!historicalChoice) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") settleHistoricalTimeChoice(false); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") settleHistoricalTimeChoice(true); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [historicalChoice, settleHistoricalTimeChoice]);
@@ -1697,12 +1688,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       if (last) Object.assign(next, last);
       next.AdRoomCode = next.AdRoomCode || savedPrefs.lastRoomCode || "";
       next.AdRoomHall = next.AdRoomHall || savedPrefs.lastRoomHall || "";
-      const preferredCollege = Number(last?.AdCollegeId) || filterCollege || Number(savedPrefs.filterCollege) || formScope.defaultCollegeId || 0;
-      const preferredSection = Number(last?.AdSectionId) || filterSection || Number(savedPrefs.filterSection) || 0;
-      const scoped = coerceScopeValues(scopes, preferredCollege, preferredSection, isPowerAdmin);
+      // Scope is inherited only when the user has explicitly activated the
+      // board. Never revive a saved college/term behind an empty selector.
+      const preferredCollege = Number(filterCollege) || 0;
+      const preferredSection = Number(filterSection) || 0;
+      const scoped = preferredCollege ? coerceScopeValues(scopes, preferredCollege, preferredSection, isPowerAdmin) : { collegeId: 0, sectionId: 0 };
       next.AdCollegeId = scoped.collegeId;
-      next.AdSectionId = scoped.sectionId || resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0;
-      next.AdTermId = Number(last?.AdTermId) || filterTerm || latestTermId || 0;
+      next.AdSectionId = scoped.sectionId || (scoped.collegeId ? resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0 : 0);
+      next.AdTermId = Number(filterTerm) || 0;
       // Started from an empty square in the week: that square is the answer to
       // the day and the hour, so the form opens with them already filled and a
       // sensible one-hour length.
@@ -2796,12 +2789,16 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
    */
   useEffect(() => {
     if (mode !== "schedule" || !workspaceReady) return;
-    // The scope the bootstrap already answered needs no second read.
+    if (!filterCollege || !filterTerm) {
+      appliedScope.current = "";
+      setRows([]);
+      return;
+    }
     if (appliedScope.current === `${filterCollege}|${filterSection}|${filterTerm}`) return;
     const timer = window.setTimeout(() => {
       setError(null);
       loadWorkspace(filterCollege, filterSection, filterTerm).catch((error: any) => setError(friendlyError(error)));
-    }, 60);
+    }, 90);
     return () => window.clearTimeout(timer);
   }, [mode, workspaceReady, filterCollege, filterSection, filterTerm]);
   useEffect(() => {
@@ -5904,9 +5901,8 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
                   </select>
                 </Field>
                 <Field
-                  label="رمز المقرر الدراسي"
+                  label={<span className="field-label-line"><span>رمز المقرر الدراسي</span>{!editId && sectionHint ? <small className="field-inline-hint">{sectionHint}</small> : null}</span>}
                   required
-                  hint={editId || !sectionHint ? undefined : <span className="section-hint">{sectionHint}</span>}
                 >
                   <select
                     value={form.AdCourseId || ""}
@@ -6247,22 +6243,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </div>
             </div>
             {conflicts.length ? (
-              <div className="conflict-list">
-                {conflicts.map((c, i) => (
+              <div className="conflict-list conflict-infographic">
+                {conflicts.slice(0, 4).map((c, i) => (
                   <article key={`${c.type}-${c.rowId}-${i}`}>
-                    <Badge tone={c.severity === "high" ? "danger" : "warning"}>
-                      {c.type === "room"
-                        ? "قاعة"
-                        : c.type === "instructor"
-                          ? "أستاذ"
-                          : c.type === "roomScope"
-                            ? "نطاق القاعة"
-                            : "تكرار"}
-                    </Badge>
-                    <strong>{c.message}</strong>
-                    <span>{c.detail}</span>
+                    <span className="conflict-type-icon">{c.type === "room" || c.type === "roomScope" ? <Building2 /> : c.type === "instructor" ? <UsersRound /> : <AlertTriangle />}</span>
+                    <div><small>{c.type === "room" ? "تعارض قاعة" : c.type === "instructor" ? "تعارض أستاذ" : c.type === "roomScope" ? "نطاق القاعة" : "تكرار"}</small><strong>{c.message}</strong><span title={String(c.detail || "")}>{String(c.detail || "").slice(0, 92)}</span></div>
                   </article>
                 ))}
+                {conflicts.length > 4 ? <details className="conflict-more"><summary>عرض {conflicts.length - 4} ملاحظات إضافية</summary>{conflicts.slice(4).map((c,i)=><p key={i}>{c.message}</p>)}</details> : null}
               </div>
             ) : (
               <div className="conflict-clear">
@@ -6425,6 +6413,7 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       {historicalChoice ? (
         <div className="historical-time-backdrop no-print" role="dialog" aria-modal="true" aria-label="تنبيه التوقيت التاريخي">
           <section className="historical-time-dialog">
+            <button type="button" className="historical-time-close" onClick={() => settleHistoricalTimeChoice(true)} aria-label="إغلاق الاقتراح" title="إغلاق"><X /></button>
             <header><span><Clock3 aria-hidden="true" /></span><div><small>{historicalChoice.source}</small><strong>{historicalChoice.dayLabel} · وقت غير معتاد</strong></div></header>
             <div className="historical-time-compare" dir="ltr"><b>{historicalChoice.picked}</b><ChevronLeft aria-hidden="true" /><strong>{historicalChoice.preferred}</strong></div>
             <p>النمط الأقرب يشير إلى <b dir="ltr">{historicalChoice.preferred}</b>. الوقت الذي اخترته <b dir="ltr">{historicalChoice.picked}</b> يبقى مسموحاً.</p>
@@ -6516,15 +6505,14 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
       ) : null}
       <Surface className="schedule-control">
         <div className="filter-strip">
-          {filterScope.lockCollege && filterScope.lockSection && filterScopeLabel ? <div className="scope-filter-chip"><span>النطاق</span><strong>{filterScopeLabel}</strong></div> : null}
-          {!filterScope.lockCollege ? <Field label="الكلية"><select value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(isPowerAdmin ? (sections.find(sec=>sec.AdCollegeId===id)?.AdSectionId||0) : (resolveScopeSelection(scopes,id,false).defaultSectionId||0))}}><option value="">الكل ...</option>{colleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field> : null}
-          {!filterScope.lockSection ? <Field label="القسم العلمي"><select value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">الكل ...</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
+          <Field label="الكلية"><select value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
+          {isPowerAdmin || !filterScope.lockSection ? <Field label="القسم العلمي"><select value={filterSection || ""} disabled={!filterCollege} onChange={(e)=>setFilterSection(Number(e.target.value)||0)}><option value="">كل الأقسام</option>{filterSections.map(s=><option key={s.AdSectionId} value={s.AdSectionId}>{s.AdSectionName}</option>)}</select></Field> : null}
           <Field label="الفصل الدراسي">
             <select
               value={filterTerm || ""}
-              onChange={(e) => setFilterTerm(Number(e.target.value) || latestTermId)}
+              onChange={(e) => setFilterTerm(Number(e.target.value) || 0)}
             >
-              <option value="">الأحدث تلقائياً</option>
+              <option value="">اختر الفصل</option>
               {terms.map((t) => (
                 <option key={t.AdTermId} value={t.AdTermId}>
                   {t.AdTermName}
@@ -6719,9 +6707,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
             {workspaceToolsOpen ? <GhostButton
               type="button"
               onClick={() => { if (!showMobileReadOnlyGate()) setTransferOpen(true); }}
-              title={isPowerAdmin ? "استيراد وتصدير واستبدال أستاذ والمنتدبون" : "المنتدبون"}
+              title="استيراد وتصدير واستبدال أستاذ والمنتدبون"
             >
-              <ArrowLeftRight /> {isPowerAdmin ? "أدوات البيانات" : "المنتدبون"}
+              <ArrowLeftRight /> أدوات البيانات
             </GhostButton> : null}
             {workspaceToolsOpen && isPowerAdmin ? (
               <div className="schedule-publish-slot">
@@ -8621,7 +8609,6 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
           instructors={instructors as any}
           departmentIds={departmentInstructorIds}
           terms={terms as any}
-          canTransfer={isPowerAdmin}
           onChanged={() => { void loadRows(); }}
           onClose={() => setTransferOpen(false)}
         />
@@ -8783,9 +8770,9 @@ export default function Schedules({ mode, user, scopes = [] }: Props) {
               </div>
             </div>
             <div className="context-intelligence-summary">
-              <article className="context-why-here">
+              <article className="context-why-here context-why-compact" title={context.whyHere || undefined}>
                 <span><HelpCircle aria-hidden="true" /></span>
-                <div><small>لماذا هذا هنا؟</small><strong>{context.whyHere || "لا يوجد دليل تاريخي كافٍ بعد."}</strong></div>
+                <div><small>{/مختلف|غير معتاد|تاريخ/i.test(context.whyHere || "") ? "خارج المعتاد" : "ضمن النمط"}</small><strong>{/مانع|تعارض/i.test(context.whyHere || "") ? "يحتاج تحقق" : "بدون مانع"}</strong></div>
               </article>
               <article title={context.courseLife ? `${context.courseLife.firstTerm} ← ${context.courseLife.latestTerm} · ${context.courseLife.observations} حالة` : undefined}>
                 <span><History aria-hidden="true" /></span>

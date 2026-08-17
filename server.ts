@@ -1876,7 +1876,7 @@ function roomCastlingProposals(scopeRows:any[],termRows:any[],profile:any,instru
       if(verified.safe)continue;
     }
     const swap=termRows.find((other:any)=>Number(other.id)!==Number(target.id)&&normalizedBuilding(other.AdRoomCode).toLocaleLowerCase()===desired.toLocaleLowerCase()&&["fsunday","fmonday","ftuesday","fwednesday","fthursday"].some(day=>rowsOverlapOnDay(target,other,day))&&roomIsFreeForRow({code:other.AdRoomCode,hall:other.AdRoomHall},target,termRows,new Set([Number(target.id),Number(other.id)]))&&roomIsFreeForRow({code:target.AdRoomCode,hall:target.AdRoomHall},other,termRows,new Set([Number(target.id),Number(other.id)])));
-    if(swap){const changes=[{id:target.id,AdRoomCode:swap.AdRoomCode,AdRoomHall:swap.AdRoomHall},{id:swap.id,AdRoomCode:target.AdRoomCode,AdRoomHall:target.AdRoomHall}],verified=verifyChanges(changes);if(verified.safe)proposals.push({kind:"swap",instructorId:risk.instructorId,instructorName:risk.instructorName,rowId:target.id,title:"Room Castling · تبديل شطرنجي للقاعتين",reason:`تبديل القاعتين يقلل عبور ${risk.instructorName} بين المباني من دون تغيير الوقت أو الأستاذ أو أيام المحاضرة، ولا يُعرض إلا إذا لم يزد خطر الحركة على أي أستاذ آخر في الفصل.`,before:{roomCode:target.AdRoomCode,roomHall:target.AdRoomHall,gapMinutes:risk.gapMinutes,requiredMinutes:risk.requiredMinutes},after:{roomCode:swap.AdRoomCode,roomHall:swap.AdRoomHall,requiredMinutes:travelMinutesFor(profile,risk.fromBuilding,swap.AdRoomCode)},changes,safe:true,globalScoreDelta:verified.globalAfter.score-globalBefore.score});}
+    if(swap){const changes=[{id:target.id,AdRoomCode:swap.AdRoomCode,AdRoomHall:swap.AdRoomHall},{id:swap.id,AdRoomCode:target.AdRoomCode,AdRoomHall:target.AdRoomHall}],verified=verifyChanges(changes);if(verified.safe)proposals.push({kind:"swap",instructorId:risk.instructorId,instructorName:risk.instructorName,rowId:target.id,title:"تبديل القاعات · تبديل آمن للقاعتين",reason:`تبديل القاعتين يقلل عبور ${risk.instructorName} بين المباني من دون تغيير الوقت أو الأستاذ أو أيام المحاضرة، ولا يُعرض إلا إذا لم يزد خطر الحركة على أي أستاذ آخر في الفصل.`,before:{roomCode:target.AdRoomCode,roomHall:target.AdRoomHall,gapMinutes:risk.gapMinutes,requiredMinutes:risk.requiredMinutes},after:{roomCode:swap.AdRoomCode,roomHall:swap.AdRoomHall,requiredMinutes:travelMinutesFor(profile,risk.fromBuilding,swap.AdRoomCode)},changes,safe:true,globalScoreDelta:verified.globalAfter.score-globalBefore.score});}
   }
   return {radar,proposals:proposals.slice(0,8)};
 }
@@ -2723,10 +2723,12 @@ app.post("/api/schedules/move-batch", requirePermission(7), async (req: Authenti
  * cannot place, and only writes when explicitly told to commit. A schedule is
  * a term of somebody's teaching; replacing one silently is not a feature.
  */
-app.get("/api/schedules/export", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/schedules/export", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
+  if (!collegeId || !termId) { res.status(400).json({ error: "حدد الكلية والفصل قبل التصدير." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId || 0)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const rows = filterByScope(req, await Repository.getSchedulesByScope({ collegeId, sectionId, termId }));
   const [courses, instructors, terms, colleges, sections] = await Promise.all([
     Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(),
@@ -2808,7 +2810,7 @@ app.get("/api/schedules/export", requirePermission(7), requirePowerAdmin, async 
   res.type("application/json; charset=utf-8").send(JSON.stringify(payload, null, 2));
 });
 
-app.post("/api/schedules/import", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/schedules/import", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const body = req.body || {};
   const commit = body.commit === true;
   const collegeId = Number(body.collegeId || 0);
@@ -2816,6 +2818,7 @@ app.post("/api/schedules/import", requirePermission(7), requirePowerAdmin, async
   const termId = Number(body.termId || 0);
   const incoming: any[] = Array.isArray(body.rows) ? body.rows : [];
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل قبل الاستيراد." }); return; }
+  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   if (!incoming.length) { res.status(400).json({ error: "الملف لا يحتوي مواعيد." }); return; }
 
   const [courses, instructors, existing] = await Promise.all([
@@ -2971,7 +2974,7 @@ app.post("/api/visiting-roster/copy", requirePermission(7), async (req: Authenti
  * clears the instructor and leaves the appointments visibly unassigned for the
  * department to fill. It never deletes teaching.
  */
-app.post("/api/schedules/replace-instructor", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/schedules/replace-instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const fromId = Number(req.body?.fromInstructorId || 0);
   const toId = Number(req.body?.toInstructorId || 0);
   const collegeId = Number(req.body?.collegeId || 0);
@@ -3014,7 +3017,7 @@ app.post("/api/schedules/replace-instructor", requirePermission(7), requirePower
   res.json({ preview: false, moved: rows.length, cleared: !toId, compatible: true, undoVersionId: undoVersion?.id });
 });
 
-app.get("/api/schedules/replace-instructor/history", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/schedules/replace-instructor/history", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId || !isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const versions = await Repository.getScheduleVersions(collegeId, sectionId, termId, 80);
@@ -3672,7 +3675,7 @@ app.post("/api/intelligence/war-room", requirePermission(7), async (req: Authent
   res.json(buildWarRoom(base,universe,courses,instructors,constraints,Number(req.body?.rowId||0)||undefined));
 });
 
-app.post("/api/intelligence/autopilot", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/autopilot", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req),goal=String(req.body?.goal||"حافظ على خلو الجدول من الموانع وقلل الفراغات بأقل تغيير ممكن").trim().slice(0,240);if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [scheduleData,courses,instructors,constraints]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(collegeId,sectionId,termId)]);const {rows:base,universe}=scheduleData;if(!base.length){res.status(400).json({error:"لا توجد مواعيد لتشغيل الجدولة المساعدة"});return;}
   res.json(runScheduleAutopilot(base,universe,courses,instructors,constraints,goal,240));
@@ -3689,7 +3692,7 @@ app.post("/api/intelligence/evaluate", requirePermission(7), async (req: Authent
   res.json({baseline:analyzeSchedule(baseline,universe,courses,instructors),scenario:analyzeSchedule(rows,[...external,...rows],courses,instructors),constraints:{baseline:evaluateScheduleConstraints(baseline,constraints),scenario:evaluateScheduleConstraints(rows,constraints)}});
 });
 
-app.post("/api/intelligence/auto-schedule", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]);
@@ -3936,6 +3939,32 @@ app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asyn
   res.json({ success: true, row: rows[index], rows: updated.rows, issues, issueRowIds, rowIssues, ready: issues.length === 0 });
 });
 
+app.delete("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const draft = await Repository.getScheduleDraftById(String(req.params.id));
+  if (!draft) { res.status(404).json({ error: "المسودة غير موجودة" }); return; }
+  if (!isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const rowId = Number(req.params.rowId || 0);
+  if (!draft.rows.some((row:any) => Number(row.id) === rowId)) { res.status(404).json({ error: "الموعد غير موجود داخل المسودة" }); return; }
+  const rows = safeDraftRows(draft.rows.filter((row:any) => Number(row.id) !== rowId), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  const issues = rows.length ? await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId) : [];
+  const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
+  const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
+  const conflictRows = rows.length ? findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate") : [];
+  const rowIssues = rows.length ? mapSmartIssuesToRows(rows, issues, conflictRows) : {};
+  const issueRowIds = Object.keys(rowIssues).map(Number);
+  const updated = await Repository.updateScheduleDraft(draft.id, { rows });
+  res.json({ success: true, rows: updated.rows, issues, issueRowIds, rowIssues, ready: rows.length > 0 && issues.length === 0 });
+});
+
+app.delete("/api/intelligence/drafts/:id/rows", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  if (req.get("x-schedule-confirm") !== "delete-all-draft-rows") { res.status(409).json({ error: "يتطلب حذف الجميع تأكيداً صريحاً" }); return; }
+  const draft = await Repository.getScheduleDraftById(String(req.params.id));
+  if (!draft) { res.status(404).json({ error: "المسودة غير موجودة" }); return; }
+  if (!isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const updated = await Repository.updateScheduleDraft(draft.id, { rows: [] });
+  res.json({ success: true, rows: updated.rows, issues: [], issueRowIds: [], rowIssues: {}, ready: false });
+});
+
 app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="publish"){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
@@ -3983,7 +4012,7 @@ app.get("/api/intelligence/versions", requirePermission(7), async (req: Authenti
 app.get("/api/intelligence/versions/compare", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const a=await Repository.getScheduleVersionById(String(req.query.fromId||"")),b=await Repository.getScheduleVersionById(String(req.query.toId||"")); if(!a||!b){res.status(404).json({error:"إحدى النسختين غير موجودة"});return;} if(a.scopeKey!==b.scopeKey||!isScopeAllowed(req,a.AdCollegeId,a.AdSectionId)){res.status(403).json({error:"لا يمكن مقارنة نسخ خارج نطاق القسم"});return;} const key=(r:any)=>`${r.AdCourseId}:${r.SCode}:${r.AdInstructorId}:${activeDays(r).join(",")}:${r.fstarttime}:${r.fendtime}:${r.AdRoomCode}:${r.AdRoomHall}`; const ak=new Set(a.rows.map(key)),bk=new Set(b.rows.map(key)); res.json({from:{id:a.id,label:a.label,createdAt:a.createdAt,count:a.rows.length,rows:a.rows},to:{id:b.id,label:b.label,createdAt:b.createdAt,count:b.rows.length,rows:b.rows},added:[...bk].filter(x=>!ak.has(x)).length,removed:[...ak].filter(x=>!bk.has(x)).length,unchanged:[...bk].filter(x=>ak.has(x)).length});
 });
-app.post("/api/intelligence/versions/:id/restore", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/versions/:id/restore", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="restore"){res.status(409).json({error:"يتطلب الاسترجاع تأكيداً صريحاً"});return;} const version=await Repository.getScheduleVersionById(String(req.params.id)); if(!version){res.status(404).json({error:"النسخة غير موجودة"});return;} if(!isScopeAllowed(req,version.AdCollegeId,version.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const restored=safeDraftRows(version.rows,version.AdCollegeId,version.AdSectionId,version.AdTermId); const issues=await validateSmartRows(restored,version.AdCollegeId,version.AdSectionId); if(issues.length){res.status(400).json({error:"لا يمكن استرجاع نسخة تحتوي أوقاتاً أو تعارضات غير صالحة",issues});return;} await captureScopeVersion(req,version.AdCollegeId,version.AdSectionId,version.AdTermId,`قبل استرجاع: ${version.label}`,"undo"); const rows=await Repository.replaceScheduleScope(version.AdCollegeId,version.AdSectionId,version.AdTermId,restored); await Repository.upsertSchedulePublication({AdCollegeId:version.AdCollegeId,AdSectionId:version.AdSectionId,AdTermId:version.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:`restore:${version.id}`}); res.json({success:true,count:rows.length});
 });
 
@@ -4018,7 +4047,7 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: Aut
   });
 });
 
-app.post("/api/intelligence/import-preview", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/import-preview", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const raw=Array.isArray(req.body?.rows)?req.body.rows:[]; if(!raw.length){res.status(400).json({error:"الملف لا يحتوي صفوفاً قابلة للقراءة"});return;} if(raw.length>450){res.status(400).json({error:"الملف أكبر من الحد الآمن للاستيراد"});return;} const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]); const sectionCourses=courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId); const byCode=new Map(sectionCourses.map(c=>[String(c.CourseCode).trim().toLowerCase(),c])); const byCivil=new Map(instructors.map(i=>[String(i.AdInstructorCivil).trim(),i])); const byName=new Map(instructors.map(i=>[String(i.AdInstructorName).trim().toLowerCase(),i])); const issues:string[]=[]; const rows:any[]=[];
   raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5),end=String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5);const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
 });
@@ -5239,7 +5268,7 @@ app.get("/api/share", requirePermission(7), requirePowerAdmin, async (req: Authe
   res.json(await Repository.getShareLinks(collegeId, sectionId, termId));
 });
 
-app.post("/api/share", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.body?.collegeId || 0), sectionId = Number(req.body?.sectionId || 0), termId = Number(req.body?.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
@@ -5251,6 +5280,7 @@ app.post("/api/share", requirePermission(7), requirePowerAdmin, async (req: Auth
   const kind = req.body?.kind === "staff" ? "staff"
     : req.body?.kind === "survey" ? "survey"
     : "department";
+  if (!isPowerUser(req) && kind !== "survey") { res.status(403).json({ error: "هذا النوع من روابط النشر مخصص لإدارة النظام الرئيسية" }); return; }
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
   const termName = terms.find(row => row.AdTermId === termId)?.AdTermName || "";
@@ -5271,10 +5301,11 @@ app.post("/api/share", requirePermission(7), requirePowerAdmin, async (req: Auth
   res.status(201).json(link);
 });
 
-app.delete("/api/share/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.delete("/api/share/:id", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const link = await Repository.getShareLink(String(req.params.id));
   if (!link) { res.status(404).json({ error: "الرابط غير موجود" }); return; }
   if (!isScopeAllowed(req, link.AdCollegeId, link.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  if (!isPowerUser(req) && link.kind !== "survey") { res.status(403).json({ error: "هذا النوع من روابط النشر مخصص لإدارة النظام الرئيسية" }); return; }
   await Repository.revokeShareLink(link.id);
   res.json({ ok: true });
 });

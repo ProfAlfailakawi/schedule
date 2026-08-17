@@ -5212,3 +5212,46 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .rooms-card .rooms-insight{opacity:0}
 .rooms-card:hover .rooms-insight,.rooms-card:focus-within .rooms-insight{opacity:1}
 .schedule-physics-float.physics-view-rooms{min-width:min(260px,70vw)}
+
+/* Context selection and high-frequency appointment surfaces stay visually
+   stable: changing scope swaps data, never the geometry around it. */
+.filter-strip{min-height:94px;align-items:end;contain:layout}
+.filter-strip .field{min-width:0}.filter-strip .field select,.filter-strip .field input{min-height:48px}
+.field-label-line{display:flex;align-items:center;gap:9px;min-width:0;flex-wrap:wrap}
+.field-inline-hint{
+  display:inline-flex;align-items:center;min-height:24px;padding:3px 9px;border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));border-radius:999px;
+  background:color-mix(in srgb,var(--accent-softer) 46%,var(--surface));color:var(--muted);font-size:10px;font-weight:600;line-height:1.25;white-space:normal;
+}
+
+/* Save blockers are a decision infographic, not a wall of diagnostic prose. */
+.conflict-list.conflict-infographic{display:grid;gap:10px}
+.conflict-infographic article{
+  display:grid!important;grid-template-columns:42px minmax(0,1fr)!important;align-items:start!important;gap:12px!important;
+  padding:13px 14px!important;border-radius:17px!important;min-height:0!important;
+}
+.conflict-infographic .conflict-type-icon{
+  display:grid;place-items:center;width:42px;height:42px;border-radius:13px;background:color-mix(in srgb,currentColor 8%,var(--surface));
+}
+.conflict-infographic .conflict-type-icon svg{width:20px;height:20px}
+.conflict-infographic article>div{min-width:0}.conflict-infographic article strong{display:block;font-size:.9rem;line-height:1.4}
+.conflict-infographic article p{margin:4px 0 0!important;color:var(--muted);font-size:.78rem;line-height:1.55;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.conflict-infographic .conflict-more{grid-column:1/-1;margin-top:2px;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent);padding-top:8px}
+
+/* The context reason card only answers the decision at a glance; full prose is
+   retained as a native title for anyone who deliberately asks for it. */
+.context-why-here.context-why-compact{display:grid!important;place-items:center;align-content:center;gap:5px;text-align:center;padding:14px 12px!important;min-height:126px}
+.context-why-compact small{color:var(--muted);font-size:.72rem}.context-why-compact strong{font-size:1rem;line-height:1.35}.context-why-compact span{font-size:.76rem;color:var(--accent);font-weight:700}
+
+/* Historical-time suggestion always has an explicit escape hatch. */
+.historical-time-dialog{position:relative}
+.historical-time-close{
+  position:absolute;inset-block-start:14px;inset-inline-start:14px;z-index:3;display:grid;place-items:center;width:38px;height:38px;padding:0;
+  border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--muted);cursor:pointer;box-shadow:var(--shadow-xs);
+}
+.historical-time-close:hover{border-color:color-mix(in srgb,var(--accent) 42%,var(--line));color:var(--accent)}
+.historical-time-close svg{width:17px;height:17px}
+@media(max-width:720px){
+  .filter-strip{min-height:0;contain:none}.field-label-line{align-items:flex-start}.field-inline-hint{white-space:normal;max-width:100%}
+  .conflict-infographic article{grid-template-columns:38px minmax(0,1fr)!important;padding:12px!important}.conflict-infographic .conflict-type-icon{width:38px;height:38px}
+}
+.conflict-infographic article>div>span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:4px;color:var(--muted);font-size:.74rem;line-height:1.5}.conflict-infographic article strong{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.regulation-advice-tile p{-webkit-line-clamp:2}.regulation-advice-tile{min-height:116px}

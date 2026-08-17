@@ -241,16 +241,27 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
         <div className="print-report print-upright">
           <PrintLetterhead title="مراجعة الاعتماد · قرار 1912/2016" scope={scopeLine} />
           <section className={`print-review-hero tone-${tone}`}>
-            <div><small>قرار الاعتماد</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</strong><span>{scopeLine}</span></div>
-            <b>{score}<small>/100</small></b>
+            <svg className="print-review-ring" viewBox="0 0 64 64" aria-label={`مؤشر المطابقة ${score} من 100`}>
+              <circle className="ring-track" cx="32" cy="32" r="26" />
+              <circle className="ring-value" cx="32" cy="32" r="26" strokeDasharray={`${(score / 100) * ringLength} ${ringLength}`} />
+              <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
+              <text x="32" y="45" className="ring-unit">/ 100</text>
+            </svg>
+            <div><small>مراجعة الاعتماد · قرار 1912/2016</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</strong><span>{scopeLine}</span></div>
           </section>
-          <div className="print-review-spread">
-            <span><b>{spread.high}</b> يمنع</span><span><b>{spread.medium}</b> يراجَع</span><span><b>{spread.low}</b> ملاحظة</span><span><b>{spread.clean}</b> سليم</span>
+          <div className="print-review-spread" role="img" aria-label="توزيع المواعيد حسب نتيجة المراجعة">
+            <div className="print-spread-bar">
+              {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} /> : null}
+              {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} /> : null}
+              {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} /> : null}
+              {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} /> : null}
+            </div>
+            <div className="print-spread-keys"><span className="seg-high"><b>{spread.high}</b> يمنع</span><span className="seg-medium"><b>{spread.medium}</b> يراجَع</span><span className="seg-low"><b>{spread.low}</b> ملاحظة</span><span className="seg-clean"><b>{spread.clean}</b> سليم</span></div>
           </div>
           <section className="print-review-findings">
             {findings.length ? findings.map((finding, index) => (
               <article className={`print-review-finding severity-${finding.severity}`} key={finding.rule}>
-                <header><b>{index + 1}</b><div><strong>{finding.title}</strong><span>{finding.detail}</span></div><em>{finding.article}</em><i>{SEVERITY_LABEL[finding.severity]}</i></header>
+                <header><b className="print-finding-index">{finding.severity === "high" ? <AlertTriangle /> : finding.severity === "medium" ? <Info /> : <CheckCircle2 />}</b><div><strong>{finding.title}</strong><span>{finding.detail}</span></div><em>{finding.article}</em><i>{SEVERITY_LABEL[finding.severity]}</i></header>
                 {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, 18).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > 18 ? <small>+ {(finding.rowIds.length - 18).toLocaleString("ar-KW-u-nu-latn")} موعد آخر</small> : null}</div> : null}
               </article>
             )) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>مطابق لكل ما يمكن فحصه آلياً من اللائحة.</span></div>}

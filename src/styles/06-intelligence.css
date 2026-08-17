@@ -3511,3 +3511,87 @@ button.twin-delta{width:100%}
    indicator instead of trapping it under the viewport edge. */
 .intel-drawer,.drawer-schedule-list{scroll-padding-bottom:max(28px,env(safe-area-inset-bottom));}
 .drawer-schedule-list{padding-bottom:max(32px,calc(env(safe-area-inset-bottom) + 18px));}
+
+/* Explicit scope activation. The control row reserves its full geometry so a
+   college/term choice cannot make the page jump while intelligence reloads. */
+.intel-context{min-height:148px;align-items:center;contain:layout;content-visibility:visible}
+.intel-context-copy{min-height:52px;display:grid;align-content:center}
+.intel-context-fields{align-items:end;min-height:76px}
+.intel-context-fields .field{min-width:190px;min-height:72px;display:grid;align-content:end}
+.intel-context-fields select{height:48px;min-height:48px;transition:border-color .16s var(--ease),box-shadow .16s var(--ease),background .16s var(--ease)}
+.intel-context-idle{
+  min-height:96px;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px 24px!important;
+  border-style:dashed!important;background:color-mix(in srgb,var(--surface-2) 62%,var(--surface))!important;
+}
+.intel-context-idle>div{display:grid;gap:5px}.intel-context-idle strong{font-size:1rem}.intel-context-idle span{color:var(--muted);font-size:.85rem}
+
+/* Approval and publication are independent states; never concatenate them into
+   a single sentence that makes "not published" look like an approval blocker. */
+.approval-status-grid{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px!important;align-items:stretch}
+.approval-status-grid>article{
+  display:grid;align-content:start;gap:4px;min-height:92px;padding:13px 14px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)
+}
+.approval-status-grid>article small{color:var(--muted);font-size:.7rem;font-weight:700}.approval-status-grid>article strong{font-size:.95rem;line-height:1.35}.approval-status-grid>article span{color:var(--muted);font-size:.74rem;line-height:1.5}
+.approval-status-grid>.blocked{border-color:color-mix(in srgb,var(--danger) 28%,var(--line));background:color-mix(in srgb,var(--danger-soft) 36%,var(--surface))}.approval-status-grid>.blocked strong{color:var(--danger)}
+.approval-status-grid>.ready{border-color:color-mix(in srgb,var(--success) 24%,var(--line));background:color-mix(in srgb,var(--success-soft) 32%,var(--surface))}.approval-status-grid>.ready strong{color:var(--success)}
+.approval-status-grid>.publication-state{background:color-mix(in srgb,var(--surface-2) 70%,var(--surface))}
+
+/* Room-swap proposals are presented as a scannable Arabic set of safe alternatives. */
+.castling-cards{display:grid!important;grid-template-columns:minmax(185px,.58fr) minmax(0,1.42fr);gap:12px!important;align-items:stretch!important;padding:14px!important}
+.castling-head{display:flex!important;align-items:center!important;gap:11px!important;padding:8px 4px!important}.castling-head>div{display:grid;gap:3px}.castling-head strong{font-size:.95rem}.castling-head span{font-size:.73rem;color:var(--muted)}
+.castling-mark{display:grid!important;place-items:center!important;width:42px;height:42px;border-radius:13px;background:color-mix(in srgb,var(--accent) 10%,var(--surface));color:var(--accent)}.castling-mark svg{width:20px;height:20px}
+.castling-options{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px!important}
+.castling-options>button{
+  position:relative;display:grid!important;grid-template-columns:1fr!important;align-content:center!important;gap:6px!important;min-height:94px;padding:11px 13px!important;text-align:start!important;
+  border:1px solid var(--line)!important;border-radius:15px!important;background:var(--surface)!important;color:var(--ink)!important;box-shadow:none!important;
+}
+.castling-options>button:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--line))!important;background:color-mix(in srgb,var(--accent-softer) 28%,var(--surface))!important}
+.castling-person{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-size:.73rem;font-weight:700}.castling-person svg{width:14px;height:14px;color:var(--accent)}
+.castling-options strong{display:flex!important;align-items:center;gap:6px;font:700 .77rem/1.2 var(--font-mono);direction:ltr;unicode-bidi:isolate}.castling-options strong svg{width:13px;height:13px;color:var(--muted)}
+.castling-options small{display:flex;align-items:center;gap:5px;color:var(--success);font-size:.68rem;font-weight:700}.castling-options small svg{width:12px;height:12px}.castling-open{position:absolute;inset-inline-end:9px;inset-block-end:9px;width:14px;height:14px;color:var(--muted)}
+
+/* Room drawer: high-frequency room intelligence becomes an infographic. */
+.room-drawer-infographic{display:grid;gap:15px;margin-top:18px}
+.room-kpis{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important;margin:0!important}
+.room-kpis article{position:relative;display:grid!important;align-content:center!important;gap:2px!important;min-height:96px!important;padding:13px 14px!important;border-radius:17px!important;background:var(--surface-2)!important}
+.room-kpis article>span{position:absolute;inset-block-start:12px;inset-inline-start:12px;display:grid;place-items:center;width:31px;height:31px;border-radius:10px;background:var(--surface);color:var(--accent)}.room-kpis article>span svg{width:16px;height:16px}.room-kpis article strong{font-size:1.55rem!important}.room-kpis article small{color:var(--muted);font-size:.72rem}
+.room-usage-block,.room-windows-block{display:grid;gap:10px;padding:13px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2)}
+.room-usage-block>header,.room-windows-block>header{display:flex;align-items:center;justify-content:space-between;gap:10px}.room-usage-block>header>div,.room-windows-block>header>div{display:grid;gap:2px}.room-usage-block header small,.room-windows-block header small{color:var(--brass);font-size:.68rem;font-weight:700}.room-usage-block header strong,.room-windows-block header strong{font-size:.9rem}.room-usage-block header>svg,.room-windows-block header>svg{width:18px;height:18px;color:var(--muted)}
+.room-usage-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.room-usage-grid article{display:grid;gap:2px;padding:10px;border:1px solid color-mix(in srgb,var(--line) 78%,transparent);border-radius:13px;background:var(--surface)}.room-usage-grid strong{font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.room-usage-grid span{color:var(--muted);font-size:.68rem}
+.room-window-days{display:grid;gap:8px}.room-window-days>article{display:grid;grid-template-columns:58px minmax(0,1fr);align-items:start;gap:8px}.room-window-days>article>b{padding-top:7px;color:var(--ink-2);font-size:.72rem}.room-window-days>article>div{display:flex;flex-wrap:wrap;gap:6px}.room-window-days span{display:inline-flex;align-items:center;min-height:30px;padding:5px 8px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font:650 .67rem/1 var(--font-mono);white-space:nowrap}
+.room-privacy{margin:0!important;padding:9px 11px!important;border-radius:13px!important;background:color-mix(in srgb,var(--accent-softer) 34%,var(--surface));font-size:.7rem!important;line-height:1.55!important}.room-privacy svg{width:14px;height:14px}
+
+/* Professor week: clear semantic bands, with an actual visual key. */
+.week-shape{padding:12px 13px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2)}
+.week-shape-track{height:26px!important;border-radius:9px!important;background:color-mix(in srgb,var(--line-strong) 30%,var(--surface))!important;border:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
+.week-shape-track>b{inset-block:3px!important;border-radius:6px!important;background:var(--accent-strong)!important;box-shadow:0 1px 0 color-mix(in srgb,#fff 15%,transparent) inset}
+.week-shape-track>i.week-shape-wait{
+  inset-block:3px!important;border-radius:6px!important;color:color-mix(in srgb,var(--brass) 92%,#5a3a00)!important;
+  background:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--brass) 32%,var(--surface)) 0 4px,color-mix(in srgb,var(--brass) 10%,var(--surface)) 4px 8px)!important;
+  outline:1px solid color-mix(in srgb,var(--brass) 30%,transparent);font-weight:750!important;
+}
+.week-shape-legend{display:flex!important;flex-wrap:wrap;gap:7px!important;margin-top:12px!important;margin-inline-start:56px!important;color:var(--muted)!important}
+.week-shape-legend>span{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:.67rem;font-weight:650}
+.week-shape-legend>span>i{display:block;width:13px;height:8px;border-radius:3px}.week-shape-legend .teaching>i{background:var(--accent-strong)}.week-shape-legend .waiting>i{background:color-mix(in srgb,var(--brass) 38%,var(--surface));outline:1px solid color-mix(in srgb,var(--brass) 34%,transparent)}.week-shape-legend .idle>i{background:color-mix(in srgb,var(--line-strong) 42%,var(--surface))}
+
+/* Draft pre-publish repair is a complete workflow: fast individual actions,
+   deliberate bulk deletion, and immediate revalidation. */
+.genesis-bulk-tools{display:flex;align-items:center;justify-content:flex-start;gap:8px;flex-wrap:wrap;margin:10px 0 12px;padding:9px;border:1px solid var(--line);border-radius:15px;background:var(--surface-2)}
+.genesis-bulk-tools>button{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 11px;border:1px solid var(--line);border-radius:11px;background:var(--surface);color:var(--ink-2);font-size:.75rem;font-weight:700;cursor:pointer}.genesis-bulk-tools>button svg{width:15px;height:15px}.genesis-bulk-tools>button:hover{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));color:var(--accent)}
+.genesis-bulk-tools>button.danger{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 25%,var(--line));background:color-mix(in srgb,var(--danger-soft) 28%,var(--surface))}
+.genesis-delete-confirm{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:7px 9px;border:1px solid color-mix(in srgb,var(--danger) 25%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--danger-soft) 32%,var(--surface));font-size:.72rem}.genesis-delete-confirm strong{color:var(--danger)}.genesis-delete-confirm button{min-height:30px;padding:0 9px;border-radius:9px;border:1px solid var(--line);background:var(--surface);font-size:.7rem;font-weight:700;cursor:pointer}.genesis-delete-confirm button.confirm{background:var(--danger);border-color:var(--danger);color:#fff}
+.genesis-row-actions{display:flex;align-items:center;gap:6px;justify-content:flex-start;white-space:nowrap}.genesis-row-actions button{display:inline-flex;align-items:center;gap:4px;min-height:32px;padding:0 8px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-2);font-size:.7rem;font-weight:700;cursor:pointer}.genesis-row-actions button svg{width:13px;height:13px}.genesis-row-actions button:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--line));color:var(--accent)}.genesis-row-actions button.danger{color:var(--danger)}
+
+/* Long mobile drawers must be able to lift the last card completely above
+   Safari/Chrome system UI, not merely make its top edge reachable. */
+.intel-drawer,.drawer-schedule-list{scroll-padding-bottom:max(124px,calc(env(safe-area-inset-bottom,0px) + 100px))!important}
+.drawer-schedule-list{padding-bottom:max(132px,calc(env(safe-area-inset-bottom,0px) + 108px))!important}
+@media(max-width:760px){
+  .intel-context{min-height:0;contain:none}.intel-context-fields{min-height:0}.intel-context-fields .field{min-height:0;min-width:0}
+  .approval-status-grid{grid-template-columns:1fr}.castling-cards{grid-template-columns:1fr!important}.castling-options{grid-template-columns:1fr!important}
+  .room-usage-grid{grid-template-columns:1fr}.room-window-days>article{grid-template-columns:50px minmax(0,1fr)}
+  .week-shape{padding:10px}.week-shape-legend{margin-inline-start:0!important}.week-shape-scale{margin-inline-start:48px}.week-shape-row{gap:8px}.week-shape-row>small{width:40px}
+  .intel-drawer{padding-bottom:max(100px,calc(env(safe-area-inset-bottom,0px) + 80px))!important}.drawer-schedule-list{padding-bottom:max(154px,calc(env(safe-area-inset-bottom,0px) + 128px))!important;scroll-padding-bottom:max(154px,calc(env(safe-area-inset-bottom,0px) + 128px))!important}
+}
+.genesis-row-actions .genesis-delete{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 22%,var(--line));background:color-mix(in srgb,var(--danger-soft) 22%,var(--surface))}.genesis-row-actions .genesis-delete:hover{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 42%,var(--line))}
+.intel-context-idle>svg{width:28px;height:28px;margin-inline-end:12px;color:var(--accent);padding:5px;border-radius:10px;background:color-mix(in srgb,var(--accent) 9%,var(--surface))}

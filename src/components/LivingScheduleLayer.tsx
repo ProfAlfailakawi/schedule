@@ -20,6 +20,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Upload,
   UsersRound,
   WandSparkles,
@@ -124,6 +125,8 @@ export default function LivingScheduleLayer({
     [genesisUndoPoint, setGenesisUndoPoint] = useState<any>(null),
     [genesisEditId, setGenesisEditId] = useState<number | null>(null),
     [genesisEdit, setGenesisEdit] = useState<any>(null),
+    [genesisBulkEdit, setGenesisBulkEdit] = useState(false),
+    [genesisDeleteAllConfirm, setGenesisDeleteAllConfirm] = useState(false),
     [memoryReason, setMemoryReason] = useState(""),
     [memory, setMemory] = useState<any>(null),
     [safety, setSafety] = useState<any[]>([]),
@@ -424,8 +427,41 @@ export default function LivingScheduleLayer({
           days:[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]].filter(([key]) => Boolean(genesisEdit[key])).map(([,label]) => label).join(" · "),
         } : row),
       } : current);
+      const editedId = genesisEditId;
+      const currentRows = Array.isArray(genesis?.previewRows) ? genesis.previewRows : [];
+      const nextRow = genesisBulkEdit ? currentRows[currentRows.findIndex((row:any) => Number(row.id) === Number(editedId)) + 1] : null;
       setGenesisEditId(null); setGenesisEdit(null);
       setMessage(result.ready ? "تمت معالجة الموانع. المسودة جاهزة للنشر." : `تم حفظ التعديل. بقيت ${(result.issues || []).length} ملاحظة.`);
+      if (nextRow) window.setTimeout(() => beginGenesisEdit(nextRow), 0);
+      else if (genesisBulkEdit) setGenesisBulkEdit(false);
+    } catch (e:any) { setError(e.message); } finally { setBusy(false); }
+  };
+
+  const deleteGenesisRow = async (rowId: number) => {
+    const draftId = String(genesis?.draft?.id || "").trim();
+    if (!draftId || !rowId) return;
+    setBusy(true); setError("");
+    try {
+      const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/rows/${encodeURIComponent(String(rowId))}`, { method: "DELETE" });
+      setGenesis((current:any) => current ? {
+        ...current,
+        previewRows: (current.previewRows || []).filter((row:any) => Number(row.id) !== Number(rowId)),
+        draftRows: (current.draftRows || []).filter((row:any) => Number(row.id) !== Number(rowId)),
+        issues: result.issues || [], issueRowIds: result.issueRowIds || [], rowIssues: result.rowIssues || {}, reviewRequired: (result.issues || []).length,
+      } : current);
+      if (genesisEditId === rowId) { setGenesisEditId(null); setGenesisEdit(null); }
+      setMessage(result.ready ? "تم حذف الموعد وإعادة الفحص. المسودة جاهزة للنشر." : `تم حذف الموعد وإعادة الفحص · بقيت ${(result.issues || []).length} ملاحظة.`);
+    } catch (e:any) { setError(e.message); } finally { setBusy(false); }
+  };
+  const deleteAllGenesisRows = async () => {
+    const draftId = String(genesis?.draft?.id || "").trim();
+    if (!draftId) return;
+    setBusy(true); setError("");
+    try {
+      const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/rows`, { method: "DELETE", headers: { "x-schedule-confirm": "delete-all-draft-rows" } });
+      setGenesis((current:any) => current ? { ...current, previewRows: [], draftRows: [], issues: result.issues || [], issueRowIds: [], rowIssues: {}, reviewRequired: 0 } : current);
+      setGenesisEditId(null); setGenesisEdit(null); setGenesisBulkEdit(false); setGenesisDeleteAllConfirm(false);
+      setMessage("تم حذف جميع المواعيد من المسودة. لم يُنشر أي تغيير على الجدول الرسمي.");
     } catch (e:any) { setError(e.message); } finally { setBusy(false); }
   };
 
@@ -976,10 +1012,14 @@ export default function LivingScheduleLayer({
                             </div>
                             <b>{genesis.previewRows.length}</b>
                           </header>
+                          <div className="genesis-bulk-tools" role="toolbar" aria-label="إجراءات سريعة على المسودة">
+                            <button type="button" onClick={() => { setGenesisBulkEdit(true); const first = genesis.previewRows?.[0]; if (first) beginGenesisEdit(first); }} disabled={busy || !genesis.previewRows?.length}><Save /> تعديل للجميع</button>
+                            {!genesisDeleteAllConfirm ? <button type="button" className="danger" onClick={() => setGenesisDeleteAllConfirm(true)} disabled={busy || !genesis.previewRows?.length}><Trash2 /> حذف للجميع</button> : <span className="genesis-delete-confirm"><b>حذف كل المواعيد من المسودة؟</b><button type="button" className="danger" onClick={() => void deleteAllGenesisRows()} disabled={busy}>نعم، احذف</button><button type="button" onClick={() => setGenesisDeleteAllConfirm(false)}>إلغاء</button></span>}
+                          </div>
                           <div className="genesis-preview-scroll">
                             <table>
                               <thead>
-                                <tr><th>م</th><th>المقرر</th><th>الشعبة</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الأستاذ</th></tr>
+                                <tr><th>م</th><th>المقرر</th><th>الشعبة</th><th>الأيام</th><th>الوقت</th><th>القاعة</th><th>الأستاذ</th><th>الإجراء</th></tr>
                               </thead>
                               <tbody>
                                 {genesis.previewRows.map((row: any) => {
@@ -993,10 +1033,11 @@ export default function LivingScheduleLayer({
                                       <td>{row.days || "—"}</td>
                                       <td dir="ltr">{formatScheduleTimeRange(row.start, row.end)}</td>
                                       <td dir="ltr">{[row.building,row.hall].filter(Boolean).join("/") || "—"}</td>
-                                      <td><span>{row.instructor || "—"}</span>{flagged ? <button className="genesis-fix" type="button" onClick={() => beginGenesisEdit(row)}>تعديل هنا</button> : null}</td>
+                                      <td><span>{row.instructor || "—"}</span></td>
+                                      <td><div className="genesis-row-actions"><button className="genesis-fix" type="button" onClick={() => beginGenesisEdit(row)}><Save /> تعديل</button><button className="genesis-delete" type="button" onClick={() => void deleteGenesisRow(Number(row.id))} disabled={busy}><Trash2 /> حذف</button></div></td>
                                     </tr>
-                                    {flagged ? <tr className="genesis-row-reason"><td colSpan={7}><ShieldAlert /><strong>سبب المنع:</strong><span>{(genesis.rowIssues?.[String(row.id)] || [])[0] || "هذا الموعد مرتبط بمشكلة تمنع النشر."}</span></td></tr> : null}
-                                    {editing ? <tr className="genesis-inline-editor"><td colSpan={7}><div>
+                                    {flagged ? <tr className="genesis-row-reason"><td colSpan={8}><ShieldAlert /><strong>سبب المنع:</strong><span>{(genesis.rowIssues?.[String(row.id)] || [])[0] || "هذا الموعد مرتبط بمشكلة تمنع النشر."}</span></td></tr> : null}
+                                    {editing ? <tr className="genesis-inline-editor"><td colSpan={8}><div>
                                       <label><span>الأستاذ</span><select value={genesisEdit?.AdInstructorId || ""} onChange={e => setGenesisEdit((v:any)=>({...v,AdInstructorId:Number(e.target.value)||0}))}><option value="">اختر</option>{sortByName(instructors, i => i.AdInstructorName).map(i=><option key={i.AdInstructorId} value={i.AdInstructorId}>{i.AdInstructorName}</option>)}</select></label>
                                       <label><span>من</span><input type="time" value={genesisEdit?.fstarttime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fstarttime:e.target.value}))}/></label>
                                       <label><span>إلى</span><input type="time" value={genesisEdit?.fendtime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fendtime:e.target.value}))}/></label>
@@ -1004,7 +1045,7 @@ export default function LivingScheduleLayer({
                                       <label><span>القاعة</span><input value={genesisEdit?.AdRoomHall || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,AdRoomHall:e.target.value}))}/></label>
                                       <fieldset className="genesis-days"><legend>الأيام</legend>{[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]].map(([key,label]) => <label key={key}><input type="checkbox" checked={Boolean(genesisEdit?.[key])} onChange={e=>setGenesisEdit((v:any)=>({...v,[key]:e.target.checked}))}/><span>{label}</span></label>)}</fieldset>
                                       <PrimaryButton type="button" onClick={() => void saveGenesisRow()} disabled={busy}><Save />حفظ وفحص</PrimaryButton>
-                                      <GhostButton type="button" onClick={() => {setGenesisEditId(null);setGenesisEdit(null);}}>إلغاء</GhostButton>
+                                      <GhostButton type="button" onClick={() => {setGenesisEditId(null);setGenesisEdit(null);setGenesisBulkEdit(false);}}>إلغاء</GhostButton>
                                     </div></td></tr> : null}
                                   </React.Fragment>;
                                 })}
@@ -1015,7 +1056,7 @@ export default function LivingScheduleLayer({
                             <p>{genesis.published ? "هذه المسودة منشورة الآن على الجدول الرسمي." : "راجع الجدول، ثم انشره من هنا مباشرة عندما يكون جاهزاً."}</p>
                             <div>
                               {!genesis.published ? (
-                                <PrimaryButton type="button" onClick={() => void publishGenesisDraft()} disabled={busy || !genesis?.draft?.id || Boolean(genesis?.issues?.length)} title={genesis?.issues?.length ? "عالج الملاحظات المعلّمة أولاً" : undefined}>
+                                <PrimaryButton type="button" onClick={() => void publishGenesisDraft()} disabled={busy || !genesis?.draft?.id || !genesis?.previewRows?.length || Boolean(genesis?.issues?.length)} title={genesis?.issues?.length ? "عالج الملاحظات المعلّمة أولاً" : undefined}>
                                   <Upload /> انشر الآن
                                 </PrimaryButton>
                               ) : null}

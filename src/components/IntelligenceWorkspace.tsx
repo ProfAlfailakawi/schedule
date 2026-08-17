@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   CircleHelp,
+  Clock3,
   Command,
   Dna,
   FileClock,
@@ -29,6 +30,7 @@ import {
   ShieldAlert,
   SlidersHorizontal,
   Sparkles,
+  Target,
   Trash2,
   Upload,
   UsersRound,
@@ -352,6 +354,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           : null;
       } catch { return null; }
     });
+  useEffect(() => { if (!isPowerAdmin && heatMode !== "department") setHeatMode("department"); }, [isPowerAdmin, heatMode]);
   const [prompt, setPrompt] = useState(""),
     [chat, setChat] = useState<ChatItem[]>([]),
     chatEnd = useRef<HTMLDivElement | null>(null);
@@ -470,41 +473,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         setTerms(sortedTerms);
         setCourses(sortByName(lookups?.courses || [], (row:any)=>row.CourseName));
         setInstructors(sortByName(lookups?.instructors || [], (row:any)=>row.AdInstructorName));
-        const latest = sortedTerms[0]?.AdTermId || 0;
-        let handoff: { collegeId?: number; sectionId?: number; termId?: number } | null = null;
-        try {
-          const raw = sessionStorage.getItem("schedule-intelligence-scope");
-          sessionStorage.removeItem("schedule-intelligence-scope");
-          handoff = raw ? JSON.parse(raw) : null;
-        } catch { handoff = null; }
-        const requestedCollege = Number(handoff?.collegeId || 0);
-        const requestedSection = Number(handoff?.sectionId || 0);
-        const requestedTerm = Number(handoff?.termId || 0);
-        const scoped = resolveScopeSelection(scopes, requestedCollege, isPowerAdmin);
-        const fallbackCollege = isPowerAdmin
-          ? (c[0]?.AdCollegeId || s[0]?.AdCollegeId || 0)
-          : scoped.defaultCollegeId;
-        const defaultCollege = c.some((item:any)=>Number(item.AdCollegeId)===requestedCollege)
-          ? requestedCollege
-          : fallbackCollege;
-        const scopedForCollege = resolveScopeSelection(scopes, defaultCollege, isPowerAdmin);
-        const allowedIds = new Set((scopedForCollege.sectionIds || []).map((id: any) => Number(id)));
-        const allowedSection = s.find((item:any)=>
-          Number(item.AdSectionId)===requestedSection &&
-          Number(item.AdCollegeId)===defaultCollege &&
-          (isPowerAdmin || allowedIds.has(Number(item.AdSectionId)))
-        );
-        const firstAllowedSection = s.find((item:any)=>
-          Number(item.AdCollegeId)===defaultCollege &&
-          (isPowerAdmin || allowedIds.has(Number(item.AdSectionId)))
-        )?.AdSectionId || 0;
-        const defaultSection = allowedSection
-          ? requestedSection
-          : (scopedForCollege.defaultSectionId || firstAllowedSection);
-        const defaultTerm = t.some((item:any)=>Number(item.AdTermId)===requestedTerm) ? requestedTerm : latest;
-        setCollegeId(defaultCollege);
-        setSectionId(defaultSection);
-        setTermId(defaultTerm);
+        // Context is deliberately explicit. A visible default that has not
+        // actually loaded is worse than an empty selector: it makes the page
+        // look broken on first entry. Consume any old handoff and start clean.
+        try { sessionStorage.removeItem("schedule-intelligence-scope"); } catch {}
+        setCollegeId(0);
+        setSectionId(0);
+        setTermId(0);
         setCompareTo(sortedTerms[0]?.AdTermId || 0);
         setCompareFrom(sortedTerms[1]?.AdTermId || sortedTerms[0]?.AdTermId || 0);
       } catch (e: any) {
@@ -602,7 +577,23 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setWarRoom(null);
     setAutopilot(null);
     setWarRowId("");
-    if (collegeId && sectionId && termId) void reload();
+    if (collegeId && sectionId && termId) {
+      void reload();
+    } else {
+      // An incomplete scope is a true idle state, never the previous scope
+      // dimmed behind empty selectors. This also removes the visual flash that
+      // used to occur while switching college/term.
+      setOverview(null);
+      setRows([]);
+      setDrafts([]);
+      setVersions([]);
+      setGenome(null);
+      setConstraints([]);
+      setDemand(null);
+      setOperationsReview(null);
+      setDecisionInbox({ manual: [], inferred: [], totalOpen: 0 });
+      setExperienceHealth(null);
+    }
   }, [collegeId, sectionId, termId]);
   useEffect(() => {
     chatEnd.current?.scrollIntoView({
@@ -1360,22 +1351,24 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     window.location.assign("/FSchedule/Index");
   };
 
+  const scopedContext = resolveScopeSelection(scopes, collegeId, isPowerAdmin);
+  const contextColleges = isPowerAdmin ? colleges : colleges.filter((college) => resolveScopeSelection(scopes, 0, false).collegeIds.includes(Number(college.AdCollegeId)));
   const ContextBar = () => (
     <IntelligenceContextBar
       collegeId={collegeId}
       sectionId={sectionId}
       termId={termId}
-      colleges={colleges}
+      colleges={contextColleges}
       sections={sections}
       availableSections={availableSections}
       terms={terms}
       online={online}
-      lockCollege={resolveScopeSelection(scopes, collegeId, isPowerAdmin).lockCollege}
-      lockSection={resolveScopeSelection(scopes, collegeId, isPowerAdmin).lockSection}
+      lockCollege={scopedContext.lockCollege}
+      lockSection={scopedContext.lockSection}
       hideSection={!isPowerAdmin}
       onCollegeChange={(nextCollegeId, firstSectionId) => {
         setCollegeId(nextCollegeId);
-        setSectionId(resolveScopeSelection(scopes, nextCollegeId, isPowerAdmin).defaultSectionId || firstSectionId);
+        setSectionId(nextCollegeId ? (isPowerAdmin ? firstSectionId : (resolveScopeSelection(scopes, nextCollegeId, false).defaultSectionId || firstSectionId)) : 0);
       }}
       onSectionChange={setSectionId}
       onTermChange={setTermId}
@@ -1466,7 +1459,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             : String(overview.dataHealth?.invalidRows || 0),
           icon: <CheckCircle2 />,
         }] : []),
-        ...(demand && (demand.respondents || demand.prediction?.courses?.length || demand.openings?.proposals?.length || demand.survey?.length || isPowerAdmin)
+        ...(demand
           ? [
               {
                 value: "students" as const,
@@ -1573,6 +1566,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         مركز الذكاء
       </PageTitle>
       <ContextBar />
+      {!collegeId || !termId ? (
+        <Surface className="intel-context-idle" aria-live="polite">
+          <Target aria-hidden="true" />
+          <div><strong>اختر الكلية والفصل</strong><span>تبدأ القراءات بعد تحديد النطاق؛ لا يوجد اختيار تلقائي.</span></div>
+        </Surface>
+      ) : null}
       {showWorkspaceGuide ? (
         <div className="intel-guide-backdrop no-print" role="dialog" aria-modal="true" aria-label="شرح مركز الذكاء" onMouseDown={(event) => { if (event.target === event.currentTarget) closeWorkspaceGuide(); }}>
           <section className="intel-guide-modal">
@@ -1846,23 +1845,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <span>دقيقة متوسط الفراغ</span>
               </article>
             </div>
-            <div className="approval-status">
-              <Badge
-                tone={
-                  overview.readiness === "blocked"
-                    ? "danger"
-                    : overview.readiness === "ready"
-                      ? "success"
-                      : "warning"
-                }
-              >
-                {readinessLabel}
-              </Badge>
-              <span>
-                {overview.publication
-                  ? `آخر نشر ${new Date(overview.publication.publishedAt).toLocaleString("ar-KW-u-nu-latn")}`
-                  : "لم يُسجل نشر من مركز الذكاء بعد"}
-              </span>
+            <div className="approval-status approval-status-grid">
+              <article className={overview.metrics.criticalConflicts ? "blocked" : "ready"}>
+                <small>حالة الاعتماد</small>
+                <strong>{overview.metrics.criticalConflicts ? "يمنع الاعتماد" : "جاهز للاعتماد"}</strong>
+                <span>{overview.metrics.criticalConflicts ? `${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضع يحتاج تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span>
+              </article>
+              <article className="publication-state">
+                <small>حالة النشر</small>
+                <strong>{overview.publication ? "تم النشر" : "لم يُنشر بعد"}</strong>
+                <span>{overview.publication ? new Date(overview.publication.publishedAt).toLocaleString("ar-KW-u-nu-latn") : "النشر مستقل عن نتيجة الاعتماد"}</span>
+              </article>
             </div>
           </Surface>
             </div>
@@ -1929,14 +1922,16 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {heatMode === "university" ? "حركة الجامعة" : "حركة القسم"}
                 </h2>
               </div>
-              <Segmented
-                value={heatMode}
-                onChange={setHeatMode}
-                options={[
-                  { value: "department", label: "القسم" },
-                  { value: "university", label: "الجامعة" },
-                ]}
-              />
+              {isPowerAdmin ? (
+                <Segmented
+                  value={heatMode}
+                  onChange={setHeatMode}
+                  options={[
+                    { value: "department", label: "القسم" },
+                    { value: "university", label: "الجامعة" },
+                  ]}
+                />
+              ) : null}
             </div>
             <div className="schedule-heatmap">
               <div className="heat-corner">الوقت</div>
@@ -2025,20 +2020,22 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </div>
               ) : <div className="spatial-clear"><CheckCircle2 /><div><strong>لا توجد انتقالات مرهقة</strong><span>الفواصل تستوعب زمن الحركة.</span></div></div>}
               {overview.roomCastling?.length ? (
-                <div className="castling-strip">
-                  <div><strong>Room Castling</strong><span>القاعة فقط · بدون مساس بالوقت.</span></div>
+                <div className="castling-strip castling-cards">
+                  <div className="castling-head"><span className="castling-mark"><Building2 /></span><div><strong>تبديل القاعات</strong><span>اقتراحات أقرب دون تغيير الوقت</span></div></div>
+                  <div className="castling-options">
                   {overview.roomCastling.slice(0, 3).map((proposal: any, index: number) => (
                     <button key={`${proposal.rowId}-${index}`} type="button" onClick={() => {
                       const changes = new Map((proposal.changes || []).map((c: any) => [Number(c.id), c]));
                       const next = rows.map(row => { const change: any = changes.get(Number(row.id)); return change ? { ...row, AdRoomCode: change.AdRoomCode, AdRoomHall: change.AdRoomHall } : row; });
                       setScenario(next); setScenarioEval(null); setTab("twin"); setTwinCard("board"); setMessage(`تم فتح «${proposal.title}» كتجربة فقط — لا شيء محفوظ.`);
                     }}>
-                      <span>{proposal.kind === "swap" ? "تبديل شطرنجي" : "تقريب القاعة"}</span>
-                      <strong>{proposal.instructorName}</strong>
-                      <small>{proposal.before.roomCode}/{proposal.before.roomHall} ← {proposal.after.roomCode}/{proposal.after.roomHall}</small>
-                      <ChevronLeft />
+                      <span className="castling-person"><UsersRound />{proposal.instructorName}</span>
+                      <strong dir="ltr">{proposal.before.roomCode}/{proposal.before.roomHall} <ArrowLeftRight /> {proposal.after.roomCode}/{proposal.after.roomHall}</strong>
+                      <small><CheckCircle2 /> متاح وآمن</small>
+                      <ChevronLeft className="castling-open" />
                     </button>
                   ))}
+                  </div>
                 </div>
               ) : null}
               <details className="insight-disclosure">
@@ -2187,7 +2184,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </details>
           </Surface>
             </div> : null}
-          {demand && (demand.respondents || demand.prediction?.courses?.length || demand.openings?.proposals?.length || demand.survey?.length || isPowerAdmin) ? (
+          {demand ? (
             <div
               className="content-stack insight-scene-panel"
               id="insight-panel-students"
@@ -2257,15 +2254,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         جنسه: قسم البنين رابط، وقسم البنات رابط آخر. لا تُحفظ الأسماء ولا الأرقام
                         المدنية — يُتحقق من الرقم ثم يُشفَّر ويُنسى.
                       </small>
-                      {isPowerAdmin ? (
-                        <div className="demand-actions">
-                          <PrimaryButton onClick={issueSurvey} disabled={busy}>
-                            <QrCode /> أصدر رابط الاستبيان
-                          </PrimaryButton>
-                        </div>
-                      ) : (
-                        <small>إصدار الرابط من صلاحية الإدارة الرئيسية.</small>
-                      )}
+                      <div className="demand-actions">
+                        <PrimaryButton onClick={issueSurvey} disabled={busy}>
+                          <QrCode /> أصدر رابط الاستبيان
+                        </PrimaryButton>
+                      </div>
                     </div>
                   </article>
                 )}
@@ -4232,42 +4225,29 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     </h2>
                   </div>
                 </div>
-                <div className="drawer-metrics">
-                  <article>
-                    <strong>{detail.data.totalAppointments}</strong>
-                    <span>موعد في الفصل</span>
-                  </article>
-                  <article>
-                    <strong>{detail.data.freeWindows.length}</strong>
-                    <span>نافذة فارغة</span>
-                  </article>
-                </div>
-                <h3>أكثر الجهات استخداماً</h3>
-                <div className="drawer-list">
-                  {detail.data.departments.map((x: any, i: number) => (
-                    <div key={i}>
-                      <strong>{x.name}</strong>
-                      <span>{x.count} لقاء</span>
+                <div className="room-drawer-infographic">
+                  <div className="drawer-metrics room-kpis">
+                    <article><span><CalendarClock /></span><strong>{detail.data.totalAppointments}</strong><small>موعد في الفصل</small></article>
+                    <article><span><Clock3 /></span><strong>{detail.data.freeWindows.length}</strong><small>نافذة متاحة</small></article>
+                  </div>
+                  <section className="room-usage-block">
+                    <header><div><small>الجهة الأبرز</small><strong>الأكثر استخدامًا</strong></div><Building2 /></header>
+                    <div className="room-usage-grid">
+                      {detail.data.departments.slice(0, 6).map((x: any, i: number) => (
+                        <article key={i}><strong>{x.name}</strong><span>{x.count.toLocaleString("ar-KW-u-nu-latn")} لقاء</span></article>
+                      ))}
                     </div>
-                  ))}
+                  </section>
+                  <section className="room-windows-block">
+                    <header><div><small>الفترات القريبة</small><strong>النوافذ المتاحة</strong></div><CalendarClock /></header>
+                    <div className="room-window-days">
+                      {Object.entries(detail.data.freeWindows.slice(0, 14).reduce((acc: Record<string, any[]>, x: any) => { (acc[x.day] ||= []).push(x); return acc; }, {})).map(([day, windows]: any) => (
+                        <article key={day}><b>{day}</b><div>{windows.map((x: any, i: number) => <span key={i} dir="ltr">{formatScheduleTimeRange(x.start, x.end)}</span>)}</div></article>
+                      ))}
+                    </div>
+                  </section>
+                  <p className="drawer-privacy room-privacy"><ShieldCheck />تُحسب الحجوزات الأخرى لمنع التعارض مع إبقاء تفاصيلها مخفية.</p>
                 </div>
-                <h3>أقرب الفترات الفارغة</h3>
-                <div className="free-window-grid">
-                  {detail.data.freeWindows
-                    .slice(0, 12)
-                    .map((x: any, i: number) => (
-                      <span key={i}>
-                        <b>{x.day}</b>
-                        <i dir="ltr">
-                          {formatScheduleTimeRange(x.start, x.end)}
-                        </i>
-                      </span>
-                    ))}
-                </div>
-                <p className="drawer-privacy">
-                  حجوزات الأقسام الأخرى تُحسب لضمان عدم التعارض، لكن تفاصيلها
-                  تبقى مخفية عن المستخدم غير المصرح له.
-                </p>
               </>
             ) : (
               <>
@@ -4329,9 +4309,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             </div>
                           </div>
                         ))}
-                        <p className="week-shape-legend">
-                          الكتلة الممتلئة تدريس، والمظللة انتظار على الحرم ساعة فأكثر بين محاضرتين.
-                        </p>
+                        <div className="week-shape-legend" aria-label="مفتاح شكل الأسبوع">
+                          <span className="teaching"><i />محاضرة</span>
+                          <span className="waiting"><i />انتظار طويل</span>
+                          <span className="idle"><i />وقت خامل</span>
+                        </div>
                       </div>
                     </>
                   );
