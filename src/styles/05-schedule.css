@@ -7104,3 +7104,97 @@ html.schedule-physics-active .week-strip-slot.field-tier::before{pointer-events:
 .rooms-scale span{
   z-index:1;
 }
+
+/* === V27: final-hour code exception + ruler/rooms width parity ============
+   Apply the user's latest corrections without changing the accepted visual
+   direction of the week view. */
+
+/* Dense week ruler now exposes the same complete half-hour structure the body
+   uses, so the vertical reading lines feel continuous from header to rows. */
+.week-strip-ruler-track{overflow:hidden}
+.week-strip-ruler-line{
+  position:absolute;
+  inset-block:0;
+  width:0;
+  z-index:1;
+  pointer-events:none;
+  opacity:.9;
+  border-inline-start:1px dashed color-mix(in srgb,var(--line) 58%,transparent);
+}
+.week-strip-ruler-line.major{
+  border-inline-start-style:solid;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 86%,transparent);
+}
+.week-strip-ruler-line.half{
+  border-inline-start-style:dashed;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 54%,transparent);
+}
+.week-strip-ruler-line.terminal{
+  border-inline-start-style:solid;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 92%,transparent);
+}
+.week-strip-hourmark{z-index:2}
+.week-strip-slot{border-inline-end:1px dashed color-mix(in srgb,var(--line-strong) 56%,transparent)!important}
+
+/* Exceptional 19:00 rule only: when the terminal-hour card has already fallen
+   back to the two-line identity, place the code under the title instead of on
+   the title row so it never collides with the course name. */
+.week-strip-track .week-identity-line[data-mode="double"][data-terminal-stack="true"]{
+  grid-template-columns:minmax(0,1fr) auto!important;
+  grid-template-rows:1fr 1fr!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"][data-terminal-stack="true"] .week-title{
+  grid-column:1 / -1!important;
+  grid-row:1!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"][data-terminal-stack="true"] .week-code{
+  grid-column:1!important;
+  grid-row:2!important;
+  justify-self:start!important;
+  align-self:start!important;
+  margin-inline-start:0!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"][data-terminal-stack="true"] .week-who{
+  grid-column:2!important;
+  grid-row:2!important;
+  justify-self:end!important;
+  align-self:start!important;
+  min-width:0!important;
+  max-width:100%!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+}
+
+/* Rooms must own the full horizontal canvas just like the week. Without a real
+   width on the room sections, some browsers squeezed the track into a narrow
+   right strip. */
+.rooms-scale,
+.rooms-scale-week,
+.rooms-rows,
+.rooms-week-room{
+  width:var(--rooms-canvas-width,1706px)!important;
+  min-width:var(--rooms-canvas-width,1706px)!important;
+  box-sizing:border-box!important;
+}
+.rooms-week-days,
+.rooms-row{width:100%!important}
+
+/* Undo the over-aggressive RTL safe gutter that left the rooms board appearing
+   as a thin clipped column. Keep normal page padding and let the matrix itself
+   provide the needed scroll width. */
+.rooms-surface{
+  padding-inline-start:var(--s5)!important;
+  padding-inline-end:var(--s5)!important;
+}
+.rooms-surface>.rooms-head,
+.rooms-surface>.rooms-filter-block,
+.rooms-surface>.rooms-legend{
+  margin-inline-start:0!important;
+}
+
+/* The rooms ruler follows the same readable line grammar as the week. */
+.rooms-scale-line{z-index:0}
+.rooms-scale span{z-index:1!important}
+.rooms-hourline{opacity:1!important}
+.rooms-slot{border-inline-end:1px dashed color-mix(in srgb,var(--line-strong) 56%,transparent)!important}

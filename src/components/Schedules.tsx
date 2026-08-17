@@ -4561,7 +4561,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       >
         <GripVertical data-physics-handle="true" className="week-drag-handle" />
         {denseWeekStrips ? (
-          <div className="week-identity-line" data-mode={denseIdentityMode}>
+          <div
+            className="week-identity-line"
+            data-mode={denseIdentityMode}
+            data-terminal-stack={denseIdentityMode === "double" && mins(r.fstarttime) >= 19 * 60 ? "true" : undefined}
+          >
             <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
             <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
             <em className="week-code" dir="ltr">{code}</em>
@@ -8714,6 +8718,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         style={{ width: `${weekStripConfig.timelineWidth}px` }}
                         aria-hidden="true"
                       >
+                        {timeSlots.map((slot) => (
+                          <i
+                            key={`week-strip-ruler-line-${slot}`}
+                            className={`week-strip-ruler-line ${mins(slot) % 60 === 0 ? "major" : "half"} ${slot === SCHEDULE_DAY_END_TIME ? "terminal" : ""}`}
+                            style={{ insetInlineStart: `${weekStripOffset(mins(slot))}px` }}
+                            aria-hidden="true"
+                          />
+                        ))}
                         {weekStripHourMarks.map((mark) => (
                           <i
                             key={`week-strip-ruler-${mark}`}
