@@ -371,8 +371,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [insightReason, setInsightReason] = useState<InsightReason | null>(null);
   useEffect(() => { if (!isPowerAdmin && heatMode !== "department") setHeatMode("department"); }, [isPowerAdmin, heatMode]);
   const [prompt, setPrompt] = useState(""),
-    [chat, setChat] = useState<ChatItem[]>([]),
-    chatEnd = useRef<HTMLDivElement | null>(null);
+    [chat, setChat] = useState<ChatItem[]>([]);
+  const copilotThread = useRef<HTMLDivElement | null>(null);
+  const pendingCopilotAnswer = useRef<number | null>(null);
   const drawerClose = useRef<HTMLButtonElement | null>(null),
     drawerReturnFocus = useRef<HTMLElement | null>(null),
     reduceMotion = useRef(false);
@@ -642,10 +643,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }
   }, [collegeId, sectionId, termId]);
   useEffect(() => {
-    chatEnd.current?.scrollIntoView({
-      behavior: reduceMotion.current ? "auto" : "smooth",
+    const index = pendingCopilotAnswer.current;
+    if (index == null || chat.length <= index) return;
+    const frame = window.requestAnimationFrame(() => {
+      const thread = copilotThread.current;
+      const answer = thread?.querySelector<HTMLElement>(`[data-copilot-answer="${index}"]`);
+      if (!thread || !answer) return;
+      const threadBox = thread.getBoundingClientRect();
+      const answerBox = answer.getBoundingClientRect();
+      const nextTop = Math.max(0, thread.scrollTop + answerBox.top - threadBox.top - 12);
+      thread.scrollTo({
+        top: nextTop,
+        behavior: reduceMotion.current ? "auto" : "smooth",
+      });
+      // Keep keyboard/screen-reader focus with the answer without asking the
+      // browser to scroll the document itself. `preventScroll` is essential:
+      // scrollIntoView on this nested chat was the reason the whole page used
+      // to jump to its bottom.
+      answer.focus({ preventScroll: true });
+      pendingCopilotAnswer.current = null;
     });
-  }, [chat]);
+    return () => window.cancelAnimationFrame(frame);
+  }, [chat.length]);
   const detailOpen = Boolean(detail);
   useEffect(() => {
     if (!detailOpen) return;
@@ -776,6 +795,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const sendCopilot = async (text = prompt) => {
     const q = text.trim();
     if (!q) return;
+    // There is only one request at a time. Capture the exact slot that will
+    // receive this answer so the question can hand the reader to that answer,
+    // not to the bottom of the document.
+    pendingCopilotAnswer.current = chat.length;
     setBusy(true);
     setError(null);
     setPrompt("");
@@ -798,6 +821,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       });
       setChat((p) => [...p, { prompt: q, answer }]);
     } catch (e: any) {
+      pendingCopilotAnswer.current = null;
       setError(smartMessage(e));
     } finally {
       setBusy(false);
@@ -2981,7 +3005,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </button>
               ))}
             </div>
-            <div className="copilot-thread">
+            <div className="copilot-thread" ref={copilotThread}>
               {chat.length ? (
                 chat.map((item, i) => (
                   <React.Fragment key={i}>
@@ -2989,7 +3013,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span>{user.Name.trim().charAt(0) || "د"}</span>
                       <p>{item.prompt}</p>
                     </div>
-                    <div className="chat-assistant">
+                    <div className="chat-assistant" data-copilot-answer={i} tabIndex={-1}>
                       <span>
                         <Sparkles />
                       </span>
@@ -3090,7 +3114,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <span>مثال: انقل 101 إلى 11:00</span>
                 </div>
               )}
-              <div ref={chatEnd} />
             </div>
             <form
               className="copilot-compose"

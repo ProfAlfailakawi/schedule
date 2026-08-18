@@ -3934,3 +3934,16 @@ button.twin-delta{width:100%}
   .intel-reason-items article{grid-template-columns:26px minmax(0,1fr);gap:8px;padding:9px 10px}
   .intel-reason-items article>b{grid-column:2;justify-self:start}
 }
+
+/* Copilot navigation: answers scroll inside the conversation, never the page. */
+.copilot-thread{
+  min-height:0;
+  max-height:min(54dvh,520px);
+  overscroll-behavior:contain;
+  scroll-behavior:smooth;
+  scrollbar-gutter:stable;
+}
+.chat-assistant[data-copilot-answer]:focus{outline:0}
+@media(max-width:760px){
+  .copilot-thread{max-height:min(52dvh,480px)}
+}
