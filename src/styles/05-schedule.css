@@ -2351,6 +2351,37 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    shows what the move costs while the finger is still down.
    ========================================================================== */
 
+/* The active time is always readable while a lecture is carried. The guide is
+   intentionally independent of the card transform: it reads the same live
+   target the drop engine reads, so week and rooms show one identical clock
+   language without touching the spring, magnetism or preview motion. */
+.schedule-drag-time-guide{
+  position:fixed;
+  inset-inline:18px;
+  z-index:218;
+  height:0;
+  border-top:1.5px dashed color-mix(in srgb,var(--danger) 88%,transparent);
+  pointer-events:none;
+  transform:translateY(-50%);
+}
+.schedule-drag-time-guide>span{
+  position:absolute;
+  left:50%;
+  top:50%;
+  transform:translate(-50%,-50%);
+  min-width:76px;
+  padding:8px 13px 7px;
+  border:1.5px solid color-mix(in srgb,var(--danger) 88%,transparent);
+  border-radius:11px;
+  background:color-mix(in srgb,var(--surface) 96%,transparent);
+  color:var(--ink-2);
+  box-shadow:var(--shadow-sm);
+  font:700 18px/1 var(--font-mono);
+  font-variant-numeric:tabular-nums;
+  text-align:center;
+  white-space:nowrap;
+}
+
 .schedule-physics-float{
   position:fixed;top:0;left:0;z-index:219;
   display:grid;grid-template-columns:14px minmax(0,1fr) auto;
@@ -3043,6 +3074,15 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-legend-search input:focus{outline:none}
 .week-legend-search input::placeholder{color:var(--muted-2,var(--muted))}
 .week-legend-search input::-webkit-search-cancel-button{cursor:pointer}
+.rooms-filter-search{margin-inline-start:auto}
+.rooms-filter-search input{width:min(180px,28vw)}
+.rooms-filter-empty{
+  flex:0 0 auto;
+  padding-inline:6px;
+  color:var(--muted);
+  font-size:var(--t-xs);
+  white-space:nowrap;
+}
 .week-legend-none{
   flex:none;font-size:var(--t-xs);color:var(--muted);padding-inline:4px;
 }
@@ -6837,6 +6877,7 @@ html[data-schedule-workspace="focus"] .schedule-agenda-surface{
 
 /* Physics verdicts and conflict/revision sheets are part of the focused
    workspace. Portals must sit above the fixed focus canvas, never behind it. */
+html[data-schedule-workspace="focus"] .schedule-drag-time-guide{z-index:2090!important}
 html[data-schedule-workspace="focus"] .schedule-physics-float{z-index:2100!important}
 html[data-schedule-workspace="focus"] .schedule-physics-hud{z-index:2110!important}
 html[data-schedule-workspace="focus"] .views-dialog-backdrop,
@@ -7591,4 +7632,29 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
 .rooms-ruler-scroll .schedule-time-label{
   inset-block-start:50%!important;
   transform:translate(50%,-50%)!important;
+}
+
+/* === V31: edge-safe RTL ruler labels + always-visible building selector ====
+   Keep the accepted RTL clock geometry untouched. Only text that sits exactly
+   on the right edge is nudged into the readable canvas so Safari cannot clip
+   the first hour or the ruler identity. */
+.week-ruler-scroll .schedule-ruler-day-title,
+.rooms-ruler-scroll .schedule-ruler-day-title{
+  display:block!important;
+  width:100%!important;
+  min-width:0!important;
+  box-sizing:border-box!important;
+  padding-inline:6px!important;
+  overflow:visible!important;
+  white-space:nowrap!important;
+  text-align:center!important;
+  transform:translateX(-6px)!important;
+}
+.week-ruler-scroll .week-strip-ruler-label,
+.rooms-ruler-scroll .rooms-scale-identity{
+  overflow:visible!important;
+}
+.week-ruler-scroll .schedule-time-label-start,
+.rooms-ruler-scroll .schedule-time-label-start{
+  transform:translate(-8px,-50%)!important;
 }

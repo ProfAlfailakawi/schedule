@@ -489,6 +489,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     [matrixDay, setMatrixDay] = useState<DayKey | "week">("week"),
     [matrixBuildings, setMatrixBuildings] = useState<Set<string>>(new Set()),
     [matrixRooms, setMatrixRooms] = useState<Set<string>>(new Set()),
+    [roomFilterQuery, setRoomFilterQuery] = useState(""),
     [viewMode, setViewMode] = useState(
       isPhoneDevice() ? "list" : savedPrefs.viewMode === "week" ? "week" : savedPrefs.viewMode === "rooms" ? "rooms" : "list",
     ),
@@ -7927,7 +7928,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             const buildingScopedRooms = matrixBuildings.size
               ? roomsWithAfterglow.filter(room => matrixBuildings.has(room.buildingKey))
               : roomsWithAfterglow;
-            const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
+            const roomFilterKey = normalizeRoomToken(roomFilterQuery);
+            const roomFilterMatches = roomFilterKey
+              ? buildingScopedRooms.filter(room =>
+                  normalizeRoomToken(`${room.building} ${room.hall} ${room.label}`).includes(roomFilterKey),
+                )
+              : buildingScopedRooms;
+            const roomList = matrixRooms.size
+              ? roomFilterMatches.filter(room => matrixRooms.has(room.key))
+              : roomFilterMatches;
             // The rooms board and dense week now literally share the same
             // horizontal clock geometry. There is no second formula to drift:
             // same hour width, same 19:30 terminal expansion, same pixel for
@@ -8078,10 +8087,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اضغط أي فراغ لإضافة موعد داخل القاعة · انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}
                   </span>
                 </div>
-                {allBuildings.length > 1 ? (
+                {allBuildings.length > 0 ? (
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
-                      <div><Building2 /><strong>المباني المعروضة</strong></div>
+                      <div><Building2 /><strong>فلتر المباني</strong></div>
                       <small>{phoneReadOnly ? "المباني معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixBuildings.size ? `اخترت ${matrixBuildings.size.toLocaleString("ar-KW-u-nu-latn")} من ${allBuildings.length.toLocaleString("ar-KW-u-nu-latn")} مبنى — اضغط لإضافة مبنى أو إزالته.` : "كل المباني ظاهرة — اختر مبنى واحدًا أو عدة مبانٍ قبل تصفية القاعات."}</small>
                     </div>
                     <div className="rooms-picker" role="group" aria-label="اختيار مبنى واحد أو عدة مبانٍ">
@@ -8124,7 +8133,29 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
                       <div><MapPin /><strong>القاعات المعروضة</strong></div>
-                      <small>{phoneReadOnly ? "القاعات معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر." : matrixRooms.size ? `اخترت ${matrixRooms.size} من ${countOf(buildingScopedRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.` : matrixBuildings.size ? "كل قاعات المباني المختارة ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة." : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
+                      <small>{phoneReadOnly
+                        ? "القاعات معروضة للقراءة فقط على الهاتف؛ التصفية والتحريك من الكمبيوتر."
+                        : roomFilterKey
+                          ? `نتيجة الفلتر: ${countOf(roomFilterMatches.length, AR.room)} من ${countOf(buildingScopedRooms.length, AR.room)}.`
+                          : matrixRooms.size
+                            ? `اخترت ${matrixRooms.size} من ${countOf(buildingScopedRooms.length, AR.room)} — اضغط لإضافة قاعة أو إزالتها.`
+                            : matrixBuildings.size
+                              ? "كل قاعات المباني المختارة ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."
+                              : "كل القاعات ظاهرة — اختر قاعة واحدة أو مجموعة قاعات للمقارنة."}</small>
+                      {!phoneReadOnly ? (
+                        <label className="week-legend-search rooms-filter-search">
+                          <Search aria-hidden="true" />
+                          <input
+                            type="search"
+                            value={roomFilterQuery}
+                            onChange={(e) => setRoomFilterQuery(e.target.value)}
+                            placeholder="فلتر القاعات…"
+                            aria-label="فلتر القاعات بالرمز أو المبنى أو رقم القاعة"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                        </label>
+                      ) : null}
                     </div>
                     <div className="rooms-picker" role="group" aria-label="اختيار قاعة واحدة أو عدة قاعات">
                       <button
@@ -8139,7 +8170,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       >
                         كل القاعات
                       </button>
-                      {buildingScopedRooms.map(room => (
+                      {roomFilterMatches.map(room => (
                         <button
                           type="button"
                           key={room.key}
@@ -8159,6 +8190,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           <span dir="ltr">{displayRoomBadge(room)}</span>
                         </button>
                       ))}
+                      {roomFilterKey && roomFilterMatches.length === 0 ? (
+                        <span className="rooms-filter-empty">لا توجد قاعة مطابقة.</span>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
@@ -8257,7 +8291,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     aria-hidden="true"
                   >
                     <small className="rooms-scale-identity">
-                      <span>{matrixDay === "week" ? "اليوم" : ""}</span>
+                      <span className="schedule-ruler-day-title">{matrixDay === "week" ? "اليوم" : ""}</span>
                     </small>
                     <div style={{ width: `${timelineWidth}px` }}>
                       {timeSlots.map(slot => (
@@ -8268,7 +8302,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         />
                       ))}
                       {hourMarks.filter(mark => mark !== gridWindow.end).map(mark => (
-                        <span className="schedule-time-label" key={mark} style={{ insetInlineStart: `${roomOffset(mark)}px` }} dir="ltr">{timeFromMins(mark)}</span>
+                        <span
+                          className={`schedule-time-label ${mark === gridWindow.start ? "schedule-time-label-start" : ""}`}
+                          key={mark}
+                          style={{ right: `${roomOffset(mark)}px` }}
+                          dir="ltr"
+                        >
+                          {timeFromMins(mark)}
+                        </span>
                       ))}
                     </div>
                   </div>
@@ -8793,7 +8834,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 >
                   <div className="week-strip-ruler" style={{ width: `${weekStripConfig.canvasWidth}px` }}>
                     <div className="week-strip-ruler-label">
-                      <span>اليوم</span>
+                      <span className="schedule-ruler-day-title">اليوم</span>
                     </div>
                     <div
                       className="week-strip-ruler-track"
@@ -8811,8 +8852,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       {weekStripHourMarks.filter((mark) => mark !== gridWindow.end).map((mark) => (
                         <span
                           key={`week-sticky-ruler-${mark}`}
-                          className="schedule-time-label"
-                          style={{ insetInlineStart: `${weekStripOffset(mark)}px` }}
+                          className={`schedule-time-label ${mark === gridWindow.start ? "schedule-time-label-start" : ""}`}
+                          style={{ right: `${weekStripOffset(mark)}px` }}
                           dir="ltr"
                         >
                           {timeFromMins(mark)}

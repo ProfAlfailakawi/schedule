@@ -49,6 +49,9 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
   const ripple = decision?.ripple;
   const compact = !isPowerAdmin;
   const GAP = 14, EDGE = 14;
+  const timeGuideStyle: React.CSSProperties | undefined = target?.rect
+    ? { top: `${Math.round(target.rect.top + target.rect.height / 2)}px` }
+    : undefined;
   const hudStyle: React.CSSProperties | undefined = target?.rect ? (() => {
     const viewport = window.visualViewport;
     const viewportLeft = viewport?.offsetLeft || 0;
@@ -73,6 +76,15 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
   })() : undefined;
 
   return createPortal(<>
+    {target ? (
+      <div
+        className={`schedule-drag-time-guide physics-view-${variant}`}
+        style={timeGuideStyle}
+        aria-hidden="true"
+      >
+        <span dir="ltr">{target.start}</span>
+      </div>
+    ) : null}
     <div ref={overlayRef} className={`schedule-physics-float physics-view-${variant} quality-${decision?.quality || "unknown"}`} aria-hidden="true">
       <div className="physics-float-handle"><GripVertical/></div>
       <div className="physics-float-copy">
