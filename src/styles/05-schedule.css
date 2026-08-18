@@ -535,6 +535,7 @@ button.schedule-radar:hover{filter:brightness(.96)}
 .week-daystrip-day[data-today="true"] span{color:var(--brass);font-weight:650}
 .week-daystrip-day[data-today="true"][aria-pressed="true"] span{color:var(--accent-ink)}
 .week-daystrip-all{
+  min-width:96px;
   flex:none;
   display:inline-flex;align-items:center;gap:var(--s2);
   padding:var(--s3) var(--s4);
@@ -7297,6 +7298,7 @@ html.schedule-physics-active .week-strip-slot.field-tier::before{pointer-events:
   overflow:hidden!important;
   text-overflow:ellipsis!important;
 }
+.rooms-week-room-head strong{font-variant-numeric:tabular-nums!important}
 .rooms-week-days{
   grid-column:2!important;
   grid-row:1!important;
@@ -7343,4 +7345,216 @@ html[data-schedule-workspace="focus"] .week-strip-ruler,
 html[data-schedule-workspace="focus"] .rooms-scale{
   position:sticky!important;
   top:0!important;
+}
+
+/* === V29: persistent scope + one sticky clock ruler everywhere ============
+   Normal week/rooms and focus now share one scroll ownership model: the page
+   (or focused surface) owns vertical scrolling, while dedicated inner strips
+   own horizontal scrolling. This is the key difference that lets sticky work
+   outside focus too. */
+
+/* ---------- Shared clock ruler ------------------------------------------- */
+.week-ruler-scroll,
+.rooms-ruler-scroll{
+  position:sticky!important;
+  top:0!important;
+  z-index:320!important;
+  width:100%!important;
+  max-width:100%!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+  overscroll-behavior-inline:contain;
+  scrollbar-width:none!important;
+  background:var(--surface)!important;
+  border-bottom:1px solid var(--line-strong)!important;
+  box-shadow:0 8px 18px color-mix(in srgb,var(--ink) 4%,transparent);
+}
+.week-ruler-scroll::-webkit-scrollbar,
+.rooms-ruler-scroll::-webkit-scrollbar{display:none!important}
+
+.week-ruler-scroll .week-strip-ruler,
+.rooms-ruler-scroll .rooms-scale{
+  position:relative!important;
+  top:auto!important;
+  z-index:auto!important;
+  display:grid!important;
+  grid-template-columns:var(--week-strip-label,64px) minmax(0,1fr)!important;
+  width:var(--week-strip-canvas,var(--rooms-canvas-width,1706px))!important;
+  min-width:var(--week-strip-canvas,var(--rooms-canvas-width,1706px))!important;
+  height:46px!important;
+  min-height:46px!important;
+  margin:0!important;
+  padding:0!important;
+  border:0!important;
+  background:var(--surface)!important;
+  box-shadow:none!important;
+}
+.rooms-ruler-scroll .rooms-scale{
+  grid-template-columns:var(--rooms-day-label,64px) minmax(0,1fr)!important;
+  width:var(--rooms-canvas-width,1706px)!important;
+  min-width:var(--rooms-canvas-width,1706px)!important;
+}
+
+.week-ruler-scroll .week-strip-ruler-label,
+.rooms-ruler-scroll .rooms-scale-identity{
+  position:sticky!important;
+  inset-inline-start:0!important;
+  z-index:4!important;
+  height:46px!important;
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  padding:0 10px!important;
+  border-inline-end:1px solid color-mix(in srgb,var(--line-strong) 78%,var(--line))!important;
+  background:var(--surface)!important;
+  box-shadow:-5px 0 12px color-mix(in srgb,var(--ink) 3%,transparent)!important;
+  overflow:hidden!important;
+  box-sizing:border-box!important;
+}
+.week-ruler-scroll .week-strip-ruler-label{
+  width:var(--week-strip-label,96px)!important;
+  min-width:var(--week-strip-label,96px)!important;
+}
+.rooms-ruler-scroll .rooms-scale-identity{
+  width:var(--rooms-day-label,96px)!important;
+  min-width:var(--rooms-day-label,96px)!important;
+  grid-template-columns:1fr!important;
+}
+.rooms-ruler-scroll .rooms-scale-identity>b{display:none!important}
+.rooms-ruler-scroll .rooms-scale-identity>span,
+.week-ruler-scroll .week-strip-ruler-label>span{
+  height:auto!important;
+  display:block!important;
+  padding:0!important;
+  border:0!important;
+  color:var(--ink-2)!important;
+  font:650 11.5px/1 var(--font-ui)!important;
+  white-space:nowrap!important;
+  text-align:center!important;
+}
+
+.week-ruler-scroll .week-strip-ruler-track,
+.rooms-ruler-scroll .rooms-scale>div{
+  position:relative!important;
+  height:46px!important;
+  direction:rtl!important;
+  overflow:hidden!important;
+  background:var(--surface)!important;
+}
+.schedule-time-line{
+  position:absolute!important;
+  inset-block:0!important;
+  width:0!important;
+  z-index:1!important;
+  pointer-events:none!important;
+  opacity:1!important;
+}
+.schedule-time-line.major{
+  border-inline-start:1px solid color-mix(in srgb,var(--line-strong) 92%,transparent)!important;
+}
+.schedule-time-line.half{
+  border-inline-start:1px dashed color-mix(in srgb,var(--line-strong) 58%,transparent)!important;
+}
+.schedule-time-line.terminal{
+  border-inline-start-style:solid!important;
+  border-inline-start-color:color-mix(in srgb,var(--line-strong) 94%,transparent)!important;
+}
+.schedule-time-label{
+  position:absolute!important;
+  inset-block-start:50%!important;
+  z-index:2!important;
+  transform:translate(50%,-50%)!important;
+  color:var(--muted-2)!important;
+  font:560 10.5px/1 var(--font-mono)!important;
+  font-variant-numeric:tabular-nums!important;
+  white-space:nowrap!important;
+}
+
+/* ---------- Rooms: delete the entire room/stat column -------------------- */
+.rooms-surface{
+  overflow:visible!important;
+  padding-inline-start:var(--s5)!important;
+  padding-inline-end:var(--s5)!important;
+}
+.rooms-main-scroll{
+  width:100%;
+  overflow-x:auto;
+  overflow-y:hidden;
+  overscroll-behavior-inline:contain;
+  scrollbar-gutter:stable;
+}
+.rooms-main-scroll::-webkit-scrollbar{height:10px}
+.rooms-main-scroll::-webkit-scrollbar-track{background:transparent}
+.rooms-main-scroll::-webkit-scrollbar-thumb{
+  background:color-mix(in srgb,var(--line-strong) 74%,transparent);
+  border:3px solid transparent;
+  background-clip:padding-box;
+  border-radius:999px;
+}
+.rooms-week-room{
+  display:block!important;
+  width:var(--rooms-canvas-width,1706px)!important;
+  min-width:var(--rooms-canvas-width,1706px)!important;
+}
+.rooms-week-room-head{display:none!important}
+.rooms-week-days{
+  grid-column:auto!important;
+  grid-row:auto!important;
+  width:100%!important;
+  min-width:0!important;
+}
+.rooms-week-days .rooms-row,
+.rooms-row{
+  grid-template-columns:var(--rooms-day-label,64px) minmax(0,1fr)!important;
+  width:100%!important;
+  min-width:0!important;
+}
+.rooms-week-days .rooms-row>.rooms-day-label,
+.rooms-row>.rooms-day-label{
+  inset-inline-start:0!important;
+  width:var(--rooms-day-label,64px)!important;
+  min-width:var(--rooms-day-label,64px)!important;
+}
+.rooms-rows{
+  width:var(--rooms-canvas-width,1706px)!important;
+  min-width:var(--rooms-canvas-width,1706px)!important;
+  margin-top:0!important;
+}
+
+/* The old ruler was sticky inside the horizontal scroll surface. Disable that
+   stale ownership; the new wrapper above is the sticky viewport element. */
+.rooms-scale,
+.week-strip-ruler{
+  position:relative!important;
+  top:auto!important;
+}
+
+/* ---------- Dense week: vertical scroll belongs to page/focus surface ----- */
+.week-ruler-scroll{--week-strip-label:64px}
+.week-scroll-main.week-strips-scroll{
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+}
+.week-strips{overflow:visible!important}
+
+/* Focus uses the same rulers and the same coordinates. The focused surface,
+   not the inner horizontal scroller, owns vertical movement. */
+html[data-schedule-workspace="focus"] .schedule-page>.week-surface,
+html[data-schedule-workspace="focus"] .schedule-page>.rooms-surface{
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+}
+html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-scroll-main{
+  flex:0 0 auto!important;
+  min-height:0!important;
+  height:auto!important;
+  max-height:none!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+}
+html[data-schedule-workspace="focus"] .week-ruler-scroll,
+html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
+  position:sticky!important;
+  top:0!important;
+  z-index:1650!important;
 }

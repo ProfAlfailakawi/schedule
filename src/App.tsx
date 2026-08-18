@@ -71,6 +71,7 @@ function scheduleScopeQuery(userId: number): string {
     const pref = JSON.parse(localStorage.getItem(`schedule-workspace-prefs-${userId}`) || "{}");
     if (Number(pref.filterCollege)) query.set("collegeId", String(Number(pref.filterCollege)));
     if (Number(pref.filterSection)) query.set("sectionId", String(Number(pref.filterSection)));
+    if (Number(pref.filterTerm)) query.set("termId", String(Number(pref.filterTerm)));
   } catch { /* an unreadable shelf just means an unscoped warm start */ }
   query.set("resolve", "1");
   return query.toString();
@@ -254,6 +255,7 @@ function NavButton({
   view,
   icon,
   label,
+  visualLabel,
   active,
   activeView,
   onGo,
@@ -261,11 +263,13 @@ function NavButton({
   view: View;
   icon: React.ReactNode;
   label: string;
+  visualLabel?: string;
   active?: boolean;
   activeView: View;
   onGo: (view: View) => void;
 }) {
   const on = active ?? activeView === view;
+  const visibleText = visualLabel ?? label;
   return (
     <button
       type="button"
@@ -278,7 +282,7 @@ function NavButton({
       onClick={() => onGo(view)}
     >
       {icon}
-      <span>{label}</span>
+      {visibleText ? <span>{visibleText}</span> : null}
       {on ? <ChevronLeft className="nav-arrow" /> : null}
     </button>
   );
@@ -1609,7 +1613,7 @@ export default function App() {
   // so a coordinator without "terms" still lands somewhere useful.
   const academicEntry = academicViews.find((view) => hasPerm(ACADEMIC_PERM[view]));
   const viewLabels: Partial<Record<View, string>> = {
-    dashboard: "لوحة العمل",
+    dashboard: "",
     schedules: "إدارة الجدول",
     intelligence: "مركز الذكاء",
     reportDepartment: "الاستعلامات والتقارير",
@@ -2049,7 +2053,7 @@ export default function App() {
               reportViews.includes(activeView as ReportMode)
             }
           >
-            <NavButton activeView={activeView} onGo={go} view="dashboard" icon={<House />} label="لوحة العمل" />
+            <NavButton activeView={activeView} onGo={go} view="dashboard" icon={<House />} label="" visualLabel="" />
             {allowed.schedule ? (
               <NavButton
                 activeView={activeView}
@@ -2083,7 +2087,7 @@ export default function App() {
               setNavGroups(current => ({ ...current, [id]: !open }))
             }
               id="schedule"
-              title="أدوات القرار"
+              title=""
               rail="schedule"
               holdsActive={activeView === "intelligence"}
             >

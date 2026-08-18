@@ -162,8 +162,11 @@ function QuerySkeleton() {
 
 export default function Reports({ mode, user, scopes = [] }: Props) {
   const prefKey = `schedule-unified-prefs-${user?.SystemUserId || 0}`;
+  const workspacePrefKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   let saved: any = {};
+  let workspaceSaved: any = {};
   try { saved = JSON.parse(localStorage.getItem(prefKey) || "{}"); } catch { /* first run */ }
+  try { workspaceSaved = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch { /* first run */ }
 
   const [lens, setLens] = useState<Lens>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   const [colleges, setColleges] = useState<AdCollege[]>([]);
@@ -172,7 +175,16 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
-  const [filters, setFilters] = useState<Filters>(() => ({ ...fresh(), ...(saved.filters || {}), collegeId: 0, sectionId: 0, termId: 0, instructorId: 0, instructorQuery: "", civil: "" }));
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...fresh(),
+    ...(saved.filters || {}),
+    collegeId: Number(saved.filters?.collegeId || workspaceSaved.filterCollege || 0) || 0,
+    sectionId: Number(saved.filters?.sectionId || workspaceSaved.filterSection || 0) || 0,
+    termId: Number(saved.filters?.termId || workspaceSaved.filterTerm || 0) || 0,
+    instructorId: 0,
+    instructorQuery: "",
+    civil: "",
+  }));
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   const [error, setError] = useState<string | null>(null);
@@ -201,7 +213,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     // (instructor, course, civil id, time window, days) survives a reload and a
     // closed detail, matching the restore which already spreads all of them.
     localStorage.setItem(prefKey, JSON.stringify({ lens, filters }));
-  }, [lens, filters]);
+    localStorage.setItem(workspacePrefKey, JSON.stringify({
+      filterCollege: Number(filters.collegeId || 0) || 0,
+      filterSection: Number(filters.sectionId || 0) || 0,
+      filterTerm: Number(filters.termId || 0) || 0,
+    }));
+  }, [prefKey, workspacePrefKey, lens, filters]);
 
   useEffect(() => {
     (async () => {
@@ -507,7 +524,15 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const byTime = useMemo(() => {
     const groups = new Map<string, FSchedule[]>();
     results.forEach(row => groups.set(row.fstarttime, [...(groups.get(row.fstarttime) || []), row]));
-    return [...groups.entries()].map(([key, rows]) => ({ key, rows, count: rows.length })).sort((a, b) => a.key.localeCompare(b.key));
+    return [...groups.entries()]
+      .map(([key, rows]) => {
+        const courses = new Set(rows.map(row => Number(row.AdCourseId || 0)).filter(Boolean)).size;
+        const instructors = new Set(rows.map(row => Number(row.AdInstructorId || 0)).filter(Boolean)).size;
+        const rooms = [...new Set(rows.map(row => [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")).filter(Boolean))].sort(byArabic);
+        const days = new Set(rows.flatMap(row => DAYS.filter(day => (row as any)[day.flag]).map(day => day.key))).size;
+        return { key, rows, count: rows.length, courses, instructors, rooms, days };
+      })
+      .sort((a, b) => a.key.localeCompare(b.key));
   }, [results]);
 
   const fairness = useMemo(() => {
@@ -1357,16 +1382,68 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           </div>
         ) : lens === "time" ? (
           <div className="lens-times">
-            {byTime.map(slot => (
-              <article key={slot.key}>
-                <time dir="ltr">{slot.key}</time>
-                <span className="slot-bar"><i style={{ width: share(slot.count, maxSlot) }} /></span>
-                <b>{num(slot.count)}</b>
-                <div className="slot-rooms">
-                  {Array.from(new Set(slot.rows.map(row => row.AdRoomCode))).slice(0, 8).map(room => <span key={room}>{room}</span>)}
-                </div>
-              </article>
-            ))}
+            {byTime.map(slot => {
+              const expanded = openGroup === slot.key;
+              return (
+                <article key={slot.key} className={expanded ? "open" : ""}>
+                  <button
+                    type="button"
+                    className="lens-time-toggle"
+                    data-guide-ignore="يفتح ملخص الوقت داخل مركز الاستعلام فقط ولا يغيّر بيانات الجدول"
+                    aria-expanded={expanded}
+                    aria-controls={`query-time-slot-${slot.key}`}
+                    onClick={() => setOpenGroup(current => current === slot.key ? null : slot.key)}
+                  >
+                    <time dir="ltr">{scheduleClockForDisplay(slot.key)}</time>
+                    <span className="slot-bar"><i style={{ width: share(slot.count, maxSlot) }} /></span>
+                    <b>{num(slot.count)}</b>
+                    <div className="slot-rooms">
+                      {slot.rooms.slice(0, 4).map(room => <span key={room}>{room}</span>)}
+                      {slot.rooms.length > 4 ? <span>+{num(slot.rooms.length - 4)}</span> : null}
+                    </div>
+                    <div className="time-slot-facts" aria-hidden="true">
+                      <span>{num(slot.courses)} مقرر</span>
+                      <span>{num(slot.instructors)} أستاذ</span>
+                      <span>{num(slot.days)} أيام</span>
+                    </div>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                  {expanded ? (
+                    <div className="time-slot-panel" id={`query-time-slot-${slot.key}`}>
+                      <div className="time-slot-panel-head">
+                        <div><strong>{scheduleClockForDisplay(slot.key)}</strong><small>{num(slot.count)} موعد · {num(slot.courses)} مقرر · {num(slot.instructors)} أستاذ</small></div>
+                        <span>{slot.rooms.length ? `${num(slot.rooms.length)} قاعة` : "بدون قاعات"}</span>
+                      </div>
+                      <div className="time-slot-grid">
+                        {slot.rows.map(row => {
+                          const course = courseById.get(row.AdCourseId);
+                          const instructor = instructorById.get(row.AdInstructorId);
+                          return (
+                            <button
+                              type="button"
+                              key={row.id}
+                              className="time-slot-card"
+                              data-guide-ignore="يفتح/يغلق بطاقة الموعد داخل مركز الاستعلام فقط ولا يغيّر بيانات الجدول"
+                              onClick={() => setSelectedResultId(current => current === row.id ? null : row.id)}
+                              aria-expanded={selectedResultId === row.id}
+                            >
+                              <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
+                              <div>
+                                <span className="code-chip">{course?.CourseCode || "—"}</span>
+                                <span>شعبة {row.SCode || "—"}</span>
+                              </div>
+                              <small>{instructor?.AdInstructorName || "بدون أستاذ"}</small>
+                              <em>{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
+                              <i>{dayText(row) || "بلا أيام"}</i>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         ) : lens === "balance" ? (
           <BalancePanel

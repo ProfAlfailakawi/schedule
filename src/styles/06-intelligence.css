@@ -473,12 +473,12 @@
 /* --- Lens: times ---------------------------------------------------------- */
 
 .lens-times{display:flex;flex-direction:column}
-.lens-times>article{
-  display:grid;grid-template-columns:64px minmax(80px,1fr) 44px minmax(0,1.1fr);
-  align-items:center;gap:var(--s4);
-  padding:var(--s4) var(--s6);border-bottom:1px solid var(--line);
-}
+.lens-times>article{border-bottom:1px solid var(--line)}
 .lens-times>article:last-child{border-bottom:0}
+.lens-time-toggle{
+  width:100%;display:grid;grid-template-columns:72px minmax(90px,1fr) 48px minmax(0,1fr) minmax(0,.9fr) 18px;
+  align-items:center;gap:var(--s4);padding:var(--s4) var(--s6);text-align:inherit;background:none;border:0;color:inherit;
+}
 .lens-times time{font:600 var(--t-sm)/1 var(--font-mono);font-variant-numeric:tabular-nums}
 .slot-bar{display:block;height:9px;border-radius:var(--r-full);background:var(--surface-3);overflow:hidden}
 .slot-bar i{display:block;height:100%;border-radius:var(--r-full);background:var(--accent);transition:width .6s var(--ease-out)}
@@ -487,6 +487,23 @@
 .slot-rooms span{
   padding:2px var(--s2);border-radius:var(--r-xs);
   background:var(--surface-2);color:var(--muted);font-size:var(--t-xs);
+}
+.time-slot-facts{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:var(--s2);color:var(--muted-2);font-size:var(--t-xs)}
+.time-slot-panel{padding:0 var(--s6) var(--s5)}
+.time-slot-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s3);padding:var(--s3) 0}
+.time-slot-panel-head strong{display:block;font-size:var(--t-sm);font-weight:700}
+.time-slot-panel-head small,.time-slot-panel-head span{color:var(--muted);font-size:var(--t-xs)}
+.time-slot-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:var(--s3)}
+.time-slot-card{
+  display:grid;gap:var(--s2);padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);background:var(--surface-2);
+  text-align:start;color:inherit;
+}
+.time-slot-card strong{font-size:var(--t-sm);font-weight:650;line-height:1.55}
+.time-slot-card>div{display:flex;flex-wrap:wrap;gap:var(--s2)}
+.time-slot-card small,.time-slot-card em,.time-slot-card i{color:var(--muted);font-size:var(--t-xs);font-style:normal}
+@media (max-width: 980px){
+  .lens-time-toggle{grid-template-columns:72px minmax(90px,1fr) 48px;align-items:start}
+  .slot-rooms,.time-slot-facts{grid-column:1/-1;justify-content:flex-start}
 }
 
 /* --- Lens: fairness ------------------------------------------------------- */

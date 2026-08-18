@@ -305,6 +305,8 @@ const roomIdentity = (buildingRaw: unknown, hallRaw: unknown) => {
   };
 };
 
+const displayRoomBadge = (room: { hall?: string; building?: string; label?: string }) => room.hall || room.building || room.label || "—";
+
 const sameRoom = (
   left: { AdRoomCode?: unknown; AdRoomHall?: unknown },
   right: { AdRoomCode?: unknown; AdRoomHall?: unknown },
@@ -1339,8 +1341,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // A scope with no chosen section keeps the names it already knows —
       // parity with the old per-section lookups, which only ran once a
       // section was picked, so the editor never loses a name it must display.
-      if (Array.isArray(data?.instructors) && data.instructors.length) setInstructors(sortByName(data.instructors, (row: any) => row.AdInstructorName));
-      if (Array.isArray(data?.courses) && data.courses.length) setCourses(sortByName(data.courses, (row: any) => row.CourseName));
+      setInstructors(Array.isArray(data?.instructors) ? sortByName(data.instructors, (row: any) => row.AdInstructorName) : []);
+      setCourses(Array.isArray(data?.courses) ? sortByName(data.courses, (row: any) => row.CourseName) : []);
       setVisitingIds(new Set((Array.isArray(data?.visitingInstructorIds) ? data.visitingInstructorIds : []).map(Number).filter(Boolean)));
       onContext?.(context);
       if (firstPaintForScope) requestAnimationFrame(() => telemetryTiming("schedule.ready", performance.now() - uiStarted));
@@ -1429,14 +1431,37 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         }
         const savedCollege = Number(pref.filterCollege) || 0;
         const savedSection = Number(pref.filterSection) || 0;
+        const savedTerm = Number(pref.filterTerm) || 0;
         if (mode === "schedule") {
-          // Do not paint a value the user did not choose. First entry loads only
-          // the catalogues; the board activates after college + term are explicit.
           setViewMode(pref.viewMode === "week" ? "week" : pref.viewMode === "rooms" ? "rooms" : "list");
-          await loadLookups();
-          setFilterCollege(0);
-          setFilterSection(0);
-          setFilterTerm(0);
+          const lookup = await loadLookups();
+
+          // First visit still starts unselected. Once this user has chosen a
+          // college/term, however, that last valid workspace is their landing
+          // place on the next sign-in. The preference key is user-scoped, so a
+          // shared machine never lets one account activate another account's
+          // college or academic term.
+          let nextCollege = savedCollege;
+          let nextSection = savedSection;
+          if (isPowerAdmin) {
+            if (!lookup.colleges.some(college => Number(college.AdCollegeId) === nextCollege)) nextCollege = 0;
+            const section = lookup.sections.find(item => Number(item.AdSectionId) === nextSection);
+            if (!section || (nextCollege && Number(section.AdCollegeId) !== nextCollege)) nextSection = 0;
+          } else {
+            const scoped = coerceScopeValues(scopes, nextCollege, nextSection, false);
+            nextCollege = scoped.collegeId;
+            nextSection = scoped.sectionId;
+          }
+
+          let nextTerm = savedTerm && lookup.terms.some(term => Number(term.AdTermId) === savedTerm) ? savedTerm : 0;
+          // A previously saved term that was later removed should not strand the
+          // user on an empty selector. Only stale saved state falls forward; a
+          // genuine first visit (no saved term) remains explicit as before.
+          if (savedTerm && !nextTerm) nextTerm = Number(lookup.terms[0]?.AdTermId || 0);
+
+          setFilterCollege(nextCollege);
+          setFilterSection(nextSection);
+          setFilterTerm(nextTerm);
           setRows([]);
           setWorkspaceReady(true);
           return;
@@ -1539,6 +1564,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       (s) => !copyCollege || s.AdCollegeId === copyCollege,
     );
   const latestTermId = useMemo(() => Number(sortTermsNewest(terms)[0]?.AdTermId || 0), [terms]);
+  useEffect(() => {
+    if (!form.AdSectionId) return;
+    if (formCourses.length) return;
+    let alive = true;
+    void fetch(`/api/courses?sectionId=${Number(form.AdSectionId)}`, { credentials: "include" })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!alive || !Array.isArray(data) || !data.length) return;
+        setCourses(current => {
+          const merged = new Map(current.map(course => [Number(course.AdCourseId), course] as const));
+          data.forEach((course: any) => merged.set(Number(course.AdCourseId), course));
+          return sortByName([...merged.values()], (course: any) => course.CourseName);
+        });
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [form.AdSectionId, formCourses.length]);
   /* Stable lookup maps are essential here. Rebuilding them on every click made
      every dependent memo look changed and forced the week layout to start over. */
   const collegeById = useMemo(
@@ -4375,7 +4417,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const spanMinutes = Math.max(SCHEDULE_SLOT_MINUTES, visualEnd - gridWindow.start);
     const timeWidth = Math.round((spanMinutes / 60) * hourWidth) + terminalHourBonus;
     const timelineWidth = timeWidth;
-    const labelWidth = 64;
+    const labelWidth = 96;
     // The identity is now a literal single-line row, so density can be paid for
     // by geometry rather than typography.
     const laneHeight = 38;
@@ -4400,9 +4442,22 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   }) as React.CSSProperties, [weekStripConfig]);
 
   const weekTopScrollRef = useRef<HTMLDivElement | null>(null);
+  const weekRulerScrollRef = useRef<HTMLDivElement | null>(null);
   const weekMainScrollRef = useRef<HTMLDivElement | null>(null);
-  const syncWeekScroll = (source: "top" | "main", value: number) => {
-    const target = source === "top" ? weekMainScrollRef.current : weekTopScrollRef.current;
+  const roomsRulerScrollRef = useRef<HTMLDivElement | null>(null);
+  const roomsMainScrollRef = useRef<HTMLDivElement | null>(null);
+  const syncWeekScroll = (source: "top" | "ruler" | "main", value: number) => {
+    const targets = [
+      source !== "top" ? weekTopScrollRef.current : null,
+      source !== "ruler" ? weekRulerScrollRef.current : null,
+      source !== "main" ? weekMainScrollRef.current : null,
+    ];
+    targets.forEach(target => {
+      if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
+    });
+  };
+  const syncRoomsScroll = (source: "ruler" | "main", value: number) => {
+    const target = source === "ruler" ? roomsMainScrollRef.current : roomsRulerScrollRef.current;
     if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
   };
 
@@ -4416,7 +4471,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const clamped = Math.max(gridWindow.start, Math.min(weekStripConfig.visualEnd, minutesAt));
     const base = ((clamped - gridWindow.start) / 60) * weekStripConfig.hourWidth;
     if (clamped <= weekStripConfig.terminalHourStart) return base;
-    return base + ((clamped - weekStripConfig.terminalHourStart) / 60) * weekStripConfig.terminalHourBonus;
+    return base + ((clamped - weekStripConfig.terminalHourStart) / 30) * weekStripConfig.terminalHourBonus;
   };
   const weekStripSpanWidth = (from: number, to: number) =>
     Math.max(2, weekStripOffset(to) - weekStripOffset(from));
@@ -6392,6 +6447,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       </option>
                     ))}
                   </select>
+                  {!courseNames.length && form.AdSectionId ? <small className="field-inline-hint">لا تظهر مقررات لهذا القسم بعد. جرّبتُ الآن الجلب المباشر للقسم الحالي؛ إن استمرت القائمة فارغة فراجع بيانات المقررات في القسم نفسه.</small> : null}
                 </Field>
                 <Field
                   label={<span className="field-label-line"><span>رمز المقرر الدراسي</span>{!editId && sectionHint ? <small className="field-inline-hint">{sectionHint}</small> : null}</span>}
@@ -7867,26 +7923,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               ? roomsWithAfterglow.filter(room => matrixBuildings.has(room.buildingKey))
               : roomsWithAfterglow;
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
-            const ROOM_HOUR_WIDTH = weekStripConfig.hourWidth;
-            // Rooms use one shared canvas: room identity + day identity + the
-            // exact same time axis. Keeping these widths explicit prevents the
-            // room header, day rail and ruler from drifting into three separate
-            // coordinate systems when the board is horizontally scrolled.
-            const ROOM_DAY_LABEL_WIDTH = weekStripConfig.labelWidth;
-            const ROOM_IDENTITY_WIDTH = 112;
-            const ROOM_FIXED_WIDTH = ROOM_IDENTITY_WIDTH + ROOM_DAY_LABEL_WIDTH;
+            // The rooms board and dense week now literally share the same
+            // horizontal clock geometry. There is no second formula to drift:
+            // same hour width, same 19:30 terminal expansion, same pixel for
+            // every label and vertical guide.
+            const ROOM_DAY_LABEL_WIDTH = Math.max(weekStripConfig.labelWidth, 96);
+            const ROOM_FIXED_WIDTH = ROOM_DAY_LABEL_WIDTH;
             const ROOM_LANE_HEIGHT = 48;
-            // Same nonlinear end-cap as the week: only 19:30–20:00 receives
-            // extra paper, so a short final lecture keeps its full identity.
-            const ROOM_TERMINAL_START = Math.max(gridWindow.start, SCHEDULE_DAY_END - 30);
-            const ROOM_TERMINAL_BONUS = weekStripConfig.terminalHourBonus;
-            const roomOffset = (minutesAt: number) => {
-              const clamped = Math.max(gridWindow.start, Math.min(SCHEDULE_DAY_END, minutesAt));
-              const base = ((clamped - gridWindow.start) / 60) * ROOM_HOUR_WIDTH;
-              if (clamped <= ROOM_TERMINAL_START) return base;
-              return base + ((clamped - ROOM_TERMINAL_START) / 30) * ROOM_TERMINAL_BONUS;
-            };
-            const timelineWidth = Math.max(ROOM_HOUR_WIDTH, roomOffset(SCHEDULE_DAY_END));
+            const roomOffset = weekStripOffset;
+            const timelineWidth = weekStripConfig.timelineWidth;
             const roomsCanvasWidth = ROOM_FIXED_WIDTH + timelineWidth;
             const pct = (minutesAt: number) => (roomOffset(minutesAt) / timelineWidth) * 100;
             const roomSpanPct = (from: number, to: number) => Math.max(0.18, ((roomOffset(to) - roomOffset(from)) / timelineWidth) * 100);
@@ -8010,7 +8055,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     options={[{ value: "week", label: "الأسبوع كامل" }, ...days.map(day => ({ value: day.key, label: day.label }))]}
                     onChange={(value) => setMatrixDay(value as DayKey | "week")}
                   />
-                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "نفس منطق الأسبوع: كل صف يوم مستقل داخل القاعة، وكل فراغ قابل للنقر أو السحب والإفلات مباشرة في ساعته." : "عرض يوم منفرد بنفس منطق الأسبوع: اسحب الموعد على الساعة المطلوبة أو اضغط أي فراغ لإضافة موعد في تلك الساعة."}</small>
+                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "اسحب الموعد إلى ساعته الجديدة أو اضغط أي فراغ لإضافة موعد جديد داخل القاعة نفسها." : "عرض يوم منفرد: اسحب الموعد إلى الساعة المطلوبة أو اضغط أي فراغ لإضافة موعد في تلك الساعة."}</small>
                   {physicsActive && dragComparison ? (
                     <div className="rooms-drag-compare" aria-live="polite">
                       <GripVertical aria-hidden="true" />
@@ -8088,7 +8133,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           className={`rooms-chip ${matrixRooms.has(room.key) ? "on" : ""}`}
                           aria-pressed={matrixRooms.has(room.key)}
                           data-guide-ignore="مرشح بصري لقاعة داخل لوحة القاعات؛ لا يغير بيانات الجدول"
-                          title={`${matrixRooms.has(room.key) ? "إخفاء" : "إظهار"} ${room.label}`}
+                          title={`${matrixRooms.has(room.key) ? "إخفاء" : "إظهار"} ${displayRoomBadge(room)}`}
                           onClick={(e) => {
                             setMatrixRooms(current => {
                               const next = new Set(current);
@@ -8098,7 +8143,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             requestAnimationFrame(() => e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
                           }}
                         >
-                          <span dir="ltr">{room.label}</span>
+                          <span dir="ltr">{displayRoomBadge(room)}</span>
                           <b className="num">{roomCounts.get(room.key) || 0}</b>
                         </button>
                       ))}
@@ -8185,44 +8230,52 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   </div>
                 ) : null}
                 <div
-                  className={`rooms-scale ${matrixDay === "week" ? "rooms-scale-week" : ""}`}
-                  style={{
-                    ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px`,
-                    ["--rooms-room-label" as any]: `${ROOM_IDENTITY_WIDTH}px`,
-                    ["--rooms-day-label" as any]: `${ROOM_DAY_LABEL_WIDTH}px`,
-                    ["--rooms-fixed-label" as any]: `${ROOM_FIXED_WIDTH}px`,
-                  }}
-                  aria-hidden="true"
+                  ref={roomsRulerScrollRef}
+                  className="rooms-ruler-scroll"
+                  onScroll={(e) => syncRoomsScroll("ruler", e.currentTarget.scrollLeft)}
+                  aria-label="شريط ساعات القاعات"
                 >
-                  <small className="rooms-scale-identity">
-                    <b>القاعة</b>
-                    <span>{matrixDay === "week" ? "اليوم" : ""}</span>
-                  </small>
-                  <div>
-                    {timeSlots.map(slot => (
-                      <i
-                        key={`rooms-scale-line-${slot}`}
-                        className={`rooms-scale-line ${mins(slot) % 60 === 0 ? "rooms-scale-line-major" : "rooms-scale-line-half"} ${slot === SCHEDULE_DAY_END_TIME ? "rooms-scale-line-terminal" : ""}`}
-                        style={{ right: `${pct(mins(slot))}%` }}
-                      />
-                    ))}
-                    {hourMarks.filter(mark => mark !== gridWindow.end).map(mark => (
-                      <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark)}</span>
-                    ))}
+                  <div
+                    className={`rooms-scale ${matrixDay === "week" ? "rooms-scale-week" : ""}`}
+                    style={{
+                      ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px`,
+                      ["--rooms-day-label" as any]: `${ROOM_DAY_LABEL_WIDTH}px`,
+                      ["--rooms-fixed-label" as any]: `${ROOM_FIXED_WIDTH}px`,
+                    }}
+                    aria-hidden="true"
+                  >
+                    <small className="rooms-scale-identity">
+                      <span>{matrixDay === "week" ? "اليوم" : ""}</span>
+                    </small>
+                    <div style={{ width: `${timelineWidth}px` }}>
+                      {timeSlots.map(slot => (
+                        <i
+                          key={`rooms-scale-line-${slot}`}
+                          className={`rooms-scale-line schedule-time-line ${mins(slot) % 60 === 0 ? "major rooms-scale-line-major" : "half rooms-scale-line-half"} ${slot === SCHEDULE_DAY_END_TIME ? "terminal rooms-scale-line-terminal" : ""}`}
+                          style={{ insetInlineStart: `${roomOffset(mins(slot))}px` }}
+                        />
+                      ))}
+                      {hourMarks.filter(mark => mark !== gridWindow.end).map(mark => (
+                        <span className="schedule-time-label" key={mark} style={{ insetInlineStart: `${roomOffset(mark)}px` }} dir="ltr">{timeFromMins(mark)}</span>
+                      ))}
+                    </div>
                   </div>
                 </div>
                 <div
-                  className="rooms-rows"
-                  style={{
-                    ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px`,
-                    ["--rooms-room-label" as any]: `${ROOM_IDENTITY_WIDTH}px`,
-                    ["--rooms-day-label" as any]: `${ROOM_DAY_LABEL_WIDTH}px`,
-                    ["--rooms-fixed-label" as any]: `${ROOM_FIXED_WIDTH}px`,
-                  }}
+                  ref={roomsMainScrollRef}
+                  className="rooms-main-scroll"
+                  onScroll={(e) => syncRoomsScroll("main", e.currentTarget.scrollLeft)}
                 >
+                  <div
+                    className="rooms-rows"
+                    style={{
+                      ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px`,
+                      ["--rooms-day-label" as any]: `${ROOM_DAY_LABEL_WIDTH}px`,
+                      ["--rooms-fixed-label" as any]: `${ROOM_FIXED_WIDTH}px`,
+                    }}
+                  >
                   {roomList.map(room => (
-                    <section className="rooms-week-room" key={room.key}>
-                      <header className="rooms-week-room-head" aria-label={`القاعة ${room.label}`} title={room.label} />
+                    <section className="rooms-week-room" key={room.key} aria-label={`القاعة ${room.label}`} title={room.label}>
                       <div className="rooms-week-days">
                         {displayDays.map(day => {
                           const roomLayout = layoutFor(day.key as DayKey, room.key);
@@ -8300,8 +8353,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </section>
                   ))}
                   {displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length || moveTraces.some(trace => trace.roomKey === "|" && trace.dayKey === day.key)) ? (
-                    <section className="rooms-week-room rooms-row-none">
-                      <header className="rooms-week-room-head" aria-label="بلا قاعة" title="بلا قاعة" />
+                    <section className="rooms-week-room rooms-row-none" aria-label="بلا قاعة" title="بلا قاعة">
                       <div className="rooms-week-days">
                         {displayDays.map(day => {
                           const homelessLayout = noRoomLayout.get(day.key as DayKey) || { items: [], lanes: 1 };
@@ -8365,6 +8417,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   {!roomList.length && !displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length || moveTraces.some(trace => trace.roomKey === "|" && trace.dayKey === day.key)) ? (
                     <p className="rooms-empty">لا قاعات مسجلة في هذا النطاق بعد — أسنِد قاعة لأي محاضرة وستظهر هنا صفاً كاملاً.</p>
                   ) : null}
+                  </div>
                 </div>
               </>
             );
@@ -8598,7 +8651,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   onClick={() => setExpandedDay(null)}
                   title="عرض الأسبوع كاملاً"
                 >
-                  <Expand aria-hidden="true" />الأسبوع
+                  <Expand aria-hidden="true" />اليوم
                 </button>
               ) : null}
             </div>
@@ -8719,6 +8772,43 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   <div className="week-scroll-spacer" aria-hidden="true" />
                 </div>
                 <div
+                  ref={weekRulerScrollRef}
+                  className="week-ruler-scroll"
+                  style={weekStripStyle}
+                  onScroll={(e) => syncWeekScroll("ruler", e.currentTarget.scrollLeft)}
+                  aria-label="شريط ساعات الأسبوع"
+                >
+                  <div className="week-strip-ruler" style={{ width: `${weekStripConfig.canvasWidth}px` }}>
+                    <div className="week-strip-ruler-label">
+                      <span>اليوم</span>
+                    </div>
+                    <div
+                      className="week-strip-ruler-track"
+                      style={{ width: `${weekStripConfig.timelineWidth}px` }}
+                      aria-hidden="true"
+                    >
+                      {timeSlots.map((slot) => (
+                        <i
+                          key={`week-sticky-ruler-line-${slot}`}
+                          className={`week-strip-ruler-line schedule-time-line ${mins(slot) % 60 === 0 ? "major" : "half"} ${slot === SCHEDULE_DAY_END_TIME ? "terminal" : ""}`}
+                          style={{ insetInlineStart: `${weekStripOffset(mins(slot))}px` }}
+                          aria-hidden="true"
+                        />
+                      ))}
+                      {weekStripHourMarks.filter((mark) => mark !== gridWindow.end).map((mark) => (
+                        <span
+                          key={`week-sticky-ruler-${mark}`}
+                          className="schedule-time-label"
+                          style={{ insetInlineStart: `${weekStripOffset(mark)}px` }}
+                          dir="ltr"
+                        >
+                          {timeFromMins(mark)}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div
                   ref={weekMainScrollRef}
                   className="week-scroll-main week-strips-scroll"
                   onScroll={(e) => syncWeekScroll("main", e.currentTarget.scrollLeft)}
@@ -8728,34 +8818,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     style={weekStripStyle}
                     data-expanded={expandedDay || undefined}
                   >
-                    <div className="week-strip-ruler">
-                      <div className="week-strip-ruler-label">
-                        <span>الأسبوع</span>
-                      </div>
-                      <div
-                        className="week-strip-ruler-track"
-                        style={{ width: `${weekStripConfig.timelineWidth}px` }}
-                        aria-hidden="true"
-                      >
-                        {timeSlots.map((slot) => (
-                          <i
-                            key={`week-strip-ruler-line-${slot}`}
-                            className={`week-strip-ruler-line ${mins(slot) % 60 === 0 ? "major" : "half"} ${slot === SCHEDULE_DAY_END_TIME ? "terminal" : ""}`}
-                            style={{ insetInlineStart: `${weekStripOffset(mins(slot))}px` }}
-                            aria-hidden="true"
-                          />
-                        ))}
-                        {weekStripHourMarks.filter((mark) => mark !== gridWindow.end).map((mark) => (
-                          <i
-                            key={`week-strip-ruler-${mark}`}
-                            className={`week-strip-hourmark ${mark === gridWindow.end ? "terminal" : ""}`}
-                            style={{ insetInlineStart: `${weekStripOffset(mark)}px` }}
-                          >
-                            <span dir="ltr">{timeFromMins(mark)}</span>
-                          </i>
-                        ))}
-                      </div>
-                    </div>
                     {(expandedDay ? days.filter(day => day.key === expandedDay) : days).map((d) => {
                       const layout = weekLayout[d.key] || { items: [], busiest: 1 };
                       const dayHeight = weekStripDayHeight(layout.busiest);
