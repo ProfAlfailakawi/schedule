@@ -1319,3 +1319,54 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
   .smart-guide-mark-all span{font-size:8.5px}
   .smart-guide-fab.icon-only .smart-guide-fab-new{inset-inline-start:-18px!important;min-width:52px!important;justify-content:center}
 }
+
+/* === Smart Guide V17 · calm first-use hierarchy and collision-safe scroll == */
+.smart-guide>*{flex:0 0 auto;min-width:0}
+.smart-guide .smart-guide-fold,
+.smart-guide .smart-guide-focus-card,
+.smart-guide .smart-guide-selected-context,
+.smart-guide .smart-guide-notice,
+.smart-guide .smart-guide-pending-task{
+  position:relative;
+  z-index:1;
+  margin-block:0;
+  contain:layout paint;
+}
+.smart-guide .smart-guide-browse{z-index:8}
+.smart-guide-fold+ .smart-guide-fold{margin-top:0}
+.smart-guide-intent-fold>summary{min-height:50px}
+.smart-guide-intent-fold>.smart-guide-intent-results{
+  padding:10px;
+  max-height:min(46dvh,430px);
+  overflow-y:auto;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  -webkit-overflow-scrolling:touch;
+}
+.smart-guide-intent-results::-webkit-scrollbar,
+.smart-guide-live-controls::-webkit-scrollbar{width:6px}
+.smart-guide-intent-results::-webkit-scrollbar-thumb,
+.smart-guide-live-controls::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--muted) 28%,transparent);border-radius:99px}
+.smart-guide-live-fold[open]>.smart-guide-live-controls{
+  max-height:min(52dvh,500px)!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+  scrollbar-gutter:stable;
+  -webkit-overflow-scrolling:touch;
+  touch-action:pan-y;
+  outline:none;
+}
+.smart-guide-live-fold[open]>.smart-guide-live-controls:focus-visible{box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--accent) 28%,transparent);border-radius:12px}
+.smart-guide-live-fold[open]>summary{position:sticky;top:0;z-index:2}
+.smart-guide-focus-card{isolation:isolate}
+.smart-guide-results>button,.smart-guide-live-controls>button,.smart-guide-feature-grid>button,.smart-guide-new-grid>button{position:relative;z-index:0;transform:none!important}
+.smart-guide-results>button+button,.smart-guide-live-controls>button+button,.smart-guide-feature-grid>button+button,.smart-guide-new-grid>button+button{margin-top:0}
+
+@media(max-width:900px){
+  .smart-guide-intent-fold>.smart-guide-intent-results{max-height:48dvh}
+  .smart-guide-live-fold[open]>.smart-guide-live-controls{max-height:54dvh!important}
+}
+@media(max-width:560px){
+  .smart-guide-intent-fold>.smart-guide-intent-results{max-height:44dvh;padding:8px}
+  .smart-guide-live-fold[open]>.smart-guide-live-controls{max-height:50dvh!important;padding:8px}
+}

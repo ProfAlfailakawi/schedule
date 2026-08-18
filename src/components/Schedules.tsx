@@ -118,7 +118,7 @@ import {
   type ScheduleViewDraft,
 } from "../utils/scheduleViews";
 import ScheduleTransfer from "./ScheduleTransfer";
-import { adviseDayPattern, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
+import { adviseDayPattern, DECISION_1912_LABEL, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
@@ -2103,7 +2103,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * department that knows why it is departing from the article should not have
    * to argue with a form about it — it should simply be told, once, plainly.
    */
-  const editorRegulation = useMemo(() => {
+  const editorReviewFindings = useMemo(() => {
     if (editor === "index") return [];
     if (!form.AdCourseId || !form.fstarttime || !form.fendtime) return [];
     if (!days.some(d => Boolean((form as any)[d.key]))) return [];
@@ -2127,6 +2127,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     form.fstarttime, form.fendtime, form.AdRoomCode, form.AdRoomHall,
     form.fsunday, form.fmonday, form.ftuesday, form.fwednesday, form.fthursday,
   ]);
+  const editorRegulation = useMemo(() => editorReviewFindings.filter(isDecision1912Finding), [editorReviewFindings]);
+  const editorSupplementalReview = useMemo(() => editorReviewFindings.filter(finding => !isDecision1912Finding(finding)), [editorReviewFindings]);
   const timeRangeInvalid = Boolean(form.fstarttime&&form.fendtime)&&mins(form.fendtime)<=mins(form.fstarttime);
   const outsideTeachingDay = Boolean(form.fstarttime && form.fendtime) && !timeRangeInvalid &&
     !withinScheduleDay(mins(form.fstarttime), mins(form.fendtime));
@@ -2246,10 +2248,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       selectedDaysLabel: selectedFormDays.length ? selectedFormDays.length.toLocaleString("ar-KW-u-nu-latn") : "0",
     };
   }), [editorRegulation, formDurationMinutes, selectedFormDays.length]);
+  const editorSupplementalCards = useMemo(() => editorSupplementalReview.map((finding, index) => ({
+    ...finding,
+    detail: String(finding.detail || "").replace(/\s+/g, " ").trim(),
+    icon: finding.source === "history" ? "history" : index % 2 ? "room" : "idea",
+    sourceLabel: finding.source === "history" ? "السجل التاريخي" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
+  })), [editorSupplementalReview]);
   const editorRoomConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض قاعة" || card.typeLabel === "نطاق القاعة"), [editorConflictCards]);
   const editorInstructorConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض أستاذ"), [editorConflictCards]);
   const editorGenericConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel !== "تعارض قاعة" && card.typeLabel !== "نطاق القاعة" && card.typeLabel !== "تعارض أستاذ"), [editorConflictCards]);
-  const hasEditorDecisionAccordions = Boolean(editorRoomConflictCards.length || editorInstructorConflictCards.length || editorTimingNote || editorRegulation.length || editorGenericConflictCards.length);
+  const hasEditorDecisionAccordions = Boolean(editorRoomConflictCards.length || editorInstructorConflictCards.length || editorTimingNote || editorRegulation.length || editorSupplementalCards.length || editorGenericConflictCards.length);
   const renderEditorConflictCard = (card: any) => (
     <article key={card.id} className={`decision-card ${card.toneClass}`}>
       <div className="decision-card-topline">
@@ -6914,46 +6922,75 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </div>
                 </Field>
-                <div className="schedule-location-field schedule-location-field--building">
-                  <Field label="رقم المبنى" required>
-                    <input
-                      value={form.AdRoomCode}
-                      list="schedule-buildings"
-                      onChange={(e) =>
-                        // A different building means the old hall no longer exists.
-                        setForm((p) => ({ ...p, AdRoomCode: e.target.value, AdRoomHall: "" }))
-                      }
-                      required
-                    />
-                    <datalist id="schedule-buildings">
-                      {buildingOptions.map(code => <option key={code} value={code} />)}
-                    </datalist>
-                  </Field>
-                </div>
-                <div className="schedule-location-field schedule-location-field--hall">
-                  <Field
-                    label="رقم القاعة"
-                    required
-                    hint={hallOptions.length ? (
-                      <span className="schedule-hall-hint">
-                        <span>قاعات المبنى <bdi dir="ltr">{form.AdRoomCode}</bdi>:</span>
-                        <bdi dir="ltr">{hallOptions.slice(0, 5).join(" · ")}</bdi>
-                        {hallOptions.length > 5 ? <strong dir="ltr">+{hallOptions.length - 5}</strong> : null}
-                      </span>
-                    ) : undefined}
-                  >
-                    <input
-                      value={form.AdRoomHall}
-                      list="schedule-halls"
-                      onChange={(e) =>
-                        setForm((p) => ({ ...p, AdRoomHall: e.target.value }))
-                      }
-                      required
-                    />
-                    <datalist id="schedule-halls">
-                      {hallOptions.map(hall => <option key={hall} value={hall} />)}
-                    </datalist>
-                  </Field>
+                <div className="schedule-location-pair">
+                  <div className="schedule-location-field schedule-location-field--building">
+                    <Field label="رقم المبنى" required>
+                      <input
+                        value={form.AdRoomCode}
+                        list="schedule-buildings"
+                        onChange={(e) =>
+                          // A different building means the old hall no longer exists.
+                          setForm((p) => ({ ...p, AdRoomCode: e.target.value, AdRoomHall: "" }))
+                        }
+                        required
+                      />
+                      <datalist id="schedule-buildings">
+                        {buildingOptions.map(code => <option key={code} value={code} />)}
+                      </datalist>
+                    </Field>
+                  </div>
+                  <div className="schedule-location-field schedule-location-field--hall">
+                    <Field label="رقم القاعة" required>
+                      <div className="schedule-hall-input-row">
+                        <input
+                          value={form.AdRoomHall}
+                          list="schedule-halls"
+                          onChange={(e) =>
+                            setForm((p) => ({ ...p, AdRoomHall: e.target.value }))
+                          }
+                          required
+                        />
+                        {hallOptions.length ? (
+                          <details className="schedule-hall-picker">
+                            <summary
+                              data-guide-ignore="اختيار قاعة سريع داخل محرر الموعد؛ المرشد يشرح حقل القاعة الأساسي"
+                              aria-label={`عرض قاعات المبنى ${form.AdRoomCode}`}
+                              title={`اختيار سريع من ${hallOptions.length.toLocaleString("ar-KW-u-nu-latn")} قاعة في المبنى ${form.AdRoomCode}`}
+                            >
+                              <MapPin aria-hidden="true" />
+                              <span className="schedule-hall-picker-count" dir="ltr">{hallOptions.length}</span>
+                            </summary>
+                            <div className="schedule-hall-picker-popover" role="group" aria-label={`قاعات المبنى ${form.AdRoomCode}`}>
+                              <header>
+                                <div><small>اختيار سريع</small><strong>قاعات المبنى <bdi dir="ltr">{form.AdRoomCode}</bdi></strong></div>
+                                <span>{hallOptions.length.toLocaleString("ar-KW-u-nu-latn")}</span>
+                              </header>
+                              <div className="schedule-hall-picker-grid">
+                                {hallOptions.map(hall => (
+                                  <button
+                                    type="button"
+                                    data-guide-ignore="خيار قاعة داخل قائمة الاختيار السريع التابعة لحقل القاعة"
+                                    key={hall}
+                                    className={String(form.AdRoomHall) === String(hall) ? "active" : ""}
+                                    onClick={(event) => {
+                                      setForm((current) => ({ ...current, AdRoomHall: hall }));
+                                      event.currentTarget.closest("details")?.removeAttribute("open");
+                                    }}
+                                  >
+                                    <MapPin aria-hidden="true" />
+                                    <bdi dir="ltr">{hall}</bdi>
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </details>
+                        ) : null}
+                      </div>
+                      <datalist id="schedule-halls">
+                        {hallOptions.map(hall => <option key={hall} value={hall} />)}
+                      </datalist>
+                    </Field>
+                  </div>
                 </div>
                 {roomOwner ? (
                   <div className="room-owner-note" role="status">
@@ -7107,16 +7144,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 {editorRegulation.length ? (
                   <details className="decision-accordion">
                     <summary className="decision-accordion-summary">
-                      <span className="decision-accordion-title"><ClipboardCheck /> ملاحظات اللائحة</span>
+                      <span className="decision-accordion-title"><ClipboardCheck /> اللائحة · {DECISION_1912_LABEL}</span>
                       <em>{countOf(editorRegulation.length, AR.note)}</em>
                     </summary>
                     <div className="decision-accordion-body">
-                      <section className="decision-section decision-section--regulation" role="status" aria-label="ملاحظات اللائحة">
+                      <section className="decision-section decision-section--regulation" role="status" aria-label={`اللائحة · ${DECISION_1912_LABEL}`}>
                         <div className="decision-note-list">
                           {editorRegulationCards.map((finding) => (
                             <article key={finding.rule} className={`decision-note decision-note--${finding.severity} decision-note--feature`}>
                               <div className="decision-feature-topline">
-                                <span className="decision-card-kicker">ملاحظات اللائحة</span>
+                                <span className="decision-card-kicker">اللائحة · {DECISION_1912_LABEL}</span>
                                 <em className="decision-card-flag">{finding.article || "معلومة"}</em>
                               </div>
                               <div className="decision-feature-hero">
@@ -7187,16 +7224,39 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </div>
                   </details>
                 ) : null}
-                {editorGenericConflictCards.length ? (
+                {editorGenericConflictCards.length || editorSupplementalCards.length ? (
                   <details className="decision-accordion">
                     <summary className="decision-accordion-summary">
                       <span className="decision-accordion-title"><Layers /> ملاحظة</span>
-                      <em>{countOf(editorGenericConflictCards.length, AR.note)}</em>
+                      <em>{countOf(editorGenericConflictCards.length + editorSupplementalCards.length, AR.note)}</em>
                     </summary>
                     <div className="decision-accordion-body">
-                      <div className="decision-stack" aria-label="ملاحظة">
-                        {editorGenericConflictCards.map(renderEditorConflictCard)}
-                      </div>
+                      {editorGenericConflictCards.length ? (
+                        <div className="decision-stack" aria-label="ملاحظة">
+                          {editorGenericConflictCards.map(renderEditorConflictCard)}
+                        </div>
+                      ) : null}
+                      {editorSupplementalCards.length ? (
+                        <div className="decision-note-list" aria-label="ملاحظات سياقية">
+                          {editorSupplementalCards.map(finding => (
+                            <article key={finding.rule} className={`decision-note decision-note--${finding.severity} decision-note--feature`}>
+                              <div className="decision-feature-topline">
+                                <span className="decision-card-kicker">{finding.sourceLabel}</span>
+                                <em className="decision-card-flag">{finding.article}</em>
+                              </div>
+                              <div className="decision-feature-hero">
+                                <div className="decision-note-body">
+                                  <strong>{finding.title}</strong>
+                                  {finding.detail ? <details className="decision-note-details"><summary>التفاصيل</summary><p>{finding.detail}</p></details> : null}
+                                </div>
+                                <div className="decision-note-icon" aria-hidden="true">
+                                  {finding.icon === "history" ? <History /> : finding.icon === "room" ? <Building2 /> : <Lightbulb />}
+                                </div>
+                              </div>
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
                   </details>
                 ) : null}
@@ -7943,12 +8003,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 and the query centre covers the structured cases in full. */}
             <GhostButton
               type="button"
+              className={workspaceToolsOpen ? "schedule-tools-toggle is-close" : "schedule-tools-toggle"}
               data-guide-target="schedule.tool.more"
               onClick={() => setWorkspaceToolsOpen(open => !open)}
               aria-expanded={workspaceToolsOpen}
-              title="إظهار أدوات التركيز والمراجعة والنشر"
+              aria-label={workspaceToolsOpen ? "إغلاق الأدوات" : "المزيد من الأدوات"}
+              title={workspaceToolsOpen ? "إغلاق الأدوات" : "إظهار أدوات التركيز والمراجعة والنشر"}
             >
-              <Layers aria-hidden="true" /> {workspaceToolsOpen ? "أدوات أقل" : "المزيد"}
+              {workspaceToolsOpen ? <X aria-hidden="true" /> : <><Layers aria-hidden="true" /> المزيد</>}
             </GhostButton>
             {!phoneReadOnly && (workspaceToolsOpen || focusMode) ? <GhostButton
               type="button"
@@ -7961,17 +8023,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               aria-pressed={focusMode}
             >
               <Focus /> {focusMode ? "إنهاء التركيز" : "تركيز"}
-            </GhostButton> : null}
-            {!phoneReadOnly && (workspaceToolsOpen || presentationMode) ? <GhostButton
-              type="button"
-              onClick={() => {
-                setPresentationMode(!presentationMode);
-                setFocusMode(false);
-                if (!presentationMode) setViewMode("week");
-              }}
-              aria-pressed={presentationMode}
-            >
-              <Expand /> {presentationMode ? "إنهاء العرض" : "عرض"}
             </GhostButton> : null}
             {workspaceToolsOpen ? <GhostButton
               type="button"
@@ -8385,16 +8436,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </div>
                   ) : null}
                 </div>
-                <div className={`week-note rooms-note ${physicsActive ? "gravity-note-active" : ""}`}>
-                  <GripVertical aria-hidden="true" />
-                  <span aria-live="polite">
-                    {physicsActive && dragComparison
-                      ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}`
-                      : phoneReadOnly
-                        ? "على الهاتف يبقى عرض المباني والقاعات للقراءة فقط، والتعديل والإضافة متاحان من «قائمة»."
-                        : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اضغط أي فراغ لإضافة موعد داخل القاعة · انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}
-                  </span>
-                </div>
+                {!focusMode ? (
+                  <div className={`week-note rooms-note ${physicsActive ? "gravity-note-active" : ""}`}>
+                    <GripVertical aria-hidden="true" />
+                    <span aria-live="polite">
+                      {physicsActive && dragComparison
+                        ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}`
+                        : phoneReadOnly
+                          ? "على الهاتف يبقى عرض المباني والقاعات للقراءة فقط، والتعديل والإضافة متاحان من «قائمة»."
+                          : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اضغط أي فراغ لإضافة موعد داخل القاعة · انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}
+                    </span>
+                  </div>
+                ) : null}
                 {allBuildings.length > 0 ? (
                   <div className="rooms-filter-block">
                     <div className="rooms-filter-copy">
@@ -10033,7 +10086,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       ) : null}
       {reviewOpen ? (
         <ScheduleReview
-          rows={filteredRows}
+          rows={rows}
           courses={courseById}
           instructors={instructorById}
           previousRows={previousTermRows}
@@ -10043,6 +10096,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,
             sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName,
           ].filter(Boolean).join(" · ")}
+          collegeId={filterCollege}
+          sectionId={filterSection}
+          termId={filterTerm}
           onClose={() => setReviewOpen(false)}
           onFocusRows={(ids) => {
             // Bring the flagged appointments to the surface using the lens the

@@ -1297,6 +1297,10 @@ export default function SmartGuide({
     refreshProfile();
   };
 
+  const collapseIntentResults = (element: HTMLElement | null) => {
+    element?.closest("details.smart-guide-intent-fold")?.removeAttribute("open");
+  };
+
   const runRoutine = (routine: { id: string; sequence: string[]; name: string }) => {
     replayWorkflow(routine.sequence);
     touchGuideRoutine(userId, routine.id);
@@ -1524,34 +1528,40 @@ export default function SmartGuide({
         ) : null}
 
         {query.trim() ? (
-          <section className="smart-guide-results">
-            <div className="smart-guide-section-head"><div><small>فهمت سؤالك</small><strong>{specialIntent || results.length ? "الأقرب إلى مقصدك" : "لم أجد تطابقًا مباشرًا"}</strong></div></div>
-            {intentLoading ? <div className="smart-guide-intent-status"><Sparkles /><span>أفهم القيود التي ذكرتها…</span></div> : null}
-            {!specialIntent && resolvedIntent?.clarification ? <div className="smart-guide-clarification" role="status"><Lightbulb /><span>{resolvedIntent.clarification}</span>{intentFeature ? <button type="button" onClick={() => chooseKnown(intentFeature)}>اعرض الأقرب</button> : null}</div> : null}
-            {!specialIntent && resolvedIntent?.goal !== "unknown" && intentFeature ? (
-              <article className="smart-guide-intent-card">
-                <span><BrainCircuit /></span>
-                <div>
-                  <small>{resolvedIntent.source === "ai" ? "فهم مركب" : "فهم مباشر"}</small>
-                  <strong>{intentFeature.title}</strong>
-                  <em>{[
-                    resolvedIntent.entities?.day ? ({fsunday:"الأحد",fmonday:"الاثنين",ftuesday:"الثلاثاء",fwednesday:"الأربعاء",fthursday:"الخميس"} as Record<string,string>)[resolvedIntent.entities.day] : "",
-                    resolvedIntent.entities?.time || "",
-                    resolvedIntent.constraints?.keepInstructor ? "مع إبقاء الأستاذ الحالي" : "",
-                    resolvedIntent.constraints?.findAlternativeRoom ? "وابحث عن قاعة بديلة عند الحاجة" : "",
-                  ].filter(Boolean).join(" · ")}</em>
-                </div>
-                {Number(resolvedIntent.confidence || 0) < .62 ? <button type="button" onClick={() => chooseKnown(intentFeature)}>هل هذا ما تقصده؟</button> : resolvedIntent.requestedAction === "simulate" ? <button type="button" onClick={() => simulateFeature(intentFeature)}>جرّب بأمان</button> : <button type="button" onClick={() => chooseKnown(intentFeature)}>متابعة</button>}
-              </article>
-            ) : null}
-            {specialIntent ? <article className="smart-guide-special-answer"><span><History /></span><div><strong>{specialIntent.title}</strong><small>{specialIntent.detail}</small></div>{specialIntent.kind === "resume" ? <button type="button" onClick={resumeTask}>أكمل</button> : specialIntent.kind === "repeat" ? <button type="button" onClick={() => repeatSequence.length ? replayWorkflow(repeatSequence) : routines[0] ? runRoutine(routines[0]) : workflows[0] ? replayWorkflow(workflows[0].sequence) : setBrowseMode("forYou")}>جهّز المسار</button> : specialIntent.kind === "faster" ? <button type="button" onClick={() => replayWorkflow(workflows[0].sequence)}>افتح الأقصر</button> : null}</article> : null}
-            {results.map((row) => {
-              if (row.kind === "known") return <button key={row.feature.id} type="button" onClick={() => chooseKnown(row.feature)}><span><Sparkles /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
-              if (row.kind === "dynamic") return <button key={row.feature.id} type="button" onClick={() => chooseDynamic(row.feature)}><span><MousePointer2 /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
-              return <button key={row.feature.id} type="button" onClick={() => runRoutine(row.feature)}><span><Zap /></span><div><strong>{row.feature.name}</strong><small>اختصار شخصي لمسار عملك</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
-            })}
-            {!results.length && !specialIntent ? <p>صِف ما تريد إنجازه بدل اسم الزر، أو استخدم «أشر لي» وحدد العنصر مباشرةً.</p> : null}
-          </section>
+          <details className="smart-guide-fold smart-guide-intent-fold">
+            <summary>
+              <Search aria-hidden="true" />
+              <span><small>{intentLoading ? "أفهم سؤالك الآن…" : "نتائج البحث"}</small><strong>{specialIntent || results.length ? "الأقرب إلى مقصدك" : "لم أجد تطابقًا مباشرًا"}</strong></span>
+              <b dir="ltr">{Math.max(results.length, specialIntent ? 1 : 0)}</b>
+            </summary>
+            <section className="smart-guide-results smart-guide-intent-results">
+              {intentLoading ? <div className="smart-guide-intent-status"><Sparkles /><span>أفهم القيود التي ذكرتها…</span></div> : null}
+              {!specialIntent && resolvedIntent?.clarification ? <div className="smart-guide-clarification" role="status"><Lightbulb /><span>{resolvedIntent.clarification}</span>{intentFeature ? <button type="button" onClick={(event) => { collapseIntentResults(event.currentTarget); chooseKnown(intentFeature); }}>اعرض الأقرب</button> : null}</div> : null}
+              {!specialIntent && resolvedIntent?.goal !== "unknown" && intentFeature ? (
+                <article className="smart-guide-intent-card">
+                  <span><BrainCircuit /></span>
+                  <div>
+                    <small>{resolvedIntent.source === "ai" ? "فهم مركب" : "فهم مباشر"}</small>
+                    <strong>{intentFeature.title}</strong>
+                    <em>{[
+                      resolvedIntent.entities?.day ? ({fsunday:"الأحد",fmonday:"الاثنين",ftuesday:"الثلاثاء",fwednesday:"الأربعاء",fthursday:"الخميس"} as Record<string,string>)[resolvedIntent.entities.day] : "",
+                      resolvedIntent.entities?.time || "",
+                      resolvedIntent.constraints?.keepInstructor ? "مع إبقاء الأستاذ الحالي" : "",
+                      resolvedIntent.constraints?.findAlternativeRoom ? "وابحث عن قاعة بديلة عند الحاجة" : "",
+                    ].filter(Boolean).join(" · ")}</em>
+                  </div>
+                  {Number(resolvedIntent.confidence || 0) < .62 ? <button type="button" onClick={(event) => { collapseIntentResults(event.currentTarget); chooseKnown(intentFeature); }}>هل هذا ما تقصده؟</button> : resolvedIntent.requestedAction === "simulate" ? <button type="button" onClick={(event) => { collapseIntentResults(event.currentTarget); simulateFeature(intentFeature); }}>جرّب بأمان</button> : <button type="button" onClick={(event) => { collapseIntentResults(event.currentTarget); chooseKnown(intentFeature); }}>متابعة</button>}
+                </article>
+              ) : null}
+              {specialIntent ? <article className="smart-guide-special-answer"><span><History /></span><div><strong>{specialIntent.title}</strong><small>{specialIntent.detail}</small></div>{specialIntent.kind === "resume" ? <button type="button" onClick={resumeTask}>أكمل</button> : specialIntent.kind === "repeat" ? <button type="button" onClick={() => repeatSequence.length ? replayWorkflow(repeatSequence) : routines[0] ? runRoutine(routines[0]) : workflows[0] ? replayWorkflow(workflows[0].sequence) : setBrowseMode("forYou")}>جهّز المسار</button> : specialIntent.kind === "faster" ? <button type="button" onClick={() => replayWorkflow(workflows[0].sequence)}>افتح الأقصر</button> : null}</article> : null}
+              {results.map((row) => {
+                if (row.kind === "known") return <button key={row.feature.id} type="button" onClick={(event) => { collapseIntentResults(event.currentTarget); chooseKnown(row.feature); }}><span><Sparkles /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
+                if (row.kind === "dynamic") return <button key={row.feature.id} type="button" onClick={(event) => { collapseIntentResults(event.currentTarget); chooseDynamic(row.feature); }}><span><MousePointer2 /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
+                return <button key={row.feature.id} type="button" onClick={(event) => { collapseIntentResults(event.currentTarget); runRoutine(row.feature); }}><span><Zap /></span><div><strong>{row.feature.name}</strong><small>اختصار شخصي لمسار عملك</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
+              })}
+              {!results.length && !specialIntent ? <p>صِف ما تريد إنجازه بدل اسم الزر، أو استخدم «أشر لي» وحدد العنصر مباشرةً.</p> : null}
+            </section>
+          </details>
         ) : null}
 
         {selected ? (
@@ -1586,7 +1596,7 @@ export default function SmartGuide({
             {browseMode === "here" ? (
               <>
                 <details className="smart-guide-fold"><summary><Sparkles /><span><small>هذه الشاشة</small><strong>الأدوات المتاحة الآن</strong></span><b dir="ltr">{known.filter(feature => !feature.id.startsWith("page.")).length}</b></summary><div className="smart-guide-feature-grid">{known.filter(feature => !feature.id.startsWith("page.")).map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.summary}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}</div></details>
-                <details className="smart-guide-fold"><summary><MousePointer2 /><span><small>اكتشاف حي</small><strong>عناصر الشاشة</strong></span><b dir="ltr">{dynamic.filter(item => !item.target || !featureById(item.target)).length}</b></summary><div className="smart-guide-live-controls">{dynamic.filter(item => !item.target || !featureById(item.target)).map(item => <button type="button" key={item.id} onClick={() => chooseDynamic(item)}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}{!dynamic.filter(item => !item.target || !featureById(item.target)).length?<p>كل العناصر الظاهرة حاليًا معرّفة داخل المرشد.</p>:null}</div></details>
+                <details className="smart-guide-fold smart-guide-live-fold" onToggle={(event) => { if (event.currentTarget.open) setSheetLevel("full"); }}><summary><MousePointer2 /><span><small>اكتشاف حي</small><strong>عناصر الشاشة</strong></span><b dir="ltr">{dynamic.filter(item => !item.target || !featureById(item.target)).length}</b></summary><div className="smart-guide-live-controls" tabIndex={0} aria-label="عناصر الشاشة المكتشفة — مرّر للأسفل لرؤية الكل">{dynamic.filter(item => !item.target || !featureById(item.target)).map(item => <button type="button" key={item.id} onClick={() => chooseDynamic(item)}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}{!dynamic.filter(item => !item.target || !featureById(item.target)).length?<p>كل العناصر الظاهرة حاليًا معرّفة داخل المرشد.</p>:null}</div></details>
               </>
             ) : null}
 

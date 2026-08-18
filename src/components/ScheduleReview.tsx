@@ -1,14 +1,15 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardCheck, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton } from "./ui";
 import {
-  DAY_KEYS, DAY_NAMES, regulationScore, reviewSchedule,
+  DAY_KEYS, DAY_NAMES, DECISION_1912_LABEL, isDecision1912Finding, regulationScore, reviewSchedule,
   type DayKey, type RegulationFinding
 } from "../utils/scheduleRegulations";
 import type { CourseNature } from "../utils/courseNature";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
+import { findConflicts } from "../utils/scheduleIntelligence";
 
 /**
  * The last read before a schedule is adopted.
@@ -29,12 +30,29 @@ interface Props {
   /** What each course has habitually been, learned from every term on record. */
   nature?: Map<number, CourseNature> | null;
   scopeLine: string;
+  collegeId: number;
+  sectionId: number;
+  termId: number;
   meeting?: { day: DayKey; from: string; to: string } | null;
   onClose: () => void;
   onFocusRows?: (ids: number[]) => void;
 }
 
-const SEVERITY_LABEL: Record<string, string> = { high: "يمنع الاعتماد", medium: "يستحق المراجعة", low: "ملاحظة" };
+const findingStatus = (finding: RegulationFinding) => {
+  if (finding.approvalEffect === "block") return "يمنع الاعتماد";
+  if (finding.source === "decision-1912") return finding.approvalEffect === "review" ? "مراجعة لائحية" : "ملاحظة لائحية";
+  if (finding.source === "history") return "سياق تاريخي";
+  if (finding.source === "department") return "سياسة القسم";
+  return "مراجعة";
+};
+
+/** Visual tone follows approval effect, not the rule's analytical severity. */
+const findingTone = (finding: RegulationFinding): "high" | "medium" | "low" =>
+  finding.approvalEffect === "block" ? "high" : finding.approvalEffect === "review" ? "medium" : "low";
+const findingIcon = (finding: RegulationFinding) => {
+  const tone = findingTone(finding);
+  return tone === "high" ? <AlertTriangle /> : tone === "medium" ? <Info /> : <CheckCircle2 />;
+};
 
 /**
  * One person, once — with their sections folded beneath.
@@ -82,14 +100,62 @@ function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSc
   );
 }
 
-export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, meeting, onClose, onFocusRows }: Props) {
-  const findings = useMemo(
+export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
+  const baseFindings = useMemo(
     () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
     [rows, courses, instructors, previousRows, meeting, nature]
   );
-  const score = useMemo(() => regulationScore(findings, rows.length), [findings, rows.length]);
-  const blocking = findings.filter(finding => finding.severity === "high");
+  const decisionFindings = useMemo(() => baseFindings.filter(isDecision1912Finding), [baseFindings]);
+  const score = useMemo(() => regulationScore(decisionFindings, rows.length), [decisionFindings, rows.length]);
+  const [serverBlockers, setServerBlockers] = useState<Array<{id:string;type:string;title:string;detail:string;rowIds:number[]}>>([]);
+  const [readinessChecked, setReadinessChecked] = useState(false);
+  const [readinessError, setReadinessError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setReadinessChecked(true); setReadinessError(true); return; }
+    const controller = new AbortController();
+    setReadinessChecked(false);
+    setReadinessError(false);
+    void fetch(`/api/schedules/review-readiness?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { credentials: "include", signal: controller.signal })
+      .then(async response => response.ok ? response.json() : Promise.reject(new Error("readiness")))
+      .then(data => setServerBlockers(Array.isArray(data?.blockers) ? data.blockers : []))
+      .catch(error => { if (error?.name !== "AbortError") { setServerBlockers([]); setReadinessError(true); } })
+      .finally(() => { if (!controller.signal.aborted) setReadinessChecked(true); });
+    return () => controller.abort();
+  }, [collegeId, sectionId, termId, rows]);
+
+  const localBlockers = useMemo(() => findConflicts(rows, rows)
+    .filter(item => item.severity === "high" || item.type === "duplicate")
+    .map(item => ({
+      id: `local-conflict:${[item.rowId, item.otherId].sort((a, b) => a - b).join(":")}`,
+      type: item.type,
+      title: item.message,
+      detail: item.detail,
+      rowIds: [Number(item.rowId), Number(item.otherId)].filter(Boolean),
+    })), [rows]);
+  const activeBlockers = readinessChecked && !readinessError ? serverBlockers : localBlockers;
+
+  const blockerFindings = useMemo<RegulationFinding[]>(() => activeBlockers.map((item, index) => ({
+    rule: item.id || `approval-blocker-${index}`,
+    article: "موانع الحفظ",
+    severity: "high",
+    source: "readiness",
+    approvalEffect: "block",
+    title: item.title || "يوجد مانع اعتماد",
+    detail: item.detail || "راجع الموعد قبل الاعتماد.",
+    rowIds: Array.isArray(item.rowIds) ? item.rowIds.map(Number).filter(Boolean) : [],
+  })), [activeBlockers]);
+  const readinessFindings = useMemo(() => baseFindings.filter(finding => finding.source === "readiness"), [baseFindings]);
+  const supplementalFindings = useMemo(() => baseFindings.filter(finding => finding.source !== "readiness" && !isDecision1912Finding(finding)), [baseFindings]);
+  // Approval reads in a predictable order: hard save blockers, decision 1912,
+  // then historical/department context. This keeps different authorities from
+  // being visually mixed under one regulation heading.
+  const findings = useMemo(
+    () => [...blockerFindings, ...readinessFindings, ...decisionFindings, ...supplementalFindings],
+    [blockerFindings, readinessFindings, decisionFindings, supplementalFindings]
+  );
+  const blocking = findings.filter(finding => finding.approvalEffect === "block");
 
   /**
    * The schedule as a bar rather than a list.
@@ -100,16 +166,17 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
    * arithmetic — the clean part is simply the length of the green.
    */
   const spread = useMemo(() => {
-    const worst = new Map<number, RegulationFinding["severity"]>();
+    const state = new Map<number, "high" | "medium" | "low">();
     const rank = { high: 3, medium: 2, low: 1 } as const;
     for (const finding of findings) {
+      const level: "high" | "medium" | "low" = finding.approvalEffect === "block" ? "high" : finding.approvalEffect === "review" ? "medium" : "low";
       for (const id of finding.rowIds) {
-        const current = worst.get(id);
-        if (!current || rank[finding.severity] > rank[current]) worst.set(id, finding.severity);
+        const current = state.get(id);
+        if (!current || rank[level] > rank[current]) state.set(id, level);
       }
     }
     const counts = { high: 0, medium: 0, low: 0 };
-    for (const severity of worst.values()) counts[severity] += 1;
+    for (const level of state.values()) counts[level] += 1;
     const flagged = counts.high + counts.medium + counts.low;
     return { ...counts, clean: Math.max(0, rows.length - flagged), total: Math.max(1, rows.length) };
   }, [findings, rows.length]);
@@ -162,8 +229,8 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     printFollowupPages.push(remainingFindings.slice(index, index + 4));
   }
   const renderPrintFinding = (finding: RegulationFinding) => (
-    <article className={`print-review-finding severity-${finding.severity}`} key={finding.rule}>
-      <header><b className="print-finding-index">{finding.severity === "high" ? <AlertTriangle /> : finding.severity === "medium" ? <Info /> : <CheckCircle2 />}</b><div><strong>{finding.title}</strong><span>{finding.detail}</span></div><em>{finding.article}</em><i>{SEVERITY_LABEL[finding.severity]}</i></header>
+    <article className={`print-review-finding severity-${findingTone(finding)}`} key={finding.rule}>
+      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
       {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, printRowPreviewLimit).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > printRowPreviewLimit ? <small>+ {(finding.rowIds.length - printRowPreviewLimit).toLocaleString("ar-KW-u-nu-latn")} موعد آخر</small> : null}</div> : null}
     </article>
   );
@@ -175,7 +242,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     <div className="review-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="review-sheet no-print visual-minimal" role="dialog" aria-modal="true" aria-label="مراجعة الاعتماد">
         <header className={`review-head tone-${tone}`}>
-          <svg className="review-ring" viewBox="0 0 64 64" role="img" aria-label={`مؤشر المطابقة ${score} من 100`}>
+          <svg className="review-ring" viewBox="0 0 64 64" role="img" aria-label={`مطابقة ${DECISION_1912_LABEL} ${score} من 100`}>
             <circle className="ring-track" cx="32" cy="32" r="26" />
             <circle
               className="ring-value"
@@ -186,9 +253,10 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
             <text x="32" y="45" className="ring-unit">/ 100</text>
           </svg>
           <div className="review-title">
-            <span className="surface-kicker">مراجعة الاعتماد · قرار 1912/2016</span>
-            <h2>{blocking.length ? "يوجد ما يمنع الاعتماد" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</h2>
+            <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
+            <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</h2>
             <p>{scopeLine}</p>
+            {readinessError ? <small>تمت مراجعة قرار 1912/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
@@ -211,11 +279,9 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
 
         <div className="review-body">
           {findings.length ? findings.map(finding => (
-            <article key={finding.rule} className={`review-finding severity-${finding.severity} ${open === finding.rule ? "open" : ""}`}>
-              <button type="button" onClick={() => setOpen(current => (current === finding.rule ? null : finding.rule))}>
-                <span className="review-mark" aria-hidden="true">
-                  {finding.severity === "high" ? <AlertTriangle /> : finding.severity === "medium" ? <Info /> : <CheckCircle2 />}
-                </span>
+            <article key={finding.rule} className={`review-finding severity-${findingTone(finding)} ${open === finding.rule ? "open" : ""}`}>
+              <button type="button" data-guide-ignore="فتح تفاصيل ملاحظة داخل مراجعة الاعتماد فقط" onClick={() => setOpen(current => (current === finding.rule ? null : finding.rule))}>
+                <span className="review-mark" aria-hidden="true">{findingIcon(finding)}</span>
                 <span className="review-copy">
                   <strong>{finding.title}</strong>
                   <small>{finding.detail}</small>
@@ -226,7 +292,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                   ) : null}
                 </span>
                 <em>{finding.article}</em>
-                <i>{SEVERITY_LABEL[finding.severity]}</i>
+                <i>{findingStatus(finding)}</i>
               </button>
               {open === finding.rule && finding.rowIds.length ? (
                 <div className="review-rows">
@@ -264,7 +330,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
             <div className="review-clear">
               <CheckCircle2 />
               <strong>لا ملاحظات</strong>
-              <span>الجدول مطابق لكل ما يمكن فحصه آلياً من اللائحة.</span>
+              <span>الجدول مطابق لما يمكن فحصه آلياً من قرار 1912/2016، ولا تظهر موانع حفظ في النطاق.</span>
             </div>
           )}
         </div>
@@ -289,15 +355,15 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
         <div className="print-sheet-modal">
           <div className="print-report print-upright print-review-report">
             <section className="print-explicit-page print-review-page">
-              <PrintLetterhead title="مراجعة الاعتماد · قرار 1912/2016" scope={scopeLine} />
+              <PrintLetterhead title={`مراجعة الاعتماد · ${DECISION_1912_LABEL}`} scope={scopeLine} />
               <section className={`print-review-hero tone-${tone}`}>
-                <svg className="print-review-ring" viewBox="0 0 64 64" aria-label={`مؤشر المطابقة ${score} من 100`}>
+                <svg className="print-review-ring" viewBox="0 0 64 64" aria-label={`مطابقة ${DECISION_1912_LABEL} ${score} من 100`}>
                   <circle className="ring-track" cx="32" cy="32" r="26" />
                   <circle className="ring-value" cx="32" cy="32" r="26" strokeDasharray={`${(score / 100) * ringLength} ${ringLength}`} />
                   <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
                   <text x="32" y="45" className="ring-unit">/ 100</text>
                 </svg>
-                <div><small>مراجعة الاعتماد · قرار 1912/2016</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</strong><span>{scopeLine}</span></div>
+                <div><small>مراجعة الاعتماد · {DECISION_1912_LABEL}</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</strong><span>{scopeLine}</span></div>
               </section>
               <div className="print-review-spread" role="img" aria-label="توزيع المواعيد حسب نتيجة المراجعة">
                 <div className="print-spread-bar">
@@ -309,7 +375,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                 <div className="print-spread-keys"><span className="seg-high"><b>{spread.high}</b> يمنع</span><span className="seg-medium"><b>{spread.medium}</b> يراجَع</span><span className="seg-low"><b>{spread.low}</b> ملاحظة</span><span className="seg-clean"><b>{spread.clean}</b> سليم</span></div>
               </div>
               <section className="print-review-findings">
-                {findings.length ? firstPrintPage.map(renderPrintFinding) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>مطابق لكل ما يمكن فحصه آلياً من اللائحة.</span></div>}
+                {findings.length ? firstPrintPage.map(renderPrintFinding) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>مطابق لما يمكن فحصه آلياً من قرار 1912/2016 ولا تظهر موانع حفظ محلية.</span></div>}
               </section>
               {!printFollowupPages.length ? (
                 <div className="print-signatures print-explicit-page-meta">

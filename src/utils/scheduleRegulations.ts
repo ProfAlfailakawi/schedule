@@ -24,17 +24,27 @@ import { SCHEDULE_DAY_END , formatScheduleTimeRange } from "./scheduleTime";
  */
 
 export type RegulationSeverity = "high" | "medium" | "low";
+export type RegulationFindingSource = "decision-1912" | "history" | "department" | "readiness";
+export type ApprovalEffect = "note" | "review" | "block";
+
+export const DECISION_1912_LABEL = "قرار 1912/2016";
 
 export interface RegulationFinding {
   /** Stable identifier, so a department can silence one rule and not the rest. */
   rule: string;
   article: string;
   severity: RegulationSeverity;
+  /** What authority this finding comes from. Only decision-1912 belongs to the regulation score. */
+  source: RegulationFindingSource;
+  /** Whether approval should merely note it, review it, or actually stop. */
+  approvalEffect: ApprovalEffect;
   title: string;
   detail: string;
   /** The appointments this finding is about, for highlighting on the grid. */
   rowIds: number[];
 }
+
+export const isDecision1912Finding = (finding: RegulationFinding) => finding.source === "decision-1912";
 
 export const DAY_KEYS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"] as const;
 export const DAY_NAMES = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
@@ -353,6 +363,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       rule: "lecture-length",
       article: "م.8/أ،ب",
       severity: "low",
+      source: "decision-1912",
+      approvalEffect: "note",
       title: `مدة المحاضرة بعيدة عن نمط اليوم في ${arabicNumber(wrongLength.length)} موعد`,
       detail: "الأحد والثلاثاء والخميس ساعة، والاثنين والأربعاء ساعة ونصف. فروق الدقائق القليلة (50 و80 دقيقة) مقبولة كزمن انتقال ولا تُحتسب هنا.",
       rowIds: wrongLength.map(row => row.id)
@@ -377,6 +389,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
         rule: "out-of-character",
         article: "سجل 10 سنوات",
         severity: "medium",
+        source: "history",
+        approvalEffect: "note",
         title: `${arabicNumber(odd.length)} موعد يخالف المعتاد لهذا المقرر`,
         detail: `مقارنةً بكيفية تدريس المقرر نفسه في الفصول السابقة. ${reasons.slice(0, 4).join(" — ")}`,
         rowIds: odd.map(row => row.id)
@@ -415,6 +429,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       rule: "sections-same-hour",
       article: "م.7/5",
       severity: "high",
+      source: "decision-1912",
+      approvalEffect: "review",
       title: `شعب مقرر واحد في نفس الساعة واليوم: ${courseNames.slice(0, 6).join("، ")}`,
       detail: "توزَّع شعب المقرر الواحد على ساعات مختلفة وفي أيام متعددة حتى يجد الطالب شعبة تناسبه.",
       rowIds: [...new Set(clashing.map(row => row.id))]
@@ -464,6 +480,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       rule: "consecutive-sections",
       article: "م.6/2،3",
       severity: "medium",
+      source: "decision-1912",
+      approvalEffect: "review",
       title: `تجاوز الشعب المتتالية في اليوم (${arabicNumber(runsOver.length)})`,
       detail: `الحد شعبتان متتاليتان للمحاضرات التي تزيد عن ساعة، وثلاث للمحاضرات ذات الساعة الواحدة. ${runsOver.slice(0, 4).join(" — ")}`,
       rowIds: [...new Set(runRows)]
@@ -490,6 +508,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
           rule: "period-balance",
           article: "م.7/2",
           severity: "low",
+          source: "decision-1912",
+          approvalEffect: "note",
           title: `توزيع الفترتين خارج النطاق: صباحي ${arabicNumber(morningShare)}٪ · مسائي ${arabicNumber(eveningShare)}٪`,
           detail: "المطلوب صباحاً بين 50٪ و70٪، ومساءً بين 30٪ و50٪ من إجمالي مقررات القسم.",
           rowIds: []
@@ -515,8 +535,10 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       rule: "class-size",
       article: "م.8",
       severity: "low",
-      title: `سعة أعلى من الحد الأقصى للمقررات النظرية (${arabicNumber(oversized.length)})`,
-      detail: `الحد الأقصى 60 طالباً للمقرر النظري، 40 للتطبيقي، 25 للعملي. ${[...new Set(oversized)].slice(0, 5).join("، ")}`,
+      source: "decision-1912",
+      approvalEffect: "note",
+      title: `سعة أعلى من الحد الأعلى العام (${arabicNumber(oversized.length)})`,
+      detail: `يفحص النظام آلياً الحد الأعلى العام 60 طالباً لأن بيانات المقرر الحالية لا تحمل تصنيفاً موثوقاً (نظري/تطبيقي/عملي). حدود 40 للتطبيقي و25 للعملي تبقى مرجعاً لائحياً ولا يُحكم بها آلياً حتى يتوفر نوع المقرر. ${[...new Set(oversized)].slice(0, 5).join("، ")}`,
       rowIds: [...new Set(oversizedRows)]
     });
   }
@@ -544,6 +566,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
         rule: "rotation",
         article: "م.6/4",
         severity: "medium",
+        source: "decision-1912",
+        approvalEffect: "review",
         title: `مقررات أحادية الطرح لم تُدوَّر (${arabicNumber(repeated.length)})`,
         detail: `المقرر ذو الشعبة الواحدة يُسند لعضو آخر في الفصل التالي عملاً بمبدأ التدوير. ${repeated.slice(0, 5).join(" — ")}`,
         rowIds: repeatedRows
@@ -563,6 +587,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
         rule: "meeting-window",
         article: "قرار القسم",
         severity: "medium",
+        source: "department",
+        approvalEffect: "review",
         title: `${arabicNumber(inside.length)} موعد داخل وقت اجتماع القسم`,
         detail: `${DAY_NAMES[DAY_KEYS.indexOf(day)]} ${formatScheduleTimeRange(from, to)} محجوز لاجتماع القسم.`,
         rowIds: inside.map(row => row.id)
@@ -575,8 +601,10 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   if (unfinished.length) {
     findings.push({
       rule: "incomplete",
-      article: "م.6/5",
+      article: "جاهزية الاعتماد",
       severity: "high",
+      source: "readiness",
+      approvalEffect: "block",
       title: `${arabicNumber(unfinished.length)} موعد ناقص البيانات`,
       detail: "كل موعد يحتاج أياماً ووقتاً وأستاذاً محدداً قبل اعتماد الجدول.",
       rowIds: unfinished.map(row => row.id)
@@ -602,6 +630,7 @@ export function regulationScore(findings: RegulationFinding[], rowCount: number)
   const weight: Record<RegulationSeverity, number> = { high: 1, medium: 0.5, low: 0.2 };
   const worst = new Map<number, number>();
   for (const finding of findings) {
+    if (!isDecision1912Finding(finding)) continue;
     const cost = weight[finding.severity];
     // A finding with no specific rows (a balance ratio, say) counts as a light
     // touch on the whole schedule rather than on nothing.
@@ -610,6 +639,6 @@ export function regulationScore(findings: RegulationFinding[], rowCount: number)
     for (const id of targets) worst.set(id, Math.max(worst.get(id) || 0, cost));
   }
   const implicated = [...worst.values()].reduce((total, cost) => total + cost, 0);
-  const wide = findings.filter(finding => !finding.rowIds.length).length * 0.02 * rowCount;
+  const wide = findings.filter(finding => isDecision1912Finding(finding) && !finding.rowIds.length).length * 0.02 * rowCount;
   return Math.max(0, Math.min(100, Math.round(100 - ((implicated + wide) / rowCount) * 100)));
 }

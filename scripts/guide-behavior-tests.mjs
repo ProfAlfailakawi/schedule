@@ -226,6 +226,9 @@ assert(smart.includes('[profile.currentTask, profile.previousTask, context?.curr
 assert(smart.includes('pendingViewCommandRef.current={view:feature.view,command:prepared}') && smart.includes('onNavigate(feature.view)'), "أوامر القراءة من شاشة أخرى تنتقل للواجهة المطلوبة قبل التنفيذ بدل إرسال أمر إلى مكوّن غير مركب");
 assert(smart.includes('const controller = new AbortController()') && smart.includes('window.setTimeout(() => controller.abort(), 5500)'), "فهم السؤال عبر AI له مهلة زمنية ولا يترك المستخدم أمام تحميل لا ينتهي");
 assert(app.includes('جديد — اضغط لمعرفة ما هو') && app.includes('} جديد`'), "شارة المشغل تشرح الرقم نصيًا بدل +9 المبهمة");
+assert(smart.includes('smart-guide-fold smart-guide-intent-fold') && smart.includes('الأقرب إلى مقصدك') && !smart.includes('<section className="smart-guide-results">'), "«الأقرب إلى مقصدك» أصبح قائمة مغلقة هادئة بدل كتلة نتائج طويلة مفتوحة دائمًا");
+assert(smart.includes('smart-guide-fold smart-guide-live-fold') && smart.includes('if (event.currentTarget.open) setSheetLevel("full")') && css.includes('.smart-guide-live-fold[open]>.smart-guide-live-controls') && css.includes('overflow-y:auto!important'), "«اكتشاف حي» يفتح الورقة كاملة ويملك تمريرًا داخليًا مستقلًا للوصول إلى آخر عنصر");
+assert(css.includes('.smart-guide>*{flex:0 0 auto;min-width:0}') && css.includes('contain:layout paint'), "بطاقات المرشد معزولة تخطيطيًا ولا يمكن أن تتداخل فوق بعضها أثناء التمرير");
 
 // اختبار CI فعلي: أي زر جديد بلا metadata/ignore يجب أن يفشل التدقيق.
 const probe=path.join(root,"src/__guide_ci_probe__.tsx");

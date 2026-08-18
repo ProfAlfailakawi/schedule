@@ -2587,6 +2587,69 @@ app.post("/api/hall-barter/requests/:id/cancel", requirePermission(7), async (re
 
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });
 
+
+/**
+ * One approval-time reading of the whole department scope.
+ *
+ * The editor checks one candidate at a time. Approval cannot do that: it must
+ * see collisions against the whole term, including appointments outside the
+ * reader's department that share an instructor or room. This endpoint performs
+ * that term-wide read on the server, then redacts the other appointment when it
+ * sits outside the caller's permissions. It returns only hard blockers — the
+ * regulation remains an advisory/review layer in the client.
+ */
+app.get("/api/schedules/review-readiness", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
+  if(!collegeId||!sectionId||!termId){res.status(400).json({error:"حدد الكلية والقسم والفصل."});return;}
+  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [scopeRows,termRows,hallBarterRequests]=await Promise.all([
+    Repository.getSchedulesByScope({collegeId,sectionId,termId}),
+    Repository.getSchedulesByScope({termId}),
+    Repository.getHallBarterRequests(termId),
+  ]);
+  const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
+  const byId=new Map(termRows.map(row=>[Number(row.id),row] as const));
+  const blockers:any[]=[];
+  const seen=new Set<string>();
+  const add=(item:any)=>{const key=String(item.id||`${item.type}:${(item.rowIds||[]).join(":")}`);if(seen.has(key))return;seen.add(key);blockers.push(item);};
+
+  findConflicts(scopeRows as any,termRows as any)
+    .filter((item:any)=>item.severity==="high"||item.type==="duplicate")
+    .forEach((item:any)=>{
+      const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
+      if(!ownIds.has(ownId))return;
+      const otherId=Number(item.rowId)===ownId?Number(item.otherId):Number(item.rowId);
+      const other=byId.get(otherId);
+      const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,Number(other.AdCollegeId),Number(other.AdSectionId))):false;
+      const title=item.type==="instructor"?"حجز مزدوج لأستاذ المقرر":item.type==="room"?"حجز مزدوج للقاعة":"موعد مطابق تماماً لنفس المقرر والشعبة";
+      const detail=visible&&other
+        ? `${String(other.AdCourseName||"موعد آخر")} — ${formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))}`
+        : item.type==="room"?"يوجد حجز متداخل للقاعة خارج نطاق العرض الحالي.":item.type==="instructor"?"يوجد للأستاذ موعد متداخل خارج نطاق العرض الحالي.":"يوجد سجل مطابق خارج نطاق العرض الحالي.";
+      add({id:`conflict:${[ownId,otherId].sort((a,b)=>a-b).join(":")}`,type:item.type,title,detail,rowIds:[ownId]});
+    });
+
+  const roomKey=(row:any)=>`${String(row.AdRoomCode||"").trim().toLocaleLowerCase()}|${String(row.AdRoomHall||"").trim().toLocaleLowerCase()}`;
+  const approved=hallBarterRequests.filter((request:any)=>request.status==="approved");
+  for(const row of scopeRows){
+    const key=roomKey(row);if(key==="|")continue;
+    const sameRoom=approved.filter((request:any)=>`${String(request.roomCode||"").trim().toLocaleLowerCase()}|${String(request.roomHall||"").trim().toLocaleLowerCase()}`===key);
+    if(!sameRoom.length)continue;
+    const active=SCHEDULE_DAY_KEYS.filter(day=>Boolean((row as any)[day]));
+    const mine=sameRoom.filter((request:any)=>Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId);
+    const foreign=sameRoom.find((request:any)=>
+      !(Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId)&&
+      active.some(day=>request.day===day&&scheduleOverlap(String(row.fstarttime||""),String(row.fendtime||""),String(request.startTime||""),String(request.endTime||"")))
+    );
+    if(foreign){
+      add({id:`barter:${row.id}:${foreign.id}`,type:"hallBarter",title:`القاعة ${row.AdRoomCode}/${row.AdRoomHall} محجوزة عبر بورصة القاعات`,detail:`نافذة معتمدة ${HALL_BARTER_DAY_LABEL.get(foreign.day)||""} ${formatScheduleTimeRange(String(foreign.startTime||""),String(foreign.endTime||""))}.`,rowIds:[Number(row.id)]});
+    }
+    if(mine.length&&active.some(day=>!mine.some((request:any)=>request.day===day&&timeToMinutes(String(row.fstarttime||""))>=timeToMinutes(String(request.startTime||""))&&timeToMinutes(String(row.fendtime||""))<=timeToMinutes(String(request.endTime||""))))){
+      add({id:`barter-window:${row.id}`,type:"hallBarterWindow",title:"الموعد يتجاوز نافذة الاستعارة المعتمدة",detail:"استخدم القاعة داخل اليوم والوقت المعتمدين، أو اطلب نافذة إضافية قبل الاعتماد.",rowIds:[Number(row.id)]});
+    }
+  }
+  res.json({blockers,checkedRows:scopeRows.length,termRows:termRows.length});
+});
+
 /**
  * Natural-language MOVE (Idea 3). Parses "انقل 101 إلى 11:00" / "حرّك 344 إلى
  * الأربعاء", finds the lecture in the open scope and returns a PREVIEW only —
