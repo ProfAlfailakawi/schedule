@@ -39,6 +39,9 @@ export interface RegulationFinding {
   approvalEffect: ApprovalEffect;
   title: string;
   detail: string;
+  /** Optional identity used by review UI to group repeated cases by person/room. */
+  subjectKey?: string;
+  subjectLabel?: string;
   /** The appointments this finding is about, for highlighting on the grid. */
   rowIds: number[];
 }

@@ -778,6 +778,14 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 
 .finding-share-wrap{display:grid;gap:6px;margin-top:6px}
 .finding-share-count{display:inline-flex;align-items:center;gap:6px;color:var(--muted-2);font-size:11px;font-weight:780}
+.review-subject-list{display:grid;gap:10px}
+.review-subject{overflow:hidden;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.review-subject>header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;background:var(--surface-2);border-bottom:1px solid var(--line)}
+.review-subject>header strong{min-width:0;font-size:var(--t-sm);font-weight:760;color:var(--ink);overflow-wrap:anywhere}
+.review-subject>header small{flex:none;padding:3px 8px;border-radius:999px;background:var(--danger-soft);color:var(--danger);font-size:10px;font-weight:800}
+.review-subject-cases{display:grid}
+.review-subject-cases p{margin:0;padding:10px 13px;color:var(--ink-2);font-size:var(--t-sm);line-height:1.75;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
+.review-subject-cases p:first-child{border-top:0}
 .review-subfinding-list{display:grid;gap:8px}
 .review-subfinding{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
 .review-subfinding header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
@@ -1574,3 +1582,33 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .review-foot{padding:10px 24px}
   .review-print-icon-button,.review-close-icon-button{width:46px!important;height:46px!important;min-width:46px!important}
 }
+
+/* --- Week cards: keep room/building labels inside the card -----------------
+   On dense phones the place label was the first thing to spill because it sat
+   beside the time as an inline note with no wrapping contract. The time stays
+   intact; the place can wrap or ellipsize inside the card instead of escaping
+   past its border. */
+.week-event{overflow:hidden}
+.week-title,.week-who,.week-when,.week-code{display:block;min-width:0;max-width:100%}
+.week-when{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.week-when time{flex:none}
+.week-when i{
+  font-style:normal;min-width:0;max-width:100%;
+  color:var(--muted);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;direction:ltr;unicode-bidi:isolate;
+}
+.week-code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:640px){
+  .week-when{gap:4px}
+  .week-when i{max-inline-size:100%}
+}
+
+/* --- Review subject cards: aggregated details, not repeated paragraphs ----- */
+.review-subject-cases{display:grid;gap:10px;padding:12px 13px}
+.review-subject-cases p{margin:0;border-top:0;padding:0}
+.review-subject-summary{color:var(--ink-2);font-size:var(--t-sm);line-height:1.8}
+.review-subject-rows{display:flex;flex-direction:column;gap:8px}
+.review-row-card.compact{background:var(--surface)}
+.review-row-card.compact .rrc-main{display:grid;gap:2px;min-width:0}
+.review-row-card.compact .rrc-main strong{font-size:12px;font-weight:760;color:var(--ink);overflow-wrap:anywhere}
+.review-row-card.compact .rrc-main small{font-size:11px;color:var(--muted);line-height:1.55}

@@ -2602,13 +2602,17 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
   if(!collegeId||!sectionId||!termId){res.status(400).json({error:"حدد الكلية والقسم والفصل."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
-  const [scopeRows,termRows,hallBarterRequests]=await Promise.all([
+  const [scopeRows,termRows,hallBarterRequests,instructors,courses]=await Promise.all([
     Repository.getSchedulesByScope({collegeId,sectionId,termId}),
     Repository.getSchedulesByScope({termId}),
     Repository.getHallBarterRequests(termId),
+    Repository.getInstructors(),
+    Repository.getCourses(),
   ]);
   const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
   const byId=new Map(termRows.map(row=>[Number(row.id),row] as const));
+  const instructorById=new Map(instructors.map(row=>[Number(row.AdInstructorId),String(row.AdInstructorName||"")]));
+  const courseById=new Map(courses.map(row=>[Number(row.AdCourseId),row] as const));
   const blockers:any[]=[];
   const seen=new Set<string>();
   const add=(item:any)=>{const key=String(item.id||`${item.type}:${(item.rowIds||[]).join(":")}`);if(seen.has(key))return;seen.add(key);blockers.push(item);};
@@ -2621,11 +2625,26 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
       const otherId=Number(item.rowId)===ownId?Number(item.otherId):Number(item.rowId);
       const other=byId.get(otherId);
       const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,Number(other.AdCollegeId),Number(other.AdSectionId))):false;
+      const own=byId.get(ownId);
       const title=item.type==="instructor"?"حجز مزدوج لأستاذ المقرر":item.type==="room"?"حجز مزدوج للقاعة":"موعد مطابق تماماً لنفس المقرر والشعبة";
-      const detail=visible&&other
-        ? `${String(other.AdCourseName||"موعد آخر")} — ${formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))}`
-        : item.type==="room"?"يوجد حجز متداخل للقاعة خارج نطاق العرض الحالي.":item.type==="instructor"?"يوجد للأستاذ موعد متداخل خارج نطاق العرض الحالي.":"يوجد سجل مطابق خارج نطاق العرض الحالي.";
-      add({id:`conflict:${[ownId,otherId].sort((a,b)=>a-b).join(":")}`,type:item.type,title,detail,rowIds:[ownId]});
+      const ownDays=own?SCHEDULE_DAY_KEYS.map((key,index)=>own[key]?DAY_LABELS[index]:null).filter(Boolean).join("، "):"";
+      const ownCourse=own?(courseById.get(Number(own.AdCourseId))?.CourseCode||String(own.AdCourseName||"المقرر")):"المقرر";
+      const ownTime=own?formatScheduleTimeRange(String(own.fstarttime||""),String(own.fendtime||"")):"";
+      const subjectKey=item.type==="instructor"
+        ? `instructor:${Number(own?.AdInstructorId||0)}`
+        : item.type==="room"
+          ? `room:${String(own?.AdRoomCode||"").trim()}/${String(own?.AdRoomHall||"").trim()}`
+          : `course:${Number(own?.AdCourseId||0)}:${String(own?.SCode||"")}`;
+      const subjectLabel=item.type==="instructor"
+        ? (instructorById.get(Number(own?.AdInstructorId||0))||"أستاذ المقرر")
+        : item.type==="room"
+          ? `القاعة ${String(own?.AdRoomCode||"").trim()}/${String(own?.AdRoomHall||"").trim()}`
+          : `${ownCourse} · شعبة ${String(own?.SCode||"")}`;
+      const external=visible&&other
+        ? `${courseById.get(Number(other.AdCourseId))?.CourseCode||String(other.AdCourseName||"موعد آخر")} · ${formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))}`
+        : "موعد خارج نطاق العرض الحالي";
+      const detail=`${ownCourse}${own?.SCode?` · شعبة ${own.SCode}`:""}${ownDays?` · ${ownDays}`:""}${ownTime?` · ${ownTime}`:""} ↔ ${external}`;
+      add({id:`conflict:${[ownId,otherId].sort((a,b)=>a-b).join(":")}`,type:item.type,title,detail,rowIds:[ownId],subjectKey,subjectLabel});
     });
 
   const roomKey=(row:any)=>`${String(row.AdRoomCode||"").trim().toLocaleLowerCase()}|${String(row.AdRoomHall||"").trim().toLocaleLowerCase()}`;
@@ -3998,15 +4017,49 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
         max:Math.max(...(analysis.factors||[]).map((x:any)=>x.penalty||0),1),caption:`−${f.penalty}`}));
   } else if(/فراغ|فراغات/.test(normalized)){
     title=requestedInstructor?`فراغات ${requestedInstructor.AdInstructorName}`:"تحليل فراغات الأساتذة";
-    if(requestedInstructor){const profRows=target.filter(r=>r.AdInstructorId===requestedInstructor.AdInstructorId);if(dayMatch){const items=profRows.filter(r=>Boolean((r as any)[dayMatch.key])).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));const gaps:any[]=[];for(let i=1;i<items.length;i++){const gap=timeToMinutes(items[i].fstarttime)-timeToMinutes(items[i-1].fendtime);if(gap>0)gaps.push({from:items[i-1].fendtime,to:items[i].fstarttime,mins:gap});}summary=items.length?gaps.length?`في ${dayMatch.label} لدى ${requestedInstructor.AdInstructorName} ${gaps.length} فترة فراغ بين المحاضرات، بإجمالي ${gaps.reduce((n,g)=>n+g.mins,0)} دقيقة.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;gaps.slice(0,6).forEach(g=>bullets.push(`${formatScheduleTimeRange(g.from, g.to)}: ${Math.floor(g.mins/60)}س ${g.mins%60}د.`));}else{const load=analysis.professorLoads.find((x:any)=>x.id===requestedInstructor.AdInstructorId);summary=load?`أكبر فراغ لـ ${requestedInstructor.AdInstructorName} هو ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، والحمل الأسبوعي ${load.weeklyHours} ساعة.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;}}
-    else{const threshold=(Number(normalized.match(/(\d+)\s*ساع/)?.[1]||3))*60; const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);summary=long.length?`وجدت ${long.length} أستاذاً لديهم فراغ يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات في يوم واحد.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";long.slice(0,6).forEach((x:any)=>bullets.push(`${x.name}: أكبر فراغ ${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د، والحمل الأسبوعي ${x.weeklyHours} ساعة.`));
+    if(requestedInstructor){
+      const profRows=target.filter(r=>r.AdInstructorId===requestedInstructor.AdInstructorId);
+      if(dayMatch){
+        const items=profRows.filter(r=>Boolean((r as any)[dayMatch.key])).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));
+        const gaps:any[]=[];
+        for(let i=1;i<items.length;i++){
+          const gap=timeToMinutes(items[i].fstarttime)-timeToMinutes(items[i-1].fendtime);
+          if(gap>0)gaps.push({from:items[i-1].fendtime,to:items[i].fstarttime,mins:gap});
+        }
+        summary=items.length?gaps.length?`في ${dayMatch.label} يظهر لهذا الأستاذ ${gaps.length} فراغات بإجمالي ${gaps.reduce((n,g)=>n+g.mins,0)} دقيقة.`:`في ${dayMatch.label} لا يوجد فراغ بين محاضرات ${requestedInstructor.AdInstructorName} الظاهرة ضمن هذا القسم.`:`لا توجد محاضرات ظاهرة لـ ${requestedInstructor.AdInstructorName} يوم ${dayMatch.label} ضمن هذا القسم.`;
+        shape="gaps";
+        figures.push(
+          {label:"فترات الفراغ",value:`${gaps.length}`,tone:gaps.length?"warn":"good"},
+          {label:"إجمالي الفراغ",value:`${gaps.reduce((n,g)=>n+g.mins,0)}`,hint:"دقيقة"},
+          {label:"محاضرات اليوم",value:`${items.length}`,tone:"plain"}
+        );
+        const worst=Math.max(1,...gaps.map((g:any)=>g.mins||0),1);
+        gaps.slice(0,6).forEach((g:any)=>bars.push({label:formatScheduleTimeRange(g.from,g.to),value:g.mins,max:worst,caption:`${Math.floor(g.mins/60)}س ${g.mins%60}د`}));
+      }else{
+        const load=analysis.professorLoads.find((x:any)=>x.id===requestedInstructor.AdInstructorId);
+        summary=load?`أكبر فراغ لهذا الأستاذ ${Math.floor(load.maxGap/60)}س ${load.maxGap%60}د، وحمله الأسبوعي ${load.weeklyHours} ساعة.`:`لا توجد بيانات حمل ظاهرة لهذا الأستاذ في النطاق الحالي.`;
+        shape="gaps";
+        figures.push(
+          {label:"أكبر فراغ",value:`${Math.floor((load?.maxGap||0)/60)}س ${(load?.maxGap||0)%60}د`,tone:(load?.maxGap||0)>=180?"warn":"plain"},
+          {label:"الحمل الأسبوعي",value:`${load?.weeklyHours||0}`,hint:"ساعة"},
+          {label:"عدد المواعيد",value:`${profRows.length}`,tone:"plain"}
+        );
+      }
+    } else {
+      const threshold=(Number(normalized.match(/(\d+)\s*ساع/)?.[1]||3))*60;
+      const long=analysis.professorLoads.filter((x:any)=>x.maxGap>=threshold);
+      const longest=Math.max(0,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
+      summary=long.length?`يوجد ${long.length} أستاذاً بفراغ يومي يساوي أو يتجاوز ${Math.round(threshold/60)} ساعات.`:"لا يوجد أستاذ يتجاوز حد الفراغ المطلوب في هذا الجدول.";
       shape="gaps";
-      figures.push({label:"أساتذة بفراغ طويل",value:`${long.length}`,tone:long.length?"warn":"good"},
-        {label:"متوسط الفراغ",value:`${analysis.metrics.avgInstructorGap}`,hint:"دقيقة"});
+      figures.push(
+        {label:"أساتذة بفراغ طويل",value:`${long.length}`,tone:long.length?"warn":"good"},
+        {label:"متوسط الفراغ",value:`${analysis.metrics.avgInstructorGap}`,hint:"دقيقة"},
+        {label:"أكبر فراغ",value:`${Math.floor(longest/60)}س ${longest%60}د`,tone:long.length?"warn":"plain"}
+      );
       const worst=Math.max(1,...analysis.professorLoads.map((x:any)=>x.maxGap||0));
       [...analysis.professorLoads].sort((a:any,b:any)=>b.maxGap-a.maxGap).slice(0,6)
-        .forEach((x:any)=>bars.push({label:x.name,value:x.maxGap,max:worst,
-          caption:`${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د`}));}
+        .forEach((x:any)=>bars.push({label:x.name,value:x.maxGap,max:worst,caption:`${Math.floor(x.maxGap/60)}س ${x.maxGap%60}د`}));
+    }
   } else if(dayMatch && (/مزدحم|ازدحام|زحمة/.test(normalized) || /ليش|لماذا|سبب|تحقيق/.test(normalized))){
     title=`تحقيق ${dayMatch.label}`; const day=analysis.dayLoad.find((x:any)=>x.key===dayMatch.key); const peaks=analysis.heatmap.filter((x:any)=>x.day===dayMatch.key).sort((a:any,b:any)=>b.count-a.count).slice(0,3);
     const history=(await Repository.getSchedulesByScope({collegeId,sectionId})).filter(row=>Number(row.AdTermId)!==termId);
@@ -4042,12 +4095,17 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
      the suggested command on screen is worded. Arabic inflects; a matcher that
      only knows the singular answers the wrong question. */
   } else if(/قاع(ة|ات)/.test(normalized)){
-    title="ذكاء القاعات"; const low=[...analysis.rooms].sort((a:any,b:any)=>a.utilization-b.utilization).slice(0,5); summary=`أقل القاعات استخداماً داخل نطاق القسم حالياً تظهر أدناه. التوفر الفعلي لأي موعد يُفحص أيضاً مقابل حجوزات الأقسام الأخرى.`; low.forEach((r:any)=>bullets.push(`${r.code}/${r.hall}: استخدام تقريبي ${r.utilization}% (${r.sessions} مواعيد).`));
+    title="ذكاء القاعات";
+    const low=[...analysis.rooms].sort((a:any,b:any)=>a.utilization-b.utilization).slice(0,5);
+    const avgUtil=analysis.rooms.length?Math.round(analysis.rooms.reduce((n:any,r:any)=>n+(r.utilization||0),0)/analysis.rooms.length):0;
+    summary=`أقل القاعات استخداماً داخل نطاق القسم موضحة في الرسم، مع فحص التوفر الفعلي أيضاً مقابل حجوزات الأقسام الأخرى.`;
     shape="rooms";
-    figures.push({label:"قاعات في النطاق",value:`${analysis.rooms.length}`,tone:"plain"},
-      {label:"أقلّها استخداماً",value:`${low[0]?.utilization??0}`,hint:"٪",tone:(low[0]?.utilization??0)<25?"warn":"plain"});
-    [...analysis.rooms].sort((a:any,b:any)=>b.utilization-a.utilization).slice(0,8)
-      .forEach((r:any)=>bars.push({label:`${r.code}/${r.hall}`,value:r.utilization,max:100,caption:`${r.utilization}٪`}));
+    figures.push(
+      {label:"قاعات في النطاق",value:`${analysis.rooms.length}`,tone:"plain"},
+      {label:"أقلّها استخداماً",value:`${low[0]?.utilization??0}`,hint:"٪",tone:(low[0]?.utilization??0)<25?"warn":"plain"},
+      {label:"متوسط الاستخدام",value:`${avgUtil}`,hint:"٪",tone:avgUtil<55?"good":"plain"}
+    );
+    low.forEach((r:any)=>bars.push({label:`${r.code}/${r.hall}`,value:r.utilization,max:100,caption:`${r.utilization}٪`}));
   } else {
     analysis.alerts.slice(0,5).forEach((a:any)=>bullets.push(`${a.title}: ${a.detail}`));
     const sectionName=sections.find(s=>s.AdSectionId===sectionId)?.AdSectionName||"القسم"; summary=`قرأت جدول ${sectionName} فقط ضمن صلاحياتك. ${summary}`;

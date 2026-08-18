@@ -152,6 +152,16 @@ type InsightScene =
 type TwinCard = "hero" | "lab" | "board" | "editor" | "ledger";
 type ApproveCard = "compare" | "drafts" | "versions";
 type ChatItem = { prompt: string; answer: any };
+type InsightReason = {
+  kicker: string;
+  title: string;
+  metric?: string;
+  tone?: "good" | "warn" | "bad" | "plain";
+  icon?: React.ReactNode;
+  summary: string;
+  facts?: Array<{ label: string; value: string }>;
+  bars?: Array<{ label: string; value: number; max: number; caption?: string }>;
+};
 interface Props {
   user: any;
   scopes: any[];
@@ -357,6 +367,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           : null;
       } catch { return null; }
     });
+  const [insightReason, setInsightReason] = useState<InsightReason | null>(null);
   useEffect(() => { if (!isPowerAdmin && heatMode !== "department") setHeatMode("department"); }, [isPowerAdmin, heatMode]);
   const [prompt, setPrompt] = useState(""),
     [chat, setChat] = useState<ChatItem[]>([]),
@@ -1677,11 +1688,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   /* Escape closes an open reading, exactly as it closes every other overlay
      on this workspace. */
   useEffect(() => {
-    if (!insightScene) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setInsightScene(null); };
+    if (!insightScene && !insightReason) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (insightReason) setInsightReason(null);
+      else setInsightScene(null);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [insightScene]);
+  }, [insightScene, insightReason]);
 
   const activeInsight = insightScenes.find((item) => item.value === insightScene) || null;
   const activeInsightKey = activeInsight?.value || "";
@@ -2017,36 +2032,60 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <ShieldCheck />
             </div>
             <div className="approval-metrics">
-              <article
-                className={overview.metrics.criticalConflicts ? "danger" : "ok"}
-              >
+              <button type="button" className={`approval-metric-card ${overview.metrics.criticalConflicts ? "danger" : "ok"}`} onClick={() => setInsightReason({
+                kicker:"قبل الاعتماد", title:"موانع الاعتماد", metric:String(overview.metrics.criticalConflicts), tone:overview.metrics.criticalConflicts?"bad":"good", icon:<ShieldAlert />,
+                summary:overview.metrics.criticalConflicts?"هذه مواضع تحتاج معالجة لأنها تعارض الحفظ أو الاعتماد، وليست مجرد ملاحظات لائحية.":"لا تظهر موانع حفظ في النطاق الحالي.",
+                facts:[{label:"المواضع",value:String(overview.metrics.criticalConflicts)},{label:"حالة الاعتماد",value:overview.metrics.criticalConflicts?"متوقف":"جاهز"},{label:"قرار 1913",value:"تحذيري"}],
+                bars:[{label:"المتأثر",value:Number(overview.metrics.criticalConflicts||0),max:Math.max(1,Number(rows.length||1)),caption:`${overview.metrics.criticalConflicts} موضع`}]
+              })}>
                 <strong>{overview.metrics.criticalConflicts}</strong>
                 <span>موضع يحتاج تحقق</span>
-              </article>
-              <article>
+                <ChevronLeft aria-hidden="true" />
+              </button>
+              <button type="button" className="approval-metric-card" onClick={() => setInsightReason({
+                kicker:"سلامة البيانات", title:"سجلات تحتاج مراجعة", metric:String(overview.metrics.invalidRows), tone:overview.metrics.invalidRows?"warn":"good", icon:<FileClock />,
+                summary:overview.metrics.invalidRows?"هذه سجلات تنقصها بيانات تجعل قراءتها أو فحصها غير مكتمل.":"لا توجد سجلات ناقصة ظاهرة في النطاق الحالي.",
+                facts:[{label:"السجلات",value:String(overview.metrics.invalidRows)},{label:"الجدول",value:String(rows.length)},{label:"الأثر",value:overview.metrics.invalidRows?"مراجعة":"لا شيء"}]
+              })}>
                 <strong>{overview.metrics.invalidRows}</strong>
-                <span>سجل يحتاج مراجعة</span>
-              </article>
-              <article>
+                <span>سجل يحتاج مراجعة</span><ChevronLeft aria-hidden="true" />
+              </button>
+              <button type="button" className="approval-metric-card" onClick={() => setInsightReason({
+                kicker:"مساحة العمل", title:"المسودات الداخلية", metric:String(overview.draftCount), tone:"plain", icon:<Save />,
+                summary:"هذه نسخ تجريبية أو محفوظة للمراجعة ولم تُنشر على الجدول المعتمد.",
+                facts:[{label:"المسودات",value:String(overview.draftCount)},{label:"النشر",value:"لا"},{label:"الجدول الحقيقي",value:"لم يتغير"}]
+              })}>
                 <strong>{overview.draftCount}</strong>
-                <span>مسودة داخلية</span>
-              </article>
-              <article>
+                <span>مسودة داخلية</span><ChevronLeft aria-hidden="true" />
+              </button>
+              <button type="button" className="approval-metric-card" onClick={() => setInsightReason({
+                kicker:"راحة الجدول", title:"متوسط فراغ الأساتذة", metric:`${overview.metrics.avgInstructorGap}د`, tone:Number(overview.metrics.avgInstructorGap)>=180?"warn":"plain", icon:<CalendarClock />,
+                summary:"متوسط زمني يصف المسافة بين المحاضرات لدى الأساتذة داخل النطاق؛ افتح قراءة الأساتذة لرؤية كل شخص على حدة.",
+                facts:[{label:"المتوسط",value:`${overview.metrics.avgInstructorGap} دقيقة`},{label:"القراءة",value:"إرشادية"},{label:"التفصيل",value:"حسب الأستاذ"}]
+              })}>
                 <strong>{overview.metrics.avgInstructorGap}</strong>
-                <span>دقيقة متوسط الفراغ</span>
-              </article>
+                <span>دقيقة متوسط الفراغ</span><ChevronLeft aria-hidden="true" />
+              </button>
             </div>
             <div className="approval-status approval-status-grid">
-              <article className={overview.metrics.criticalConflicts ? "blocked" : "ready"}>
+              <button type="button" className={overview.metrics.criticalConflicts ? "blocked" : "ready"} onClick={() => setInsightReason({
+                kicker:"حالة الاعتماد", title:overview.metrics.criticalConflicts?"لماذا الاعتماد متوقف؟":"لماذا الجدول جاهز؟", metric:overview.metrics.criticalConflicts?String(overview.metrics.criticalConflicts):"✓", tone:overview.metrics.criticalConflicts?"bad":"good", icon:overview.metrics.criticalConflicts?<ShieldAlert />:<ShieldCheck />,
+                summary:overview.metrics.criticalConflicts?`يوجد ${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضعاً من نوع الموانع الحقيقية. ملاحظات اللائحة نفسها تبقى تحذيرية ولا تمنع الاعتماد.`:"لا توجد موانع حفظ ظاهرة. ملاحظات اللائحة — إن وجدت — تبقى للمراجعة فقط.",
+                facts:[{label:"موانع حقيقية",value:String(overview.metrics.criticalConflicts)},{label:"اللائحة",value:"تحذيرية"},{label:"الحالة",value:overview.metrics.criticalConflicts?"يحتاج معالجة":"جاهز"}]
+              })}>
                 <small>حالة الاعتماد</small>
                 <strong>{overview.metrics.criticalConflicts ? "يمنع الاعتماد" : "جاهز للاعتماد"}</strong>
-                <span>{overview.metrics.criticalConflicts ? `${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضع يحتاج تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span>
-              </article>
-              <article className="publication-state">
+                <span>{overview.metrics.criticalConflicts ? `${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضع يحتاج تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span><ChevronLeft aria-hidden="true" />
+              </button>
+              <button type="button" className="publication-state" onClick={() => setInsightReason({
+                kicker:"حالة النشر", title:overview.publication?"الجدول منشور":"لم يُنشر بعد", metric:overview.publication?"✓":"—", tone:overview.publication?"good":"plain", icon:<Upload />,
+                summary:overview.publication?"هذه النسخة سبق نشرها للمستخدمين.":"النشر خطوة مستقلة وتبقى بقرار المستخدم صاحب الصلاحية.",
+                facts:[{label:"الحالة",value:overview.publication?"منشور":"غير منشور"},{label:"الاعتماد",value:"مستقل"},{label:"التحكم",value:"يدوي"}]
+              })}>
                 <small>حالة النشر</small>
                 <strong>{overview.publication ? "تم النشر" : "لم يُنشر بعد"}</strong>
-                <span>{overview.publication ? new Date(overview.publication.publishedAt).toLocaleString("ar-KW-u-nu-latn") : "النشر مستقل عن نتيجة الاعتماد"}</span>
-              </article>
+                <span>{overview.publication ? new Date(overview.publication.publishedAt).toLocaleString("ar-KW-u-nu-latn") : "النشر مستقل عن نتيجة الاعتماد"}</span><ChevronLeft aria-hidden="true" />
+              </button>
             </div>
           </Surface>
             </div>
@@ -2073,10 +2112,16 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   : /توزيع|أيام/.test(a.title) ? <BarChart3 />
                   : a.severity === "ok" ? <CheckCircle2 /> : <AlertTriangle />;
                 return (
-                  <article key={i} className={`smart-alert-card ${a.severity}`}>
+                  <button type="button" key={i} className={`smart-alert-card ${a.severity}`} onClick={() => setInsightReason({
+                    kicker:"تنبيه ذكي", title:a.title, metric:String(i + 1), tone:a.severity === "high" || a.severity === "danger" ? "bad" : a.severity === "ok" ? "good" : "warn", icon,
+                    summary:a.detail,
+                    facts:[{label:"الأولوية",value:`#${i + 1}`},{label:"النوع",value:/اعتماد|تعارض|حجز|مزدوج/.test(a.title)?"اعتماد":/فراغ|موعد|وقت/.test(a.title)?"وقت":"جدولة"},{label:"الإجراء",value:"راجع السبب"}],
+                    bars:[{label:"الأولوية",value:Math.max(1,3-i),max:3,caption:i===0?"عالية":i===1?"متوسطة":"لاحقة"}]
+                  })}>
                     <span className="smart-alert-icon">{icon}</span>
                     <div><strong>{a.title}</strong><p>{a.detail}</p></div>
-                  </article>
+                    <ChevronLeft className="smart-alert-open" aria-hidden="true" />
+                  </button>
                 );
               })}
             </div>
@@ -2087,10 +2132,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </summary>
                 <div className="smart-alerts">
                   {overview.alerts.slice(3).map((a: any, i: number) => (
-                    <article key={i + 3} className={`smart-alert-card ${a.severity}`}>
+                    <button type="button" key={i + 3} className={`smart-alert-card ${a.severity}`} onClick={() => setInsightReason({
+                      kicker:"تنبيه ذكي", title:a.title, metric:String(i + 4), tone:a.severity === "high" || a.severity === "danger" ? "bad" : a.severity === "ok" ? "good" : "warn", icon:<AlertTriangle />,
+                      summary:a.detail, facts:[{label:"الأولوية",value:`#${i + 4}`},{label:"الحالة",value:"تحتاج مراجعة"},{label:"التأثير",value:"تحذيري"}]
+                    })}>
                       <span className="smart-alert-icon"><AlertTriangle /></span>
-                      <div><strong>{a.title}</strong><p>{a.detail}</p></div>
-                    </article>
+                      <div><strong>{a.title}</strong><p>{a.detail}</p></div><ChevronLeft className="smart-alert-open" aria-hidden="true" />
+                    </button>
                   ))}
                 </div>
               </details>
@@ -2814,6 +2862,33 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         </div>
       ) : null}
 
+      {insightReason ? (
+        <div className="intel-reason-backdrop no-print" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setInsightReason(null); }}>
+          <section className={`intel-reason-sheet tone-${insightReason.tone || "plain"}`} role="dialog" aria-modal="true" aria-label={insightReason.title}>
+            <header className="intel-reason-head">
+              <span className="intel-reason-icon" aria-hidden="true">{insightReason.icon || <CircleHelp />}</span>
+              <div><small>{insightReason.kicker}</small><strong>{insightReason.title}</strong></div>
+              {insightReason.metric ? <b className="intel-reason-metric"><Num value={insightReason.metric} /></b> : null}
+              <button type="button" onClick={() => setInsightReason(null)} aria-label="إغلاق التفاصيل" title="إغلاق"><X /></button>
+            </header>
+            <p className="intel-reason-summary">{insightReason.summary}</p>
+            {insightReason.facts?.length ? (
+              <div className="intel-reason-facts">
+                {insightReason.facts.map((fact, index) => <article key={`${fact.label}-${index}`}><small>{fact.label}</small><strong><Num value={fact.value} /></strong></article>)}
+              </div>
+            ) : null}
+            {insightReason.bars?.length ? (
+              <div className="intel-reason-bars" role="img" aria-label="رسم توضيحي للسبب">
+                {insightReason.bars.map((bar, index) => (
+                  <div key={`${bar.label}-${index}`}><span>{bar.label}</span><i><b style={{ width:`${Math.max(3,Math.min(100,(bar.value/Math.max(1,bar.max))*100))}%` }} /></i><em><Num value={bar.caption ?? bar.value} /></em></div>
+                ))}
+              </div>
+            ) : null}
+            <footer><ShieldCheck aria-hidden="true" /><span>شرح فقط · لا يغيّر الجدول</span><button type="button" onClick={() => setInsightReason(null)}>تم</button></footer>
+          </section>
+        </div>
+      ) : null}
+
       {tab === "copilot" ? (
         <div className="copilot-layout">
           <Surface className="copilot-panel">
@@ -2926,18 +3001,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                             </div>
                           ) : null}
 
-                          <p>{item.answer?.summary}</p>
-                          {item.answer?.bullets?.length ? (
-                            <ul>
-                              {item.answer.bullets.map((b: string, j: number) => (
-                                <li key={j}>{b}</li>
-                              ))}
-                            </ul>
+                          {!(item.answer?.figures?.length || item.answer?.bars?.length || item.answer?.shift) ? (
+                            <>
+                              <p>{item.answer?.summary}</p>
+                              {item.answer?.bullets?.length ? (
+                                <ul>
+                                  {item.answer.bullets.map((b: string, j: number) => (
+                                    <li key={j}>{b}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
+                            </>
                           ) : null}
-                          <small>
-                            <ShieldCheck />
-                            {item.answer?.guardrail}
-                          </small>
                         </div>
                       )}
                     </div>

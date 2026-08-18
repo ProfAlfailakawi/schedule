@@ -8043,7 +8043,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             >
               <ArrowLeftRight /> أدوات البيانات
             </GhostButton> : null}
-            {workspaceToolsOpen && isPowerAdmin ? (
+            {workspaceToolsOpen && permissions.includes(7) ? (
               <div className="schedule-publish-slot">
                 <SchedulePublish
                   collegeId={filterCollege}

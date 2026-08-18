@@ -456,11 +456,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     sortByName(courses.filter(c => !filters.sectionId || c.AdSectionId === filters.sectionId), (c: AdCourse) => c.CourseName),
     row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
   ), [courses, filters.sectionId, filters.courseId, courseIdentityKey]);
-  const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
+  const termOptions = useMemo(() => dedupeVisibleOptions(
     terms,
     row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
   ), [terms, filters.termId]);
-  const instructorOptions = useMemo(() => dedupeVisibleOptions<AdInstructor>(
+  const instructorOptions = useMemo(() => dedupeVisibleOptions(
     instructors,
     row => optionKey(row.AdInstructorCivil) || optionKey(row.AdInstructorName), filters.instructorId, row => Number(row.AdInstructorId),
   ), [instructors, filters.instructorId]);
@@ -1068,12 +1068,13 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 {courseOptions.map(row => <option key={row.AdCourseId} value={row.AdCourseId}>{cleanOptionText(row.CourseName)}</option>)}
               </select>
             </Field>
-            <Field label="الفترة">
-              <div className="time-pair">
-                <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.startTime} onChange={event => set("startTime", event.target.value)} aria-label="من" />
-                <input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.endTime} onChange={event => set("endTime", event.target.value)} aria-label="إلى" />
+            <div className="field query-period-field">
+              <label>الفترة</label>
+              <div className="time-pair query-period-pair">
+                <label className="query-period-input"><span>من</span><input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.startTime} onChange={event => set("startTime", event.target.value)} aria-label="من" /></label>
+                <label className="query-period-input"><span>إلى</span><input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.endTime} onChange={event => set("endTime", event.target.value)} aria-label="إلى" /></label>
               </div>
-            </Field>
+            </div>
             <div className="field wide">
               <label>الأيام</label>
               <div className="checkbox-row day-pills">

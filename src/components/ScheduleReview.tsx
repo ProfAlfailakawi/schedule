@@ -46,9 +46,6 @@ type ReviewFindingGroup = RegulationFinding & {
 
 const groupFindingKey = (finding: RegulationFinding) => [finding.approvalEffect, finding.source, finding.article, finding.title].join("::");
 
-const findingCaseCount = (finding: RegulationFinding | ReviewFindingGroup) =>
-  "groupedCount" in finding ? finding.groupedCount : 1;
-
 const findingStatus = (finding: RegulationFinding) => {
   if (finding.approvalEffect === "block") return "يمنع الاعتماد";
   if (finding.source === "decision-1912") return finding.approvalEffect === "review" ? "مراجعة لائحية" : "ملاحظة لائحية";
@@ -118,7 +115,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   );
   const decisionFindings = useMemo(() => baseFindings.filter(isDecision1912Finding), [baseFindings]);
   const score = useMemo(() => regulationScore(decisionFindings, rows.length), [decisionFindings, rows.length]);
-  const [serverBlockers, setServerBlockers] = useState<Array<{id:string;type:string;title:string;detail:string;rowIds:number[]}>>([]);
+  const [serverBlockers, setServerBlockers] = useState<Array<{id:string;type:string;title:string;detail:string;rowIds:number[];subjectKey?:string;subjectLabel?:string}>>([]);
   const [readinessChecked, setReadinessChecked] = useState(false);
   const [readinessError, setReadinessError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -155,6 +152,8 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     approvalEffect: "block",
     title: item.title || "يوجد مانع اعتماد",
     detail: item.detail || "راجع الموعد قبل الاعتماد.",
+    subjectKey: item.subjectKey,
+    subjectLabel: item.subjectLabel,
     rowIds: Array.isArray(item.rowIds) ? item.rowIds.map(Number).filter(Boolean) : [],
   })), [activeBlockers]);
   const readinessFindings = useMemo(() => baseFindings.filter(finding => finding.source === "readiness"), [baseFindings]);
@@ -181,7 +180,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       rowIds: [...bucket.rowIds],
       groupedItems: bucket.items,
       groupedCount: bucket.items.length,
-      detail: bucket.items.length > 1 ? `يتكرر هذا البند في ${bucket.items.length.toLocaleString("ar-KW-u-nu-latn")} حالة. افتحه لعرض التفاصيل.` : bucket.base.detail,
+      detail: bucket.items.length > 1 ? `تم جمع ${bucket.items.length.toLocaleString("ar-KW-u-nu-latn")} تعارضاً متشابهاً في بند واحد.` : bucket.base.detail,
     }));
   }, [findings]);
   const blocking = findings.filter(finding => finding.approvalEffect === "block");
@@ -216,14 +215,30 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
 
   const byId = useMemo(() => new Map(rows.map(row => [row.id, row])), [rows]);
 
-  const findingPreview = (finding: RegulationFinding) => {
-    if (finding.approvalEffect === "block") return "يحتاج معالجة قبل الاعتماد";
-    if (finding.source === "decision-1912") return finding.rowIds.length
-      ? `يمس ${(finding.rowIds.length).toLocaleString("ar-KW-u-nu-latn")} موعد`
-      : "تنبيه تشغيلي";
-    if (finding.source === "history") return "استنتاج تاريخي";
+  const groupEntitySummary = (finding: ReviewFindingGroup) => {
+    const affectedRows = finding.rowIds.map(id => byId.get(id)).filter(Boolean) as FSchedule[];
+    if (finding.title.includes("أستاذ")) {
+      const names = [...new Set(affectedRows.map(row => instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"))];
+      if (names.length === 1) return names[0];
+      if (names.length > 1) return `${names.length.toLocaleString("ar-KW-u-nu-latn")} أساتذة`;
+    }
+    if (finding.title.includes("قاعة")) {
+      const rooms = [...new Set(affectedRows.map(row => `${row.AdRoomCode}/${row.AdRoomHall}`).filter(room => room !== "/"))];
+      if (rooms.length === 1) return `القاعة ${rooms[0]}`;
+      if (rooms.length > 1) return `${rooms.length.toLocaleString("ar-KW-u-nu-latn")} قاعات`;
+    }
+    if (finding.source === "history") return "سجل 10 سنوات";
     if (finding.source === "department") return "سياسة القسم";
-    return "تفصيل إضافي";
+    return finding.rowIds.length ? `${finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد` : "تنبيه تشغيلي";
+  };
+
+  const findingPreview = (finding: ReviewFindingGroup) => {
+    const entity = groupEntitySummary(finding);
+    if (finding.groupedCount > 1) return `${entity} · ${finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} تعارض`;
+    if (finding.approvalEffect === "block") return `${entity} · يحتاج معالجة قبل الاعتماد`;
+    if (finding.source === "decision-1912") return `${entity} · تنبيه لائحي`;
+    if (finding.source === "history") return `${entity} · استنتاج تاريخي`;
+    return entity;
   };
 
   const printReview = React.useCallback(() => {
@@ -260,6 +275,33 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     return `${code} · شعبة ${row.SCode} · ${who} · ${days || "بلا أيام"} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}`;
   };
 
+  const renderCompactRows = (rowIds: number[], limit = 6) => {
+    const uniqueRows = [...new Set(rowIds)].map(id => byId.get(id)).filter(Boolean) as FSchedule[];
+    if (!uniqueRows.length) return null;
+    return (
+      <>
+        <div className="review-subject-rows">
+          {uniqueRows.slice(0, limit).map(row => {
+            const days = DAY_KEYS.filter(key => (row as any)[key]).map(key => DAY_NAMES[DAY_KEYS.indexOf(key)]).join("، ");
+            const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "—";
+            const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+            return (
+              <article key={`subject-row-${row.id}`} className="review-row-card compact">
+                <span className="rrc-code" dir="ltr">{code}</span>
+                <div className="rrc-main">
+                  <strong>{who}</strong>
+                  <small>شعبة {row.SCode} · {days || "بلا أيام"}</small>
+                </div>
+                <time className="rrc-time" dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
+              </article>
+            );
+          })}
+        </div>
+        {uniqueRows.length > limit ? <p className="review-more">و{(uniqueRows.length - limit).toLocaleString("ar-KW-u-nu-latn")} مواعيد أخرى…</p> : null}
+      </>
+    );
+  };
+
   const printRowPreviewLimit = 5;
   const firstPrintPage = groupedFindings.slice(0, Math.min(groupedFindings.length, 3));
   const remainingFindings = groupedFindings.slice(firstPrintPage.length);
@@ -269,7 +311,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   }
   const renderPrintFinding = (finding: ReviewFindingGroup) => (
     <article className={`print-review-finding severity-${findingTone(finding)}`} key={finding.rule}>
-      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.groupedCount > 1 ? `${finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} حالات · ${finding.detail}` : finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
+      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.groupedCount > 1 ? `${finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} تعارض · ${finding.detail}` : finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
       {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, printRowPreviewLimit).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > printRowPreviewLimit ? <small>+ {(finding.rowIds.length - printRowPreviewLimit).toLocaleString("ar-KW-u-nu-latn")} موعد آخر</small> : null}</div> : null}
     </article>
   );
@@ -326,7 +368,12 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                   <small>{findingPreview(finding)}</small>
                   {finding.rowIds.length ? (
                     <span className="finding-share-wrap">
-                      <span className="finding-share-count">{findingCaseCount(finding).toLocaleString("ar-KW-u-nu-latn")} حالة · {finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
+                      <span className="finding-share-count">
+                        <b>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")}</b>
+                        <span>{finding.groupedCount === 1 ? "تعارض" : "تعارضات"}</span>
+                        <i>·</i>
+                        <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد متأثر</span>
+                      </span>
                       <span className="finding-share" aria-hidden="true">
                         <i style={{ width: `${Math.min(100, (finding.rowIds.length / spread.total) * 100)}%` }} />
                       </span>
@@ -343,46 +390,63 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                     <div className="review-finding-meta">
                       <span>{finding.article}</span>
                       <span>{findingStatus(finding)}</span>
-                      {finding.groupedCount > 1 ? <span>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} حالات</span> : null}{finding.rowIds.length ? <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span> : null}
+                      {finding.groupedCount > 1 ? <span>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} تعارض</span> : null}{finding.rowIds.length ? <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span> : null}
                     </div>
                   </div>
                   {finding.rowIds.length ? (
                     <>
                       {finding.groupedCount > 1 ? (
-                        <div className="review-subfinding-list">
-                          {finding.groupedItems.map((item, index) => (
-                            <article key={`${item.rule}-${index}`} className="review-subfinding">
-                              <header>
-                                <strong>الحالة {(index + 1).toLocaleString("ar-KW-u-nu-latn")}</strong>
-                                <small>{item.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</small>
-                              </header>
-                              <p>{item.detail}</p>
-                            </article>
-                          ))}
+                        <div className="review-subject-list">
+                          {(() => {
+                            const subjects = new Map<string, { label: string; items: RegulationFinding[] }>();
+                            finding.groupedItems.forEach((item, index) => {
+                              const key = item.subjectKey || `case:${index}`;
+                              const bucket = subjects.get(key) || { label: item.subjectLabel || groupEntitySummary(finding), items: [] };
+                              bucket.items.push(item);
+                              subjects.set(key, bucket);
+                            });
+                            return [...subjects.entries()].map(([key, subject]) => (
+                              <section key={key} className="review-subject">
+                                <header>
+                                  <strong>{subject.label}</strong>
+                                  <small>{subject.items.length.toLocaleString("ar-KW-u-nu-latn")} تعارض</small>
+                                </header>
+                                <div className="review-subject-cases">
+                                  {(() => {
+                                    const uniqueDetails = [...new Set(subject.items.map(item => item.detail).filter(Boolean))];
+                                    const subjectRowIds = [...new Set(subject.items.flatMap(item => item.rowIds))];
+                                    return (
+                                      <>
+                                        {uniqueDetails.length ? <p className="review-subject-summary">{uniqueDetails[0]}{uniqueDetails.length > 1 ? ` · ${uniqueDetails.length.toLocaleString("ar-KW-u-nu-latn")} أسباب مرتبطة` : ""}</p> : null}
+                                        {renderCompactRows(subjectRowIds, 6)}
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              </section>
+                            ));
+                          })()}
                         </div>
-                      ) : null}
-                      {/* The same person often appears many times in one finding —
-                          once per section they teach. Listing the name over and over
-                          buried the point; grouping by person shows each name once,
-                          with its sections tucked beneath, opened on a press. */}
-                      {(() => {
-                        const groups = new Map<string, { who: string; rows: FSchedule[] }>();
-                        for (const id of finding.rowIds) {
-                          const row = byId.get(id);
-                          if (!row) continue;
-                          const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
-                          const key = `${row.AdInstructorId}:${who}`;
-                          const bucket = groups.get(key) || { who, rows: [] };
-                          bucket.rows.push(row);
-                          groups.set(key, bucket);
-                        }
-                        return [...groups.values()].slice(0, 12).map((group, index) => (
-                          <React.Fragment key={`${group.who}-${index}`}>
-                            <ReviewPersonGroup group={group} courses={courses} />
-                          </React.Fragment>
-                        ));
-                      })()}
-                      {finding.rowIds.length > 12 ? <p className="review-more">و{(finding.rowIds.length - 12).toLocaleString("ar-KW-u-nu-latn")} غيرها…</p> : null}
+                      ) : (
+                        (() => {
+                          const groups = new Map<string, { who: string; rows: FSchedule[] }>();
+                          for (const id of finding.rowIds) {
+                            const row = byId.get(id);
+                            if (!row) continue;
+                            const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+                            const key = `${row.AdInstructorId}:${who}`;
+                            const bucket = groups.get(key) || { who, rows: [] };
+                            bucket.rows.push(row);
+                            groups.set(key, bucket);
+                          }
+                          return [...groups.values()].slice(0, 12).map((group, index) => (
+                            <React.Fragment key={`${group.who}-${index}`}>
+                              <ReviewPersonGroup group={group} courses={courses} />
+                            </React.Fragment>
+                          ));
+                        })()
+                      )}
+                      {finding.groupedCount === 1 && finding.rowIds.length > 12 ? <p className="review-more">و{(finding.rowIds.length - 12).toLocaleString("ar-KW-u-nu-latn")} غيرها…</p> : null}
                       {onFocusRows ? (
                         <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds); onClose(); }}>
                           أظهرها على الجدول
