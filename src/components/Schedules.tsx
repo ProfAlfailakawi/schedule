@@ -2237,6 +2237,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       return { key: day.key, label: day.label, state, cue, icon, active };
     });
   }, [form, expectedStartMinuteForDay, preferredStartForDrop]);
+  const editorTimingInline = useMemo(() => {
+    if (!editorTimingNote || !form.fstarttime) return null;
+    const preferred = [...new Set(editorTimingVisualDays.filter(day => day.active && day.state === "off" && day.cue && day.cue !== "—").map(day => day.cue))];
+    const affectedDays = editorTimingVisualDays.filter(day => day.active && day.state === "off").map(day => day.label);
+    return {
+      picked: displayClockCompact(String(form.fstarttime || "")),
+      preferred,
+      affectedDays,
+      note: String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim(),
+    };
+  }, [editorTimingNote, editorTimingVisualDays, form.fstarttime]);
   const editorRegulationCards = useMemo(() => editorRegulation.map((finding, index) => {
     const detail = String(finding.detail || "").replace(/\s+/g, " ").trim();
     const ruleIcon = finding.rule === "rotation" ? "history" : finding.rule === "consecutive-sections" ? "idea" : finding.rule === "sections-same-hour" ? "room" : index % 2 ? "room" : "idea";
@@ -2258,7 +2269,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const editorRoomConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض قاعة" || card.typeLabel === "نطاق القاعة"), [editorConflictCards]);
   const editorInstructorConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض أستاذ"), [editorConflictCards]);
   const editorGenericConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel !== "تعارض قاعة" && card.typeLabel !== "نطاق القاعة" && card.typeLabel !== "تعارض أستاذ"), [editorConflictCards]);
-  const hasEditorDecisionAccordions = Boolean(editorRoomConflictCards.length || editorInstructorConflictCards.length || editorTimingNote || editorRegulation.length || editorSupplementalCards.length || editorGenericConflictCards.length);
+  const hasEditorDecisionAccordions = Boolean(editorRoomConflictCards.length || editorInstructorConflictCards.length || editorRegulation.length || editorSupplementalCards.length || editorGenericConflictCards.length);
   const renderEditorConflictCard = (card: any) => (
     <article key={card.id} className={`decision-card ${card.toneClass}`}>
       <div className="decision-card-topline">
@@ -6917,6 +6928,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </div>
                 </Field>
+                {editorTimingInline ? (
+                  <div className="schedule-time-intelligence" role="status" aria-live="polite">
+                    <div className="schedule-time-intelligence-icon" aria-hidden="true"><Clock3 /></div>
+                    <div className="schedule-time-intelligence-copy">
+                      <div className="schedule-time-intelligence-head">
+                        <strong>وقت غير معتاد</strong>
+                        <em>مسموح</em>
+                      </div>
+                      <div className="schedule-time-intelligence-pills">
+                        <span><small>اخترت</small><b dir="ltr">{editorTimingInline.picked}</b></span>
+                        {editorTimingInline.preferred.length ? <span><small>المعتاد</small><b dir="ltr">{editorTimingInline.preferred.join(" / ")}</b></span> : null}
+                        {editorTimingInline.affectedDays.length ? <span><small>الأيام</small><b>{editorTimingInline.affectedDays.join(" / ")}</b></span> : null}
+                      </div>
+                      <details>
+                        <summary>ليش؟</summary>
+                        <p>{editorTimingInline.note}</p>
+                      </details>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="schedule-location-pair">
                   <div className="schedule-location-field schedule-location-field--building">
                     <Field label="رقم المبنى" required>
@@ -7176,45 +7207,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             </article>
                           ))}
                         </div>
-                      </section>
-                    </div>
-                  </details>
-                ) : null}
-                {editorTimingNote ? (
-                  <details className="decision-accordion">
-                    <summary className="decision-accordion-summary">
-                      <span className="decision-accordion-title"><Clock3 /> ملاحظة التوقيت</span>
-                      <em>تنبيه فقط</em>
-                    </summary>
-                    <div className="decision-accordion-body">
-                      <section className="decision-section decision-section--timing" role="status" aria-label="ملاحظة التوقيت">
-                        <article className="decision-note decision-note--timing decision-note--feature">
-                          <div className="decision-feature-topline">
-                            <span className="decision-card-kicker">ملاحظة التوقيت</span>
-                            <em className="decision-card-flag">تنبيه</em>
-                          </div>
-                          <div className="decision-feature-hero">
-                            <div className="decision-note-body">
-                              <strong>بداية غير معتادة</strong>
-                              <details className="decision-note-details">
-                                <summary>التفاصيل</summary>
-                                <p>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim()}</p>
-                              </details>
-                            </div>
-                            <div className="decision-note-icon" aria-hidden="true"><CalendarDays /></div>
-                          </div>
-                          <div className="timing-pill-grid" aria-hidden="true">
-                            {editorTimingVisualDays.map(day => (
-                              <div key={day.key} className={`timing-pill timing-pill--${day.state} ${day.active ? "" : "timing-pill--empty"}`}>
-                                <span className="timing-pill-day">{day.label}</span>
-                                <div className="timing-pill-mark">
-                                  {day.icon === "match" ? <CheckCircle2 /> : day.icon === "off" ? <Clock3 /> : <CalendarDays />}
-                                </div>
-                                <strong>{day.cue}</strong>
-                              </div>
-                            ))}
-                          </div>
-                        </article>
                       </section>
                     </div>
                   </details>
