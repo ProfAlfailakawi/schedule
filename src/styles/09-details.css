@@ -776,6 +776,15 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .severity-medium .finding-share i{background:var(--warning)}
 .severity-low .finding-share i{background:var(--muted-2)}
 
+.finding-share-wrap{display:grid;gap:6px;margin-top:6px}
+.finding-share-count{display:inline-flex;align-items:center;gap:6px;color:var(--muted-2);font-size:11px;font-weight:780}
+.review-subfinding-list{display:grid;gap:8px}
+.review-subfinding{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.review-subfinding header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
+.review-subfinding strong{font-size:var(--t-sm);font-weight:700;color:var(--ink)}
+.review-subfinding small{font-size:11px;color:var(--muted-2);font-weight:780}
+.review-subfinding p{margin:0;color:var(--ink-2);font-size:var(--t-sm);line-height:1.8}
+
 .review-body{min-height:0;flex:1;overflow-y:auto}
 .review-finding{border-bottom:1px solid var(--line)}
 /* Mark, sentence, article, verdict — four columns that line up down the page.

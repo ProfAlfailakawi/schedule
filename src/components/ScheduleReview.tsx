@@ -38,6 +38,17 @@ interface Props {
   onFocusRows?: (ids: number[]) => void;
 }
 
+type ReviewFindingGroup = RegulationFinding & {
+  groupKey: string;
+  groupedItems: RegulationFinding[];
+  groupedCount: number;
+};
+
+const groupFindingKey = (finding: RegulationFinding) => [finding.approvalEffect, finding.source, finding.article, finding.title].join("::");
+
+const findingCaseCount = (finding: RegulationFinding | ReviewFindingGroup) =>
+  "groupedCount" in finding ? finding.groupedCount : 1;
+
 const findingStatus = (finding: RegulationFinding) => {
   if (finding.approvalEffect === "block") return "يمنع الاعتماد";
   if (finding.source === "decision-1912") return finding.approvalEffect === "review" ? "مراجعة لائحية" : "ملاحظة لائحية";
@@ -155,6 +166,24 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     () => [...blockerFindings, ...readinessFindings, ...decisionFindings, ...supplementalFindings],
     [blockerFindings, readinessFindings, decisionFindings, supplementalFindings]
   );
+  const groupedFindings = useMemo<ReviewFindingGroup[]>(() => {
+    const buckets = new Map<string, { base: RegulationFinding; items: RegulationFinding[]; rowIds: Set<number> }>();
+    for (const finding of findings) {
+      const key = groupFindingKey(finding);
+      const bucket = buckets.get(key) || { base: finding, items: [], rowIds: new Set<number>() };
+      bucket.items.push(finding);
+      finding.rowIds.forEach(id => bucket.rowIds.add(id));
+      buckets.set(key, bucket);
+    }
+    return [...buckets.entries()].map(([groupKey, bucket]) => ({
+      ...bucket.base,
+      groupKey,
+      rowIds: [...bucket.rowIds],
+      groupedItems: bucket.items,
+      groupedCount: bucket.items.length,
+      detail: bucket.items.length > 1 ? `يتكرر هذا البند في ${bucket.items.length.toLocaleString("ar-KW-u-nu-latn")} حالة. افتحه لعرض التفاصيل.` : bucket.base.detail,
+    }));
+  }, [findings]);
   const blocking = findings.filter(finding => finding.approvalEffect === "block");
 
   /**
@@ -232,15 +261,15 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   };
 
   const printRowPreviewLimit = 5;
-  const firstPrintPage = findings.slice(0, Math.min(findings.length, 3));
-  const remainingFindings = findings.slice(firstPrintPage.length);
-  const printFollowupPages: RegulationFinding[][] = [];
+  const firstPrintPage = groupedFindings.slice(0, Math.min(groupedFindings.length, 3));
+  const remainingFindings = groupedFindings.slice(firstPrintPage.length);
+  const printFollowupPages: ReviewFindingGroup[][] = [];
   for (let index = 0; index < remainingFindings.length; index += 4) {
     printFollowupPages.push(remainingFindings.slice(index, index + 4));
   }
-  const renderPrintFinding = (finding: RegulationFinding) => (
+  const renderPrintFinding = (finding: ReviewFindingGroup) => (
     <article className={`print-review-finding severity-${findingTone(finding)}`} key={finding.rule}>
-      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
+      <header><b className="print-finding-index">{findingIcon(finding)}</b><div><strong>{finding.title}</strong><span>{finding.groupedCount > 1 ? `${finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} حالات · ${finding.detail}` : finding.detail}</span></div><em>{finding.article}</em><i>{findingStatus(finding)}</i></header>
       {finding.rowIds.length ? <div className="print-review-rows">{finding.rowIds.slice(0, printRowPreviewLimit).map(id => <span key={id}>{describe(byId.get(id))}</span>)}{finding.rowIds.length > printRowPreviewLimit ? <small>+ {(finding.rowIds.length - printRowPreviewLimit).toLocaleString("ar-KW-u-nu-latn")} موعد آخر</small> : null}</div> : null}
     </article>
   );
@@ -288,34 +317,50 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
         </div>
 
         <div className="review-body">
-          {findings.length ? findings.map(finding => (
-            <article key={finding.rule} className={`review-finding severity-${findingTone(finding)} ${open === finding.rule ? "open" : ""}`}>
-              <button type="button" data-guide-ignore="فتح تفاصيل ملاحظة داخل مراجعة الاعتماد فقط" onClick={() => setOpen(current => (current === finding.rule ? null : finding.rule))}>
+          {groupedFindings.length ? groupedFindings.map(finding => (
+            <article key={finding.groupKey} className={`review-finding severity-${findingTone(finding)} ${open === finding.groupKey ? "open" : ""}`}>
+              <button type="button" data-guide-ignore="فتح تفاصيل ملاحظة داخل مراجعة الاعتماد فقط" onClick={() => setOpen(current => (current === finding.groupKey ? null : finding.groupKey))}>
                 <span className="review-mark" aria-hidden="true">{findingIcon(finding)}</span>
                 <span className="review-copy">
                   <strong>{finding.title}</strong>
                   <small>{findingPreview(finding)}</small>
                   {finding.rowIds.length ? (
-                    <span className="finding-share" aria-hidden="true">
-                      <i style={{ width: `${Math.min(100, (finding.rowIds.length / spread.total) * 100)}%` }} />
+                    <span className="finding-share-wrap">
+                      <span className="finding-share-count">{findingCaseCount(finding).toLocaleString("ar-KW-u-nu-latn")} حالة · {finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
+                      <span className="finding-share" aria-hidden="true">
+                        <i style={{ width: `${Math.min(100, (finding.rowIds.length / spread.total) * 100)}%` }} />
+                      </span>
                     </span>
                   ) : null}
                 </span>
                 <em>{finding.article}</em>
                 <i>{findingStatus(finding)}</i>
               </button>
-              {open === finding.rule ? (
+              {open === finding.groupKey ? (
                 <div className="review-rows">
                   <div className="review-finding-detail">
                     <p>{finding.detail}</p>
                     <div className="review-finding-meta">
                       <span>{finding.article}</span>
                       <span>{findingStatus(finding)}</span>
-                      {finding.rowIds.length ? <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span> : null}
+                      {finding.groupedCount > 1 ? <span>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} حالات</span> : null}{finding.rowIds.length ? <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span> : null}
                     </div>
                   </div>
                   {finding.rowIds.length ? (
                     <>
+                      {finding.groupedCount > 1 ? (
+                        <div className="review-subfinding-list">
+                          {finding.groupedItems.map((item, index) => (
+                            <article key={`${item.rule}-${index}`} className="review-subfinding">
+                              <header>
+                                <strong>الحالة {(index + 1).toLocaleString("ar-KW-u-nu-latn")}</strong>
+                                <small>{item.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</small>
+                              </header>
+                              <p>{item.detail}</p>
+                            </article>
+                          ))}
+                        </div>
+                      ) : null}
                       {/* The same person often appears many times in one finding —
                           once per section they teach. Listing the name over and over
                           buried the point; grouping by person shows each name once,
