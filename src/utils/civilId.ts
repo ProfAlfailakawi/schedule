@@ -1,19 +1,18 @@
+import { toEnglishDigits } from "./digits";
+
 /**
  * Validate Kuwaiti Civil ID based on the legacy checksum algorithm.
  */
 export function validateCivilId(civilId: string): { isValid: boolean; message?: string } {
+  civilId = toEnglishDigits(civilId).trim();
   // Check if empty
   if (!civilId || civilId.trim() === "") {
     return { isValid: false, message: "الرجاء إدخال رقم مدني صحيح" };
   }
 
-  // Check for Arabic-Indic digits (٠-٩) or letters/symbols
-  if (/[٠-٩]/.test(civilId)) {
-    return { isValid: false, message: "الرجاء كتابة الأرقام بالانجليزي" };
-  }
 
   if (!/^\d+$/.test(civilId)) {
-    return { isValid: false, message: "الرجاء كتابة الأرقام بالانجليزي" };
+    return { isValid: false, message: "الرقم المدني يجب أن يحتوي على أرقام فقط" };
   }
 
   // Check length

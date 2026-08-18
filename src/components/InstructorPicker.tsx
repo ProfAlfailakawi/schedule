@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CircleDot, Plus, Search, UserRound, X } from "lucide-react";
 import { byArabic } from "../utils/sorting";
 import { validateCivilId } from "../utils/civilId";
+import { numericText } from "../utils/digits";
 
 /**
  * Choosing who teaches this, out of thousands.
@@ -244,8 +245,8 @@ export default function InstructorPicker({ value, onChange, instructors, departm
             <div className="instructor-new">
               <strong>أستاذ جديد</strong>
               <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="الاسم الكامل" aria-label="اسم الأستاذ" />
-              <input value={newCivil} onChange={e => setNewCivil(e.target.value.replace(/\D/g, "").slice(0, 12))} inputMode="numeric" placeholder="الرقم المدني" aria-label="الرقم المدني" dir="ltr" />
-              <input value={newMobile} onChange={e => setNewMobile(e.target.value.replace(/\D/g, "").slice(0, 8))} inputMode="numeric" placeholder="الهاتف (اختياري)" aria-label="الهاتف" dir="ltr" />
+              <input value={newCivil} onChange={e => setNewCivil(numericText(e.target.value).slice(0, 12))} inputMode="numeric" placeholder="الرقم المدني" aria-label="الرقم المدني" dir="ltr" />
+              <input value={newMobile} onChange={e => setNewMobile(numericText(e.target.value).slice(0, 8))} inputMode="numeric" placeholder="الهاتف (اختياري)" aria-label="الهاتف" dir="ltr" />
               {error ? <em>{error}</em> : null}
               <div>
                 <button type="button" className="btn btn-primary" onClick={create} disabled={busy}>{busy ? "يحفظ…" : "أضف واختر"}</button>

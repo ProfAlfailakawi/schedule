@@ -27,7 +27,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton, visualConfirm } from "./ui";
+import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton } from "./ui";
 import {
   BriefScene,
   ContextPicker,
@@ -439,14 +439,6 @@ export default function LivingScheduleLayer({
   const deleteGenesisRow = async (rowId: number) => {
     const draftId = String(genesis?.draft?.id || "").trim();
     if (!draftId || !rowId) return;
-    const row = (genesis?.previewRows || []).find((item:any) => Number(item.id) === Number(rowId));
-    if (!(await visualConfirm({
-      title: "حذف الموعد من المسودة",
-      message: row?.AdCourseName ? `سيُحذف «${row.AdCourseName}» من المسودة فقط، ولن يتغير الجدول الرسمي.` : "سيُحذف هذا الموعد من المسودة فقط، ولن يتغير الجدول الرسمي.",
-      confirmLabel: "حذف",
-      tone: "danger",
-      compact: true,
-    }))) return;
     setBusy(true); setError("");
     try {
       const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/rows/${encodeURIComponent(String(rowId))}`, { method: "DELETE" });
@@ -656,13 +648,13 @@ export default function LivingScheduleLayer({
   };
   if (!living)
     return (
-      <section className="living-command-deck living-loading no-print" aria-label="حالة الجدول ومركز القرار">
+      <section className="living-command-deck living-loading no-print" aria-label="حالة الجدول ومركز الذكاء">
         <div className="living-pulse-core">
           <span className="pulse-beacon info" />
           <div>
             <small>حالة الجدول</small>
             <strong>أقرأ نبض الجدول…</strong>
-            <p>مركز القرار جاهز؛ مؤشرات الصحة تصل بعد لحظة.</p>
+            <p>مركز الذكاء جاهز؛ مؤشرات الصحة تصل بعد لحظة.</p>
           </div>
         </div>
         <div className="living-health-strip" aria-label="مؤشرات صحة الجدول قيد التحميل">
@@ -673,15 +665,20 @@ export default function LivingScheduleLayer({
           ))}
         </div>
         <div className="living-command-actions">
+          {experience ? (
+            <button className="living-primary-decision" onClick={() => void experience.openDecision()} disabled={!sourceRows.length}>
+              <BrainCircuit />
+              قرار الآن
+            </button>
+          ) : null}
           <button
             className="living-more"
             type="button"
-            data-guide-ignore="اختصار محلي لفتح مركز القرار داخل الجدول نفسه"
             onClick={() => { open("pulse"); void loadLiving(); }}
             disabled={busy}
           >
             <Sparkles />
-            مركز القرار
+            مركز الذكاء
           </button>
         </div>
       </section>
@@ -696,7 +693,7 @@ export default function LivingScheduleLayer({
   ];
   return (
     <>
-      <section className="living-command-deck no-print" aria-label="حالة الجدول ومركز القرار">
+      <section className="living-command-deck no-print" aria-label="حالة الجدول ومركز الذكاء">
         <div className="living-pulse-core">
           <span className={`pulse-beacon ${living.pulse?.items?.[0]?.severity || "info"}`} />
           <div>
@@ -727,9 +724,15 @@ export default function LivingScheduleLayer({
           })}
         </div>
         <div className="living-command-actions">
-          <button className="living-more" data-guide-ignore="اختصار محلي لفتح مركز القرار داخل الجدول نفسه" onClick={() => open("pulse")}>
+          {experience ? (
+            <button className="living-primary-decision" onClick={() => void experience.openDecision()} disabled={!rows.length}>
+              <BrainCircuit />
+              قرار الآن
+            </button>
+          ) : null}
+          <button className="living-more" onClick={() => open("pulse")}>
             <Sparkles />
-            مركز القرار
+            مركز الذكاء
           </button>
         </div>
       </section>
@@ -746,7 +749,7 @@ export default function LivingScheduleLayer({
                 {sceneItems.find((x) => x.id === scene)?.icon}
               </span>
               <div className="living-panel-heading">
-                <span>مركز القرار</span>
+                <span>لوحة الذكاء</span>
                 <div>
                   <h2>{sceneItems.find((x) => x.id === scene)?.label}</h2>
                   <p>{living.context?.sectionName} · {living.context?.termName}</p>
@@ -771,7 +774,7 @@ export default function LivingScheduleLayer({
               ))}
             </nav>
             {experience ? (
-              <section className="living-experience-tools" aria-label="اختصارات مركز القرار">
+              <section className="living-experience-tools" aria-label="اختصارات مركز الذكاء">
                 <button type="button" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>
                   <BrainCircuit /><span>القرار الأهم الآن</span>
                 </button>
@@ -845,7 +848,7 @@ export default function LivingScheduleLayer({
                             type="time"
                             min={SCHEDULE_DAY_START_TIME}
                             max={SCHEDULE_DAY_END_TIME}
-                            step={SCHEDULE_SLOT_MINUTES * 60}
+                            step={60}
                             value={candidateStart}
                             onChange={(e) => setCandidateStart(e.target.value)}
                           />
@@ -856,7 +859,7 @@ export default function LivingScheduleLayer({
                             type="time"
                             min={SCHEDULE_DAY_START_TIME}
                             max={SCHEDULE_DAY_END_TIME}
-                            step={SCHEDULE_SLOT_MINUTES * 60}
+                            step={60}
                             value={candidateEnd}
                             onChange={(e) => setCandidateEnd(e.target.value)}
                           />

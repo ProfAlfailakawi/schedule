@@ -3396,7 +3396,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           type="time"
                           min={SCHEDULE_DAY_START_TIME}
                           max={SCHEDULE_DAY_END_TIME}
-                          step={SCHEDULE_SLOT_MINUTES * 60}
+                          step={60}
                           value={constraintDraft.time}
                           onChange={(e) =>
                             setConstraintDraft((p: any) => ({
@@ -3947,7 +3947,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           type="time"
                           min={SCHEDULE_DAY_START_TIME}
                           max={SCHEDULE_DAY_END_TIME}
-                          step={SCHEDULE_SLOT_MINUTES * 60}
+                          step={60}
                           value={selectedScenario.fstarttime}
                           onChange={(e) =>
                             patchScenario({ fstarttime: e.target.value })
@@ -3959,7 +3959,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           type="time"
                           min={SCHEDULE_DAY_START_TIME}
                           max={SCHEDULE_DAY_END_TIME}
-                          step={SCHEDULE_SLOT_MINUTES * 60}
+                          step={60}
                           value={selectedScenario.fendtime}
                           onChange={(e) =>
                             patchScenario({ fendtime: e.target.value })

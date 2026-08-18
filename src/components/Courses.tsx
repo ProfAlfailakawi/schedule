@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BookOpen, Building2, Clock3, Trash2, Users } from "lucide-react";
 import { sortByName } from "../utils/sorting";
+import { decimalText, numericText } from "../utils/digits";
 import {
   AddButton,
   EmbeddedAction,
@@ -117,19 +118,11 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       setMode("edit");
     };
   const numeric = (v: string, setter: (x: string) => void) => {
-      if (!/^\d*$/.test(v)) {
-        setError("الرجاء كتابة الأرقام بالانجليزي");
-        return;
-      }
-      setter(v);
+      setter(numericText(v));
       setError(null);
     },
     decimal = (v: string, setter: (x: string) => void) => {
-      if (!/^\d*(?:\.\d*)?$/.test(v)) {
-        setError("الرجاء كتابة الأرقام بالانجليزي");
-        return;
-      }
-      setter(v);
+      setter(decimalText(v));
       setError(null);
     },
     validateCourseCode = () => {

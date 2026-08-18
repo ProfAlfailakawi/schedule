@@ -1943,7 +1943,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   backRef.current = back;
   const setNumber = (key: keyof typeof form, raw: string) =>
     setForm((prev) => ({ ...prev, [key]: Number(raw) || 0 }));
-  const englishDigits = (v: string) => /^\d*$/.test(v);
+  const englishDigits = (v: string) => /^\d*$/.test(normalizeArabicDigits(v));
   /**
    * The scope a painted appointment is filed under.
    *
@@ -2969,7 +2969,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       setError("الرجاء إدخال الحقول المطلوبة بالأحمر");
       return;
     }
-    if (!englishDigits(form.SCode)) { setError("الرجاء كتابة الأرقام بالانجليزي"); return; }
+    if (!englishDigits(form.SCode)) { setError("الشعبة يجب أن تحتوي على أرقام فقط"); return; }
     if (validationIssues.length) { setScheduleTouched(true); setError(validationIssues[0]); return; }
     if (blockingConflicts.length) { setError(blockingConflicts[0]?.message || "لا يمكن الحفظ قبل معالجة التعارضات."); return; }
     if (practiceMode) {
@@ -6760,14 +6760,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     inputMode="numeric"
                     onChange={(e) => {
                       sectionAutofilled.current = false;
-                      if (englishDigits(e.target.value))
-                        setForm((p) => ({ ...p, SCode: e.target.value }));
-                    }}
-                    onBeforeInput={(e: any) => {
-                      if (e.data && !/^\d+$/.test(e.data)) {
-                        e.preventDefault();
-                        setError("الرجاء كتابة الأرقام بالانجليزي");
-                      }
+                      const value = normalizeArabicDigits(e.target.value);
+                      if (englishDigits(value)) setForm((p) => ({ ...p, SCode: value }));
                     }}
                     required
                   />
@@ -6897,7 +6891,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       type="time"
                       min={SCHEDULE_DAY_START_TIME}
                       max={SCHEDULE_DAY_END_TIME}
-                      step={SCHEDULE_SLOT_MINUTES * 60}
+                      step={60}
                       value={form.fstarttime}
                       onChange={(e) => {
                         setScheduleTouched(true);
@@ -6913,7 +6907,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       type="time"
                       min={SCHEDULE_DAY_START_TIME}
                       max={SCHEDULE_DAY_END_TIME}
-                      step={SCHEDULE_SLOT_MINUTES * 60}
+                      step={60}
                       value={form.fendtime}
                       onChange={(e) => {
                         setScheduleTouched(true);

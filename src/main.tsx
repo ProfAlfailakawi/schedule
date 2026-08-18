@@ -3,15 +3,13 @@ import {createRoot} from "react-dom/client";
 import App from "./App.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import {safeStorage} from "./utils/safeStorage";
+import {toEnglishDigits} from "./utils/digits";
 import "./index.css";
 
 // Global safety layer for the existing application. It never changes successful online
 // responses; it only blocks writes while offline and softens unexpected infrastructure
 // errors into a message a scheduling coordinator can act on.
 const nativeFetch=window.fetch.bind(window);
-const toEnglishDigits=(value:string)=>String(value||"")
-  .replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
-  .replace(/[۰-۹]/g,d=>String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
 const normalizePayload=(value:any):any=>{
   if(typeof value==="string")return toEnglishDigits(value);
   if(Array.isArray(value))return value.map(normalizePayload);
@@ -31,20 +29,75 @@ const normalizePayload=(value:any):any=>{
  * memory to the pre-edit value keeps the change visible to React, and the caret
  * is put back because assigning `value` sends it to the end of the field.
  */
+const textEntry = (target: EventTarget | null): target is HTMLInputElement | HTMLTextAreaElement =>
+  target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+
+const setNativeFieldValue = (target: HTMLInputElement | HTMLTextAreaElement, value: string) => {
+  const prototype = target instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+  if (setter) setter.call(target, value);
+  else target.value = value;
+};
+
+/**
+ * Normalize Arabic/Persian digits before React sees the change.
+ *
+ * `beforeinput` matters for input[type=number]: some browsers reject Arabic
+ * digits before an ordinary `input` event exists. Text fields are also checked
+ * on `input` as a safety net for IME/autofill/paste paths.
+ */
+document.addEventListener("beforeinput", (event) => {
+  if (!textEntry(event.target)) return;
+  const input = event as InputEvent;
+  if (!input.data || toEnglishDigits(input.data) === input.data) return;
+  const target = event.target;
+  const incoming = toEnglishDigits(input.data);
+  const type = target instanceof HTMLInputElement ? target.type : "textarea";
+  if (["date", "time", "datetime-local", "month", "week", "color", "file", "checkbox", "radio", "range"].includes(type)) return;
+  event.preventDefault();
+  const current = target.value;
+  const start = target.selectionStart ?? current.length;
+  const end = target.selectionEnd ?? start;
+  const next = `${current.slice(0, start)}${incoming}${current.slice(end)}`;
+  setNativeFieldValue(target, next);
+  try { target.setSelectionRange(start + incoming.length, start + incoming.length); } catch {}
+  target.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: input.inputType || "insertText", data: incoming }));
+}, true);
+
 document.addEventListener("input",(event)=>{
-  const target=event.target as HTMLInputElement|HTMLTextAreaElement|null;
-  if(!target||!(target instanceof HTMLInputElement||target instanceof HTMLTextAreaElement))return;
+  if(!textEntry(event.target))return;
+  const target=event.target;
+  // Clear any translated native-validation message as soon as the user edits.
+  if(target.validationMessage) target.setCustomValidity("");
   const original=target.value;
   const normalized=toEnglishDigits(original);
   if(normalized===original)return;
   const start=target.selectionStart,end=target.selectionEnd;
-  target.value=normalized;
+  setNativeFieldValue(target, normalized);
   const tracker=(target as any)._valueTracker;
   if(tracker&&typeof tracker.setValue==="function")tracker.setValue(original);
   if(start!==null&&end!==null){
     try{target.setSelectionRange(start,end)}catch{/* number/date fields reject selection */}
   }
 },true);
+
+// Browser-native validation bubbles follow the browser language. Keep the
+// native accessibility/focus behaviour, but make every message in this Arabic
+// product Arabic. Manual schedule time fields accept every minute; this also
+// explains any true range/required failure without leaking an English string.
+document.addEventListener("invalid", (event) => {
+  if (!textEntry(event.target)) return;
+  const target = event.target;
+  const v = target.validity;
+  let message = "تحقق من القيمة المدخلة.";
+  if (v.valueMissing) message = "هذا الحقل مطلوب.";
+  else if (v.stepMismatch && target instanceof HTMLInputElement && target.type === "time") message = "يمكن إدخال الوقت بالدقيقة، مثل 12:20.";
+  else if (v.rangeUnderflow) message = `القيمة يجب ألا تقل عن ${target.getAttribute("min") || "الحد الأدنى"}.`;
+  else if (v.rangeOverflow) message = `القيمة يجب ألا تتجاوز ${target.getAttribute("max") || "الحد الأعلى"}.`;
+  else if (v.typeMismatch) message = "صيغة القيمة غير صحيحة.";
+  else if (v.patternMismatch) message = "صيغة القيمة لا تطابق المطلوب.";
+  target.setCustomValidity(message);
+}, true);
 
 const friendlyInfrastructureError=(text:string,status:number)=>{
   const value=String(text||"").trim();

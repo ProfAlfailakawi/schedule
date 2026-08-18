@@ -8,6 +8,7 @@ import {
   SCHEDULE_DAY_START,
 } from "../utils/scheduleTime";
 import { sortByName } from "../utils/sorting";
+import { toEnglishDigits } from "../utils/digits";
 
 /**
  * The appointment written where it was drawn.
@@ -214,7 +215,7 @@ export default function QuickCreatePopover({
 
   const halls = hallsFor(draft.room);
   const ready = Boolean(draft.courseId && draft.scode.trim() && draft.instructorId && draft.room.trim() && draft.hall.trim());
-  const digitsOk = /^\d*$/.test(draft.scode);
+  const digitsOk = /^\d*$/.test(toEnglishDigits(draft.scode));
   const clash = ready && digitsOk ? conflictOf(draft, seed.day) : null;
 
   const orderedCourses = useMemo(() => sortByName(courses, (course: AdCourse) => course.CourseName), [courses]);
@@ -294,7 +295,7 @@ export default function QuickCreatePopover({
             inputMode="numeric"
             dir="ltr"
             placeholder="01"
-            onChange={(e) => patch({ scode: e.target.value })}
+            onChange={(e) => patch({ scode: toEnglishDigits(e.target.value) })}
           />
         </label>
         <label className="qc-field qc-wide">

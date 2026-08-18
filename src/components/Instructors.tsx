@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Phone, Trash2, UserRound } from "lucide-react";
 import { validateCivilId } from "../utils/civilId";
+import { numericText } from "../utils/digits";
 import { sortByName } from "../utils/sorting";
 import {
   AddButton,
@@ -86,11 +87,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       setError(null);
     };
   const onCivil = (value: string) => {
-      if (value && !/^\d*$/.test(value)) {
-        setError("الرجاء كتابة الأرقام بالانجليزي");
-        return;
-      }
-      setCivil(value.slice(0, 12));
+      setCivil(numericText(value).slice(0, 12));
       setError(null);
     },
     validateCivil = () => {
@@ -231,7 +228,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   aria-label="رقم الهاتف"
                   autoComplete="tel"
                   onChange={(e) => {
-                    if (/^\d*$/.test(e.target.value)) setMobile(e.target.value);
+                    setMobile(numericText(e.target.value).slice(0, 8));
                   }}
                 />
               </Field>
