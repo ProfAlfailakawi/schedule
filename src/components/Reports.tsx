@@ -456,11 +456,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     sortByName(courses.filter(c => !filters.sectionId || c.AdSectionId === filters.sectionId), (c: AdCourse) => c.CourseName),
     row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
   ), [courses, filters.sectionId, filters.courseId, courseIdentityKey]);
-  const termOptions = useMemo(() => dedupeVisibleOptions(
+  const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
     terms,
     row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
   ), [terms, filters.termId]);
-  const instructorOptions = useMemo(() => dedupeVisibleOptions(
+  const instructorOptions = useMemo(() => dedupeVisibleOptions<AdInstructor>(
     instructors,
     row => optionKey(row.AdInstructorCivil) || optionKey(row.AdInstructorName), filters.instructorId, row => Number(row.AdInstructorId),
   ), [instructors, filters.instructorId]);
