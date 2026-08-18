@@ -7868,7 +7868,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               : roomsWithAfterglow;
             const roomList = matrixRooms.size ? buildingScopedRooms.filter(room => matrixRooms.has(room.key)) : buildingScopedRooms;
             const ROOM_HOUR_WIDTH = weekStripConfig.hourWidth;
-            const ROOM_LABEL_WIDTH = weekStripConfig.labelWidth;
+            // Rooms use one shared canvas: room identity + day identity + the
+            // exact same time axis. Keeping these widths explicit prevents the
+            // room header, day rail and ruler from drifting into three separate
+            // coordinate systems when the board is horizontally scrolled.
+            const ROOM_DAY_LABEL_WIDTH = weekStripConfig.labelWidth;
+            const ROOM_IDENTITY_WIDTH = 112;
+            const ROOM_FIXED_WIDTH = ROOM_IDENTITY_WIDTH + ROOM_DAY_LABEL_WIDTH;
             const ROOM_LANE_HEIGHT = 48;
             // Same nonlinear end-cap as the week: only 19:30–20:00 receives
             // extra paper, so a short final lecture keeps its full identity.
@@ -7881,7 +7887,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               return base + ((clamped - ROOM_TERMINAL_START) / 30) * ROOM_TERMINAL_BONUS;
             };
             const timelineWidth = Math.max(ROOM_HOUR_WIDTH, roomOffset(SCHEDULE_DAY_END));
-            const roomsCanvasWidth = ROOM_LABEL_WIDTH + timelineWidth;
+            const roomsCanvasWidth = ROOM_FIXED_WIDTH + timelineWidth;
             const pct = (minutesAt: number) => (roomOffset(minutesAt) / timelineWidth) * 100;
             const roomSpanPct = (from: number, to: number) => Math.max(0.18, ((roomOffset(to) - roomOffset(from)) / timelineWidth) * 100);
             const trackHeight = (lanes: number) => Math.max(54, 8 + Math.max(1, lanes) * ROOM_LANE_HEIGHT);
@@ -8180,10 +8186,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 ) : null}
                 <div
                   className={`rooms-scale ${matrixDay === "week" ? "rooms-scale-week" : ""}`}
-                  style={{ ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px` }}
+                  style={{
+                    ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px`,
+                    ["--rooms-room-label" as any]: `${ROOM_IDENTITY_WIDTH}px`,
+                    ["--rooms-day-label" as any]: `${ROOM_DAY_LABEL_WIDTH}px`,
+                    ["--rooms-fixed-label" as any]: `${ROOM_FIXED_WIDTH}px`,
+                  }}
                   aria-hidden="true"
                 >
-                  {matrixDay === "week" ? <small>اليوم</small> : <small />}
+                  <small className="rooms-scale-identity">
+                    <b>القاعة</b>
+                    <span>{matrixDay === "week" ? "اليوم" : ""}</span>
+                  </small>
                   <div>
                     {timeSlots.map(slot => (
                       <i
@@ -8197,7 +8211,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     ))}
                   </div>
                 </div>
-                <div className="rooms-rows" style={{ ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px` }}>
+                <div
+                  className="rooms-rows"
+                  style={{
+                    ["--rooms-canvas-width" as any]: `${roomsCanvasWidth}px`,
+                    ["--rooms-room-label" as any]: `${ROOM_IDENTITY_WIDTH}px`,
+                    ["--rooms-day-label" as any]: `${ROOM_DAY_LABEL_WIDTH}px`,
+                    ["--rooms-fixed-label" as any]: `${ROOM_FIXED_WIDTH}px`,
+                  }}
+                >
                   {roomList.map(room => (
                     <section className="rooms-week-room" key={room.key}>
                       <header className="rooms-week-room-head">

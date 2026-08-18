@@ -7198,3 +7198,149 @@ html.schedule-physics-active .week-strip-slot.field-tier::before{pointer-events:
 .rooms-scale span{z-index:1!important}
 .rooms-hourline{opacity:1!important}
 .rooms-slot{border-inline-end:1px dashed color-mix(in srgb,var(--line-strong) 56%,transparent)!important}
+
+/* === V28: rooms one-canvas geometry + sticky TIME only ====================
+   The room board previously had three independent horizontal geometries: a
+   wide floating room header, a 64px day rail, and the timeline ruler. On a
+   wide canvas that produced a blank header band and time lines that no longer
+   began where the rows began. One grid now owns all three. */
+
+/* The day shortcut cards are controls, not a ruler. They scroll away normally.
+   Only the actual hour ruler remains sticky in normal and focus workspaces. */
+.week-strip-mode .week-daystrip{
+  position:static!important;
+  top:auto!important;
+  z-index:auto!important;
+  backdrop-filter:none!important;
+}
+.week-strip-ruler{
+  position:sticky!important;
+  top:0!important;
+  z-index:180!important;
+}
+
+/* One shared fixed edge: room (112px) + day (64px), then the time canvas. */
+.rooms-scale,
+.rooms-scale-week{
+  grid-template-columns:var(--rooms-fixed-label,176px) minmax(0,1fr)!important;
+}
+.rooms-scale>small.rooms-scale-identity{
+  position:sticky!important;
+  inset-inline-start:0!important;
+  z-index:190!important;
+  width:var(--rooms-fixed-label,176px)!important;
+  min-width:var(--rooms-fixed-label,176px)!important;
+  display:grid!important;
+  grid-template-columns:var(--rooms-room-label,112px) var(--rooms-day-label,64px)!important;
+  align-items:center!important;
+  padding:0!important;
+  overflow:hidden!important;
+  background:var(--surface)!important;
+  border-inline-end:1px solid color-mix(in srgb,var(--line-strong) 78%,var(--line))!important;
+  box-shadow:-6px 0 14px color-mix(in srgb,var(--ink) 3%,transparent)!important;
+}
+.rooms-scale-identity>b,
+.rooms-scale-identity>span{
+  min-width:0;
+  height:100%;
+  display:flex;
+  align-items:center;
+  padding-inline:9px;
+  color:var(--muted-2);
+  font-family:var(--font-ui);
+  font-size:10px;
+  font-weight:650;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.rooms-scale-identity>b{border-inline-end:1px solid color-mix(in srgb,var(--line) 78%,transparent)}
+
+/* A room is now a real left/right grid cell spanning its five day lanes instead
+   of a separate horizontal header row. This removes the large empty band. */
+.rooms-week-room{
+  display:grid!important;
+  grid-template-columns:var(--rooms-room-label,112px) minmax(0,1fr)!important;
+  align-items:stretch!important;
+  width:var(--rooms-canvas-width,1706px)!important;
+  min-width:var(--rooms-canvas-width,1706px)!important;
+}
+.rooms-week-room-head{
+  position:sticky!important;
+  inset-inline-start:0!important;
+  z-index:175!important;
+  grid-column:1!important;
+  grid-row:1!important;
+  align-self:stretch!important;
+  width:var(--rooms-room-label,112px)!important;
+  min-width:var(--rooms-room-label,112px)!important;
+  max-width:none!important;
+  min-height:0!important;
+  height:auto!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:flex-start!important;
+  justify-content:center!important;
+  gap:5px!important;
+  padding:9px!important;
+  border:0!important;
+  border-inline-end:1px solid color-mix(in srgb,var(--line-strong) 78%,var(--line))!important;
+  border-radius:0!important;
+  background:var(--surface-2)!important;
+  box-shadow:-5px 0 12px color-mix(in srgb,var(--ink) 3%,transparent)!important;
+  overflow:hidden!important;
+}
+.rooms-week-room-head strong,
+.rooms-week-room-head small{
+  max-width:100%!important;
+  white-space:nowrap!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+}
+.rooms-week-days{
+  grid-column:2!important;
+  grid-row:1!important;
+  min-width:0!important;
+  width:100%!important;
+}
+.rooms-week-days .rooms-row,
+.rooms-row{
+  grid-template-columns:var(--rooms-day-label,64px) minmax(0,1fr)!important;
+  width:100%!important;
+  min-width:0!important;
+}
+.rooms-week-days .rooms-row>.rooms-day-label,
+.rooms-row>.rooms-day-label{
+  position:sticky!important;
+  inset-inline-start:var(--rooms-room-label,112px)!important;
+  z-index:170!important;
+  width:var(--rooms-day-label,64px)!important;
+  min-width:var(--rooms-day-label,64px)!important;
+  box-sizing:border-box!important;
+  background:var(--surface)!important;
+}
+.rooms-week-days .rooms-track{
+  min-width:0!important;
+  width:100%!important;
+}
+
+/* The room ruler is the only vertically sticky furniture on the room matrix. */
+.rooms-scale{
+  position:sticky!important;
+  top:0!important;
+  z-index:185!important;
+  margin-bottom:0!important;
+  border-bottom:1px solid var(--line-strong)!important;
+}
+.rooms-rows{margin-top:0!important}
+
+/* Focus mode follows the same rule: keep hours, not navigation/day controls. */
+html[data-schedule-workspace="focus"] .week-strip-mode .week-daystrip{
+  position:static!important;
+  top:auto!important;
+}
+html[data-schedule-workspace="focus"] .week-strip-ruler,
+html[data-schedule-workspace="focus"] .rooms-scale{
+  position:sticky!important;
+  top:0!important;
+}
