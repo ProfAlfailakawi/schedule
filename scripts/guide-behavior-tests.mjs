@@ -137,14 +137,14 @@ assert(serverSource.includes('canAccessGuideFeature, featureById') && !serverSou
 // 18/19/20 — الهاتف، أشر لي، الإيقاف.
 const css=read("src/styles/03-shell.css");
 assert(css.includes("smart-guide.level-peek") && css.includes("smart-guide.level-medium") && css.includes("smart-guide.level-full") && css.includes("level-peek .smart-guide-pending-task"), "الهاتف يستخدم Progressive Disclosure بثلاثة ارتفاعات ومستوى بصري واحد افتراضيًا");
-assert(smart.includes("setDrawerHidden(true); setPointMode(true)") && css.includes(".smart-guide.is-screen-action"), "«أشر لي» يخفي درج المرشد فورًا");
+assert(smart.includes("beginScreenHandoff(\"وضع أشر لي\"") && smart.includes("setPointMode(true)") && smart.includes("window.addEventListener(\"pointerdown\", select, true)") && css.includes(".smart-guide.is-screen-action"), "«أشر لي» يسلم التحكم للشاشة ويلتقط pointerdown قبل السحب");
 assert(smart.includes("const stopTour") && smart.includes("إيقاف"), "«أرني» يمكن إيقافه في أي لحظة");
 
 // عناصر إضافية من شروط الكمال.
 const app=read("src/App.tsx");
 assert(app.includes("launcherIntroduced") && app.includes('"icon-only"'), "بعد أول استخدام يتحول «كيف؟» إلى أيقونة النجمة فقط");
-assert(smart.includes("setDrawerHidden(true);\n    const current = profile.currentTask"), "كل استكمال يحتاج الشاشة يخفي الدرج أولًا");
-assert(/const executeSafe[\s\S]{0,2400}setDrawerHidden\(true\)/.test(smart) && /const simulateFeature[\s\S]{0,600}setDrawerHidden\(true\)/.test(smart) && /const replayWorkflow[\s\S]{0,220}setDrawerHidden\(true\)/.test(smart), "كل إجراء ينقل التفاعل إلى الشاشة يخفي «كيف؟» قبل التفاعل");
+assert(smart.includes("beginScreenHandoff(\"أستعيد آخر موضع\"") && smart.includes("const current = profile.currentTask"), "كل استكمال يحتاج الشاشة يبدأ Handoff مركزيًا");
+assert(/const executeSafe[\s\S]{0,2400}beginScreenHandoff/.test(smart) && /const simulateFeature[\s\S]{0,600}beginScreenHandoff/.test(smart) && /const replayWorkflow[\s\S]{0,220}beginScreenHandoff/.test(smart), "كل إجراء ينقل التفاعل إلى الشاشة يستخدم Handoff المركزي قبل التفاعل");
 assert(read("src/components/Schedules.tsx").includes("practiceMode") && read("src/components/Schedules.tsx").includes("practiceSnapshotRef"), "وضع تجربة آمن يعمل داخل نفس واجهة الجدول");
 assert(!/<video\b/i.test(smart), "لا يوجد فيديو داخل المرشد");
 assert(read("server.ts").includes("rawHistorySent:false"), "AI fallback يرسل سياقًا أدنى دون سجل النقرات الخام");
@@ -214,6 +214,9 @@ assert(schedulesSource.includes('signal:!id ? "schedule.move.no-selection" : "sc
 assert(smart.includes('event.key === "Escape"') && smart.includes('aria-modal={!drawerHidden') && smart.includes('previousFocusRef') && smart.includes('querySelectorAll<HTMLElement>') && smart.includes('drawer.setAttribute("inert","")'), "سطح المرشد يدعم Escape وحبس التركيز واستعادته ويعزل الدرج المخفي عن Tab على سطح المكتب");
 assert(smart.includes('className="primary" onClick={startIntroducedIconAction}') && smart.includes('<Play />ابدأ') && !smart.includes('اضغط الأيقونة مرة أخرى للتنفيذ'), "أول ضغطة هاتف تعرض تعريفًا مع زر «ابدأ» بدل مطالبة المستخدم بضغطة ثانية غامضة");
 assert(smart.includes('showScreenHandoff') && smart.includes('guide-screen-handoff') && css.includes('@keyframes guideHandoffIn'), "كل تسليم مهم من المرشد إلى الشاشة له انتقال بصري واضح");
+assert(smart.includes('hidden={drawerHidden}'), "درج المرشد المخفي يخرج فعليًا من العرض ولا يبقى Overlay شفافًا فوق الصفحة");
+assert(app.includes('schedule-view-ready') && smart.includes('schedule-view-ready') && smart.includes('pendingViewCommandRef'), "الأوامر بعد التنقل تنتظر جاهزية الشاشة بدل مؤقتات تخمينية");
+assert(smart.includes('clearLifecycleTimers') && smart.includes('lifecycleTimersRef'), "مؤقتات دورة حياة المرشد قابلة للإلغاء مركزيًا لمنع callbacks القديمة");
 assert(smart.includes('التعلّم عن نمط استخدامك محفوظ على هذا الجهاز') && smart.includes('قد يُرسل نص السؤال وسياق محدود'), "نص الخصوصية يفرق بين التعلم المحلي وفهم السؤال عبر خدمة AI");
 assert(smart.includes('markAllGuideProductUpdatesSeen(userId, allAllowed)') && smart.includes('markAllDiscoveredSeen(userId, activeView)'), "زر «اعتبر الكل مقروءًا» يحترم صلاحيات المنتج ونطاق الشاشة للعناصر المكتشفة");
 assert(!/setPreview\(null\)>إلغاء/.test(smart) && smart.includes('onClick={cancelPreview}>إلغاء'), "إلغاء معاينة «أكمل عني» يغلق Transaction بدل تركها معلقة");

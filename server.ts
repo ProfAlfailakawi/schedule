@@ -5251,15 +5251,29 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
 
   const { rows, universe } = await scopedScheduleUniverse(collegeId, sectionId, termId);
   const toMinutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
-  const mineKeys = new Set(rows.filter(row => row.AdRoomCode).map(row => `${row.AdRoomCode}|${row.AdRoomHall}`));
+  // Imported room identifiers sometimes carry trailing/non-breaking spaces or
+  // bidi marks. Those variants look identical in Arabic UI but used to become
+  // separate map keys (for example two visible «9» buildings). Canonicalize
+  // both the scope keys and the universe keys before aggregation.
+  const cleanRoomPart = (value: unknown) => String(value || "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const roomPartKey = (value: unknown) => cleanRoomPart(value)
+    .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+    .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .toLocaleLowerCase("ar");
+  const roomKey = (row: any) => `${roomPartKey(row.AdRoomCode)}|${roomPartKey(row.AdRoomHall)}`;
+  const mineKeys = new Set(rows.filter(row => cleanRoomPart(row.AdRoomCode)).map(roomKey));
 
   const rooms = new Map<string, { room: string; hall: string; mine: boolean; busy: Array<{ day: number; from: number; to: number; mine: boolean }> }>();
   const mineIds = new Set(rows.map(row => row.id));
   universe.forEach(row => {
-    if (!row.AdRoomCode) return;
-    const key = `${row.AdRoomCode}|${row.AdRoomHall}`;
+    if (!cleanRoomPart(row.AdRoomCode)) return;
+    const key = roomKey(row);
     if (!mineKeys.has(key)) return;
-    const entry = rooms.get(key) || { room: String(row.AdRoomCode), hall: String(row.AdRoomHall || ""), mine: mineKeys.has(key), busy: [] };
+    const entry = rooms.get(key) || { room: cleanRoomPart(row.AdRoomCode), hall: cleanRoomPart(row.AdRoomHall), mine: mineKeys.has(key), busy: [] };
     const from = toMinutes(row.fstarttime), to = toMinutes(row.fendtime);
     if (to > from) {
       DAY_FLAGS.forEach((flag, day) => {

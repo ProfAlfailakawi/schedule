@@ -3675,6 +3675,38 @@ button.twin-delta{width:100%}
 .visual-minimal.query-page .occupancy-pick header>button:hover{color:var(--ink)}
 .visual-minimal.query-page .occupancy-pick-rows article{border-radius:16px}
 
+/* Query details belong to the viewport that produced them. The shared screen
+   stylesheet anchors the desktop drawer to the top edge; on a long occupancy
+   matrix that made a click near the bottom feel as if the answer jumped away.
+   Re-home query dialogs in the centre of the *current* viewport, without
+   changing document scroll. */
+.visual-minimal.query-page .query-detail-backdrop{
+  position:fixed;inset:0;z-index:120;
+}
+.visual-minimal.query-page .query-detail-panel{
+  position:fixed;z-index:121;
+  top:50%;bottom:auto;inset-inline-start:auto;inset-inline-end:auto;left:50%;right:auto;
+  inline-size:min(560px,calc(100vw - 24px));
+  max-block-size:min(78dvh,720px);
+  margin:0;overflow-y:auto;
+  transform:translate(-50%,-50%);
+  animation:query-dialog-in .2s var(--ease-out) both;
+}
+@keyframes query-dialog-in{
+  from{opacity:0;transform:translate(-50%,calc(-50% + 12px)) scale(.985)}
+  to{opacity:1;transform:translate(-50%,-50%) scale(1)}
+}
+@media(max-width:760px){
+  .visual-minimal.query-page .query-detail-panel{
+    top:50%;bottom:auto;inset-inline-start:auto;inset-inline-end:auto;left:50%;right:auto;
+    inline-size:min(calc(100vw - 20px),560px);
+    max-block-size:82dvh;
+    border-radius:22px;
+    transform:translate(-50%,-50%);
+    animation:query-dialog-in .2s var(--ease-out) both;
+  }
+}
+
 /* Intelligence: only one hierarchy level should visually shout at a time. */
 .visual-minimal.intelligence-page .intelligence-scenes{padding:6px;background:var(--surface-2)}
 .visual-minimal.intelligence-page .intelligence-scenes .segmented{gap:6px}
@@ -3711,8 +3743,15 @@ button.twin-delta{width:100%}
 .intel-context.visual-minimal .intel-context-fields select{border-radius:12px;background:var(--surface)}
 
 @media(max-width:760px){
-  .visual-minimal.query-page .query-primary-filters{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .visual-minimal.query-page .query-primary-filters .field:first-child{grid-column:1/-1}
+  /* Phone filters are deliberately one-per-row. The old 2-column layout put
+     «الفصل» beside «المزيد», so the selected term was clipped exactly where
+     the user most needs to confirm context. Full rows keep every value readable
+     and make the secondary-filter button a clear next action. */
+  .visual-minimal.query-page .query-primary-filters{grid-template-columns:minmax(0,1fr)}
+  .visual-minimal.query-page .query-primary-filters>.field,
+  .visual-minimal.query-page .query-primary-filters>.btn{grid-column:1/-1;inline-size:100%;min-inline-size:0}
+  .visual-minimal.query-page .query-primary-filters select{inline-size:100%;min-inline-size:0}
+  .visual-minimal.query-page .query-primary-filters>.btn{justify-content:center}
   .visual-minimal.intelligence-page .intelligence-scenes .segmented button,
   .visual-minimal.intelligence-page .scene-subnav button{min-inline-size:50px;min-block-size:50px}
 }

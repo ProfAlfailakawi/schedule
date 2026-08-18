@@ -493,6 +493,13 @@ export default function App() {
   const [activeView, setActiveView] = useState<View>(
     () => viewByPath.get(window.location.pathname.toLowerCase()) || "dashboard",
   );
+  useEffect(() => {
+    let second=0;
+    const first=window.requestAnimationFrame(() => {
+      second=window.requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("schedule-view-ready", { detail:{ view:activeView } })));
+    });
+    return () => { window.cancelAnimationFrame(first); if (second) window.cancelAnimationFrame(second); };
+  }, [activeView]);
   useEffect(() => { telemetryBreadcrumb(`واجهة: ${activeView}`); setGuideContext(null); setGuideHint(null); }, [activeView]);
   useEffect(() => {
     const userId = Number(user?.SystemUserId || 0);
@@ -777,7 +784,7 @@ export default function App() {
   // dashboard, schedule, queries — are one press away; the secondary groups
   // (decision tools, reference & administration) stay folded until asked for,
   // which is what the reader wanted when the admin group used to spring open.
-  const [navGroups, setNavGroups] = useState<Record<string, boolean>>({ core: true });
+  const [navGroups, setNavGroups] = useState<Record<string, boolean>>({});
   /* «عن البرنامج» is no longer a destination in the menu. What it was about —
      what this system has become — now lives behind the identity line at the
      foot of the rail, where it belongs: a thing you glance at, not a place you
@@ -2034,27 +2041,8 @@ export default function App() {
           </kbd>
         </button>
         <nav className="side-nav" aria-label="القائمة الرئيسية">
-          <NavSection
-            navGroups={navGroups}
-            onToggle={(id, open) =>
-              // Each group opens and closes on its own; the default already
-              // keeps the rail tidy (core open, the rest folded), so a manual
-              // press should touch only the group it was aimed at.
-              setNavGroups(current => ({ ...current, [id]: !open }))
-            }
-            id="core"
-            title="مساحة العمل"
-            rail="core"
-            className="nav-section-core"
-            holdsActive={
-              activeView === "dashboard" ||
-              activeView === "schedules" ||
-              activeView === "intelligence" ||
-              searchViews.includes(activeView as ReportMode) ||
-              reportViews.includes(activeView as ReportMode)
-            }
-          >
-            <NavButton activeView={activeView} onGo={go} view="dashboard" icon={<House />} label="لوحة العمل" />
+          {/* الوجهات الأساسية تظهر مباشرة دائمًا بلا عنوان وسيط أو سهم/قائمة داخلية. */}
+          <div className="nav-section nav-section-core" data-rail="core" aria-label="التنقل الأساسي">
             {allowed.schedule ? (
               <NavButton
                 activeView={activeView}
@@ -2074,8 +2062,6 @@ export default function App() {
                 label="الاستعلامات والتقارير"
               />
             ) : null}
-            {/* مركز الذكاء عنصر رئيسي مثل الجدول والاستعلامات؛ لا عنوان وسيط
-                ولا مجموعة قابلة للطي توحي بأنه أداة فرعية. */}
             {allowed.schedule ? (
               <NavButton
                 activeView={activeView}
@@ -2085,7 +2071,7 @@ export default function App() {
                 label="مركز الذكاء"
               />
             ) : null}
-          </NavSection>
+          </div>
           {isPowerAdmin && academicEntry ? (
             <NavSection
             navGroups={navGroups}

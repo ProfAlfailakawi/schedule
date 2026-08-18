@@ -507,6 +507,15 @@ export default function useSchedulePhysics(options: Options) {
     else reset();
   }, [finishReturn, reset]);
 
+  // Auto-scroll can move the slot grid while the pointer itself is stationary.
+  // Re-read the existing hit-test at the stored pointer position so the carried
+  // card keeps the correct live drop target without changing drag physics.
+  const refreshTarget = useCallback(() => {
+    const session = sessionRef.current;
+    if (!session?.active || session.ending) return;
+    updateTarget(session);
+  }, [updateTarget]);
+
   /**
    * Did the press that just finished move a card?
    *
@@ -519,5 +528,5 @@ export default function useSchedulePhysics(options: Options) {
   const didDrag = useCallback(() => performance.now() - dragEndedAtRef.current < 400, []);
 
   const supported = useMemo(() => typeof window !== "undefined" && "PointerEvent" in window, []);
-  return { state, overlayRef, bindEvent, cancel, didDrag, reducedMotion, supported };
+  return { state, overlayRef, bindEvent, cancel, refreshTarget, didDrag, reducedMotion, supported };
 }

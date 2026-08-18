@@ -223,12 +223,63 @@ export default function SmartGuide({
   const iconActionRef = useRef<{ key:string; action:()=>void } | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const handoffTimerRef = useRef<number | null>(null);
+  const lifecycleTimersRef = useRef<Set<number>>(new Set());
+  const handoffGenerationRef = useRef(0);
+  const pendingViewCommandRef = useRef<{ view:string; command:GuideCommand } | null>(null);
+  const pendingCloseViewRef = useRef<string | null>(null);
+  const workflowRemainingRef = useRef(0);
+  const handoffActiveRef = useRef(false);
+  const tourActiveRef = useRef(false);
+  const [readyView, setReadyView] = useState("");
 
+  const clearLifecycleTimers = useCallback(() => {
+    lifecycleTimersRef.current.forEach(id => window.clearTimeout(id));
+    lifecycleTimersRef.current.clear();
+  }, []);
+  const scheduleLifecycle = useCallback((fn:()=>void, delay=0) => {
+    const id = window.setTimeout(() => { lifecycleTimersRef.current.delete(id); fn(); }, delay);
+    lifecycleTimersRef.current.add(id);
+    return id;
+  }, []);
   const showScreenHandoff = useCallback((title:string, detail:string) => {
     if (handoffTimerRef.current) window.clearTimeout(handoffTimerRef.current);
     setScreenHandoff({ title, detail });
-    handoffTimerRef.current = window.setTimeout(() => setScreenHandoff(null), 2600);
+    // Handoff is state, not a decorative timer. It remains until the screen/command resolves.
+    handoffTimerRef.current = null;
   }, []);
+  const beginScreenHandoff = useCallback((title:string, detail:string) => {
+    handoffGenerationRef.current += 1;
+    handoffActiveRef.current=true;
+    setReadyView("");
+    clearLifecycleTimers();
+    showScreenHandoff(title, detail);
+    setDrawerHidden(true);
+    return handoffGenerationRef.current;
+  }, [clearLifecycleTimers, showScreenHandoff]);
+  const restoreGuide = useCallback((message?:string) => {
+    handoffGenerationRef.current += 1;
+    handoffActiveRef.current=false;
+    tourActiveRef.current=false;
+    clearLifecycleTimers();
+    pendingViewCommandRef.current = null;
+    pendingCloseViewRef.current = null;
+    workflowRemainingRef.current = 0;
+    setPointMode(false);
+    setDrawerHidden(false);
+    setScreenHandoff(null);
+    if (message) setNotice(message);
+  }, [clearLifecycleTimers]);
+  const finishHandoffToScreen = useCallback(() => {
+    handoffGenerationRef.current += 1;
+    handoffActiveRef.current=false;
+    tourActiveRef.current=false;
+    clearLifecycleTimers();
+    pendingViewCommandRef.current=null;
+    pendingCloseViewRef.current=null;
+    workflowRemainingRef.current=0;
+    setScreenHandoff(null);
+    onClose();
+  }, [clearLifecycleTimers, onClose]);
 
   const refreshProfile = useCallback(() => setProfile(loadGuideProfile(userId)), [userId]);
   const admin = Boolean(root || user?.IsAdminUser);
@@ -265,15 +316,18 @@ export default function SmartGuide({
     if (!rollbackTransaction) return;
     const commands = transactionRollbackCommands(loadGuideProfile(userId), rollbackTransaction.id);
     if (!commands.length) return;
-    showScreenHandoff("أعيد آخر عملية", `سأتراجع عن «${rollbackTransaction.title}» باستخدام أوامر التراجع الموثقة.`);
-    setDrawerHidden(true);
-    commands.forEach((command, index) => window.setTimeout(() => runCommand(command), index * 180));
+    beginScreenHandoff("أعيد آخر عملية", `سأتراجع عن «${rollbackTransaction.title}» باستخدام أوامر التراجع الموثقة.`);
+    workflowRemainingRef.current=commands.length;
+    commands.forEach((command, index) => scheduleLifecycle(() => runCommand(command), index * 120));
     markGuideTransactionRolledBack(userId, rollbackTransaction.id);
     setNotice(`تم إرسال التراجع عن «${rollbackTransaction.title}».`);
-    window.setTimeout(refreshProfile, commands.length * 180 + 260);
+    scheduleLifecycle(refreshProfile, commands.length * 120 + 150);
+    scheduleLifecycle(() => {
+      if (workflowRemainingRef.current > 0) finishHandoffToScreen();
+    }, Math.max(3000, commands.length * 500));
   // runCommand is declared below and is stable for the current context at invocation time.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rollbackTransaction?.id, userId, refreshProfile, showScreenHandoff]);
+  }, [rollbackTransaction?.id, userId, refreshProfile, beginScreenHandoff, scheduleLifecycle, finishHandoffToScreen]);
 
   const repeatSequence = useMemo(() => {
     const base = routines[0]?.sequence || workflows[0]?.sequence || [];
@@ -334,10 +388,9 @@ export default function SmartGuide({
             createdAt: Date.now(),
           }));
         } catch {}
-        onNavigate(command.value || "intelligence");
-        window.setTimeout(() => {
-          window.dispatchEvent(new CustomEvent("schedule-smart-guide-command", { detail: { scope: "intelligence", type: "scene", value: "try", task: command.task } }));
-        }, 280);
+        const targetView = String(command.value || "intelligence");
+        pendingViewCommandRef.current = { view:targetView, command:{ scope: "intelligence", type: "scene", value: "try", task: command.task, featureId:command.featureId } };
+        onNavigate(targetView);
       }
       return;
     }
@@ -433,9 +486,15 @@ export default function SmartGuide({
       setSheetLevel("peek");
       setIconIntro(null);
       setScreenHandoff(null);
+      clearLifecycleTimers();
+      pendingViewCommandRef.current=null;
+      pendingCloseViewRef.current=null;
+      workflowRemainingRef.current=0;
+      handoffActiveRef.current=false;
+      tourActiveRef.current=false;
       iconActionRef.current = null;
     }
-  }, [open]);
+  }, [open, clearLifecycleTimers]);
 
   useEffect(() => {
     if (!open || query.trim()) return;
@@ -462,14 +521,34 @@ export default function SmartGuide({
   };
 
   useEffect(() => {
-    const restore = () => setDrawerHidden(false);
+    const restore = () => restoreGuide();
     window.addEventListener("schedule-smart-guide-restore", restore);
     return () => window.removeEventListener("schedule-smart-guide-restore", restore);
-  }, []);
+  }, [restoreGuide]);
 
   useEffect(() => () => {
     if (handoffTimerRef.current) window.clearTimeout(handoffTimerRef.current);
-  }, []);
+    clearLifecycleTimers();
+    pendingViewCommandRef.current = null;
+  }, [clearLifecycleTimers]);
+
+  useEffect(() => {
+    const onViewReady = (event:Event) => {
+      const view=String((event as CustomEvent).detail?.view || "");
+      if (!view) return;
+      setReadyView(view);
+      if (pendingCloseViewRef.current === view) {
+        pendingCloseViewRef.current=null;
+        finishHandoffToScreen();
+      }
+      const pending=pendingViewCommandRef.current;
+      if (!pending || pending.view !== view) return;
+      pendingViewCommandRef.current=null;
+      runCommand(pending.command);
+    };
+    window.addEventListener("schedule-view-ready", onViewReady as EventListener);
+    return () => window.removeEventListener("schedule-view-ready", onViewReady as EventListener);
+  }, [runCommand, finishHandoffToScreen]);
 
   useEffect(() => {
     if (!open || !root || !context?.collegeId || !context?.sectionId) {
@@ -497,14 +576,18 @@ export default function SmartGuide({
       return;
     }
     document.body.classList.add("guide-point-mode");
-    const click = (event: MouseEvent) => {
+    let handled=false;
+    const select = (event:PointerEvent) => {
       const raw = event.target instanceof HTMLElement ? event.target : null;
       if (!raw || raw.closest(".smart-guide,.guide-point-banner,.guide-screen-handoff") || raw.closest("[data-guide-ignore]")) return;
-      const carrier = raw.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target],[data-guide-stable-id],button,a,[role='button'],select,input");
+      const carrier = raw.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target],[data-guide-stable-id],button,a,[role='button'],select,input,textarea,[draggable='true']");
       if (!carrier) return;
+      // Capture pointerdown, not click: this prevents drag/drop or press handlers from starting underneath the guide.
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
+      if (handled) return;
+      handled=true;
       const owner = carrier.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target]");
       const featureId = carrier.getAttribute("data-guide-feature-id") || owner?.getAttribute("data-guide-feature-id") || "";
       const target = carrier.getAttribute("data-guide-target") || owner?.getAttribute("data-guide-target") || "";
@@ -519,31 +602,31 @@ export default function SmartGuide({
           .replace(/\s+/g, " ").trim().slice(0, 72) || "هذا العنصر";
         const stableKey = carrier.getAttribute("data-guide-stable-id") || "";
         const id = stableDynamicControlId(activeView, {
-          title,
-          kind:carrier.tagName.toLowerCase(),
-          featureId,
-          target,
-          stableKey,
+          title, kind:carrier.tagName.toLowerCase(), featureId, target, stableKey,
           name:carrier.getAttribute("name") || carrier.getAttribute("type") || "",
-          href:carrier.getAttribute("href") || "",
-          role:carrier.getAttribute("role") || "",
+          href:carrier.getAttribute("href") || "", role:carrier.getAttribute("role") || "",
         });
         setSelectedDynamic({ id, title, summary: "عنصر حي في الشاشة الحالية.", target: featureId || target || undefined, stableKey:stableKey || undefined, kind: carrier.tagName.toLowerCase() });
         setSelectedId(null);
       }
       carrier.setAttribute("data-guide-hot", "true");
-      window.setTimeout(() => carrier.removeAttribute("data-guide-hot"), 2400);
-      setPointMode(false);
-      setDrawerHidden(false);
-      setScreenHandoff(null);
+      scheduleLifecycle(() => carrier.removeAttribute("data-guide-hot"), 2400);
+      restoreGuide();
       refreshProfile();
     };
-    window.addEventListener("click", click, true);
+    const suppressClick = (event:MouseEvent) => {
+      if (!handled) return;
+      event.preventDefault(); event.stopPropagation(); event.stopImmediatePropagation();
+      handled=false;
+    };
+    window.addEventListener("pointerdown", select, true);
+    window.addEventListener("click", suppressClick, true);
     return () => {
       document.body.classList.remove("guide-point-mode");
-      window.removeEventListener("click", click, true);
+      window.removeEventListener("pointerdown", select, true);
+      window.removeEventListener("click", suppressClick, true);
     };
-  }, [pointMode, userId, activeView, permissionSession, refreshProfile]);
+  }, [pointMode, userId, activeView, permissionSession, refreshProfile, restoreGuide, scheduleLifecycle]);
   useEffect(() => {
     const onResult = (event: Event) => {
       const detail = (event as CustomEvent).detail || {};
@@ -573,12 +656,23 @@ export default function SmartGuide({
         if (journey) failGuideJourney(userId, journey.id, String(detail.signal || "failed"));
         if (detail.transactionId) failGuideTransaction(userId, String(detail.transactionId));
       }
-      if (detail.ok === false) setGuideTask(userId, undefined);
+      if (detail.ok === false) {
+        setGuideTask(userId, undefined);
+        restoreGuide(`تعذر إكمال «${feature.title}». بقيت بياناتك كما هي ويمكنك المحاولة من الشاشة أو طلب الإرشاد من جديد.`);
+      } else if (detail.ok === true && detail.final !== false && handoffActiveRef.current && !tourActiveRef.current) {
+        if (workflowRemainingRef.current > 0) {
+          workflowRemainingRef.current=Math.max(0,workflowRemainingRef.current-1);
+          if (workflowRemainingRef.current === 0) finishHandoffToScreen();
+        } else {
+          // The screen owns the interaction after a successful handoff; do not resurrect a modal over it.
+          finishHandoffToScreen();
+        }
+      }
       refreshProfile();
     };
     window.addEventListener("schedule-smart-guide-action-result", onResult as EventListener);
     return () => window.removeEventListener("schedule-smart-guide-action-result", onResult as EventListener);
-  }, [permissionSession, refreshProfile, userId]);
+  }, [permissionSession, refreshProfile, userId, restoreGuide, finishHandoffToScreen]);
 
   const locateStep = useCallback((state: TourState | null) => {
     if (!state) {
@@ -601,11 +695,16 @@ export default function SmartGuide({
         return;
       }
       attempts += 1;
-      if (attempts < 15) window.setTimeout(find, 110);
-      else setNotice("لم أتمكن من تحديد العنصر في الحالة الحالية. يمكنك استخدام «أشر لي» وتحديد العنصر مباشرةً.");
+      if (attempts < 15) scheduleLifecycle(find, 110);
+      else {
+        tourActiveRef.current=false;
+        setTour(null);
+        setLocated(null);
+        restoreGuide("لم أتمكن من تحديد العنصر في الحالة الحالية. يمكنك استخدام «أشر لي» وتحديد العنصر مباشرةً.");
+      }
     };
     find();
-  }, [runCommand]);
+  }, [runCommand, scheduleLifecycle, restoreGuide]);
 
   useEffect(() => {
     document.querySelectorAll("[data-guide-hot='true']").forEach((element) => element.removeAttribute("data-guide-hot"));
@@ -634,8 +733,7 @@ export default function SmartGuide({
     if (feature.view && feature.view !== activeView) {
       setPendingTourStep(0);
       setPendingTourId(feature.id);
-      showScreenHandoff("أنتقل إلى الشاشة المطلوبة", `سأفتح «${feature.title}» ثم أحدد مكانها لك.`);
-      setDrawerHidden(true);
+      beginScreenHandoff("أنتقل إلى الشاشة المطلوبة", `سأفتح «${feature.title}» ثم أحدد مكانها لك.`);
       onNavigate(feature.view);
       return;
     }
@@ -662,14 +760,12 @@ export default function SmartGuide({
       recordFeatureEvent(userId, feature.id, "helped");
       telemetryGuideJourney({ featureId:feature.id, version:feature.version, step:"guide", outcome:"helped" });
       markFeatureSeen(userId, feature.id);
-      showScreenHandoff("هذا هو المكان", `سأبرز «${feature.title}» لثوانٍ ثم أعيد المرشد تلقائيًا.`);
-      setDrawerHidden(true);
+      beginScreenHandoff("هذا هو المكان", `سأبرز «${feature.title}» لثوانٍ ثم أعيد المرشد تلقائيًا.`);
       element.scrollIntoView({ behavior: "smooth", block: "center", inline:"center" });
       element.setAttribute("data-guide-hot", "true");
-      window.setTimeout(() => {
+      scheduleLifecycle(() => {
         element.removeAttribute("data-guide-hot");
-        setDrawerHidden(false);
-        setScreenHandoff(null);
+        restoreGuide();
       }, 2400);
       refreshProfile();
       return;
@@ -687,8 +783,8 @@ export default function SmartGuide({
       updatedAt: Date.now(),
       step: 0,
     });
-    showScreenHandoff("إرشاد حي على الشاشة", `سأحدد الآن أول خطوة في «${feature.title}».`);
-    setDrawerHidden(true);
+    beginScreenHandoff("إرشاد حي على الشاشة", `سأحدد الآن أول خطوة في «${feature.title}».`);
+    tourActiveRef.current=true;
     setTour({ feature, steps, index: 0 });
     setNotice("");
     refreshProfile();
@@ -697,11 +793,11 @@ export default function SmartGuide({
   useEffect(() => {
     if (!pendingTourId) return;
     const feature = featureById(pendingTourId);
-    if (!feature || (feature.view && feature.view !== activeView)) return;
+    if (!feature || (feature.view && feature.view !== activeView) || readyView !== activeView) return;
     const resumeAt = pendingTourStep;
     setPendingTourId(null);
     setPendingTourStep(0);
-    window.setTimeout(() => {
+    {
       let steps = hydrateGuideSteps([...(feature.steps || [])]);
       if (feature.id === "schedule.action.move-room" && context?.selected?.id) {
         const selectedStep: TourStep = { selector: `[data-row-id="${Number(context.selected.id)}"]`, text: `هذه بطاقة «${context.selected.course || "المقرر المحدد"}». ابدأ السحب منها إلى القاعة المطلوبة.` };
@@ -711,20 +807,19 @@ export default function SmartGuide({
       recordFeatureEvent(userId, feature.id, "helped");
       telemetryGuideJourney({ featureId:feature.id, version:feature.version, step:"guide", outcome:"helped" });
       markFeatureSeen(userId, feature.id);
-      showScreenHandoff("أكمل من نفس الخطوة", `عدت إلى «${feature.title}» وسأبرز الخطوة التالية.`);
-      setDrawerHidden(true);
+      beginScreenHandoff("أكمل من نفس الخطوة", `عدت إلى «${feature.title}» وسأبرز الخطوة التالية.`);
+      tourActiveRef.current=true;
       setTour({ feature, steps, index: Math.min(Math.max(0, resumeAt), steps.length - 1) });
       refreshProfile();
-    }, 80);
-  // startTour intentionally closes over the current screen state; the id is the stable trigger.
+    }
+  // Resumption waits for the App view-ready signal instead of guessing a render delay.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingTourId, pendingTourStep, activeView, context?.selected?.id, context?.selected?.course, refreshProfile, userId]);
+  }, [pendingTourId, pendingTourStep, activeView, readyView, context?.selected?.id, context?.selected?.course, refreshProfile, userId, beginScreenHandoff]);
 
   const stopTour = () => {
     setTour(null);
     setLocated(null);
-    setDrawerHidden(false);
-    setScreenHandoff(null);
+    restoreGuide();
     setGuideTask(userId, undefined);
     refreshProfile();
   };
@@ -734,7 +829,8 @@ export default function SmartGuide({
     if (current.index >= current.steps.length - 1) {
       setGuideTask(userId, undefined);
       setLocated(null);
-      window.setTimeout(() => setDrawerHidden(false), 120);
+      tourActiveRef.current=false;
+      scheduleLifecycle(() => restoreGuide(), 0);
       refreshProfile();
       return null;
     }
@@ -768,10 +864,9 @@ export default function SmartGuide({
       setDrawerHidden(false);
       setNotice(`قبل «${feature.title}» حدّد مقررًا واحدًا من الجدول. لن أبدأ معاملة أو تغييرًا قبل وجود مقرر محدد.`);
       if (feature.id === "schedule.action.move-room" || feature.id === "schedule.action.find-room") {
-        showScreenHandoff("خطوة مطلوبة أولًا", "سأفتح عرض المباني والقاعات فقط؛ حدّد المقرر ثم اطلب المتابعة.");
-        setDrawerHidden(true);
+        beginScreenHandoff("خطوة مطلوبة أولًا", "سأفتح عرض المباني والقاعات فقط؛ حدّد المقرر ثم اطلب المتابعة.");
         runCommand({ scope:"schedule", type:"changeView", value:"rooms", featureId:"schedule.view.rooms" });
-        window.setTimeout(() => setDrawerHidden(false), 1400);
+        scheduleLifecycle(() => restoreGuide("حدّد مقررًا واحدًا من عرض القاعات، ثم اطلب المتابعة."), 4000);
       }
       return;
     }
@@ -779,8 +874,8 @@ export default function SmartGuide({
     const journey = journeyForFeature(feature.id);
     if (journey) startGuideJourney(userId, journey.id);
     if (feature.view && feature.view !== activeView && !feature.safeAction && !action?.command && !action?.prepare) {
-      showScreenHandoff("أفتح الوجهة", `سأنتقل إلى «${feature.title}» دون تنفيذ أي تغيير.`);
-      setDrawerHidden(true);
+      beginScreenHandoff("أفتح الوجهة", `سأنتقل إلى «${feature.title}» دون تنفيذ أي تغيير.`);
+      pendingCloseViewRef.current=feature.view;
       onNavigate(feature.view);
       setGuideTask(userId, { id:`assist:${feature.id}`, title:`فتح ${feature.title}`, featureId:feature.id, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
       return;
@@ -793,8 +888,7 @@ export default function SmartGuide({
     }
     if (action?.risk === "read") {
       recordFeatureEvent(userId, feature.id, "started");
-      showScreenHandoff("أجهز الخطوة الآمنة", `سأفتح «${feature.title}» دون تعديل البيانات.`);
-      setDrawerHidden(true);
+      beginScreenHandoff("أجهز الخطوة الآمنة", `سأفتح «${feature.title}» دون تعديل البيانات.`);
       runCommand({ ...command, featureId: feature.id });
       setGuideTask(userId, { id:`assist:${feature.id}`, title:`مساعدة تنفيذية: ${feature.title}`, featureId:feature.id, target:feature.target, command, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
       return;
@@ -876,11 +970,10 @@ export default function SmartGuide({
     if (!preview) return;
     recordFeatureEvent(userId, preview.feature.id, "started");
     const journey = journeyForFeature(preview.feature.id);
-    showScreenHandoff("سلمتك الخطوة إلى الشاشة", `جهزت «${preview.feature.title}». القرار النهائي والحفظ يبقيان بيدك.`);
-    setDrawerHidden(true);
+    beginScreenHandoff("سلمتك الخطوة إلى الشاشة", `جهزت «${preview.feature.title}». القرار النهائي والحفظ يبقيان بيدك.`);
     if (preview.feature.view && preview.feature.view !== activeView) {
+      pendingViewCommandRef.current={ view:preview.feature.view, command:preview.command };
       onNavigate(preview.feature.view);
-      window.setTimeout(() => runCommand(preview.command), 320);
     } else runCommand(preview.command);
     setGuideTask(userId, {
       id: `assist:${preview.feature.id}`,
@@ -899,11 +992,11 @@ export default function SmartGuide({
   const simulateFeature = (feature: GuideFeature) => {
     if (!canAccessGuideFeature(feature, permissionSession)) { setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية."); return; }
     recordFeatureEvent(userId, feature.id, "attempt");
-    showScreenHandoff("تجربة آمنة", `سأفتح مساحة تجربة لـ«${feature.title}» دون لمس الجدول الحقيقي.`);
-    setDrawerHidden(true);
+    beginScreenHandoff("تجربة آمنة", `سأفتح مساحة تجربة لـ«${feature.title}» دون لمس الجدول الحقيقي.`);
     if (feature.simulationAction) {
       runCommand({ ...feature.simulationAction, featureId:feature.id });
       setNotice("فتحت مساحة التجربة. لن يلمس هذا الاختبار الجدول الحقيقي حتى تعتمد أنت التغيير لاحقًا.");
+      scheduleLifecycle(() => finishHandoffToScreen(), 4500);
       return;
     }
     if (activeView === "schedules") {
@@ -911,14 +1004,11 @@ export default function SmartGuide({
       setNotice("سأحوّلك إلى مساحة «جرّب» لاختبار الفكرة دون تعديل الجدول الحقيقي.");
       return;
     }
-    setDrawerHidden(false);
-    setScreenHandoff(null);
-    setNotice("هذه الميزة لا تحتاج محاكاة مستقلة؛ يمكنني عرضها على الشاشة أو تجهيز خطوتها الآمنة.");
+    restoreGuide("هذه الميزة لا تحتاج محاكاة مستقلة؛ يمكنني عرضها على الشاشة أو تجهيز خطوتها الآمنة.");
   };
 
   const resumeTask = () => {
-    showScreenHandoff("أستعيد آخر موضع", "سأعيدك إلى المهمة السابقة وخطوتها الحالية.");
-    setDrawerHidden(true);
+    beginScreenHandoff("أستعيد آخر موضع", "سأعيدك إلى المهمة السابقة وخطوتها الحالية.");
     const current = profile.currentTask;
     const currentGeneric = Boolean(current?.id?.startsWith("work:page:") || current?.id === "work:schedule" || current?.id === "work:intelligence");
     const task = currentGeneric && profile.previousTask ? profile.previousTask : (current || profile.previousTask || context?.currentTask);
@@ -937,24 +1027,31 @@ export default function SmartGuide({
           onNavigate(feature.view);
           return;
         }
+        tourActiveRef.current=true;
         setTour({ feature, steps: hydrateGuideSteps(feature.steps), index: resumeAt });
         setNotice(`أعدتك إلى الخطوة ${resumeAt + 1} من «${feature.title}».`);
         return;
       }
     }
-    if (task.command) runCommand(task.command);
+    if (task.command) {
+      if (task.command.scope === "app" && task.command.type === "navigate" && task.command.value) pendingCloseViewRef.current=String(task.command.value);
+      runCommand(task.command);
+    }
     if (task.target) {
       const element = targetNow(task.target);
       element?.scrollIntoView({ behavior: "smooth", block: "center" });
       element?.setAttribute("data-guide-hot", "true");
-      window.setTimeout(() => element?.removeAttribute("data-guide-hot"), 2400);
+      scheduleLifecycle(() => element?.removeAttribute("data-guide-hot"), 2400);
     }
-    setNotice(`أعدتك إلى «${task.title || "المهمة السابقة"}».`);
+    if (!task.command) restoreGuide(`أعدتك إلى «${task.title || "المهمة السابقة"}».`);
+    else {
+      setNotice(`أعدتك إلى «${task.title || "المهمة السابقة"}».`);
+      scheduleLifecycle(() => restoreGuide(`عدت إلى «${task.title || "المهمة السابقة"}». يمكنك المتابعة من الشاشة.`), 4000);
+    }
   };
 
   const replayWorkflow = (sequence: string[]) => {
-    showScreenHandoff("أفتح مسارك المعتاد", "سأنفذ خطوات القراءة والفتح الآمنة فقط، وأترك القرارات المؤثرة لك.");
-    setDrawerHidden(true);
+    beginScreenHandoff("أفتح مسارك المعتاد", "سأنفذ خطوات القراءة والفتح الآمنة فقط، وأترك القرارات المؤثرة لك.");
     const commands = sequence
       .map(featureById)
       .filter((feature): feature is GuideFeature => Boolean(feature && canAccessGuideFeature(feature, permissionSession)))
@@ -967,12 +1064,15 @@ export default function SmartGuide({
       setNotice("تعرّفت على هذا المسار كعادة لديك، لكن خطواته الحالية تحتاج قراراتك داخل الشاشة. سأستخدمه لترتيب الاقتراحات بدل تنفيذ ضغطات غير موثوقة.");
       return;
     }
-    let delay = 0;
-    commands.forEach((command) => {
-      window.setTimeout(() => runCommand(command), delay);
-      delay += 300;
-    });
+    workflowRemainingRef.current=commands.length;
+    commands.forEach((command, index) => scheduleLifecycle(() => runCommand(command), index * 120));
     setNotice("فتحت الأجزاء الآمنة فقط من مسارك المعتاد. لم يتم تنفيذ أي تغيير على البيانات.");
+    // Fallback only if a legacy screen does not emit an action-result event.
+    scheduleLifecycle(() => {
+      if (workflowRemainingRef.current > 0) {
+        finishHandoffToScreen();
+      }
+    }, Math.max(3500, commands.length * 500));
   };
 
   useEffect(() => {
@@ -985,7 +1085,7 @@ export default function SmartGuide({
     lastEscalationRef.current = key;
     setSelectedId(feature.id);
     setNotice("سأحوّل الشرح إلى إرشاد حي على الشاشة بدل تكرار النص نفسه.");
-    window.setTimeout(() => startTour(feature), 120);
+    scheduleLifecycle(() => startTour(feature), 0);
   // startTour intentionally uses the freshest visible context.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
@@ -1074,17 +1174,19 @@ export default function SmartGuide({
   };
 
   const onboardingChoose = (kind: "build" | "review" | "reports") => {
-    showScreenHandoff("أفتح وجهتك", kind === "build" ? "سأفتح مساحة بناء الجدول." : kind === "review" ? "سأفتح الجدول ثم أجهز المراجعة." : "سأفتح التقرير المتاح ضمن صلاحياتك.");
-    setDrawerHidden(true);
+    beginScreenHandoff("أفتح وجهتك", kind === "build" ? "سأفتح مساحة بناء الجدول." : kind === "review" ? "سأفتح الجدول ثم أجهز المراجعة." : "سأفتح التقرير المتاح ضمن صلاحياتك.");
     setOnboardingDone(userId, true);
     refreshProfile();
-    if (kind === "build") onNavigate("schedules");
-    else if (kind === "review") {
-      onNavigate("schedules");
-      window.setTimeout(() => runCommand({ scope: "schedule", type: "openReview" }), 260);
+    if (kind === "build") {
+      if (activeView === "schedules") finishHandoffToScreen();
+      else { pendingCloseViewRef.current="schedules"; onNavigate("schedules"); }
+    } else if (kind === "review") {
+      if (activeView === "schedules") runCommand({ scope: "schedule", type: "openReview", featureId:"schedule.tool.review" });
+      else { pendingViewCommandRef.current={ view:"schedules", command:{ scope: "schedule", type: "openReview", featureId:"schedule.tool.review" } }; onNavigate("schedules"); }
     } else {
       const next = permissions.includes(14) ? "reportDepartment" : permissions.includes(8) ? "reportInstructor" : permissions.includes(9) ? "reportRoom" : "dashboard";
-      onNavigate(next);
+      if (next === activeView) finishHandoffToScreen();
+      else { pendingCloseViewRef.current=next; onNavigate(next); }
     }
   };
 
@@ -1121,11 +1223,28 @@ export default function SmartGuide({
       setNotice("العنصر معروف، لكنه غير ظاهر في حالة الشاشة الحالية. افتح الجزء الذي يحتويه أو استخدم «أشر لي».");
       return;
     }
-    showScreenHandoff("هذا هو العنصر", `سأبرز «${feature.title}» ثم أعيد المرشد تلقائيًا.`);
-    setDrawerHidden(true);
+    beginScreenHandoff("هذا هو العنصر", `سأبرز «${feature.title}» ثم أعيد المرشد تلقائيًا.`);
     element.scrollIntoView({ behavior:"smooth", block:"center", inline:"center" });
     element.setAttribute("data-guide-hot","true");
-    window.setTimeout(()=>{element.removeAttribute("data-guide-hot");setDrawerHidden(false);setScreenHandoff(null);},2400);
+    scheduleLifecycle(()=>{ element.removeAttribute("data-guide-hot"); restoreGuide(); },2400);
+  };
+
+  const showWhatHappensNow = () => {
+    setSelectedId(null);
+    setSelectedDynamic(null);
+    const selectedRowId=Number(context?.selected?.id || 0);
+    const selectedRow=selectedRowId ? document.querySelector<HTMLElement>(`[data-row-id="${selectedRowId}"]`) : null;
+    const currentFeature=featureById(String(context?.currentFeatureId || "")) || pageFeature;
+    const target=currentFeature?.target ? targetNow(currentFeature.target) : null;
+    const element=selectedRow || target;
+    if (!element) {
+      setNotice(what);
+      return;
+    }
+    beginScreenHandoff("هذا ما يحدث الآن", context?.detectedHelp?.detail || what);
+    element.scrollIntoView({ behavior:"smooth", block:"center", inline:"center" });
+    element.setAttribute("data-guide-hot","true");
+    scheduleLifecycle(() => { element.removeAttribute("data-guide-hot"); restoreGuide(what); }, 2400);
   };
 
   const pageTitle = context?.view === activeView ? (context?.title || pageFeature?.title || "هذه الشاشة") : (pageFeature?.title || "هذه الشاشة");
@@ -1140,7 +1259,7 @@ export default function SmartGuide({
       {!drawerHidden && !pointMode && !located && !preview ? (
         <div className="smart-guide-outside-dismiss no-print" role="presentation" onPointerDown={onClose} />
       ) : null}
-      <aside className={`smart-guide visual-minimal no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal={!drawerHidden && !pointMode && !located && !preview} aria-hidden={drawerHidden || pointMode || located || preview ? true : undefined} tabIndex={-1} dir="rtl">
+      <aside hidden={drawerHidden} className={`smart-guide visual-minimal no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal={!drawerHidden && !pointMode && !located && !preview} aria-hidden={drawerHidden || pointMode || located || preview ? true : undefined} tabIndex={-1} dir="rtl">
         <button type="button" className="smart-guide-sheet-handle" aria-label="تغيير ارتفاع المرشد" onPointerDown={onSheetPointerDown} onPointerUp={onSheetPointerUp}><i /></button>
         <header className="smart-guide-hero">
           <div>
@@ -1149,8 +1268,8 @@ export default function SmartGuide({
             <p>{isExpert ? "أنت متمكن هنا؛ سأبقى هادئًا ما لم تخرج العملية عن نمطك المعتاد." : what}</p>
           </div>
           <div className="smart-guide-hero-tools">
-            <button type="button" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { showScreenHandoff("وضع أشر لي", "سأخفي المرشد وأنتظر اختيارك؛ الضغط لن يُنفذ العنصر."); setDrawerHidden(true); setPointMode(true); })} aria-label="أشر لي" title="أشر لي"><Target /></button>
-            <button type="button" onClick={() => runIconAction("now", "ماذا يحدث الآن؟", "ألخص حالة الشاشة الحالية وما يستحق الانتباه دون تغيير أي بيانات.", () => { setSelectedId(null); setSelectedDynamic(null); setNotice(what); })} aria-label="ماذا يحدث الآن؟" title="ماذا يحدث الآن؟"><BrainCircuit /></button>
+            <button type="button" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { beginScreenHandoff("وضع أشر لي", "سأخفي المرشد وأنتظر اختيارك؛ الضغط لن يُنفذ العنصر."); setPointMode(true); })} aria-label="أشر لي" title="أشر لي"><Target /></button>
+            <button type="button" onClick={() => runIconAction("now", "ماذا يحدث الآن؟", "ألخص حالة الشاشة الحالية وما يستحق الانتباه دون تغيير أي بيانات.", showWhatHappensNow)} aria-label="ماذا يحدث الآن؟" title="ماذا يحدث الآن؟"><BrainCircuit /></button>
             <button type="button" onClick={() => runIconAction("resume", "أكمل من حيث توقفت", "أعيدك إلى آخر مهمة وخطوتها الحالية، ثم أترك القرار لك.", resumeTask)} aria-label="أكمل من حيث توقفت" title="أكمل من حيث توقفت"><History /></button>
             <button type="button" className="smart-guide-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
           </div>
@@ -1219,9 +1338,9 @@ export default function SmartGuide({
             <div><small>العنصر المحدد</small><strong>{context.selected.course}</strong><span>{[context.selected.room, context.selected.start].filter(Boolean).join(" · ")}</span></div>
             <div className="smart-guide-selected-actions">
               <button type="button" onClick={() => chooseKnown(featureById("schedule.action.move-room")!)}>تغيير القاعة</button>
-              <button type="button" onClick={() => { showScreenHandoff("أفتح محرر المقرر","سأفتح المقرر المحدد لتغيير الوقت؛ لن أحفظ نيابةً عنك."); setDrawerHidden(true); runCommand({ scope: "schedule", type: "openEditRow", value: String(context.selected.id) }); }}>تغيير الوقت</button>
-              <button type="button" onClick={() => { showScreenHandoff("أحدد المقرر على الشاشة", context.selected.conflict ? "سأبرز مكان التعارض الحالي." : "سأبرز بطاقة المقرر على الجدول."); setDrawerHidden(true); runCommand({ scope: "schedule", type: "focusRow", value: String(context.selected.id) }); }}>{context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"}</button>
-              <button type="button" onClick={() => { showScreenHandoff("أبحث عن بديل","سأفتح البدائل للمقرر المحدد دون اعتماد تغيير."); setDrawerHidden(true); runCommand({ scope: "schedule", type: "findAlternative", value: String(context.selected.id) }); }}>ابحث عن بديل</button>
+              <button type="button" onClick={() => { beginScreenHandoff("أفتح محرر المقرر","سأفتح المقرر المحدد لتغيير الوقت؛ لن أحفظ نيابةً عنك."); runCommand({ scope: "schedule", type: "openEditRow", value: String(context.selected.id), featureId:"schedule.action.change-time" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}>تغيير الوقت</button>
+              <button type="button" onClick={() => { beginScreenHandoff("أحدد المقرر على الشاشة", context.selected.conflict ? "سأبرز مكان التعارض الحالي." : "سأبرز بطاقة المقرر على الجدول."); runCommand({ scope: "schedule", type: "focusRow", value: String(context.selected.id), featureId:"schedule.view.week" }); scheduleLifecycle(() => restoreGuide("تم تحديد المقرر على الجدول."), 3200); }}>{context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"}</button>
+              <button type="button" onClick={() => { beginScreenHandoff("أبحث عن بديل","سأفتح البدائل للمقرر المحدد دون اعتماد تغيير."); runCommand({ scope: "schedule", type: "findAlternative", value: String(context.selected.id), featureId:"schedule.action.find-room" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}>ابحث عن بديل</button>
             </div>
           </section>
         ) : null}
@@ -1347,7 +1466,7 @@ export default function SmartGuide({
       {screenHandoff ? <div className="guide-screen-handoff no-print" role="status" aria-live="assertive"><span><Sparkles /></span><div><strong>{screenHandoff.title}</strong><small>{screenHandoff.detail}</small></div></div> : null}
 
       {pointMode ? (
-        <div className="guide-point-banner no-print" data-guide-ignore="شريط وضع أشر لي جزء من المرشد وليس هدفًا للشرح"><Hand /><span><strong>أشر لي</strong> اضغط أي عنصر داخل SCHEDULE؛ لن أنفذ الضغط، بل سأشرح العنصر فقط.</span><button type="button" data-guide-ignore="زر إلغاء أشر لي يجب أن يبقى إجراء تحكم بالمرشد" onClick={(event) => { event.stopPropagation(); setPointMode(false); setDrawerHidden(false); }}>إلغاء</button></div>
+        <div className="guide-point-banner no-print" data-guide-ignore="شريط وضع أشر لي جزء من المرشد وليس هدفًا للشرح"><Hand /><span><strong>أشر لي</strong> اضغط أي عنصر داخل SCHEDULE؛ لن أنفذ الضغط، بل سأشرح العنصر فقط.</span><button type="button" data-guide-ignore="زر إلغاء أشر لي يجب أن يبقى إجراء تحكم بالمرشد" onClick={(event) => { event.stopPropagation(); restoreGuide(); }}>إلغاء</button></div>
       ) : null}
 
       {located ? (

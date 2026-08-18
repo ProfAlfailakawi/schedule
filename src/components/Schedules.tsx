@@ -3711,6 +3711,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             strict: strictNoConflict,
             moves: [{
               id: row.id,
+              rev: row.rev,
               fields: {
                 fsunday: Boolean((after as any).fsunday),
                 fmonday: Boolean((after as any).fmonday),
@@ -5073,7 +5074,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   useEffect(() => {
     if (!physicsActive) return;
     let pointerX = -1, pointerY = -1, frame = 0;
-    const surface = document.querySelector<HTMLElement>(".week-scroll-main") || document.querySelector<HTMLElement>(".week-surface");
+    const surface = document.querySelector<HTMLElement>(".week-scroll-main, .rooms-main-scroll") || document.querySelector<HTMLElement>(".week-surface");
     const EDGE = 48, TOP_GUARD = 72, MAX_STEP = 24;
     const follow = (event: PointerEvent) => { pointerX = event.clientX; pointerY = event.clientY; };
     const tick = () => {
@@ -5086,11 +5087,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         }
         if (surface) {
           const rect = surface.getBoundingClientRect();
+          let scrolledHorizontally = false;
           if (pointerX < rect.left + EDGE && pointerX > rect.left - 8) {
             surface.scrollBy(-Math.ceil(MAX_STEP * Math.min(1, (rect.left + EDGE - pointerX) / EDGE)), 0);
+            scrolledHorizontally = true;
           } else if (pointerX > rect.right - EDGE && pointerX < rect.right + 8) {
             surface.scrollBy(Math.ceil(MAX_STEP * Math.min(1, (pointerX - (rect.right - EDGE)) / EDGE)), 0);
+            scrolledHorizontally = true;
           }
+          if (scrolledHorizontally && surface.matches(".rooms-main-scroll")) physics.refreshTarget();
         }
       }
       frame = requestAnimationFrame(tick);
@@ -5101,7 +5106,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       window.removeEventListener("pointermove", follow);
       cancelAnimationFrame(frame);
     };
-  }, [physicsActive]);
+  }, [physicsActive, physics.refreshTarget]);
   /**
    * The watchdog over a drag that never ended.
    *

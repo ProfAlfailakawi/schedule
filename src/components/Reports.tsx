@@ -133,6 +133,51 @@ const dayCell = (row: FSchedule) => {
 };
 const share = (value: number, max: number) => `${Math.min(100, Math.round((value / Math.max(1, max)) * 100))}%`;
 
+
+/**
+ * Native selects expose even tiny data inconsistencies to the user. Imported
+ * room/catalogue values can differ only by trailing spaces, bidi marks,
+ * Unicode width, or Arabic/Persian digit forms; visually they are identical,
+ * so a Set on the raw database string still rendered "9" twice. Normalize the
+ * visible value once, and use the same canonical key everywhere a query filter
+ * compares it.
+ */
+const cleanOptionText = (value: unknown) => String(value ?? "")
+  .normalize("NFKC")
+  .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, "")
+  .replace(/\s+/g, " ")
+  .trim();
+const optionKey = (value: unknown) => cleanOptionText(value)
+  .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
+  .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+  .toLocaleLowerCase("ar");
+const uniqueTextOptions = (values: unknown[]) => {
+  const seen = new Set<string>();
+  return values.reduce<string[]>((list, value) => {
+    const label = cleanOptionText(value);
+    const key = optionKey(label);
+    if (!key || seen.has(key)) return list;
+    seen.add(key);
+    list.push(label);
+    return list;
+  }, []);
+};
+const dedupeVisibleOptions = <T,>(
+  rows: T[],
+  keyOf: (row: T) => string,
+  selectedId: number,
+  idOf: (row: T) => number,
+) => {
+  const visible = new Map<string, T>();
+  rows.forEach(row => {
+    const key = keyOf(row);
+    if (!key) return;
+    const existing = visible.get(key);
+    if (!existing || (selectedId && idOf(row) === selectedId)) visible.set(key, row);
+  });
+  return Array.from(visible.values());
+};
+
 /**
  * The answer, drawn as light while the query runs.
  *
@@ -184,6 +229,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     instructorId: 0,
     instructorQuery: "",
     civil: "",
+    building: cleanOptionText(saved.filters?.building || ""),
+    hall: cleanOptionText(saved.filters?.hall || ""),
   }));
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
@@ -383,9 +430,40 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   const scopeState = resolveScopeSelection(scopes, filters.collegeId, isPowerAdmin);
   const baseScope = resolveScopeSelection(scopes, 0, isPowerAdmin);
-  const collegeOptions = useMemo(() => sortByName(isPowerAdmin ? colleges : colleges.filter(c => baseScope.collegeIds.includes(Number(c.AdCollegeId))), (c: AdCollege) => c.AdCollegeName), [colleges, isPowerAdmin, baseScope.collegeIds.join("|")]);
-  const sectionOptions = useMemo(() => sortByName(sections.filter(s => (!filters.collegeId || s.AdCollegeId === filters.collegeId) && (isPowerAdmin || scopeState.sectionIds.includes(Number(s.AdSectionId)))), (s: AdSection) => s.AdSectionName), [sections, filters.collegeId, isPowerAdmin, scopeState.sectionIds.join("|")]);
-  const courseOptions = useMemo(() => sortByName(courses.filter(c => !filters.sectionId || c.AdSectionId === filters.sectionId), (c: AdCourse) => c.CourseName), [courses, filters.sectionId]);
+  const collegeOptions = useMemo(() => dedupeVisibleOptions(
+    sortByName(isPowerAdmin ? colleges : colleges.filter(c => baseScope.collegeIds.includes(Number(c.AdCollegeId))), (c: AdCollege) => c.AdCollegeName),
+    row => optionKey(row.AdCollegeName), filters.collegeId, row => Number(row.AdCollegeId),
+  ), [colleges, isPowerAdmin, baseScope.collegeIds.join("|"), filters.collegeId]);
+  const sectionOptions = useMemo(() => dedupeVisibleOptions(
+    sortByName(sections.filter(s => (!filters.collegeId || s.AdCollegeId === filters.collegeId) && (isPowerAdmin || scopeState.sectionIds.includes(Number(s.AdSectionId)))), (s: AdSection) => s.AdSectionName),
+    row => `${Number(row.AdCollegeId) || 0}|${optionKey(row.AdSectionName)}`, filters.sectionId, row => Number(row.AdSectionId),
+  ), [sections, filters.collegeId, filters.sectionId, isPowerAdmin, scopeState.sectionIds.join("|")]);
+  /**
+   * A course can exist more than once in imported catalogues (different legacy
+   * IDs / code variants) while carrying the exact same visible name inside the
+   * same department.  The report selector is a human-facing list, so one
+   * visible course must be one option.  Keep the department in the key to avoid
+   * collapsing genuinely different departments when an administrator is
+   * working across the college.
+   */
+  const courseIdentityKey = useCallback((row: AdCourse) => {
+    const sectionId = Number(row.AdSectionId) || 0;
+    const visibleName = optionKey(row.CourseName);
+    const fallbackCode = optionKey(row.CourseCode);
+    return `${sectionId}|${visibleName || fallbackCode}`;
+  }, []);
+  const courseOptions = useMemo(() => dedupeVisibleOptions(
+    sortByName(courses.filter(c => !filters.sectionId || c.AdSectionId === filters.sectionId), (c: AdCourse) => c.CourseName),
+    row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
+  ), [courses, filters.sectionId, filters.courseId, courseIdentityKey]);
+  const termOptions = useMemo(() => dedupeVisibleOptions(
+    terms,
+    row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
+  ), [terms, filters.termId]);
+  const instructorOptions = useMemo(() => dedupeVisibleOptions(
+    instructors,
+    row => optionKey(row.AdInstructorCivil) || optionKey(row.AdInstructorName), filters.instructorId, row => Number(row.AdInstructorId),
+  ), [instructors, filters.instructorId]);
   const instructorById = useMemo(() => new Map(instructors.map(x => [x.AdInstructorId, x])), [instructors]);
   const courseById = useMemo(() => new Map(courses.map(x => [x.AdCourseId, x])), [courses]);
   const collegeById = useMemo(() => new Map(colleges.map(x => [x.AdCollegeId, x])), [colleges]);
@@ -393,8 +471,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const termById = useMemo(() => new Map(terms.map(x => [x.AdTermId, x])), [terms]);
   const departmentInstructorIds = useMemo(() => Array.from(new Set(all.filter(row => (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) && (!filters.termId || Number(row.AdTermId) === Number(filters.termId))).map(row => Number(row.AdInstructorId)).filter(Boolean))), [all, filters.sectionId, filters.termId]);
 
-  const buildings = useMemo(() => Array.from(new Set(all.map(s => s.AdRoomCode).filter(Boolean))).sort(byArabic), [all]);
-  const halls = useMemo(() => Array.from(new Set(all.filter(s => !filters.building || s.AdRoomCode === filters.building).map(s => s.AdRoomHall).filter(Boolean))).sort(byArabic), [all, filters.building]);
+  const buildings = useMemo(() => uniqueTextOptions(all.map(s => s.AdRoomCode)).sort(byArabic), [all]);
+  const halls = useMemo(() => uniqueTextOptions(
+    all
+      .filter(s => !filters.building || optionKey(s.AdRoomCode) === optionKey(filters.building))
+      .map(s => s.AdRoomHall),
+  ).sort(byArabic), [all, filters.building]);
 
   /** One predicate serves every lens. Nothing is mode-specific any more. */
   const results = useMemo(() => {
@@ -415,8 +497,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           : sortKey(instructor?.AdInstructorName || "").toLowerCase().includes(nameQuery);
       });
     }
-    if (filters.building) rows = rows.filter(s => String(s.AdRoomCode || "").includes(filters.building));
-    if (filters.hall) rows = rows.filter(s => String(s.AdRoomHall || "").includes(filters.hall));
+    if (filters.building) rows = rows.filter(s => optionKey(s.AdRoomCode) === optionKey(filters.building));
+    if (filters.hall) rows = rows.filter(s => optionKey(s.AdRoomHall) === optionKey(filters.hall));
     if (filters.startTime && filters.endTime) {
       /* A lecture that lives entirely inside the window is the most obvious
          answer to "what is on between ten and twelve", and the old test — which
@@ -425,7 +507,15 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
          uses: any shared minute counts, and touching edges do not. */
       rows = rows.filter(s => s.fstarttime < filters.endTime && s.fendtime > filters.startTime);
     }
-    if (filters.courseId) rows = rows.filter(s => s.AdCourseId === filters.courseId);
+    if (filters.courseId) {
+      const chosen = courseById.get(filters.courseId);
+      const chosenIdentity = chosen ? courseIdentityKey(chosen) : "";
+      rows = rows.filter(s => {
+        if (!chosenIdentity) return Number(s.AdCourseId) === Number(filters.courseId);
+        const rowCourse = courseById.get(s.AdCourseId);
+        return rowCourse ? courseIdentityKey(rowCourse) === chosenIdentity : Number(s.AdCourseId) === Number(filters.courseId);
+      });
+    }
     if (filters.courseCode.trim()) rows = rows.filter(s => (courseById.get(s.AdCourseId)?.CourseCode || "") === filters.courseCode.trim());
     const chosenDays = DAYS.filter(day => filters[day.key]);
     if (chosenDays.length) rows = rows.filter(s => chosenDays.some(day => (s as any)[day.flag]));
@@ -435,7 +525,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       String(a.fstarttime).localeCompare(String(b.fstarttime)) ||
       Number(a.id) - Number(b.id)
     );
-  }, [all, filters, instructorById, courseById]);
+  }, [all, filters, instructorById, courseById, courseIdentityKey]);
 
   const set = (key: keyof Filters, value: any) => setFilters(prev => ({ ...prev, [key]: value }));
   const resetFilters = () => setFilters(prev => ({ ...fresh(), collegeId: prev.collegeId, sectionId: prev.sectionId, termId: prev.termId }));
@@ -622,10 +712,10 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const placed = results.filter(row => row.fstarttime && row.fendtime && (row.AdRoomCode || row.AdRoomHall));
     if (!placed.length) return null;
 
-    const buildings = [...new Set(placed.map(row => String(row.AdRoomCode || "").trim()).filter(Boolean))].sort(byArabic);
+    const buildings = uniqueTextOptions(placed.map(row => row.AdRoomCode)).sort(byArabic);
     const scoped = placed.filter(row =>
-      (!matrixBuilding || String(row.AdRoomCode || "").trim() === matrixBuilding) &&
-      (!matrixHall || String(row.AdRoomHall || "").trim().toLowerCase().includes(matrixHall.trim().toLowerCase())));
+      (!matrixBuilding || optionKey(row.AdRoomCode) === optionKey(matrixBuilding)) &&
+      (!matrixHall || optionKey(row.AdRoomHall).includes(optionKey(matrixHall))));
 
     const from = GRID_START;
     const to = GRID_END;
@@ -634,14 +724,16 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
     type Hall = { key: string; building: string; hall: string };
     const halls: Hall[] = [...new Map<string, Hall>(scoped.map(row => {
-      const key = `${String(row.AdRoomCode || "").trim()}|${String(row.AdRoomHall || "").trim()}`;
-      return [key, { key, building: String(row.AdRoomCode || "").trim(), hall: String(row.AdRoomHall || "").trim() }] as const;
+      const building = cleanOptionText(row.AdRoomCode);
+      const hall = cleanOptionText(row.AdRoomHall);
+      const key = `${optionKey(building)}|${optionKey(hall)}`;
+      return [key, { key, building, hall }] as const;
     })).values()].sort((a, b) => byArabic(a.building, b.building) || byArabic(a.hall, b.hall));
 
     const lines = halls.flatMap(room => DAY_GROUPS.map(group => {
       const inRoom = scoped.filter(row =>
-        String(row.AdRoomCode || "").trim() === room.building &&
-        String(row.AdRoomHall || "").trim() === room.hall &&
+        optionKey(row.AdRoomCode) === optionKey(room.building) &&
+        optionKey(row.AdRoomHall) === optionKey(room.hall) &&
         group.days.some(index => Boolean((row as any)[DAYS[index].flag])));
       const cells = columns.map(point => ({
         point,
@@ -915,21 +1007,21 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               }}
             >
               <option value="">اختر الكلية</option>
-              {collegeOptions.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{row.AdCollegeName}</option>)}
+              {collegeOptions.map(row => <option key={row.AdCollegeId} value={row.AdCollegeId}>{cleanOptionText(row.AdCollegeName)}</option>)}
             </select>
           </Field>
           {isPowerAdmin || !scopeState.lockSection ? (
             <Field label="القسم">
               <select value={filters.sectionId || ""} disabled={!filters.collegeId} onChange={event => set("sectionId", Number(event.target.value) || 0)}>
                 <option value="">كل الأقسام</option>
-                {sectionOptions.map(row => <option key={row.AdSectionId} value={row.AdSectionId}>{row.AdSectionName}</option>)}
+                {sectionOptions.map(row => <option key={row.AdSectionId} value={row.AdSectionId}>{cleanOptionText(row.AdSectionName)}</option>)}
               </select>
             </Field>
           ) : null}
           <Field label="الفصل">
             <select value={filters.termId || ""} onChange={event => set("termId", Number(event.target.value) || 0)}>
               <option value="">اختر الفصل</option>
-              {terms.map(row => <option key={row.AdTermId} value={row.AdTermId}>{row.AdTermName}</option>)}
+              {termOptions.map(row => <option key={row.AdTermId} value={row.AdTermId}>{cleanOptionText(row.AdTermName)}</option>)}
             </select>
           </Field>
           <GhostButton
@@ -952,7 +1044,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               <InstructorPicker
                 value={filters.instructorId}
                 onChange={(id) => setFilters(prev => ({ ...prev, instructorId: id, instructorQuery: "", civil: "" }))}
-                instructors={instructors}
+                instructors={instructorOptions}
                 departmentIds={departmentInstructorIds}
                 collegeId={filters.collegeId}
                 termId={filters.termId}
@@ -973,7 +1065,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <Field label="المقرر">
               <select value={filters.courseId || ""} onChange={event => set("courseId", Number(event.target.value) || 0)}>
                 <option value="">الكل</option>
-                {courseOptions.map(row => <option key={row.AdCourseId} value={row.AdCourseId}>{row.CourseName}</option>)}
+                {courseOptions.map(row => <option key={row.AdCourseId} value={row.AdCourseId}>{cleanOptionText(row.CourseName)}</option>)}
               </select>
             </Field>
             <Field label="الفترة">
