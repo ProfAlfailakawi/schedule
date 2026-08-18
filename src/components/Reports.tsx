@@ -213,7 +213,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     // (instructor, course, civil id, time window, days) survives a reload and a
     // closed detail, matching the restore which already spreads all of them.
     localStorage.setItem(prefKey, JSON.stringify({ lens, filters }));
+    // One shared academic context for the whole product. Merge rather than
+    // replace so opening Reports never erases the schedule's view/colour prefs.
+    let shared: any = {};
+    try { shared = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch {}
     localStorage.setItem(workspacePrefKey, JSON.stringify({
+      ...shared,
       filterCollege: Number(filters.collegeId || 0) || 0,
       filterSection: Number(filters.sectionId || 0) || 0,
       filterTerm: Number(filters.termId || 0) || 0,
@@ -233,7 +238,25 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         setTerms(sortedTerms);
         setInstructors(sortByName(data[3], (row: AdInstructor) => row.AdInstructorName));
         setCourses(sortByName(data[4], (row: AdCourse) => row.CourseName));
-        setFilters(prev => ({ ...prev, collegeId: 0, sectionId: 0, termId: 0, instructorId: 0, instructorQuery: "", civil: "" }));
+        // Keep the last academic workspace active after login/navigation. The
+        // old code restored it in useState and then immediately zeroed it here,
+        // which is why Reports looked like a first visit every time.
+        setFilters(prev => {
+          let collegeId = Number(prev.collegeId || 0) || 0;
+          let sectionId = Number(prev.sectionId || 0) || 0;
+          let termId = Number(prev.termId || 0) || 0;
+          if (isPowerAdmin) {
+            if (collegeId && !data[0].some((row: AdCollege) => Number(row.AdCollegeId) === collegeId)) collegeId = 0;
+            const section = data[1].find((row: AdSection) => Number(row.AdSectionId) === sectionId);
+            if (!section || (collegeId && Number(section.AdCollegeId) !== collegeId)) sectionId = 0;
+          } else {
+            const scoped = coerceScopeValues(scopes, collegeId, sectionId, false);
+            collegeId = scoped.collegeId;
+            sectionId = scoped.sectionId;
+          }
+          if (termId && !sortedTerms.some(row => Number(row.AdTermId) === termId)) termId = Number(sortedTerms[0]?.AdTermId || 0);
+          return { ...prev, collegeId, sectionId, termId };
+        });
       } catch (e: any) { setError(e.message); } finally { setLoading(false); }
     })();
   }, []);
@@ -745,6 +768,37 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const selectedResult = selectedResultId === null ? null : results.find(row => row.id === selectedResultId) || null;
   const pickedCourse = selectedResult ? courseById.get(selectedResult.AdCourseId) : null;
   const pickedInstructor = selectedResult ? instructorById.get(selectedResult.AdInstructorId) : null;
+  const selectedResultDetail = selectedResult ? (
+    <>
+      <div className="query-detail-backdrop no-print" onMouseDown={() => setSelectedResultId(null)} aria-hidden="true" />
+      <aside
+        className="occupancy-pick query-detail-panel no-print"
+        id="query-result-detail-panel"
+        role="dialog"
+        aria-label={`تفاصيل ${pickedCourse?.CourseName || selectedResult.AdCourseName || "الموعد"}`}
+      >
+        <header>
+          <div><small>تفاصيل الموعد</small><strong>{pickedCourse?.CourseName || selectedResult.AdCourseName || "—"}</strong></div>
+          <span className="occupancy-pick-count">الشعبة {selectedResult.SCode || "—"}</span>
+          <button type="button" onClick={() => setSelectedResultId(null)} aria-label="إغلاق التفاصيل" title="إغلاق"><X aria-hidden="true" /></button>
+        </header>
+        <div className="occupancy-pick-rows">
+          <article>
+            <strong>{pickedInstructor?.AdInstructorName || "بدون أستاذ"}</strong>
+            <span>{sectionById.get(selectedResult.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
+            <em>{dayText(selectedResult) || "بلا أيام"}</em>
+            <time dir="ltr">{formatScheduleTimeRange(selectedResult.fstarttime, selectedResult.fendtime)}</time>
+          </article>
+          <article>
+            <strong>{pickedCourse?.CourseCode || "بدون رمز"}</strong>
+            <span>{collegeById.get(selectedResult.AdCollegeId)?.AdCollegeName || "بدون كلية"}</span>
+            <em>{[selectedResult.AdRoomCode, selectedResult.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
+            <span>{selectedResult.fdetail || "لا توجد ملاحظات"}</span>
+          </article>
+        </div>
+      </aside>
+    </>
+  ) : null;
   // The detail reads as a side panel, so the results list keeps its place and
   // its scroll. Escape closes it back to exactly where the reader left off.
   useEffect(() => {
@@ -753,6 +807,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedResultId]);
+  useEffect(() => {
+    setSelectedResultId(null);
+  }, [lens]);
   // The room-occupancy reading is the same side panel; Escape closes it too.
   useEffect(() => {
     if (!roomPick) return;
@@ -1077,42 +1134,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               <div className="lens-more"><SecondaryButton onClick={() => setVisibleLimit(v => v + 150)}>المزيد</SecondaryButton></div>
             ) : null}
           </div>
-          {selectedResult ? (
-            <>
-              <div className="query-detail-backdrop no-print" onMouseDown={() => setSelectedResultId(null)} aria-hidden="true" />
-              <aside
-                className="occupancy-pick query-detail-panel no-print"
-                id="query-result-detail-panel"
-                role="dialog"
-                aria-label={`تفاصيل ${pickedCourse?.CourseName || selectedResult.AdCourseName || "الموعد"}`}
-              >
-                <header>
-                  <div>
-                    <small>تفاصيل الموعد</small>
-                    <strong>{pickedCourse?.CourseName || selectedResult.AdCourseName || "—"}</strong>
-                  </div>
-                  <span className="occupancy-pick-count">الشعبة {selectedResult.SCode || "—"}</span>
-                  <button type="button" onClick={() => setSelectedResultId(null)} aria-label="إغلاق التفاصيل" title="إغلاق">
-                    <X aria-hidden="true" />
-                  </button>
-                </header>
-                <div className="occupancy-pick-rows">
-                  <article>
-                    <strong>{pickedInstructor?.AdInstructorName || "بدون أستاذ"}</strong>
-                    <span>{sectionById.get(selectedResult.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
-                    <em>{dayText(selectedResult) || "بلا أيام"}</em>
-                    <time dir="ltr">{formatScheduleTimeRange(selectedResult.fstarttime, selectedResult.fendtime)}</time>
-                  </article>
-                  <article>
-                    <strong>{pickedCourse?.CourseCode || "بدون رمز"}</strong>
-                    <span>{collegeById.get(selectedResult.AdCollegeId)?.AdCollegeName || "بدون كلية"}</span>
-                    <em>{[selectedResult.AdRoomCode, selectedResult.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
-                    <span>{selectedResult.fdetail || "لا توجد ملاحظات"}</span>
-                  </article>
-                </div>
-              </aside>
-            </>
-          ) : null}
           </>
         ) : lens === "week" ? (
           <div className="lens-week">
@@ -1426,6 +1447,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                               data-guide-ignore="يفتح/يغلق بطاقة الموعد داخل مركز الاستعلام فقط ولا يغيّر بيانات الجدول"
                               onClick={() => setSelectedResultId(current => current === row.id ? null : row.id)}
                               aria-expanded={selectedResultId === row.id}
+                              aria-controls="query-result-detail-panel"
                             >
                               <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
                               <div>
@@ -1476,6 +1498,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         ) : (
           <div className="query-empty"><EmptyState title="لا بيانات كافية" /></div>
         )}
+        {selectedResultDetail}
       </section>
 
       <PrintPortal>

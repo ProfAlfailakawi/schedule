@@ -2049,6 +2049,7 @@ export default function App() {
             holdsActive={
               activeView === "dashboard" ||
               activeView === "schedules" ||
+              activeView === "intelligence" ||
               searchViews.includes(activeView as ReportMode) ||
               reportViews.includes(activeView as ReportMode)
             }
@@ -2073,24 +2074,9 @@ export default function App() {
                 label="الاستعلامات والتقارير"
               />
             ) : null}
-          </NavSection>
-          {/* Note 20: decision tools are for everyone who works on the schedule,
-              not admins only. A non-admin is scoped to their own department by
-              resolveScopeSelection; publishing stays guarded server-side. */}
-          {allowed.schedule ? (
-            <NavSection
-            navGroups={navGroups}
-            onToggle={(id, open) =>
-              // Each group opens and closes on its own; the default already
-              // keeps the rail tidy (core open, the rest folded), so a manual
-              // press should touch only the group it was aimed at.
-              setNavGroups(current => ({ ...current, [id]: !open }))
-            }
-              id="schedule"
-              title=""
-              rail="schedule"
-              holdsActive={activeView === "intelligence"}
-            >
+            {/* مركز الذكاء عنصر رئيسي مثل الجدول والاستعلامات؛ لا عنوان وسيط
+                ولا مجموعة قابلة للطي توحي بأنه أداة فرعية. */}
+            {allowed.schedule ? (
               <NavButton
                 activeView={activeView}
                 onGo={go}
@@ -2098,8 +2084,8 @@ export default function App() {
                 icon={<WandSparkles />}
                 label="مركز الذكاء"
               />
-            </NavSection>
-          ) : null}
+            ) : null}
+          </NavSection>
           {isPowerAdmin && academicEntry ? (
             <NavSection
             navGroups={navGroups}

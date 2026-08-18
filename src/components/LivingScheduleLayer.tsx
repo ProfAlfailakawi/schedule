@@ -654,7 +654,7 @@ export default function LivingScheduleLayer({
           <div>
             <small>حالة الجدول</small>
             <strong>أقرأ نبض الجدول…</strong>
-            <p>أدوات القرار جاهزة؛ مؤشرات الصحة تصل بعد لحظة.</p>
+            <p>مركز الذكاء جاهز؛ مؤشرات الصحة تصل بعد لحظة.</p>
           </div>
         </div>
         <div className="living-health-strip" aria-label="مؤشرات صحة الجدول قيد التحميل">
@@ -774,7 +774,7 @@ export default function LivingScheduleLayer({
               ))}
             </nav>
             {experience ? (
-              <section className="living-experience-tools" aria-label="أدوات القرار المتقدمة">
+              <section className="living-experience-tools" aria-label="اختصارات مركز الذكاء">
                 <button type="button" onClick={() => { setScene(null); void experience.openDecision(); }} disabled={!rows.length}>
                   <BrainCircuit /><span>القرار الأهم الآن</span>
                 </button>

@@ -7558,3 +7558,37 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
   top:0!important;
   z-index:1650!important;
 }
+
+
+/* === V30: 2026-08-18 requested parity / containment pass ==================
+   The wide clock owns horizontal scrolling; controls stay inside the surface. */
+.rooms-surface>.rooms-head,
+.rooms-surface>.rooms-note,
+.rooms-surface>.rooms-filter-block,
+.rooms-surface>.rooms-legend{
+  position:relative!important;
+  inset:auto!important;
+  width:100%!important;
+  max-width:100%!important;
+  margin-inline:0!important;
+  box-sizing:border-box!important;
+}
+.rooms-filter-block{overflow:hidden!important}
+.rooms-filter-block .rooms-picker{
+  width:100%!important;
+  max-width:100%!important;
+  min-width:0!important;
+  overflow-x:auto!important;
+  overflow-y:hidden!important;
+}
+.rooms-note{margin-bottom:var(--s4)!important}
+.week-ruler-scroll,.week-scroll-main.week-strips-scroll,
+.rooms-ruler-scroll,.rooms-main-scroll{direction:rtl!important}
+.week-ruler-scroll .week-strip-ruler-track,
+.rooms-ruler-scroll .rooms-scale>div{direction:rtl!important}
+/* One coordinate vocabulary in both views: the label sits on the line itself. */
+.week-ruler-scroll .schedule-time-label,
+.rooms-ruler-scroll .schedule-time-label{
+  inset-block-start:50%!important;
+  transform:translate(50%,-50%)!important;
+}

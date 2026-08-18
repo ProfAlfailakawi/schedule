@@ -5241,6 +5241,12 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
   let termId = Number(req.query.termId || 0);
+  // القاعات الظاهرة للمستخدم العادي تظل داخل قسمه. نحتاج جدول الفصل
+  // الكامل فقط لمعرفة أن قاعته محجوزة من جهة أخرى، لا لعرض قاعات الآخرين.
+  if (!req.user.IsAdminUser && (!collegeId || !sectionId || !isScopeAllowed(req, collegeId, sectionId))) {
+    res.status(403).json({ error: "خارج نطاق القسم المسموح لك" });
+    return;
+  }
   if (!termId) { const terms = await Repository.getTerms(); termId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0); }
 
   const { rows, universe } = await scopedScheduleUniverse(collegeId, sectionId, termId);
@@ -5252,6 +5258,7 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
   universe.forEach(row => {
     if (!row.AdRoomCode) return;
     const key = `${row.AdRoomCode}|${row.AdRoomHall}`;
+    if (!mineKeys.has(key)) return;
     const entry = rooms.get(key) || { room: String(row.AdRoomCode), hall: String(row.AdRoomHall || ""), mine: mineKeys.has(key), busy: [] };
     const from = toMinutes(row.fstarttime), to = toMinutes(row.fendtime);
     if (to > from) {

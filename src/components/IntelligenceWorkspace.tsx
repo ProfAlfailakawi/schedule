@@ -282,6 +282,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         ? v
         : "command";
     });
+  const scopeHydrated = useRef(false);
+  const workspacePrefKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const [overview, setOverview] = useState<any>(null),
     [rows, setRows] = useState<FSchedule[]>([]),
     [drafts, setDrafts] = useState<any[]>([]),
@@ -475,16 +477,32 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         setTerms(sortedTerms);
         setCourses(sortByName(lookups?.courses || [], (row:any)=>row.CourseName));
         setInstructors(sortByName(lookups?.instructors || [], (row:any)=>row.AdInstructorName));
-        // Context is deliberately explicit. A visible default that has not
-        // actually loaded is worse than an empty selector: it makes the page
-        // look broken on first entry. Consume any old handoff and start clean.
+        // مركز الذكاء يقرأ نفس آخر نطاق فعّال في الجدول والاستعلامات.
+        // طلب محاكاة حديث من المرشد يبقى أولوية مؤقتة، وإلا فآخر كلية/قسم/فصل
+        // صالح يعود Active تلقائيًا بعد الدخول من جديد.
         try { sessionStorage.removeItem("schedule-intelligence-scope"); } catch {}
         let guideRequest:any = null;
         try { guideRequest = JSON.parse(sessionStorage.getItem("schedule-guide-simulation") || "null"); } catch {}
         const guideFresh = guideRequest && Date.now() - Number(guideRequest.createdAt || 0) < 10 * 60 * 1000;
-        setCollegeId(guideFresh ? Number(guideRequest.collegeId || 0) : 0);
-        setSectionId(guideFresh ? Number(guideRequest.sectionId || 0) : 0);
-        setTermId(guideFresh ? Number(guideRequest.termId || 0) : 0);
+        let shared:any = {};
+        try { shared = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch {}
+        let nextCollege = guideFresh ? Number(guideRequest.collegeId || 0) : Number(shared.filterCollege || 0);
+        let nextSection = guideFresh ? Number(guideRequest.sectionId || 0) : Number(shared.filterSection || 0);
+        let nextTerm = guideFresh ? Number(guideRequest.termId || 0) : Number(shared.filterTerm || 0);
+        if (isPowerAdmin) {
+          if (nextCollege && !c.some((row:any) => Number(row.AdCollegeId) === nextCollege)) nextCollege = 0;
+          const section = s.find((row:any) => Number(row.AdSectionId) === nextSection);
+          if (!section || (nextCollege && Number(section.AdCollegeId) !== nextCollege)) nextSection = 0;
+        } else {
+          const scoped = coerceScopeValues(scopes, nextCollege, nextSection, false);
+          nextCollege = scoped.collegeId;
+          nextSection = scoped.sectionId;
+        }
+        if (nextTerm && !sortedTerms.some((row:any) => Number(row.AdTermId) === nextTerm)) nextTerm = Number(sortedTerms[0]?.AdTermId || 0);
+        scopeHydrated.current = true;
+        setCollegeId(nextCollege);
+        setSectionId(nextSection);
+        setTermId(nextTerm);
         setCompareTo(sortedTerms[0]?.AdTermId || 0);
         setCompareFrom(sortedTerms[1]?.AdTermId || sortedTerms[0]?.AdTermId || 0);
       } catch (e: any) {
@@ -494,6 +512,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       }
     })();
   }, []);
+  useEffect(() => {
+    if (!scopeHydrated.current) return;
+    let shared:any = {};
+    try { shared = JSON.parse(localStorage.getItem(workspacePrefKey) || "{}"); } catch {}
+    localStorage.setItem(workspacePrefKey, JSON.stringify({
+      ...shared,
+      filterCollege: Number(collegeId || 0) || 0,
+      filterSection: Number(sectionId || 0) || 0,
+      filterTerm: Number(termId || 0) || 0,
+    }));
+  }, [workspacePrefKey, collegeId, sectionId, termId]);
   const availableSections = useMemo(
     () => sections.filter((s) => !collegeId || s.AdCollegeId === collegeId),
     [sections, collegeId],
@@ -1746,7 +1775,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       {!collegeId || !termId ? (
         <Surface className="intel-context-idle" aria-live="polite">
           <Target aria-hidden="true" />
-          <div><strong>اختر الكلية والفصل</strong><span>تبدأ القراءات بعد تحديد النطاق؛ لا يوجد اختيار تلقائي.</span></div>
+          <div><strong>اختر الكلية والفصل</strong><span>تبدأ القراءات بعد تحديد النطاق؛ وبعد أول اختيار سيعود آخر نطاق فعّال تلقائيًا.</span></div>
         </Surface>
       ) : null}
       <nav className="intelligence-scenes no-print" aria-label="مراحل مركز الذكاء">

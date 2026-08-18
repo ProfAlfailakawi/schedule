@@ -3728,3 +3728,10 @@ button.twin-delta{width:100%}
 .mobile-desktop-gate-steps b{font-size:11px;line-height:1.55;color:var(--ink)}
 .mobile-desktop-gate-card>button{margin-top:4px}
 @media (max-width:640px){.mobile-desktop-gate-steps{grid-template-columns:1fr}}
+
+
+/* Time result cards are real controls: their affordance now matches behavior. */
+.time-slot-card{cursor:pointer;transition:border-color .14s var(--ease),background .14s var(--ease),box-shadow .14s var(--ease),transform .14s var(--ease)}
+.time-slot-card:hover{border-color:var(--line-strong);background:var(--surface);box-shadow:var(--shadow-xs)}
+.time-slot-card:focus-visible{outline:0;box-shadow:var(--ring);border-color:var(--accent)}
+.time-slot-card[aria-expanded="true"]{border-color:var(--accent);background:var(--accent-softer)}

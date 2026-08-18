@@ -8055,7 +8055,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     options={[{ value: "week", label: "الأسبوع كامل" }, ...days.map(day => ({ value: day.key, label: day.label }))]}
                     onChange={(value) => setMatrixDay(value as DayKey | "week")}
                   />
-                  <small>{phoneReadOnly ? "معاينة ثابتة على الهاتف؛ التبديل والنقل والتعديل متاح من الكمبيوتر فقط." : matrixDay === "week" ? "اسحب الموعد إلى ساعته الجديدة أو اضغط أي فراغ لإضافة موعد جديد داخل القاعة نفسها." : "عرض يوم منفرد: اسحب الموعد إلى الساعة المطلوبة أو اضغط أي فراغ لإضافة موعد في تلك الساعة."}</small>
                   {physicsActive && dragComparison ? (
                     <div className="rooms-drag-compare" aria-live="polite">
                       <GripVertical aria-hidden="true" />
@@ -8063,6 +8062,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       <em dir="ltr">{dragComparison.place}</em>
                     </div>
                   ) : null}
+                </div>
+                <div className={`week-note rooms-note ${physicsActive ? "gravity-note-active" : ""}`}>
+                  <GripVertical aria-hidden="true" />
+                  <span aria-live="polite">
+                    {physicsActive && dragComparison
+                      ? `قبل: ${dragComparison.before} · بعد: ${dragComparison.after} · القاعة ${dragComparison.place}`
+                      : phoneReadOnly
+                        ? "على الهاتف يبقى عرض المباني والقاعات للقراءة فقط، والتعديل والإضافة متاحان من «قائمة»."
+                        : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اضغط أي فراغ لإضافة موعد داخل القاعة · انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}
+                  </span>
                 </div>
                 {allBuildings.length > 1 ? (
                   <div className="rooms-filter-block">
@@ -8081,7 +8090,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           requestAnimationFrame(() => e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
                         }}
                       >
-                        كل المباني <b className="num">{allBuildings.length}</b>
+                        كل المباني
                       </button>
                       {allBuildings.map(building => (
                         <button
@@ -8101,7 +8110,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           }}
                         >
                           <span dir="ltr">{building.label}</span>
-                          <b className="num">{building.count}</b>
                         </button>
                       ))}
                     </div>
@@ -8124,7 +8132,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           requestAnimationFrame(() => e.currentTarget.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" }));
                         }}
                       >
-                        كل القاعات <b className="num">{buildingScopedRooms.length}</b>
+                        كل القاعات
                       </button>
                       {buildingScopedRooms.map(room => (
                         <button
@@ -8144,7 +8152,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           }}
                         >
                           <span dir="ltr">{displayRoomBadge(room)}</span>
-                          <b className="num">{roomCounts.get(room.key) || 0}</b>
                         </button>
                       ))}
                     </div>
