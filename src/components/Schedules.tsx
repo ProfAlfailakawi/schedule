@@ -8648,6 +8648,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 <button
                   type="button"
                   className="week-daystrip-all"
+                  data-guide-ignore="زر رجوع بصري من اليوم المركّز إلى عرض الأيام؛ لا يغيّر بيانات الجدول"
                   onClick={() => setExpandedDay(null)}
                   title="عرض الأسبوع كاملاً"
                 >

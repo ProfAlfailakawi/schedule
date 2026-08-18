@@ -269,7 +269,7 @@ function NavButton({
   onGo: (view: View) => void;
 }) {
   const on = active ?? activeView === view;
-  const visibleText = visualLabel ?? label;
+  const visibleText = view === "dashboard" ? "" : (visualLabel ?? label);
   return (
     <button
       type="button"
@@ -1613,7 +1613,7 @@ export default function App() {
   // so a coordinator without "terms" still lands somewhere useful.
   const academicEntry = academicViews.find((view) => hasPerm(ACADEMIC_PERM[view]));
   const viewLabels: Partial<Record<View, string>> = {
-    dashboard: "",
+    dashboard: "لوحة العمل",
     schedules: "إدارة الجدول",
     intelligence: "مركز الذكاء",
     reportDepartment: "الاستعلامات والتقارير",
@@ -2053,7 +2053,7 @@ export default function App() {
               reportViews.includes(activeView as ReportMode)
             }
           >
-            <NavButton activeView={activeView} onGo={go} view="dashboard" icon={<House />} label="" visualLabel="" />
+            <NavButton activeView={activeView} onGo={go} view="dashboard" icon={<House />} label="لوحة العمل" />
             {allowed.schedule ? (
               <NavButton
                 activeView={activeView}
