@@ -4,7 +4,9 @@ import {
   BarChart3,
   Bot,
   BrainCircuit,
+  BookOpen,
   CalendarDays,
+  Clock3,
   Check,
   ChevronLeft,
   CircleDot,
@@ -25,6 +27,7 @@ import {
   Sparkles,
   Target,
   Trash2,
+  UserRound,
   WandSparkles,
   X,
   Zap,
@@ -146,10 +149,12 @@ function hydrateGuideSteps(steps: TourStep[]) {
 
 function explainDynamic(feature: DynamicGuideFeature) {
   const normalized = normalizeArabic(feature.title);
+  if (feature.summary && !/عنصر حي في الشاشة الحالية/.test(feature.summary)) return feature.summary;
   if (/حذف|مسح|ازاله/.test(normalized)) return "هذا إجراء حذف. لن ينفذه المرشد نيابةً عنك دون تأكيد صريح منك.";
   if (/اعتماد|نشر|استعاده|نسخه/.test(normalized)) return "هذا إجراء مؤثر. يمكنني أن أوضح نتيجته وأوصلك إليه، بينما يبقى القرار النهائي لك.";
   if (feature.kind === "select") return "هذا اختيار يغيّر نطاق البيانات الحالية أو طريقة عرضها.";
   if (feature.kind === "input") return "هذا حقل إدخال مرتبط بالشاشة الحالية، ويستخدم عادةً للبحث أو تضييق النتائج.";
+  if (feature.kind === "button") return `هذا زر ينفذ «${feature.title}» داخل الشاشة الحالية. لن يحدث شيء حتى تختاره بنفسك.`;
   return feature.summary || "هذا عنصر حي في الشاشة الحالية، ويمكنني أن أحدد مكانه وأشرح استخدامه.";
 }
 
@@ -230,6 +235,8 @@ export default function SmartGuide({
   const workflowRemainingRef = useRef(0);
   const handoffActiveRef = useRef(false);
   const tourActiveRef = useRef(false);
+  const tourAwaitingScheduleSelectionRef = useRef(false);
+  const tourSelectionStartedWithIdRef = useRef(0);
   const [readyView, setReadyView] = useState("");
 
   const clearLifecycleTimers = useCallback(() => {
@@ -260,6 +267,8 @@ export default function SmartGuide({
     handoffGenerationRef.current += 1;
     handoffActiveRef.current=false;
     tourActiveRef.current=false;
+    tourAwaitingScheduleSelectionRef.current=false;
+    tourSelectionStartedWithIdRef.current=0;
     clearLifecycleTimers();
     pendingViewCommandRef.current = null;
     pendingCloseViewRef.current = null;
@@ -273,6 +282,8 @@ export default function SmartGuide({
     handoffGenerationRef.current += 1;
     handoffActiveRef.current=false;
     tourActiveRef.current=false;
+    tourAwaitingScheduleSelectionRef.current=false;
+    tourSelectionStartedWithIdRef.current=0;
     clearLifecycleTimers();
     pendingViewCommandRef.current=null;
     pendingCloseViewRef.current=null;
@@ -606,7 +617,18 @@ export default function SmartGuide({
           name:carrier.getAttribute("name") || carrier.getAttribute("type") || "",
           href:carrier.getAttribute("href") || "", role:carrier.getAttribute("role") || "",
         });
-        setSelectedDynamic({ id, title, summary: "عنصر حي في الشاشة الحالية.", target: featureId || target || undefined, stableKey:stableKey || undefined, kind: carrier.tagName.toLowerCase() });
+        const authored = String(carrier.getAttribute("data-guide-description") || owner?.getAttribute("data-guide-description") || "").replace(/\s+/g, " ").trim();
+        const normalizedTitle = normalizeArabic(title);
+        const inferred = authored || (/املأ.*كالمعتاد/.test(normalizedTitle)
+          ? "يعبّئ الأيام والوقت والمكان من النمط المعتاد لهذا المقرر لتختصر الإدخال اليدوي، ثم تراجع القيم قبل الحفظ."
+          : carrier.matches("button,[role='button']")
+            ? `زر إجراء: ينفذ «${title}» داخل هذه الشاشة.`
+            : carrier.matches("select")
+              ? "اختيار يغيّر القيمة أو النطاق المرتبط بهذا الجزء من الشاشة."
+              : carrier.matches("input,textarea")
+                ? "حقل إدخال تستخدمه للبحث أو إدخال قيمة مرتبطة بهذه الشاشة."
+                : "عنصر تفاعلي في الشاشة الحالية.");
+        setSelectedDynamic({ id, title, summary: inferred, target: featureId || target || undefined, stableKey:stableKey || undefined, kind: carrier.tagName.toLowerCase() });
         setSelectedId(null);
       }
       carrier.setAttribute("data-guide-hot", "true");
@@ -687,11 +709,15 @@ export default function SmartGuide({
     if (step.command) runCommand(step.command);
     let attempts = 0;
     const find = () => {
-      const element = targetElement(step);
+      const waitingForScheduleCard = tourAwaitingScheduleSelectionRef.current && step.selector === "[data-row-id]";
+      const element = waitingForScheduleCard
+        ? document.querySelector<HTMLElement>('[data-guide-target="schedule.week.board"],.week-surface,.week-scroll-main')
+        : targetElement(step);
       if (element) {
         element.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
         element.setAttribute("data-guide-hot", "true");
-        setLocated({ rect: element.getBoundingClientRect(), text: step.text, index: state.index, total: state.steps.length });
+        const text = waitingForScheduleCard ? `${step.text} اضغط البطاقة نفسها؛ بعدها سأنتقل تلقائيًا للحقل المطلوب.` : step.text;
+        setLocated({ rect: element.getBoundingClientRect(), text, index: state.index, total: state.steps.length });
         return;
       }
       attempts += 1;
@@ -724,6 +750,26 @@ export default function SmartGuide({
     };
   }, [tour, locateStep]);
 
+  const guideRowInjectionFeatures = new Set(["schedule.action.move-room", "schedule.action.change-time", "schedule.action.change-course", "schedule.action.change-instructor"]);
+  const injectSelectedScheduleStep = (feature: GuideFeature, steps: TourStep[]) => {
+    if (!guideRowInjectionFeatures.has(feature.id) || !context?.selected?.id) return steps;
+    const actionHint = feature.id === "schedule.action.move-room"
+      ? "ابدأ السحب من هذه البطاقة إلى القاعة المطلوبة."
+      : feature.id === "schedule.action.change-instructor"
+        ? "هذه بطاقة المقرر المقصود؛ منها سأفتح تغيير الأستاذ."
+        : feature.id === "schedule.action.change-course"
+          ? "هذه بطاقة الموعد المقصود؛ منها سأفتح تغيير المقرر."
+          : "هذه بطاقة الموعد المقصود؛ منها سأفتح تغيير الوقت.";
+    const selectedStep: TourStep = {
+      selector: `[data-row-id="${Number(context.selected.id)}"]`,
+      text: `هذه بطاقة «${context.selected.course || "المقرر المحدد"}». ${actionHint}`,
+    };
+    if (feature.id === "schedule.action.move-room") {
+      return [steps[0], selectedStep, ...steps.slice(2)].filter(Boolean) as TourStep[];
+    }
+    return [selectedStep, ...steps.slice(1)].filter(Boolean) as TourStep[];
+  };
+
   const startTour = (feature: GuideFeature) => {
     if (!canAccessGuideFeature(feature, permissionSession)) {
       setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية.");
@@ -737,14 +783,7 @@ export default function SmartGuide({
       onNavigate(feature.view);
       return;
     }
-    let steps = hydrateGuideSteps([...(feature.steps || [])]);
-    if (feature.id === "schedule.action.move-room" && context?.selected?.id) {
-      const selectedStep: TourStep = {
-        selector: `[data-row-id="${Number(context.selected.id)}"]`,
-        text: `هذه بطاقة «${context.selected.course || "المقرر المحدد"}». ابدأ السحب منها إلى القاعة المطلوبة.`,
-      };
-      steps = [steps[0], selectedStep, ...steps.slice(2)].filter(Boolean) as TourStep[];
-    }
+    let steps = injectSelectedScheduleStep(feature, hydrateGuideSteps([...(feature.steps || [])]));
     if (!steps.length) {
       if (!feature.target) {
         setDrawerHidden(false);
@@ -785,6 +824,9 @@ export default function SmartGuide({
     });
     beginScreenHandoff("إرشاد حي على الشاشة", `سأحدد الآن أول خطوة في «${feature.title}».`);
     tourActiveRef.current=true;
+    const directEdit = ["schedule.action.change-time","schedule.action.change-course","schedule.action.change-instructor"].includes(feature.id);
+    tourSelectionStartedWithIdRef.current = Number(context?.selected?.id || 0);
+    tourAwaitingScheduleSelectionRef.current = directEdit && !tourSelectionStartedWithIdRef.current;
     setTour({ feature, steps, index: 0 });
     setNotice("");
     refreshProfile();
@@ -798,17 +840,16 @@ export default function SmartGuide({
     setPendingTourId(null);
     setPendingTourStep(0);
     {
-      let steps = hydrateGuideSteps([...(feature.steps || [])]);
-      if (feature.id === "schedule.action.move-room" && context?.selected?.id) {
-        const selectedStep: TourStep = { selector: `[data-row-id="${Number(context.selected.id)}"]`, text: `هذه بطاقة «${context.selected.course || "المقرر المحدد"}». ابدأ السحب منها إلى القاعة المطلوبة.` };
-        steps = [steps[0], selectedStep, ...steps.slice(2)].filter(Boolean) as TourStep[];
-      }
+      let steps = injectSelectedScheduleStep(feature, hydrateGuideSteps([...(feature.steps || [])]));
       if (!steps.length) { startTour(feature); return; }
       recordFeatureEvent(userId, feature.id, "helped");
       telemetryGuideJourney({ featureId:feature.id, version:feature.version, step:"guide", outcome:"helped" });
       markFeatureSeen(userId, feature.id);
       beginScreenHandoff("أكمل من نفس الخطوة", `عدت إلى «${feature.title}» وسأبرز الخطوة التالية.`);
       tourActiveRef.current=true;
+      const directEdit = ["schedule.action.change-time","schedule.action.change-course","schedule.action.change-instructor"].includes(feature.id);
+      tourSelectionStartedWithIdRef.current = Number(context?.selected?.id || 0);
+      tourAwaitingScheduleSelectionRef.current = directEdit && !tourSelectionStartedWithIdRef.current && resumeAt === 0;
       setTour({ feature, steps, index: Math.min(Math.max(0, resumeAt), steps.length - 1) });
       refreshProfile();
     }
@@ -817,6 +858,8 @@ export default function SmartGuide({
   }, [pendingTourId, pendingTourStep, activeView, readyView, context?.selected?.id, context?.selected?.course, refreshProfile, userId, beginScreenHandoff]);
 
   const stopTour = () => {
+    tourAwaitingScheduleSelectionRef.current=false;
+    tourSelectionStartedWithIdRef.current=0;
     setTour(null);
     setLocated(null);
     restoreGuide();
@@ -848,6 +891,51 @@ export default function SmartGuide({
     return next;
   });
 
+  const directEditTask = (featureId:string) => featureId === "schedule.action.change-instructor" ? "instructor" : featureId === "schedule.action.change-course" ? "course" : featureId === "schedule.action.change-time" ? "time" : "";
+  const runSelectedEditFromTour = useCallback((feature:GuideFeature, id:number) => {
+    const task = directEditTask(feature.id);
+    if (!task || !id) return false;
+    runCommand({ scope:"schedule", type:"openEditSelected", task, value:String(id), featureId:feature.id });
+    return true;
+  }, [runCommand]);
+
+  useEffect(() => {
+    if (!tour || tour.index !== 0 || !tourAwaitingScheduleSelectionRef.current) return;
+    const id = Number(context?.selected?.id || 0);
+    if (!id || id === tourSelectionStartedWithIdRef.current) return;
+    tourAwaitingScheduleSelectionRef.current=false;
+    const feature=tour.feature;
+    const exactStep:TourStep={ selector:`[data-row-id="${id}"]`, text:`هذه بطاقة «${context?.selected?.course || "المقرر المحدد"}». منها سأفتح ${feature.id === "schedule.action.change-instructor" ? "تغيير الأستاذ" : feature.id === "schedule.action.change-course" ? "تغيير المقرر" : "تغيير الوقت"}.` };
+    setTour(current => current ? { ...current, steps:[exactStep, ...current.steps.slice(1)] } : current);
+    scheduleLifecycle(() => {
+      runSelectedEditFromTour(feature,id);
+      setTour(current => current && current.feature.id === feature.id ? { ...current, index:Math.min(1,current.steps.length-1) } : current);
+    }, 260);
+  }, [context?.selected?.course, context?.selected?.id, runSelectedEditFromTour, scheduleLifecycle, tour]);
+
+  const tourPrimaryLabel = () => {
+    if (!tour || !located) return "أكمل";
+    if (located.index + 1 >= located.total) return "تم";
+    if (tourAwaitingScheduleSelectionRef.current && tour.steps[tour.index]?.selector === "[data-row-id]") return "";
+    if (tour.index === 0 && Number(context?.selected?.id || 0)) {
+      if (tour.feature.id === "schedule.action.change-instructor") return "افتح تغيير الأستاذ";
+      if (tour.feature.id === "schedule.action.change-course") return "افتح تغيير المقرر";
+      if (tour.feature.id === "schedule.action.change-time") return "افتح تغيير الوقت";
+    }
+    const nextText=String(tour.steps[tour.index+1]?.text || "").replace(/^[^«]*«([^»]+)».*/, "$1");
+    return nextText && nextText.length <= 28 ? `إلى ${nextText}` : "أكمل الخطوة";
+  };
+
+  const handleTourPrimary = () => {
+    if (!tour) return;
+    const id=Number(context?.selected?.id || 0);
+    if (tour.index === 0 && id && runSelectedEditFromTour(tour.feature,id)) {
+      nextTour();
+      return;
+    }
+    nextTour();
+  };
+
   const executeSafe = (feature: GuideFeature) => {
     if (!canAccessGuideFeature(feature, permissionSession)) {
       setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية.");
@@ -858,15 +946,27 @@ export default function SmartGuide({
       setNotice("هذه العملية غير متاحة ضمن صلاحياتك الحالية.");
       return;
     }
-    const needsSelection = new Set(["schedule.action.move-room","schedule.action.change-time","schedule.action.change-instructor","schedule.action.find-room"]).has(feature.id);
+    const directScheduleEdits = new Set(["schedule.action.change-time","schedule.action.change-course","schedule.action.change-instructor"]);
+    const needsSelection = new Set(["schedule.action.move-room",...directScheduleEdits,"schedule.action.find-room"]).has(feature.id);
     if (needsSelection && !Number(context?.selected?.id || 0)) {
       setPreview(null);
       setDrawerHidden(false);
       setNotice(`قبل «${feature.title}» حدّد مقررًا واحدًا من الجدول. لن أبدأ معاملة أو تغييرًا قبل وجود مقرر محدد.`);
       if (feature.id === "schedule.action.move-room" || feature.id === "schedule.action.find-room") {
         beginScreenHandoff("خطوة مطلوبة أولًا", "سأفتح عرض المباني والقاعات فقط؛ حدّد المقرر ثم اطلب المتابعة.");
-        runCommand({ scope:"schedule", type:"changeView", value:"rooms", featureId:"schedule.view.rooms" });
+        const command:GuideCommand={ scope:"schedule", type:"changeView", value:"rooms", featureId:"schedule.view.rooms" };
+        if (activeView !== "schedules") { pendingViewCommandRef.current={view:"schedules",command}; onNavigate("schedules"); }
+        else runCommand(command);
         scheduleLifecycle(() => restoreGuide("حدّد مقررًا واحدًا من عرض القاعات، ثم اطلب المتابعة."), 4000);
+      } else if (directScheduleEdits.has(feature.id)) {
+        if (activeView !== "schedules") {
+          setPendingTourStep(0);
+          setPendingTourId(feature.id);
+          beginScreenHandoff("أفتح الجدول الدراسي", "اختر بطاقة الموعد؛ بعدها سأحددها بصريًا وأفتح الحقل المطلوب تلقائيًا.");
+          onNavigate("schedules");
+        } else {
+          startTour(feature);
+        }
       }
       return;
     }
@@ -886,6 +986,22 @@ export default function SmartGuide({
       startTour(feature);
       return;
     }
+    // These commands only open the real schedule editor and focus the requested
+    // field; they do not save. Treat them as safe handoffs, not simulations or
+    // preview transactions, so a request made from Intelligence lands in the
+    // academic schedule itself and the final save remains the user's decision.
+    if (directScheduleEdits.has(feature.id)) {
+      recordFeatureEvent(userId, feature.id, "started");
+      beginScreenHandoff("أفتح التعديل الحقيقي", `سأفتح «${feature.title}» داخل الجدول الدراسي؛ الحفظ النهائي يبقى بيدك.`);
+      const prepared={...command,featureId:feature.id,value:String(Number(context?.selected?.id || 0) || command.value || "")};
+      if (feature.view && feature.view !== activeView) {
+        pendingViewCommandRef.current={view:feature.view,command:prepared};
+        onNavigate(feature.view);
+      } else runCommand(prepared);
+      setGuideTask(userId,{id:`assist:${feature.id}`,title:`تعديل فعلي: ${feature.title}`,featureId:feature.id,target:feature.target,command:prepared,startedAt:Date.now(),updatedAt:Date.now(),journeyId:journey?.id});
+      return;
+    }
+
     if (action?.risk === "read") {
       recordFeatureEvent(userId, feature.id, "started");
       beginScreenHandoff("أجهز الخطوة الآمنة", `سأفتح «${feature.title}» دون تعديل البيانات.`);
@@ -1264,8 +1380,7 @@ export default function SmartGuide({
         <header className="smart-guide-hero">
           <div>
             <span className="smart-guide-kicker"><Bot aria-hidden="true" /> مرشد SCHEDULE <i aria-hidden="true">·</i> <b>{pageTitle}</b></span>
-            <h2>كيف؟</h2>
-            <p>{isExpert ? "أنت متمكن هنا؛ سأبقى هادئًا ما لم تخرج العملية عن نمطك المعتاد." : what}</p>
+            <strong className="smart-guide-hero-state">{isExpert ? "جاهز" : "كيف أساعدك؟"}</strong>
           </div>
           <div className="smart-guide-hero-tools">
             <button type="button" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { beginScreenHandoff("وضع أشر لي", "سأخفي المرشد وأنتظر اختيارك؛ الضغط لن يُنفذ العنصر."); setPointMode(true); })} aria-label="أشر لي" title="أشر لي"><Target /></button>
@@ -1286,11 +1401,10 @@ export default function SmartGuide({
         <section className="smart-guide-location">
           <span><CircleDot aria-hidden="true" /></span>
           <div>
-            <small>أنت هنا الآن</small>
             <strong>{pageTitle}</strong>
-            <p>{context?.view === activeView ? (context?.scopeLabel || context?.placeLabel || "أعرف سياق الشاشة الحالية") : "أعرف سياق الشاشة الحالية"}</p>
+            <p>{context?.view === activeView ? (context?.scopeLabel || context?.placeLabel || "") : ""}</p>
           </div>
-          <i className={isExpert ? "expert" : "learning"}>{isExpert ? "متمكن" : "يتعلم نمطك"}</i>
+          <i className={isExpert ? "expert" : "learning"} title={isExpert ? "متقن لهذه الشاشة" : "يتعلم نمط استخدامك"} aria-label={isExpert ? "متقن لهذه الشاشة" : "يتعلم نمط استخدامك"}><BrainCircuit aria-hidden="true" /></i>
         </section>
 
         {(profile.currentTask || profile.previousTask) ? (() => {
@@ -1313,7 +1427,7 @@ export default function SmartGuide({
 
         <label className="smart-guide-search" role="search">
           <Search aria-hidden="true" />
-          <input value={query} onChange={(event) => handleSearchChange(event.target.value)} placeholder="اسأل بطريقتك… مثل: شلون أنقل المادة؟" aria-label="اسأل المرشد" />
+          <input value={query} onChange={(event) => handleSearchChange(event.target.value)} placeholder="اكتب ما تريد إنجازه…" aria-label="اسأل المرشد" />
           {query ? <button type="button" onClick={clearSearch} aria-label="مسح السؤال" title="مسح"><X aria-hidden="true" /></button> : null}
         </label>
 
@@ -1336,11 +1450,12 @@ export default function SmartGuide({
           <section className="smart-guide-selected-context">
             <div className="smart-guide-selected-visual"><MapPin /><i /><b /></div>
             <div><small>العنصر المحدد</small><strong>{context.selected.course}</strong><span>{[context.selected.room, context.selected.start].filter(Boolean).join(" · ")}</span></div>
-            <div className="smart-guide-selected-actions">
-              <button type="button" onClick={() => chooseKnown(featureById("schedule.action.move-room")!)}>تغيير القاعة</button>
-              <button type="button" onClick={() => { beginScreenHandoff("أفتح محرر المقرر","سأفتح المقرر المحدد لتغيير الوقت؛ لن أحفظ نيابةً عنك."); runCommand({ scope: "schedule", type: "openEditRow", value: String(context.selected.id), featureId:"schedule.action.change-time" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}>تغيير الوقت</button>
-              <button type="button" onClick={() => { beginScreenHandoff("أحدد المقرر على الشاشة", context.selected.conflict ? "سأبرز مكان التعارض الحالي." : "سأبرز بطاقة المقرر على الجدول."); runCommand({ scope: "schedule", type: "focusRow", value: String(context.selected.id), featureId:"schedule.view.week" }); scheduleLifecycle(() => restoreGuide("تم تحديد المقرر على الجدول."), 3200); }}>{context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"}</button>
-              <button type="button" onClick={() => { beginScreenHandoff("أبحث عن بديل","سأفتح البدائل للمقرر المحدد دون اعتماد تغيير."); runCommand({ scope: "schedule", type: "findAlternative", value: String(context.selected.id), featureId:"schedule.action.find-room" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}>ابحث عن بديل</button>
+            <div className="smart-guide-selected-actions icon-only" aria-label="إجراءات الموعد المحدد">
+              <button type="button" title="تغيير القاعة" aria-label="تغيير القاعة" onClick={() => chooseKnown(featureById("schedule.action.move-room")!)}><MapPin /></button>
+              <button type="button" title="تغيير الوقت" aria-label="تغيير الوقت" onClick={() => { beginScreenHandoff("أفتح الوقت","المحرر الحقيقي للجدول؛ اختر الوقت الجديد ثم احفظ."); runCommand({ scope:"schedule",type:"openEditSelected",task:"time",value:String(context.selected.id),featureId:"schedule.action.change-time" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}><Clock3 /></button>
+              <button type="button" title="تغيير المقرر" aria-label="تغيير المقرر" onClick={() => { beginScreenHandoff("أفتح المقرر","المحرر الحقيقي للجدول؛ اختر المقرر الجديد ثم احفظ."); runCommand({ scope:"schedule",type:"openEditSelected",task:"course",value:String(context.selected.id),featureId:"schedule.action.change-course" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}><BookOpen /></button>
+              <button type="button" title="تغيير الأستاذ" aria-label="تغيير الأستاذ" onClick={() => { beginScreenHandoff("أفتح الأستاذ","المحرر الحقيقي للجدول؛ اختر الأستاذ الجديد ثم احفظ."); runCommand({ scope:"schedule",type:"openEditSelected",task:"instructor",value:String(context.selected.id),featureId:"schedule.action.change-instructor" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}><UserRound /></button>
+              <button type="button" title={context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"} aria-label={context.selected.conflict ? "أرني التعارض" : "أرني على الجدول"} onClick={() => { beginScreenHandoff("أحدد الموعد", context.selected.conflict ? "سأبرز مكان التعارض الحالي." : "سأبرز بطاقة الموعد على الجدول."); runCommand({ scope:"schedule",type:"focusRow",value:String(context.selected.id),featureId:"schedule.view.week" }); scheduleLifecycle(() => restoreGuide("تم تحديد الموعد على الجدول."), 3200); }}><Eye /></button>
             </div>
           </section>
         ) : null}
@@ -1385,14 +1500,14 @@ export default function SmartGuide({
             <header><span><Sparkles /></span><div><small>{selectedReason === "UI_CHANGED" ? "تغيّرت هذه الوظيفة منذ آخر استخدام لك. سأحدد موضعها الحالي." : selectedReason === "FORGOTTEN" ? "استخدمت هذه الوظيفة سابقًا. هذا تذكير سريع." : selectedExpert ? "إجابة مختصرة لأنك تتقنها" : selectedRecentlyHelped ? "سبق أن شرحتها لك؛ سأختصر هذه المرة" : selected.group}</small><strong>{selected.title}</strong><p>{selected.summary}</p></div></header>
             {!selectedConcise ? <div className="smart-guide-infographic" aria-hidden="true"><span><Eye /></span><i /><span><MousePointer2 /></span><i /><span><Check /></span></div> : null}
             {!selectedConcise && selected.steps?.length ? <ol className="smart-guide-steps">{selected.steps.slice(0, 4).map((step, index) => <li key={index}><b>{String(index + 1).padStart(2, "0")}</b><span>{step.text}</span></li>)}</ol> : null}
-            {selectedConcise ? <div className="smart-guide-actions expert"><button type="button" onClick={() => executeSafe(selected)}><Zap />افتح مباشرةً</button><button type="button" onClick={() => startTour(selected)}><Eye />أرني المكان</button></div> : <div className="smart-guide-actions"><button type="button" onClick={() => startTour(selected)}><Eye />أرني على شاشتي</button><button type="button" onClick={() => executeSafe(selected)}><WandSparkles />أكمل عني</button><button type="button" onClick={() => simulateFeature(selected)}><ShieldCheck />جرّب دون تغيير</button></div>}
+            {selectedConcise ? <div className="smart-guide-actions expert"><button type="button" onClick={() => executeSafe(selected)}><Zap />افتح</button><button type="button" onClick={() => startTour(selected)}><Eye />أرني</button></div> : <div className="smart-guide-actions"><button type="button" onClick={() => startTour(selected)}><Eye />أرني</button><button type="button" onClick={() => executeSafe(selected)}><WandSparkles />افتح</button><button type="button" onClick={() => simulateFeature(selected)}><ShieldCheck />جرّب</button></div>}
             <button className="smart-guide-back-link" type="button" onClick={() => setSelectedId(null)}><ArrowLeft />العودة</button>
           </section>
         ) : null}
 
         {selectedDynamic ? (
-          <section className="smart-guide-focus-card">
-            <header><span><MousePointer2 /></span><div><small>عنصر حي</small><strong>{selectedDynamic.title}</strong><p>{explainDynamic(selectedDynamic)}</p></div></header>
+          <section className="smart-guide-focus-card smart-guide-point-answer">
+            <header><span><MousePointer2 /></span><div><small>شنو هذا؟</small><strong>{selectedDynamic.title}</strong><p><b>فايدته:</b> {explainDynamic(selectedDynamic)}</p></div></header>
             <div className="smart-guide-actions one"><button type="button" onClick={() => showDynamicOnScreen(selectedDynamic)}><Eye />أرني مكانه</button></div>
             <button className="smart-guide-back-link" type="button" onClick={() => setSelectedDynamic(null)}><ArrowLeft />العودة</button>
           </section>
@@ -1403,47 +1518,44 @@ export default function SmartGuide({
             {browseMode === "forYou" ? (
               <>
                 {predictedFeature ? <div className="smart-guide-next-wrap"><button type="button" className="smart-guide-next" onClick={() => chooseKnown(predictedFeature)}><Zap /><span><small>غالبًا خطوتك التالية</small><strong>{predictedFeature.title}</strong></span><ChevronLeft /></button><button type="button" className="smart-guide-next-why" onClick={() => setNotice("أقترح هذه الخطوة لأنها تأتي غالبًا بعد ما تفعله الآن ضمن نمط عملك المعتاد. إذا تغيّر نمطك فسيتغير الاقتراح تلقائيًا.")}>لماذا هذا الاقتراح؟</button></div> : null}
-                {routines.length ? <><section className="smart-guide-section-head"><div><small>اختصاراتك</small><strong>مسارات حفظتها بطريقتك</strong></div></section><div className="smart-guide-routines">{routines.slice(0,5).map(routine => <article key={routine.id}><span><Zap /></span><div><strong>{routine.name}</strong><small>{routine.sequence.length} خطوات آمنة</small></div><button type="button" onClick={() => runRoutine(routine)}><Play />تشغيل</button><button type="button" className="danger" onClick={() => { removeGuideRoutine(userId,routine.id); refreshProfile(); }} aria-label={`حذف اختصار ${routine.name}`}><Trash2 /></button></article>)}</div></> : null}
-                {workflows.length ? <><section className="smart-guide-section-head"><div><small>تعلّمت نمطك</small><strong>مسارات معتادة</strong></div></section><div className="smart-guide-workflows">{workflows.map((workflow,index) => <article key={index}><div><strong>{workflow.sequence.map(id => featureById(id)?.title || id.replace(/^page\./,"")).slice(-4).map((name, stepIndex, names) => <React.Fragment key={`${name}-${stepIndex}`}><span>{name}</span>{stepIndex < names.length - 1 ? <ChevronLeft className="guide-flow-arrow" aria-hidden="true" /> : null}</React.Fragment>)}</strong><small>تكرر {workflow.count.toLocaleString("ar-KW-u-nu-latn")} مرات؛ لذلك لا أعتبره تعثرًا.</small></div><div><button type="button" onClick={() => replayWorkflow(workflow.sequence)}><Play />فتح المسار</button><button type="button" onClick={() => setRoutineDraft({sequence:workflow.sequence,name:"مساري المعتاد"})}><Plus />حفظ كاختصار</button></div></article>)}</div></> : null}
-                {!routines.length && !workflows.length ? <><section className="smart-guide-section-head"><div><small>مخصص لك</small><strong>أتعلم طريقتك تدريجيًا</strong></div></section><div className="smart-guide-live-controls"><p>كلما استخدمت SCHEDULE أكثر، سأتعرف على المسارات التي تتقنها وأتوقف عن مقاطعتك فيها.</p></div></> : null}
+                {routines.length ? <details className="smart-guide-fold"><summary><Zap /><span><small>اختصاراتك</small><strong>مساراتك المحفوظة</strong></span><b dir="ltr">{routines.length}</b></summary><div className="smart-guide-routines">{routines.slice(0,5).map(routine => <article key={routine.id}><span><Zap /></span><div><strong>{routine.name}</strong><small>{routine.sequence.length} خطوات آمنة</small></div><button type="button" onClick={() => runRoutine(routine)}><Play />تشغيل</button><button type="button" className="danger" onClick={() => { removeGuideRoutine(userId,routine.id); refreshProfile(); }} aria-label={`حذف اختصار ${routine.name}`}><Trash2 /></button></article>)}</div></details> : null}
+                {workflows.length ? <details className="smart-guide-fold"><summary><BrainCircuit /><span><small>تعلّمت نمطك</small><strong>مسارات معتادة</strong></span><b dir="ltr">{workflows.length}</b></summary><div className="smart-guide-workflows">{workflows.map((workflow,index) => <article key={index}><div><strong>{workflow.sequence.map(id => featureById(id)?.title || id.replace(/^page\./,"")).slice(-4).map((name, stepIndex, names) => <React.Fragment key={`${name}-${stepIndex}`}><span>{name}</span>{stepIndex < names.length - 1 ? <ChevronLeft className="guide-flow-arrow" aria-hidden="true" /> : null}</React.Fragment>)}</strong><small>تكرر {workflow.count.toLocaleString("ar-KW-u-nu-latn")} مرات؛ لذلك لا أعتبره تعثرًا.</small></div><div><button type="button" onClick={() => replayWorkflow(workflow.sequence)}><Play />فتح المسار</button><button type="button" onClick={() => setRoutineDraft({sequence:workflow.sequence,name:"مساري المعتاد"})}><Plus />حفظ كاختصار</button></div></article>)}</div></details> : null}
+                {!routines.length && !workflows.length ? <div className="smart-guide-learning-orbit" aria-label="يتعلم المرشد نمط استخدامك" title="يتعلم المرشد نمط استخدامك"><span><MousePointer2 /></span><i /><span><BrainCircuit /></span><i /><span><Zap /></span></div> : null}
               </>
             ) : null}
 
             {browseMode === "here" ? (
               <>
-                <section className="smart-guide-section-head"><div><small>هذه الشاشة</small><strong>الأدوات المتاحة الآن</strong></div></section>
-                <div className="smart-guide-feature-grid">{known.filter(feature => !feature.id.startsWith("page.")).map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.summary}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}</div>
-                <section className="smart-guide-section-head"><div><small>اكتشاف حي</small><strong>عناصر ظهرت في الشاشة</strong></div></section>
-                <div className="smart-guide-live-controls">{dynamic.filter(item => !item.target || !featureById(item.target)).map(item => <button type="button" key={item.id} onClick={() => chooseDynamic(item)}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}{!dynamic.filter(item => !item.target || !featureById(item.target)).length?<p>كل العناصر الظاهرة حاليًا معرّفة داخل المرشد.</p>:null}</div>
+                <details className="smart-guide-fold"><summary><Sparkles /><span><small>هذه الشاشة</small><strong>الأدوات المتاحة الآن</strong></span><b dir="ltr">{known.filter(feature => !feature.id.startsWith("page.")).length}</b></summary><div className="smart-guide-feature-grid">{known.filter(feature => !feature.id.startsWith("page.")).map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.summary}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}</div></details>
+                <details className="smart-guide-fold"><summary><MousePointer2 /><span><small>اكتشاف حي</small><strong>عناصر الشاشة</strong></span><b dir="ltr">{dynamic.filter(item => !item.target || !featureById(item.target)).length}</b></summary><div className="smart-guide-live-controls">{dynamic.filter(item => !item.target || !featureById(item.target)).map(item => <button type="button" key={item.id} onClick={() => chooseDynamic(item)}><MousePointer2 /><span><strong>{item.title}</strong><small>اكتشفها المرشد تلقائيًا</small></span></button>)}{!dynamic.filter(item => !item.target || !featureById(item.target)).length?<p>كل العناصر الظاهرة حاليًا معرّفة داخل المرشد.</p>:null}</div></details>
               </>
             ) : null}
 
             {browseMode === "new" ? (
               <>
-                <section className="smart-guide-section-head smart-guide-new-head"><div><small>ما الجديد لك</small><strong>{unreadSummary.total ? "تحديثات واضحة ومفصولة حسب مصدرها" : "أنت مطّلع على التحديثات المتاحة"}</strong></div>{unreadSummary.total ? <button type="button" className="smart-guide-mark-all" onClick={markAllNewSeen}><Check aria-hidden="true" /><span>اعتبر الكل مقروءًا</span></button> : null}</section>
+                <section className="smart-guide-section-head smart-guide-new-head"><div><small>ما الجديد لك</small><strong>{unreadSummary.total ? "تحديثات واضحة ومفصولة حسب مصدرها" : "أنت مطّلع على التحديثات المتاحة"}</strong></div>{unreadSummary.total ? <button type="button" className="smart-guide-mark-all" onClick={markAllNewSeen} aria-label="اعتبر الكل مقروءًا" title="اعتبر الكل مقروءًا"><Check aria-hidden="true" /></button> : null}</section>
                 <div className="smart-guide-new-summary" aria-label="نطاق عداد الجديد">
                   <article className="is-product"><Sparkles /><span><strong>{unreadSummary.product.length.toLocaleString("ar-KW-u-nu-latn")}</strong><small>تحديثات المنتج ضمن صلاحياتك</small></span></article>
                   <article className="is-runtime"><MousePointer2 /><span><strong>{unreadSummary.runtime.length.toLocaleString("ar-KW-u-nu-latn")}</strong><small>عناصر جديدة في هذه الشاشة فقط</small></span></article>
                 </div>
-                {allChanged.length ? <><section className="smart-guide-new-scope"><strong>تحديثات المنتج</strong><small>ميزات مسجلة تغيّر إصدارها أو أضيفت منذ آخر قراءة لك.</small></section><div className="smart-guide-new-grid">{allChanged.map(feature => <button type="button" key={feature.id} onClick={() => chooseKnown(feature)}><Sparkles /><span><strong>{feature.title}</strong><small>{profile.mastery[feature.id]?.versionSeen ? "تغيّرت منذ آخر استخدام لك" : "تحديث منتج لم تقرأه بعد"}</small></span></button>)}</div></> : null}
-                {discoveredChanged.length ? <><section className="smart-guide-new-scope"><strong>جديد في {pageTitle}</strong><small>عناصر واجهة اكتشفها المرشد في هذه الشاشة بعد خط الأساس الأول.</small></section><div className="smart-guide-new-grid">{discoveredChanged.map(item => <button type="button" key={item.id} onClick={() => { markDiscoveredSeen(userId,item.id); refreshProfile(); const live=dynamic.find(value=>value.id===item.id); if(live) chooseDynamic(live); else setNotice(`ظهر «${item.title}» مؤخرًا هنا. سأحدده لك عندما يعود للظهور.`); }}><MousePointer2 /><span><strong>{item.title}</strong><small>عنصر واجهة جديد في هذه الشاشة</small></span></button>)}</div></> : null}
+                {allChanged.length ? <details className="smart-guide-fold"><summary><Sparkles /><span><small>المنتج</small><strong>تحديثات المنتج</strong></span><b dir="ltr">{allChanged.length}</b></summary><div className="smart-guide-new-grid">{allChanged.map(feature => <button type="button" key={feature.id} onClick={() => chooseKnown(feature)}><Sparkles /><span><strong>{feature.title}</strong><small>{profile.mastery[feature.id]?.versionSeen ? "تغيّرت منذ آخر استخدام لك" : "تحديث منتج لم تقرأه بعد"}</small></span></button>)}</div></details> : null}
+                {discoveredChanged.length ? <details className="smart-guide-fold"><summary><MousePointer2 /><span><small>هذه الشاشة</small><strong>جديد في {pageTitle}</strong></span><b dir="ltr">{discoveredChanged.length}</b></summary><div className="smart-guide-new-grid">{discoveredChanged.map(item => <button type="button" key={item.id} onClick={() => { markDiscoveredSeen(userId,item.id); refreshProfile(); const live=dynamic.find(value=>value.id===item.id); if(live) chooseDynamic(live); else setNotice(`ظهر «${item.title}» مؤخرًا هنا. سأحدده لك عندما يعود للظهور.`); }}><MousePointer2 /><span><strong>{item.title}</strong><small>عنصر واجهة جديد في هذه الشاشة</small></span></button>)}</div></details> : null}
               </>
             ) : null}
 
             {browseMode === "all" ? (
               <>
-                <section className="smart-guide-section-head"><div><small>كل الميزات</small><strong>ضمن صلاحياتك فقط</strong></div></section>
-                <div className="smart-guide-feature-grid">
+                <details className="smart-guide-fold"><summary><Compass /><span><small>الفهرس</small><strong>كل الميزات ضمن صلاحياتك</strong></span><b dir="ltr">{allAllowed.length + dynamic.filter(item => !featureById(item.id)).length}</b></summary><div className="smart-guide-feature-grid">
                   {allAllowed.map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.group}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}
                   {dynamic.filter(item => !featureById(item.id)).map(item => <button key={item.id} type="button" onClick={() => chooseDynamic(item)}><span><MousePointer2 /></span><div><strong>{item.title}</strong><small>مكتشفة تلقائيًا</small></div></button>)}
-                </div>
+                </div></details>
               </>
             ) : null}
 
             {routineDraft ? <section className="smart-guide-routine-editor"><Zap /><div><small>اسم الاختصار</small><input value={routineDraft.name} onChange={event => setRoutineDraft({...routineDraft,name:event.target.value})} maxLength={48}/></div><button type="button" onClick={saveRoutineDraft}>حفظ</button><button type="button" onClick={() => setRoutineDraft(null)}>إلغاء</button></section> : null}
 
-            {root && collectiveFriction.length && browseMode === "forYou" ? <><section className="smart-guide-section-head"><div><small>تحسين المنتج</small><strong>أكثر نقاط التعثر جماعيًا</strong></div></section><div className="smart-guide-friction">{collectiveFriction.map((item,index) => <article key={`${item.name}-${index}`}><Gauge /><span><strong>{item.name}</strong><small>{item.count.toLocaleString("ar-KW-u-nu-latn")} إشارة مجهولة الهوية</small></span><i style={{"--guide-friction":`${Math.min(100,item.count*8)}%`} as React.CSSProperties}/></article>)}</div></> : null}
-            {root && collectiveInsights.length && browseMode === "forYou" ? <><section className="smart-guide-section-head"><div><small>مؤشر تجربة المنتج</small><strong>أماكن قد تحتاج تحسينًا في الواجهة</strong></div></section><div className="smart-guide-friction product-insights">{collectiveInsights.map((item,index) => { const feature=featureById(item.featureId); const change=Math.round(Number(item.changeVsPrevious||0)*100); return <article key={`${item.featureId}-${item.step}-${index}`}><Gauge /><span><strong>{feature?.title || item.featureId}</strong><small>{`فشل ${Math.round(item.failureRate*100)}٪ · نجاح بعد المساعدة ${Math.round(Number(item.helpToSuccessRate||0)*100)}٪${change ? ` · ${change>0?"↑":"↓"}${Math.abs(change)}٪ عن السابق` : ""}`}</small></span><i style={{"--guide-friction":`${Math.min(100,Math.round((item.failureRate+item.abandonRate)*100))}%`} as React.CSSProperties}/></article>; })}</div></> : null}
+            {root && collectiveFriction.length && browseMode === "all" ? <details className="smart-guide-fold"><summary><Gauge /><span><small>تحسين المنتج</small><strong>نقاط التعثر الجماعية</strong></span><b dir="ltr">{collectiveFriction.length}</b></summary><div className="smart-guide-friction">{collectiveFriction.map((item,index) => <article key={`${item.name}-${index}`}><Gauge /><span><strong>{item.name}</strong><small>{item.count.toLocaleString("ar-KW-u-nu-latn")} إشارة مجهولة الهوية</small></span><i style={{"--guide-friction":`${Math.min(100,item.count*8)}%`} as React.CSSProperties}/></article>)}</div></details> : null}
+            {root && collectiveInsights.length && browseMode === "all" ? <details className="smart-guide-fold"><summary><Gauge /><span><small>تجربة المنتج</small><strong>مؤشرات التحسين</strong></span><b dir="ltr">{collectiveInsights.length}</b></summary><div className="smart-guide-friction product-insights">{collectiveInsights.map((item,index) => { const feature=featureById(item.featureId); const change=Math.round(Number(item.changeVsPrevious||0)*100); return <article key={`${item.featureId}-${item.step}-${index}`}><Gauge /><span><strong>{feature?.title || item.featureId}</strong><small>{`فشل ${Math.round(item.failureRate*100)}٪ · نجاح بعد المساعدة ${Math.round(Number(item.helpToSuccessRate||0)*100)}٪${change ? ` · ${change>0?"↑":"↓"}${Math.abs(change)}٪ عن السابق` : ""}`}</small></span><i style={{"--guide-friction":`${Math.min(100,Math.round((item.failureRate+item.abandonRate)*100))}%`} as React.CSSProperties}/></article>; })}</div></details> : null}
           </>
         ) : null}
 
@@ -1452,7 +1564,7 @@ export default function SmartGuide({
         <footer className="smart-guide-footer">
           <button type="button" onClick={() => setSettingsOpen((value) => !value)}><Settings2 />المساعدة الاستباقية</button>
           <small>{profile.hintMode === "off" ? "متوقفة" : profile.hintMode === "quiet" ? "قليلة" : "تلقائية"}</small>
-          <em>التعلّم عن نمط استخدامك محفوظ على هذا الجهاز. وعند الحاجة فقط لفهم سؤال مركّب قد يُرسل نص السؤال وسياق محدود إلى خدمة الذكاء المهيأة للنظام.</em>
+          <span className="sr-only">التعلّم عن نمط استخدامك محفوظ على هذا الجهاز. وعند الحاجة فقط لفهم سؤال مركّب قد يُرسل نص السؤال وسياق محدود إلى خدمة الذكاء المهيأة للنظام.</span>
         </footer>
         {settingsOpen ? (
           <div className="smart-guide-settings">
@@ -1475,7 +1587,10 @@ export default function SmartGuide({
           <MousePointer2 className="guide-ghost-hand" style={{ top: Math.max(12, located.rect.top + Math.min(located.rect.height * 0.45, 36)), left: Math.max(12, located.rect.left + Math.min(located.rect.width * 0.55, 90)) }} />
           <div className="guide-ghost-card" role="dialog" aria-modal="true" aria-label="خطوات الإرشاد الحي" tabIndex={-1} style={{ top: Math.min(window.innerHeight - 170, Math.max(16, located.rect.bottom + 14)), left: Math.min(window.innerWidth - 330, Math.max(16, located.rect.left)) }}>
             <small>{located.index + 1} من {located.total}</small><strong>{located.text}</strong>
-            <div><button type="button" onClick={stopTour}>إيقاف</button><button type="button" className="primary" onClick={nextTour}>{located.index + 1 >= located.total ? <><Check />تم</> : <>التالي<ChevronLeft /></>}</button></div>
+            <div>
+              <button type="button" onClick={stopTour}>إيقاف</button>
+              {tourPrimaryLabel() ? <button type="button" className="primary" onClick={handleTourPrimary}>{located.index + 1 >= located.total ? <><Check />تم</> : <>{tourPrimaryLabel()}<ChevronLeft /></>}</button> : <span className="guide-ghost-wait">اضغط البطاقة للمتابعة</span>}
+            </div>
           </div>
         </div>
       ) : null}

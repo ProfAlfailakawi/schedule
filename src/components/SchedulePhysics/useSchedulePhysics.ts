@@ -11,12 +11,20 @@ interface Options {
   disabled?: boolean;
   /** A synchronous, local reading shown before the network refines it. */
   previewTarget?: (row: FSchedule, target: SchedulePhysicsTarget) => SchedulePhysicsDecision | null;
+  /**
+   * A lightweight authoritative refinement used while the pointer is moving.
+   * Keep this limited to the facts that may invalidate a drop (room/teacher/revision).
+   * Richer intelligence can still live behind evaluateTarget without slowing the hand.
+   */
+  confirmTarget?: EvaluateTarget;
   evaluateTarget: EvaluateTarget;
   onStart?: (row: FSchedule, sourceDay: ScheduleDayKey) => void;
   onDecision?: (decision: SchedulePhysicsDecision | null, target: SchedulePhysicsTarget | null) => void;
   onDropRequest: (request: SchedulePhysicsDropRequest) => void;
   onCancel?: (reason: "escape" | "outside" | "same" | "invalid") => void;
   onInvalid?: (decision: SchedulePhysicsDecision | null) => void;
+  /** Week-only continuity guard: magnetic guidance may assist the pointer, never tug against its active horizontal direction. */
+  preservePointerDirectionX?: boolean;
 }
 
 interface Session {
@@ -171,9 +179,12 @@ export default function useSchedulePhysics(options: Options) {
     else optionsRef.current.onCancel?.(reason);
   }, [clearEvaluation]);
 
+  const targetKey = (row: FSchedule, target: SchedulePhysicsTarget) =>
+    `${row.id}:${Number((row as any).rev || 0)}:${Number(row.AdInstructorId || 0)}:${target.day}:${target.start}:${target.room ? `${target.room.code}|${target.room.hall}` : "week"}`;
+
   const runEvaluation = useCallback((session: Session, target: SchedulePhysicsTarget) => {
     clearEvaluation();
-    const key = `${session.row.id}:${target.day}:${target.start}`;
+    const key = targetKey(session.row, target);
     const cached = cacheRef.current.get(key);
     if (cached) {
       session.decision = cached;
@@ -182,46 +193,47 @@ export default function useSchedulePhysics(options: Options) {
       return;
     }
     const immediate = optionsRef.current.previewTarget?.(session.row, target) || null;
-    const loading: SchedulePhysicsDecision = immediate
-      ? { ...immediate, key, loading: true }
+    const first: SchedulePhysicsDecision = immediate
+      ? { ...immediate, key, loading: false }
       : {
           key, quality: "unknown", title: "أقرأ أثر القرار…", summary: "أحسب الموانع والفراغ والضغط والجودة دون حفظ أي شيء.",
           reasons: [], positives: [], tradeoffs: [], conflicts: [], ripple: null, why: null, whyNot: null, loading: true, dataAvailable: false,
         };
-    session.decision = loading;
-    setState(prev => ({ ...prev, target, decision: loading }));
-    optionsRef.current.onDecision?.(loading, target);
-    // The drag HUD only answers the two operational questions the coordinator
-    // needs while moving: is the room busy, or is the instructor busy? The local
-    // preview already has both from the loaded schedule, so do not stall the
-    // pointer on remote intelligence. The authoritative server validation still
-    // runs on commit and remains the final gate.
-    if (immediate) {
-      const finalImmediate = { ...immediate, key, loading: false };
-      session.decision = finalImmediate;
-      cacheRef.current.set(key, finalImmediate);
-      setState(prev => ({ ...prev, target, decision: finalImmediate }));
-      optionsRef.current.onDecision?.(finalImmediate, target);
-      return;
-    }
+    // The hand gets an answer in the same frame. Network validation is a quiet
+    // second opinion, never a spinner the coordinator has to wait for.
+    session.decision = first;
+    setState(prev => ({ ...prev, target, decision: first }));
+    optionsRef.current.onDecision?.(first, target);
+
+    // Refine the exact target in the background. Moving to another square calls
+    // clearEvaluation(), aborting the old request immediately, so late answers
+    // can never recolour the square now under the pointer.
     evalTimerRef.current = window.setTimeout(async () => {
       const controller = new AbortController();
       evalAbortRef.current = controller;
       try {
-        const decision = await optionsRef.current.evaluateTarget(session.row, target, controller.signal);
+        const evaluator = immediate && optionsRef.current.confirmTarget
+          ? optionsRef.current.confirmTarget
+          : optionsRef.current.evaluateTarget;
+        const decision = await evaluator(session.row, target, controller.signal);
         if (controller.signal.aborted) return;
-        cacheRef.current.set(key, decision);
+        const settled = { ...decision, key, loading: false };
+        cacheRef.current.set(key, settled);
         const current = sessionRef.current;
         if (!current || current.targetKey !== key || current.row.id !== session.row.id) return;
-        current.decision = decision;
-        setState(prev => ({ ...prev, target: current.target, decision }));
-        optionsRef.current.onDecision?.(decision, current.target);
+        current.decision = settled;
+        setState(prev => ({ ...prev, target: current.target, decision: settled }));
+        optionsRef.current.onDecision?.(settled, current.target);
       } catch (error: any) {
         if (controller.signal.aborted || error?.name === "AbortError") return;
-        const fallback: SchedulePhysicsDecision = {
-          key, quality: "unknown", title: "لا توجد بيانات كافية", summary: "تعذر جلب قراءة القرار اللحظية. لم يتم حفظ أي تغيير.",
-          reasons: [], positives: [], tradeoffs: [], conflicts: [], ripple: null, why: null, whyNot: null, dataAvailable: false,
-        };
+        // A failed refinement must not turn a reliable local red/green answer
+        // into an unknown state. Commit still performs the authoritative gate.
+        const fallback: SchedulePhysicsDecision = immediate
+          ? { ...immediate, key, loading: false }
+          : {
+              key, quality: "unknown", title: "لا توجد بيانات كافية", summary: "تعذر جلب قراءة القرار اللحظية. لم يتم حفظ أي تغيير.",
+              reasons: [], positives: [], tradeoffs: [], conflicts: [], ripple: null, why: null, whyNot: null, dataAvailable: false,
+            };
         cacheRef.current.set(key, fallback);
         const current = sessionRef.current;
         if (!current || current.targetKey !== key) return;
@@ -229,12 +241,12 @@ export default function useSchedulePhysics(options: Options) {
         setState(prev => ({ ...prev, decision: fallback }));
         optionsRef.current.onDecision?.(fallback, current.target);
       }
-    }, immediate ? 24 : 80);
+    }, immediate ? 0 : 60);
   }, [clearEvaluation]);
 
   const updateTarget = useCallback((session: Session) => {
     const target = targetFromPoint(session.pointerX, session.pointerY);
-    const key = target ? `${session.row.id}:${target.day}:${target.start}` : "";
+    const key = target ? targetKey(session.row, target) : "";
     if (key === session.targetKey) {
       if (target && session.target) session.target.rect = target.rect;
       return;
@@ -271,7 +283,18 @@ export default function useSchedulePhysics(options: Options) {
         const targetCenterX = session.target.rect.left + session.target.rect.width / 2;
         const targetCenterY = session.target.rect.top + Math.min(session.target.rect.height, session.sourceRect.height) / 2;
         const maxBias = quality === "suboptimal" ? 3.5 : 7;
-        desiredX += Math.max(-maxBias, Math.min(maxBias, (targetCenterX - baseCenterX) * strength));
+        let magneticX = Math.max(-maxBias, Math.min(maxBias, (targetCenterX - baseCenterX) * strength));
+        // In the RTL week board a target boundary can jump beneath the pointer while
+        // it is moving. The old magnetic correction could briefly point the other
+        // way, which looked like the card snapping left while the hand kept moving
+        // right. Keep every existing spring/magnet constant; only refuse a magnetic
+        // nudge that contradicts the user's current horizontal motion. Rooms keeps
+        // the original behaviour.
+        if (optionsRef.current.preservePointerDirectionX) {
+          if (session.velocityX > 0.15 && magneticX < 0) magneticX = 0;
+          else if (session.velocityX < -0.15 && magneticX > 0) magneticX = 0;
+        }
+        desiredX += magneticX;
         desiredY += Math.max(-maxBias, Math.min(maxBias, (targetCenterY - baseCenterY) * strength));
       }
     }
@@ -477,6 +500,7 @@ export default function useSchedulePhysics(options: Options) {
       if (target.closest("button,input,select,textarea,a,[data-no-physics='true']")) return;
       const element = event.currentTarget as HTMLElement;
       const rect = element.getBoundingClientRect();
+      cacheRef.current.clear();
       const session: Session = {
         pointerId: event.pointerId, pointerType: event.pointerType || "mouse", row, sourceDay, sourceStart: row.fstarttime,
         sourceRect: rect, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top,

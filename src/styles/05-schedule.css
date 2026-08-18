@@ -1761,6 +1761,11 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .replay-still strong{display:block;font-size:var(--t-sm);font-weight:650;color:var(--ink)}
 .replay-still p{margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+.replay-empty-state{padding:16px 18px;border:1px dashed var(--line);border-radius:16px;background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);line-height:1.8;text-align:center}
+.replay-empty-state-rich{display:grid;gap:8px;justify-items:center}
+.replay-empty-state-rich strong{font-size:var(--t-sm);font-weight:700;color:var(--ink)}
+.replay-empty-state-rich span,.replay-empty-state-rich p{max-width:560px;color:var(--muted)}
+.replay-empty-state-rich em{font-style:normal;color:var(--danger)}
 
 .context-loading{position:fixed;inset:0;z-index:130;display:grid;place-items:center;background:rgb(0 0 0 / .2)}
 
@@ -5071,7 +5076,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .hall-barter-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;min-width:178px}
 .hall-barter-actions .btn{min-height:38px}
 
-.hall-barter-active-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.hall-barter-active-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
 .hall-barter-active-grid>article{
   position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:var(--s3);
   padding:var(--s4);border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:var(--r-lg);
@@ -5115,11 +5120,21 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 .hall-barter-pending-row .hall-barter-window{margin-top:0}
 .hall-barter-pending-label{padding:5px 8px;border-radius:999px;background:color-mix(in srgb,#f1c466 12%,var(--surface));color:#8b5b12;font-size:9.5px;font-weight:700;white-space:nowrap}
 
+@media(min-width:1200px){
+  .hall-barter-opportunity-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(min-width:1500px){
+  .hall-barter-opportunity-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+@media(min-width:1900px){
+  .hall-barter-opportunity-grid{grid-template-columns:repeat(5,minmax(0,1fr))}
+}
 @media(max-width:980px){
   .hall-barter-summary{grid-template-columns:auto minmax(0,1fr) auto}
   .hall-barter-summary-stats{grid-column:2;justify-content:flex-start}
   .hall-barter-chevron{grid-column:3;grid-row:1 / span 2}
-  .hall-barter-opportunity-grid,.hall-barter-active-grid{grid-template-columns:minmax(0,1fr)}
+  .hall-barter-opportunity-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .hall-barter-active-grid{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
 }
 @media(max-width:680px){
   .hall-barter-board{border-radius:18px}
@@ -5348,7 +5363,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
 @media (max-width:900px){.context-intelligence-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.schedule-guide-grid{grid-template-columns:1fr}}
 @media (max-width:640px){.schedule-guide-backdrop{padding:12px;align-items:end}.schedule-guide-card{padding:18px;border-radius:24px 24px 18px 18px}.schedule-guide-card>footer{align-items:flex-start;flex-direction:column}.schedule-guide-card>footer>button{align-self:flex-end}.context-intelligence-summary{grid-template-columns:1fr 1fr}.schedule-ops-pill.protected{display:none}}
 
-.context-life-details{border:1px solid var(--line);border-radius:18px;background:var(--surface);overflow:hidden}.context-life-details>summary{list-style:none;display:flex;align-items:center;gap:9px;padding:11px 14px;cursor:pointer;color:var(--muted);font-size:var(--t-xs);font-weight:650}.context-life-details>summary::-webkit-details-marker{display:none}.context-life-details>summary svg{width:16px;height:16px}.context-life-details>summary span{flex:1}.context-life-details[open]>summary>svg:last-child{transform:rotate(180deg)}.context-life-details-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 12px 12px}.context-life-details-grid section{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:12px;border-radius:14px;background:var(--surface-2)}.context-life-details-grid header{grid-column:1/-1;display:flex;align-items:center;gap:8px;margin-bottom:2px}.context-life-details-grid header svg{width:16px;height:16px;color:var(--accent)}.context-life-details-grid header strong{flex:1;font-size:var(--t-xs)}.context-life-details-grid header b{font-size:10px;color:var(--muted);font-weight:650}.context-life-details-grid section>div{display:grid;gap:2px;min-width:0}.context-life-details-grid section>div span{font-size:10px;color:var(--muted)}.context-life-details-grid section>div strong{font-size:var(--t-xs);font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.context-life-details{border:1px solid var(--line);border-radius:18px;background:var(--surface);overflow:hidden}.context-life-details>summary{list-style:none;display:flex;align-items:center;gap:9px;padding:11px 14px;cursor:pointer;color:var(--muted);font-size:var(--t-xs);font-weight:650}.context-life-details>summary::-webkit-details-marker{display:none}.context-life-details>summary svg{width:16px;height:16px}.context-life-details>summary span{flex:1}.context-life-details[open]>summary>svg:last-child{transform:rotate(180deg)}.context-life-details-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0 12px 12px;align-items:start}.context-life-details-grid section{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,auto);gap:8px;padding:12px;border-radius:14px;background:var(--surface-2);align-content:start}.context-life-details-grid header{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:2px}.context-life-details-grid header svg{width:16px;height:16px;color:var(--accent)}.context-life-details-grid header strong{flex:1;font-size:var(--t-xs)}.context-life-details-grid header b{font-size:10px;color:var(--muted);font-weight:650}.context-life-details-grid section>div{display:grid;gap:2px;min-width:0;padding:9px 10px;border:1px solid color-mix(in srgb,var(--line) 80%,transparent);border-radius:12px;background:var(--surface)}.context-life-details-grid section>div span{font-size:10px;color:var(--muted)}.context-life-details-grid section>div strong{font-size:var(--t-xs);font-weight:650;line-height:1.5;overflow:visible;text-overflow:clip;white-space:normal;overflow-wrap:anywhere}
 @media(max-width:680px){.context-life-details-grid{grid-template-columns:1fr}.context-life-details-grid section{grid-template-columns:1fr 1fr}}
 
 /* Historical timing prompt: one decision, no browser-native alert. */
@@ -5405,6 +5420,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .filter-strip{min-height:94px;align-items:end;contain:layout}
 .filter-strip .field{min-width:0}.filter-strip .field select,.filter-strip .field input{min-height:48px}
 .field-label-line{display:flex;align-items:center;gap:9px;min-width:0;flex-wrap:wrap}
+.field-label-required-inline{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}
 .field-inline-hint{
   display:inline-flex;align-items:center;min-height:24px;padding:3px 9px;border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));border-radius:999px;
   background:color-mix(in srgb,var(--accent-softer) 46%,var(--surface));color:var(--muted);font-size:10px;font-weight:600;line-height:1.25;white-space:normal;
@@ -5507,6 +5523,35 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .conflict-head--clear>span{border-color:color-mix(in srgb,var(--success) 16%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--success-soft) 58%,var(--surface)),var(--surface));color:var(--success)}
 .conflict-head--alert>span{color:var(--warning)}
 .decision-stack{padding:16px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 98%,transparent),transparent)}
+.decision-accordion-list{display:grid;gap:12px;padding:16px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 98%,transparent),transparent)}
+.decision-accordion{
+  border:1px solid color-mix(in srgb,var(--line) 82%,transparent);border-radius:22px;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 98%,transparent),var(--surface));
+  box-shadow:0 14px 28px color-mix(in srgb,var(--ink) 4%,transparent);
+  overflow:hidden;
+}
+.decision-accordion-summary{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none;
+  padding:16px 18px;color:var(--ink);font-weight:780;
+}
+.decision-accordion-summary::-webkit-details-marker{display:none}
+.decision-accordion-title{display:inline-flex;align-items:center;gap:9px;font-size:.92rem;line-height:1.3}
+.decision-accordion-title svg{inline-size:18px;block-size:18px;color:var(--accent);flex:none}
+.decision-accordion-summary em{
+  display:inline-flex;align-items:center;gap:6px;min-height:28px;padding:0 10px;
+  border:1px solid color-mix(in srgb,var(--line) 80%,transparent);border-radius:999px;
+  background:color-mix(in srgb,var(--surface-2) 88%,var(--surface));color:var(--muted);
+  font-style:normal;font-size:.66rem;font-weight:800;line-height:1;
+}
+.decision-accordion-summary::before{
+  content:"";inline-size:10px;block-size:10px;flex:none;
+  border-inline-end:2px solid var(--muted);border-block-end:2px solid var(--muted);transform:rotate(45deg);
+  transition:transform .18s ease,color .18s ease;
+}
+.decision-accordion[open] .decision-accordion-summary::before{transform:rotate(225deg) translate(-1px,-1px)}
+.decision-accordion-body{padding:0 12px 12px}
+.decision-accordion-body .decision-stack,
+.decision-accordion-body .decision-section{padding:0;background:none}
 .decision-card{
   grid-template-columns:minmax(0,1fr);
   gap:12px;
@@ -5616,6 +5661,9 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 @container (max-width:420px){
   .conflict-head{padding:16px 16px 14px;grid-template-columns:48px minmax(0,1fr)}
   .conflict-head>span{width:48px;height:48px;border-radius:16px}
+  .decision-accordion-list{padding:12px;gap:10px}
+  .decision-accordion{border-radius:18px}
+  .decision-accordion-summary{padding:14px 15px}
   .decision-stack{padding:12px}
   .decision-card,.decision-note--feature,.decision-section{padding:13px;border-radius:18px}
   .decision-card-hero,.decision-feature-hero{grid-template-columns:minmax(0,1fr) 44px;gap:10px}
@@ -7657,4 +7705,194 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
 .week-ruler-scroll .schedule-time-label-start,
 .rooms-ruler-scroll .schedule-time-label-start{
   transform:translate(-8px,-50%)!important;
+}
+
+/* === V32: room identity without another column + live week autoscroll =====
+   The room board stays on the compact one-canvas geometry. The first visible
+   day rail in each room block carries a tiny building → room identity capsule,
+   so the block identifies itself without adding a header row or a new column. */
+.rooms-week-days .rooms-day-label.has-room-identity{
+  flex-direction:column!important;
+  align-items:center!important;
+  justify-content:center!important;
+  gap:3px!important;
+  padding-block:4px!important;
+  padding-inline:5px!important;
+}
+.rooms-day-label .rooms-day-name{
+  display:block;
+  min-width:0;
+  max-width:100%;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.rooms-room-identity-compact{
+  max-width:100%;
+  min-height:19px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  padding:2px 5px;
+  border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));
+  border-radius:999px;
+  background:color-mix(in srgb,var(--accent-softer) 62%,var(--surface));
+  color:var(--ink-2);
+  box-shadow:0 2px 7px color-mix(in srgb,var(--ink) 3%,transparent);
+  white-space:nowrap;
+  overflow:hidden;
+  direction:ltr;
+  font:600 9px/1 var(--font-mono);
+  font-variant-numeric:tabular-nums;
+}
+.rooms-room-identity-compact>svg{
+  width:10px;
+  height:10px;
+  flex:none;
+  color:var(--accent);
+}
+.rooms-room-identity-compact>b,
+.rooms-room-identity-compact>strong{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  font:inherit;
+}
+.rooms-room-identity-compact>b{font-weight:560;color:var(--muted-2)}
+.rooms-room-identity-compact>strong{font-weight:720;color:var(--ink)}
+.rooms-room-identity-compact>i{flex:none;font-style:normal;color:var(--muted-2);font-weight:700}
+
+
+/* === V31: identity continuity without changing the accepted card physics === */
+/* In a cramped dense-week card, catalogue code becomes secondary identity and
+   sits beside the instructor. The course title owns the full first row. */
+.week-strip-track .week-identity-line[data-mode="double"][data-code-row="secondary"]{
+  grid-template-columns:minmax(0,1fr) auto!important;
+  grid-template-rows:1fr 1fr!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"][data-code-row="secondary"] .week-title{
+  grid-column:1 / -1!important;
+  grid-row:1!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"][data-code-row="secondary"] .week-who{
+  grid-column:1!important;
+  grid-row:2!important;
+  min-width:0!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+  font-size:clamp(8.25px,4.8cqi,9.25px)!important;
+  letter-spacing:-.12px!important;
+}
+.week-strip-track .week-identity-line[data-mode="double"][data-code-row="secondary"] .week-code{
+  grid-column:2!important;
+  grid-row:2!important;
+  align-self:start!important;
+  justify-self:start!important;
+  margin-inline-start:3px!important;
+}
+/* The floating card has room to tell the truth: an instructor name may wrap
+   naturally instead of being shortened with an ellipsis during the drag. */
+.physics-float-copy small{
+  white-space:normal!important;
+  overflow:visible!important;
+  text-overflow:clip!important;
+  line-height:1.28!important;
+  overflow-wrap:normal;
+  word-break:keep-all;
+}
+/* Classic week cards use the same adaptive priority: if the title is long or
+   the lane is narrow, code belongs to the instructor line, never the title. */
+.week-calendar .week-event[data-code-row="secondary"] .week-title{
+  padding-inline-end:0!important;
+}
+.week-calendar .week-event[data-code-row="secondary"] .week-who{
+  padding-inline-end:34px!important;
+  min-width:0;
+}
+.week-calendar .week-event[data-code-row="secondary"] .week-code{
+  position:absolute!important;
+  inset:auto auto 3px 4px!important;
+  width:auto!important;max-width:30px!important;height:14px!important;
+  padding:0 3px!important;margin:0!important;
+  background:transparent!important;
+  font-size:9.5px!important;line-height:1!important;
+}
+/* Prefer the complete instructor identity. On cards with enough vertical room,
+   a long Arabic name may use a second line; short lectures keep one line but
+   scale gently before resorting to ellipsis. */
+.week-calendar .week-event:not(.week-strip-event) .week-who{
+  font-size:clamp(9px,calc(7.8px + 1.35cqw),10.35px);
+}
+@container (min-height:68px){
+  .week-calendar .week-event .week-who{
+    white-space:normal;
+    overflow:hidden;
+    text-overflow:clip;
+    display:-webkit-box;
+    -webkit-box-orient:vertical;
+    -webkit-line-clamp:2;
+  }
+}
+
+/* Context intelligence: progressive disclosure instead of one long wall. */
+.context-tabs{
+  position:sticky;top:49px;z-index:4;
+  display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;
+  margin:0 0 var(--s4);padding:5px;
+  border:1px solid var(--line);border-radius:15px;
+  background:color-mix(in srgb,var(--surface) 94%,transparent);
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+}
+.context-tabs button{
+  min-height:36px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:0;border-radius:11px;background:transparent;color:var(--muted);
+  font:650 11px/1 var(--font);cursor:pointer;
+}
+.context-tabs button svg{width:14px;height:14px}
+.context-tabs button.active{background:var(--surface);color:var(--ink);box-shadow:0 4px 16px rgba(20,45,38,.06)}
+.schedule-context[data-context-tab="overview"] .context-tab-analysis,
+.schedule-context[data-context-tab="overview"] .context-tab-context,
+.schedule-context[data-context-tab="analysis"] .context-tab-overview,
+.schedule-context[data-context-tab="analysis"] .context-tab-context,
+.schedule-context[data-context-tab="context"] .context-tab-overview,
+.schedule-context[data-context-tab="context"] .context-tab-analysis{display:none !important}
+.schedule-context[data-context-tab="overview"] .context-intelligence-summary{margin-top:0}
+@media(max-width:640px){
+  .context-tabs{top:45px}
+  .context-tabs button{min-height:34px;font-size:10.5px}
+}
+
+/* Guide edit hand-off: first identify the exact lecture, then open its editor. */
+[data-guide-edit-target="true"]{overflow:visible!important}
+.guide-edit-target-pin{
+  position:absolute;z-index:120;inset-block-start:-24px;inset-inline-start:50%;
+  transform:translateX(-50%);padding:4px 8px;border-radius:999px;
+  background:var(--accent);color:var(--accent-contrast);font:750 10px/1 var(--font);
+  box-shadow:0 8px 22px rgba(20,45,38,.18);pointer-events:none;white-space:nowrap;
+}
+
+
+/* Full-height decision/fingerprint sheets: use the viewport that is already
+   available on desktop instead of creating an unnecessary inner scroll. */
+@media (min-width:900px) and (min-height:700px){
+  .one-decision-backdrop,.signature-backdrop{padding:10px}
+  .one-decision-mode,.schedule-signature{max-height:calc(100dvh - 20px)}
+  .one-decision-mode>header,.schedule-signature>header{padding-block:clamp(14px,1.9vh,24px)}
+  .decision-command-summary{padding-top:clamp(10px,1.4vh,20px)}
+  .decision-problem,.decision-verdict{padding-block:clamp(12px,1.6vh,20px)}
+  .decision-options{padding-block:clamp(10px,1.3vh,18px);overflow-y:visible}
+  .decision-options article{padding-block:clamp(12px,1.5vh,20px)}
+  .one-decision-mode>footer,.schedule-signature>footer{padding-block:clamp(10px,1.2vh,16px)}
+  .signature-scroll{overflow-y:visible;overscroll-behavior:auto}
+  .signature-grid{padding-block:clamp(10px,1.4vh,20px);gap:clamp(8px,1.1vh,12px)}
+  .signature-grid article{min-height:clamp(138px,17vh,160px);padding-block:clamp(12px,1.6vh,20px)}
+  .signature-grid article>p{line-height:1.55}
+  .dna-bars{height:clamp(46px,6.5vh,70px);margin-top:clamp(8px,1.2vh,16px)}
+  .signature-deviations{padding-bottom:clamp(10px,1.4vh,20px);gap:clamp(8px,1.1vh,12px)}
+  .signature-deviations>div{padding-block:clamp(10px,1.4vh,16px)}
 }

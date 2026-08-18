@@ -1102,3 +1102,127 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
   overflow:auto!important;
   padding:16px!important;
 }
+
+/* === Smart Guide V15: action-first visual dashboard =======================
+   Keep every capability, but make the default surface icon-led and quiet.
+   Detail returns only after the user chooses a feature. */
+.smart-guide.visual-minimal{
+  gap:10px;
+  padding:15px;
+}
+.smart-guide.visual-minimal .smart-guide-hero{
+  align-items:center;
+  padding-block:0 2px;
+}
+.smart-guide-hero-state{
+  display:block;
+  margin-top:5px;
+  font-size:17px;
+  line-height:1.15;
+  font-weight:780;
+  letter-spacing:-.02em;
+}
+.smart-guide.visual-minimal .smart-guide-location{
+  min-height:58px;
+  padding:9px 10px;
+  border-radius:18px;
+}
+.smart-guide.visual-minimal .smart-guide-location>span{
+  width:34px;height:34px;border-radius:12px;
+}
+.smart-guide.visual-minimal .smart-guide-location>div{gap:1px}
+.smart-guide.visual-minimal .smart-guide-location strong{font-size:12.5px}
+.smart-guide.visual-minimal .smart-guide-location p{font-size:9.8px;line-height:1.35}
+.smart-guide.visual-minimal .smart-guide-location>i{
+  width:32px;height:32px;padding:0;display:grid;place-items:center;border-radius:11px;
+}
+.smart-guide.visual-minimal .smart-guide-location>i svg{width:15px;height:15px}
+.smart-guide.visual-minimal .smart-guide-search{height:43px;border-radius:15px}
+.smart-guide.visual-minimal .smart-guide-browse{
+  position:sticky;top:-1px;z-index:4;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  padding:4px;border-radius:16px;
+  backdrop-filter:blur(14px);
+}
+.smart-guide.visual-minimal .smart-guide-browse button{
+  min-height:42px;display:grid;grid-template-columns:1fr;place-items:center;gap:2px;padding:4px;
+}
+.smart-guide.visual-minimal .smart-guide-browse button>svg{width:17px;height:17px}
+.smart-guide.visual-minimal .smart-guide-browse button>span{font-size:9px}
+.smart-guide-selected-actions.icon-only{
+  display:grid;grid-template-columns:repeat(5,38px);justify-content:start;gap:7px;
+}
+.smart-guide-selected-actions.icon-only button,
+.smart-guide-selected-actions.icon-only button:first-child{
+  width:38px;height:38px;padding:0;display:grid;place-items:center;
+  border:1px solid var(--line);border-radius:13px;background:var(--surface-2);color:var(--ink);
+}
+.smart-guide-selected-actions.icon-only button:first-child{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 24%,var(--line))}
+.smart-guide-selected-actions.icon-only button:hover{background:var(--accent-soft);color:var(--accent)}
+.smart-guide-selected-actions.icon-only svg{width:16px;height:16px}
+.smart-guide-learning-orbit{
+  min-height:88px;display:flex;align-items:center;justify-content:center;gap:8px;
+  border:1px solid color-mix(in srgb,var(--accent) 12%,var(--line));border-radius:20px;
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 5%,var(--surface)),var(--surface));
+}
+.smart-guide-learning-orbit span{
+  width:42px;height:42px;display:grid;place-items:center;border-radius:15px;
+  background:var(--surface-2);color:var(--accent);border:1px solid var(--line);
+}
+.smart-guide-learning-orbit span:nth-of-type(2){width:50px;height:50px;background:var(--accent-soft)}
+.smart-guide-learning-orbit svg{width:18px;height:18px}
+.smart-guide-learning-orbit i{width:28px;height:1px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 34%,transparent),transparent)}
+/* Titles are enough in browsing mode. Prose is available when a feature is
+   opened, so the overview no longer repeats the same explanation everywhere. */
+.smart-guide.visual-minimal .smart-guide-feature-grid>button small,
+.smart-guide.visual-minimal .smart-guide-results>button small,
+.smart-guide.visual-minimal .smart-guide-new-grid>button small,
+.smart-guide.visual-minimal .smart-guide-routines article small,
+.smart-guide.visual-minimal .smart-guide-workflows article small{display:none}
+.smart-guide.visual-minimal .smart-guide-feature-grid>button,
+.smart-guide.visual-minimal .smart-guide-results>button,
+.smart-guide.visual-minimal .smart-guide-new-grid>button{min-height:48px;padding:8px 10px}
+.smart-guide.visual-minimal .smart-guide-focus-card>header p{display:none}
+.smart-guide.visual-minimal .smart-guide-steps{display:none}
+.smart-guide.visual-minimal .smart-guide-section-head small{display:none}
+.smart-guide.visual-minimal .smart-guide-section-head strong{font-size:11.5px;font-weight:680}
+.smart-guide.visual-minimal .smart-guide-footer{
+  grid-template-columns:auto auto;justify-content:start;border-top:0;padding-top:1px;opacity:.82;
+}
+.smart-guide.visual-minimal .smart-guide-footer button{font-size:9px}
+@media(max-width:560px){
+  .smart-guide.visual-minimal{gap:9px;padding:13px 12px calc(14px + env(safe-area-inset-bottom))}
+  .smart-guide-hero-state{font-size:15px}
+  .smart-guide.visual-minimal .smart-guide-location{min-height:52px}
+  .smart-guide-selected-actions.icon-only{grid-template-columns:repeat(5,36px)}
+  .smart-guide-selected-actions.icon-only button,.smart-guide-selected-actions.icon-only button:first-child{width:36px;height:36px}
+}
+
+/* Guide progressive disclosure: dense collections stay folded until asked for. */
+.smart-guide-fold{
+  border:1px solid var(--line);border-radius:16px;background:var(--surface);overflow:hidden;
+}
+.smart-guide-fold+ .smart-guide-fold{margin-top:8px}
+.smart-guide-fold>summary{
+  list-style:none;min-height:58px;display:grid;grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;gap:10px;padding:10px 12px;cursor:pointer;color:var(--ink);
+}
+.smart-guide-fold>summary::-webkit-details-marker{display:none}
+.smart-guide-fold>summary>svg{width:18px;height:18px;color:var(--accent)}
+.smart-guide-fold>summary>span{min-width:0;display:grid;gap:1px}
+.smart-guide-fold>summary small{font-size:9px;color:var(--muted)}
+.smart-guide-fold>summary strong{font-size:12.5px;font-weight:720}
+.smart-guide-fold>summary>b{min-width:28px;height:28px;display:grid;place-items:center;border-radius:999px;background:var(--surface-2);font-size:10px;color:var(--muted)}
+.smart-guide-fold[open]>summary{border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--accent) 3%,var(--surface))}
+.smart-guide-fold>.smart-guide-feature-grid,
+.smart-guide-fold>.smart-guide-live-controls,
+.smart-guide-fold>.smart-guide-routines,
+.smart-guide-fold>.smart-guide-workflows,
+.smart-guide-fold>.smart-guide-new-grid{padding:10px}
+.smart-guide-mark-all{width:32px!important;min-width:32px!important;height:32px!important;padding:0!important;border-radius:999px!important}
+.smart-guide-mark-all span{display:none!important}
+.smart-guide-point-answer header p{margin-top:5px;line-height:1.65}
+.smart-guide-point-answer header p>b{color:var(--ink);font-weight:750}
+
+
+.guide-ghost-wait{display:inline-flex;align-items:center;min-height:34px;padding:0 10px;border:1px dashed color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--accent) 5%,var(--surface));color:var(--accent);font-size:9.5px;font-weight:700}

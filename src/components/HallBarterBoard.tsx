@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftRight,
   Building2,
@@ -92,6 +92,7 @@ export default function HallBarterBoard({
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const boardRef = useRef<HTMLElement | null>(null);
 
   const load = useCallback(async (quiet = false) => {
     if (!collegeId || !sectionId || !termId) { setBoard(emptyBoard); return; }
@@ -128,6 +129,24 @@ export default function HallBarterBoard({
     if (!liveSerial) return;
     void load(true);
   }, [liveSerial, load]);
+
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      const target = event.target instanceof Node ? event.target : null;
+      if (!target || boardRef.current?.contains(target)) return;
+      setOpen(false);
+    };
+    const dismissByKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss, true);
+    document.addEventListener("keydown", dismissByKey);
+    return () => {
+      document.removeEventListener("pointerdown", dismiss, true);
+      document.removeEventListener("keydown", dismissByKey);
+    };
+  }, [open]);
 
   const incomingPending = useMemo(() => board.incoming.filter(row => row.status === "pending"), [board.incoming]);
   const outgoingPending = useMemo(() => board.outgoing.filter(row => row.status === "pending"), [board.outgoing]);
@@ -166,7 +185,7 @@ export default function HallBarterBoard({
   );
 
   return (
-    <section className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="بورصة القاعات الساكنة بين الكليات">
+    <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="بورصة القاعات الساكنة بين الكليات">
       <button type="button" className="hall-barter-summary" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className="hall-barter-mark"><Building2 aria-hidden="true" /><ArrowLeftRight aria-hidden="true" /></span>
         <span className="hall-barter-summary-copy">

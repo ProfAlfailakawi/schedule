@@ -1541,3 +1541,23 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 @media (prefers-reduced-motion:reduce){
   .journey-strata i,.journey-lifetime,.journey-current,.journey-timeline,.journey-philosophy,.journey-foot{animation:none!important}
 }
+
+
+/* Fit the approval review into the desktop viewport by using existing vertical
+   space before creating an inner scroll. */
+@media (min-width:900px) and (min-height:760px){
+  .review-backdrop{padding:8px}
+  .review-sheet,.review-sheet.visual-minimal{max-height:calc(100dvh - 16px)}
+  .review-body{overflow-y:visible}
+  .review-head{padding:clamp(14px,1.9vh,22px) 24px;gap:18px}
+  .review-ring{width:76px;height:76px}
+  .review-spread,.review-sheet.visual-minimal .review-spread{padding:clamp(9px,1.2vh,14px) 24px}
+  .review-sheet.visual-minimal .spread-bar,.spread-bar{height:8px;block-size:8px}
+  .spread-keys{margin-top:8px;gap:6px 18px}
+  .review-finding>button{padding:clamp(9px,1.1vh,13px) 24px;gap:10px}
+  .review-sheet.visual-minimal .review-mark{inline-size:36px;block-size:36px;border-radius:12px}
+  .review-copy small{line-height:1.45}
+  .finding-share{margin-top:6px}
+  .review-foot{padding:10px 24px}
+  .review-print-icon-button,.review-close-icon-button{width:46px!important;height:46px!important;min-width:46px!important}
+}

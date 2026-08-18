@@ -19,6 +19,10 @@ const signed = (value: unknown, suffix = "") => {
   return `${n > 0 ? "+" : ""}${n}${suffix}`;
 };
 
+const withoutTeacherLabel = (value: unknown) => String(value || "")
+  .replace(/^\s*(?:الأستاذ|الاستاذ|أستاذ|استاذ)\s*[:：\-–—]?\s*/u, "")
+  .trim();
+
 export default function SchedulePhysicsLayer({ state, overlayRef, course, instructor, isPowerAdmin = false, variant = "week" }: Props) {
   /**
    * The reading panel measures itself.
@@ -109,7 +113,7 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
           if (!room && !teacher) return <div className="physics-conflict-clear"><CheckCircle2/><strong>لا يوجد تعارض في القاعة أو الأستاذ</strong></div>;
           return <>
             {room ? <div className="physics-conflict-row is-room"><DoorOpen/><div><small>القاعة</small><strong>{room.message || "القاعة محجوزة في هذا الوقت"}</strong></div></div> : null}
-            {teacher ? <div className="physics-conflict-row is-teacher"><UserRound/><div><small>الأستاذ</small><strong>{teacher.message || "الأستاذ مرتبط بموعد آخر"}</strong></div></div> : null}
+            {teacher ? <div className="physics-conflict-row is-teacher"><UserRound/><div><small>الأستاذ</small><strong>{withoutTeacherLabel(teacher.message) || "مرتبط بموعد آخر"}</strong></div></div> : null}
           </>;
         })()}
       </div>
