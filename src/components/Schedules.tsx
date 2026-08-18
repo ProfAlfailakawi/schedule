@@ -6914,37 +6914,47 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </div>
                 </Field>
-                <Field label="رقم المبنى" required>
-                  <input
-                    value={form.AdRoomCode}
-                    list="schedule-buildings"
-                    onChange={(e) =>
-                      // A different building means the old hall no longer exists.
-                      setForm((p) => ({ ...p, AdRoomCode: e.target.value, AdRoomHall: "" }))
-                    }
+                <div className="schedule-location-field schedule-location-field--building">
+                  <Field label="رقم المبنى" required>
+                    <input
+                      value={form.AdRoomCode}
+                      list="schedule-buildings"
+                      onChange={(e) =>
+                        // A different building means the old hall no longer exists.
+                        setForm((p) => ({ ...p, AdRoomCode: e.target.value, AdRoomHall: "" }))
+                      }
+                      required
+                    />
+                    <datalist id="schedule-buildings">
+                      {buildingOptions.map(code => <option key={code} value={code} />)}
+                    </datalist>
+                  </Field>
+                </div>
+                <div className="schedule-location-field schedule-location-field--hall">
+                  <Field
+                    label="رقم القاعة"
                     required
-                  />
-                  <datalist id="schedule-buildings">
-                    {buildingOptions.map(code => <option key={code} value={code} />)}
-                  </datalist>
-                </Field>
-                <Field
-                  label="رقم القاعة"
-                  required
-                  hint={hallOptions.length ? `قاعات ${form.AdRoomCode}: ${hallOptions.slice(0, 8).join(" · ")}` : undefined}
-                >
-                  <input
-                    value={form.AdRoomHall}
-                    list="schedule-halls"
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, AdRoomHall: e.target.value }))
-                    }
-                    required
-                  />
-                  <datalist id="schedule-halls">
-                    {hallOptions.map(hall => <option key={hall} value={hall} />)}
-                  </datalist>
-                </Field>
+                    hint={hallOptions.length ? (
+                      <span className="schedule-hall-hint">
+                        <span>قاعات المبنى <bdi dir="ltr">{form.AdRoomCode}</bdi>:</span>
+                        <bdi dir="ltr">{hallOptions.slice(0, 5).join(" · ")}</bdi>
+                        {hallOptions.length > 5 ? <strong dir="ltr">+{hallOptions.length - 5}</strong> : null}
+                      </span>
+                    ) : undefined}
+                  >
+                    <input
+                      value={form.AdRoomHall}
+                      list="schedule-halls"
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, AdRoomHall: e.target.value }))
+                      }
+                      required
+                    />
+                    <datalist id="schedule-halls">
+                      {hallOptions.map(hall => <option key={hall} value={hall} />)}
+                    </datalist>
+                  </Field>
+                </div>
                 {roomOwner ? (
                   <div className="room-owner-note" role="status">
                     <span className="room-owner-mark" aria-hidden="true"><Building2 /></span>

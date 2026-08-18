@@ -224,7 +224,7 @@ export default function HallBarterBoard({
                 {incomingPending.map(row => (
                   <article key={row.id}>
                     <div className="hall-barter-request-main">
-                      <strong>{row.requesterSectionName}</strong><small>{row.requesterCollegeName}</small>
+                      <strong>{row.requesterSectionName}</strong>
                       {windowLine(row)}
                     </div>
                     <div className="hall-barter-confidence"><b>{row.confidence}%</b><span>ثبات الفراغ</span><small>{row.historyTerms} فصول</small></div>
@@ -247,7 +247,7 @@ export default function HallBarterBoard({
                   return (
                     <article key={row.id}>
                       <span className="hall-barter-status-dot" />
-                      <div><small>{borrowing ? "مستعارة لقسمك من" : "معارة إلى"}</small><strong>{borrowing ? row.ownerSectionName : row.requesterSectionName}</strong><em>{borrowing ? row.ownerCollegeName : row.requesterCollegeName}</em></div>
+                      <div><small>{borrowing ? "مستعارة لقسمك من" : "معارة إلى"}</small><strong>{borrowing ? row.ownerSectionName : row.requesterSectionName}</strong></div>
                       {windowLine(row)}
                       {borrowing ? <GhostButton type="button" disabled={busyId === row.id} onClick={() => void cancel(row.id)}>إلغاء الاستعارة</GhostButton> : <span className="hall-barter-approved-label"><Check />معتمدة</span>}
                     </article>
@@ -263,9 +263,11 @@ export default function HallBarterBoard({
               <div className="hall-barter-opportunity-grid">
                 {board.opportunities.map(opportunity => (
                   <article key={opportunity.id}>
-                    <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{opportunity.ownerSectionName}</small><em>{opportunity.ownerCollegeName}</em></div>
-                    <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>{Math.round(opportunity.durationMinutes / 30) * 30} دقيقة متصلة</small></div>
-                    <div className="hall-barter-confidence"><b>{opportunity.confidence}%</b><span>ثبات الفراغ</span><small>{opportunity.historyTerms} فصول · ملكية تاريخية {opportunity.ownerShare}%</small></div>
+                    <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{opportunity.ownerSectionName}</small></div>
+                    <div className="hall-barter-opportunity-meta">
+                      <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>{Math.round(opportunity.durationMinutes / 30) * 30} دقيقة</small></div>
+                      <div className="hall-barter-confidence"><b>{opportunity.confidence}%</b><span>ثبات الفراغ</span><small>{opportunity.historyTerms} فصول · {opportunity.ownerShare}% تاريخيًا</small></div>
+                    </div>
                     <PrimaryButton type="button" disabled={busyId === opportunity.id} onClick={() => void request(opportunity)}><ArrowLeftRight />اطلب استعارة النطاق</PrimaryButton>
                   </article>
                 ))}
@@ -281,7 +283,7 @@ export default function HallBarterBoard({
               <div className="hall-barter-pending-row">
                 {outgoingPending.map(row => (
                   <article key={row.id}>
-                    <div><strong>{row.ownerSectionName}</strong><small>{row.ownerCollegeName}</small></div>
+                    <div><strong>{row.ownerSectionName}</strong></div>
                     {windowLine(row)}
                     <span className="hall-barter-pending-label">{statusLabel(row.status)}</span>
                     <GhostButton type="button" disabled={busyId === row.id} onClick={() => void cancel(row.id)}>إلغاء الطلب</GhostButton>

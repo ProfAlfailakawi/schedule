@@ -7932,3 +7932,135 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
 .replay-retry:hover{background:var(--accent-softer);border-color:var(--accent)}
 body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide{z-index:221!important}
 body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>span{top:0!important;transform:translate(-50%,calc(-100% - 8px))!important}
+
+/* ── Location fields: keep each value visually attached to its label. ─────
+   Building / hall are one decision pair. On desktop the label and its input
+   share the same row; the hall suggestions keep Arabic and room codes in
+   separate bidi islands so the helper line never turns itself inside-out. */
+.schedule-editor .schedule-location-field{min-width:0}
+.schedule-editor .schedule-location-field .field{
+  display:grid;
+  grid-template-columns:max-content minmax(0,1fr);
+  align-items:center;
+  gap:10px 14px;
+  min-width:0;
+}
+.schedule-editor .schedule-location-field .field>label{
+  margin:0;
+  align-self:center;
+  white-space:nowrap;
+}
+.schedule-editor .schedule-location-field .field>input{
+  min-width:0;
+  width:100%;
+}
+.schedule-editor .schedule-location-field .field>.field-help{
+  grid-column:1/-1;
+  margin:0;
+  min-width:0;
+}
+.schedule-hall-hint{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  min-width:0;
+  max-width:100%;
+  color:var(--muted);
+  line-height:1.5;
+}
+.schedule-hall-hint>span{white-space:nowrap}
+.schedule-hall-hint>bdi{
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  unicode-bidi:isolate;
+}
+.schedule-hall-hint>strong{
+  flex:none;
+  padding:1px 6px;
+  border-radius:999px;
+  background:var(--surface-2);
+  color:var(--ink-2);
+  font-size:.9em;
+}
+
+/* ── Hall barter: dense, quiet cards for 4–6-up desktop grids. ────────────
+   The college name is intentionally absent from the card markup: the section
+   is the useful identity here. The internal hierarchy stays readable even
+   when six opportunities share one row. */
+.hall-barter-opportunity-grid>article{
+  grid-template-columns:minmax(0,1fr);
+  gap:8px;
+  padding:12px;
+}
+.hall-barter-room{
+  grid-template-columns:18px max-content minmax(0,1fr);
+  align-items:center;
+  align-content:center;
+  gap:4px 7px;
+  min-height:34px;
+}
+.hall-barter-room>svg{
+  grid-row:auto;
+  width:17px;
+  height:17px;
+}
+.hall-barter-room>strong{font-size:12px;line-height:1.2}
+.hall-barter-room>small{
+  min-width:0;
+  font-size:9.5px;
+  line-height:1.35;
+  color:var(--ink-2);
+  overflow:hidden;
+  display:-webkit-box;
+  -webkit-line-clamp:2;
+  -webkit-box-orient:vertical;
+}
+.hall-barter-opportunity-meta{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 86px;
+  gap:7px;
+  align-items:stretch;
+}
+.hall-barter-opportunity-meta .hall-barter-slot{
+  border:1px solid var(--line-soft,var(--line));
+  border-radius:12px;
+  padding:7px 8px;
+  background:var(--surface-2);
+}
+.hall-barter-opportunity-meta .hall-barter-slot>span{font-size:9px}
+.hall-barter-opportunity-meta .hall-barter-slot>time{font-size:10px}
+.hall-barter-opportunity-meta .hall-barter-slot>small{font-size:8.5px}
+.hall-barter-opportunity-meta .hall-barter-confidence{
+  min-height:0;
+  padding:6px;
+  border-radius:12px;
+}
+.hall-barter-opportunity-meta .hall-barter-confidence>b{font-size:16px}
+.hall-barter-opportunity-meta .hall-barter-confidence>span{font-size:8.5px}
+.hall-barter-opportunity-meta .hall-barter-confidence>small{font-size:8px;line-height:1.25}
+.hall-barter-opportunity-grid>article>.btn{
+  min-height:36px;
+  padding-inline:8px;
+  font-size:11px;
+}
+.hall-barter-request-main>strong{font-size:12px}
+.hall-barter-request-list .hall-barter-window{font-size:10px}
+.hall-barter-request-list .hall-barter-confidence>b{font-size:16px}
+.hall-barter-active-grid>article>div strong{font-size:11.5px}
+.hall-barter-pending-row strong{font-size:10.5px}
+
+@media(max-width:680px){
+  .schedule-editor .schedule-location-field .field{
+    grid-template-columns:1fr;
+    gap:7px;
+  }
+  .schedule-editor .schedule-location-field .field>.field-help{grid-column:1}
+  .schedule-hall-hint{flex-wrap:wrap}
+  .hall-barter-opportunity-grid{grid-template-columns:1fr}
+  .hall-barter-opportunity-grid>article{grid-template-columns:minmax(0,1fr);padding:11px}
+  .hall-barter-opportunity-grid .hall-barter-confidence{grid-column:auto;grid-row:auto}
+  .hall-barter-opportunity-meta{grid-template-columns:minmax(0,1fr) 82px}
+  .hall-barter-slot{grid-column:auto;margin-top:0}
+}
