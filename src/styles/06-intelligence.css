@@ -3905,3 +3905,32 @@ button.twin-delta{width:100%}
   .query-period-pair{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important}
   .query-period-input{grid-template-columns:30px minmax(0,1fr);inline-size:100%;width:100%}
 }
+
+/* Query period is a controlled 24-hour selector, never the iOS AM/PM control. */
+.query-period-input>select{
+  display:block;inline-size:100%;width:100%;min-inline-size:0;min-width:0;max-inline-size:100%;max-width:100%;
+  box-sizing:border-box;direction:ltr;unicode-bidi:isolate;font-family:var(--font-mono);font-variant-numeric:tabular-nums;
+  text-align:center;text-align-last:center;
+}
+@media(max-width:760px){
+  .query-period-field{inline-size:100%;width:100%;overflow:hidden}
+  .query-period-pair{inline-size:100%;width:100%;max-width:100%;overflow:hidden}
+  .query-period-input{inline-size:100%;width:100%;max-width:100%;overflow:hidden}
+  .query-period-input>select{inline-size:100%!important;width:100%!important;max-width:100%!important}
+}
+
+/* Reason sheets answer the next question, not repeat the card that opened them. */
+.intel-reason-items{display:grid;gap:8px;margin-top:14px}
+.intel-reason-items article{
+  display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:10px;
+  padding:10px 12px;border:1px solid var(--line);border-radius:15px;background:var(--surface-2);
+}
+.intel-reason-item-index{width:26px;height:26px;display:grid;place-items:center;border-radius:999px;background:var(--surface-3);color:var(--muted);font-size:10px;font-weight:800}
+.intel-reason-items article>div{min-width:0;display:grid;gap:2px}
+.intel-reason-items strong{font-size:12px;font-weight:760;color:var(--ink);overflow-wrap:anywhere}
+.intel-reason-items small{font-size:10px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
+.intel-reason-items article>b{font-size:11px;font-weight:760;color:var(--accent);white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(max-width:620px){
+  .intel-reason-items article{grid-template-columns:26px minmax(0,1fr);gap:8px;padding:9px 10px}
+  .intel-reason-items article>b{grid-column:2;justify-self:start}
+}

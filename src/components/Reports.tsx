@@ -87,6 +87,25 @@ const DAYS = [
 const GRID_START = SCHEDULE_DAY_START;
 const GRID_END = SCHEDULE_DAY_END;
 const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+const QUERY_TIME_OPTIONS = Array.from(
+  { length: Math.floor((GRID_END - GRID_START) / SCHEDULE_SLOT_MINUTES) + 1 },
+  (_, index) => clock(GRID_START + index * SCHEDULE_SLOT_MINUTES)
+);
+
+function QueryTimeSelect({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  return (
+    <select
+      className="query-time-24h"
+      value={value}
+      onChange={event => onChange(event.target.value)}
+      aria-label={label}
+      data-time-format="24h"
+    >
+      <option value="">--:--</option>
+      {QUERY_TIME_OPTIONS.map(option => <option key={`${label}-${option}`} value={option}>{option}</option>)}
+    </select>
+  );
+}
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
 const COMPREHENSIVE_FIRST_PAGE_ROWS = 23;
@@ -456,11 +475,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     sortByName(courses.filter(c => !filters.sectionId || c.AdSectionId === filters.sectionId), (c: AdCourse) => c.CourseName),
     row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
   ), [courses, filters.sectionId, filters.courseId, courseIdentityKey]);
-  const termOptions = useMemo(() => dedupeVisibleOptions(
+  const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
     terms,
     row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
   ), [terms, filters.termId]);
-  const instructorOptions = useMemo(() => dedupeVisibleOptions(
+  const instructorOptions = useMemo(() => dedupeVisibleOptions<AdInstructor>(
     instructors,
     row => optionKey(row.AdInstructorCivil) || optionKey(row.AdInstructorName), filters.instructorId, row => Number(row.AdInstructorId),
   ), [instructors, filters.instructorId]);
@@ -1071,8 +1090,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <div className="field query-period-field">
               <label>الفترة</label>
               <div className="time-pair query-period-pair">
-                <label className="query-period-input"><span>من</span><input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.startTime} onChange={event => set("startTime", event.target.value)} aria-label="من" /></label>
-                <label className="query-period-input"><span>إلى</span><input type="time" min={SCHEDULE_DAY_START_TIME} max={SCHEDULE_DAY_END_TIME} step={SCHEDULE_SLOT_MINUTES * 60} value={filters.endTime} onChange={event => set("endTime", event.target.value)} aria-label="إلى" /></label>
+                <label className="query-period-input"><span>من</span><QueryTimeSelect value={filters.startTime} onChange={value => set("startTime", value)} label="من" /></label>
+                <label className="query-period-input"><span>إلى</span><QueryTimeSelect value={filters.endTime} onChange={value => set("endTime", value)} label="إلى" /></label>
               </div>
             </div>
             <div className="field wide">

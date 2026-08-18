@@ -5586,7 +5586,7 @@ async function buildStaffCard(link: ScheduleShareLink, civil: string, requestedT
   };
 }
 
-app.get("/api/share", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/share", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0), sectionId = Number(req.query.sectionId || 0), termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
@@ -5605,7 +5605,6 @@ app.post("/api/share", requirePermission(7), async (req: AuthenticatedRequest, r
   const kind = req.body?.kind === "staff" ? "staff"
     : req.body?.kind === "survey" ? "survey"
     : "department";
-  if (!isPowerUser(req) && kind !== "survey") { res.status(403).json({ error: "هذا النوع من روابط النشر مخصص لإدارة النظام الرئيسية" }); return; }
   const [sections, terms] = await Promise.all([Repository.getSections(), Repository.getTerms()]);
   const sectionName = sections.find(row => row.AdSectionId === sectionId)?.AdSectionName || "قسم";
   const termName = terms.find(row => row.AdTermId === termId)?.AdTermName || "";
@@ -5630,7 +5629,6 @@ app.delete("/api/share/:id", requirePermission(7), async (req: AuthenticatedRequ
   const link = await Repository.getShareLink(String(req.params.id));
   if (!link) { res.status(404).json({ error: "الرابط غير موجود" }); return; }
   if (!isScopeAllowed(req, link.AdCollegeId, link.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  if (!isPowerUser(req) && link.kind !== "survey") { res.status(403).json({ error: "هذا النوع من روابط النشر مخصص لإدارة النظام الرئيسية" }); return; }
   await Repository.revokeShareLink(link.id);
   res.json({ ok: true });
 });

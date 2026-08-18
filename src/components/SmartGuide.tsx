@@ -522,18 +522,38 @@ export default function SmartGuide({
     if (selectedId || selectedDynamic || preview) setSheetLevel("full");
   }, [open, query, selectedId, selectedDynamic, preview]);
 
+  const scrollGuideAnswerIntoView = useCallback((card: HTMLElement | null) => {
+    const drawer = drawerRef.current;
+    if (!drawer || !card) return;
+    // The guide itself is the scroll container. `scrollIntoView()` also scrolls
+    // the document on iOS, which is why choosing an item from «الكل» jumped the
+    // underlying page to its end while the answer stayed off-screen. Keep the
+    // movement entirely inside the bottom sheet and land the answer just below
+    // its sticky browse bar.
+    const drawerRect = drawer.getBoundingClientRect();
+    const cardRect = card.getBoundingClientRect();
+    const topInset = Math.max(18, Math.min(92, drawerRect.height * 0.12));
+    const targetTop = drawer.scrollTop + (cardRect.top - drawerRect.top) - topInset;
+    drawer.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+  }, []);
+
   useEffect(() => {
     if (!open || (!selectedId && !selectedDynamic)) return;
     setSheetLevel("full");
+    let secondFrame = 0;
     const frame = window.requestAnimationFrame(() => {
-      const card = focusCardRef.current;
-      if (!card) return;
-      card.scrollIntoView({ behavior:"smooth", block:"center", inline:"nearest" });
-      card.classList.add("is-arrived");
-      scheduleLifecycle(() => card.classList.remove("is-arrived"), 900);
+      // Wait one more frame: selecting a feature removes the long index and
+      // inserts the answer card in its place, so the first layout is transitional.
+      secondFrame = window.requestAnimationFrame(() => {
+        const card = focusCardRef.current;
+        if (!card) return;
+        scrollGuideAnswerIntoView(card);
+        card.classList.add("is-arrived");
+        scheduleLifecycle(() => card.classList.remove("is-arrived"), 900);
+      });
     });
-    return () => window.cancelAnimationFrame(frame);
-  }, [open, selectedId, selectedDynamic, scheduleLifecycle]);
+    return () => { window.cancelAnimationFrame(frame); if (secondFrame) window.cancelAnimationFrame(secondFrame); };
+  }, [open, selectedId, selectedDynamic, scheduleLifecycle, scrollGuideAnswerIntoView]);
 
   const cycleSheet = (direction: "up" | "down" | "tap") => {
     setSheetLevel(current => {

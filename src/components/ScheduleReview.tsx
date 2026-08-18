@@ -385,14 +385,16 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
               </button>
               {open === finding.groupKey ? (
                 <div className="review-rows">
-                  <div className="review-finding-detail">
-                    <p>{finding.detail}</p>
-                    <div className="review-finding-meta">
-                      <span>{finding.article}</span>
-                      <span>{findingStatus(finding)}</span>
-                      {finding.groupedCount > 1 ? <span>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} تعارض</span> : null}{finding.rowIds.length ? <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span> : null}
+                  {!finding.rowIds.length ? (
+                    <div className="review-finding-detail">
+                      <p>{finding.detail}</p>
+                      <div className="review-finding-meta">
+                        <span>{finding.article}</span>
+                        <span>{findingStatus(finding)}</span>
+                        {finding.groupedCount > 1 ? <span>{finding.groupedCount.toLocaleString("ar-KW-u-nu-latn")} حالات</span> : null}
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                   {finding.rowIds.length ? (
                     <>
                       {finding.groupedCount > 1 ? (
@@ -417,8 +419,8 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                                     const subjectRowIds = [...new Set(subject.items.flatMap(item => item.rowIds))];
                                     return (
                                       <>
-                                        {uniqueDetails.length ? <p className="review-subject-summary">{uniqueDetails[0]}{uniqueDetails.length > 1 ? ` · ${uniqueDetails.length.toLocaleString("ar-KW-u-nu-latn")} أسباب مرتبطة` : ""}</p> : null}
                                         {renderCompactRows(subjectRowIds, 6)}
+                                        {!subjectRowIds.length && uniqueDetails.length ? <p className="review-subject-summary">{uniqueDetails[0]}</p> : null}
                                       </>
                                     );
                                   })()}

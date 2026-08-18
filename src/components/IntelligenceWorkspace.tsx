@@ -158,9 +158,10 @@ type InsightReason = {
   metric?: string;
   tone?: "good" | "warn" | "bad" | "plain";
   icon?: React.ReactNode;
-  summary: string;
+  summary?: string;
   facts?: Array<{ label: string; value: string }>;
   bars?: Array<{ label: string; value: number; max: number; caption?: string }>;
+  items?: Array<{ title: string; meta?: string; value?: string }>;
 };
 interface Props {
   user: any;
@@ -1700,6 +1701,63 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const activeInsight = insightScenes.find((item) => item.value === insightScene) || null;
   const activeInsightKey = activeInsight?.value || "";
+  const reasonCourseById = useMemo(() => new Map(courses.map(course => [Number(course.AdCourseId), course])), [courses]);
+  const reasonInstructorById = useMemo(() => new Map(instructors.map(instructor => [Number(instructor.AdInstructorId), instructor])), [instructors]);
+  const reasonRowById = useMemo(() => new Map(rows.map(row => [Number(row.id), row])), [rows]);
+  const reasonDays = (row: FSchedule | undefined) => row ? Object.entries(dayLabels).filter(([key]) => Boolean((row as any)[key])).map(([,label]) => label).join("، ") : "";
+  const reasonCourse = (row: FSchedule | undefined) => row ? (reasonCourseById.get(Number(row.AdCourseId))?.CourseCode || row.AdCourseName || "المقرر") : "موعد";
+  const reasonInstructor = (row: FSchedule | undefined) => row ? (reasonInstructorById.get(Number(row.AdInstructorId))?.AdInstructorName || "بدون أستاذ") : "";
+  const conflictReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => {
+    const conflicts = Array.isArray(overview?.conflicts) ? overview.conflicts.filter((item:any) => item?.severity === "high") : [];
+    return conflicts.slice(0, 12).map((conflict:any) => {
+      const first = reasonRowById.get(Number(conflict.rowId));
+      const second = reasonRowById.get(Number(conflict.otherId));
+      const title = conflict.type === "instructor"
+        ? reasonInstructor(first) || "أستاذ المقرر"
+        : conflict.type === "room"
+          ? `القاعة ${first?.AdRoomCode || "—"}/${first?.AdRoomHall || "—"}`
+          : reasonCourse(first);
+      const left = first ? `${reasonCourse(first)} · شعبة ${first.SCode || "—"} · ${reasonDays(first) || "بلا أيام"}` : "الموعد الأول";
+      const right = second ? `${reasonCourse(second)} · شعبة ${second.SCode || "—"}` : "موعد آخر";
+      return {
+        title,
+        meta: `${left} ↔ ${right}`,
+        value: first ? formatScheduleTimeRange(first.fstarttime, first.fendtime) : "تعارض",
+      };
+    });
+  }, [overview?.conflicts, reasonRowById, reasonCourseById, reasonInstructorById]);
+  const longGapReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => {
+    const loads = Array.isArray(overview?.professorLoads) ? overview.professorLoads : [];
+    return loads.filter((item:any) => Number(item.maxGap || 0) >= 180).sort((a:any,b:any) => Number(b.maxGap||0)-Number(a.maxGap||0)).slice(0, 12).map((item:any) => ({
+      title: String(item.name || "أستاذ"),
+      meta: `${Number(item.weeklyHours || 0).toLocaleString("ar-KW-u-nu-latn")} ساعة أسبوعيًا · ${Number(item.days || 0).toLocaleString("ar-KW-u-nu-latn")} أيام`,
+      value: `${Math.floor(Number(item.maxGap || 0) / 60)}س ${Number(item.maxGap || 0) % 60}د`,
+    }));
+  }, [overview?.professorLoads]);
+  const lateReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => rows.filter(row => twinMinutes(row.fstarttime) >= 16 * 60).sort((a,b) => twinMinutes(a.fstarttime) - twinMinutes(b.fstarttime)).slice(0, 12).map(row => ({
+    title: reasonCourse(row),
+    meta: `${reasonInstructor(row)} · شعبة ${row.SCode || "—"} · ${reasonDays(row) || "بلا أيام"}`,
+    value: formatScheduleTimeRange(row.fstarttime, row.fendtime),
+  })), [rows, reasonCourseById, reasonInstructorById]);
+  const invalidReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => rows.filter(row => !row.AdInstructorId || !row.AdCourseId || !row.AdRoomCode || !row.AdRoomHall || twinMinutes(row.fendtime) <= twinMinutes(row.fstarttime) || !reasonDays(row)).slice(0, 12).map(row => {
+    const missing = [!row.AdInstructorId ? "الأستاذ" : "", !row.AdCourseId ? "المقرر" : "", !row.AdRoomCode || !row.AdRoomHall ? "القاعة" : "", twinMinutes(row.fendtime) <= twinMinutes(row.fstarttime) ? "الوقت" : "", !reasonDays(row) ? "الأيام" : ""].filter(Boolean);
+    return { title: `${reasonCourse(row)} · شعبة ${row.SCode || "—"}`, meta: `ناقص: ${missing.join("، ")}`, value: `${missing.length} حقول` };
+  }), [rows, reasonCourseById]);
+  const dayBalanceReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => {
+    const load = Array.isArray(overview?.dayLoad) ? [...overview.dayLoad].sort((a:any,b:any)=>Number(b.count||0)-Number(a.count||0)) : [];
+    const max = Math.max(1,...load.map((item:any)=>Number(item.count||0)));
+    return load.map((item:any) => ({ title:String(item.label || item.key || "يوم"), meta:`${Math.round(Number(item.count||0)/max*100)}٪ من أعلى يوم`, value:`${Number(item.count||0).toLocaleString("ar-KW-u-nu-latn")} موعد` }));
+  }, [overview?.dayLoad]);
+  const reasonForSmartAlert = (alert:any, index:number): InsightReason => {
+    const title = String(alert?.title || "تنبيه ذكي");
+    const base = { kicker:"تفاصيل التنبيه", title, metric:String(index + 1), tone:(alert?.severity === "critical" || alert?.severity === "high" || alert?.severity === "danger" ? "bad" : alert?.severity === "ok" ? "good" : "warn") as InsightReason["tone"] };
+    if (/مانع اعتماد|تعارض|حجز|مزدوج/.test(title)) return { ...base, icon:<ShieldAlert />, summary:"هذه هي الموانع الفعلية التي كوّنت الرقم:", items:conflictReasonItems, facts:[{label:"الموانع",value:String(overview?.metrics?.criticalConflicts || 0)},{label:"النوع",value:"حجز فعلي"},{label:"اللائحة",value:"تحذيرية"}] };
+    if (/فراغ/.test(title)) return { ...base, icon:<CalendarClock />, summary:"الأساتذة الذين تجاوز لديهم الفراغ 3 ساعات:", items:longGapReasonItems, facts:[{label:"الأساتذة",value:String(longGapReasonItems.length)},{label:"الحد",value:"3 ساعات"},{label:"القراءة",value:"إرشادية"}] };
+    if (/متأخر|بعد 4|وقت/.test(title)) return { ...base, icon:<Clock3 />, summary:"المواعيد التي تبدأ من 4:00 مساءً فأكثر:", items:lateReasonItems, facts:[{label:"المواعيد",value:String(lateReasonItems.length)},{label:"من",value:"16:00"},{label:"النوع",value:"توقيت"}] };
+    if (/بيانات|سجل/.test(title)) return { ...base, icon:<FileClock />, summary:"السجلات التي ينقصها شيء محدد:", items:invalidReasonItems, facts:[{label:"السجلات",value:String(invalidReasonItems.length)},{label:"الحالة",value:"تحتاج إكمال"}] };
+    if (/توزيع|أيام/.test(title)) return { ...base, icon:<BarChart3 />, summary:"هذا هو توزيع الحمل بين الأيام:", items:dayBalanceReasonItems, facts:[{label:"التفاوت",value:`${overview?.metrics?.imbalance || 0}٪`},{label:"الأيام",value:String(dayBalanceReasonItems.length)}] };
+    return { ...base, icon:<AlertTriangle />, summary:"تفاصيل هذا التنبيه:", items:[{title,meta:String(alert?.detail || "لا توجد تفاصيل إضافية."),value:""}] };
+  };
   const chronologicalVersions = useMemo(() => [...versions].sort((a,b)=>String(a.createdAt).localeCompare(String(b.createdAt))), [versions]);
   const versionActivityHeatmap = useMemo(() => {
     const labels=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"],hours=Array.from({length:16},(_,i)=>i+7),counts=new Map<string,number>();
@@ -2032,25 +2090,27 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <ShieldCheck />
             </div>
             <div className="approval-metrics">
-              <button type="button" className={`approval-metric-card ${overview.metrics.criticalConflicts ? "danger" : "ok"}`} onClick={() => setInsightReason({
+              <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className={`approval-metric-card ${overview.metrics.criticalConflicts ? "danger" : "ok"}`} onClick={() => setInsightReason({
                 kicker:"قبل الاعتماد", title:"موانع الاعتماد", metric:String(overview.metrics.criticalConflicts), tone:overview.metrics.criticalConflicts?"bad":"good", icon:<ShieldAlert />,
-                summary:overview.metrics.criticalConflicts?"هذه مواضع تحتاج معالجة لأنها تعارض الحفظ أو الاعتماد، وليست مجرد ملاحظات لائحية.":"لا تظهر موانع حفظ في النطاق الحالي.",
-                facts:[{label:"المواضع",value:String(overview.metrics.criticalConflicts)},{label:"حالة الاعتماد",value:overview.metrics.criticalConflicts?"متوقف":"جاهز"},{label:"قرار 1913",value:"تحذيري"}],
+                summary:overview.metrics.criticalConflicts?"هذه هي الموانع الموجودة الآن:":"لا تظهر موانع حفظ في النطاق الحالي.",
+                facts:[{label:"الموانع",value:String(overview.metrics.criticalConflicts)},{label:"حالة الاعتماد",value:overview.metrics.criticalConflicts?"متوقف":"جاهز"},{label:"اللائحة",value:"تحذيرية"}],
+                items:conflictReasonItems,
                 bars:[{label:"المتأثر",value:Number(overview.metrics.criticalConflicts||0),max:Math.max(1,Number(rows.length||1)),caption:`${overview.metrics.criticalConflicts} موضع`}]
               })}>
                 <strong>{overview.metrics.criticalConflicts}</strong>
                 <span>موضع يحتاج تحقق</span>
                 <ChevronLeft aria-hidden="true" />
               </button>
-              <button type="button" className="approval-metric-card" onClick={() => setInsightReason({
+              <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
                 kicker:"سلامة البيانات", title:"سجلات تحتاج مراجعة", metric:String(overview.metrics.invalidRows), tone:overview.metrics.invalidRows?"warn":"good", icon:<FileClock />,
-                summary:overview.metrics.invalidRows?"هذه سجلات تنقصها بيانات تجعل قراءتها أو فحصها غير مكتمل.":"لا توجد سجلات ناقصة ظاهرة في النطاق الحالي.",
+                summary:overview.metrics.invalidRows?"هذه السجلات وما ينقص كل واحد منها:":"لا توجد سجلات ناقصة ظاهرة في النطاق الحالي.",
+                items:invalidReasonItems,
                 facts:[{label:"السجلات",value:String(overview.metrics.invalidRows)},{label:"الجدول",value:String(rows.length)},{label:"الأثر",value:overview.metrics.invalidRows?"مراجعة":"لا شيء"}]
               })}>
                 <strong>{overview.metrics.invalidRows}</strong>
                 <span>سجل يحتاج مراجعة</span><ChevronLeft aria-hidden="true" />
               </button>
-              <button type="button" className="approval-metric-card" onClick={() => setInsightReason({
+              <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
                 kicker:"مساحة العمل", title:"المسودات الداخلية", metric:String(overview.draftCount), tone:"plain", icon:<Save />,
                 summary:"هذه نسخ تجريبية أو محفوظة للمراجعة ولم تُنشر على الجدول المعتمد.",
                 facts:[{label:"المسودات",value:String(overview.draftCount)},{label:"النشر",value:"لا"},{label:"الجدول الحقيقي",value:"لم يتغير"}]
@@ -2058,26 +2118,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <strong>{overview.draftCount}</strong>
                 <span>مسودة داخلية</span><ChevronLeft aria-hidden="true" />
               </button>
-              <button type="button" className="approval-metric-card" onClick={() => setInsightReason({
+              <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
                 kicker:"راحة الجدول", title:"متوسط فراغ الأساتذة", metric:`${overview.metrics.avgInstructorGap}د`, tone:Number(overview.metrics.avgInstructorGap)>=180?"warn":"plain", icon:<CalendarClock />,
-                summary:"متوسط زمني يصف المسافة بين المحاضرات لدى الأساتذة داخل النطاق؛ افتح قراءة الأساتذة لرؤية كل شخص على حدة.",
-                facts:[{label:"المتوسط",value:`${overview.metrics.avgInstructorGap} دقيقة`},{label:"القراءة",value:"إرشادية"},{label:"التفصيل",value:"حسب الأستاذ"}]
+                summary:longGapReasonItems.length?"أصحاب الفراغات الأطول الآن:":"لا يوجد أستاذ بفراغ يومي يتجاوز 3 ساعات.",
+                items:longGapReasonItems,
+                facts:[{label:"المتوسط",value:`${overview.metrics.avgInstructorGap} دقيقة`},{label:"أكثر من 3س",value:String(longGapReasonItems.length)},{label:"القراءة",value:"إرشادية"}]
               })}>
                 <strong>{overview.metrics.avgInstructorGap}</strong>
                 <span>دقيقة متوسط الفراغ</span><ChevronLeft aria-hidden="true" />
               </button>
             </div>
             <div className="approval-status approval-status-grid">
-              <button type="button" className={overview.metrics.criticalConflicts ? "blocked" : "ready"} onClick={() => setInsightReason({
+              <button type="button" data-guide-ignore="يفتح سبب حالة الاعتماد داخل القراءة الحالية فقط" className={overview.metrics.criticalConflicts ? "blocked" : "ready"} onClick={() => setInsightReason({
                 kicker:"حالة الاعتماد", title:overview.metrics.criticalConflicts?"لماذا الاعتماد متوقف؟":"لماذا الجدول جاهز؟", metric:overview.metrics.criticalConflicts?String(overview.metrics.criticalConflicts):"✓", tone:overview.metrics.criticalConflicts?"bad":"good", icon:overview.metrics.criticalConflicts?<ShieldAlert />:<ShieldCheck />,
-                summary:overview.metrics.criticalConflicts?`يوجد ${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضعاً من نوع الموانع الحقيقية. ملاحظات اللائحة نفسها تبقى تحذيرية ولا تمنع الاعتماد.`:"لا توجد موانع حفظ ظاهرة. ملاحظات اللائحة — إن وجدت — تبقى للمراجعة فقط.",
+                summary:overview.metrics.criticalConflicts?"الموانع الفعلية التي توقف الاعتماد:":"لا توجد موانع حفظ ظاهرة. ملاحظات اللائحة — إن وجدت — تبقى للمراجعة فقط.",
+                items:overview.metrics.criticalConflicts?conflictReasonItems:[],
                 facts:[{label:"موانع حقيقية",value:String(overview.metrics.criticalConflicts)},{label:"اللائحة",value:"تحذيرية"},{label:"الحالة",value:overview.metrics.criticalConflicts?"يحتاج معالجة":"جاهز"}]
               })}>
                 <small>حالة الاعتماد</small>
                 <strong>{overview.metrics.criticalConflicts ? "يمنع الاعتماد" : "جاهز للاعتماد"}</strong>
                 <span>{overview.metrics.criticalConflicts ? `${overview.metrics.criticalConflicts.toLocaleString("ar-KW-u-nu-latn")} موضع يحتاج تحقق` : "لا توجد موانع اعتماد ظاهرة"}</span><ChevronLeft aria-hidden="true" />
               </button>
-              <button type="button" className="publication-state" onClick={() => setInsightReason({
+              <button type="button" data-guide-ignore="يفتح شرح حالة النشر داخل القراءة الحالية فقط" className="publication-state" onClick={() => setInsightReason({
                 kicker:"حالة النشر", title:overview.publication?"الجدول منشور":"لم يُنشر بعد", metric:overview.publication?"✓":"—", tone:overview.publication?"good":"plain", icon:<Upload />,
                 summary:overview.publication?"هذه النسخة سبق نشرها للمستخدمين.":"النشر خطوة مستقلة وتبقى بقرار المستخدم صاحب الصلاحية.",
                 facts:[{label:"الحالة",value:overview.publication?"منشور":"غير منشور"},{label:"الاعتماد",value:"مستقل"},{label:"التحكم",value:"يدوي"}]
@@ -2112,12 +2174,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   : /توزيع|أيام/.test(a.title) ? <BarChart3 />
                   : a.severity === "ok" ? <CheckCircle2 /> : <AlertTriangle />;
                 return (
-                  <button type="button" key={i} className={`smart-alert-card ${a.severity}`} onClick={() => setInsightReason({
-                    kicker:"تنبيه ذكي", title:a.title, metric:String(i + 1), tone:a.severity === "high" || a.severity === "danger" ? "bad" : a.severity === "ok" ? "good" : "warn", icon,
-                    summary:a.detail,
-                    facts:[{label:"الأولوية",value:`#${i + 1}`},{label:"النوع",value:/اعتماد|تعارض|حجز|مزدوج/.test(a.title)?"اعتماد":/فراغ|موعد|وقت/.test(a.title)?"وقت":"جدولة"},{label:"الإجراء",value:"راجع السبب"}],
-                    bars:[{label:"الأولوية",value:Math.max(1,3-i),max:3,caption:i===0?"عالية":i===1?"متوسطة":"لاحقة"}]
-                  })}>
+                  <button type="button" data-guide-ignore="يفتح سبب التنبيه الذكي داخل مركز القيادة فقط" key={i} className={`smart-alert-card ${a.severity}`} onClick={() => setInsightReason(reasonForSmartAlert(a, i))}>
                     <span className="smart-alert-icon">{icon}</span>
                     <div><strong>{a.title}</strong><p>{a.detail}</p></div>
                     <ChevronLeft className="smart-alert-open" aria-hidden="true" />
@@ -2132,10 +2189,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </summary>
                 <div className="smart-alerts">
                   {overview.alerts.slice(3).map((a: any, i: number) => (
-                    <button type="button" key={i + 3} className={`smart-alert-card ${a.severity}`} onClick={() => setInsightReason({
-                      kicker:"تنبيه ذكي", title:a.title, metric:String(i + 4), tone:a.severity === "high" || a.severity === "danger" ? "bad" : a.severity === "ok" ? "good" : "warn", icon:<AlertTriangle />,
-                      summary:a.detail, facts:[{label:"الأولوية",value:`#${i + 4}`},{label:"الحالة",value:"تحتاج مراجعة"},{label:"التأثير",value:"تحذيري"}]
-                    })}>
+                    <button type="button" data-guide-ignore="يفتح سبب التنبيه الذكي داخل مركز القيادة فقط" key={i + 3} className={`smart-alert-card ${a.severity}`} onClick={() => setInsightReason(reasonForSmartAlert(a, i + 3))}>
                       <span className="smart-alert-icon"><AlertTriangle /></span>
                       <div><strong>{a.title}</strong><p>{a.detail}</p></div><ChevronLeft className="smart-alert-open" aria-hidden="true" />
                     </button>
@@ -2869,12 +2923,23 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <span className="intel-reason-icon" aria-hidden="true">{insightReason.icon || <CircleHelp />}</span>
               <div><small>{insightReason.kicker}</small><strong>{insightReason.title}</strong></div>
               {insightReason.metric ? <b className="intel-reason-metric"><Num value={insightReason.metric} /></b> : null}
-              <button type="button" onClick={() => setInsightReason(null)} aria-label="إغلاق التفاصيل" title="إغلاق"><X /></button>
+              <button type="button" data-guide-ignore="إغلاق نافذة شرح المؤشر فقط" onClick={() => setInsightReason(null)} aria-label="إغلاق التفاصيل" title="إغلاق"><X /></button>
             </header>
-            <p className="intel-reason-summary">{insightReason.summary}</p>
+            {insightReason.summary ? <p className="intel-reason-summary">{insightReason.summary}</p> : null}
             {insightReason.facts?.length ? (
               <div className="intel-reason-facts">
                 {insightReason.facts.map((fact, index) => <article key={`${fact.label}-${index}`}><small>{fact.label}</small><strong><Num value={fact.value} /></strong></article>)}
+              </div>
+            ) : null}
+            {insightReason.items?.length ? (
+              <div className="intel-reason-items" aria-label="التفاصيل الفعلية">
+                {insightReason.items.map((item, index) => (
+                  <article key={`${item.title}-${index}`}>
+                    <span className="intel-reason-item-index">{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</span>
+                    <div><strong>{item.title}</strong>{item.meta ? <small>{item.meta}</small> : null}</div>
+                    {item.value ? <b dir="ltr"><Num value={item.value} /></b> : null}
+                  </article>
+                ))}
               </div>
             ) : null}
             {insightReason.bars?.length ? (
@@ -2884,7 +2949,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ))}
               </div>
             ) : null}
-            <footer><ShieldCheck aria-hidden="true" /><span>شرح فقط · لا يغيّر الجدول</span><button type="button" onClick={() => setInsightReason(null)}>تم</button></footer>
+            <footer><ShieldCheck aria-hidden="true" /><span>شرح فقط · لا يغيّر الجدول</span><button type="button" data-guide-ignore="إغلاق نافذة شرح المؤشر فقط" onClick={() => setInsightReason(null)}>تم</button></footer>
           </section>
         </div>
       ) : null}

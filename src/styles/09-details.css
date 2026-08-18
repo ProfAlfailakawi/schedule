@@ -1612,3 +1612,30 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .review-row-card.compact .rrc-main{display:grid;gap:2px;min-width:0}
 .review-row-card.compact .rrc-main strong{font-size:12px;font-weight:760;color:var(--ink);overflow-wrap:anywhere}
 .review-row-card.compact .rrc-main small{font-size:11px;color:var(--muted);line-height:1.55}
+
+/* === Publish sheet phone header: the title sits below the QR mark ========== */
+@media(max-width:600px){
+  .share-sheet.visual-minimal>header{
+    position:relative!important;
+    display:block!important;
+    min-height:104px!important;
+    padding:58px 8px 0!important;
+    margin-top:6px!important;
+    text-align:center!important;
+  }
+  .share-sheet.visual-minimal>header .share-glyph{
+    position:absolute!important;
+    inset-block-start:0!important;
+    inset-inline-start:0!important;
+    margin:0!important;
+  }
+  .share-sheet.visual-minimal>header>div{min-width:0!important;width:100%!important}
+  .share-sheet.visual-minimal>header small{line-height:1.2!important}
+  .share-sheet.visual-minimal>header h2{
+    margin-top:6px!important;
+    padding:0 4px!important;
+    font-size:clamp(20px,6vw,24px)!important;
+    line-height:1.3!important;
+    overflow-wrap:anywhere!important;
+  }
+}
