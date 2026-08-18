@@ -27,7 +27,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton } from "./ui";
+import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton, visualConfirm } from "./ui";
 import {
   BriefScene,
   ContextPicker,
@@ -439,6 +439,14 @@ export default function LivingScheduleLayer({
   const deleteGenesisRow = async (rowId: number) => {
     const draftId = String(genesis?.draft?.id || "").trim();
     if (!draftId || !rowId) return;
+    const row = (genesis?.previewRows || []).find((item:any) => Number(item.id) === Number(rowId));
+    if (!(await visualConfirm({
+      title: "حذف الموعد من المسودة",
+      message: row?.AdCourseName ? `سيُحذف «${row.AdCourseName}» من المسودة فقط، ولن يتغير الجدول الرسمي.` : "سيُحذف هذا الموعد من المسودة فقط، ولن يتغير الجدول الرسمي.",
+      confirmLabel: "حذف",
+      tone: "danger",
+      compact: true,
+    }))) return;
     setBusy(true); setError("");
     try {
       const result = await json(`/api/intelligence/drafts/${encodeURIComponent(draftId)}/rows/${encodeURIComponent(String(rowId))}`, { method: "DELETE" });

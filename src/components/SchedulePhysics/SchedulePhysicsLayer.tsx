@@ -54,7 +54,7 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
   const compact = !isPowerAdmin;
   const GAP = 14, EDGE = 14;
   const timeGuideStyle: React.CSSProperties | undefined = target?.rect
-    ? { top: `${Math.round(target.rect.top + target.rect.height / 2)}px` }
+    ? { top: `${Math.round(variant === "rooms" ? Math.max(16, target.rect.top - 2) : target.rect.top + target.rect.height / 2)}px` }
     : undefined;
   const hudStyle: React.CSSProperties | undefined = target?.rect ? (() => {
     const viewport = window.visualViewport;
@@ -98,6 +98,7 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
       </div>
       <div className="physics-float-meta"><b dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</b><small>{row.AdRoomCode}/{row.AdRoomHall}</small></div>
     </div>
+
 
     {target ? <aside ref={hudRef} className={`schedule-physics-hud quality-${decision?.quality || "unknown"} ${compact ? "compact" : "detailed"}`} style={hudStyle} aria-live="polite">
       <header>

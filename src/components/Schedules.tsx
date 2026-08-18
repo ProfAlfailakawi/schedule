@@ -559,6 +559,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const [contextCommentsOpen, setContextCommentsOpen] = useState(false);
   const rippleTimer = useRef<number | undefined>(undefined),
     rippleKey = useRef("");
+  const replayAbortRef = useRef<AbortController | null>(null);
+  const replayRequestSeqRef = useRef(0);
   const guideOperationRef = useRef<{ featureId:string; transactionId?:string; startedAt:number; task?:string; expected?:string } | null>(null);
   const normalReviewTrackedRef = useRef(false);
   const normalSearchTrackedRef = useRef<{query:string;startedAt:number;completed?:boolean} | null>(null);
@@ -572,6 +574,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (detail.final !== false && operation?.featureId === detail.featureId) guideOperationRef.current = null;
   }, []);
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
+  useEffect(() => () => {
+    replayAbortRef.current?.abort();
+    replayAbortRef.current = null;
+  }, []);
   useEffect(() => {
     if (!rows.length) return;
     let request:any = null;
@@ -2420,6 +2426,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     setSolutions([]);
   };
   const openContext = async (row: FSchedule) => {
+    replayAbortRef.current?.abort();
+    replayAbortRef.current = null;
+    replayRequestSeqRef.current += 1;
+    setReplayLoading(false);
     setContextLoading(true);
     setContextTab("overview");
     setCommentText("");
@@ -2457,33 +2467,61 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const nextContextRow = contextSequenceIndex >= 0 && contextSequenceIndex < contextSequence.length - 1
     ? contextSequence[contextSequenceIndex + 1]
     : null;
+  const closeReplay = () => {
+    replayAbortRef.current?.abort();
+    replayAbortRef.current = null;
+    replayRequestSeqRef.current += 1;
+    setReplayLoading(false);
+    setReplay(null);
+  };
   const loadReplay = async (row: FSchedule) => {
+    replayAbortRef.current?.abort();
+    const controller = new AbortController();
+    replayAbortRef.current = controller;
+    const requestSeq = ++replayRequestSeqRef.current;
+    let timeoutReached = false;
+    const timeoutId = window.setTimeout(() => { timeoutReached = true; controller.abort(); }, 6500);
+    const currentPlace = [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة";
+    const currentDays = arabicDays(row) || "بدون أيام";
+    const currentTime = formatScheduleTimeRange(row.fstarttime, row.fendtime);
     setReplayLoading(true);
     setReplay({
-      title: row.AdCourseName,
-      subtitle: `${daysLabel(row)} · ${displayClockCompact(row.fstarttime || "")} · ${row.AdRoomCode || ""}/${row.AdRoomHall || ""}`,
-      summary: "أبني المسار من السجل التاريخي الحالي لهذا الموعد.",
+      title: row.AdCourseName || "الموعد الحالي",
+      subtitle: `${currentDays} · ${currentTime} · ${currentPlace}`,
+      summary: "هذه قراءة فورية من الموعد الحالي. أستكمل الآن السجل التاريخي في الخلفية.",
       events: [],
-      emptyMessage: "لا يوجد سجل تفصيلي محفوظ لهذا الموعد بعد، لكن هذه القراءة تؤكد أن القرار الحالي مستند إلى حالة الموعد الحالية وسياقه التاريخي.",
+      currentFacts: { days: currentDays, time: currentTime, place: currentPlace },
+      emptyMessage: "القراءة الحالية جاهزة، ولم يصل بعد سجل تغييرات تاريخي موثّق لهذا الموعد.",
     });
     try {
-      const payload = await fetchJson(`/api/intelligence/replay/${row.id}`);
-      setReplay(payload || {
-        title: row.AdCourseName,
-        subtitle: `${daysLabel(row)} · ${displayClockCompact(row.fstarttime || "")} · ${row.AdRoomCode || ""}/${row.AdRoomHall || ""}`,
-        summary: "لا توجد أحداث تفصيلية محفوظة لهذا الموعد بعد.",
-        events: [],
-        emptyMessage: "هذا الموعد لم يسجل انتقالات سابقة كافية، لذلك أعرض لك وضعه الحالي مباشرةً بدل خط زمني فارغ.",
+      const payload = await fetchJson(`/api/intelligence/replay/${row.id}`, { signal: controller.signal });
+      if (requestSeq !== replayRequestSeqRef.current) return;
+      setReplay({
+        ...payload,
+        title: payload?.title || row.AdCourseName || "الموعد الحالي",
+        subtitle: payload?.subtitle || `${currentDays} · ${currentTime} · ${currentPlace}`,
+        summary: payload?.summary || "تمت قراءة السجل التاريخي لهذا الموعد.",
+        events: Array.isArray(payload?.events) ? payload.events : [],
+        currentFacts: { days: currentDays, time: currentTime, place: currentPlace },
+        emptyMessage: payload?.emptyMessage || "لا توجد تغييرات تاريخية موثّقة لهذا الموعد حتى الآن. الوضع الحالي ظاهر أدناه بدل ترك الشاشة فارغة.",
       });
     } catch (e: any) {
+      if (requestSeq !== replayRequestSeqRef.current) return;
+      if (controller.signal.aborted && !timeoutReached) return;
       setReplay((current: any) => ({
         ...(current || {}),
-        error: friendlyError(e),
-        emptyMessage: "تعذر تحميل سجل التحليل الآن. يمكنك المحاولة لاحقًا، ولم يتغير أي شيء في الموعد.",
+        error: timeoutReached ? "انتهت مهلة جلب السجل التاريخي." : friendlyError(e),
+        emptyMessage: timeoutReached
+          ? "لم يصل السجل التاريخي خلال المهلة المحددة. أبقيت القراءة الحالية جاهزة ويمكنك إعادة المحاولة."
+          : "تعذر جلب السجل التاريخي الآن. أبقيت بيانات الموعد الحالية ظاهرة ولم يتغير شيء في الجدول.",
         events: current?.events || [],
       }));
     } finally {
-      setReplayLoading(false);
+      window.clearTimeout(timeoutId);
+      if (requestSeq === replayRequestSeqRef.current) {
+        if (replayAbortRef.current === controller) replayAbortRef.current = null;
+        setReplayLoading(false);
+      }
     }
   };
   const clearRipple = () => {
@@ -7074,7 +7112,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                               <div className="decision-feature-hero">
                                 <div className="decision-note-body">
                                   <strong>{finding.title}</strong>
-                                  {finding.detail ? <p>{finding.detail}</p> : null}
+                                  {finding.detail ? <details className="decision-note-details"><summary>التفاصيل</summary><p>{finding.detail}</p></details> : null}
                                 </div>
                                 <div className="decision-note-icon" aria-hidden="true">
                                   {finding.icon === "history" ? <History /> : finding.icon === "room" ? <Building2 /> : <Lightbulb />}
@@ -7116,7 +7154,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           <div className="decision-feature-hero">
                             <div className="decision-note-body">
                               <strong>بداية غير معتادة</strong>
-                              <p>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim()}</p>
+                              <details className="decision-note-details">
+                                <summary>التفاصيل</summary>
+                                <p>{String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim()}</p>
+                              </details>
                             </div>
                             <div className="decision-note-icon" aria-hidden="true"><CalendarDays /></div>
                           </div>
@@ -10204,7 +10245,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     type="button"
                     aria-label="إغلاق تشريح القرار"
                     title="إغلاق تشريح القرار"
-                    onClick={() => setReplay(null)}
+                    data-guide-ignore="إغلاق تفصيل ثانوي لتشريح القرار فقط ولا يغير بيانات الجدول"
+                    onClick={closeReplay}
                   >
                     <X />
                   </button>
@@ -10217,7 +10259,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   not contain.
                 */}
                 {replayLoading ? (
-                  <div className="replay-empty-state">أجمع السجل الآن…</div>
+                  <div className="replay-empty-state replay-empty-state-rich is-loading">
+                    <strong>القراءة الحالية جاهزة</strong>
+                    {replay.subtitle ? <span>{replay.subtitle}</span> : null}
+                    <p>{replay.summary || "أستكمل السجل التاريخي في الخلفية…"}</p>
+                    <small>أستكمل السجل التاريخي…</small>
+                  </div>
                 ) : replay.events?.length ? (
                   <ol className="replay-spine">
                     {replay.events.map((event: any, i: number) => (
@@ -10253,6 +10300,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     <strong>{replay.emptyMessage || replay.summary || "لا يوجد سجل انتقالات محفوظ لهذا الموعد بعد."}</strong>
                     {replay.subtitle ? <span>{replay.subtitle}</span> : null}
                     {replay.error ? <em>{replay.error}</em> : <p>إذا بقي الموعد ثابتاً فسأعرضه لك مباشرةً، وإذا تغيّر لاحقاً سيظهر الخط الزمني هنا خطوةً خطوة.</p>}
+                    {replay.error ? <button type="button" className="replay-retry" data-guide-ignore="إعادة محاولة قراءة سجل تشريح القرار فقط ولا تنفذ أي تغيير" onClick={() => void loadReplay(context.selected)}>إعادة المحاولة</button> : null}
                   </div>
                 )}
               </div>
