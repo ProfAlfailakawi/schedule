@@ -8206,7 +8206,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         style={{ right: `${pct(mins(slot))}%` }}
                       />
                     ))}
-                    {hourMarks.map(mark => (
+                    {hourMarks.filter(mark => mark !== gridWindow.end).map(mark => (
                       <span key={mark} style={{ right: `${pct(mark)}%` }} dir="ltr">{timeFromMins(mark)}</span>
                     ))}
                   </div>
@@ -8222,10 +8222,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 >
                   {roomList.map(room => (
                     <section className="rooms-week-room" key={room.key}>
-                      <header className="rooms-week-room-head">
-                        <strong dir="ltr">{room.label}</strong>
-                        <small><b className="num">{roomCounts.get(room.key) || 0}</b> موعداً أسبوعياً</small>
-                      </header>
+                      <header className="rooms-week-room-head" aria-label={`القاعة ${room.label}`} title={room.label} />
                       <div className="rooms-week-days">
                         {displayDays.map(day => {
                           const roomLayout = layoutFor(day.key as DayKey, room.key);
@@ -8304,7 +8301,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   ))}
                   {displayDays.some(day => (noRoomByDay.get(day.key as DayKey) || []).length || moveTraces.some(trace => trace.roomKey === "|" && trace.dayKey === day.key)) ? (
                     <section className="rooms-week-room rooms-row-none">
-                      <header className="rooms-week-room-head"><strong>بلا قاعة</strong></header>
+                      <header className="rooms-week-room-head" aria-label="بلا قاعة" title="بلا قاعة" />
                       <div className="rooms-week-days">
                         {displayDays.map(day => {
                           const homelessLayout = noRoomLayout.get(day.key as DayKey) || { items: [], lanes: 1 };
@@ -8748,7 +8745,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             aria-hidden="true"
                           />
                         ))}
-                        {weekStripHourMarks.map((mark) => (
+                        {weekStripHourMarks.filter((mark) => mark !== gridWindow.end).map((mark) => (
                           <i
                             key={`week-strip-ruler-${mark}`}
                             className={`week-strip-hourmark ${mark === gridWindow.end ? "terminal" : ""}`}
