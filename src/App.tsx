@@ -493,13 +493,6 @@ export default function App() {
   const [activeView, setActiveView] = useState<View>(
     () => viewByPath.get(window.location.pathname.toLowerCase()) || "dashboard",
   );
-  useEffect(() => {
-    let second=0;
-    const first=window.requestAnimationFrame(() => {
-      second=window.requestAnimationFrame(() => window.dispatchEvent(new CustomEvent("schedule-view-ready", { detail:{ view:activeView } })));
-    });
-    return () => { window.cancelAnimationFrame(first); if (second) window.cancelAnimationFrame(second); };
-  }, [activeView]);
   useEffect(() => { telemetryBreadcrumb(`واجهة: ${activeView}`); setGuideContext(null); setGuideHint(null); }, [activeView]);
   useEffect(() => {
     const userId = Number(user?.SystemUserId || 0);
@@ -2348,8 +2341,8 @@ export default function App() {
           if (!guideIntroduced && user) setLauncherIntroduced(Number(user.SystemUserId), true);
           setGuideOpen(true);
         }}
-        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : guideNewCount ? `افتح مرشد SCHEDULE — ${guideUnread.product.length} تحديث منتج و${guideUnread.runtime.length} جديد في هذه الشاشة` : "افتح مرشد SCHEDULE"}
-        title={guideHint ? `${guideHint.title}` : "مرشد SCHEDULE"}
+        aria-label={guideHint ? `${guideHint.title} — افتح المرشد` : guideNewCount ? `افتح مرشد SCHEDULE — لديك ${guideNewCount} عناصر جديدة: ${guideUnread.product.length} تحديثات للميزات و${guideUnread.runtime.length} عناصر جديدة في هذه الشاشة` : "افتح مرشد SCHEDULE"}
+        title={guideHint ? `${guideHint.title}` : guideNewCount ? `${guideNewCount} جديد — اضغط لمعرفة ما هو` : "مرشد SCHEDULE"}
       >
         <span className="smart-guide-fab-mark" aria-hidden="true"><Sparkles /></span>
         {!guideIntroduced ? (
@@ -2358,7 +2351,7 @@ export default function App() {
             <strong>كيف؟</strong>
           </span>
         ) : null}
-        {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : !guideOpen && guideNewCount ? <i className="smart-guide-fab-new" dir="ltr" aria-hidden="true">{guideNewCount > 9 ? "9+" : guideNewCount}</i> : null}
+        {guideHint ? <i className="smart-guide-fab-pulse" aria-hidden="true" /> : !guideOpen && guideNewCount ? <i className="smart-guide-fab-new" aria-hidden="true">{`${guideNewCount.toLocaleString("ar-KW-u-nu-latn")} جديد`}</i> : null}
       </button>
 
       {searchOpen ? (

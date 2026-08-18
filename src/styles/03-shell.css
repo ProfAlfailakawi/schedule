@@ -1226,3 +1226,96 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
 
 
 .guide-ghost-wait{display:inline-flex;align-items:center;min-height:34px;padding:0 10px;border:1px dashed color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:11px;background:color-mix(in srgb,var(--accent) 5%,var(--surface));color:var(--accent);font-size:9.5px;font-weight:700}
+
+/* === Smart Guide V16 · first-use clarity and deterministic navigation ======
+   A chosen answer must never appear "somewhere below", unread counters must
+   explain themselves, and every bottom-sheet state must remain scrollable. */
+.smart-guide{
+  min-height:0;
+  max-height:calc(100dvh - 36px);
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  -webkit-overflow-scrolling:touch;
+  overscroll-behavior-y:contain;
+  touch-action:pan-y;
+  scroll-padding-block:78px 54px;
+}
+.smart-guide-pending-task{
+  position:relative;z-index:2;pointer-events:auto!important;
+  transition:border-color .16s var(--ease),background .16s var(--ease),transform .16s var(--ease);
+}
+.smart-guide-pending-task:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--line));background:var(--accent-softer);transform:translateY(-1px)}
+
+.smart-guide-onboarding{padding:0!important;overflow:hidden;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:18px;background:var(--surface)}
+.smart-guide-onboarding-toggle{
+  width:100%;min-height:44px;padding:8px 11px;border:0;background:transparent;color:var(--ink);
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;text-align:start;
+}
+.smart-guide-onboarding-toggle>svg:first-child{width:16px;height:16px;color:var(--accent)}
+.smart-guide-onboarding-toggle>span{font-size:11px;font-weight:760}
+.smart-guide-onboarding-toggle>svg:last-child{width:13px;height:13px;color:var(--muted);transition:transform .18s var(--ease)}
+.smart-guide-onboarding.is-open .smart-guide-onboarding-toggle{border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--accent) 3%,var(--surface))}
+.smart-guide-onboarding.is-open .smart-guide-onboarding-toggle>svg:last-child{transform:rotate(-90deg)}
+.smart-guide-onboarding>div{padding:8px!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+
+.smart-guide-unread-brief{
+  width:100%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:9px;
+  padding:9px 11px;border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));border-radius:16px;
+  background:linear-gradient(115deg,color-mix(in srgb,var(--accent) 7%,var(--surface)),var(--surface));color:var(--ink);text-align:start;
+}
+.smart-guide-unread-brief>svg:first-child{width:17px;height:17px;color:var(--accent)}
+.smart-guide-unread-brief>span{display:grid;gap:1px;min-width:0}
+.smart-guide-unread-brief strong{font-size:11px;font-weight:780}
+.smart-guide-unread-brief small{font-size:9px;line-height:1.45;color:var(--muted)}
+.smart-guide-unread-brief>svg:last-child{width:13px;height:13px;color:var(--muted)}
+.smart-guide-unread-brief:hover{border-color:color-mix(in srgb,var(--accent) 38%,var(--line));background:var(--accent-softer)}
+
+.smart-guide-browse i{
+  min-width:22px!important;width:auto!important;max-width:none!important;height:20px!important;padding:0 6px!important;
+  white-space:nowrap;font-variant-numeric:tabular-nums lining-nums;
+}
+.smart-guide-mark-all{
+  width:auto!important;min-width:0!important;height:32px!important;padding:0 10px!important;border-radius:999px!important;
+  display:inline-flex!important;align-items:center;gap:5px;white-space:nowrap;
+}
+.smart-guide-mark-all span{display:inline!important;font-size:9px;font-weight:750}
+
+.smart-guide-result-jump{width:15px!important;height:15px!important;color:var(--accent)!important;opacity:.8;transition:transform .16s var(--ease)}
+.smart-guide-results>button:hover .smart-guide-result-jump{transform:translateY(3px)}
+.smart-guide-focus-card{scroll-margin-block:86px 42px}
+.smart-guide-focus-card.is-arrived{animation:smartGuideFocusArrived .9s ease both}
+@keyframes smartGuideFocusArrived{
+  0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent),0 12px 30px rgba(15,23,42,.06)}
+  35%{box-shadow:0 0 0 5px color-mix(in srgb,var(--accent) 14%,transparent),0 16px 36px rgba(15,23,42,.09)}
+  100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--accent) 0%,transparent),0 12px 30px rgba(15,23,42,.06)}
+}
+.smart-guide-fold[open]>.smart-guide-feature-grid,
+.smart-guide-fold[open]>.smart-guide-live-controls,
+.smart-guide-fold[open]>.smart-guide-routines,
+.smart-guide-fold[open]>.smart-guide-workflows,
+.smart-guide-fold[open]>.smart-guide-new-grid{max-height:none!important;overflow:visible!important}
+
+.smart-guide-fab-new{
+  width:auto!important;max-width:none!important;min-width:0!important;height:25px!important;padding:0 7px!important;
+  white-space:nowrap;font-size:8.5px!important;font-weight:800!important;line-height:1!important;
+}
+.smart-guide-fab.icon-only .smart-guide-fab-new{
+  width:auto!important;min-width:0!important;height:24px!important;padding:0 6px!important;font-size:8px!important;
+  inset-inline-start:-12px!important;inset-block-start:-8px!important;
+}
+
+@media(max-width:900px){
+  .smart-guide{max-height:100dvh;scroll-padding-block:72px calc(60px + env(safe-area-inset-bottom))}
+  .smart-guide.level-full{height:94dvh;overflow-y:auto!important}
+}
+@media(max-width:560px){
+  .smart-guide.level-full{height:94dvh!important;max-height:94dvh!important;overflow-y:auto!important;padding-bottom:calc(28px + env(safe-area-inset-bottom))!important}
+  .smart-guide-onboarding-toggle{min-height:40px;padding:7px 9px}
+  .smart-guide-onboarding-toggle>span{font-size:10px}
+  .smart-guide-onboarding>div{grid-template-columns:1fr 1fr 1fr!important;padding:7px!important;gap:6px}
+  .smart-guide-unread-brief{padding:8px 9px;border-radius:14px}
+  .smart-guide-unread-brief small{font-size:8.5px}
+  .smart-guide-mark-all{height:30px!important;padding:0 8px!important}
+  .smart-guide-mark-all span{font-size:8.5px}
+  .smart-guide-fab.icon-only .smart-guide-fab-new{inset-inline-start:-18px!important;min-width:52px!important;justify-content:center}
+}

@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Clock3,
   Check,
+  ChevronDown,
   ChevronLeft,
   CircleDot,
   Compass,
@@ -107,7 +108,7 @@ type SearchRow =
   | { kind: "dynamic"; feature: DynamicGuideFeature; score: number }
   | { kind: "routine"; feature: { id: string; name: string; sequence: string[] }; score: number };
 
-const formatBadgeCount = (count:number, cap:number) => count > cap ? `${cap}+` : String(Math.max(0,count));
+const formatGuideCount = (count:number) => Math.max(0,Number(count||0)).toLocaleString("ar-KW-u-nu-latn");
 const searchRowKey = (row:SearchRow) => `${row.kind}:${row.feature.id}`;
 
 const normalizeArabic = (value: string) => String(value || "")
@@ -183,6 +184,11 @@ function isSensitive(feature: GuideFeature) {
   return feature.risk === "sensitive" || /حذف|نشر|اعتماد|استعاده|استعادة|مسح/.test(normalizeArabic(feature.title));
 }
 
+function isGenericGuideTask(task:any) {
+  const id=String(task?.id || "");
+  return id.startsWith("work:page:") || id === "work:schedule" || id === "work:intelligence";
+}
+
 export default function SmartGuide({
   open,
   onClose,
@@ -212,6 +218,7 @@ export default function SmartGuide({
   const [preview, setPreview] = useState<{ feature: GuideFeature; command: GuideCommand; transactionId?: string } | null>(null);
   const [notice, setNotice] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
   const [browseMode, setBrowseMode] = useState<"forYou" | "here" | "new" | "all">("forYou");
   const [sheetLevel, setSheetLevel] = useState<"peek" | "medium" | "full">("peek");
   const [iconIntro, setIconIntro] = useState<{ key:string; title:string; summary:string } | null>(null);
@@ -220,6 +227,7 @@ export default function SmartGuide({
   const [collectiveFriction, setCollectiveFriction] = useState<Array<{ name: string; count: number }>>([]);
   const [collectiveInsights, setCollectiveInsights] = useState<Array<{ featureId:string; version:number; step:string; attempts:number; failureRate:number; abandonRate:number; helpRate:number; helpToSuccessRate:number; changeVsPrevious:number }>>([]);
   const drawerRef = useRef<HTMLElement | null>(null);
+  const focusCardRef = useRef<HTMLElement | null>(null);
   const lastEscalationRef = useRef("");
   const discoveredSignatureRef = useRef("");
   const sheetDragStartRef = useRef<number | null>(null);
@@ -366,8 +374,8 @@ export default function SmartGuide({
     const text = normalizeArabic(query);
     if (!text) return null;
     if (/وين كنت|شنو كنت|كنت اسوي|ماذا كنت|اين توقفت|وين وقفت/.test(text)) {
-      const task = profile.currentTask || profile.previousTask || context?.currentTask;
-      return task ? { kind: "resume" as const, title: "آخر مهمة كنت تعمل عليها", detail: task.title || "المهمة السابقة" } : { kind: "empty" as const, title: "لا توجد مهمة معلقة", detail: "ابدأ أي مهمة وسأحفظ موضعها وخطوتها التالية تلقائيًا." };
+      const task = [profile.currentTask, profile.previousTask, context?.currentTask].find(item => item && !isGenericGuideTask(item));
+      return task ? { kind: "resume" as const, title: "آخر مهمة كنت تعمل عليها", detail: task.title || "المهمة السابقة" } : { kind: "empty" as const, title: "لا توجد مهمة معلقة", detail: "ابدأ أي مهمة فعلية وسأحفظ موضعها وخطوتها التالية تلقائيًا." };
     }
     if (/نفس اللي|نفس الي|مثل امس|مثل أمس|سويته امس|سويته أمس|كرر السابق/.test(text)) {
       const routine = routines[0];
@@ -422,6 +430,7 @@ export default function SmartGuide({
     const timer = window.setTimeout(() => {
       if (requestId !== intentRequestRef.current) return;
       setIntentLoading(true);
+      const requestTimeout = window.setTimeout(() => controller.abort(), 5500);
       fetch("/api/guide/intent", {
         method: "POST",
         credentials: "include",
@@ -442,7 +451,7 @@ export default function SmartGuide({
         .then(response => response.ok ? response.json() : null)
         .then(data => { if (requestId === intentRequestRef.current && data?.intent) setAiIntent(data.intent); })
         .catch(() => undefined)
-        .finally(() => { if (requestId === intentRequestRef.current) setIntentLoading(false); });
+        .finally(() => { window.clearTimeout(requestTimeout); if (requestId === intentRequestRef.current) setIntentLoading(false); });
     }, 320);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query, ruleIntent, activeView, context?.currentFeatureId, context?.currentTask?.featureId, context?.currentTask?.title, context?.detectedHelp?.detail, context?.lastAction, context?.selected?.course, context?.selected?.id, allAllowed]);
@@ -493,6 +502,7 @@ export default function SmartGuide({
       setNotice("");
       setSettingsOpen(false);
       setRoutineDraft(null);
+      setGoalOpen(false);
       setBrowseMode("forYou");
       setSheetLevel("peek");
       setIconIntro(null);
@@ -509,8 +519,21 @@ export default function SmartGuide({
 
   useEffect(() => {
     if (!open || query.trim()) return;
-    if (selectedId || selectedDynamic || preview) setSheetLevel("medium");
+    if (selectedId || selectedDynamic || preview) setSheetLevel("full");
   }, [open, query, selectedId, selectedDynamic, preview]);
+
+  useEffect(() => {
+    if (!open || (!selectedId && !selectedDynamic)) return;
+    setSheetLevel("full");
+    const frame = window.requestAnimationFrame(() => {
+      const card = focusCardRef.current;
+      if (!card) return;
+      card.scrollIntoView({ behavior:"smooth", block:"center", inline:"nearest" });
+      card.classList.add("is-arrived");
+      scheduleLifecycle(() => card.classList.remove("is-arrived"), 900);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, selectedId, selectedDynamic, scheduleLifecycle]);
 
   const cycleSheet = (direction: "up" | "down" | "tap") => {
     setSheetLevel(current => {
@@ -1004,9 +1027,16 @@ export default function SmartGuide({
 
     if (action?.risk === "read") {
       recordFeatureEvent(userId, feature.id, "started");
-      beginScreenHandoff("أجهز الخطوة الآمنة", `سأفتح «${feature.title}» دون تعديل البيانات.`);
-      runCommand({ ...command, featureId: feature.id });
-      setGuideTask(userId, { id:`assist:${feature.id}`, title:`مساعدة تنفيذية: ${feature.title}`, featureId:feature.id, target:feature.target, command, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
+      beginScreenHandoff("أجهز الخطوة الآمنة", `سأفتح «${feature.title}» في مكانها الصحيح دون تعديل البيانات.`);
+      const prepared={ ...command, featureId: feature.id };
+      if (feature.view && feature.view !== activeView) {
+        pendingViewCommandRef.current={ view:feature.view, command:prepared };
+        onNavigate(feature.view);
+      } else {
+        runCommand(prepared);
+      }
+      setGuideTask(userId, { id:`assist:${feature.id}`, title:`مساعدة تنفيذية: ${feature.title}`, featureId:feature.id, target:feature.target, command:prepared, startedAt:Date.now(), updatedAt:Date.now(), journeyId:journey?.id });
+      scheduleLifecycle(() => { if (handoffActiveRef.current && !tourActiveRef.current) finishHandoffToScreen(); }, 5500);
       return;
     }
     const transactionId = beginGuideTransaction(userId, `مساعدة: ${feature.title}`);
@@ -1124,15 +1154,27 @@ export default function SmartGuide({
   };
 
   const resumeTask = () => {
-    beginScreenHandoff("أستعيد آخر موضع", "سأعيدك إلى المهمة السابقة وخطوتها الحالية.");
-    const current = profile.currentTask;
-    const currentGeneric = Boolean(current?.id?.startsWith("work:page:") || current?.id === "work:schedule" || current?.id === "work:intelligence");
-    const task = currentGeneric && profile.previousTask ? profile.previousTask : (current || profile.previousTask || context?.currentTask);
+    const current = !isGenericGuideTask(profile.currentTask) ? profile.currentTask : null;
+    const previous = !isGenericGuideTask(profile.previousTask) ? profile.previousTask : null;
+    const contextual = !isGenericGuideTask(context?.currentTask) ? context?.currentTask : null;
+    const task = current || previous || contextual;
     if (!task) {
       setDrawerHidden(false);
-      setNotice("لا توجد مهمة معلقة حاليًا.");
+      setScreenHandoff(null);
+      setNotice("لا توجد مهمة معلقة حقيقية الآن. أنت بالفعل في آخر شاشة كنت تعمل عليها.");
       return;
     }
+    if (task.command?.scope === "app" && task.command.type === "navigate" && String(task.command.value || "") === activeView) {
+      setNotice(`أنت بالفعل في «${task.title || "هذه الشاشة"}». يمكنك المتابعة مباشرةً من هنا.`);
+      if (task.target) {
+        const element = targetNow(task.target);
+        element?.scrollIntoView({ behavior:"smooth", block:"center", inline:"center" });
+        element?.setAttribute("data-guide-hot", "true");
+        scheduleLifecycle(() => element?.removeAttribute("data-guide-hot"), 1800);
+      }
+      return;
+    }
+    beginScreenHandoff("أستعيد آخر موضع", `سأعيدك إلى «${task.title || "المهمة السابقة"}» ثم أترك المتابعة لك.`);
     if (task.featureId) {
       const feature = featureById(task.featureId);
       if (feature?.steps?.length) {
@@ -1162,7 +1204,7 @@ export default function SmartGuide({
     if (!task.command) restoreGuide(`أعدتك إلى «${task.title || "المهمة السابقة"}».`);
     else {
       setNotice(`أعدتك إلى «${task.title || "المهمة السابقة"}».`);
-      scheduleLifecycle(() => restoreGuide(`عدت إلى «${task.title || "المهمة السابقة"}». يمكنك المتابعة من الشاشة.`), 4000);
+      scheduleLifecycle(() => { if (handoffActiveRef.current) finishHandoffToScreen(); }, 5000);
     }
   };
 
@@ -1238,6 +1280,8 @@ export default function SmartGuide({
 
   const chooseKnown = (feature: GuideFeature) => {
     if (!canAccessGuideFeature(feature, permissionSession)) { setNotice("هذه الميزة غير متاحة ضمن صلاحياتك الحالية."); return; }
+    setSheetLevel("full");
+    setNotice("");
     setSelectedId(feature.id);
     setSelectedDynamic(null);
     markFeatureSeen(userId, feature.id);
@@ -1245,6 +1289,8 @@ export default function SmartGuide({
   };
 
   const chooseDynamic = (feature: DynamicGuideFeature) => {
+    setSheetLevel("full");
+    setNotice("");
     setSelectedDynamic(feature);
     setSelectedId(null);
     recordFeatureEvent(userId, feature.id, "helped");
@@ -1320,11 +1366,20 @@ export default function SmartGuide({
     setSheetLevel(selectedId || selectedDynamic || preview ? "medium" : preSearchSheetRef.current);
   };
 
+  const selectBrowseMode = (mode:"forYou"|"here"|"new"|"all") => {
+    setBrowseMode(mode);
+    setSelectedId(null);
+    setSelectedDynamic(null);
+    setNotice("");
+    if (mode === "forYou") setSheetLevel(current => current === "peek" ? "medium" : current);
+    else setSheetLevel("full");
+  };
+
   const markAllNewSeen = () => {
     markAllGuideProductUpdatesSeen(userId, allAllowed);
     markAllDiscoveredSeen(userId, activeView);
     refreshProfile();
-    setNotice("اعتبرت تحديثات المنتج والعناصر الجديدة في هذه الشاشة مقروءة.");
+    setNotice("تمت قراءة كل عناصر «الجديد» واختفى العداد. لم تُحذف أي ميزة أو بيانات.");
   };
 
   const showDynamicOnScreen = (feature:DynamicGuideFeature) => {
@@ -1408,21 +1463,24 @@ export default function SmartGuide({
         </section>
 
         {(profile.currentTask || profile.previousTask) ? (() => {
-          const current = profile.currentTask;
-          const task = current?.id?.startsWith("work:page:") && profile.previousTask ? profile.previousTask : (current || profile.previousTask);
+          const current = !isGenericGuideTask(profile.currentTask) ? profile.currentTask : null;
+          const previous = !isGenericGuideTask(profile.previousTask) ? profile.previousTask : null;
+          const task = current || previous;
           if (!task || Date.now() - Number(task.updatedAt || 0) > 24 * 60 * 60 * 1000) return null;
-          return <button type="button" className="smart-guide-pending-task" onClick={resumeTask}><History /><span><small>مهمة معلقة</small><strong>{task.title}</strong></span><ChevronLeft /></button>;
+          return <button type="button" className="smart-guide-pending-task" onClick={resumeTask} aria-label={`متابعة المهمة: ${task.title}`}><History /><span><small>مهمة معلقة · اضغط للمتابعة</small><strong>{task.title}</strong></span><ChevronLeft /></button>;
         })() : null}
 
         {!profile.onboardingDone && !isExpert ? (
-          <details className="smart-guide-onboarding">
-            <summary><Compass aria-hidden="true" /><span>ابدأ حسب هدفك</span><ChevronLeft aria-hidden="true" /></summary>
-            <div>
+          <section className={`smart-guide-onboarding ${goalOpen ? "is-open" : ""}`}>
+            <button type="button" className="smart-guide-onboarding-toggle" onClick={() => { setGoalOpen(value => !value); setSheetLevel("full"); }} aria-expanded={goalOpen}>
+              <Compass aria-hidden="true" /><span>ابدأ حسب هدفك</span><ChevronLeft aria-hidden="true" />
+            </button>
+            {goalOpen ? <div>
               <button type="button" onClick={() => onboardingChoose("build")}><CalendarDays /><span><strong>بناء جدول</strong></span></button>
               <button type="button" onClick={() => onboardingChoose("review")}><ShieldCheck /><span><strong>مراجعة جدول</strong></span></button>
               <button type="button" onClick={() => onboardingChoose("reports")}><BarChart3 /><span><strong>بحث وتقارير</strong></span></button>
-            </div>
-          </details>
+            </div> : null}
+          </section>
         ) : null}
 
         <label className="smart-guide-search" role="search">
@@ -1440,11 +1498,12 @@ export default function SmartGuide({
         ) : null}
 
         <nav className="smart-guide-browse" aria-label="أقسام المرشد">
-          <button className={browseMode === "forYou" ? "active" : ""} type="button" onClick={() => setBrowseMode("forYou")}><Target /><span>لك</span></button>
-          <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => setBrowseMode("here")}><LayoutDashboard /><span>هنا</span></button>
-          <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => setBrowseMode("new")}><Sparkles /><span>الجديد</span>{unreadSummary.total ? <i dir="ltr">{formatBadgeCount(unreadSummary.total,99)}</i> : null}</button>
-          <button className={browseMode === "all" ? "active" : ""} type="button" onClick={() => setBrowseMode("all")}><Compass /><span>الكل</span></button>
+          <button className={browseMode === "forYou" ? "active" : ""} type="button" onClick={() => selectBrowseMode("forYou")}><Target /><span>لك</span></button>
+          <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => selectBrowseMode("here")}><LayoutDashboard /><span>هنا</span></button>
+          <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => selectBrowseMode("new")}><Sparkles /><span>الجديد</span>{unreadSummary.total ? <i title={`${formatGuideCount(unreadSummary.total)} عناصر جديدة`}>{formatGuideCount(unreadSummary.total)}</i> : null}</button>
+          <button className={browseMode === "all" ? "active" : ""} type="button" onClick={() => selectBrowseMode("all")}><Compass /><span>الكل</span></button>
         </nav>
+        {unreadSummary.total && browseMode !== "new" ? <button type="button" className="smart-guide-unread-brief" onClick={() => selectBrowseMode("new")}><Sparkles /><span><strong>{formatGuideCount(unreadSummary.total)} جديد</strong><small>تحديثات للميزات وعناصر ظهرت في الشاشة؛ اضغط لمعرفة التفاصيل أو لمسح العداد.</small></span><ChevronLeft /></button> : null}
 
         {context?.view === activeView && context?.selected ? (
           <section className="smart-guide-selected-context">
@@ -1487,16 +1546,16 @@ export default function SmartGuide({
             ) : null}
             {specialIntent ? <article className="smart-guide-special-answer"><span><History /></span><div><strong>{specialIntent.title}</strong><small>{specialIntent.detail}</small></div>{specialIntent.kind === "resume" ? <button type="button" onClick={resumeTask}>أكمل</button> : specialIntent.kind === "repeat" ? <button type="button" onClick={() => repeatSequence.length ? replayWorkflow(repeatSequence) : routines[0] ? runRoutine(routines[0]) : workflows[0] ? replayWorkflow(workflows[0].sequence) : setBrowseMode("forYou")}>جهّز المسار</button> : specialIntent.kind === "faster" ? <button type="button" onClick={() => replayWorkflow(workflows[0].sequence)}>افتح الأقصر</button> : null}</article> : null}
             {results.map((row) => {
-              if (row.kind === "known") return <button key={row.feature.id} type="button" onClick={() => chooseKnown(row.feature)}><span><Sparkles /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div></button>;
-              if (row.kind === "dynamic") return <button key={row.feature.id} type="button" onClick={() => chooseDynamic(row.feature)}><span><MousePointer2 /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div></button>;
-              return <button key={row.feature.id} type="button" onClick={() => runRoutine(row.feature)}><span><Zap /></span><div><strong>{row.feature.name}</strong><small>اختصار شخصي لمسار عملك</small></div></button>;
+              if (row.kind === "known") return <button key={row.feature.id} type="button" onClick={() => chooseKnown(row.feature)}><span><Sparkles /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
+              if (row.kind === "dynamic") return <button key={row.feature.id} type="button" onClick={() => chooseDynamic(row.feature)}><span><MousePointer2 /></span><div><strong>{row.feature.title}</strong><small>{row.feature.summary}</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
+              return <button key={row.feature.id} type="button" onClick={() => runRoutine(row.feature)}><span><Zap /></span><div><strong>{row.feature.name}</strong><small>اختصار شخصي لمسار عملك</small></div><ChevronDown className="smart-guide-result-jump" aria-hidden="true" /></button>;
             })}
             {!results.length && !specialIntent ? <p>صِف ما تريد إنجازه بدل اسم الزر، أو استخدم «أشر لي» وحدد العنصر مباشرةً.</p> : null}
           </section>
         ) : null}
 
         {selected ? (
-          <section className="smart-guide-focus-card">
+          <section className="smart-guide-focus-card" ref={focusCardRef} data-guide-focus-card="true">
             <header><span><Sparkles /></span><div><small>{selectedReason === "UI_CHANGED" ? "تغيّرت هذه الوظيفة منذ آخر استخدام لك. سأحدد موضعها الحالي." : selectedReason === "FORGOTTEN" ? "استخدمت هذه الوظيفة سابقًا. هذا تذكير سريع." : selectedExpert ? "إجابة مختصرة لأنك تتقنها" : selectedRecentlyHelped ? "سبق أن شرحتها لك؛ سأختصر هذه المرة" : selected.group}</small><strong>{selected.title}</strong><p>{selected.summary}</p></div></header>
             {!selectedConcise ? <div className="smart-guide-infographic" aria-hidden="true"><span><Eye /></span><i /><span><MousePointer2 /></span><i /><span><Check /></span></div> : null}
             {!selectedConcise && selected.steps?.length ? <ol className="smart-guide-steps">{selected.steps.slice(0, 4).map((step, index) => <li key={index}><b>{String(index + 1).padStart(2, "0")}</b><span>{step.text}</span></li>)}</ol> : null}
@@ -1506,7 +1565,7 @@ export default function SmartGuide({
         ) : null}
 
         {selectedDynamic ? (
-          <section className="smart-guide-focus-card smart-guide-point-answer">
+          <section className="smart-guide-focus-card smart-guide-point-answer" ref={focusCardRef} data-guide-focus-card="true">
             <header><span><MousePointer2 /></span><div><small>شنو هذا؟</small><strong>{selectedDynamic.title}</strong><p><b>فايدته:</b> {explainDynamic(selectedDynamic)}</p></div></header>
             <div className="smart-guide-actions one"><button type="button" onClick={() => showDynamicOnScreen(selectedDynamic)}><Eye />أرني مكانه</button></div>
             <button className="smart-guide-back-link" type="button" onClick={() => setSelectedDynamic(null)}><ArrowLeft />العودة</button>
@@ -1533,7 +1592,7 @@ export default function SmartGuide({
 
             {browseMode === "new" ? (
               <>
-                <section className="smart-guide-section-head smart-guide-new-head"><div><small>ما الجديد لك</small><strong>{unreadSummary.total ? "تحديثات واضحة ومفصولة حسب مصدرها" : "أنت مطّلع على التحديثات المتاحة"}</strong></div>{unreadSummary.total ? <button type="button" className="smart-guide-mark-all" onClick={markAllNewSeen} aria-label="اعتبر الكل مقروءًا" title="اعتبر الكل مقروءًا"><Check aria-hidden="true" /></button> : null}</section>
+                <section className="smart-guide-section-head smart-guide-new-head"><div><small>ما الجديد لك</small><strong>{unreadSummary.total ? `${formatGuideCount(unreadSummary.total)} عناصر لم تُقرأ بعد` : "أنت مطّلع على التحديثات المتاحة"}</strong></div>{unreadSummary.total ? <button type="button" className="smart-guide-mark-all" onClick={markAllNewSeen} aria-label="اعتبر الكل مقروءًا"><Check aria-hidden="true" /><span>إخفاء العداد</span></button> : null}</section>
                 <div className="smart-guide-new-summary" aria-label="نطاق عداد الجديد">
                   <article className="is-product"><Sparkles /><span><strong>{unreadSummary.product.length.toLocaleString("ar-KW-u-nu-latn")}</strong><small>تحديثات المنتج ضمن صلاحياتك</small></span></article>
                   <article className="is-runtime"><MousePointer2 /><span><strong>{unreadSummary.runtime.length.toLocaleString("ar-KW-u-nu-latn")}</strong><small>عناصر جديدة في هذه الشاشة فقط</small></span></article>
