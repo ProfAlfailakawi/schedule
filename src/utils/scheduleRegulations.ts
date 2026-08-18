@@ -3,7 +3,7 @@ import { departsFromNature, type CourseNature } from "./courseNature";
 import { SCHEDULE_DAY_END , formatScheduleTimeRange } from "./scheduleTime";
 
 /**
- * The timetable rules of PAAET decision 1912/2016, written as code.
+ * The timetable rules of PAAET decision 1913/2016, written as code.
  *
  * Every check here quotes the article it comes from, because a warning a
  * coordinator cannot trace back to a rule is a warning they will learn to
@@ -15,19 +15,18 @@ import { SCHEDULE_DAY_END , formatScheduleTimeRange } from "./scheduleTime";
  *   م.6/2  no more than two consecutive sections in a day for lectures over an hour
  *   م.6/3  no more than three consecutive sections in a day for one-hour lectures
  *   م.6/4  single-section courses rotate between staff each term
- *   م.7/2  morning 50–70% and evening 30–50% of a department's load
  *   م.7/5  sections of one course spread across different hours and days
- *   م.8/أ  Sunday, Tuesday, Thursday lectures run one hour
- *   م.8/ب  Monday and Wednesday lectures run an hour and a half
- *   م.8/9  a course is offered at the same fixed time on all of its days
- *   م.8    theory 20–60 students, applied 15–40, practical 15–25
+ *
+ * The rest of the full decision is intentionally not enforced here unless the
+ * current product actually carries reliable data for it. These checks are only
+ * the scheduling alerts the department chose to surface.
  */
 
 export type RegulationSeverity = "high" | "medium" | "low";
 export type RegulationFindingSource = "decision-1912" | "history" | "department" | "readiness";
 export type ApprovalEffect = "note" | "review" | "block";
 
-export const DECISION_1912_LABEL = "قرار 1912/2016";
+export const DECISION_1912_LABEL = "قرار 1913/2016";
 
 export interface RegulationFinding {
   /** Stable identifier, so a department can silence one rule and not the rest. */
@@ -322,55 +321,6 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || `موعد ${row.id}`;
   const who = (id: number) => instructors.get(id)?.AdInstructorName || "بدون أستاذ";
 
-  // --- م.8/أ،ب — lecture length must match the day it sits on -------------
-  // Departments run 50-minute and 80-minute slots to leave room for movement
-  // between buildings, which is a deliberate reading of the same rule rather
-  // than a mistake. Flagging every row for a ten-minute difference buries the
-  // findings that matter, so only a genuinely different shape is reported.
-  const LENGTH_TOLERANCE = 15;
-  const wrongLength: FSchedule[] = [];
-  for (const row of rows) {
-    const days = daysOf(row);
-    if (!days.length) continue;
-
-    // How this course is actually taught outranks the general rule. A four-hour
-    // Wednesday workshop that has run for years is the course, not a mistake.
-    const nature = context.nature?.get(Number(row.AdCourseId));
-    if (nature && nature.confidence !== "low") {
-      if (!departsFromNature(row, nature)) continue;
-    }
-
-    // A recognised single-day block is teaching the articles do not describe.
-    const course = courses.get(row.AdCourseId);
-    const declared = Number(course?.CourseHours || course?.CourseCredit || 0);
-    if (declared) {
-      const shapes = patternsForHours(declared);
-      const matchesShape = shapes.some(shape =>
-        shape.days.length === days.length &&
-        shape.minutesPerDay.some(length => Math.abs(length - duration(row)) <= LENGTH_TOLERANCE));
-      if (matchesShape) continue;
-    }
-
-    const advice = adviseDayPattern(days, row.fstarttime, row.fendtime);
-    if (!advice || advice.family === "mixed") continue;
-    const gap = Math.abs(duration(row) - advice.expectedMinutes);
-    // Two hours on a one-hour day is a different lecture; ten minutes is a
-    // changeover allowance.
-    if (gap > LENGTH_TOLERANCE) wrongLength.push(row);
-  }
-  if (wrongLength.length) {
-    findings.push({
-      rule: "lecture-length",
-      article: "م.8/أ،ب",
-      severity: "low",
-      source: "decision-1912",
-      approvalEffect: "note",
-      title: `مدة المحاضرة بعيدة عن نمط اليوم في ${arabicNumber(wrongLength.length)} موعد`,
-      detail: "الأحد والثلاثاء والخميس ساعة، والاثنين والأربعاء ساعة ونصف. فروق الدقائق القليلة (50 و80 دقيقة) مقبولة كزمن انتقال ولا تُحتسب هنا.",
-      rowIds: wrongLength.map(row => row.id)
-    });
-  }
-
   // --- learned habit — this course is not behaving like itself -------------
   if (context.nature?.size) {
     const odd: FSchedule[] = [];
@@ -391,8 +341,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
         severity: "medium",
         source: "history",
         approvalEffect: "note",
-        title: `${arabicNumber(odd.length)} موعد يخالف المعتاد لهذا المقرر`,
-        detail: `مقارنةً بكيفية تدريس المقرر نفسه في الفصول السابقة. ${reasons.slice(0, 4).join(" — ")}`,
+        title: `خارج المعتاد تاريخياً (${arabicNumber(odd.length)})`,
+        detail: `استنتاج من سجل أكثر من 10 سنوات. ${reasons.slice(0, 4).join(" — ")}`,
         rowIds: odd.map(row => row.id)
       });
     }
@@ -431,8 +381,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       severity: "high",
       source: "decision-1912",
       approvalEffect: "review",
-      title: `شعب مقرر واحد في نفس الساعة واليوم: ${courseNames.slice(0, 6).join("، ")}`,
-      detail: "توزَّع شعب المقرر الواحد على ساعات مختلفة وفي أيام متعددة حتى يجد الطالب شعبة تناسبه.",
+      title: `تكرار شعب المقرر في نفس الوقت (${arabicNumber(courseNames.length)})`,
+      detail: `المقرر الواحد يُفضَّل توزيعه على أوقات أو أيام مختلفة. ${courseNames.slice(0, 6).join("، ")}`,
       rowIds: [...new Set(clashing.map(row => row.id))]
     });
   }
@@ -482,64 +432,9 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       severity: "medium",
       source: "decision-1912",
       approvalEffect: "review",
-      title: `تجاوز الشعب المتتالية في اليوم (${arabicNumber(runsOver.length)})`,
-      detail: `الحد شعبتان متتاليتان للمحاضرات التي تزيد عن ساعة، وثلاث للمحاضرات ذات الساعة الواحدة. ${runsOver.slice(0, 4).join(" — ")}`,
+      title: `تتابع مرتفع على الأستاذ (${arabicNumber(runsOver.length)})`,
+      detail: `تحذير تشغيلي للتتابع اليومي حسب اللائحة. ${runsOver.slice(0, 4).join(" — ")}`,
       rowIds: [...new Set(runRows)]
-    });
-  }
-
-  // --- م.7/2 — the morning/evening balance of the department ---------------
-  const timed = rows.filter(row => row.fstarttime);
-  if (timed.length >= 8) {
-    const morning = timed.filter(row => {
-      const start = toMinutes(row.fstarttime);
-      return start >= MORNING_START && start < MORNING_END;
-    }).length;
-    const evening = timed.filter(row => {
-      const start = toMinutes(row.fstarttime);
-      return start >= MORNING_END && start < EVENING_END;
-    }).length;
-    const total = morning + evening;
-    if (total) {
-      const morningShare = Math.round((morning / total) * 100);
-      const eveningShare = 100 - morningShare;
-      if (morningShare < 50 || morningShare > 70) {
-        findings.push({
-          rule: "period-balance",
-          article: "م.7/2",
-          severity: "low",
-          source: "decision-1912",
-          approvalEffect: "note",
-          title: `توزيع الفترتين خارج النطاق: صباحي ${arabicNumber(morningShare)}٪ · مسائي ${arabicNumber(eveningShare)}٪`,
-          detail: "المطلوب صباحاً بين 50٪ و70٪، ومساءً بين 30٪ و50٪ من إجمالي مقررات القسم.",
-          rowIds: []
-        });
-      }
-    }
-  }
-
-  // --- م.8 — class size limits -------------------------------------------
-  const oversized: string[] = [];
-  const oversizedRows: number[] = [];
-  for (const row of rows) {
-    const course = courses.get(row.AdCourseId);
-    const capacity = Number(course?.MaxStudent || 0);
-    if (!capacity) continue;
-    if (capacity > 60) {
-      oversized.push(`${course?.CourseCode || row.AdCourseName} (${arabicNumber(capacity)})`);
-      oversizedRows.push(row.id);
-    }
-  }
-  if (oversized.length) {
-    findings.push({
-      rule: "class-size",
-      article: "م.8",
-      severity: "low",
-      source: "decision-1912",
-      approvalEffect: "note",
-      title: `سعة أعلى من الحد الأعلى العام (${arabicNumber(oversized.length)})`,
-      detail: `يفحص النظام آلياً الحد الأعلى العام 60 طالباً لأن بيانات المقرر الحالية لا تحمل تصنيفاً موثوقاً (نظري/تطبيقي/عملي). حدود 40 للتطبيقي و25 للعملي تبقى مرجعاً لائحياً ولا يُحكم بها آلياً حتى يتوفر نوع المقرر. ${[...new Set(oversized)].slice(0, 5).join("، ")}`,
-      rowIds: [...new Set(oversizedRows)]
     });
   }
 
@@ -568,8 +463,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
         severity: "medium",
         source: "decision-1912",
         approvalEffect: "review",
-        title: `مقررات أحادية الطرح لم تُدوَّر (${arabicNumber(repeated.length)})`,
-        detail: `المقرر ذو الشعبة الواحدة يُسند لعضو آخر في الفصل التالي عملاً بمبدأ التدوير. ${repeated.slice(0, 5).join(" — ")}`,
+        title: `التدوير غير محقق (${arabicNumber(repeated.length)})`,
+        detail: `المقرر أحادي الطرح ما زال عند نفس العضو مقارنة بالفصل السابق. ${repeated.slice(0, 5).join(" — ")}`,
         rowIds: repeatedRows
       });
     }
@@ -589,8 +484,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
         severity: "medium",
         source: "department",
         approvalEffect: "review",
-        title: `${arabicNumber(inside.length)} موعد داخل وقت اجتماع القسم`,
-        detail: `${DAY_NAMES[DAY_KEYS.indexOf(day)]} ${formatScheduleTimeRange(from, to)} محجوز لاجتماع القسم.`,
+        title: `داخل وقت اجتماع القسم (${arabicNumber(inside.length)})`,
+        detail: `${DAY_NAMES[DAY_KEYS.indexOf(day)]} ${formatScheduleTimeRange(from, to)} وقت محجوز للقسم.`,
         rowIds: inside.map(row => row.id)
       });
     }
@@ -605,8 +500,8 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
       severity: "high",
       source: "readiness",
       approvalEffect: "block",
-      title: `${arabicNumber(unfinished.length)} موعد ناقص البيانات`,
-      detail: "كل موعد يحتاج أياماً ووقتاً وأستاذاً محدداً قبل اعتماد الجدول.",
+      title: `بيانات غير مكتملة (${arabicNumber(unfinished.length)})`,
+      detail: "هذا الموعد يحتاج أياماً ووقتاً وأستاذاً قبل الاعتماد.",
       rowIds: unfinished.map(row => row.id)
     });
   }

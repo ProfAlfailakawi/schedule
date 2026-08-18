@@ -2239,10 +2239,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   }, [form, expectedStartMinuteForDay, preferredStartForDrop]);
   const editorRegulationCards = useMemo(() => editorRegulation.map((finding, index) => {
     const detail = String(finding.detail || "").replace(/\s+/g, " ").trim();
+    const ruleIcon = finding.rule === "rotation" ? "history" : finding.rule === "consecutive-sections" ? "idea" : finding.rule === "sections-same-hour" ? "room" : index % 2 ? "room" : "idea";
     return {
       ...finding,
       detail,
-      icon: index % 3 === 0 ? "history" : index % 3 === 1 ? "room" : "idea",
+      icon: ruleIcon,
       metric: parseRegulationMetric(`${finding.title} ${detail}`),
       currentDurationLabel: formDurationMinutes ? `${formDurationMinutes.toLocaleString("ar-KW-u-nu-latn")} د` : "—",
       selectedDaysLabel: selectedFormDays.length ? selectedFormDays.length.toLocaleString("ar-KW-u-nu-latn") : "0",
@@ -2252,7 +2253,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     ...finding,
     detail: String(finding.detail || "").replace(/\s+/g, " ").trim(),
     icon: finding.source === "history" ? "history" : index % 2 ? "room" : "idea",
-    sourceLabel: finding.source === "history" ? "السجل التاريخي" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
+    sourceLabel: finding.source === "history" ? "سجل 10 سنوات" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
   })), [editorSupplementalReview]);
   const editorRoomConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض قاعة" || card.typeLabel === "نطاق القاعة"), [editorConflictCards]);
   const editorInstructorConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض أستاذ"), [editorConflictCards]);
@@ -7144,16 +7145,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 {editorRegulation.length ? (
                   <details className="decision-accordion">
                     <summary className="decision-accordion-summary">
-                      <span className="decision-accordion-title"><ClipboardCheck /> اللائحة · {DECISION_1912_LABEL}</span>
+                      <span className="decision-accordion-title"><ClipboardCheck /> ملاحظات اللائحة · {DECISION_1912_LABEL}</span>
                       <em>{countOf(editorRegulation.length, AR.note)}</em>
                     </summary>
                     <div className="decision-accordion-body">
-                      <section className="decision-section decision-section--regulation" role="status" aria-label={`اللائحة · ${DECISION_1912_LABEL}`}>
+                      <section className="decision-section decision-section--regulation" role="status" aria-label={`ملاحظات اللائحة · ${DECISION_1912_LABEL}`}>
                         <div className="decision-note-list">
                           {editorRegulationCards.map((finding) => (
                             <article key={finding.rule} className={`decision-note decision-note--${finding.severity} decision-note--feature`}>
                               <div className="decision-feature-topline">
-                                <span className="decision-card-kicker">اللائحة · {DECISION_1912_LABEL}</span>
+                                <span className="decision-card-kicker">ملاحظات اللائحة · {DECISION_1912_LABEL}</span>
                                 <em className="decision-card-flag">{finding.article || "معلومة"}</em>
                               </div>
                               <div className="decision-feature-hero">

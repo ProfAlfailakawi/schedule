@@ -187,6 +187,16 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
 
   const byId = useMemo(() => new Map(rows.map(row => [row.id, row])), [rows]);
 
+  const findingPreview = (finding: RegulationFinding) => {
+    if (finding.approvalEffect === "block") return "يحتاج معالجة قبل الاعتماد";
+    if (finding.source === "decision-1912") return finding.rowIds.length
+      ? `يمس ${(finding.rowIds.length).toLocaleString("ar-KW-u-nu-latn")} موعد`
+      : "تنبيه تشغيلي";
+    if (finding.source === "history") return "استنتاج تاريخي";
+    if (finding.source === "department") return "سياسة القسم";
+    return "تفصيل إضافي";
+  };
+
   const printReview = React.useCallback(() => {
     if (typeof window === "undefined") return;
     flushSync(() => {});
@@ -254,9 +264,9 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
           </svg>
           <div className="review-title">
             <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
-            <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</h2>
+            <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
             <p>{scopeLine}</p>
-            {readinessError ? <small>تمت مراجعة قرار 1912/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
+            {readinessError ? <small>تمت مراجعة قرار 1913/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
@@ -284,7 +294,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                 <span className="review-mark" aria-hidden="true">{findingIcon(finding)}</span>
                 <span className="review-copy">
                   <strong>{finding.title}</strong>
-                  <small>{finding.detail}</small>
+                  <small>{findingPreview(finding)}</small>
                   {finding.rowIds.length ? (
                     <span className="finding-share" aria-hidden="true">
                       <i style={{ width: `${Math.min(100, (finding.rowIds.length / spread.total) * 100)}%` }} />
@@ -294,34 +304,46 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                 <em>{finding.article}</em>
                 <i>{findingStatus(finding)}</i>
               </button>
-              {open === finding.rule && finding.rowIds.length ? (
+              {open === finding.rule ? (
                 <div className="review-rows">
-                  {/* The same person often appears many times in one finding —
-                      once per section they teach. Listing the name over and over
-                      buried the point; grouping by person shows each name once,
-                      with its sections tucked beneath, opened on a press. */}
-                  {(() => {
-                    const groups = new Map<string, { who: string; rows: FSchedule[] }>();
-                    for (const id of finding.rowIds) {
-                      const row = byId.get(id);
-                      if (!row) continue;
-                      const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
-                      const key = `${row.AdInstructorId}:${who}`;
-                      const bucket = groups.get(key) || { who, rows: [] };
-                      bucket.rows.push(row);
-                      groups.set(key, bucket);
-                    }
-                    return [...groups.values()].slice(0, 12).map((group, index) => (
-                      <React.Fragment key={`${group.who}-${index}`}>
-                        <ReviewPersonGroup group={group} courses={courses} />
-                      </React.Fragment>
-                    ));
-                  })()}
-                  {finding.rowIds.length > 12 ? <p className="review-more">و{(finding.rowIds.length - 12).toLocaleString("ar-KW-u-nu-latn")} غيرها…</p> : null}
-                  {onFocusRows ? (
-                    <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds); onClose(); }}>
-                      أظهرها على الجدول
-                    </SecondaryButton>
+                  <div className="review-finding-detail">
+                    <p>{finding.detail}</p>
+                    <div className="review-finding-meta">
+                      <span>{finding.article}</span>
+                      <span>{findingStatus(finding)}</span>
+                      {finding.rowIds.length ? <span>{finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span> : null}
+                    </div>
+                  </div>
+                  {finding.rowIds.length ? (
+                    <>
+                      {/* The same person often appears many times in one finding —
+                          once per section they teach. Listing the name over and over
+                          buried the point; grouping by person shows each name once,
+                          with its sections tucked beneath, opened on a press. */}
+                      {(() => {
+                        const groups = new Map<string, { who: string; rows: FSchedule[] }>();
+                        for (const id of finding.rowIds) {
+                          const row = byId.get(id);
+                          if (!row) continue;
+                          const who = instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+                          const key = `${row.AdInstructorId}:${who}`;
+                          const bucket = groups.get(key) || { who, rows: [] };
+                          bucket.rows.push(row);
+                          groups.set(key, bucket);
+                        }
+                        return [...groups.values()].slice(0, 12).map((group, index) => (
+                          <React.Fragment key={`${group.who}-${index}`}>
+                            <ReviewPersonGroup group={group} courses={courses} />
+                          </React.Fragment>
+                        ));
+                      })()}
+                      {finding.rowIds.length > 12 ? <p className="review-more">و{(finding.rowIds.length - 12).toLocaleString("ar-KW-u-nu-latn")} غيرها…</p> : null}
+                      {onFocusRows ? (
+                        <SecondaryButton type="button" onClick={() => { onFocusRows(finding.rowIds); onClose(); }}>
+                          أظهرها على الجدول
+                        </SecondaryButton>
+                      ) : null}
+                    </>
                   ) : null}
                 </div>
               ) : null}
@@ -330,7 +352,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
             <div className="review-clear">
               <CheckCircle2 />
               <strong>لا ملاحظات</strong>
-              <span>الجدول مطابق لما يمكن فحصه آلياً من قرار 1912/2016، ولا تظهر موانع حفظ في النطاق.</span>
+              <span>لا توجد موانع حفظ، ولا تنبيهات لائحية ظاهرة ضمن النطاق الذي يفحصه النظام.</span>
             </div>
           )}
         </div>
@@ -363,7 +385,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                   <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
                   <text x="32" y="45" className="ring-unit">/ 100</text>
                 </svg>
-                <div><small>مراجعة الاعتماد · {DECISION_1912_LABEL}</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع ملاحظات" : "مطابق للائحة"}</strong><span>{scopeLine}</span></div>
+                <div><small>مراجعة الاعتماد · {DECISION_1912_LABEL}</small><strong>{blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</strong><span>{scopeLine}</span></div>
               </section>
               <div className="print-review-spread" role="img" aria-label="توزيع المواعيد حسب نتيجة المراجعة">
                 <div className="print-spread-bar">
@@ -375,7 +397,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                 <div className="print-spread-keys"><span className="seg-high"><b>{spread.high}</b> يمنع</span><span className="seg-medium"><b>{spread.medium}</b> يراجَع</span><span className="seg-low"><b>{spread.low}</b> ملاحظة</span><span className="seg-clean"><b>{spread.clean}</b> سليم</span></div>
               </div>
               <section className="print-review-findings">
-                {findings.length ? firstPrintPage.map(renderPrintFinding) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>مطابق لما يمكن فحصه آلياً من قرار 1912/2016 ولا تظهر موانع حفظ محلية.</span></div>}
+                {findings.length ? firstPrintPage.map(renderPrintFinding) : <div className="print-review-clear"><CheckCircle2 /><strong>لا ملاحظات على الجدول</strong><span>لا توجد موانع حفظ محلية، ولا تنبيهات لائحية ظاهرة ضمن النطاق الذي يفحصه النظام.</span></div>}
               </section>
               {!printFollowupPages.length ? (
                 <div className="print-signatures print-explicit-page-meta">
