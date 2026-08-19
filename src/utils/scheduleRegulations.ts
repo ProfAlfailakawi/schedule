@@ -53,8 +53,12 @@ export const DAY_NAMES = ["الأحد", "الاثنين", "الثلاثاء", "�
 export type DayKey = (typeof DAY_KEYS)[number];
 
 /** Days the regulation gives one-hour lectures, and days it gives 90 minutes. */
-const HOUR_DAYS: DayKey[] = ["fsunday", "ftuesday", "fthursday"];
-const HOUR_AND_HALF_DAYS: DayKey[] = ["fmonday", "fwednesday"];
+const SHORT_LECTURE_DAYS: DayKey[] = ["fsunday", "ftuesday", "fthursday"];
+const LONG_LECTURE_DAYS: DayKey[] = ["fmonday", "fwednesday"];
+
+/** Institutional teaching periods: 50 minutes on Sun/Tue/Thu and 80 minutes on Mon/Wed. */
+export const SHORT_LECTURE_MINUTES = 50;
+export const LONG_LECTURE_MINUTES = 80;
 
 const MORNING_START = 8 * 60;
 const MORNING_END = 14 * 60;
@@ -80,7 +84,7 @@ const arabicNumber = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
  * has to reshape the appointment rather than carry the old end time across.
  */
 export function expectedMinutesForDay(day: DayKey): number {
-  return HOUR_AND_HALF_DAYS.includes(day) ? 90 : 60;
+  return LONG_LECTURE_DAYS.includes(day) ? LONG_LECTURE_MINUTES : SHORT_LECTURE_MINUTES;
 }
 
 export interface DayPatternAdvice {
@@ -100,18 +104,18 @@ export interface DayPatternAdvice {
  */
 export function adviseDayPattern(days: DayKey[], start: string, currentEnd: string): DayPatternAdvice | null {
   if (!days.length || !start) return null;
-  const hour = days.filter(day => HOUR_DAYS.includes(day)).length;
-  const long = days.filter(day => HOUR_AND_HALF_DAYS.includes(day)).length;
-  if (hour && long) {
+  const short = days.filter(day => SHORT_LECTURE_DAYS.includes(day)).length;
+  const long = days.filter(day => LONG_LECTURE_DAYS.includes(day)).length;
+  if (short && long) {
     return {
       family: "mixed",
       expectedMinutes: 0,
       suggestedEnd: currentEnd,
       changed: false,
-      note: "أيام مختلطة: الأحد/الثلاثاء/الخميس مدتها ساعة، والاثنين/الأربعاء ساعة ونصف (م.8/أ،ب). راجع التوزيع."
+      note: "أيام مختلطة: الأحد/الثلاثاء/الخميس مدتها المعتادة 50 دقيقة، والاثنين/الأربعاء 80 دقيقة. راجع التوزيع."
     };
   }
-  const expected = long ? 90 : 60;
+  const expected = long ? LONG_LECTURE_MINUTES : SHORT_LECTURE_MINUTES;
   const suggestedEnd = clock(Math.min(SCHEDULE_DAY_END, toMinutes(start) + expected));
   const changed = suggestedEnd !== currentEnd;
   return {
@@ -120,8 +124,8 @@ export function adviseDayPattern(days: DayKey[], start: string, currentEnd: stri
     suggestedEnd,
     changed,
     note: long
-      ? "الاثنين والأربعاء: مدة المحاضرة ساعة ونصف (م.8/ب)."
-      : "الأحد والثلاثاء والخميس: مدة المحاضرة ساعة واحدة (م.8/أ)."
+      ? "الاثنين والأربعاء: مدة المحاضرة المعتادة 80 دقيقة."
+      : "الأحد والثلاثاء والخميس: مدة المحاضرة المعتادة 50 دقيقة."
   };
 }
 
@@ -155,32 +159,32 @@ export interface WeeklyPattern {
 
 const PATTERN_LIBRARY: Array<Omit<WeeklyPattern, "label"> & { hours: number }> = [
   {
-    hours: 1, id: "1h-single", days: ["fsunday"], minutesPerDay: [60], weeklyMinutes: 60,
-    note: "ساعة واحدة أسبوعياً في يوم واحد."
+    hours: 1, id: "1h-single", days: ["fsunday"], minutesPerDay: [50], weeklyMinutes: 50,
+    note: "فترة تدريس واحدة مدتها 50 دقيقة في يوم واحد."
   },
   {
-    hours: 2, id: "2h-two-days", days: ["fsunday", "ftuesday"], minutesPerDay: [60, 60], weeklyMinutes: 120,
-    note: "ساعتان: لقاءان بساعة في الأحد والثلاثاء (م.8/أ)."
+    hours: 2, id: "2h-two-days", days: ["fsunday", "ftuesday"], minutesPerDay: [50, 50], weeklyMinutes: 100,
+    note: "فترتان: 50 دقيقة في الأحد و50 دقيقة في الثلاثاء."
   },
   {
-    hours: 2, id: "2h-one-block", days: ["ftuesday"], minutesPerDay: [120], weeklyMinutes: 120,
-    note: "ساعتان في لقاء واحد."
+    hours: 2, id: "2h-one-block", days: ["ftuesday"], minutesPerDay: [100], weeklyMinutes: 100,
+    note: "فترتان أكاديميتان متصلتان في لقاء واحد (100 دقيقة)."
   },
   {
-    hours: 3, id: "3h-three-days", days: ["fsunday", "ftuesday", "fthursday"], minutesPerDay: [60, 60, 60], weeklyMinutes: 180,
-    note: "ثلاث ساعات: ثلاثة لقاءات بساعة — الأحد والثلاثاء والخميس (م.8/أ)."
+    hours: 3, id: "3h-three-days", days: ["fsunday", "ftuesday", "fthursday"], minutesPerDay: [50, 50, 50], weeklyMinutes: 150,
+    note: "ثلاث فترات: 50 دقيقة في الأحد والثلاثاء والخميس."
   },
   {
-    hours: 3, id: "3h-two-days", days: ["fmonday", "fwednesday"], minutesPerDay: [90, 90], weeklyMinutes: 180,
-    note: "ثلاث ساعات: لقاءان بساعة ونصف — الاثنين والأربعاء (م.8/ب)."
+    hours: 3, id: "3h-two-days", days: ["fmonday", "fwednesday"], minutesPerDay: [80, 80], weeklyMinutes: 160,
+    note: "ثلاث فترات موزعة على لقاءين: 80 دقيقة في الاثنين و80 دقيقة في الأربعاء."
   },
   {
-    hours: 4, id: "4h-mon-wed-thu", days: ["fmonday", "fwednesday", "fthursday"], minutesPerDay: [90, 90, 60], weeklyMinutes: 240,
-    note: "أربع ساعات: 90+90+60 — الاثنين والأربعاء والخميس (م.8/ت)."
+    hours: 4, id: "4h-mon-wed-thu", days: ["fmonday", "fwednesday", "fthursday"], minutesPerDay: [80, 80, 50], weeklyMinutes: 210,
+    note: "النمط الممتد: 80+80+50 دقيقة على الاثنين والأربعاء والخميس."
   },
   {
-    hours: 4, id: "4h-tue-thu", days: ["ftuesday", "fthursday"], minutesPerDay: [120, 120], weeklyMinutes: 240,
-    note: "أربع ساعات: لقاءان بساعتين — الثلاثاء والخميس (م.8/ت)."
+    hours: 4, id: "4h-tue-thu", days: ["ftuesday", "fthursday"], minutesPerDay: [100, 100], weeklyMinutes: 200,
+    note: "أربع فترات أكاديمية موزعة على لقاءين، 100 دقيقة لكل لقاء."
   },
   // Laboratories, workshops and field training run as one long sitting. The
   // articles describe lectures and never spell these out, but they are how a
@@ -340,12 +344,12 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
     if (odd.length) {
       findings.push({
         rule: "out-of-character",
-        article: "سجل 10 سنوات",
+        article: "الاعتياد التاريخي",
         severity: "medium",
         source: "history",
         approvalEffect: "note",
         title: `خارج المعتاد تاريخياً (${arabicNumber(odd.length)})`,
-        detail: `استنتاج من سجل أكثر من 10 سنوات. ${reasons.slice(0, 4).join(" — ")}`,
+        detail: `استنتاج من السجل التاريخي المتاح للمقرر والقسم. ${reasons.slice(0, 4).join(" — ")}`,
         rowIds: odd.map(row => row.id)
       });
     }

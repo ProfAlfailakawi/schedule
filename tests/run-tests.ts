@@ -672,16 +672,16 @@ async function runTests() {
     });
 
     /* A department with TWO rhythms, as a Kuwaiti week actually has. Sunday,
-       Tuesday and Thursday run an hour with ten minutes between; Monday and
-       Wednesday run an hour and a half with the same break. Ten terms of it,
+       Tuesday and Thursday run 50-minute teaching periods with ten minutes between; Monday and
+       Wednesday run 80-minute periods with the same break. Ten terms of it,
        because a habit is what survives across years. */
     const history: any[] = [];
     for (let term = 1; term <= 10; term += 1) {
       for (const day of ["fsunday", "ftuesday", "fthursday"])
-        history.push(at(day, "08:00", "09:00", term), at(day, "09:10", "10:10", term),
-                     at(day, "10:20", "11:20", term));
+        history.push(at(day, "08:00", "08:50", term), at(day, "09:00", "09:50", term),
+                     at(day, "10:00", "10:50", term));
       for (const day of ["fmonday", "fwednesday"])
-        history.push(at(day, "08:00", "09:30", term), at(day, "09:40", "11:10", term));
+        history.push(at(day, "08:00", "09:20", term), at(day, "09:30", "10:50", term));
     }
     const reading = learnRhythm(history);
 
@@ -695,19 +695,19 @@ async function runTests() {
 
     assert(odd.breakMinutes === 10 && even.breakMinutes === 10,
       "the ten-minute break is read back out of the rows, on both patterns");
-    assert(odd.durationMinutes === 60, `Sun/Tue/Thu lectures are an hour (got ${odd.durationMinutes})`);
-    assert(even.durationMinutes === 90, `Mon/Wed lectures are an hour and a half (got ${even.durationMinutes})`);
+    assert(odd.durationMinutes === 50, `Sun/Tue/Thu teaching periods are 50 minutes (got ${odd.durationMinutes})`);
+    assert(even.durationMinutes === 80, `Mon/Wed teaching periods are 80 minutes (got ${even.durationMinutes})`);
     // The whole reason for reading per pattern: one average would be 72
     // minutes, which is a length this department has never once used.
     assert(odd.durationMinutes !== even.durationMinutes, "and the two are never averaged into one");
-    assert(odd.ladder.includes("08:00") && odd.ladder.includes("09:10"), "the habitual start ladder is learned");
+    assert(odd.ladder.includes("08:00") && odd.ladder.includes("09:00"), "the habitual start ladder is learned");
     assert(reading.learnedFrom.terms === 10, "the reading states how much history it rests on");
 
     /* THE CASE THIS EXISTS FOR: someone types 08:55 on a Monday where every
        Monday for ten years has begun at 08:00 or 09:40. Invisible to every
        other check in the program — no clash, no rule, nothing. */
-    const slip = offRhythm({ fmonday: true, fstarttime: "09:35", fendtime: "11:05" } as any, reading);
-    assert(slip.includes("09:40") && slip.includes("09:35"),
+    const slip = offRhythm({ fmonday: true, fstarttime: "09:25", fendtime: "10:45" } as any, reading);
+    assert(slip.includes("09:30") && slip.includes("09:25"),
       `a five-minute slip is named with the habit it missed (got "${slip}")`);
     assert(slip.includes("الاثنين"), "and the day it belongs to");
 

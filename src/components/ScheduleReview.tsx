@@ -227,7 +227,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       if (rooms.length === 1) return `القاعة ${rooms[0]}`;
       if (rooms.length > 1) return `${rooms.length.toLocaleString("ar-KW-u-nu-latn")} قاعات`;
     }
-    if (finding.source === "history") return "سجل 10 سنوات";
+    if (finding.source === "history") return "السجل التاريخي";
     if (finding.source === "department") return "سياسة القسم";
     return finding.rowIds.length ? `${finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد` : "تنبيه تشغيلي";
   };

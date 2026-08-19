@@ -166,8 +166,10 @@ const AGENDA_PAGE_SIZE = 60;
    place so team notes can be restored later without rebuilding the feature. */
 const TEAM_NOTES_ENABLED = false;
 
-const WHOLE_HOUR_DAYS = new Set<DayKey>(["fsunday", "ftuesday", "fthursday"]);
-const HALF_HOUR_DAYS = new Set<DayKey>(["fmonday", "fwednesday"]);
+const SHORT_LECTURE_DAYS = new Set<DayKey>(["fsunday", "ftuesday", "fthursday"]);
+const LONG_LECTURE_DAYS = new Set<DayKey>(["fmonday", "fwednesday"]);
+const SHORT_LECTURE_MINUTES = 50;
+const LONG_LECTURE_MINUTES = 80;
 
 /**
  * Local timetable convention: Sun/Tue/Thu start on :00, Mon/Wed on :30.
@@ -182,16 +184,21 @@ const scheduleStartConventionNote = (row: Partial<FSchedule>): string | null => 
   const minute = Number(match[2]);
   const active = days.filter(day => Boolean((row as any)[day.key])).map(day => day.key as DayKey);
   if (!active.length) return null;
-  const hasWholeHourDays = active.some(day => WHOLE_HOUR_DAYS.has(day));
-  const hasHalfHourDays = active.some(day => HALF_HOUR_DAYS.has(day));
-  if (hasWholeHourDays && hasHalfHourDays) {
-    return "ملاحظة التوقيت: الأيام المختارة تجمع نمطين؛ الأحد/الثلاثاء/الخميس تبدأ عادةً على رأس الساعة، والاثنين/الأربعاء عند النصف. يمكنك المتابعة إذا كان ذلك مقصوداً.";
+  const hasShortLectureDays = active.some(day => SHORT_LECTURE_DAYS.has(day));
+  const hasLongLectureDays = active.some(day => LONG_LECTURE_DAYS.has(day));
+  if (hasShortLectureDays && hasLongLectureDays) {
+    return "ملاحظة التوقيت: الأيام المختارة تجمع نمطين زمنيين مختلفين. راجع سجل المقرر قبل تثبيت الوقت.";
   }
-  if (hasWholeHourDays && minute !== 0) {
-    return "ملاحظة التوقيت: محاضرات الأحد/الثلاثاء/الخميس تبدأ عادةً على رأس الساعة (مثل 09:00). يمكنك المتابعة بهذا الوقت إذا كان النقل مقصوداً.";
-  }
-  if (hasHalfHourDays && minute !== 30) {
-    return "ملاحظة التوقيت: محاضرات الاثنين/الأربعاء تبدأ عادةً عند النصف (مثل 09:30). يمكنك المتابعة بهذا الوقت إذا كان النقل مقصوداً.";
+  const end = String(row.fendtime || "").trim();
+  const endMatch = end.match(/^(\d{1,2}):(\d{2})$/);
+  if (endMatch) {
+    const startMinutes = Number(match[1]) * 60 + minute;
+    const endMinutes = Number(endMatch[1]) * 60 + Number(endMatch[2]);
+    const duration = endMinutes - startMinutes;
+    const expected = hasLongLectureDays ? LONG_LECTURE_MINUTES : SHORT_LECTURE_MINUTES;
+    if (duration > 0 && duration !== expected) {
+      return `ملاحظة التوقيت: المدة المعتادة لهذا النمط ${expected} دقيقة، بينما المدة المدخلة ${duration} دقيقة. تنبيه فقط — راجع سجل المقرر إن كان له نمط تاريخي مختلف.`;
+    }
   }
   return null;
 };
@@ -1781,8 +1788,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const learned = historicalReadingFor(row, day).data;
     if (learned && learned.samples >= 3 && learned.share >= 0.55) return learned.minute;
     // Institutional fallback only when history has no reliable opinion.
-    if (WHOLE_HOUR_DAYS.has(day)) return 0;
-    if (HALF_HOUR_DAYS.has(day)) return 30;
+    if (SHORT_LECTURE_DAYS.has(day)) return 0;
+    if (LONG_LECTURE_DAYS.has(day)) return 30;
     return null;
   }, [historicalReadingFor]);
 
@@ -1815,12 +1822,27 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       }
       const duration = endMinutes > startMinutes ? endMinutes - startMinutes : 0;
 
-      // The institutional duration is the floor, not the historical percentile
-      // range. History may legitimately contain old exceptions (for example a
-      // 90-minute Sunday lecture), but that must not silence the current rule:
-      // Sun/Tue/Thu are one-hour meetings and Mon/Wed are 90-minute meetings.
-      // This is why 11:00–12:30 previously slipped through: 90 minutes could sit
-      // inside the learned durationRange even though the selected days expect 60.
+      // The course's own history is the primary clock. A percentile range must
+      // never turn a different teaching period into "normal": if this course has
+      // repeatedly run 80 minutes, 90 minutes still deserves a warning even when
+      // a few old exceptions widened the historical range.
+      const learned = reading.data;
+      if (learned && duration > 0 && learned.durationSamples >= 3 && learned.durationShare >= .35 && learned.durationMinutes > 0) {
+        const expected = Number(learned.durationMinutes);
+        if (Math.abs(duration - expected) >= 10) {
+          const expectedEnd = timeFromMins(startMinutes + expected);
+          const source = reading.basis === "course-pattern" ? "سجل هذا المقرر مع نمط الأيام"
+            : reading.basis === "course" ? "سجل هذا المقرر"
+            : reading.basis === "pattern" ? "سجل نمط الأيام في القسم"
+            : "سجل القسم";
+          return `${source}: ${day.label} مدته المعتادة ${expected.toLocaleString("ar-KW-u-nu-latn")} دقيقة (${isolateLtrText(formatScheduleTimeRange(start, expectedEnd))})، بينما أدخلت ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة (${isolateLtrText(formatScheduleTimeRange(start, end))}). تنبيه فقط — لا يمنع الحفظ.`;
+        }
+        continue;
+      }
+
+      // Only when the available history is too weak do we fall back to the
+      // institution's teaching-period convention: 50 minutes on Sun/Tue/Thu
+      // and 80 minutes on Mon/Wed. This fallback never overrides reliable course history.
       if (duration > 0) {
         const selectedKeys = active.map(item => item.key as RegDayKey);
         const institutional = adviseDayPattern(selectedKeys, start, end);
@@ -1829,17 +1851,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         }
         if (institutional?.changed) {
           return `${institutional.note} الوقت المعتاد لهذه الأيام هو ${isolateLtrText(formatScheduleTimeRange(start, institutional.suggestedEnd))}، بينما أدخلت ${isolateLtrText(formatScheduleTimeRange(start, end))}. تنبيه فقط — لا يمنع الحفظ.`;
-        }
-      }
-
-      // History remains useful for finer local deviations once the appointment
-      // already satisfies the institutional day/duration contract.
-      const learned = reading.data;
-      if (learned && duration > 0 && learned.durationSamples >= 3 && learned.durationShare >= .35) {
-        const [low, high] = learned.durationRange || [0, 0];
-        if (low && high && (duration < low || duration > high)) {
-          const expectedEnd = timeFromMins(startMinutes + learned.durationMinutes);
-          return `${day.label}: التاريخ الأقرب لهذا المقرر/النمط يشير غالباً إلى ${isolateLtrText(formatScheduleTimeRange(start, expectedEnd))}، بينما أدخلت ${isolateLtrText(formatScheduleTimeRange(start, end))}. تنبيه فقط — لا يمنع الحفظ.`;
         }
       }
     }
@@ -2293,7 +2304,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     ...finding,
     detail: String(finding.detail || "").replace(/\s+/g, " ").trim(),
     icon: finding.source === "history" ? "history" : index % 2 ? "room" : "idea",
-    sourceLabel: finding.source === "history" ? "سجل 10 سنوات" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
+    sourceLabel: finding.source === "history" ? "السجل التاريخي" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
   })), [editorSupplementalReview]);
   const editorRoomConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض قاعة" || card.typeLabel === "نطاق القاعة"), [editorConflictCards]);
   const editorInstructorConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض أستاذ"), [editorConflictCards]);
@@ -7258,7 +7269,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             <article key={finding.rule} className={`decision-note decision-note--${finding.severity} decision-note--feature`}>
                               <div className="decision-feature-topline">
                                 <span className="decision-card-kicker">{finding.sourceLabel}</span>
-                                <em className="decision-card-flag">{finding.article}</em>
+                                <em className="decision-card-flag">{finding.article && finding.article !== finding.sourceLabel ? finding.article : "مرجع تاريخي"}</em>
                               </div>
                               <div className="decision-feature-hero">
                                 <div className="decision-note-body">
