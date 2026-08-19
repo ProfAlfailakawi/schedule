@@ -99,9 +99,9 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
         aria-expanded={open}
         aria-label="تثبيت التطبيق على الجهاز"
         title="تثبيت التطبيق"
+        data-guide-ignore="زر اختياري لتثبيت SCHEDULE كتطبيق؛ لا يغيّر بيانات الجدول أو صلاحيات المستخدم"
       >
         <Download aria-hidden="true" />
-        {variant === "login" ? <span>تثبيت التطبيق</span> : null}
       </button>
 
       {open ? (

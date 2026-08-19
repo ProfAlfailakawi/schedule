@@ -846,3 +846,138 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
 @media (pointer:coarse) and (orientation:landscape){
   html,body,#root{zoom:1!important;transform:none!important}
 }
+
+
+/* ==========================================================================
+   PHONE LANDSCAPE CONTRACT
+   A rotated phone is still a phone even when CSS width crosses the 760px
+   breakpoint. Use coarse pointer + short viewport height so desktop/tablet
+   layouts never squeeze fields, filters, rails, tables or dialogs.
+   ========================================================================== */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:650px){
+  html,body,#root,.app-shell,.page-main,.content-stack,
+  .surface,.form-card,.smart-form,.query-page,.query-bar,.query-canvas,
+  .report-paper,.report-preview,.dashboard-page,.catalog-page,.admin-page{
+    min-width:0!important;max-width:100%!important;
+  }
+
+  /* Every field owns the width of its grid cell; native select intrinsic width
+     must never push the cell wider or shave the leading year in RTL text. */
+  .field,.field>*,select,input,textarea{
+    min-inline-size:0!important;max-inline-size:100%!important;
+  }
+  .field select,.master-filter-stack select,.intel-context-fields select,
+  .smart-filter-grid select,.report-filter-form select,.matrix-controls select,
+  .compare-controls select,.version-compare select{
+    inline-size:100%!important;width:100%!important;
+    min-inline-size:0!important;max-inline-size:100%!important;
+    text-overflow:ellipsis;
+  }
+
+  /* Query scope: two generous columns instead of desktop's three + action.
+     This is the exact case that clipped «الفصل الأول 2026/2027». */
+  .visual-minimal.query-page .query-primary-filters,
+  .query-scope{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:10px!important;
+  }
+  .visual-minimal.query-page .query-primary-filters>.field,
+  .visual-minimal.query-page .query-primary-filters>.btn,
+  .query-scope>.field,.query-scope>.btn{min-width:0!important;max-width:100%!important}
+  .query-scope>.btn{width:100%;justify-content:center}
+  .query-bar{padding:12px!important}
+  .query-ask{min-width:0}
+  .query-ask input{min-width:0!important}
+  .query-more,.query-advanced-filters{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:10px!important;
+  }
+
+  /* The same rule for every other dense control surface used in landscape. */
+  .form-grid,.filter-strip,.smart-filter-grid,.report-filter-form,
+  .scenario-fields,.mobility-defaults,.intel-context-fields,.compare-controls,
+  .version-compare,.matrix-controls,.war-picker,.autopilot-options{
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+
+  /* Horizontal navigation stays one intentional rail instead of clipping. */
+  .lens-strip,.console-rail,.scene-subnav,.intelligence-scenes,
+  .segmented,.week-daystrip,.report-mode-strip,.tabs,.subtabs{
+    max-width:100%;overflow-x:auto!important;overflow-y:hidden!important;
+    overscroll-behavior-inline:contain;-webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+  }
+  .lens-strip::-webkit-scrollbar,.console-rail::-webkit-scrollbar,
+  .scene-subnav::-webkit-scrollbar,.intelligence-scenes::-webkit-scrollbar,
+  .segmented::-webkit-scrollbar,.week-daystrip::-webkit-scrollbar,
+  .report-mode-strip::-webkit-scrollbar,.tabs::-webkit-scrollbar,
+  .subtabs::-webkit-scrollbar{display:none}
+
+  /* Dense data is allowed to pan inside its own viewport, never widen the app. */
+  .table-scroll,.data-table-wrap,.report-table-wrap,.matrix-scroll,
+  .week-scroll-main,.week-scroll-top,.rooms-scroll,.occupancy-scroll,
+  .timeline-scroll,.comparison-scroll{
+    max-width:100%!important;overflow-x:auto!important;overscroll-behavior-x:contain;
+  }
+
+  /* Sheets/dialogs must fit the short landscape viewport. */
+  .spotlight,.living-panel,.schedule-context,.intel-drawer,
+  .one-decision-mode,.schedule-signature,.query-detail-panel,
+  .catalog-form-drawer,.install-pop{
+    max-height:calc(100dvh - 12px)!important;max-width:calc(100vw - 12px)!important;
+  }
+}
+
+/* ==========================================================================
+   LOGIN IS A FIXED SCREEN
+   No vertical page travel. Compress spacing on phones so the complete sign-in
+   surface fits inside the viewport rather than turning the login into a page.
+   ========================================================================== */
+@media (pointer:coarse) and (max-width:760px){
+  .apex-login{
+    position:fixed!important;inset:0!important;
+    width:100vw!important;height:100dvh!important;min-height:0!important;
+    overflow:hidden!important;overscroll-behavior:none!important;
+    padding:10px 14px calc(10px + env(safe-area-inset-bottom))!important;
+  }
+  .apex-login-stage{
+    height:100%;min-height:0;overflow:hidden;
+    grid-template-rows:auto minmax(0,1fr);
+    gap:10px!important;padding:6px 0!important;align-content:center;
+  }
+  .apex-login-story{min-height:0}
+  .apex-login-kicker{font-size:10px}
+  .apex-login-story h1{margin-top:8px!important;font-size:clamp(30px,9vw,40px)!important;line-height:.98}
+  .apex-login-story>p{margin-top:8px!important;font-size:12px!important;line-height:1.55}
+  .apex-login-principles{margin-top:10px!important;gap:6px!important}
+  .apex-login-principles>span{padding:7px 10px!important}
+  .apex-login-principles b{font-size:11px!important}
+  .apex-login-access{padding:16px!important;border-radius:24px!important;min-height:0}
+  .apex-access-head>span{font-size:10px}
+  .apex-access-head strong{font-size:21px!important}
+  .apex-access-head p{margin-top:4px!important;font-size:11px!important}
+  .apex-login-form{gap:10px!important;margin-top:12px!important}
+  .apex-login-form .field{gap:5px!important}
+  .apex-login-form .field input{min-height:44px!important}
+  .apex-login-form .btn{min-height:46px!important}
+  .apex-login-access footer{margin-top:12px!important;padding-top:10px!important;gap:8px!important}
+  .install-login .install-trigger{width:34px!important;min-width:34px!important;height:34px!important;padding:0!important}
+}
+
+/* Landscape login uses the two-column composition again, but remains fixed. */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:650px){
+  .apex-login{padding:8px 14px calc(8px + env(safe-area-inset-bottom))!important}
+  .apex-login-stage{
+    grid-template-columns:minmax(0,1fr) minmax(320px,390px)!important;
+    grid-template-rows:minmax(0,1fr)!important;
+    align-items:center!important;gap:18px!important;padding:0!important;
+  }
+  .apex-login-story h1{font-size:clamp(30px,6.5vh,44px)!important}
+  .apex-login-story>p{font-size:11px!important;line-height:1.5}
+  .apex-login-principles{display:flex!important;margin-top:8px!important}
+  .apex-login-access{padding:14px 16px!important}
+  .apex-login-form{gap:8px!important;margin-top:10px!important}
+  .apex-login-form .field input{min-height:40px!important}
+  .apex-login-form .btn{min-height:42px!important}
+  .apex-login-access footer{margin-top:9px!important;padding-top:8px!important}
+}

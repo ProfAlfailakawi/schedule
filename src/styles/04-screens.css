@@ -7,8 +7,11 @@
    ========================================================================== */
 
 .apex-login{
-  position:relative;
-  min-height:100dvh;
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100dvh;
+  min-height:0;
   overflow:hidden;
   display:flex;
   flex-direction:column;
@@ -1428,10 +1431,9 @@
   box-shadow:0 0 0 3px color-mix(in srgb,var(--brass) 15%,transparent);
 }
 .install-login .install-trigger{
-  width:auto;min-width:34px;padding-inline:9px;gap:7px;
-  display:inline-flex;color:#9fb0a8;background:#0b100f;border-color:#2b3630;
+  width:36px;min-width:36px;height:36px;padding:0;gap:0;
+  display:inline-grid;place-items:center;color:#9fb0a8;background:#0b100f;border-color:#2b3630;
 }
-.install-login .install-trigger span{font-size:11px;white-space:nowrap}
 .install-login .install-trigger:hover,.install-login .install-trigger.active{
   color:#dfe8e3;background:#121a17;border-color:#425149;
 }
