@@ -1598,11 +1598,10 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             </div>
             <div className="fairness-rows">
               {fairness.rows.map(row => (
-                <div key={row.id} className={row.delta > 60 ? "over" : row.delta < -60 ? "under" : ""}>
+                <div key={row.id}>
                   <span>{row.name}</span>
                   <i><b style={{ width: share(row.load, fairness.rows[0].load) }} /></i>
                   <em>{num(Math.round(row.load / 60))}س</em>
-                  <small dir="ltr">{row.delta > 0 ? "+" : ""}{num(Math.round(row.delta / 60))}</small>
                 </div>
               ))}
             </div>

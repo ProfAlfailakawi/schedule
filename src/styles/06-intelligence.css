@@ -3947,3 +3947,10 @@ button.twin-delta{width:100%}
 @media(max-width:760px){
   .copilot-thread{max-height:min(52dvh,480px)}
 }
+
+/* Fairness is descriptive, not normative. Workload bars show the actual load;
+   no inferred +/- delta is rendered because required load depends on rank and
+   local regulation rather than one universal threshold. */
+.fairness-rows>div{
+  grid-template-columns:minmax(0,1.1fr) minmax(90px,2fr) 52px;
+}

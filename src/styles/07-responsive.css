@@ -981,3 +981,119 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .apex-login-form .btn{min-height:42px!important}
   .apex-login-access footer{margin-top:9px!important;padding-top:8px!important}
 }
+
+/* ==========================================================================
+   QUERY CENTER — PHONE TIME LENS
+   The interactive row owns the layout. Earlier rules targeted the article,
+   leaving the button on the desktop six-column grid and pushing room chips out
+   of the card on narrow phones. Keep every datum inside one coherent row.
+   ========================================================================== */
+@media (pointer:coarse) and (max-width:760px){
+  .lens-time-toggle{
+    display:grid!important;
+    grid-template-columns:56px minmax(0,1fr) 36px!important;
+    grid-template-areas:
+      "time bar count"
+      "facts facts facts"
+      "rooms rooms rooms"
+      "chev chev chev"!important;
+    align-items:center!important;
+    gap:8px 10px!important;
+    padding:14px 16px!important;
+    min-width:0!important;
+  }
+  .lens-time-toggle>time{grid-area:time;min-width:0;white-space:nowrap}
+  .lens-time-toggle>.slot-bar{grid-area:bar;min-width:0;width:100%}
+  .lens-time-toggle>b{grid-area:count;min-width:0;text-align:end}
+  .lens-time-toggle>.time-slot-facts{
+    grid-area:facts;display:flex!important;justify-content:flex-start!important;
+    gap:8px!important;min-width:0;flex-wrap:wrap;
+  }
+  .lens-time-toggle>.slot-rooms{
+    grid-area:rooms;display:flex!important;justify-content:flex-start!important;
+    gap:6px!important;min-width:0;max-width:100%;flex-wrap:wrap;
+  }
+  .lens-time-toggle>.slot-rooms span{
+    max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .lens-time-toggle>svg:last-child{grid-area:chev;justify-self:start;width:16px;height:16px}
+  .time-slot-panel{padding:0 16px 16px!important;min-width:0}
+  .time-slot-panel-head{display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:8px!important}
+  .time-slot-panel-head>div{min-width:0}
+  .time-slot-grid{grid-template-columns:minmax(0,1fr)!important}
+  .time-slot-card{min-width:0;overflow:hidden}
+
+  .fairness-rows>div{
+    grid-template-columns:minmax(0,1fr) 46px!important;
+    grid-template-areas:"name hours" "bar bar"!important;
+    gap:6px 12px!important;
+  }
+  .fairness-rows>div>span{grid-area:name}
+  .fairness-rows i{grid-area:bar}
+  .fairness-rows em{grid-area:hours}
+}
+
+/* Landscape phones are phones by height even when CSS width exceeds the usual
+   mobile breakpoint. Preserve the same compact query composition. */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:650px){
+  .lens-time-toggle{
+    display:grid!important;
+    grid-template-columns:56px minmax(120px,1fr) 36px minmax(0,1fr)!important;
+    grid-template-areas:"time bar count facts" "rooms rooms rooms rooms"!important;
+    gap:8px 12px!important;padding:12px 16px!important;min-width:0!important;
+  }
+  .lens-time-toggle>time{grid-area:time}
+  .lens-time-toggle>.slot-bar{grid-area:bar;min-width:0}
+  .lens-time-toggle>b{grid-area:count}
+  .lens-time-toggle>.time-slot-facts{grid-area:facts;justify-content:flex-end!important;min-width:0;flex-wrap:wrap}
+  .lens-time-toggle>.slot-rooms{grid-area:rooms;justify-content:flex-start!important;min-width:0;flex-wrap:wrap}
+  .lens-time-toggle>svg:last-child{display:none}
+}
+
+/* ==========================================================================
+   LOGIN — FIXED BUT BALANCED
+   Keep the page physically fixed while distributing the hero and access card
+   across the available viewport. Tall phones should not compress everything at
+   the top and leave a dead black field below.
+   ========================================================================== */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait){
+  .apex-login{
+    position:fixed!important;inset:0!important;height:100dvh!important;
+    overflow:hidden!important;display:flex!important;flex-direction:column!important;
+  }
+  .apex-login-stage{
+    flex:1!important;height:auto!important;min-height:0!important;
+    display:grid!important;grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:auto auto!important;
+    align-content:space-evenly!important;align-items:center!important;
+    gap:clamp(14px,2.2dvh,26px)!important;
+    padding:clamp(10px,2dvh,24px) 0!important;
+    overflow:hidden!important;
+  }
+  .apex-login-story,.apex-login-access{width:100%;min-width:0}
+  .apex-login-story h1{font-size:clamp(34px,5.2dvh,48px)!important}
+  .apex-login-story>p{font-size:clamp(12px,1.65dvh,15px)!important}
+  .apex-login-principles{margin-top:clamp(10px,1.7dvh,18px)!important}
+  .apex-login-access{padding:clamp(18px,2.4dvh,28px)!important}
+  .apex-access-head strong{font-size:clamp(22px,2.9dvh,28px)!important}
+  .apex-login-form{margin-top:clamp(12px,1.8dvh,20px)!important;gap:clamp(10px,1.5dvh,16px)!important}
+  .apex-login-form .field input{min-height:clamp(46px,6dvh,58px)!important}
+  .apex-login-form .btn{min-height:clamp(48px,6dvh,58px)!important}
+  .apex-login-access footer{margin-top:clamp(12px,1.8dvh,20px)!important;padding-top:clamp(10px,1.5dvh,16px)!important}
+}
+
+/* Very short portrait phones: preserve the fixed contract by compressing just
+   enough to fit, rather than allowing page scroll. */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (max-height:700px){
+  .apex-login-stage{align-content:center!important;gap:8px!important;padding:4px 0!important}
+  .apex-login-kicker{display:none!important}
+  .apex-login-story h1{font-size:30px!important;margin-top:0!important}
+  .apex-login-story>p{font-size:11px!important;margin-top:6px!important;line-height:1.4!important}
+  .apex-login-principles{display:none!important}
+  .apex-login-access{padding:14px!important}
+  .apex-access-head p{display:none!important}
+  .apex-login-form{margin-top:8px!important;gap:7px!important}
+  .apex-login-form .field input{min-height:40px!important}
+  .apex-login-form .btn{min-height:42px!important}
+  .apex-login-access footer{margin-top:8px!important;padding-top:7px!important}
+}
