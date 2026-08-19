@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
-import { AR, countOf } from "../utils/arabicCount";
 
 export type JourneyReading = {
   scoped: boolean;
@@ -59,12 +58,12 @@ function Counted({ value, duration = 900, play = true }: { value: number; durati
   return <>{ar(shown)}</>;
 }
 
-function useRevealOnce<T extends HTMLElement>(threshold = 0.35) {
+function useRevealOnce<T extends HTMLElement>(threshold = 0.08, enabled = true) {
   const ref = useRef<T | null>(null);
   const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
-    if (revealed || !ref.current) return;
+    if (!enabled || revealed || !ref.current) return;
     const node = ref.current;
     if (typeof IntersectionObserver === "undefined") {
       setRevealed(true);
@@ -79,12 +78,12 @@ function useRevealOnce<T extends HTMLElement>(threshold = 0.35) {
       },
       {
         threshold,
-        rootMargin: "0px 0px -10% 0px",
+        rootMargin: "0px 0px 18% 0px",
       },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [revealed, threshold]);
+  }, [enabled, revealed, threshold]);
 
   return { ref, revealed };
 }
@@ -94,13 +93,7 @@ function readingSentence(terms: number): string {
   if (terms < 10) return "ذاكرة تتشكّل، فصلاً بعد فصل.";
   if (terms < 25) return "قرارات متراكمة صنعت ذاكرة تشغيلية واضحة.";
   if (terms < 50) return "مسار طويل من الجداول والقرارات الأكاديمية.";
-  return `${countOf(terms, AR.term)} من القرارات والجداول والذاكرة.`;
-}
-
-function milestone(terms: number, schedules: number | null): string | null {
-  if (terms >= 10) return `${ar(terms)} فصلاً أصبحت جزءاً من ذاكرة SCHEDULE.`;
-  if (schedules && schedules > 0) return `${ar(schedules)} موعداً أكاديمياً أصبح جزءاً من ذاكرة SCHEDULE.`;
-  return null;
+  return "ذاكرة واسعة من الجداول والقرارات الأكاديمية المتراكمة.";
 }
 
 export default function ScheduleJourney({ version, onClose }: { version?: string; onClose: () => void }) {
@@ -151,10 +144,9 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
   const life = reading?.lifetime;
   const now = reading?.current;
   const headline = useMemo(() => readingSentence(life?.terms || 0), [life]);
-  const note = useMemo(() => milestone(life?.terms || 0, life?.schedules ?? null), [life]);
-  const metricsReveal = useRevealOnce<HTMLElement>(0.28);
-  const currentReveal = useRevealOnce<HTMLElement>(0.32);
   const empty = Boolean(reading && (life?.terms || 0) === 0);
+  const metricsReveal = useRevealOnce<HTMLElement>(0.08, Boolean(reading && !empty));
+  const currentReveal = useRevealOnce<HTMLElement>(0.08, Boolean(reading && !empty));
   const termCount = life?.terms || 0;
   const heroValue = life?.schedules ?? now?.schedules ?? termCount;
   const heroLabel = "مواعيد أكاديمية";
@@ -181,7 +173,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
             <div className="journey-signature" aria-hidden="true"><b>SCHEDULE</b><i /><small>ACADEMIC DECISION SYSTEM</small></div>
           </div>
 
-          <div className="journey-memory-core" aria-label={termCount ? `${ar(termCount)} فصلاً في ذاكرة النظام` : "ذاكرة النظام تبدأ من هنا"}>
+          <div className="journey-memory-core" aria-label={reading ? `${ar(heroValue)} موعداً أكاديمياً في ذاكرة النظام` : "ذاكرة النظام تبدأ من هنا"}>
             <span className="journey-core-halo" aria-hidden="true" />
             <span className="journey-core-orbit journey-core-orbit-a" aria-hidden="true"><i /></span>
             <span className="journey-core-orbit journey-core-orbit-b" aria-hidden="true"><i /></span>
@@ -218,19 +210,14 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
                 {reading.scoped ? <small className="journey-scope-v2">الأرقام وفق نطاق صلاحياتك</small> : <small className="journey-scope-v2">ذاكرة النظام الكاملة</small>}
               </header>
 
-              <div className="journey-metrics">
-                <article className="journey-metric journey-metric-primary">
-                  <span>مواعيد أكاديمية</span>
-                  <b><Counted value={life!.schedules || 0} duration={920} play={metricsReveal.revealed} /></b>
-                  <small>كل رقم هنا مرّ فعلياً عبر النظام</small>
-                </article>
+              <div className={`journey-metrics journey-metrics-memory ${metricsReveal.revealed ? "is-revealed" : ""}`}>
+                <article className="journey-metric journey-metric-feature"><span>مقررات</span><b><Counted value={life!.courses} duration={760} play={metricsReveal.revealed} /></b><small>هوية أكاديمية محفوظة</small></article>
                 <article className="journey-metric"><span>فصول</span><b><Counted value={life!.terms} duration={720} play={metricsReveal.revealed} /></b><small>طبقات من الذاكرة</small></article>
-                <article className="journey-metric"><span>مقررات</span><b><Counted value={life!.courses} duration={720} play={metricsReveal.revealed} /></b><small>هوية أكاديمية محفوظة</small></article>
                 <article className="journey-metric"><span>أعضاء هيئة تدريس</span><b><Counted value={life!.instructors} duration={720} play={metricsReveal.revealed} /></b><small>داخل قصة الجدول</small></article>
                 <article className="journey-metric"><span>أقسام علمية</span><b><Counted value={life!.sections} duration={720} play={metricsReveal.revealed} /></b><small>تتقاطع داخل مساحة واحدة</small></article>
                 <article className="journey-metric"><span>كليات</span><b><Counted value={life!.colleges} duration={720} play={metricsReveal.revealed} /></b><small>مرتبطة بقرار واحد</small></article>
               </div>
-              {note ? <p className="journey-milestone journey-milestone-v2"><i aria-hidden="true" />{note}</p> : null}
+              <p className="journey-memory-note"><i aria-hidden="true" />كل مؤشر هنا يضيف معنى مختلفاً للذاكرة، بلا تكرار.</p>
             </section>
 
             <section className="journey-current journey-current-v2" ref={currentReveal.ref}>
@@ -240,7 +227,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
                 <p>صورة لحظية لما يتحرك الآن داخل مساحة العمل.</p>
                 <div className="journey-current-signal"><i aria-hidden="true" /><span>فصل فعّال داخل الذاكرة</span></div>
               </div>
-              <div className="journey-current-grid">
+              <div className={`journey-current-grid ${currentReveal.revealed ? "is-revealed" : ""}`}>
                 <article><b><Counted value={now!.schedules} duration={720} play={currentReveal.revealed} /></b><span>موعداً أكاديمياً</span></article>
                 <article><b><Counted value={now!.courses} duration={720} play={currentReveal.revealed} /></b><span>مقرراً</span></article>
                 <article><b><Counted value={now!.instructors} duration={720} play={currentReveal.revealed} /></b><span>عضو هيئة تدريس</span></article>

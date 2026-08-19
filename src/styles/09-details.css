@@ -1769,10 +1769,17 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .journey-section-head h3{margin:0!important;color:#e9f0ec!important;font-size:clamp(20px,2.5vw,29px)!important;line-height:1.45!important;font-weight:600!important;letter-spacing:-.02em}
 .journey-section-head>small,.journey-scope-v2{max-width:260px;color:#65736c!important;font-size:10px!important;line-height:1.7;text-align:end}
 
-.journey-metrics{display:grid;grid-template-columns:1.45fr repeat(2,minmax(0,1fr));gap:10px}
+.journey-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
 .journey-metric{position:relative;min-height:132px;display:flex;flex-direction:column;justify-content:space-between;gap:12px;padding:17px 18px;border:1px solid var(--journey-line);border-radius:18px;background:linear-gradient(150deg,rgba(255,255,255,.036),rgba(255,255,255,.012));overflow:hidden}
 .journey-metric::after{content:"";position:absolute;inset-inline-start:0;inset-block:16px;width:1px;background:linear-gradient(transparent,rgba(121,174,153,.42),transparent)}
 .journey-metric>span{font-size:10px;color:#7f8d86}.journey-metric>b{font:700 clamp(28px,3.7vw,42px)/1 var(--font-mono);color:#eaf1ed;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.journey-metric>small{font-size:9px;color:#58665f;line-height:1.45}
+.journey-metrics-memory{grid-template-columns:repeat(3,minmax(0,1fr));align-items:stretch}
+.journey-metrics-memory .journey-metric-feature{grid-row:span 2;min-height:274px;justify-content:flex-end;padding:24px;background:radial-gradient(circle at 72% 15%,rgba(71,129,108,.15),transparent 36%),linear-gradient(150deg,rgba(41,73,62,.28),rgba(255,255,255,.012))}
+.journey-metrics-memory .journey-metric-feature::before{content:"";position:absolute;inset:22px 22px auto auto;width:68px;height:68px;border:1px solid rgba(132,180,160,.12);border-radius:50%;box-shadow:0 0 0 15px rgba(132,180,160,.024),0 0 0 30px rgba(132,180,160,.011)}
+.journey-metrics-memory .journey-metric-feature>b{font-size:clamp(46px,6vw,68px)}
+.journey-memory-note{display:flex;align-items:center;justify-content:center;gap:9px;margin:18px 0 0!important;color:#718079!important;font-size:10px!important;font-weight:600!important}
+.journey-memory-note i{width:5px;height:5px;border-radius:50%;background:#6f9f8d;box-shadow:0 0 12px rgba(111,159,141,.42)}
+
 .journey-metric-primary{grid-row:span 2;min-height:274px;justify-content:flex-end;padding:24px;background:radial-gradient(circle at 72% 15%,rgba(71,129,108,.17),transparent 36%),linear-gradient(150deg,rgba(41,73,62,.32),rgba(255,255,255,.012))}
 .journey-metric-primary::before{content:"";position:absolute;inset:22px 22px auto auto;width:74px;height:74px;border:1px solid rgba(132,180,160,.13);border-radius:50%;box-shadow:0 0 0 16px rgba(132,180,160,.025),0 0 0 32px rgba(132,180,160,.012)}
 .journey-metric-primary>b{font-size:clamp(52px,7vw,78px)}.journey-metric-primary>span{color:#9aaba3}.journey-metric-primary>small{color:#718079}
@@ -1812,7 +1819,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .journey-signature{margin-top:18px;flex-wrap:wrap;gap:8px}
   .journey-lifetime-v2,.journey-current-v2,.journey-timeline-v2,.journey-philosophy-v2,.journey-foot-v2{margin-inline:18px}
   .journey-section-head{align-items:flex-start;flex-direction:column;gap:8px}.journey-section-head>small,.journey-scope-v2{text-align:start;max-width:none}
-  .journey-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.journey-metric-primary{grid-column:1/-1;grid-row:auto;min-height:196px}.journey-metric-primary>b{font-size:58px}
+  .journey-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.journey-metrics-memory .journey-metric-feature{grid-column:1/-1;grid-row:auto;min-height:184px}.journey-metrics-memory .journey-metric-feature>b{font-size:54px}.journey-metric-primary{grid-column:1/-1;grid-row:auto;min-height:196px}.journey-metric-primary>b{font-size:58px}
   .journey-current-v2{grid-template-columns:1fr;padding:24px!important}.journey-current-grid article{min-height:94px}
   .journey-stages-v2{grid-template-columns:1fr!important}.journey-stages-v2::before{display:none}.journey-stage-v2{min-height:0;display:grid!important;grid-template-columns:34px 42px minmax(0,1fr);align-items:center}.journey-stage-v2 .journey-stage-copy{margin-top:0}.journey-stage-v2 .journey-stage-copy p{margin-top:1px}
   .journey-philosophy-v2{grid-template-columns:48px minmax(0,1fr);gap:12px;padding:28px 22px!important}.journey-philosophy-mark{font-size:72px}.journey-philosophy-v2 h3{font-size:clamp(30px,9vw,42px)!important}
@@ -1825,7 +1832,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .journey-core-center{width:54%;padding:13px 8px 11px}
   .journey-core-center small{font-size:10px}
   .journey-core-center span{font-size:8px}
-  .journey-lifetime-v2{padding:28px 0!important}.journey-metrics{grid-template-columns:1fr 1fr;gap:7px}.journey-metric{min-height:118px;padding:14px}.journey-metric-primary{min-height:170px}.journey-metric-primary>b{font-size:48px}
+  .journey-lifetime-v2{padding:28px 0!important}.journey-metrics{grid-template-columns:1fr 1fr;gap:7px}.journey-metric{min-height:118px;padding:14px}.journey-metrics-memory .journey-metric-feature{min-height:164px}.journey-metrics-memory .journey-metric-feature>b{font-size:46px}.journey-metric-primary{min-height:170px}.journey-metric-primary>b{font-size:48px}
   .journey-current-v2{padding:18px!important}.journey-current-grid{grid-template-columns:1fr 1fr;gap:7px}.journey-current-grid article{min-height:86px;padding:13px}.journey-current-grid b{font-size:28px}
   .journey-stage-v2{grid-template-columns:30px 38px minmax(0,1fr);padding:12px!important}.journey-stage-v2 .journey-stage-mark{width:38px;height:38px}
   .journey-philosophy-v2{grid-template-columns:1fr}.journey-philosophy-mark{height:46px;font-size:68px}.journey-philosophy-v2 p{font-size:10px!important}
@@ -1835,6 +1842,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .journey-hero-v2{padding-inline:14px!important}
   .journey-hero-v2 h2{font-size:clamp(34px,12.6vw,46px)!important;max-width:6.4ch}
   .journey-metrics,.journey-current-grid{grid-template-columns:1fr}
+  .journey-metrics-memory .journey-metric-feature{grid-column:auto;min-height:150px}
   .journey-metric,.journey-current-grid article{min-height:0}
 }
 @media(prefers-reduced-motion:reduce){.journey-state-pulse{animation:none}}
