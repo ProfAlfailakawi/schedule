@@ -29,9 +29,9 @@ export function scheduleClockForDisplay(value: string | null | undefined): strin
 }
 
 /**
- * Render a chronological start → end range while isolating the Latin clock
- * from surrounding RTL Arabic text. The isolate controls bidi only; it never
- * changes the semantic order of either the clocks or the range.
+ * Render the university-facing range in its approved visual order: END - START.
+ * Internal data always remains start/end in chronological order; only the
+ * presentation contract is reversed. The isolate prevents RTL bidi reordering.
  */
 export function formatScheduleTimeRange(
   start: string | null | undefined,
@@ -42,5 +42,5 @@ export function formatScheduleTimeRange(
   if (from === "—" && to === "—") return "—";
   if (to === "—") return from;
   if (from === "—") return to;
-  return `⁦${from} - ${to}⁩`;
+  return `⁦${to} - ${from}⁩`;
 }

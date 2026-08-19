@@ -1262,7 +1262,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <div>
                   {day.rows.length ? day.rows.map(row => (
                     <article key={`${day.key}-${row.id}`}>
-                      <time dir="ltr">{scheduleClockForDisplay(row.fstarttime)}<i>{scheduleClockForDisplay(row.fendtime)}</i></time>
+                      <time dir="ltr">{scheduleClockForDisplay(row.fendtime)}<i>{scheduleClockForDisplay(row.fstarttime)}</i></time>
                       <div>
                         <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
                         <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
@@ -1301,7 +1301,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       <th className="matrix-corner">القاعة</th>
                       <th className="matrix-days">الأيام</th>
                       {matrix.columns.map(point => (
-                        <th key={point} dir="ltr">{scheduleClockForDisplay(clock(point))}<i>{scheduleClockForDisplay(clock(point + 60))}</i></th>
+                        <th key={point} dir="ltr">{scheduleClockForDisplay(clock(point + 60))}<i>{scheduleClockForDisplay(clock(point))}</i></th>
                       ))}
                     </tr>
                   </thead>
@@ -1988,7 +1988,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <div>
                       {dayRows.length ? dayRows.map(row => (
                         <article key={`${day.key}-${row.id}`}>
-                          <time className="print-ltr"><b>{scheduleClockForDisplay(row.fstarttime)}</b><span>{scheduleClockForDisplay(row.fendtime)}</span></time>
+                          <time className="print-ltr"><b>{scheduleClockForDisplay(row.fendtime)}</b><span>{scheduleClockForDisplay(row.fstarttime)}</span></time>
                           <div><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span>{instructorOf(row)?.AdInstructorName || "بدون أستاذ"}</span></div>
                           <small><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</bdi><bdi className="print-ltr">{placeOfRow(row)}</bdi></small>
                         </article>
@@ -2127,7 +2127,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <table className="print-matrix-new">
               <colgroup><col style={{ width: "8%" }} /><col style={{ width: "11%" }} />{matrix.columns.map((point: number) => <col key={point} />)}</colgroup>
-              <thead><tr><th>القاعة</th><th>الأيام</th>{matrix.columns.map((point: number) => <th key={point} className="print-ltr">{scheduleClockForDisplay(clock(point))}<small>{scheduleClockForDisplay(clock(point + 60))}</small></th>)}</tr></thead>
+              <thead><tr><th>القاعة</th><th>الأيام</th>{matrix.columns.map((point: number) => <th key={point} className="print-ltr">{scheduleClockForDisplay(clock(point + 60))}<small>{scheduleClockForDisplay(clock(point))}</small></th>)}</tr></thead>
               <tbody>{pageLines.map((line: any) => <tr key={line.id}>
                 <th><strong>{line.room.hall || "—"}</strong><small>{line.room.building}</small></th>
                 <td>{line.group.label}</td>

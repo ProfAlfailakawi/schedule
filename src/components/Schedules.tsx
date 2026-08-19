@@ -6548,7 +6548,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         onClick={() => void openContext(r)}
                       >
                         <time dir="ltr">
-                          <b>{scheduleClockForDisplay(r.fstarttime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fendtime)}</small>
+                          <b>{scheduleClockForDisplay(r.fendtime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fstarttime)}</small>
                         </time>
                         <i />
                         <div>
