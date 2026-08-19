@@ -1160,3 +1160,50 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     max-height:100svh!important;overflow:hidden!important;
   }
 }
+
+/* ========================================================================== 
+   LOGIN — FINAL PORTRAIT RHYTHM
+   `space-between` pinned the story to the top and the card to the bottom. On
+   tall phones that made both halves feel detached.  Centre the composition as
+   one unit, with deliberate air above and below; short phones retain the
+   compact emergency rules above.
+   ========================================================================== */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait){
+  .apex-login{
+    padding:max(14px,calc(env(safe-area-inset-top) + 6px)) 14px max(12px,env(safe-area-inset-bottom))!important;
+  }
+  .mobile-topbar>.mobile-brand{width:auto;min-width:0;padding-inline:7px}
+  .mobile-brand .schedule-signature-seal{display:none}
+  .login-footer-tools{gap:7px}
+  .login-footer-tools .install-trigger,.login-footer-tools .demo-entry-icon{
+    width:36px!important;min-width:36px!important;height:36px!important;min-height:36px!important;
+  }
+}
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (min-height:760px){
+  .apex-login-stage{
+    align-content:center!important;
+    gap:clamp(18px,2.35svh,27px)!important;
+    padding-block:clamp(22px,3.1svh,38px)!important;
+  }
+  .apex-login-access{transform:none!important}
+}
+@media (pointer:coarse) and (max-width:430px) and (orientation:portrait){
+  .login-footer-label{font-size:10.5px}
+  .login-footer-year{font-size:10px}
+}
+
+@media (max-width:640px){
+  .journey-backdrop{padding:14px 10px max(10px,env(safe-area-inset-bottom))}
+  .journey{max-height:calc(100svh - 24px);padding:24px 13px 20px;gap:22px;border-radius:28px}
+  .journey-close{inset-block-start:12px;inset-inline-end:12px;width:38px;height:38px;border-radius:13px;z-index:3}
+  .journey-hero{padding:20px 12px 17px;border-radius:23px;gap:13px}
+  .journey-signature{--sig-seal:50px;--sig-word:21px;--sig-tag:10.5px;gap:10px}
+  .journey-highlights{gap:6px}
+  .journey-highlights span{padding:7px 9px;font-size:10px}
+  .journey-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .journey-grid article{padding:14px 10px;border-radius:18px}
+  .journey-grid b{font-size:clamp(24px,8vw,31px)}
+  .journey-current{padding:16px;border-radius:20px}
+  .journey-foot{display:grid;gap:14px}
+  .journey-foot-signature{justify-items:start}
+}

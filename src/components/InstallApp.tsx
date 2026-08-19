@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, Download, Menu, Plus, Share, X } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
+import ScheduleSignature from "./ScheduleSignature";
 
 const SEEN_KEY = "schedule-install-seen";
 type InstallVariant = "dashboard" | "login";
@@ -104,7 +105,10 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
       dir="rtl"
     >
       <header>
-        <strong>ثبّت SCHEDULE</strong>
+        <div className="install-brand-head">
+          <ScheduleSignature size="mini" />
+          <span>تثبيت التطبيق</span>
+        </div>
         <button type="button" onClick={() => setOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
       </header>
       {deferred ? (

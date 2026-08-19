@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
+import ScheduleSignature, { SCHEDULE_DECISION_LINE, SCHEDULE_DEFINITION } from "./ScheduleSignature";
 
 /**
  * ── رحلة SCHEDULE ─────────────────────────────────────────────────────────
@@ -159,12 +160,18 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
         <button type="button" className="journey-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
 
         <header className="journey-hero">
-          <span className="journey-eyebrow">رحلة النظام عبر السنوات</span>
-          <h2>رحلة SCHEDULE</h2>
-          <p>
-            أكثر من عقد من العمل الأكاديمي، تحوّل فيه SCHEDULE من أداة لبناء الجدول
-            إلى مساحة يُتَّخذ فيها القرار.
-          </p>
+          <ScheduleSignature size="hero" className="journey-signature" />
+          <div className="journey-definition">
+            <span className="journey-eyebrow">رحلة النظام عبر السنوات</span>
+            <h2>{SCHEDULE_DECISION_LINE}</h2>
+            <p>{SCHEDULE_DEFINITION}</p>
+          </div>
+          <div className="journey-highlights" aria-hidden="true">
+            <span>بناء الجدول</span>
+            <span>مراجعة واعتماد</span>
+            <span>اكتشاف التعارضات</span>
+            <span>تقارير وقرار</span>
+          </div>
           {/* A quiet suggestion of accumulated terms — lines, not illustration. */}
           <div className="journey-strata" aria-hidden="true">
             {Array.from({ length: 14 }).map((_, index) => <i key={index} style={{ ["--i" as any]: index }} />)}
@@ -183,6 +190,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
         ) : (
           <>
             <section className="journey-lifetime">
+              <p className="journey-reading journey-reading-overview">من أداة لبناء الجدول إلى ذاكرة أكاديمية ومساحة يُتَّخذ فيها القرار.</p>
               <p className="journey-reading">{headline}</p>
               <div className="journey-grid">
                 <article><b><Counted value={life!.schedules || 0} duration={850} /></b><span>موعداً أكاديمياً مرّ من هنا</span></article>
@@ -238,7 +246,10 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
             <span>التأسيس والتطوير</span>
             <strong>د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</strong>
           </div>
-          <small>SCHEDULE{version ? ` · الإصدار ${version}` : ""}</small>
+          <div className="journey-foot-signature">
+            <ScheduleSignature size="mini" />
+            {version ? <small>الإصدار {version}</small> : null}
+          </div>
         </footer>
       </div>
     </div>
