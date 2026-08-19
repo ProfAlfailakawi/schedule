@@ -29,7 +29,6 @@ import {
 } from "lucide-react";
 
 import Login from "./components/Login";
-import ScheduleSignature from "./components/ScheduleSignature";
 import Dashboard from "./components/Dashboard";
 import type { ReportMode } from "./components/Reports";
 import type { AdminMode } from "./components/AdminUsers";
@@ -1976,9 +1975,8 @@ export default function App() {
           onClick={() => go("dashboard")}
           aria-label="العودة إلى لوحة العمل"
           aria-current={activeView === "dashboard" ? "page" : undefined}
-          data-guide-ignore="هوية SCHEDULE في شريط الهاتف؛ الضغط يعيد إلى لوحة العمل وهي وجهة تنقل أساسية معروفة"
         >
-          <ScheduleSignature size="micro" showTagline={false} />
+          SCHEDULE
         </button>
         <button
           type="button"
@@ -2012,9 +2010,14 @@ export default function App() {
           <button
             onClick={() => go("dashboard")}
             aria-label="العودة إلى لوحة العمل"
-            data-guide-ignore="هوية SCHEDULE الرئيسية داخل القائمة؛ الضغط يعيد إلى لوحة العمل ولا يضيف إجراءً تشغيليًا جديدًا"
           >
-            <ScheduleSignature size="compact" />
+            <span className="brand-mark">
+              <CalendarDays />
+            </span>
+            <span>
+              <strong>SCHEDULE</strong>
+              <small>التحكم الأكاديمي</small>
+            </span>
           </button>
           <button
             className="sidebar-close"
@@ -2180,7 +2183,8 @@ export default function App() {
           {/* The system's own identity, and the quietest possible door into its
               memory. Not a button — a line that answers when it is pressed. */}
           <button type="button" className="rail-identity" onClick={() => setJourneyOpen(true)} title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات" data-guide-ignore="مدخل تعريفي تسويقي إلى رحلة SCHEDULE ولا ينفذ إجراءً على بيانات الجدول">
-            <ScheduleSignature size="mini" />
+            <span className="rail-identity-name">SCHEDULE</span>
+            <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
             <span className="rail-identity-go" aria-hidden="true"><ChevronLeft /></span>
           </button>
           <div className="user-card">

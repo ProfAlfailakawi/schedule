@@ -11,7 +11,6 @@ import {
 import { Field, Notice, PrimaryButton } from "./ui";
 import InstallApp from "./InstallApp";
 import ScheduleJourney from "./ScheduleJourney";
-import ScheduleSignature, { SCHEDULE_DEFINITION } from "./ScheduleSignature";
 interface LoginProps {
   onLoginSuccess: (data: {
     user: any;
@@ -94,7 +93,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             <br />
             <em>يبدأ من قرار.</em>
           </h1>
-          <p>{SCHEDULE_DEFINITION}</p>
+          <p>
+            مساحة هادئة لبناء الجدول الدراسي، فهم أثر كل حركة، والوصول إلى
+            القرار الصحيح بدون ضوضاء.
+          </p>
           <div className="apex-login-principles" aria-hidden="true">
             <span>
               <ShieldCheck />
@@ -131,7 +133,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   <i />
                   <i />
                 </span>
-                <ScheduleSignature size="micro" markOnly />
+                <Sparkles aria-hidden="true" />
               </button>
             </div>
             <p>أكمل من حيث توقفت</p>
@@ -173,16 +175,14 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             </PrimaryButton>
           </form>
           <footer>
-            <span className="login-footer-label">الجدول الأكاديمي</span>
-            <div className="login-footer-tools">
-              {demoEnabled ? (
-                <button type="button" className="demo-entry-icon" onClick={enterDemo} disabled={loading || demoLoading} aria-label="تجربة النظام" title="تجربة النظام" data-guide-ignore="دخول اختياري إلى بيئة Demo معزولة">
-                  {demoLoading ? <span className="button-spinner" /> : <FlaskConical aria-hidden="true" />}
-                </button>
-              ) : null}
-              <InstallApp variant="login" />
-            </div>
-            <small className="login-footer-year">{new Date().getFullYear()}</small>
+            <span>الجدول الأكاديمي</span>
+            {demoEnabled ? (
+              <button type="button" className="demo-entry-icon" onClick={enterDemo} disabled={loading || demoLoading} aria-label="تجربة النظام" title="تجربة النظام" data-guide-ignore="دخول اختياري إلى بيئة Demo معزولة">
+                {demoLoading ? <span className="button-spinner" /> : <FlaskConical aria-hidden="true" />}
+              </button>
+            ) : null}
+            <InstallApp variant="login" />
+            <small>{new Date().getFullYear()}</small>
           </footer>
         </div>
       </section>

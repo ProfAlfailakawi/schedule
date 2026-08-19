@@ -1262,19 +1262,15 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .journey-close:hover{background:var(--surface-2);color:var(--ink)}
 .journey-close svg{width:15px;height:15px}
 
-.journey-hero{display:grid;gap:var(--s4);text-align:center;position:relative;padding:clamp(18px,3vw,28px);border:1px solid var(--line);border-radius:26px;background:linear-gradient(180deg,color-mix(in srgb,#fff 86%,var(--surface) 14%),color-mix(in srgb,var(--surface-2) 80%,#fff 20%))}
+.journey-hero{display:grid;gap:var(--s2);text-align:center;position:relative}
 .journey-eyebrow{
   font:600 10px/1 var(--font-mono);letter-spacing:.2em;color:var(--muted-2,var(--muted));
 }
-.journey-hero h2{margin:0;font-size:clamp(30px,4.6vw,44px);font-weight:700;letter-spacing:-.04em;color:var(--ink)}
+.journey-hero h2{font-size:var(--t-h1);font-weight:600;letter-spacing:-.02em}
 .journey-hero p{
   max-width:52ch;margin:0 auto;color:var(--muted);
   font-size:var(--t-body);line-height:1.85;
 }
-.journey-definition{display:grid;gap:var(--s2);justify-items:center}
-.journey-highlights{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
-.journey-highlights span{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font-size:var(--t-xs);line-height:1.2}
-.journey-signature{margin-inline:auto;margin-bottom:2px}
 /* Accumulated terms, suggested rather than illustrated: lines that thin out. */
 .journey-strata{
   display:flex;align-items:flex-end;justify-content:center;gap:5px;
@@ -1288,7 +1284,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 }
 
 .journey-reading{margin:0;text-align:center;color:var(--ink-2);font-size:var(--t-h4);line-height:1.7}
-.journey-reading-overview{font-size:var(--t-body);font-weight:600;color:var(--accent-ink)}
 .journey-figure{display:grid;gap:2px;justify-items:center;margin:var(--s4) 0}
 .journey-figure strong{
   font:700 clamp(46px,9vw,76px)/1 var(--font-mono);
@@ -1300,13 +1295,13 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   gap:var(--s3);
 }
 .journey-grid article{
-  display:grid;gap:6px;padding:var(--s4);text-align:center;
-  border:1px solid var(--line);border-radius:20px;background:color-mix(in srgb,var(--surface-2) 78%,#fff 22%);
+  display:grid;gap:2px;padding:var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
 }
 .journey-grid b{
   font:700 var(--t-h2)/1 var(--font-mono);color:var(--ink);font-variant-numeric:tabular-nums;
 }
-.journey-grid span{font-size:var(--t-xs);color:var(--ink-2);line-height:1.7}
+.journey-grid span{font-size:var(--t-xs);color:var(--ink-2);line-height:1.6}
 .journey-grid-small b{font-size:var(--t-h3)}
 .journey-milestone{
   margin:var(--s3) 0 0;text-align:center;
@@ -1370,12 +1365,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .journey-first strong{font-size:var(--t-h3);color:var(--ink);font-weight:600}
 
 @media (max-width:640px){
-  .journey{padding:var(--s6) var(--s3) var(--s5);gap:var(--s5)}
-  .journey-hero{padding:16px 14px;border-radius:22px}
-  .journey-highlights{gap:6px}
-  .journey-highlights span{padding:7px 10px}
-  .journey-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .journey-grid article{padding:13px 12px;border-radius:18px}
+  .journey{padding:var(--s7) var(--s4) var(--s5);gap:var(--s6)}
   .journey-backdrop{padding:3vh var(--s3) var(--s3)}
 }
 @media (prefers-reduced-motion:reduce){
