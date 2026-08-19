@@ -6,6 +6,7 @@ import {
   formatScheduleTimeRange,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_START,
+  scheduleClockForDisplay,
 } from "../utils/scheduleTime";
 import { sortByName } from "../utils/sorting";
 import { toEnglishDigits } from "../utils/digits";
@@ -268,7 +269,7 @@ export default function QuickCreatePopover({
         />
         <div className="qc-until">
           <span>ينتهي</span>
-          <b dir="ltr">{draft.end}</b>
+          <b dir="ltr">{scheduleClockForDisplay(draft.end)}</b>
         </div>
       </div>
 

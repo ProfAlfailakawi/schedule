@@ -11,7 +11,8 @@ import {
   UsersRound,
   Zap,
 } from "lucide-react";
-import { Badge } from "./ui";
+
+import { scheduleClockForDisplay } from "../utils/scheduleTime";import { Badge } from "./ui";
 import type { AdCourse, FSchedule } from "../types";
 
 export type LivingScene =
@@ -60,7 +61,7 @@ export function ContextPicker({
     const days = DAY_SHORT.filter(([key]) => Boolean(row[key])).map(([, label]) => label).join("·");
     const who = instructorById?.get(row.AdInstructorId)?.AdInstructorName || "";
     const code = course?.CourseCode ? ` [${course.CourseCode}]` : "";
-    return `${name} — شعبة ${row.SCode}${who ? ` · ${who}` : ""}${days ? ` · ${days}` : ""} · ${row.fstarttime}${code}`;
+    return `${name} — شعبة ${row.SCode}${who ? ` · ${who}` : ""}${days ? ` · ${days}` : ""} · ${scheduleClockForDisplay(row.fstarttime)}${code}`;
   };
 
   const groups = new Map<string, FSchedule[]>();

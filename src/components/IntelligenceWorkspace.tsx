@@ -77,7 +77,7 @@ import {
   intelligenceDayLabels as dayLabels,
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
-import { formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
+import { formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES, scheduleClockForDisplay } from "../utils/scheduleTime";
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 
 /**
@@ -1000,7 +1000,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setTab("twin");
     showTwinCard("editor");
     setMessage(
-      `أُضيفت شعبة «${proposal.courseName}» داخل النسخة التجريبية فقط: ${slot.dayLabel} ${slot.start}` +
+      `أُضيفت شعبة «${proposal.courseName}» داخل النسخة التجريبية فقط: ${slot.dayLabel} ${scheduleClockForDisplay(slot.start)}` +
       `${slot.roomCode ? ` · ${slot.roomCode}${slot.roomHall ? "/" + slot.roomHall : ""}` : ""}. ` +
       (slot.instructorId ? "" : "اختر لها أستاذاً. ") +
       "لا شيء منشور — راجعها ثم احفظها كمسودة.",
@@ -1033,7 +1033,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
        counts rooms, teachers, gaps and balance — it has never counted student
        clashes, so a move that removes one can read «+0» and look pointless. */
     setMessage(
-      `طُبِّقت النقلة داخل النسخة التجريبية فقط: «${fix.courseName}» إلى ${fix.to.dayLabel} ${fix.to.start}. ` +
+      `طُبِّقت النقلة داخل النسخة التجريبية فقط: «${fix.courseName}» إلى ${fix.to.dayLabel} ${scheduleClockForDisplay(fix.to.start)}. ` +
       `يزول تقاطع ${countOf(fix.shared, AR.student)}. ` +
       "درجة الجودة لا تحسب تقاطع الطلاب بعد، فقد تبقى كما هي — لا شيء منشور حتى تحفظها كمسودة وتنشرها.",
     );
@@ -1777,7 +1777,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const base = { kicker:"تفاصيل التنبيه", title, metric:String(index + 1), tone:(alert?.severity === "critical" || alert?.severity === "high" || alert?.severity === "danger" ? "bad" : alert?.severity === "ok" ? "good" : "warn") as InsightReason["tone"] };
     if (/مانع اعتماد|تعارض|حجز|مزدوج/.test(title)) return { ...base, icon:<ShieldAlert />, summary:"هذه هي الموانع الفعلية التي كوّنت الرقم:", items:conflictReasonItems, facts:[{label:"الموانع",value:String(overview?.metrics?.criticalConflicts || 0)},{label:"النوع",value:"حجز فعلي"},{label:"اللائحة",value:"تحذيرية"}] };
     if (/فراغ/.test(title)) return { ...base, icon:<CalendarClock />, summary:"الأساتذة الذين تجاوز لديهم الفراغ 3 ساعات:", items:longGapReasonItems, facts:[{label:"الأساتذة",value:String(longGapReasonItems.length)},{label:"الحد",value:"3 ساعات"},{label:"القراءة",value:"إرشادية"}] };
-    if (/متأخر|بعد 4|وقت/.test(title)) return { ...base, icon:<Clock3 />, summary:"المواعيد التي تبدأ من 4:00 مساءً فأكثر:", items:lateReasonItems, facts:[{label:"المواعيد",value:String(lateReasonItems.length)},{label:"من",value:"16:00"},{label:"النوع",value:"توقيت"}] };
+    if (/متأخر|بعد 4|وقت/.test(title)) return { ...base, icon:<Clock3 />, summary:`المواعيد التي تبدأ من ${scheduleClockForDisplay("16:00")} فأكثر:`, items:lateReasonItems, facts:[{label:"المواعيد",value:String(lateReasonItems.length)},{label:"من",value:scheduleClockForDisplay("16:00")},{label:"النوع",value:"توقيت"}] };
     if (/بيانات|سجل/.test(title)) return { ...base, icon:<FileClock />, summary:"السجلات التي ينقصها شيء محدد:", items:invalidReasonItems, facts:[{label:"السجلات",value:String(invalidReasonItems.length)},{label:"الحالة",value:"تحتاج إكمال"}] };
     if (/توزيع|أيام/.test(title)) return { ...base, icon:<BarChart3 />, summary:"هذا هو توزيع الحمل بين الأيام:", items:dayBalanceReasonItems, facts:[{label:"التفاوت",value:`${overview?.metrics?.imbalance || 0}٪`},{label:"الأيام",value:String(dayBalanceReasonItems.length)}] };
     return { ...base, icon:<AlertTriangle />, summary:"تفاصيل هذا التنبيه:", items:[{title,meta:String(alert?.detail || "لا توجد تفاصيل إضافية."),value:""}] };
@@ -2401,7 +2401,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </div>
             <details className="insight-disclosure">
               <summary>كيف وصلنا لهذه النتيجة؟</summary>
-              <p className="insight-method">الاستخدام التقديري لكل قاعة = ساعات إشغالها ÷ ساعات اليوم الرسمية (20:00 - 8:00) على مدى أيام النطاق، والترتيب حسب عدد المواعيد.</p>
+              <p className="insight-method">الاستخدام التقديري لكل قاعة = ساعات إشغالها ÷ ساعات اليوم الرسمية (<b dir="ltr">{formatScheduleTimeRange("08:00", "20:00")}</b>) على مدى أيام النطاق، والترتيب حسب عدد المواعيد.</p>
             </details>
           </Surface>
             </div>
@@ -2731,12 +2731,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <div className="demand-move" dir="rtl">
                         <span className="demand-from">
                           <small>{fix.from.dayLabel}</small>
-                          <b dir="ltr">{fix.from.start}</b>
+                          <b dir="ltr">{scheduleClockForDisplay(fix.from.start)}</b>
                         </span>
                         <ArrowLeftRight aria-hidden="true" />
                         <span className="demand-to">
                           <small>{fix.to.dayLabel}</small>
-                          <b dir="ltr">{fix.to.start}</b>
+                          <b dir="ltr">{scheduleClockForDisplay(fix.to.start)}</b>
                         </span>
                       </div>
                       <p className="demand-why">
@@ -3111,7 +3111,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <div className="copilot-empty">
                   <BrainCircuit />
                   <strong>اسأله كما تسأل زميلك</strong>
-                  <span>مثال: انقل 101 إلى 11:00</span>
+                  <span>مثال: انقل 101 إلى {scheduleClockForDisplay("11:00")}</span>
                 </div>
               )}
             </div>
@@ -4452,7 +4452,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="postmortem-card"><div><FileClock/><span><small>تشريح الفصل</small><strong>ماذا تعلّمنا من النسخ؟</strong></span></div><ul>{operationsReview.accuracy.postmortem.slice(0,4).map((line:string,index:number)=><li key={index}>{line}</li>)}</ul></div>
             ) : null}
             {versions.length ? (
-              <div className="edit-heatmap"><div className="edit-heatmap-head"><span><small>حرارة التعديلات البشرية</small><strong>متى يكثر التغيير</strong></span><Badge>{versions.length} نسخة</Badge></div><div className="edit-heatmap-grid"><i/>{versionActivityHeatmap.hours.map(hour=><small key={hour}>{String(hour).padStart(2,"0")}</small>)}{versionActivityHeatmap.cells.map(day=><React.Fragment key={day.label}><b>{day.label}</b>{day.hours.map(cell=>{const strength=versionActivityHeatmap.max?cell.count/versionActivityHeatmap.max:0;return <span key={`${day.label}-${cell.hour}`} title={`${day.label} ${cell.hour}:00 · ${cell.count} تعديل`} style={{["--heat-pct" as any]:`${Math.max(10,Math.round(strength*85))}%`}}>{cell.count||""}</span>;})}</React.Fragment>)}</div></div>
+              <div className="edit-heatmap"><div className="edit-heatmap-head"><span><small>حرارة التعديلات البشرية</small><strong>متى يكثر التغيير</strong></span><Badge>{versions.length} نسخة</Badge></div><div className="edit-heatmap-grid"><i/>{versionActivityHeatmap.hours.map(hour=><small key={hour}>{scheduleClockForDisplay(`${String(hour).padStart(2,"0")}:00`)}</small>)}{versionActivityHeatmap.cells.map(day=><React.Fragment key={day.label}><b>{day.label}</b>{day.hours.map(cell=>{const strength=versionActivityHeatmap.max?cell.count/versionActivityHeatmap.max:0;return <span key={`${day.label}-${cell.hour}`} title={`${day.label} ${scheduleClockForDisplay(`${String(cell.hour).padStart(2,"0")}:00`)} · ${cell.count} تعديل`} style={{["--heat-pct" as any]:`${Math.max(10,Math.round(strength*85))}%`}}>{cell.count||""}</span>;})}</React.Fragment>)}</div></div>
             ) : null}
           </Surface>
           ) : null}

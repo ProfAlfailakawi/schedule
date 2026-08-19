@@ -19,7 +19,13 @@ export function withinScheduleDay(start: number, end: number): boolean {
 export function scheduleClockForDisplay(value: string | null | undefined): string {
   const raw = String(value || "").trim();
   if (!raw) return "—";
-  return raw.replace(/^0(?=\d:)/, "");
+  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return raw;
+  const hour = match[1].padStart(2, "0");
+  const minute = match[2];
+  // The stored value remains HH:MM for sorting, validation and APIs.
+  // Only the visible Arabic clock is written in reading order: MM:HH.
+  return `${minute}:${hour}`;
 }
 
 /**

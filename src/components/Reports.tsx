@@ -102,7 +102,7 @@ function QueryTimeSelect({ value, onChange, label }: { value: string; onChange: 
       data-time-format="24h"
     >
       <option value="">--:--</option>
-      {QUERY_TIME_OPTIONS.map(option => <option key={`${label}-${option}`} value={option}>{option}</option>)}
+      {QUERY_TIME_OPTIONS.map(option => <option key={`${label}-${option}`} value={option}>{scheduleClockForDisplay(option)}</option>)}
     </select>
   );
 }
@@ -1301,7 +1301,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       <th className="matrix-corner">القاعة</th>
                       <th className="matrix-days">الأيام</th>
                       {matrix.columns.map(point => (
-                        <th key={point} dir="ltr">{clock(point)}<i>{clock(point + 60)}</i></th>
+                        <th key={point} dir="ltr">{scheduleClockForDisplay(clock(point))}<i>{scheduleClockForDisplay(clock(point + 60))}</i></th>
                       ))}
                     </tr>
                   </thead>
@@ -1379,8 +1379,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                         data-count={cell.taken}
                         data-mine={cell.mine ? "1" : undefined}
                         className={roomPick?.room === room.name && roomPick?.point === cell.point ? "picked" : ""}
-                        title={`${room.name} · ${clock(cell.point)} · ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
-                        aria-label={`${room.name} الساعة ${clock(cell.point)}، ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
+                        title={`${room.name} · ${scheduleClockForDisplay(clock(cell.point))} · ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
+                        aria-label={`${room.name} الساعة ${scheduleClockForDisplay(clock(cell.point))}، ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
                         aria-pressed={roomPick?.room === room.name && roomPick?.point === cell.point}
                         onClick={() => setRoomPick(current =>
                           current?.room === room.name && current?.point === cell.point
@@ -1415,7 +1415,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <div className="occupancy-pick query-detail-panel no-print" id="query-room-detail" role="dialog" aria-label={`تفاصيل إشغال ${roomPick.room}`}>
                   <header>
                     <div>
-                      <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${clock(roomPick.point)}`}</small>
+                      <small>{roomPick.point == null ? "كل مواعيد القاعة" : `الساعة ${scheduleClockForDisplay(clock(roomPick.point))}`}</small>
                       <strong>{roomPick.room}</strong>
                     </div>
                     <span className="occupancy-pick-count">{num(picked.length)} موعد</span>
@@ -2073,7 +2073,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                 </div>
                 <table className="print-occupancy-table">
                   <colgroup><col style={{ width: "12%" }} />{roomLoad.slots.map((point: number) => <col key={point} />)}<col style={{ width: "7%" }} /></colgroup>
-                  <thead><tr><th>القاعة</th>{roomLoad.slots.map((point: number) => <th key={point} className="print-ltr">{clock(point)}</th>)}<th>الإشغال</th></tr></thead>
+                  <thead><tr><th>القاعة</th>{roomLoad.slots.map((point: number) => <th key={point} className="print-ltr">{scheduleClockForDisplay(clock(point))}</th>)}<th>الإشغال</th></tr></thead>
                   <tbody>{pageRooms.map((room: any) => <tr key={room.key}>
                     <th className="print-ltr">{room.name}</th>
                     {room.cells.map((cell: any) => <td key={cell.point} className={`print-heat print-heat-${Math.min(5, cell.taken)}`}>{cell.taken > 1 ? cell.taken : ""}</td>)}
@@ -2128,7 +2128,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
             <table className="print-matrix-new">
               <colgroup><col style={{ width: "8%" }} /><col style={{ width: "11%" }} />{matrix.columns.map((point: number) => <col key={point} />)}</colgroup>
-              <thead><tr><th>القاعة</th><th>الأيام</th>{matrix.columns.map((point: number) => <th key={point} className="print-ltr">{clock(point)}<small>{clock(point + 60)}</small></th>)}</tr></thead>
+              <thead><tr><th>القاعة</th><th>الأيام</th>{matrix.columns.map((point: number) => <th key={point} className="print-ltr">{scheduleClockForDisplay(clock(point))}<small>{scheduleClockForDisplay(clock(point + 60))}</small></th>)}</tr></thead>
               <tbody>{pageLines.map((line: any) => <tr key={line.id}>
                 <th><strong>{line.room.hall || "—"}</strong><small>{line.room.building}</small></th>
                 <td>{line.group.label}</td>

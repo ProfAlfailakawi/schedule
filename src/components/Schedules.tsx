@@ -208,11 +208,7 @@ const normalizeArabicDigits = (value: string) => String(value || "")
   .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
   .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
 
-const displayClockCompact = (value: string) => {
-  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
-  if (!match) return value || "—";
-  return `${Number(match[1])}:${match[2]}`;
-};
+const displayClockCompact = (value: string) => scheduleClockForDisplay(value);
 
 const formatTermLabel = (value: number) => {
   const count = Number(value || 0);
@@ -2081,7 +2077,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const quickConflict = (draft: QuickDraft, day: DayKey): string | null => {
     const from = mins(draft.start), to = mins(draft.end);
     if (to <= from) return "وقت النهاية يجب أن يكون بعد وقت البداية.";
-    if (!withinScheduleDay(from, to)) return "الوقت خارج اليوم الدراسي (20:00 - 8:00).";
+    if (!withinScheduleDay(from, to)) return `الوقت خارج اليوم الدراسي (${formatScheduleTimeRange(SCHEDULE_DAY_START_TIME, SCHEDULE_DAY_END_TIME)}).`;
     const room = draft.room.trim(), hall = draft.hall.trim();
     const busy = rows.find(r =>
       Boolean((r as any)[day]) &&
@@ -2211,7 +2207,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const validationIssues=[
     !selectedFormDays.length?"يجب اختيار يوم واحد على الأقل للمحاضرة.":"",
     timeRangeInvalid?"وقت النهاية يجب أن يكون بعد وقت البداية.":"",
-    outsideTeachingDay?"وقت المحاضرة يجب أن يكون بين 08:00 و20:00.":"",
+    outsideTeachingDay?`وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}.`:"",
   ].filter(Boolean);
   const blockingConflicts=conflicts.filter(c=>c?.severity==="high"||c?.type==="duplicate");
   const editorTimingNote = historicalTimingNote(form);
@@ -3832,12 +3828,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const movedIds = moves.map(m => m.before.id);
       const undoId = offerUndo(
         moves.length > 1
-          ? `نُقل ${countOf(moves.length, AR.appointment)} إلى ${label} ${effectiveTarget.start}`
-          : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${effectiveTarget.start}`,
+          ? `نُقل ${countOf(moves.length, AR.appointment)} إلى ${label} ${scheduleClockForDisplay(effectiveTarget.start)}`
+          : `نُقل ${row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "الموعد"} إلى ${label} ${scheduleClockForDisplay(effectiveTarget.start)}`,
         moves.map(move => restoreStep(move.before)),
       );
       stampDecisionFingerprint({
-        summary: request.decision?.summary || (moves.length > 1 ? `نقل جماعي إلى ${label} ${effectiveTarget.start}` : `نقل إلى ${label} ${effectiveTarget.start}`),
+        summary: request.decision?.summary || (moves.length > 1 ? `نقل جماعي إلى ${label} ${scheduleClockForDisplay(effectiveTarget.start)}` : `نقل إلى ${label} ${scheduleClockForDisplay(effectiveTarget.start)}`),
         before: motionSignature.before,
         after: motionSignature.after,
         place: motionSignature.place,
@@ -5864,7 +5860,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const label = days.find(d => d.key === keyMove.day)?.label || "";
     setKeyMove(null);
     presence.send({ holding: null, cell: null });
-    setKeyMoveSay(`تم نقل الموعد إلى ${label} ${keyMove.start}.`);
+    setKeyMoveSay(`تم نقل الموعد إلى ${label} ${scheduleClockForDisplay(keyMove.start)}.`);
     // The same door as a drag: same checks, same undo, same broadcast.
     void commitMove({
       row: keyMoveRow,
@@ -5903,7 +5899,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   useEffect(() => {
     if (!keyMove || !keyMoveReading) return;
     const label = days.find(d => d.key === keyMove.day)?.label || "";
-    setKeyMoveSay(`${label} ${keyMove.start} — ${keyMoveReading.why}`);
+    setKeyMoveSay(`${label} ${scheduleClockForDisplay(keyMove.start)} — ${keyMoveReading.why}`);
   }, [keyMove?.day, keyMove?.start, keyMoveReading?.why]);
 
   const slotBlockReason = (day: DayKey, start: string) => dragField.blocked.get(`${day}:${start}`) || "";
@@ -7921,9 +7917,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           <section className="historical-time-dialog">
             <button type="button" className="historical-time-close" data-guide-ignore="إلغاء نافذة اقتراح التوقيت فقط وإرجاع الموعد لمكانه السابق؛ لا ينفذ نقلاً" onClick={() => settleHistoricalTimeChoice("cancel")} aria-label="إلغاء النقل والعودة للوضع السابق" title="إلغاء"><X /></button>
             <header><span><Clock3 aria-hidden="true" /></span><div><small>{historicalChoice.source}</small><strong>{historicalChoice.dayLabel} · وقت غير معتاد</strong></div></header>
-            <div className="historical-time-compare" dir="ltr"><b>{historicalChoice.picked}</b><ChevronLeft aria-hidden="true" /><strong>{historicalChoice.preferred}</strong></div>
-            <p>النمط الأقرب يشير إلى <b dir="ltr">{historicalChoice.preferred}</b>. الوقت الذي اخترته <b dir="ltr">{historicalChoice.picked}</b> يبقى مسموحاً.</p>
-            <footer><button type="button" data-guide-ignore="اختيار صريح داخل تنبيه التوقيت لتثبيت الموعد المسحوب كما اختاره المستخدم" onClick={() => settleHistoricalTimeChoice("picked")}>ثبّت {historicalChoice.picked}</button><button type="button" className="primary" data-guide-ignore="اختيار صريح داخل تنبيه التوقيت لاعتماد الوقت التاريخي المقترح بدلاً من الوقت المسحوب" onClick={() => settleHistoricalTimeChoice("preferred")}>استخدم {historicalChoice.preferred}</button></footer>
+            <div className="historical-time-compare" dir="ltr"><b>{scheduleClockForDisplay(historicalChoice.picked)}</b><ChevronLeft aria-hidden="true" /><strong>{scheduleClockForDisplay(historicalChoice.preferred)}</strong></div>
+            <p>النمط الأقرب يشير إلى <b dir="ltr">{scheduleClockForDisplay(historicalChoice.preferred)}</b>. الوقت الذي اخترته <b dir="ltr">{scheduleClockForDisplay(historicalChoice.picked)}</b> يبقى مسموحاً.</p>
+            <footer><button type="button" data-guide-ignore="اختيار صريح داخل تنبيه التوقيت لتثبيت الموعد المسحوب كما اختاره المستخدم" onClick={() => settleHistoricalTimeChoice("picked")}>ثبّت {scheduleClockForDisplay(historicalChoice.picked)}</button><button type="button" className="primary" data-guide-ignore="اختيار صريح داخل تنبيه التوقيت لاعتماد الوقت التاريخي المقترح بدلاً من الوقت المسحوب" onClick={() => settleHistoricalTimeChoice("preferred")}>استخدم {scheduleClockForDisplay(historicalChoice.preferred)}</button></footer>
           </section>
         </div>
       ) : null}
@@ -8789,7 +8785,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           style={{ right: `${roomOffset(mark)}px` }}
                           dir="ltr"
                         >
-                          {timeFromMins(mark)}
+                          {scheduleClockForDisplay(timeFromMins(mark))}
                         </span>
                       ))}
                     </div>
@@ -8890,7 +8886,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                     <b dir="ltr">{formatScheduleTimeRange(paint.from, paint.to)}</b><span>موعد جديد</span>
                                   </div>
                                 ) : null}
-                                {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${timeFromMins(nowMinutes)}`}><b dir="ltr">{timeFromMins(nowMinutes)}</b></i> : null}
+                                {todayKey === day.key && nowMinutes >= gridWindow.start && nowMinutes <= gridWindow.end ? <i className="rooms-now" style={{ right: `${pct(nowMinutes)}%` }} title={`الآن · ${scheduleClockForDisplay(timeFromMins(nowMinutes))}`}><b dir="ltr">{scheduleClockForDisplay(timeFromMins(nowMinutes))}</b></i> : null}
                                 {roomLayout.items.map(({ row, lane }) => renderTrackCard(row, day.key as DayKey, { lane }))}
                               </div>
                             </div>
@@ -9350,7 +9346,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           style={{ right: `${weekStripOffset(mark)}px` }}
                           dir="ltr"
                         >
-                          {timeFromMins(mark)}
+                          {scheduleClockForDisplay(timeFromMins(mark))}
                         </span>
                       ))}
                     </div>
@@ -9492,7 +9488,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                 }}
                                 aria-hidden="true"
                               >
-                                <b dir="ltr">{keyMove.start}</b>
+                                <b dir="ltr">{scheduleClockForDisplay(keyMove.start)}</b>
                               </div>
                             ) : null}
                             {paint && paint.day === d.key ? (
@@ -9517,7 +9513,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                 style={{ insetInlineStart: `${weekStripOffset(nowMinutes)}px` }}
                                 aria-hidden="true"
                               >
-                                <span><time dir="ltr">{timeFromMins(nowMinutes)}</time></span>
+                                <span><time dir="ltr">{scheduleClockForDisplay(timeFromMins(nowMinutes))}</time></span>
                               </div>
                             ) : null}
                             {moveTraces
@@ -9719,7 +9715,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         }}
                         aria-hidden="true"
                       >
-                        <b dir="ltr">{keyMove.start}</b>
+                        <b dir="ltr">{scheduleClockForDisplay(keyMove.start)}</b>
                         <span>{keyMoveReading?.tier === "blocked" ? "غير متاح" : keyMoveReading?.tier === "excellent" ? "ممتاز" : keyMoveReading?.tier === "good" ? "جيد" : "ممكن بتنازل"}</span>
                       </div>
                     ) : null}
@@ -9753,7 +9749,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         style={{ top: ((nowMinutes - gridWindow.start) / SCHEDULE_SLOT_MINUTES) * SLOT_H }}
                         aria-hidden="true"
                       >
-                        <span><time>{timeFromMins(nowMinutes)}</time></span>
+                        <span><time>{scheduleClockForDisplay(timeFromMins(nowMinutes))}</time></span>
                       </div>
                     ) : null}
                     {experience.ghostEnabled
@@ -9943,7 +9939,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       {keyMove && keyMoveRow ? (
         <div className={`keymove-bar no-print tier-${keyMoveReading?.tier || "fair"}`} role="status">
           <strong>{keyMoveRow.AdCourseName || courseById.get(keyMoveRow.AdCourseId)?.CourseName || "الموعد"}</strong>
-          <span dir="ltr">{days.find(d => d.key === keyMove.day)?.label} · {keyMove.start}</span>
+          <span dir="ltr">{days.find(d => d.key === keyMove.day)?.label} · {scheduleClockForDisplay(keyMove.start)}</span>
           <em>{keyMoveReading?.why || ""}</em>
           <span className="keymove-keys"><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> تحريك · <kbd>Enter</kbd> تنفيذ · <kbd>Esc</kbd> إلغاء</span>
         </div>
@@ -10394,7 +10390,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   {context.courseLife ? <section>
                     <header><History/><strong>المقرر</strong><b>{context.courseLife.confidence === "high" ? "ثقة عالية" : context.courseLife.confidence === "medium" ? "ثقة متوسطة" : "تاريخ محدود"}</b></header>
                     <div className="context-life-range"><span>الفترة التاريخية</span><strong><i>{context.courseLife.firstTerm}</i><ChevronLeft aria-hidden="true"/><i>{context.courseLife.latestTerm}</i></strong></div>
-                    <div><span>الوقت المعتاد</span><strong dir="ltr">{context.courseLife.usualStart || "—"}</strong></div>
+                    <div><span>الوقت المعتاد</span><strong dir="ltr">{scheduleClockForDisplay(context.courseLife.usualStart)}</strong></div>
                     <div><span>المدة</span><strong><b dir="ltr">{context.courseLife.usualDuration || "—"}</b>{context.courseLife.usualDuration ? " دقيقة" : ""}</strong></div>
                     <div className="context-life-wide"><span>القاعة المعتادة</span><strong dir="ltr">{context.courseLife.usualRoom || "—"}</strong></div>
                   </section> : null}
@@ -10402,7 +10398,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     <header><CalendarDays/><strong>الشعبة</strong><b dir="ltr">{context.offeringLife.stability}% <span>ثبات</span></b></header>
                     <div><span>النسخ الحالية</span><strong dir="ltr">{context.offeringLife.currentJourney?.snapshots || 0}</strong></div>
                     <div><span>التغييرات</span><strong dir="ltr">{context.offeringLife.currentJourney?.changes ?? context.offeringLife.changes ?? 0}</strong></div>
-                    <div><span>الوقت المعتاد</span><strong dir="ltr">{context.offeringLife.usualStart || "—"}</strong></div>
+                    <div><span>الوقت المعتاد</span><strong dir="ltr">{scheduleClockForDisplay(context.offeringLife.usualStart)}</strong></div>
                     <div><span>القاعة المعتادة</span><strong dir="ltr">{context.offeringLife.usualRoom || "—"}</strong></div>
                   </section> : null}
                 </div>

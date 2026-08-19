@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { CheckCircle2, DoorOpen, GripVertical, Radio, UserRound } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../../types";
 import type { SchedulePhysicsDragState } from "./types";
-import { formatScheduleTimeRange } from "../../utils/scheduleTime";
+import { formatScheduleTimeRange, scheduleClockForDisplay } from "../../utils/scheduleTime";
 
 interface Props {
   state: SchedulePhysicsDragState;
@@ -86,7 +86,7 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
         style={timeGuideStyle}
         aria-hidden="true"
       >
-        <span dir="ltr">{target.start}</span>
+        <span dir="ltr">{scheduleClockForDisplay(target.start)}</span>
       </div>
     ) : null}
     <div ref={overlayRef} className={`schedule-physics-float physics-view-${variant} quality-${decision?.quality || "unknown"}`} aria-hidden="true">
@@ -103,7 +103,7 @@ export default function SchedulePhysicsLayer({ state, overlayRef, course, instru
     {target ? <aside ref={hudRef} className={`schedule-physics-hud quality-${decision?.quality || "unknown"} ${compact ? "compact" : "detailed"}`} style={hudStyle} aria-live="polite">
       <header>
         <span className="physics-hud-radar"><Radio/><i/><i/></span>
-        <div><small>{target.label} · <b dir="ltr">{target.start}</b></small><strong>{decision?.title || "أقرأ أثر القرار…"}</strong></div>
+        <div><small>{target.label} · <b dir="ltr">{scheduleClockForDisplay(target.start)}</b></small><strong>{decision?.title || "أقرأ أثر القرار…"}</strong></div>
       </header>
 
       <div className="physics-conflict-summary">

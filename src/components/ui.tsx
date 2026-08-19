@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { runVisualTransition } from "../utils/visualTransition";
 import { AlertTriangle, Check, Edit2, Plus, Search, Trash2, X, Inbox, ChevronLeft, CalendarDays, Clock3, Hash, Hourglass, Layers, ListOrdered, MapPin, Tag, Info, ShieldAlert } from "lucide-react";
+import { scheduleClockForDisplay } from "../utils/scheduleTime";
 
 let toastHost: HTMLDivElement | null = null;
 function getToastHost() {
@@ -346,7 +347,7 @@ export function PrintPortal({ children, className = "" }: { children: React.Reac
 
 export function PrintLetterhead({ title, scope, college, footer = true }: { title: React.ReactNode; scope?: React.ReactNode; college?: React.ReactNode; footer?: boolean }) {
   const now = new Date();
-  const stamp = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} · ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const stamp = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} · ${scheduleClockForDisplay(`${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`)}`;
   return (
     <>
       <header className="print-head">

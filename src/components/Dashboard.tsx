@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
-import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START}from"../utils/scheduleTime";
+import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, scheduleClockForDisplay }from"../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
@@ -10,7 +10,7 @@ interface DashboardData{history?:Array<{termId:number;termName:string;schedules:
 interface DecisionItem{severity?:string;level?:string;title?:string;label?:string;detail?:string;description?:string;message?:string}
 
 /** Minutes past midnight, as a clock a person reads. */
-const clockOf=(minutes:number)=>`${String(Math.floor(minutes/60)).padStart(2,"0")}:${String(Math.floor(minutes%60)).padStart(2,"0")}`;
+const clockOf=(minutes:number)=>scheduleClockForDisplay(`${String(Math.floor(minutes/60)).padStart(2,"0")}:${String(Math.floor(minutes%60)).padStart(2,"0")}`);
 const num=(value:number|undefined)=>Number(value||0).toLocaleString("ar-KW-u-nu-latn");
 const minutesOf=(value:string)=>{const[h,m]=String(value||"0:0").split(":").map(Number);return(h||0)*60+(m||0)};
 const spot=(minutes:number)=>`${Math.min(100,Math.max(0,((minutes-SCHEDULE_DAY_START)/SCHEDULE_DAY_SPAN)*100))}%`;
@@ -179,7 +179,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     <div className="deck-today-lead">
      <b aria-label={`${countOf(today.length, AR.lecture)} اليوم`}>{num(today.length)}</b>
      <span>اليوم</span>
-     {nextUp?<em dir="ltr" title={currentLecture?`المحاضرة الجارية حتى ${nextUp.endTime}`:`المحاضرة التالية تبدأ ${nextUp.startTime}`} aria-label={currentLecture?`المحاضرة الجارية حتى ${nextUp.endTime}`:`المحاضرة التالية تبدأ ${nextUp.startTime}`}>{currentLecture?nextUp.endTime:nextUp.startTime}</em>:null}
+     {nextUp?<em dir="ltr" title={currentLecture?`المحاضرة الجارية حتى ${scheduleClockForDisplay(nextUp.endTime)}`:`المحاضرة التالية تبدأ ${scheduleClockForDisplay(nextUp.startTime)}`} aria-label={currentLecture?`المحاضرة الجارية حتى ${scheduleClockForDisplay(nextUp.endTime)}`:`المحاضرة التالية تبدأ ${scheduleClockForDisplay(nextUp.startTime)}`}>{scheduleClockForDisplay(currentLecture?nextUp.endTime:nextUp.startTime)}</em>:null}
     </div>
     <div className="daybar">
      <div className="daybar-track" role="img" aria-label={`ضغط اليوم على ساعاته: ${
@@ -299,8 +299,8 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     {power?<><article className="deck-chart" aria-labelledby="dashboard-peak-hours-title">
      <header><Clock3 aria-hidden="true"/><span id="dashboard-peak-hours-title">ذروة الأوقات</span></header>
      {ws.busiestHours.length?<div className="bar-rows" role="list">
-      {ws.busiestHours.slice(0,5).map(slot=><div key={slot.hour} role="listitem" aria-label={`${slot.hour}: ${num(slot.count)} موعد`} title={`${slot.hour}: ${num(slot.count)}`}>
-       <span dir="ltr" aria-hidden="true">{slot.hour}</span>
+      {ws.busiestHours.slice(0,5).map(slot=><div key={slot.hour} role="listitem" aria-label={`${scheduleClockForDisplay(slot.hour)}: ${num(slot.count)} موعد`} title={`${scheduleClockForDisplay(slot.hour)}: ${num(slot.count)}`}>
+       <span dir="ltr" aria-hidden="true">{scheduleClockForDisplay(slot.hour)}</span>
        <i aria-hidden="true"><b style={{width:`${Math.round(slot.count/maxHour*100)}%`}}/></i>
        <em aria-hidden="true">{num(slot.count)}</em>
       </div>)}

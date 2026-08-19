@@ -5,6 +5,7 @@ import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -162,7 +163,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           r.instructorName || "",
           r.instructorCivil || "",
           Array.isArray(r.days) ? r.days.join(" - ") : (r.days || ""),
-          (r.start && r.end) ? `${r.start}-${r.end}` : "",
+          (r.start && r.end) ? formatScheduleTimeRange(r.start, r.end) : "",
           r.building || "",
           r.hall || "",
         ]);

@@ -33,7 +33,8 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import {
+
+import { scheduleClockForDisplay } from "../utils/scheduleTime";import {
   type DynamicGuideFeature,
   type GuideFeature,
   type GuideCommand,
@@ -1532,7 +1533,7 @@ export default function SmartGuide({
         {context?.view === activeView && context?.selected ? (
           <section className="smart-guide-selected-context">
             <div className="smart-guide-selected-visual"><MapPin /><i /><b /></div>
-            <div><small>العنصر المحدد</small><strong>{context.selected.course}</strong><span>{[context.selected.room, context.selected.start].filter(Boolean).join(" · ")}</span></div>
+            <div><small>العنصر المحدد</small><strong>{context.selected.course}</strong><span>{[context.selected.room, context.selected.start ? scheduleClockForDisplay(context.selected.start) : ""].filter(Boolean).join(" · ")}</span></div>
             <div className="smart-guide-selected-actions icon-only" aria-label="إجراءات الموعد المحدد">
               <button type="button" title="تغيير القاعة" aria-label="تغيير القاعة" onClick={() => chooseKnown(featureById("schedule.action.move-room")!)}><MapPin /></button>
               <button type="button" title="تغيير الوقت" aria-label="تغيير الوقت" onClick={() => { beginScreenHandoff("أفتح الوقت","المحرر الحقيقي للجدول؛ اختر الوقت الجديد ثم احفظ."); runCommand({ scope:"schedule",type:"openEditSelected",task:"time",value:String(context.selected.id),featureId:"schedule.action.change-time" }); scheduleLifecycle(() => finishHandoffToScreen(), 0); }}><Clock3 /></button>

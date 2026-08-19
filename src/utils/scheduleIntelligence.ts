@@ -1,5 +1,5 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
-import { formatScheduleTimeRange, SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
+import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
 export type DayKey = "fsunday"|"fmonday"|"ftuesday"|"fwednesday"|"fthursday";
 export const SCHEDULE_DAYS: Array<{key:DayKey;label:string}> = [
@@ -333,7 +333,7 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   const critical=conflicts.filter(c=>c.severity==="high").length;
   if(critical)alerts.push({severity:"critical",title:`${critical} مانع اعتماد`,detail:"حجز مزدوج يجب معالجته قبل الاعتماد."});
   const longGap=professorLoads.filter(x=>x.maxGap>=180).length;if(longGap)alerts.push({severity:"warning",title:`${longGap} أستاذ لديهم فراغ طويل`,detail:"أكثر من 3 ساعات بين محاضرتين."});
-  if(lateRows)alerts.push({severity:"info",title:`${lateRows} موعداً متأخراً`,detail:"بعد 4:00 مساءً."});
+  if(lateRows)alerts.push({severity:"info",title:`${lateRows} موعداً متأخراً`,detail:`بعد ${scheduleClockForDisplay("16:00")}.`});
   if(imbalance>=35)alerts.push({severity:"warning",title:"توزيع الأيام غير متوازن",detail:`تفاوت ملحوظ بين أحمال الأيام · ${imbalance}%.`});
   if(invalidRows)alerts.push({severity:"critical",title:`${invalidRows} سجل يحتاج بيانات`,detail:"موعد ناقص أو غير صالح."});
   if(!alerts.length)alerts.push({severity:"info",title:"الوضع مستقر",detail:"لا توجد ملاحظات حرجة."});
