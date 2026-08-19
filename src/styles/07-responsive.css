@@ -1097,3 +1097,51 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .apex-login-form .btn{min-height:42px!important}
   .apex-login-access footer{margin-top:8px!important;padding-top:7px!important}
 }
+
+/* ==========================================================================\n   LOGIN — TALL PHONE FILL\n   Use the spare vertical room on tall portrait phones to make the sign-in\n   surface feel intentional and substantial. This enlarges layout dimensions\n   (not browser zoom), so the fixed/no-scroll contract remains intact.\n   ========================================================================== */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (min-height:701px){
+  .apex-login-stage{
+    align-content:center!important;
+    gap:clamp(12px,1.55dvh,20px)!important;
+    padding:clamp(5px,.9dvh,12px) 0!important;
+  }
+  .apex-login-story h1{
+    font-size:clamp(37px,5.6dvh,52px)!important;
+    margin-top:clamp(8px,1.1dvh,13px)!important;
+  }
+  .apex-login-story>p{
+    margin-top:clamp(9px,1.15dvh,14px)!important;
+    font-size:clamp(13px,1.78dvh,16px)!important;
+    line-height:1.58!important;
+  }
+  .apex-login-principles{
+    margin-top:clamp(12px,1.8dvh,20px)!important;
+    gap:clamp(7px,1vw,10px)!important;
+  }
+  .apex-login-principles>span{padding:8px 12px!important}
+  .apex-login-principles b{font-size:12px!important}
+  .apex-login-access{
+    padding:clamp(21px,2.75dvh,31px)!important;
+    border-radius:clamp(25px,3.1dvh,30px)!important;
+  }
+  .apex-access-head>span{font-size:11px!important}
+  .apex-access-head strong{font-size:clamp(24px,3.1dvh,30px)!important}
+  .apex-access-head p{
+    margin-top:clamp(5px,.75dvh,8px)!important;
+    font-size:clamp(12px,1.55dvh,14px)!important;
+  }
+  .apex-login-form{
+    margin-top:clamp(14px,1.95dvh,22px)!important;
+    gap:clamp(11px,1.6dvh,17px)!important;
+  }
+  .apex-login-form .field{gap:6px!important}
+  .apex-login-form .field input{min-height:clamp(50px,6.35dvh,62px)!important}
+  .apex-login-form .btn{min-height:clamp(52px,6.55dvh,64px)!important}
+  .apex-login-access footer{
+    margin-top:clamp(14px,1.95dvh,22px)!important;
+    padding-top:clamp(12px,1.65dvh,18px)!important;
+    gap:10px!important;
+  }
+  .install-login .install-trigger{width:36px!important;min-width:36px!important;height:36px!important}
+  .demo-entry-icon{width:36px!important;height:36px!important}
+}
