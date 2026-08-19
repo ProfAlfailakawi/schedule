@@ -1053,9 +1053,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
 /* ==========================================================================
    LOGIN — STABLE MOBILE COMPOSITION
    Safari already exposes the small viewport through `svh`. Keep the screen
-   fixed to that stable height and let the *gap* absorb spare space; never
-   stretch the access card itself. This preserves the intended proportions
-   while keeping the card footer at the bottom of the visible page.
+   fixed to that stable height, but keep story and access card as one compact
+   composition. Spare viewport height belongs after the card, not between the
+   principles and the secure-login surface.
    ========================================================================== */
 @media (pointer:coarse) and (max-width:760px) and (orientation:portrait){
   .apex-login{
@@ -1079,9 +1079,9 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     display:grid!important;
     grid-template-columns:minmax(0,1fr)!important;
     grid-template-rows:auto auto!important;
-    align-content:space-between!important;
+    align-content:start!important;
     align-items:start!important;
-    gap:clamp(12px,1.8svh,20px)!important;
+    gap:clamp(14px,1.7svh,18px)!important;
     padding:clamp(7px,1svh,11px) 0!important;
     overflow:hidden!important;
   }

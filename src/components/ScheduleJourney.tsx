@@ -2,20 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
 
-/**
- * ── رحلة SCHEDULE ─────────────────────────────────────────────────────────
- *
- * Not a page about who made this. A page about what it has carried.
- *
- * Every number on it is counted from the database when the sheet opens, so the
- * screen cannot be wrong and cannot be flattered: add a term and it says one
- * more term, with nothing edited. That is the difference between a system that
- * has a memory and a system with a nice paragraph about having one.
- *
- * It opens over the work rather than replacing it, because it is a thing you
- * glance at, not a place you go.
- */
-
 export type JourneyReading = {
   scoped: boolean;
   lifetime: {
@@ -39,13 +25,6 @@ export type JourneyReading = {
 
 const ar = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
 
-/**
- * A number that arrives rather than appears.
- *
- * Short, once, and never on scroll — the count is the sentence's subject, and a
- * subject that keeps re-announcing itself is a distraction. A reader who has
- * asked for less motion is simply given the number.
- */
 function Counted({ value, duration = 900 }: { value: number; duration?: number }) {
   const [shown, setShown] = useState(value);
   const started = useRef(false);
@@ -58,7 +37,6 @@ function Counted({ value, duration = 900 }: { value: number; duration?: number }
     const from = performance.now();
     const tick = (now: number) => {
       const p = Math.min(1, (now - from) / duration);
-      // Fast at first, settling at the end — a number arriving, not a slot machine.
       const eased = 1 - Math.pow(1 - p, 3);
       setShown(Math.round(value * eased));
       if (p < 1) frame = requestAnimationFrame(tick);
@@ -69,22 +47,14 @@ function Counted({ value, duration = 900 }: { value: number; duration?: number }
   return <>{ar(shown)}</>;
 }
 
-/**
- * One line the system writes about itself, from the numbers alone.
- *
- * Rules, not rhetoric: no claim here can outrun the data behind it, and an
- * installation on its first day is told the truth about its first day instead
- * of being handed a decade it has not lived.
- */
-function readingSentence(terms: number, schedules: number | null): string {
+function readingSentence(terms: number): string {
   if (terms <= 0) return "الرحلة تبدأ من هنا.";
-  if (terms < 10) return "رحلة ما زالت في بدايتها.";
-  if (terms < 25) return "سنوات من الجداول والقرارات الأكاديمية.";
-  if (terms < 50) return "أكثر من عقد من الذاكرة الأكاديمية.";
+  if (terms < 10) return "ذاكرة تتشكّل، فصلاً بعد فصل.";
+  if (terms < 25) return "قرارات متراكمة صنعت ذاكرة تشغيلية واضحة.";
+  if (terms < 50) return "مسار طويل من الجداول والقرارات الأكاديمية.";
   return `${countOf(terms, AR.term)} من القرارات والجداول والذاكرة.`;
 }
 
-/** An institutional milestone, said once and quietly — never a badge. */
 function milestone(terms: number, schedules: number | null): string | null {
   if (terms >= 10) return `${ar(terms)} فصلاً أصبحت جزءاً من ذاكرة SCHEDULE.`;
   if (schedules && schedules > 0) return `${ar(schedules)} موعداً أكاديمياً أصبح جزءاً من ذاكرة SCHEDULE.`;
@@ -112,12 +82,10 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
     })();
     return () => {
       alive = false;
-      // The reader is returned to the thing they pressed, not to the top of the page.
       (opener.current as HTMLElement | null)?.focus?.();
     };
   }, []);
 
-  /* Escape closes; focus stays inside while it is open. */
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.stopPropagation(); onClose(); return; }
@@ -140,104 +108,127 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
 
   const life = reading?.lifetime;
   const now = reading?.current;
-  const headline = useMemo(() => readingSentence(life?.terms || 0, life?.schedules ?? null), [life]);
+  const headline = useMemo(() => readingSentence(life?.terms || 0), [life]);
   const note = useMemo(() => milestone(life?.terms || 0, life?.schedules ?? null), [life]);
 
   const steps = [
-    { title: "البداية", detail: "حلّ مشكلة إعداد الجدول.", Icon: Sparkles },
-    { title: "النمو", detail: "المقررات وأعضاء هيئة التدريس والأقسام والكليات في مكان واحد.", Icon: Layers },
-    { title: "النضج", detail: "مراجعة واعتماد، واكتشاف التعارضات، وتقارير تُطبع كوثائق.", Icon: ShieldCheck },
-    { title: "اليوم", detail: "منظومة تساعد على بناء القرار، لا بناء الجدول فقط.", Icon: BrainCircuit },
-    { title: "القادم", detail: "تتطوّر مع كل فصل، دون أن تفقد بساطة العمل التي اعتادها المستخدم.", Icon: CalendarDays },
+    { title: "البداية", detail: "من مهمة معقدة: بناء جدول أكاديمي قابل للعمل.", Icon: Sparkles },
+    { title: "الترابط", detail: "مقررات وأعضاء هيئة تدريس وأقسام وكليات داخل سياق واحد.", Icon: Layers },
+    { title: "الضبط", detail: "تعارضات ومراجعة واعتماد؛ قبل أن تتحول المشكلة إلى واقع.", Icon: ShieldCheck },
+    { title: "القرار", detail: "المعلومة تظهر في اللحظة التي يحتاجها فيها المستخدم.", Icon: BrainCircuit },
+    { title: "القادم", detail: "كل فصل يضيف معرفة جديدة من دون أن يزيد ضوضاء الواجهة.", Icon: CalendarDays },
   ];
-  /* An installation with no history is told so, rather than shown a wall of zeroes. */
   const empty = Boolean(reading && (life?.terms || 0) === 0);
+  const termCount = life?.terms || 0;
 
   return (
-    <div className="journey-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className="journey visual-minimal" role="dialog" aria-modal="true" aria-label="رحلة SCHEDULE" ref={sheet}>
-        <button type="button" className="journey-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
+    <div className="journey-backdrop journey-backdrop-v2 no-print" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div className="journey journey-v2 visual-minimal" role="dialog" aria-modal="true" aria-label="رحلة SCHEDULE" ref={sheet}>
+        <button type="button" className="journey-close journey-close-v2" onClick={onClose} aria-label="إغلاق" data-guide-ignore="زر إغلاق نافذة رحلة SCHEDULE ولا ينفذ إجراءً داخل النظام"><X aria-hidden="true" /></button>
 
-        <header className="journey-hero">
-          <span className="journey-eyebrow">رحلة النظام عبر السنوات</span>
-          <h2>رحلة SCHEDULE</h2>
-          <p>
-            أكثر من عقد من العمل الأكاديمي، تحوّل فيه SCHEDULE من أداة لبناء الجدول
-            إلى مساحة يُتَّخذ فيها القرار.
-          </p>
-          {/* A quiet suggestion of accumulated terms — lines, not illustration. */}
-          <div className="journey-strata" aria-hidden="true">
-            {Array.from({ length: 14 }).map((_, index) => <i key={index} style={{ ["--i" as any]: index }} />)}
+        <header className="journey-hero journey-hero-v2">
+          <div className="journey-hero-copy">
+            <span className="journey-eyebrow journey-eyebrow-v2"><i aria-hidden="true" /> ذاكرة SCHEDULE</span>
+            <h2><span>كل فصل يترك</span><em>أثراً.</em></h2>
+            <p>هذه ليست صفحة تعريفية. إنها لقطة حيّة لما مرّ عبر النظام: جداول، مقررات، أعضاء هيئة تدريس، وقرارات تراكمت حتى أصبحت ذاكرة عمل.</p>
+            <div className="journey-signature" aria-hidden="true"><b>SCHEDULE</b><i /><small>ACADEMIC DECISION SYSTEM</small></div>
+          </div>
+
+          <div className="journey-memory-core" aria-label={termCount ? `${ar(termCount)} فصلاً في ذاكرة النظام` : "ذاكرة النظام تبدأ من هنا"}>
+            <span className="journey-core-halo" aria-hidden="true" />
+            <span className="journey-core-orbit journey-core-orbit-a" aria-hidden="true"><i /></span>
+            <span className="journey-core-orbit journey-core-orbit-b" aria-hidden="true"><i /></span>
+            <span className="journey-core-grid" aria-hidden="true" />
+            <div className="journey-core-center">
+              <Sparkles aria-hidden="true" />
+              <b>{reading ? <Counted value={termCount} duration={760} /> : "—"}</b>
+              <small>{termCount === 1 ? "فصل في الذاكرة" : "فصل في الذاكرة"}</small>
+            </div>
           </div>
         </header>
 
         {failed ? (
-          <p className="journey-empty">تعذّرت قراءة أرقام النظام الآن.</p>
+          <section className="journey-state journey-state-error">
+            <span>تعذّرت قراءة الذاكرة الآن</span>
+            <small>تصميم الرحلة يعمل، لكن أرقام النظام لم تصل من الخادم.</small>
+          </section>
         ) : !reading ? (
-          <p className="journey-empty">يقرأ ذاكرة النظام…</p>
+          <section className="journey-state journey-state-loading">
+            <span className="journey-state-pulse" aria-hidden="true" />
+            <div><strong>يقرأ ذاكرة النظام…</strong><small>يجمع الأثر الفعلي من بيانات SCHEDULE.</small></div>
+          </section>
         ) : empty ? (
-          <section className="journey-first">
-            <strong>الرحلة تبدأ من هنا</strong>
-            <span>مع أول فصل دراسي، تبدأ ذاكرة SCHEDULE في التكوّن.</span>
+          <section className="journey-first journey-first-v2">
+            <span className="journey-first-index">01</span>
+            <div><strong>الرحلة تبدأ من هنا.</strong><span>مع أول فصل دراسي، يبدأ SCHEDULE ببناء ذاكرته الفعلية.</span></div>
           </section>
         ) : (
           <>
-            <section className="journey-lifetime">
-              <p className="journey-reading">{headline}</p>
-              <div className="journey-grid">
-                <article><b><Counted value={life!.schedules || 0} duration={850} /></b><span>موعداً أكاديمياً مرّ من هنا</span></article>
-                <article><b><Counted value={life!.terms} duration={700} /></b><span>فصلاً أصبح جزءاً من ذاكرة SCHEDULE</span></article>
-                <article><b><Counted value={life!.courses} duration={700} /></b><span>مقرراً مسجّلاً في النظام</span></article>
-                <article><b><Counted value={life!.instructors} duration={700} /></b><span>عضو هيئة تدريس دخل قصة الجدول</span></article>
-                <article><b><Counted value={life!.sections} duration={700} /></b><span>قسماً علمياً</span></article>
-                <article><b><Counted value={life!.colleges} duration={700} /></b><span>كلية</span></article>
+            <section className="journey-lifetime journey-lifetime-v2">
+              <header className="journey-section-head">
+                <div><span>الأثر المتراكم</span><h3>{headline}</h3></div>
+                {reading.scoped ? <small className="journey-scope-v2">الأرقام وفق نطاق صلاحياتك</small> : <small className="journey-scope-v2">ذاكرة النظام الكاملة</small>}
+              </header>
+
+              <div className="journey-metrics">
+                <article className="journey-metric journey-metric-primary">
+                  <span>مواعيد أكاديمية</span>
+                  <b><Counted value={life!.schedules || 0} duration={920} /></b>
+                  <small>كل رقم هنا مرّ فعلياً عبر النظام</small>
+                </article>
+                <article className="journey-metric"><span>فصول</span><b><Counted value={life!.terms} duration={720} /></b><small>طبقات من الذاكرة</small></article>
+                <article className="journey-metric"><span>مقررات</span><b><Counted value={life!.courses} duration={720} /></b><small>هوية أكاديمية محفوظة</small></article>
+                <article className="journey-metric"><span>أعضاء هيئة تدريس</span><b><Counted value={life!.instructors} duration={720} /></b><small>داخل قصة الجدول</small></article>
+                <article className="journey-metric"><span>أقسام علمية</span><b><Counted value={life!.sections} duration={720} /></b><small>تتقاطع داخل مساحة واحدة</small></article>
+                <article className="journey-metric"><span>كليات</span><b><Counted value={life!.colleges} duration={720} /></b><small>مرتبطة بقرار واحد</small></article>
               </div>
-              {note ? <p className="journey-milestone">{note}</p> : null}
+              {note ? <p className="journey-milestone journey-milestone-v2"><i aria-hidden="true" />{note}</p> : null}
             </section>
 
-            <section className="journey-current">
-              <header>
-                <span>هذا الفصل</span>
+            <section className="journey-current journey-current-v2">
+              <div className="journey-current-intro">
+                <span className="journey-current-kicker">الآن · هذا الفصل</span>
                 <strong>{now!.termName || "—"}</strong>
-              </header>
-              <div className="journey-grid journey-grid-small">
+                <p>صورة لحظية لما يتحرك الآن داخل مساحة العمل.</p>
+                <div className="journey-current-signal"><i aria-hidden="true" /><span>فصل فعّال داخل الذاكرة</span></div>
+              </div>
+              <div className="journey-current-grid">
                 <article><b>{ar(now!.schedules)}</b><span>موعداً أكاديمياً</span></article>
                 <article><b>{ar(now!.courses)}</b><span>مقرراً</span></article>
                 <article><b>{ar(now!.instructors)}</b><span>عضو هيئة تدريس</span></article>
                 <article><b>{ar(now!.rooms)}</b><span>قاعة مستخدمة</span></article>
               </div>
-              <p className="journey-reading-small">فصل جديد، وذاكرة أطول.</p>
             </section>
           </>
         )}
 
-        <section className="journey-timeline">
-          <h3>من البداية إلى اليوم</h3>
-          <div className="journey-stages" role="list">
+        <section className="journey-timeline journey-timeline-v2">
+          <header className="journey-section-head">
+            <div><span>كيف تطوّر النظام</span><h3>من بناء الجدول… إلى بناء القرار.</h3></div>
+            <small>خمس محطات، وفكرة واحدة: أقل ضوضاء، أكثر وضوحاً.</small>
+          </header>
+          <div className="journey-stages journey-stages-v2" role="list">
             {steps.map(({ title, detail, Icon }, index) => (
-              <article key={title} className="journey-stage" role="listitem">
+              <article key={title} className="journey-stage journey-stage-v2" role="listitem">
+                <span className="journey-stage-no">0{index + 1}</span>
                 <span className="journey-stage-mark" aria-hidden="true"><Icon /></span>
-                <div className="journey-stage-copy">
-                  <small>المحطة {ar(index + 1)}</small>
-                  <strong>{title}</strong>
-                  <p>{detail}</p>
-                </div>
+                <div className="journey-stage-copy"><strong>{title}</strong><p>{detail}</p></div>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="journey-philosophy">
-          <h3>فلسفة SCHEDULE</h3>
-          <p className="journey-motto">البساطة أمام المستخدم، والتعقيد خلفها.</p>
-          <p>بناء الجدول، ومراجعته، واكتشاف التعارضات، والبحث، والتقارير، واتخاذ القرار — داخل مساحة واحدة.</p>
+        <section className="journey-philosophy journey-philosophy-v2">
+          <span className="journey-philosophy-mark" aria-hidden="true">“</span>
+          <div>
+            <span>فلسفة SCHEDULE</span>
+            <h3>البساطة أمام المستخدم.<br /><em>والتعقيد خلفها.</em></h3>
+            <p>القيمة ليست في عدد الشاشات؛ بل في أن يصل المستخدم إلى القرار الصحيح، في الوقت الصحيح، بأقل احتكاك ممكن.</p>
+          </div>
         </section>
 
-        <footer className="journey-foot">
-          <div>
-            <span>التأسيس والتطوير</span>
-            <strong>د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</strong>
-          </div>
+        <footer className="journey-foot journey-foot-v2">
+          <div><span>التأسيس والتطوير</span><strong>د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</strong></div>
           <small>SCHEDULE{version ? ` · الإصدار ${version}` : ""}</small>
         </footer>
       </div>
