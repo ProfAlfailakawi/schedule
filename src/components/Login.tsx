@@ -5,6 +5,7 @@ import {
   Command,
   LockKeyhole,
   ShieldCheck,
+  Sparkles,
   FlaskConical,
 } from "lucide-react";
 import { Field, Notice, PrimaryButton } from "./ui";
