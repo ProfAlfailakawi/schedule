@@ -2485,12 +2485,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <div className="health-advanced-row">
               <article className={operationsReview?.anomalies?.length ? "hit" : ""}><span>منطقياً</span><b>{Number(operationsReview?.anomalies?.length||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>شذوذ محتمل</small></article>
               <article className={experienceHealth?.score<75 ? "hit" : ""}><span>تجربة القسم</span><b>{experienceHealth?.score ?? "—"}</b><small>{experienceHealth?.label || "تُقاس مع الاستخدام"}</small></article>
-              <article><span>زمن P95</span><b>{experienceHealth?.p95 ? `${experienceHealth.p95}ms` : "—"}</b><small>أبطأ 5٪</small></article>
+              <article><span>زمن الاستجابة (المئين 95)</span><b>{experienceHealth?.p95 ? `${experienceHealth.p95} مللي ثانية` : "—"}</b><small>أبطأ 5٪</small></article>
               <article className={experienceHealth?.failures ? "hit" : ""}><span>أخطاء الواجهة</span><b>{experienceHealth?.failures ?? 0}</b><small>آخر 14 يوماً</small></article>
             </div>
             {operationsReview?.anomalies?.length ? <details className="insight-disclosure"><summary>الشذوذ المنطقي ({operationsReview.anomalies.length})</summary><ul className="health-anomaly-list">{operationsReview.anomalies.slice(0,6).map((item:any,index:number)=><li key={`${item.kind}-${item.rowId||index}`} className={item.severity}><strong>{item.title}</strong><span>{item.detail}</span></li>)}</ul></details>:null}
-            {experienceHealth?.replays?.length ? <details className="insight-disclosure"><summary>Replay للأعطال الأخيرة ({experienceHealth.replays.length})</summary><div className="failure-replays">{experienceHealth.replays.slice(0,4).map((item:any,index:number)=><article key={`${item.timestamp}-${index}`}><strong>{item.name}</strong><small>{new Date(item.timestamp).toLocaleString("ar-KW-u-nu-latn")}</small><p>{item.message}</p><ol>{(item.breadcrumbs||[]).slice(-6).map((b:any,i:number)=><li key={i}>{b.action}</li>)}</ol></article>)}</div></details>:null}
-            {experienceHealth?.slowest?.length ? <details className="insight-disclosure"><summary>أبطأ مسارات الخادم</summary><div className="slow-endpoints">{experienceHealth.slowest.map((item:any)=><span key={item.path}><code>{item.path}</code><b>{item.avg}ms</b></span>)}</div></details>:null}
+            {experienceHealth?.replays?.length ? <details className="insight-disclosure"><summary>إعادة عرض الأعطال الأخيرة ({experienceHealth.replays.length})</summary><div className="failure-replays">{experienceHealth.replays.slice(0,4).map((item:any,index:number)=><article key={`${item.timestamp}-${index}`}><strong>{item.name}</strong><small>{new Date(item.timestamp).toLocaleString("ar-KW-u-nu-latn")}</small><p>{item.message}</p><ol>{(item.breadcrumbs||[]).slice(-6).map((b:any,i:number)=><li key={i}>{b.action}</li>)}</ol></article>)}</div></details>:null}
+            {experienceHealth?.slowest?.length ? <details className="insight-disclosure"><summary>أبطأ مسارات الخادم</summary><div className="slow-endpoints">{experienceHealth.slowest.map((item:any)=><span key={item.path}><code>{item.path}</code><b>{item.avg} مللي ثانية</b></span>)}</div></details>:null}
             <p>
               هذه القراءة لا تحذف ولا تصحح شيئاً تلقائياً؛ هدفها فقط كشف ما قد
               يفوت أثناء العمل السريع.
@@ -2994,9 +2994,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </div>
             <div className="prompt-chips">
               {[
-                "ليش يوم الاثنين مزدحم؟",
+                "لماذا يوم الاثنين مزدحم؟",
                 "منو عنده أكثر من 3 ساعات فراغ؟",
-                "شنو أفضل القاعات الأقل استخداماً؟",
+                "ما أفضل القاعات الأقل استخداماً؟",
                 "أعطني أفضل توزيع يقلل الفراغات",
               ].map((x) => (
                 <button key={x} onClick={() => sendCopilot(x)} disabled={busy}>
@@ -3158,7 +3158,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="mini-command-list">
                 {[
                   "أين الفراغات الطويلة عند الأساتذة؟",
-                  "إذا نقلت 101 إلى الساعة 11 شنو يتأثر؟",
+                  "إذا نقلت 101 إلى الساعة 11، فما الذي سيتأثر؟",
                   "اقترح أفضل توزيع يقلل الفراغ",
                   "اقرأ القاعات وأقلها استخداماً",
                 ].map(text => (

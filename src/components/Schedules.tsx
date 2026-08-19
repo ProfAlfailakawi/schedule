@@ -1813,8 +1813,28 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           : "القاعدة المؤسسية";
         return `${source}: ${day.label} يبدأ عادةً ${isolateLtrText(preferred)}، بينما اخترت ${isolateLtrText(start)}. تنبيه فقط — يمكنك تثبيت الوقت الجديد إذا كان مقصوداً.`;
       }
-      const learned = reading.data;
       const duration = endMinutes > startMinutes ? endMinutes - startMinutes : 0;
+
+      // The institutional duration is the floor, not the historical percentile
+      // range. History may legitimately contain old exceptions (for example a
+      // 90-minute Sunday lecture), but that must not silence the current rule:
+      // Sun/Tue/Thu are one-hour meetings and Mon/Wed are 90-minute meetings.
+      // This is why 11:00–12:30 previously slipped through: 90 minutes could sit
+      // inside the learned durationRange even though the selected days expect 60.
+      if (duration > 0) {
+        const selectedKeys = active.map(item => item.key as RegDayKey);
+        const institutional = adviseDayPattern(selectedKeys, start, end);
+        if (institutional?.family === "mixed") {
+          return `${institutional.note} الوقت المختار هو ${isolateLtrText(formatScheduleTimeRange(start, end))}. تنبيه فقط — لا يمنع الحفظ.`;
+        }
+        if (institutional?.changed) {
+          return `${institutional.note} الوقت المعتاد لهذه الأيام هو ${isolateLtrText(formatScheduleTimeRange(start, institutional.suggestedEnd))}، بينما أدخلت ${isolateLtrText(formatScheduleTimeRange(start, end))}. تنبيه فقط — لا يمنع الحفظ.`;
+        }
+      }
+
+      // History remains useful for finer local deviations once the appointment
+      // already satisfies the institutional day/duration contract.
+      const learned = reading.data;
       if (learned && duration > 0 && learned.durationSamples >= 3 && learned.durationShare >= .35) {
         const [low, high] = learned.durationRange || [0, 0];
         if (low && high && (duration < low || duration > high)) {
@@ -2239,15 +2259,24 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   }, [form, expectedStartMinuteForDay, preferredStartForDrop]);
   const editorTimingInline = useMemo(() => {
     if (!editorTimingNote || !form.fstarttime) return null;
-    const preferred = [...new Set(editorTimingVisualDays.filter(day => day.active && day.state === "off" && day.cue && day.cue !== "—").map(day => day.cue))];
-    const affectedDays = editorTimingVisualDays.filter(day => day.active && day.state === "off").map(day => day.label);
+    const selectedKeys = selectedFormDays.map(day => day.key as RegDayKey);
+    const durationAdvice = form.fendtime ? adviseDayPattern(selectedKeys, form.fstarttime, form.fendtime) : null;
+    const durationMismatch = Boolean(durationAdvice && durationAdvice.family !== "mixed" && durationAdvice.changed);
+    const preferred = durationMismatch
+      ? [formatScheduleTimeRange(form.fstarttime, durationAdvice!.suggestedEnd)]
+      : [...new Set(editorTimingVisualDays.filter(day => day.active && day.state === "off" && day.cue && day.cue !== "—").map(day => day.cue))];
+    const affectedDays = durationMismatch
+      ? selectedFormDays.map(day => day.label)
+      : editorTimingVisualDays.filter(day => day.active && day.state === "off").map(day => day.label);
     return {
-      picked: displayClockCompact(String(form.fstarttime || "")),
+      picked: durationMismatch && form.fendtime
+        ? formatScheduleTimeRange(form.fstarttime, form.fendtime)
+        : displayClockCompact(String(form.fstarttime || "")),
       preferred,
       affectedDays,
       note: String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim(),
     };
-  }, [editorTimingNote, editorTimingVisualDays, form.fstarttime]);
+  }, [editorTimingNote, editorTimingVisualDays, selectedFormDays, form.fstarttime, form.fendtime]);
   const editorRegulationCards = useMemo(() => editorRegulation.map((finding, index) => {
     const detail = String(finding.detail || "").replace(/\s+/g, " ").trim();
     const ruleIcon = finding.rule === "rotation" ? "history" : finding.rule === "consecutive-sections" ? "idea" : finding.rule === "sections-same-hour" ? "room" : index % 2 ? "room" : "idea";
@@ -6942,7 +6971,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         {editorTimingInline.affectedDays.length ? <span><small>الأيام</small><b>{editorTimingInline.affectedDays.join(" / ")}</b></span> : null}
                       </div>
                       <details>
-                        <summary>ليش؟</summary>
+                        <summary>لماذا؟</summary>
                         <p>{editorTimingInline.note}</p>
                       </details>
                     </div>

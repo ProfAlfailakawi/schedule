@@ -1596,7 +1596,7 @@ export default function SmartGuide({
 
         {selectedDynamic ? (
           <section className="smart-guide-focus-card smart-guide-point-answer" ref={focusCardRef} data-guide-focus-card="true">
-            <header><span><MousePointer2 /></span><div><small>شنو هذا؟</small><strong>{selectedDynamic.title}</strong><p><b>فايدته:</b> {explainDynamic(selectedDynamic)}</p></div></header>
+            <header><span><MousePointer2 /></span><div><small>ما هذا؟</small><strong>{selectedDynamic.title}</strong><p><b>فائدته:</b> {explainDynamic(selectedDynamic)}</p></div></header>
             <div className="smart-guide-actions one"><button type="button" onClick={() => showDynamicOnScreen(selectedDynamic)}><Eye />أرني مكانه</button></div>
             <button className="smart-guide-back-link" type="button" onClick={() => setSelectedDynamic(null)}><ArrowLeft />العودة</button>
           </section>

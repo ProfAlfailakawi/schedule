@@ -1087,7 +1087,7 @@ export default function LivingScheduleLayer({
                   <div className="memory-compose">
                     <History />
                     <div>
-                      <strong>ليش رفضنا هذا البديل؟</strong>
+                      <strong>لماذا رفضنا هذا البديل؟</strong>
                       <p>
                         اكتب السبب مرة واحدة؛ في الفصل القادم لن يتعامل النظام
                         مع القرار كأنه لم يحدث.

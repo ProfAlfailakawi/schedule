@@ -163,7 +163,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
         <button type="button" className="journey-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
 
         <header className="journey-hero">
-          <span className="journey-eyebrow">The SCHEDULE Journey</span>
+          <span className="journey-eyebrow">رحلة النظام عبر السنوات</span>
           <h2>رحلة SCHEDULE</h2>
           <p>
             أكثر من عقد من العمل الأكاديمي، تحوّل فيه SCHEDULE من أداة لبناء الجدول

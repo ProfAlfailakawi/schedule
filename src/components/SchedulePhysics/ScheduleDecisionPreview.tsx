@@ -30,7 +30,7 @@ export default function ScheduleDecisionPreview({ request, course, instructor, b
   return <div className="schedule-decision-preview" role="dialog" aria-modal="false" aria-label="معاينة قرار نقل الموعد">
     <div className="decision-preview-head">
       <span className={`decision-state quality-${decision?.quality || "unknown"}`}>{bad ? <AlertTriangle/> : <CheckCircle2/>}</span>
-      <div><small>DECISION PREVIEW · لم يُحفظ شيء بعد</small><strong>{course?.CourseCode || row.AdCourseName} · شعبة {row.SCode}</strong><p>{instructor?.AdInstructorName || ""}</p></div>
+      <div><small>معاينة القرار · لم يُحفظ شيء بعد</small><strong>{course?.CourseCode || row.AdCourseName} · شعبة {row.SCode}</strong><p>{instructor?.AdInstructorName || ""}</p></div>
       <button type="button" onClick={onCancel} aria-label="إلغاء"><X/></button>
     </div>
 

@@ -87,7 +87,7 @@ export default function About() {
         />
       </section>
       <footer className="about-editorial-footer">
-        <span>Schedule</span>
+        <span>الجدول الأكاديمي</span>
         <small>مساحة عمل الجدول الأكاديمي</small>
       </footer>
     </div>

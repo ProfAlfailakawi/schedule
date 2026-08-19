@@ -155,7 +155,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             </PrimaryButton>
           </form>
           <footer>
-            <span>Schedule</span>
+            <span>الجدول الأكاديمي</span>
             <InstallApp variant="login" />
             <small>{new Date().getFullYear()}</small>
           </footer>
