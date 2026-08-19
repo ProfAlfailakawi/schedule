@@ -86,12 +86,8 @@ function readingSentence(terms: number, schedules: number | null): string {
 
 /** An institutional milestone, said once and quietly — never a badge. */
 function milestone(terms: number, schedules: number | null): string | null {
-  if (schedules && schedules >= 50_000) return `أكثر من ${countOf(50_000, AR.appointment)} أكاديمي مرّ من هنا.`;
-  if (schedules && schedules >= 25_000) return `أكثر من ${ar(25_000)} موعد أكاديمي مرّ من هنا.`;
-  if (schedules && schedules >= 10_000) return `أكثر من ${ar(10_000)} موعد أكاديمي مرّ من هنا.`;
-  if (terms >= 100) return `${countOf(100, AR.term)} أصبح جزءاً من ذاكرة SCHEDULE.`;
-  if (terms >= 50) return `${ar(50)} فصلاً أصبحت جزءاً من ذاكرة SCHEDULE.`;
-  if (terms >= 25) return `${ar(25)} فصلاً أصبحت جزءاً من ذاكرة SCHEDULE.`;
+  if (terms >= 10) return `${ar(terms)} فصلاً أصبحت جزءاً من ذاكرة SCHEDULE.`;
+  if (schedules && schedules > 0) return `${ar(schedules)} موعداً أكاديمياً أصبح جزءاً من ذاكرة SCHEDULE.`;
   return null;
 }
 
@@ -188,13 +184,8 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
           <>
             <section className="journey-lifetime">
               <p className="journey-reading">{headline}</p>
-              {life!.schedules != null ? (
-                <div className="journey-figure">
-                  <strong><Counted value={life!.schedules!} /></strong>
-                  <span>موعداً أكاديمياً مرّ من هنا</span>
-                </div>
-              ) : null}
               <div className="journey-grid">
+                <article><b><Counted value={life!.schedules || 0} duration={850} /></b><span>موعداً أكاديمياً مرّ من هنا</span></article>
                 <article><b><Counted value={life!.terms} duration={700} /></b><span>فصلاً أصبح جزءاً من ذاكرة SCHEDULE</span></article>
                 <article><b><Counted value={life!.courses} duration={700} /></b><span>مقرراً مسجّلاً في النظام</span></article>
                 <article><b><Counted value={life!.instructors} duration={700} /></b><span>عضو هيئة تدريس دخل قصة الجدول</span></article>
@@ -202,9 +193,6 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
                 <article><b><Counted value={life!.colleges} duration={700} /></b><span>كلية</span></article>
               </div>
               {note ? <p className="journey-milestone">{note}</p> : null}
-              {reading.scoped ? (
-                <p className="journey-scope">هذه القراءة ضمن نطاقك الأكاديمي.</p>
-              ) : null}
             </section>
 
             <section className="journey-current">

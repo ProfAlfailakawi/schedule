@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Download, Menu, Plus, Share, X } from "lucide-react";
 import { safeStorage } from "../utils/safeStorage";
 
@@ -36,7 +37,8 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
   const [installed, setInstalled] = useState(appInstalled);
   const [open, setOpen] = useState(false);
   const [seen, setSeen] = useState(() => Boolean(safeStorage.get(SEEN_KEY)));
-  const ref = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
   const isIos = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
   const isStandalone =
     typeof window !== "undefined" &&
@@ -57,7 +59,9 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
     if (!open) return;
     const close = () => setOpen(false);
     const onDown = (event: PointerEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) close();
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || popRef.current?.contains(target)) return;
+      close();
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
@@ -90,8 +94,51 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
     if (choice?.outcome === "accepted") setInstalled(true);
   };
 
+  const panel = (
+    <div
+      ref={popRef}
+      className={`install-pop ${variant === "login" ? "install-pop-login-modal" : ""}`}
+      role="dialog"
+      aria-modal={variant === "login" ? "true" : undefined}
+      aria-label="تثبيت التطبيق"
+      dir="rtl"
+    >
+      <header>
+        <strong>ثبّت SCHEDULE</strong>
+        <button type="button" onClick={() => setOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+      </header>
+      {deferred ? (
+        <>
+          <p>أصبح التثبيت جاهزًا. أضف SCHEDULE إلى جهازك ليعمل كتطبيق مستقل وتفتحه مباشرة من الشاشة الرئيسية.</p>
+          <button type="button" className="install-go" onClick={install}>
+            <Download aria-hidden="true" /> ثبّت الآن
+          </button>
+        </>
+      ) : (
+        <>
+          <p>ثلاث خطوات سريعة فقط، ثم يظهر SCHEDULE كتطبيق مستقل على جهازك.</p>
+          <ol className="install-steps install-steps-grid">
+            {isIos ? (
+              <>
+                <li><span className="install-step-icon"><Share aria-hidden="true" /></span><div><b>افتح المشاركة</b><small>من Safari.</small></div></li>
+                <li><span className="install-step-icon"><Plus aria-hidden="true" /></span><div><b>أضف للشاشة</b><small>اختر «إضافة إلى الشاشة الرئيسية».</small></div></li>
+                <li><span className="install-step-icon"><Check aria-hidden="true" /></span><div><b>أكّد</b><small>اضغط «إضافة».</small></div></li>
+              </>
+            ) : (
+              <>
+                <li><span className="install-step-icon"><Menu aria-hidden="true" /></span><div><b>افتح القائمة</b><small>من المتصفح.</small></div></li>
+                <li><span className="install-step-icon"><Download aria-hidden="true" /></span><div><b>اختر التثبيت</b><small>«تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</small></div></li>
+                <li><span className="install-step-icon"><Check aria-hidden="true" /></span><div><b>أكّد</b><small>سيظهر SCHEDULE كتطبيق.</small></div></li>
+              </>
+            )}
+          </ol>
+        </>
+      )}
+    </div>
+  );
+
   return (
-    <div className={`install visual-minimal install-${variant}`} ref={ref}>
+    <div className={`install visual-minimal install-${variant}`} ref={rootRef}>
       <button
         type="button"
         className={`install-trigger ${open ? "active" : ""} ${!seen ? "discoverable" : ""}`}
@@ -99,46 +146,21 @@ export default function InstallApp({ variant = "dashboard" }: { variant?: Instal
         aria-expanded={open}
         aria-label="تثبيت التطبيق على الجهاز"
         title="تثبيت التطبيق"
-        data-guide-ignore="زر اختياري لتثبيت SCHEDULE كتطبيق؛ لا يغيّر بيانات الجدول أو صلاحيات المستخدم"
+        data-guide-ignore="أداة متصفح مساعدة لتثبيت PWA وليست ميزة تشغيلية داخل SCHEDULE"
       >
         <Download aria-hidden="true" />
       </button>
 
-      {open ? (
-        <div className="install-pop" role="dialog" aria-label="تثبيت التطبيق">
-          <header>
-            <strong>ثبّت SCHEDULE</strong>
-            <button type="button" onClick={() => setOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
-          </header>
-          {deferred ? (
-            <>
-              <p>أصبح التثبيت جاهزًا. أضف SCHEDULE إلى جهازك ليعمل كتطبيق مستقل وتفتحه مباشرة من الشاشة الرئيسية.</p>
-              <button type="button" className="install-go" onClick={install}>
-                <Download aria-hidden="true" /> ثبّت الآن
-              </button>
-            </>
-          ) : (
-            <>
-              <p>ثلاث خطوات سريعة فقط، ثم يظهر SCHEDULE كتطبيق مستقل على جهازك.</p>
-              <ol className="install-steps install-steps-grid">
-                {isIos ? (
-                  <>
-                    <li><span className="install-step-icon"><Share aria-hidden="true" /></span><div><b>افتح المشاركة</b><small>من Safari.</small></div></li>
-                    <li><span className="install-step-icon"><Plus aria-hidden="true" /></span><div><b>أضف للشاشة</b><small>اختر «إضافة إلى الشاشة الرئيسية».</small></div></li>
-                    <li><span className="install-step-icon"><Check aria-hidden="true" /></span><div><b>أكّد</b><small>اضغط «إضافة».</small></div></li>
-                  </>
-                ) : (
-                  <>
-                    <li><span className="install-step-icon"><Menu aria-hidden="true" /></span><div><b>افتح القائمة</b><small>من المتصفح.</small></div></li>
-                    <li><span className="install-step-icon"><Download aria-hidden="true" /></span><div><b>اختر التثبيت</b><small>«تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</small></div></li>
-                    <li><span className="install-step-icon"><Check aria-hidden="true" /></span><div><b>أكّد</b><small>سيظهر SCHEDULE كتطبيق.</small></div></li>
-                  </>
-                )}
-              </ol>
-            </>
-          )}
-        </div>
-      ) : null}
+      {open && variant === "login" && typeof document !== "undefined"
+        ? createPortal(
+            <div className="install-modal-backdrop" onPointerDown={event => {
+              if (event.target === event.currentTarget) setOpen(false);
+            }}>
+              {panel}
+            </div>,
+            document.body,
+          )
+        : open ? panel : null}
     </div>
   );
 }

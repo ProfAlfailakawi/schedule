@@ -7,11 +7,8 @@
    ========================================================================== */
 
 .apex-login{
-  position:fixed;
-  inset:0;
-  width:100%;
-  height:100dvh;
-  min-height:0;
+  position:relative;
+  min-height:100dvh;
   overflow:hidden;
   display:flex;
   flex-direction:column;
@@ -199,7 +196,7 @@
   font:600 var(--t-xs)/1.6 var(--font-mono);
 }
 
-.daybar{min-width:0;direction:rtl}
+.daybar{min-width:0}
 /*
    ── شكل اليوم ──────────────────────────────────────────────────────────────
  *
@@ -213,7 +210,7 @@
  * and it answers it at a glance instead of demanding a reading.
  */
 .daybar-track{
-  position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;direction:rtl;
+  position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
   /* `align-items:end` shrank every column to its own content — 22px instead of
      72 — so a bar asking for "100%" got 100% of twenty-two pixels and the whole
      shape read as a row of hairlines. Stretch gives each column the track's
@@ -252,11 +249,10 @@
 }
 @media (prefers-reduced-motion:reduce){.daybar-hour>i{transition:none}}
 
-.daybar-scale{position:relative;height:18px;margin-top:var(--s2);direction:rtl}
+.daybar-scale{position:relative;height:18px;margin-top:var(--s2)}
 .daybar-scale span{
   position:absolute;top:0;transform:translateX(50%);
   color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono);
-  direction:ltr;unicode-bidi:isolate;
 }
 .deck-clear{
   display:inline-flex;align-items:center;gap:var(--s2);
@@ -1432,9 +1428,10 @@
   box-shadow:0 0 0 3px color-mix(in srgb,var(--brass) 15%,transparent);
 }
 .install-login .install-trigger{
-  width:36px;min-width:36px;height:36px;padding:0;gap:0;
-  display:inline-grid;place-items:center;color:#9fb0a8;background:#0b100f;border-color:#2b3630;
+  width:auto;min-width:34px;padding-inline:9px;gap:7px;
+  display:inline-flex;color:#9fb0a8;background:#0b100f;border-color:#2b3630;
 }
+.install-login .install-trigger span{font-size:11px;white-space:nowrap}
 .install-login .install-trigger:hover,.install-login .install-trigger.active{
   color:#dfe8e3;background:#121a17;border-color:#425149;
 }
@@ -1977,16 +1974,58 @@ html[data-demo-admin-readonly="true"] .app-main [role="button"]{pointer-events:n
 html[data-demo-admin-readonly="true"] .app-main button:not(.plain-icon){opacity:.58}
 html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإدارة للعرض فقط";position:sticky;top:12px;z-index:35;display:block;width:max-content;max-width:calc(100% - 24px);margin:12px auto -8px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,#7a5712 92%,transparent);color:#fff8df;border:1px solid color-mix(in srgb,#fff 18%,transparent);font-size:.72rem;font-weight:750;box-shadow:0 8px 24px color-mix(in srgb,#000 14%,transparent)}
 
-/* Quiet Demo invitation. */
-.demo-entry-panel,.demo-entry-copy,.demo-entry-button{display:none!important}
-.demo-entry-icon{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid color-mix(in srgb,#8da59a 28%,transparent);border-radius:11px;background:color-mix(in srgb,#0d1714 78%,transparent);color:#8fa69b;box-shadow:0 7px 18px color-mix(in srgb,#000 13%,transparent);cursor:pointer;transition:border-color .16s var(--ease),color .16s var(--ease),background .16s var(--ease)}
-.demo-entry-icon:hover{color:#b3c9bf;border-color:color-mix(in srgb,#8fb6a5 48%,transparent);background:#101c18}.demo-entry-icon:focus-visible{outline:3px solid color-mix(in srgb,#2b7d69 25%,transparent);outline-offset:2px}.demo-entry-icon:disabled{opacity:.55;cursor:wait}.demo-entry-icon svg{width:16px;height:16px}.demo-entry-icon .button-spinner{width:14px;height:14px}
-
-
-/* Login top copy was intentionally removed; retain only the small product mark
-   without reserving the old wordmark's vertical space. */
-.apex-login-brand.apex-login-brand--mark-only{justify-content:flex-start;min-height:0}
-.apex-login-brand.apex-login-brand--mark-only .apex-login-mark{display:grid}
-@media(max-width:900px){
-  .apex-login-brand.apex-login-brand--mark-only{position:absolute;inset-block-start:clamp(14px,3vw,24px);inset-inline-end:clamp(14px,3vw,24px)}
+/* ==========================================================================
+   INSTALL APP — PORTALED LOGIN SHEET
+   The login card clips its own contents by design. Installation guidance must
+   therefore live above the page, not inside the card's geometry.
+   ========================================================================== */
+.install-modal-backdrop{
+  position:fixed;inset:0;z-index:1400;
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:18px max(14px,env(safe-area-inset-right)) max(18px,calc(env(safe-area-inset-bottom) + 14px)) max(14px,env(safe-area-inset-left));
+  background:rgb(3 8 7 / .58);
+  -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  animation:fade .16s var(--ease-out) both;
+}
+.install-pop.install-pop-login-modal{
+  position:relative!important;inset:auto!important;
+  width:min(430px,100%)!important;
+  max-width:100%!important;
+  max-height:min(68svh,560px)!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+  padding:18px!important;
+  border:1px solid #314039!important;
+  border-radius:26px!important;
+  background:#101816!important;
+  color:#eef2ee!important;
+  box-shadow:0 28px 90px rgb(0 0 0 / .55)!important;
+  animation:install-sheet-up .2s var(--ease-out,ease) both!important;
+}
+@keyframes install-sheet-up{from{opacity:0;transform:translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+.install-pop-login-modal header{position:sticky;top:-18px;z-index:2;margin:-18px -18px 12px;padding:16px 18px 10px;background:linear-gradient(#101816 82%,transparent)}
+.install-pop-login-modal header strong{color:#f1f5f2!important;font-size:14px!important}
+.install-pop-login-modal header button{color:#91a099!important;background:#18211e!important}
+.install-pop-login-modal p{color:#a6b2ac!important;font-size:12px!important;line-height:1.8!important;margin-bottom:14px!important}
+.install-pop-login-modal .install-steps-grid{display:grid!important;gap:9px!important}
+.install-pop-login-modal .install-steps-grid li{
+  position:relative;display:grid!important;grid-template-columns:42px minmax(0,1fr)!important;
+  align-items:center!important;gap:12px!important;padding:12px!important;
+  border:1px solid #2b3732!important;border-radius:17px!important;background:#0c1210!important;
+  color:#a6b2ac!important;min-width:0!important;
+}
+.install-pop-login-modal .install-steps-grid li::before,
+.install-pop-login-modal .install-steps-grid li+li::after{display:none!important}
+.install-pop-login-modal .install-step-icon{
+  width:42px;height:42px;display:grid;place-items:center;border-radius:14px;
+  background:#15241f;color:#78c1aa;
+}
+.install-pop-login-modal .install-step-icon svg{width:18px;height:18px}
+.install-pop-login-modal .install-steps-grid li>div{min-width:0}
+.install-pop-login-modal .install-steps-grid li b{font-size:13px!important;color:#eef2ee!important}
+.install-pop-login-modal .install-steps-grid li small{font-size:11.5px!important;line-height:1.55!important;color:#94a19b!important;white-space:normal!important}
+.install-pop-login-modal .install-go{min-height:44px;border-radius:15px}
+@media (min-width:700px){
+  .install-modal-backdrop{align-items:center;padding:24px}
+  .install-pop.install-pop-login-modal{max-height:min(76vh,580px)!important}
 }

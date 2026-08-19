@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -19,7 +19,6 @@ interface LoginProps {
   }) => void;
 }
 export default function Login({ onLoginSuccess }: LoginProps) {
-  const loginRootRef = useRef<HTMLElement | null>(null);
   const [username, setUsername] = useState(""),
     [password, setPassword] = useState(""),
     [loading, setLoading] = useState(false),
@@ -28,47 +27,6 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     [demoLoading, setDemoLoading] = useState(false),
     [demoEnabled, setDemoEnabled] = useState(false);
 
-  // Safari does not expose the same usable height through CSS viewport units
-  // while its address / tool bars animate. Measure the *visual* viewport and
-  // feed it to the login shell so the access card reaches the real bottom of
-  // the visible page instead of leaving a dead strip. Keyboard shrink is
-  // deliberately ignored; rotating the device starts a fresh baseline.
-  useEffect(() => {
-    const el = loginRootRef.current;
-    if (!el) return;
-    const vv = window.visualViewport;
-    let landscape = window.innerWidth > window.innerHeight;
-    let stableHeight = Math.round(vv?.height || window.innerHeight);
-
-    const apply = () => {
-      const nextLandscape = window.innerWidth > window.innerHeight;
-      const current = Math.round(vv?.height || window.innerHeight);
-      if (nextLandscape !== landscape) {
-        landscape = nextLandscape;
-        stableHeight = current;
-      } else if (current >= stableHeight * 0.72) {
-        // Browser chrome showing/hiding is a small delta and should resize the
-        // screen. A software keyboard is a large delta and should not collapse
-        // the entire composition around the focused field.
-        stableHeight = current;
-      }
-      const top = Math.max(0, Math.round(vv?.offsetTop || 0));
-      el.style.setProperty("--login-visual-height", `${stableHeight}px`);
-      el.style.setProperty("--login-visual-top", `${top}px`);
-    };
-
-    apply();
-    vv?.addEventListener("resize", apply);
-    vv?.addEventListener("scroll", apply);
-    window.addEventListener("resize", apply, { passive: true });
-    window.addEventListener("orientationchange", apply, { passive: true });
-    return () => {
-      vv?.removeEventListener("resize", apply);
-      vv?.removeEventListener("scroll", apply);
-      window.removeEventListener("resize", apply);
-      window.removeEventListener("orientationchange", apply);
-    };
-  }, []);
   useEffect(() => {
     let alive = true;
     fetch("/api/demo/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
@@ -114,7 +72,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     }
   };
   return (
-    <main ref={loginRootRef} className="apex-login visual-minimal" dir="rtl">
+    <main className="apex-login visual-minimal" dir="rtl">
       <div className="apex-login-ambient" aria-hidden="true">
         <i />
         <i />

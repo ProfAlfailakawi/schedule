@@ -8,7 +8,7 @@ import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } fr
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
-import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, fastConflictScan, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
+import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
@@ -42,7 +42,6 @@ import {
 } from "./src/utils/advancedIntelligence";
 import {
   formatScheduleTimeRange,
-  scheduleClockForDisplay,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
   SCHEDULE_DAY_START,
@@ -57,11 +56,6 @@ configureRuntimeEnvironment();
 
 const app = express();
 const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
-const ACADEMIC_TIME_ZONE = process.env.SCHEDULE_TIME_ZONE || "Asia/Kuwait";
-const academicWeekday = (date = new Date()) => {
-  const short = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: ACADEMIC_TIME_ZONE }).format(date);
-  return ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[short] ?? date.getDay();
-};
 
 
 // User-facing reference lists follow one ordering contract everywhere: Arabic
@@ -659,7 +653,7 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     if (!/^\d+$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون بالأرقام الإنجليزية`);
     if (!row.AdRoomCode || !row.AdRoomHall) errors.push(`السطر ${index + 1}: بيانات القاعة ناقصة`);
     if (timeToMinutes(row.fendtime) <= timeToMinutes(row.fstarttime)) errors.push(`السطر ${index + 1}: وقت النهاية يجب أن يكون بعد البداية`);
-    else if (!withinScheduleDay(timeToMinutes(row.fstarttime), timeToMinutes(row.fendtime))) errors.push(`السطر ${index + 1}: وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}`);
+    else if (!withinScheduleDay(timeToMinutes(row.fstarttime), timeToMinutes(row.fendtime))) errors.push(`السطر ${index + 1}: وقت المحاضرة يجب أن يكون بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`);
     if (activeDays(row).length === 0) errors.push(`السطر ${index + 1}: لم يتم تحديد يوم للمحاضرة`);
     if (course) row.AdCourseName = course.CourseName;
   });
@@ -950,18 +944,19 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const terms = await Repository.getTerms();
   const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const latestTerm = terms.find(term => term.AdTermId === latestTermId);
-  const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges] = await Promise.all([
-    Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges()
+  const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges, scheduleCount] = await Promise.all([
+    Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.countSchedules()
   ]);
   const assignedSectionIds = new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)));
 
   const latestScopedSchedules = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const scopedCourses = allCourses.filter(course => assignedSectionIds.has(Number(course.AdSectionId)));
 
   // ASP.NET DayOfWeek returned 0 for Sunday, but the legacy view checked d == 7.
   // Therefore Sunday, Friday and Saturday retain Sunday's rows while dname stays blank.
   // `weekend` lets the screen say so out loud instead of labelling Sunday's
   // lectures with Friday's date, which is what the client's own clock did.
-  const weekday = academicWeekday();
+  const weekday = new Date().getDay();
   const weekend = weekday === 5 || weekday === 6;
   let dayKey: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday" = "fsunday";
   let dayName = weekday === 0 ? "الأحد" : weekday === 5 ? "الجمعة" : weekday === 6 ? "السبت" : "";
@@ -991,38 +986,32 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const visibleTableRows = req.user.IsAdminUser
     ? daySchedules
     : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
+  const instructorIds = new Set(latestScopedSchedules.map(row => row.AdInstructorId));
   const coursesById = new Map(allCourses.map(course => [course.AdCourseId, course]));
   const instructorsById = new Map(allInstructors.map(instructor => [instructor.AdInstructorId, instructor]));
   const sectionsById = new Map(allSections.map(section => [section.AdSectionId, section]));
   const collegesById = new Map(allColleges.map(college => [college.AdCollegeId, college]));
 
-  // Dashboard statistics are a single current-term reading. Previously the admin
-  // appointment tile used the lifetime schedule count while its delta/sparkline
-  // compared it with one academic term; courses and instructors had the same
-  // master-catalogue-vs-term mismatch. That made mathematically valid numbers
-  // tell an invalid story. Resolve the visible scope first, then derive every
-  // comparable headline from exactly that same row universe.
+  const metrics = req.user.IsAdminUser ? {
+    courses: allCourses.length,
+    schedules: scheduleCount,
+    terms: terms.length,
+    instructors: allInstructors.length
+  } : {
+    courses: scopedCourses.length,
+    schedules: latestScopedSchedules.length,
+    terms: terms.length,
+    instructors: instructorIds.size
+  };
+
+  // Modern workspace analytics are additive: legacy dashboard fields above remain untouched.
   const linkedInstructorId = Number(req.user.AdInstructorId || 0);
   const personalRows = linkedInstructorId ? latestTermSchedules.filter(row => row.AdInstructorId === linkedInstructorId) : [];
   const workspaceRows = req.user.IsAdminUser ? latestTermSchedules : (linkedInstructorId ? personalRows : latestScopedSchedules);
-  const metrics = {
-    courses: new Set(workspaceRows.map(row => Number(row.AdCourseId)).filter(Boolean)).size,
-    schedules: workspaceRows.length,
-    terms: terms.length,
-    instructors: new Set(workspaceRows.map(row => Number(row.AdInstructorId)).filter(Boolean)).size
-  };
-
-  // Modern workspace analytics are additive: all figures below use the same
-  // current-term scope as the headline metrics above.
   const dayDefs = [
     ["fsunday", "الأحد"], ["fmonday", "الاثنين"], ["ftuesday", "الثلاثاء"], ["fwednesday", "الأربعاء"], ["fthursday", "الخميس"]
   ] as const;
-  const cleanRoomPart = (value: unknown) => String(value || "")
-    .normalize("NFKC")
-    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const roomKey = (row: any) => `${cleanRoomPart(row.AdRoomCode)} / ${cleanRoomPart(row.AdRoomHall)}`;
+  const roomKey = (row: any) => `${String(row.AdRoomCode || "").trim()} / ${String(row.AdRoomHall || "").trim()}`;
   const uniqueRooms = Array.from(new Set(workspaceRows.map(roomKey).filter(key => key !== " / ")));
   const minute = (value: string) => { const [h,m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   const slotRooms = new Map<string, Set<string>>();
@@ -1030,22 +1019,12 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const roomLoad = new Map<string, number>();
   for (const row of workspaceRows) {
     const start = minute(row.fstarttime), end = minute(row.fendtime);
-    if (!(end > start)) continue;
+    const hour = String(row.fstarttime || "").slice(0,2) || "--";
+    hourLoad.set(hour, (hourLoad.get(hour) || 0) + 1);
     const rKey = roomKey(row);
-    const hasRoom = rKey !== " / ";
+    roomLoad.set(rKey, (roomLoad.get(rKey) || 0) + 1);
     for (const [key] of dayDefs) if (row[key]) {
-      // Workload is about actual weekly meeting occurrences, not database rows.
-      // A Sunday/Tuesday lecture therefore contributes twice, once on each day.
-      // Peak-time load counts every teaching hour the meeting overlaps rather
-      // than only its starting hour, so a 13:30–15:00 lecture is visible in both.
-      for (let hour = SCHEDULE_DAY_START; hour < SCHEDULE_DAY_END; hour += 60) {
-        if (start < hour + 60 && end > hour) {
-          const keyHour = String(Math.floor(hour / 60)).padStart(2, "0");
-          hourLoad.set(keyHour, (hourLoad.get(keyHour) || 0) + 1);
-        }
-      }
-      if (hasRoom) roomLoad.set(rKey, (roomLoad.get(rKey) || 0) + 1);
-      if (hasRoom) for (let slot = Math.floor(start / 30); slot < Math.ceil(end / 30); slot++) {
+      for (let slot = Math.floor(start / 30); slot < Math.ceil(end / 30); slot++) {
         const bucket = `${key}:${slot}`;
         if (!slotRooms.has(bucket)) slotRooms.set(bucket, new Set());
         slotRooms.get(bucket)!.add(rKey);
@@ -1055,9 +1034,9 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const peakOccupiedRooms = Math.max(0, ...Array.from(slotRooms.values()).map(set => set.size));
   const roomOccupancyPeak = uniqueRooms.length ? Math.round((peakOccupiedRooms / uniqueRooms.length) * 100) : 0;
   const weekdayLoad = dayDefs.map(([key,label]) => ({ key, label, count: workspaceRows.filter(row => Boolean(row[key])).length }));
-  const busiestHours = Array.from(hourLoad.entries()).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).slice(0,5).map(([hour,count])=>({ hour: `${hour}:00`, count }));
-  const busiestRooms = Array.from(roomLoad.entries()).sort((a,b)=>b[1]-a[1] || arabicUiCollator.compare(a[0],b[0])).slice(0,5).map(([room,count])=>({ room, count }));
-  const personalToday = weekend ? [] : personalRows.filter(row => Boolean(row[dayKey])).sort((a,b)=>String(a.fstarttime).localeCompare(String(b.fstarttime)));
+  const busiestHours = Array.from(hourLoad.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([hour,count])=>({ hour: `${hour}:00`, count }));
+  const busiestRooms = Array.from(roomLoad.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([room,count])=>({ room, count }));
+  const personalToday = personalRows.filter(row => Boolean(row[dayKey])).sort((a,b)=>String(a.fstarttime).localeCompare(String(b.fstarttime)));
 
   /**
    * The same headline numbers, one term earlier.
@@ -1077,9 +1056,10 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   // The last four terms, oldest first. A single comparison shows a jump; four
   // points show a direction, which is the thing a coordinator is deciding
   // against. The reads are cached, so this costs nothing after the first visit.
-  const recentTermIds = sortTermsNewestServer(terms)
+  const recentTermIds = terms
     .map(term => Number(term.AdTermId) || 0)
-    .filter(Boolean)
+    .filter(id => id && id <= latestTermId)
+    .sort((a, b) => b - a)
     .slice(0, 4)
     .reverse();
   const history = await Promise.all(recentTermIds.map(async termId => {
@@ -1092,7 +1072,7 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
       termName: terms.find(term => Number(term.AdTermId) === termId)?.AdTermName || "",
       schedules: scoped.length,
       rooms: new Set(scoped.map(roomKey).filter(key => key !== " / ")).size,
-      instructors: new Set(scoped.map(row => Number(row.AdInstructorId)).filter(Boolean)).size
+      instructors: new Set(scoped.map(row => row.AdInstructorId)).size
     };
   }));
   const previous = history.length > 1 ? history[history.length - 2] : null;
@@ -1179,31 +1159,25 @@ app.get("/api/journey", async (req: AuthenticatedRequest, res: Response) => {
     Repository.countSchedules(),
     Repository.getSchedulesByScope({ termId: currentTermId }),
   ]);
-  /* The same journey is also available before sign-in from the login screen.
-     With no identity there is no personal scope to apply, so the reading is the
-     institution-wide aggregate. Once signed in, the existing scope rules remain
-     exactly as before. */
-  const authenticated = Boolean(req.user);
-  const admin = !authenticated || Boolean(req.user?.IsAdminUser);
-  const visibleTermRows = admin ? termRows : filterByScope(req, termRows);
-  const visibleSections = admin ? sections : filterByScope(req, sections);
-  const visibleColleges = admin
-    ? colleges
-    : colleges.filter(college => (req.scopes || []).some(scope => Number(scope.AdCollegeId) === college.AdCollegeId));
+  /* Journey is the one intentionally public-facing institutional reading in
+     SCHEDULE. It contains aggregate counts only — never names, civil IDs or
+     personal records — so the same truthful marketing numbers are shown before
+     login, to a normal user, to an administrator and inside Demo. */
+  const visibleTermRows = termRows;
 
   /* Unique, not summed: the same course taught in ten terms is one course that
      the system has carried, and the label above the number says exactly that. */
   const unique = (values: Array<number | string>) => new Set(values.filter(Boolean)).size;
 
   res.json({
-    scoped: authenticated && !admin,
+    scoped: false,
     lifetime: {
       terms: terms.length,
-      schedules: admin ? lifetimeRows : null,
+      schedules: lifetimeRows,
       courses: courses.length,
       instructors: instructors.length,
-      sections: visibleSections.length,
-      colleges: visibleColleges.length,
+      sections: sections.length,
+      colleges: colleges.length,
     },
     current: {
       termId: currentTermId || null,
@@ -1690,7 +1664,7 @@ app.delete("/api/courses/:id", requirePermission(6), async (req: AuthenticatedRe
 const SCHEDULE_DAY_KEYS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"] as const;
 const scheduleOverlap=(aStart:string,aEnd:string,bStart:string,bEnd:string)=>aStart<bEnd&&aEnd>bStart;
 const roomAffinityCache=new Map<string,{expiresAt:number;history:any[]}>();
-function schedulePayloadIssues(row:any){const issues:string[]=[];if(!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))issues.push("يجب اختيار يوم واحد على الأقل للمحاضرة");if(row?.fstarttime&&row?.fendtime){const start=timeToMinutes(String(row.fstarttime)),end=timeToMinutes(String(row.fendtime));if(end<=start)issues.push("وقت النهاية يجب أن يكون بعد وقت البداية");else if(!withinScheduleDay(start,end))issues.push(`وقت المحاضرة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}`);}return issues;}
+function schedulePayloadIssues(row:any){const issues:string[]=[];if(!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))issues.push("يجب اختيار يوم واحد على الأقل للمحاضرة");if(row?.fstarttime&&row?.fendtime){const start=timeToMinutes(String(row.fstarttime)),end=timeToMinutes(String(row.fendtime));if(end<=start)issues.push("وقت النهاية يجب أن يكون بعد وقت البداية");else if(!withinScheduleDay(start,end))issues.push(`وقت المحاضرة يجب أن يكون بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`);}return issues;}
 /**
  * Who does this hall belong to?
  *
@@ -3967,7 +3941,7 @@ app.post("/api/intelligence/ripple/:id", requirePermission(7), async (req: Authe
   if(!isScopeAllowed(req,row.AdCollegeId,row.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   if(!SCHEDULE_DAYS.some(d=>d.key===targetDay)||!/^\d{2}:\d{2}$/.test(targetStart)){res.status(400).json({error:"موضع السحب غير صالح"});return;}
   const duration=Math.max(30,timeToMinutes(row.fendtime)-timeToMinutes(row.fstarttime)),start=timeToMinutes(targetStart);
-  if(!withinScheduleDay(start,start+duration)){res.status(400).json({error:`وقت المعاينة يجب أن يكون بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}`});return;}
+  if(!withinScheduleDay(start,start+duration)){res.status(400).json({error:`وقت المعاينة يجب أن يكون بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`});return;}
   const candidate:any={...row,fstarttime:targetStart,fendtime:minutesToTime(start+duration)};
   const selectedDays=activeDays(row);if(selectedDays.length===1)for(const day of SCHEDULE_DAYS)candidate[day.key]=day.key===targetDay;
   const [scheduleData,courses,instructors,mobilityProfile]=await Promise.all([scopedScheduleUniverse(row.AdCollegeId,row.AdSectionId,row.AdTermId),Repository.getCourses(),Repository.getInstructors(),Repository.getCampusMobilityProfile(row.AdCollegeId)]);
@@ -4017,7 +3991,7 @@ app.post("/api/intelligence/constraints", requirePermission(7), requirePowerAdmi
     :Math.max(30,Math.min(480,Number(req.body?.maxMinutes||120)));
   const instructor=instructors.find(i=>i.AdInstructorId===instructorId),course=courses.find(c=>c.AdCourseId===courseId&&c.AdCollegeId===collegeId&&c.AdSectionId===sectionId);
   if((type==="instructor_latest_end"||type==="instructor_day_off"||(type==="max_instructor_gap"&&instructorId))&&!instructor){res.status(400).json({error:"اختر أستاذ مقرر صالح"});return;}
-  if(type==="instructor_latest_end"&&(!/^\d{2}:\d{2}$/.test(time)||timeToMinutes(time)<SCHEDULE_DAY_START||timeToMinutes(time)>SCHEDULE_DAY_END)){res.status(400).json({error:`حدد آخر وقت مسموح بين ${scheduleClockForDisplay(SCHEDULE_DAY_START_TIME)} و${scheduleClockForDisplay(SCHEDULE_DAY_END_TIME)}`});return;}
+  if(type==="instructor_latest_end"&&(!/^\d{2}:\d{2}$/.test(time)||timeToMinutes(time)<SCHEDULE_DAY_START||timeToMinutes(time)>SCHEDULE_DAY_END)){res.status(400).json({error:`حدد آخر وقت مسموح بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`});return;}
   if((type==="instructor_day_off"||type==="department_day_off")&&!SCHEDULE_DAYS.some(d=>d.key===day)){res.status(400).json({error:"حدد يوماً صالحاً"});return;}
   if(type==="course_room"&&(!course||!roomCode||!roomHall)){res.status(400).json({error:"اختر المقرر وحدد المبنى والقاعة"});return;}
   const dayLabel=SCHEDULE_DAYS.find(d=>d.key===day)?.label||"";const label=type==="instructor_latest_end"?`${instructor?.AdInstructorName}: لا محاضرات بعد ${time}`:type==="instructor_day_off"?`${instructor?.AdInstructorName}: ${dayLabel} يوم محجوز`:type==="department_day_off"?`${dayLabel}: يوم محجوز للقسم`:type==="course_room"?`${course?.CourseCode||course?.CourseName}: القاعة ${roomCode}/${roomHall}`:instructor?`${instructor.AdInstructorName}: الفراغ لا يتجاوز ${maxMinutes} دقيقة`:`أي أستاذ: الفراغ لا يتجاوز ${maxMinutes} دقيقة`;
@@ -5446,17 +5420,14 @@ app.get("/api/reports/department-balance", requirePermission(14), requirePowerAd
       lateRows: analysis.metrics.lateRows,
     };
   }).sort((a, b) => b.rows - a.rows);
-  const universityConflicts = fastConflictScan(termRows).pairs;
   res.json({
     termId,
     termName: terms.find(term => term.AdTermId === termId)?.AdTermName || "",
     departments,
     totals: {
       departments: departments.length,
-      rows: termRows.length,
-      // A cross-department collision appears in both department analyses. The
-      // university headline must count the pair once, not once per side.
-      conflicts: universityConflicts,
+      rows: departments.reduce((sum, item) => sum + item.rows, 0),
+      conflicts: departments.reduce((sum, item) => sum + item.conflicts, 0),
     },
   });
 });
@@ -6457,8 +6428,6 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
   var ar=function(n){try{return Number(n||0).toLocaleString("ar-KW-u-nu-latn")}catch(e){return String(n)}};
   var hours=function(m){var h=Math.floor(m/60),r=m%60;return r?ar(h)+"٫"+ar(Math.round(r/6)):ar(h)};
   var esc=function(s){var d=document.createElement("div");d.textContent=s==null?"":String(s);return d.innerHTML};
-  var clockDisplay=function(v){var m=String(v||"").match(/^(\d{1,2}):(\d{2})$/);return m?(m[2]+":"+String(m[1]).padStart(2,"0")):String(v||"")};
-  var rangeDisplay=function(start,end){return clockDisplay(end)+" - "+clockDisplay(start)};
   var ascii=function(value){return String(value||"")
     .replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))})
     .replace(/[۰-۹]/g,function(d){return String("۰۱۲۳۴۵۶۷۸۹".indexOf(d))});};
@@ -6516,8 +6485,8 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     var out=[];
     Object.keys(current).forEach(function(key){
       var now=current[key],was=previous[key];
-      if(!was){out.push({tone:"add",day:now.d,text:now.n+" أُضيفت "+rangeDisplay(now.s,now.e)+" · "+now.r});return}
-      if(was.s!==now.s||was.e!==now.e) out.push({tone:"move",day:now.d,text:now.n+" انتقلت "+clockDisplay(was.s)+" ← "+clockDisplay(now.s)});
+      if(!was){out.push({tone:"add",day:now.d,text:now.n+" أُضيفت "+now.e+" - "+now.s+" · "+now.r});return}
+      if(was.s!==now.s||was.e!==now.e) out.push({tone:"move",day:now.d,text:now.n+" انتقلت "+was.s+" ← "+now.s});
       if(was.r!==now.r) out.push({tone:"room",day:now.d,text:now.n+" تغيّرت القاعة "+was.r+" ← "+now.r});
     });
     Object.keys(previous).forEach(function(key){
@@ -6567,10 +6536,10 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     var weekTable='<table class="pub-week"><colgroup><col style="width:52px">'+d.byDay.map(function(){return '<col>'}).join("")+
       '</colgroup><thead><tr><th class="t">الوقت</th>'+d.byDay.map(function(day){return '<th>'+esc(day.name)+'</th>'}).join("")+
       '</tr></thead><tbody>'+starts.map(function(start){
-        return '<tr><th class="t" dir="ltr">'+esc(clockDisplay(start))+'</th>'+d.byDay.map(function(day){
+        return '<tr><th class="t" dir="ltr">'+esc(start)+'</th>'+d.byDay.map(function(day){
           return '<td>'+day.rows.filter(function(r){return r.start===start}).map(function(row){
             return '<span class="wslot"><b>'+esc(row.name||row.code)+'</b>'+
-              '<time>'+esc(rangeDisplay(row.start,row.end))+'</time>'+
+              '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
               '<small>'+[row.code,(row.room||row.hall)&&(esc(row.room||"")+"/"+esc(row.hall||""))].filter(Boolean).join(" · ")+'</small></span>';
           }).join("")+'</td>';
         }).join("")+'</tr>';
@@ -6582,19 +6551,19 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
         if(i>0){
           var before=day.gaps.filter(function(g){return g.to===row.start});
           if(before.length){
-            lead='<div class="gap"><i></i>فراغ <time>'+esc(rangeDisplay(before[0].from,before[0].to))+'</time> · '+ar(before[0].minutes)+' دقيقة</div>';
+            lead='<div class="gap"><i></i>فراغ <time>'+esc(before[0].to)+' - '+esc(before[0].from)+'</time> · '+ar(before[0].minutes)+' دقيقة</div>';
           }
         }
         /* The slot gains one quiet affordance and nothing else. It is a
            button that opens a form, not a form — a card opened to read a week
            must not become a wall of inputs. */
         return lead+'<div class="slot" data-lecture="'+row.id+'"><strong>'+esc(row.name||row.code)+'</strong>'+
-               '<time>'+esc(rangeDisplay(row.start,row.end))+'</time>'+
+               '<time>'+esc(row.end)+' - '+esc(row.start)+'</time>'+
                '<small>'+[row.code,row.section&&("شعبة "+row.section),(row.room||row.hall)&&(esc(row.room)+"/"+esc(row.hall))].filter(Boolean).join(" · ")+'</small>'+
                (live ? '<button type="button" class="say" data-say="'+row.id+'" aria-expanded="false">أبلغ القسم</button>' : '')+
                '<div class="sayform" hidden></div></div>';
       }).join("");
-      return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?rangeDisplay(day.span.from,day.span.to):"")+'</em></h2>'+body+'</section>';
+      return '<section class="day"><h2>'+esc(day.name)+'<em>'+esc(day.span?day.span.to+" - "+day.span.from:"")+'</em></h2>'+body+'</section>';
     }).join("");
     if(!d.lectureCount) document.getElementById("days").innerHTML='<div class="pub-empty">لا محاضرات لك في هذا الفصل — جرّب فصلاً آخر من الأعلى.</div>';
     /* Absence needs a reason. A missing button reads as a fault; one sentence
@@ -7137,12 +7106,12 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   const slotHtml = (row: typeof payload.rows[number]) => `<span class="slot">
       <b>${esc(row.name)}</b>
       ${row.code || row.section ? `<small dir="ltr">${esc(row.code || "")}${row.section ? ` · ${esc(row.section)}` : ""}</small>` : ""}
-      <time dir="ltr">${esc(formatScheduleTimeRange(row.start, row.end))}</time>
+      <time dir="ltr">${esc(row.end)} - ${esc(row.start)}</time>
       ${row.room || row.hall ? `<time dir="ltr">${esc([row.room, row.hall].filter(Boolean).join("/"))}</time>` : ""}
       ${row.instructor ? `<i>${esc(firstLast(row.instructor))}</i>` : ""}
     </span>`;
   const tableBody = startTimes.map(start => `<tr>
-    <th class="t" dir="ltr">${esc(scheduleClockForDisplay(start))}</th>
+    <th class="t" dir="ltr">${esc(start)}</th>
     ${SHARE_DAY_NAMES.map((_, dayIndex) =>
       `<td>${payload.rows
         .filter(row => row.days.includes(dayIndex) && String(row.start) === start)
@@ -7243,7 +7212,7 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
   ${byDay.length ? byDay.map(day => `<section>
     <h2>${esc(day.name)}</h2>
     ${day.rows.map(row => `<article>
-      <time>${esc(scheduleClockForDisplay(row.start))}<small>${esc(scheduleClockForDisplay(row.end))}</small></time>
+      <time>${esc(row.start)}<small>${esc(row.end)}</small></time>
       <div>
         <b>${esc(row.name)}</b>
         <div class="meta">
