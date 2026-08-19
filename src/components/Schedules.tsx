@@ -5739,11 +5739,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const busyInstructor = row.AdInstructorId
       ? clash(item => item.AdInstructorId === row.AdInstructorId) : undefined;
     if (busyInstructor)
-      return { tier: "blocked", why: `الأستاذ مرتبط بـ${nameOf(busyInstructor)} ${busyInstructor.fstarttime}` };
+      return { tier: "blocked", why: `الأستاذ مرتبط بـ${nameOf(busyInstructor)} ${scheduleClockForDisplay(busyInstructor.fstarttime)}` };
     const busyHall = row.AdRoomCode
       ? clash(item => sameRoom(item, row)) : undefined;
     if (busyHall)
-      return { tier: "blocked", why: `القاعة محجوزة لـ${nameOf(busyHall)} ${busyHall.fstarttime}` };
+      return { tier: "blocked", why: `القاعة محجوزة لـ${nameOf(busyHall)} ${scheduleClockForDisplay(busyHall.fstarttime)}` };
 
     /* Same scoring the drag uses, in the same order of importance. */
     let score = 100;
@@ -6379,7 +6379,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             <li key={`${item.rowId}:${item.otherId}`} className={item.foreign ? "drift-foreign" : ""}>
               <div className="drift-row">
                 <strong>{item.name}</strong>
-                <time>{item.time}</time>
+                <time dir="ltr">{scheduleClockForDisplay(item.time)}</time>
                 {item.room ? <span className="drift-room">{item.room}</span> : null}
               </div>
               <p>{item.detail}</p>
@@ -6424,7 +6424,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               <div className="drift-row">
                 <strong>{note.from}</strong>
                 {note.course ? <span className="drift-room">{note.course}</span> : null}
-                {note.time ? <time>{note.time}</time> : null}
+                {note.time ? <time dir="ltr">{scheduleClockForDisplay(note.time)}</time> : null}
               </div>
               <p>{note.text}</p>
               <div className="inbox-actions">
@@ -6548,7 +6548,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         onClick={() => void openContext(r)}
                       >
                         <time dir="ltr">
-                          <b>{scheduleClockForDisplay(r.fendtime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fstarttime)}</small>
+                          <b>{scheduleClockForDisplay(r.fstarttime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fendtime)}</small>
                         </time>
                         <i />
                         <div>

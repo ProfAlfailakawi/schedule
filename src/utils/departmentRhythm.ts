@@ -1,4 +1,4 @@
-import { formatScheduleTimeRange } from "./scheduleTime";
+import { formatScheduleTimeRange, scheduleClockForDisplay } from "./scheduleTime";
 import type { FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
 import { SCHEDULE_DAYS, timeToMinutes, type DayKey } from "./scheduleIntelligence";
@@ -214,7 +214,7 @@ export function offRhythm(
     // Only when it is CLOSE to a habitual start. A deliberately different hour
     // is a decision; five minutes off is a slip.
     if (nearest && nearest.away > 0 && nearest.away <= 20)
-      return `${label} في قسمك يبدأ عادةً ${nearest.time}، وهذا الموعد يبدأ ${row.fstarttime}.`;
+      return `${label} في قسمك يبدأ عادةً ${scheduleClockForDisplay(nearest.time)}، وهذا الموعد يبدأ ${scheduleClockForDisplay(row.fstarttime)}.`;
   }
 
   const length = end - start;

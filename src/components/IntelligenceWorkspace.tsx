@@ -2897,7 +2897,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       .map((b: any) => (
                         <b key={`${b.day}-${b.time}`}>
                           <small>
-                            {b.label || dayLabels[b.day]} · {b.time}
+                            {b.label || dayLabels[b.day]} · {scheduleClockForDisplay(b.time)}
                           </small>
                           <strong>{b.avgLoad}</strong>
                         </b>
@@ -4175,7 +4175,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               </div>
                             ) : (
                               <p className="compare-facts">
-                                <time dir="ltr">{row.time}</time>
+                                <time dir="ltr">{scheduleClockForDisplay(row.time)}</time>
                                 <span>{row.room || "—"}</span>
                                 <span>{row.instructor || "—"}</span>
                               </p>

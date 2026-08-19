@@ -1262,7 +1262,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <div>
                   {day.rows.length ? day.rows.map(row => (
                     <article key={`${day.key}-${row.id}`}>
-                      <time dir="ltr">{scheduleClockForDisplay(row.fendtime)}<i>{scheduleClockForDisplay(row.fstarttime)}</i></time>
+                      <time dir="ltr">{scheduleClockForDisplay(row.fstarttime)}<i>{scheduleClockForDisplay(row.fendtime)}</i></time>
                       <div>
                         <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
                         <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
@@ -1988,7 +1988,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <div>
                       {dayRows.length ? dayRows.map(row => (
                         <article key={`${day.key}-${row.id}`}>
-                          <time className="print-ltr"><b>{scheduleClockForDisplay(row.fendtime)}</b><span>{scheduleClockForDisplay(row.fstarttime)}</span></time>
+                          <time className="print-ltr"><b>{scheduleClockForDisplay(row.fstarttime)}</b><span>{scheduleClockForDisplay(row.fendtime)}</span></time>
                           <div><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span>{instructorOf(row)?.AdInstructorName || "بدون أستاذ"}</span></div>
                           <small><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</bdi><bdi className="print-ltr">{placeOfRow(row)}</bdi></small>
                         </article>

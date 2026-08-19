@@ -17,6 +17,7 @@ import { Notice } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
 import { sortTermsNewest } from "../utils/termSequence";
+import { scheduleClockForDisplay } from "../utils/scheduleTime";
 
 type DayKey = "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
 const dayKeys: DayKey[] = [
@@ -775,12 +776,12 @@ export default function ScheduleExperienceLayer({
                 <small>نافذة الذروة</small>
                 <strong>
                   {topBottlenecks[0]
-                    ? `${topBottlenecks[0].label} · ${topBottlenecks[0].time}`
+                    ? `${topBottlenecks[0].label} · ${scheduleClockForDisplay(topBottlenecks[0].time)}`
                     : "—"}
                 </strong>
                 <p>
                   {topBottlenecks.length
-                    ? `أكثر الخلايا تكرارًا تاريخيًا: ${topBottlenecks.map((x: any) => `${x.label} ${x.time}`).join("، ")}.`
+                    ? `أكثر الخلايا تكرارًا تاريخيًا: ${topBottlenecks.map((x: any) => `${x.label} ${scheduleClockForDisplay(x.time)}`).join("، ")}.`
                     : "ستظهر نافذة الذروة بعد توفر تاريخ كافٍ."}
                 </p>
               </article>

@@ -1,6 +1,6 @@
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleConstraint } from "../types";
 import { activeDays, analyzeSchedule, autoScheduleProposal, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
-import { formatScheduleTimeRange, SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
+import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
 const cloneRows=(rows:FSchedule[])=>rows.map(row=>({...row}));
 const roomKey=(row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${String(row.AdRoomHall||"").trim()}`;
@@ -24,7 +24,7 @@ export function evaluateScheduleConstraints(rows:FSchedule[],constraints:Schedul
   for(const c of enabled){
     if(c.type==="instructor_latest_end"&&c.AdInstructorId&&c.time){
       const limit=timeToMinutes(c.time);
-      rows.filter(r=>r.AdInstructorId===c.AdInstructorId&&timeToMinutes(r.fendtime)>limit).forEach(r=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`ينتهي ${r.AdCourseName||"المقرر"} عند ${r.fendtime} بعد الحد ${c.time}.`,rowId:r.id,severity:"critical"}));
+      rows.filter(r=>r.AdInstructorId===c.AdInstructorId&&timeToMinutes(r.fendtime)>limit).forEach(r=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`ينتهي ${r.AdCourseName||"المقرر"} عند ${scheduleClockForDisplay(r.fendtime)} بعد الحد ${scheduleClockForDisplay(c.time)}.`,rowId:r.id,severity:"critical"}));
     }
     if(c.type==="instructor_day_off"&&c.AdInstructorId&&c.day){
       rows.filter(r=>r.AdInstructorId===c.AdInstructorId&&Boolean((r as any)[c.day!])).forEach(r=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`يوجد ${r.AdCourseName||"مقرر"} في ${SCHEDULE_DAYS.find(d=>d.key===c.day)?.label||"اليوم المحجوز"}.`,rowId:r.id,severity:"critical"}));
@@ -37,7 +37,7 @@ export function evaluateScheduleConstraints(rows:FSchedule[],constraints:Schedul
     }
     if(c.type==="max_instructor_gap"&&c.maxMinutes){
       const ids=c.AdInstructorId?[c.AdInstructorId]:[...new Set(rows.map(r=>r.AdInstructorId).filter(Boolean))];
-      ids.forEach(id=>SCHEDULE_DAYS.forEach(day=>dayGapRows(rows,id,day.key).filter(g=>g.minutes>Number(c.maxMinutes)).forEach(g=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`فراغ ${g.minutes} دقيقة يوم ${day.label} بين ${g.before.fendtime} و${g.after.fstarttime}.`,rowId:g.after.id,severity:"warning"}))));
+      ids.forEach(id=>SCHEDULE_DAYS.forEach(day=>dayGapRows(rows,id,day.key).filter(g=>g.minutes>Number(c.maxMinutes)).forEach(g=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`فراغ ${g.minutes} دقيقة يوم ${day.label} بين ${scheduleClockForDisplay(g.before.fendtime)} و${scheduleClockForDisplay(g.after.fstarttime)}.`,rowId:g.after.id,severity:"warning"}))));
     }
   }
   const byConstraint=enabled.map(c=>({id:c.id,label:c.label,count:violations.filter(v=>v.constraintId===c.id).length}));

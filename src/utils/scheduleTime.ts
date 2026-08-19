@@ -19,18 +19,19 @@ export function withinScheduleDay(start: number, end: number): boolean {
 export function scheduleClockForDisplay(value: string | null | undefined): string {
   const raw = String(value || "").trim();
   if (!raw) return "—";
-  const match = raw.match(/^(\d{1,2}):(\d{2})$/);
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
   if (!match) return raw;
   const hour = match[1].padStart(2, "0");
   const minute = match[2];
-  // The stored value remains HH:MM for sorting, validation and APIs.
-  // Only the visible Arabic clock is written in reading order: MM:HH.
-  return `${minute}:${hour}`;
+  // Time is stored and displayed in the same unambiguous 24-hour HH:MM order.
+  // Arabic layout direction must never swap the hour and minute components.
+  return `${hour}:${minute}`;
 }
 
 /**
- * Institutional time ranges are read right-to-left as end → start.
- * Keep that convention identical everywhere the schedule is displayed.
+ * Render a chronological start → end range while isolating the Latin clock
+ * from surrounding RTL Arabic text. The isolate controls bidi only; it never
+ * changes the semantic order of either the clocks or the range.
  */
 export function formatScheduleTimeRange(
   start: string | null | undefined,
@@ -41,12 +42,5 @@ export function formatScheduleTimeRange(
   if (from === "—" && to === "—") return "—";
   if (to === "—") return from;
   if (from === "—") return to;
-  /*
-   * A Latin time range embedded inside Arabic prose needs its own bidi island.
-   * Without it, the browser may visually reorder the two clocks even though the
-   * source string is already end → start. LRI/PDI keep the institutional RTL
-   * convention visually stable everywhere, including plain text notices and
-   * aria labels, while remaining invisible to the reader.
-   */
-  return `⁦${to} - ${from}⁩`;
+  return `⁦${from} - ${to}⁩`;
 }

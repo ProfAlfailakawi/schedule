@@ -1,3 +1,4 @@
+import { formatScheduleTimeRange, scheduleClockForDisplay } from "./scheduleTime";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleVersion } from "../types";
 import { SCHEDULE_DAYS, timeToMinutes, minutesToTime, type DayKey } from "./scheduleIntelligence";
 
@@ -389,7 +390,7 @@ export function discoverUnwrittenRules(history: FSchedule[], terms: AdTerm[], co
   for (const day of SCHEDULE_DAYS) {
     const data = model.department.days[day.key as DayKey];
     if (data && data.samples >= 30 && data.share >= .82) {
-      rules.push({ id:`minute:${day.key}`, kind:"start-minute", confidence:Math.round(data.share*100), title:`${day.label} يبدأ غالباً عند ${data.ladder.find((time:string)=>time.endsWith(`:${String(data.minute).padStart(2,"0")}`)) || data.ladder[0] || `12:${String(data.minute).padStart(2,"0")}`}`, detail:`${data.samples} حالة تاريخية`, });
+      rules.push({ id:`minute:${day.key}`, kind:"start-minute", confidence:Math.round(data.share*100), title:`${day.label} يبدأ غالباً عند ${scheduleClockForDisplay(data.ladder.find((time:string)=>time.endsWith(`:${String(data.minute).padStart(2,"0")}`)) || data.ladder[0] || `12:${String(data.minute).padStart(2,"0")}`)}`, detail:`${data.samples} حالة تاريخية`, });
     }
     const dayRows = rows.filter(row => Boolean((row as any)[day.key]));
     const share = rows.length ? dayRows.length / rows.length : 0;
@@ -418,7 +419,7 @@ export function logicalAnomalies(rows: FSchedule[], history: FSchedule[]) {
   const exact = new Map<string,FSchedule[]>();
   rows.forEach(row => {
     const duration = timeToMinutes(row.fendtime) - timeToMinutes(row.fstarttime);
-    if (duration <= 0) anomalies.push({ kind:"duration", severity:"high", rowId:row.id, title:"مدة غير منطقية", detail:`${row.AdCourseName} · ${row.fstarttime} → ${row.fendtime}` });
+    if (duration <= 0) anomalies.push({ kind:"duration", severity:"high", rowId:row.id, title:"مدة غير منطقية", detail:`${row.AdCourseName} · ${formatScheduleTimeRange(row.fstarttime, row.fendtime)}` });
     else if (duration > 300) anomalies.push({ kind:"duration", severity:"medium", rowId:row.id, title:"مدة طويلة جداً", detail:`${row.AdCourseName} · ${duration} دقيقة` });
     const key = `${row.AdCourseId}|${row.SCode}|${patternKeyOf(row)}|${row.fstarttime}|${row.fendtime}`;
     exact.set(key,[...(exact.get(key)||[]),row]);
