@@ -1180,3 +1180,22 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .login-footer-label{font-size:10.5px}
   .login-footer-year{font-size:10px}
 }
+
+
+/* Final login balance fix: the phone layout had accumulated several compact
+   overrides, plus an upward card shift, so the whole composition drifted too
+   close to the top edge. These final rules restore breathing room and keep the
+   access card centered under the story. */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait){
+  .apex-login{
+    padding:calc(env(safe-area-inset-top) + 16px) 14px calc(env(safe-area-inset-bottom) + 12px)!important;
+  }
+  .apex-login-stage{
+    padding-block:clamp(18px,2.8svh,30px)!important;
+    gap:clamp(12px,2svh,20px)!important;
+  }
+}
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (min-height:760px){
+  .apex-login-stage{padding-block:clamp(24px,3.2svh,36px)!important;}
+  .apex-login-access{transform:none!important;}
+}

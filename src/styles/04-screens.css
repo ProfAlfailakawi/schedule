@@ -1086,7 +1086,7 @@
   transition:background .15s var(--ease),border-color .15s var(--ease);
 }
 .install-trigger:hover,.install-trigger.active{background:var(--accent-softer);border-color:color-mix(in srgb,var(--accent) 40%,var(--line))}
-.install-trigger svg{width:16px;height:16px}
+.install-trigger svg{width:16px;height:16px;display:block;flex:none}
 .install-pop{
   position:absolute;z-index:40;top:calc(100% + 8px);inset-inline-end:0;
   width:240px;padding:var(--s4);
@@ -2114,21 +2114,22 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .login-footer-label{justify-self:start;white-space:nowrap}
 .login-footer-year{justify-self:end;white-space:nowrap}
 .login-footer-tools{justify-self:center;display:flex;align-items:center;gap:9px;direction:rtl}
-.login-footer-tools .install{display:block;line-height:0}
+.login-footer-tools .install{display:grid;place-items:center;line-height:0;flex:none}
 .login-footer-tools .install-trigger,.login-footer-tools .demo-entry-icon{
   width:38px!important;min-width:38px!important;height:38px!important;min-height:38px!important;
   padding:0!important;display:grid!important;place-items:center!important;
   border:1px solid #314039!important;border-radius:13px!important;
   background:#0c1311!important;color:#93a59d!important;
   box-shadow:inset 0 0 0 1px color-mix(in srgb,#fff 2%,transparent)!important;
+  overflow:hidden!important;
 }
 .login-footer-tools .install-trigger:hover,.login-footer-tools .install-trigger.active,
 .login-footer-tools .demo-entry-icon:hover{
   color:#d7e4de!important;border-color:#486057!important;background:#111b18!important;
 }
-.login-footer-tools .install-trigger svg,.login-footer-tools .demo-entry-icon svg{width:16px!important;height:16px!important}
+.login-footer-tools .install-trigger svg,.login-footer-tools .demo-entry-icon svg{width:16px!important;height:16px!important;display:block;flex:none;transform:none!important}
 .login-footer-tools .install-trigger.discoverable::after{
-  inset-block-start:4px!important;inset-inline-start:4px!important;
+  inset-block-start:5px!important;inset-inline-start:auto!important;inset-inline-end:5px!important;
   width:5px!important;height:5px!important;box-shadow:0 0 0 2px color-mix(in srgb,var(--brass) 13%,transparent)!important;
 }
 

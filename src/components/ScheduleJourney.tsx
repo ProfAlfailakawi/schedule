@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
-import ScheduleSignature from "./ScheduleSignature";
+import ScheduleSignature, { SCHEDULE_DEFINITION, SCHEDULE_DECISION_LINE } from "./ScheduleSignature";
 
 /**
  * ── رحلة SCHEDULE ─────────────────────────────────────────────────────────
@@ -161,11 +161,17 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
 
         <header className="journey-hero">
           <ScheduleSignature size="hero" className="journey-signature" />
-          <h2>رحلة النظام عبر السنوات</h2>
-          <p>
-            من أداة لبناء الجدول إلى ذاكرة أكاديمية ومساحة يُتَّخذ فيها القرار؛
-            الأرقام هنا تحكي ما حمله النظام عبر السنوات.
-          </p>
+          <div className="journey-definition">
+            <span className="journey-eyebrow">تعريف SCHEDULE</span>
+            <h2>{SCHEDULE_DECISION_LINE}</h2>
+            <p>{SCHEDULE_DEFINITION}</p>
+          </div>
+          <div className="journey-highlights" aria-hidden="true">
+            <span>بناء الجدول</span>
+            <span>مراجعة واعتماد</span>
+            <span>اكتشاف التعارضات</span>
+            <span>تقارير وقرار</span>
+          </div>
           {/* A quiet suggestion of accumulated terms — lines, not illustration. */}
           <div className="journey-strata" aria-hidden="true">
             {Array.from({ length: 14 }).map((_, index) => <i key={index} style={{ ["--i" as any]: index }} />)}
@@ -184,6 +190,7 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
         ) : (
           <>
             <section className="journey-lifetime">
+              <p className="journey-reading journey-reading-overview">من أداة لبناء الجدول إلى ذاكرة أكاديمية ومساحة يُتَّخذ فيها القرار.</p>
               <p className="journey-reading">{headline}</p>
               <div className="journey-grid">
                 <article><b><Counted value={life!.schedules || 0} duration={850} /></b><span>موعداً أكاديمياً مرّ من هنا</span></article>

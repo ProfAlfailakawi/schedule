@@ -11,7 +11,7 @@ import {
 import { Field, Notice, PrimaryButton } from "./ui";
 import InstallApp from "./InstallApp";
 import ScheduleJourney from "./ScheduleJourney";
-import ScheduleSignature from "./ScheduleSignature";
+import ScheduleSignature, { SCHEDULE_DEFINITION } from "./ScheduleSignature";
 interface LoginProps {
   onLoginSuccess: (data: {
     user: any;
@@ -94,10 +94,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             <br />
             <em>يبدأ من قرار.</em>
           </h1>
-          <p>
-            مساحة هادئة لبناء الجدول الدراسي، فهم أثر كل حركة، والوصول إلى
-            القرار الصحيح بدون ضوضاء.
-          </p>
+          <p>{SCHEDULE_DEFINITION}</p>
           <div className="apex-login-principles" aria-hidden="true">
             <span>
               <ShieldCheck />
