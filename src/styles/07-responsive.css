@@ -1160,3 +1160,23 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     max-height:100svh!important;overflow:hidden!important;
   }
 }
+
+/* Final portrait rhythm: keep the successful fixed login, but take a little
+   tension out of the large middle gap without stretching the card itself. */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (min-height:760px){
+  .apex-login-stage{
+    padding-block:clamp(18px,2.3svh,28px)!important;
+  }
+  .apex-login-story>p{max-width:96%!important}
+  .apex-login-access{transform:translateY(-6px)}
+  .apex-login-access footer{margin-top:clamp(13px,1.45svh,16px)!important}
+}
+
+@media (pointer:coarse) and (max-width:430px) and (orientation:portrait){
+  .login-footer-tools{gap:7px}
+  .login-footer-tools .install-trigger,.login-footer-tools .demo-entry-icon{
+    width:36px!important;min-width:36px!important;height:36px!important;min-height:36px!important;
+  }
+  .login-footer-label{font-size:10.5px}
+  .login-footer-year{font-size:10px}
+}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
 import { AR, countOf } from "../utils/arabicCount";
+import ScheduleSignature from "./ScheduleSignature";
 
 /**
  * ── رحلة SCHEDULE ─────────────────────────────────────────────────────────
@@ -159,11 +160,11 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
         <button type="button" className="journey-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
 
         <header className="journey-hero">
-          <span className="journey-eyebrow">رحلة النظام عبر السنوات</span>
-          <h2>رحلة SCHEDULE</h2>
+          <ScheduleSignature size="hero" className="journey-signature" />
+          <h2>رحلة النظام عبر السنوات</h2>
           <p>
-            أكثر من عقد من العمل الأكاديمي، تحوّل فيه SCHEDULE من أداة لبناء الجدول
-            إلى مساحة يُتَّخذ فيها القرار.
+            من أداة لبناء الجدول إلى ذاكرة أكاديمية ومساحة يُتَّخذ فيها القرار؛
+            الأرقام هنا تحكي ما حمله النظام عبر السنوات.
           </p>
           {/* A quiet suggestion of accumulated terms — lines, not illustration. */}
           <div className="journey-strata" aria-hidden="true">
@@ -238,7 +239,10 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
             <span>التأسيس والتطوير</span>
             <strong>د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</strong>
           </div>
-          <small>SCHEDULE{version ? ` · الإصدار ${version}` : ""}</small>
+          <div className="journey-foot-signature">
+            <ScheduleSignature size="mini" />
+            {version ? <small>الإصدار {version}</small> : null}
+          </div>
         </footer>
       </div>
     </div>
