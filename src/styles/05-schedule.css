@@ -8191,3 +8191,10 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .week-calendar .week-event:not(.week-strip-event) .week-title{-webkit-line-clamp:1!important}
   .week-calendar .week-event:not(.week-strip-event) .week-who{font-size:9.7px!important}
 }
+
+/* «عرض الموعد» من بطاقة إشغال القاعة: إبراز هادئ ومؤقت فقط. */
+.week-event[data-hall-reveal="true"] {
+  outline: 3px solid color-mix(in srgb, var(--accent, #176f62) 38%, transparent);
+  outline-offset: 3px;
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--accent, #176f62) 18%, transparent);
+}

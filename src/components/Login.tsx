@@ -173,12 +173,12 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           </form> : null}
           {demoEnabled ? <div className="demo-entry-panel">
             <div className="demo-entry-copy">
-              <span className="demo-entry-badge">DEMO · مساحة معزولة</span>
+              <span className="demo-entry-badge">الدخول التجريبي · مساحة معزولة</span>
               <strong>جرّب النظام بحرية</strong>
               <small>أضف واحذف وانقل داخل بيانات تجريبية مصطنعة. لا تصل هذه الجلسة إلى بيانات الجامعة الحقيقية.</small>
             </div>
             <button type="button" className="demo-entry-button" data-guide-ignore="دخول اختياري إلى بيئة Demo قبل المصادقة؛ المرشد يبدأ بعد دخول المستخدم إلى مساحة العمل" onClick={enterDemo} disabled={loading || demoLoading}>
-              {demoLoading ? <span className="button-spinner" /> : <><Sparkles /> دخول فوري للتجربة <ArrowLeft /></>}
+              {demoLoading ? <span className="button-spinner" /> : <><Sparkles /> ابدأ التجربة الآن <ArrowLeft /></>}
             </button>
           </div> : null}
           <footer>

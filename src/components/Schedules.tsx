@@ -1994,6 +1994,29 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   editorRef.current = editor;
   const backRef = useRef<(() => void) | null>(null);
   backRef.current = back;
+  const revealHallOccupant = (occupant: FSchedule) => {
+    const rowId = Number(occupant?.id || 0);
+    if (!rowId) return;
+    setHallBusyPreview(null);
+    back();
+    setQuickSearch("");
+    setViewMode("week");
+    setReviewFocus(new Set([rowId]));
+    let attempts = 0;
+    const seek = () => {
+      window.requestAnimationFrame(() => {
+        const card = document.querySelector<HTMLElement>(`.week-event[data-row-id="${rowId}"], [data-row-id="${rowId}"]`);
+        if (!card && attempts++ < 30) { window.setTimeout(seek, 35); return; }
+        if (card) {
+          card.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+          card.setAttribute("data-hall-reveal", "true");
+          window.setTimeout(() => card.removeAttribute("data-hall-reveal"), 2200);
+        }
+        window.setTimeout(() => { void openContext(occupant); }, card ? 260 : 0);
+      });
+    };
+    seek();
+  };
   const setNumber = (key: keyof typeof form, raw: string) =>
     setForm((prev) => ({ ...prev, [key]: Number(raw) || 0 }));
   const englishDigits = (v: string) => /^\d*$/.test(normalizeArabicDigits(v));
@@ -2313,18 +2336,29 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     });
   }, [form, expectedStartMinuteForDay, preferredStartForDrop]);
   const editorTimingReviewCard = useMemo(() => {
-    if (!editorTimingNote) return null;
+    const historicalFindings = editorSupplementalReview.filter(finding => finding.source === "history");
+    const details = historicalFindings
+      .map(finding => String(finding.detail || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+    if (editorTimingNote) {
+      const timingDetail = String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim();
+      if (timingDetail) details.push(timingDetail);
+    }
+    const uniqueDetails = [...new Set(details)];
+    if (!uniqueDetails.length) return null;
     return {
-      rule: "historical-timing",
+      rule: "historical-course-pattern",
       article: "سجل المقرر + اللائحة",
       severity: "low",
       source: "history",
-      title: "وقت غير معتاد تاريخياً",
-      detail: String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim(),
+      approvalEffect: "note",
+      title: "خارج المعتاد تاريخياً",
+      detail: uniqueDetails.join(" — "),
+      rowIds: editId ? [editId] : [],
       icon: "history",
       sourceLabel: "السجل التاريخي",
     };
-  }, [editorTimingNote]);
+  }, [editorTimingNote, editorSupplementalReview, editId]);
   const editorRegulationCards = useMemo(() => editorRegulation.map((finding, index) => {
     const detail = String(finding.detail || "").replace(/\s+/g, " ").trim();
     const ruleIcon = finding.rule === "rotation" ? "history" : finding.rule === "consecutive-sections" ? "idea" : finding.rule === "sections-same-hour" ? "room" : index % 2 ? "room" : "idea";
@@ -2338,12 +2372,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     };
   }), [editorRegulation, formDurationMinutes, selectedFormDays.length]);
   const editorSupplementalCards = useMemo(() => {
-    const cards = editorSupplementalReview.map((finding, index) => ({
-      ...finding,
-      detail: String(finding.detail || "").replace(/\s+/g, " ").trim(),
-      icon: finding.source === "history" ? "history" : index % 2 ? "room" : "idea",
-      sourceLabel: finding.source === "history" ? "السجل التاريخي" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
-    }));
+    // Historical timing is one concept. Never show two cards for the same draft.
+    const cards = editorSupplementalReview
+      .filter(finding => finding.source !== "history")
+      .map((finding, index) => ({
+        ...finding,
+        detail: String(finding.detail || "").replace(/\s+/g, " ").trim(),
+        icon: index % 2 ? "room" : "idea",
+        sourceLabel: finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
+      }));
     return editorTimingReviewCard ? [editorTimingReviewCard, ...cards] : cards;
   }, [editorSupplementalReview, editorTimingReviewCard]);
   const editorRoomConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض قاعة" || card.typeLabel === "نطاق القاعة"), [editorConflictCards]);
@@ -7096,7 +7133,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                           </div>
                                           <p>{occupantCourse}</p>
                                           {occupantInstructor ? <small>{occupantInstructor}</small> : null}
-                                          <button type="button" className="schedule-hall-busy-open" data-guide-ignore="تنقل ثانوي من معاينة إشغال القاعة إلى تفاصيل الموعد الموجود؛ لا يغيّر بيانات الجدول" onClick={() => { setHallBusyPreview(null); void openContext(occupant); }}>عرض الموعد</button>
+                                          <button type="button" className="schedule-hall-busy-open" data-guide-ignore="تنقل ثانوي من معاينة إشغال القاعة إلى تفاصيل الموعد الموجود؛ لا يغيّر بيانات الجدول" onClick={() => revealHallOccupant(occupant)}>عرض الموعد</button>
                                           {item.occupants.length > 1 ? <em>+{(item.occupants.length - 1).toLocaleString("ar-KW-u-nu-latn")} موعد متداخل</em> : null}
                                         </div>
                                       ) : null}
@@ -7231,7 +7268,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               <div>
                 <strong>فحص موانع الحفظ</strong>
                 <small>
-                  {validationIssues.length?"تحقق من الوقت والأيام":checking?"جاري الفحص...":blockingConflicts.length?"تعارض يمنع الحفظ":editorTimingReviewCard?"ملاحظة وقت تحتاج مراجعة":"لا يوجد مانع ظاهر"}
+                  {validationIssues.length?"تحقق من الوقت والأيام":checking?"جاري الفحص...":blockingConflicts.length?"تعارض يمنع الحفظ":editorTimingReviewCard?"ملاحظة تاريخية تحتاج مراجعة":"لا يوجد مانع ظاهر"}
                 </small>
               </div>
             </div>

@@ -329,28 +329,36 @@ export function reviewSchedule(context: RegulationContext): RegulationFinding[] 
   const who = (id: number) => instructors.get(id)?.AdInstructorName || "بدون أستاذ";
 
   // --- learned habit — this course is not behaving like itself -------------
+  // Keep history course-scoped. The old aggregate could attach course 112's
+  // explanation to a draft for course 458 merely because both were unusual in
+  // the same term. One finding per academic course keeps every explanation
+  // faithful to the course the reader is actually editing.
   if (context.nature?.size) {
-    const odd: FSchedule[] = [];
-    const reasons: string[] = [];
+    const oddByCourse = new Map<number, { rows: FSchedule[]; reasons: string[] }>();
     for (const row of rows) {
-      const nature = context.nature.get(Number(row.AdCourseId));
-      const reason = departsFromNature(row, nature);
+      const courseId = Number(row.AdCourseId);
+      const learned = context.nature.get(courseId);
+      const reason = departsFromNature(row, learned);
       if (!reason) continue;
-      odd.push(row);
-      const code = courses.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "";
-      const line = `${code}: ${reason}`;
-      if (!reasons.includes(line)) reasons.push(line);
+      const entry = oddByCourse.get(courseId) || { rows: [], reasons: [] };
+      entry.rows.push(row);
+      if (!entry.reasons.includes(reason)) entry.reasons.push(reason);
+      oddByCourse.set(courseId, entry);
     }
-    if (odd.length) {
+    for (const [courseId, entry] of oddByCourse) {
+      const course = courses.get(courseId);
+      const courseLabel = course?.CourseCode || entry.rows[0]?.AdCourseName || String(courseId);
       findings.push({
         rule: "out-of-character",
         article: "الاعتياد التاريخي",
         severity: "medium",
         source: "history",
         approvalEffect: "note",
-        title: `خارج المعتاد تاريخياً (${arabicNumber(odd.length)})`,
-        detail: `استنتاج من السجل التاريخي المتاح للمقرر والقسم. ${reasons.slice(0, 4).join(" — ")}`,
-        rowIds: odd.map(row => row.id)
+        title: `خارج المعتاد تاريخياً${entry.rows.length > 1 ? ` (${arabicNumber(entry.rows.length)})` : ""}`,
+        detail: `المقرر ${courseLabel}: ${entry.reasons.slice(0, 3).join(" — ")}`,
+        subjectKey: `course:${courseId}`,
+        subjectLabel: courseLabel,
+        rowIds: entry.rows.map(row => row.id),
       });
     }
   }
