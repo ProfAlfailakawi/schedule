@@ -1,52 +1,16 @@
-SCHEDULE — الجولة البصرية النهائية + إصلاح تدقيق المرشد
-
 السبب الجذري:
-1) عداد «الجديد» الخاص بالمرشد كان يتراكب بصريًا مع زر «سجل تغييرات اليوم» لأن الاثنين يشغلان الزاوية السفلية نفسها.
-2) عناصر التأكيد البصري الجديدة في ErrorBoundary وvisualConfirm لم تكن موسومة للـGuide Audit، لذلك رفض CI البناء.
-3) التأكيدات الصغيرة للحذف كانت تقطع السياق بفتح حوار كامل، بدل micro-interaction موضعي مثل المرجع المرسل.
-4) بقيت تفاصيل بصرية أخيرة: microtext في المرشد على الهاتف، بعض الأسهم النصية، تثبيت التطبيق، ومفتاح مراجعة الاعتماد.
+زر «قرار الآن» كان ظاهرًا داخل شريط حالة الجدول رغم أن الوصول إلى القرار موجود أصلًا داخل مركز الذكاء، فصار إجراءً مكررًا بصريًا ووظيفيًا.
 
-ما تم:
-- فصل زر سجل اليوم عن Launcher المرشد نهائيًا على الكمبيوتر والهاتف، بدون لمس تصميم الأسبوع أو المباني.
-- Launcher المرشد يعرض عدادًا واحدًا فقط، ويختفي عداده أثناء فتح المرشد لأن تبويب «الجديد» يحمل العداد داخله.
-- الحفاظ على قاعدة 9+ للـLauncher مع LTR isolation، و99+ داخل تبويب «الجديد» كما تتطلب اختبارات المرشد.
-- تحسين المرشد بصريًا بالكامل على الهاتف: أحجام مقروءة، hierarchy أوضح، cards أنظف، وفصل بصري بين «تحديثات المنتج» و«عناصر هذه الشاشة».
-- تحويل الحذف المحلي إلى تأكيد موضعي متحرك: Trash → Cancel / Confirm، مع Escape، click-outside، وعودة تلقائية بعد مهلة قصيرة.
-- العمليات الثقيلة (استرجاع/تصفير/تغيير مركب) بقيت في Decision Dialog الكامل حفاظًا على وضوح العواقب.
-- إضافة data-guide-ignore الموثق لأزرار ErrorBoundary وحوار التأكيد العام، فصار Guide Audit يمر.
-- تحسين Legend مراجعة الاعتماد بالأيقونات.
-- رحلة SCHEDULE أصبحت infographic timeline.
-- تثبيت التطبيق أصبح 3 خطوات أيقونية فعلية.
-- إزالة الأسهم النصية الحية المتبقية من المقارنات/الرسائل مع إبقاء أسهم لوحة المفاتيح فقط.
-- إزالة النقطة النصية من مصفوفة الطباعة والاعتماد على التعبئة/الرقم.
-- تحسين ErrorBoundary، بوابة تقارير الهاتف، وتوحيد الحواف والرادياس.
-
-التحقق:
-- Guide audit: ناجح — 57 ميزة، 21 هدفًا حيًا، 25 واجهة، 17 إجراءً، 10 رحلات.
-- Guide behavior tests: 72/72 ناجحة.
-- Guide performance audit: ناجح.
-- Syntax transpile: ناجح لكل ملفات TSX المعدلة.
-- CSS parse: ناجح لكل ملفات CSS المعدلة.
+التعديل:
+- إزالة زر «قرار الآن» من شريط حالة الجدول في حالتي التحميل والحالة الجاهزة.
+- الإبقاء على أدوات القرار داخل مركز الذكاء كما هي دون تغيير المنطق أو البيانات.
 
 الملفات المعدلة:
-src/App.tsx
-src/components/Sections.tsx
-src/components/AdminUsers.tsx
-src/components/ScheduleReview.tsx
-src/components/Courses.tsx
-src/components/ErrorBoundary.tsx
-src/components/ui.tsx
-src/components/Terms.tsx
-src/components/SmartGuide.tsx
-src/components/Schedules.tsx
-src/components/ScheduleJourney.tsx
-src/components/Colleges.tsx
-src/components/Instructors.tsx
-src/components/IntelligenceWorkspace.tsx
-src/components/Reports.tsx
-src/components/InstallApp.tsx
-src/styles/05-schedule.css
-src/styles/03-shell.css
-src/styles/06-intelligence.css
-src/styles/02-primitives.css
-src/styles/04-screens.css
+- src/components/LivingScheduleLayer.tsx
+
+التحقق:
+- npm run audit:guide: ناجح
+- npm run test:guide: 82/82 ناجح
+- npm run test:guide:perf: ناجح
+
+لم يتم رفع أي شيء إلى GitHub أو Cloud Run.

@@ -7730,6 +7730,15 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
   overflow:hidden;
   text-overflow:ellipsis;
 }
+
+/* The first row also carries the room identity capsule. Keep Sunday aligned
+   to the right exactly like the remaining day labels instead of centering it. */
+.rooms-week-days .rooms-day-label.has-room-identity .rooms-day-name{
+  align-self:stretch;
+  width:100%;
+  text-align:right;
+  padding-inline:4px 0;
+}
 .rooms-room-identity-compact{
   max-width:100%;
   min-height:19px;

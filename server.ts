@@ -339,7 +339,14 @@ let databaseDownRef: string | null = null;
  * so the interface can tell «الخادم واقف» from «قاعدة البيانات واقفة».
  */
 app.get("/api/demo/config", (_req, res) => {
-  res.json({ enabled: Repository.isDemoMode(), sessionMinutes: 60, isolated: true, adminReadOnly: true });
+  const externalUrl = String(process.env.SCHEDULE_DEMO_URL || "").trim();
+  res.json({
+    enabled: Repository.isDemoMode(),
+    entryUrl: Repository.isDemoMode() ? "" : externalUrl,
+    sessionMinutes: 60,
+    isolated: true,
+    adminReadOnly: true,
+  });
 });
 
 app.get("/api/health", (_req, res) => {

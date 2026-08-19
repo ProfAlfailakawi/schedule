@@ -24,14 +24,28 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     [error, setError] = useState<string | null>(null),
     [identityOpen, setIdentityOpen] = useState(false),
     [demoLoading, setDemoLoading] = useState(false),
-    [demoEnabled, setDemoEnabled] = useState(false);
+    [demoEnabled, setDemoEnabled] = useState(false),
+    [demoEntryUrl, setDemoEntryUrl] = useState("");
   useEffect(() => {
     let alive = true;
-    fetch("/api/demo/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => { if (alive) setDemoEnabled(Boolean(data?.enabled)); }).catch(() => undefined);
+    fetch("/api/demo/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
+      if (!alive) return;
+      setDemoEnabled(Boolean(data?.enabled));
+      setDemoEntryUrl(String(data?.entryUrl || "").trim());
+    }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
   const enterDemo = async () => {
-    setError(null); setDemoLoading(true);
+    setError(null);
+    if (!demoEnabled && demoEntryUrl) {
+      window.location.assign(demoEntryUrl);
+      return;
+    }
+    if (!demoEnabled) {
+      setError("بيئة Demo المعزولة غير مربوطة بهذه الخدمة بعد.");
+      return;
+    }
+    setDemoLoading(true);
     try {
       const res = await fetch("/api/auth/demo", { method: "POST" });
       const data = await res.json();
@@ -171,16 +185,16 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               )}
             </PrimaryButton>
           </form> : null}
-          {demoEnabled ? <div className="demo-entry-panel">
+          {<div className="demo-entry-panel">
             <div className="demo-entry-copy">
-              <span className="demo-entry-badge">الدخول التجريبي · مساحة معزولة</span>
+              <span className="demo-entry-badge">تجربة النظام · مساحة معزولة</span>
               <strong>جرّب النظام بحرية</strong>
               <small>أضف واحذف وانقل داخل بيانات تجريبية مصطنعة. لا تصل هذه الجلسة إلى بيانات الجامعة الحقيقية.</small>
             </div>
             <button type="button" className="demo-entry-button" data-guide-ignore="دخول اختياري إلى بيئة Demo قبل المصادقة؛ المرشد يبدأ بعد دخول المستخدم إلى مساحة العمل" onClick={enterDemo} disabled={loading || demoLoading}>
-              {demoLoading ? <span className="button-spinner" /> : <><Sparkles /> ابدأ التجربة الآن <ArrowLeft /></>}
+              {demoLoading ? <span className="button-spinner" /> : <><Sparkles /> تجربة النظام <ArrowLeft /></>}
             </button>
-          </div> : null}
+          </div>}
           <footer>
             <span>الجدول الأكاديمي</span>
             <InstallApp variant="login" />
