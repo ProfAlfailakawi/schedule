@@ -58,32 +58,68 @@ function Counted({ value, duration = 900, play = true }: { value: number; durati
   return <>{ar(shown)}</>;
 }
 
-function useRevealOnce<T extends HTMLElement>(threshold = 0.08, enabled = true) {
+function useRevealOnce<T extends HTMLElement>(
+  rootRef: React.RefObject<HTMLElement | null>,
+  threshold = 0.08,
+  enabled = true,
+) {
   const ref = useRef<T | null>(null);
   const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
     if (!enabled || revealed || !ref.current) return;
     const node = ref.current;
-    if (typeof IntersectionObserver === "undefined") {
+    const root = rootRef.current;
+    let frame = 0;
+
+    const isVisibleInsideRoot = () => {
+      if (!node.isConnected) return false;
+      const rect = node.getBoundingClientRect();
+      const rootRect = root?.getBoundingClientRect();
+      const top = rootRect ? rootRect.top : 0;
+      const bottom = rootRect ? rootRect.bottom : window.innerHeight;
+      const visible = Math.min(rect.bottom, bottom) - Math.max(rect.top, top);
+      return visible > Math.min(96, Math.max(24, rect.height * threshold));
+    };
+
+    const revealIfVisible = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        if (isVisibleInsideRoot()) setRevealed(true);
+      });
+    };
+
+    if (isVisibleInsideRoot()) {
       setRevealed(true);
       return;
     }
-    const observer = new IntersectionObserver(
-      entries => {
-        if (entries.some(entry => entry.isIntersecting)) {
-          setRevealed(true);
-          observer.disconnect();
-        }
-      },
-      {
-        threshold,
-        rootMargin: "0px 0px 18% 0px",
-      },
-    );
-    observer.observe(node);
-    return () => observer.disconnect();
-  }, [enabled, revealed, threshold]);
+
+    let observer: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== "undefined") {
+      observer = new IntersectionObserver(
+        entries => {
+          if (entries.some(entry => entry.isIntersecting && entry.intersectionRatio > 0)) {
+            setRevealed(true);
+            observer?.disconnect();
+          }
+        },
+        { root: root || null, threshold: [0, threshold], rootMargin: "0px 0px 10% 0px" },
+      );
+      observer.observe(node);
+    }
+
+    const scrollTarget: EventTarget = root || window;
+    scrollTarget.addEventListener("scroll", revealIfVisible, { passive: true });
+    window.addEventListener("resize", revealIfVisible, { passive: true });
+    revealIfVisible();
+
+    return () => {
+      observer?.disconnect();
+      scrollTarget.removeEventListener("scroll", revealIfVisible as EventListener);
+      window.removeEventListener("resize", revealIfVisible as EventListener);
+      window.cancelAnimationFrame(frame);
+    };
+  }, [enabled, revealed, threshold, rootRef]);
 
   return { ref, revealed };
 }
@@ -145,8 +181,8 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
   const now = reading?.current;
   const headline = useMemo(() => readingSentence(life?.terms || 0), [life]);
   const empty = Boolean(reading && (life?.terms || 0) === 0);
-  const metricsReveal = useRevealOnce<HTMLElement>(0.08, Boolean(reading && !empty));
-  const currentReveal = useRevealOnce<HTMLElement>(0.08, Boolean(reading && !empty));
+  const metricsReveal = useRevealOnce<HTMLElement>(sheet, 0.08, Boolean(reading && !empty));
+  const currentReveal = useRevealOnce<HTMLElement>(sheet, 0.08, Boolean(reading && !empty));
   const termCount = life?.terms || 0;
   const heroValue = life?.schedules ?? now?.schedules ?? termCount;
   const heroLabel = "مواعيد أكاديمية";

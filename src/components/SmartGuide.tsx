@@ -122,6 +122,16 @@ const normalizeArabic = (value: string) => String(value || "")
   .replace(/\s+/g, " ")
   .trim();
 
+const dedupeDynamicFeatures = (items: DynamicGuideFeature[]) => {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = normalizeArabic(item.title).replace(/\s+/g, " ").trim() || item.id;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
 function targetElement(step: TourStep): HTMLElement | null {
   if (step.target) return document.querySelector<HTMLElement>(`[data-guide-target="${step.target}"],[data-guide-feature-id="${step.target}"]`);
   if (step.selector) return document.querySelector<HTMLElement>(step.selector);
@@ -314,7 +324,7 @@ export default function SmartGuide({
   const isExpert = Boolean(context?.metrics?.isExpert) || pageMastery >= 0.72;
   const unreadSummary = useMemo(() => guideUnreadSummary(profile, allAllowed, activeView), [profile, allAllowed, activeView]);
   const allChanged = useMemo(() => rankChangedFeatures(profile, unreadSummary.product), [profile, unreadSummary.product]);
-  const discoveredChanged = unreadSummary.runtime;
+  const discoveredChanged = useMemo(() => dedupeDynamicFeatures(unreadSummary.runtime), [unreadSummary.runtime]);
   const workflows = useMemo(() => commonWorkflows(profile, activeView).map(workflow => ({ ...workflow, sequence:workflow.sequence.filter(id => { const feature=featureById(id); return Boolean(feature && canAccessGuideFeature(feature, permissionSession)); }) })).filter(workflow => workflow.sequence.length > 0), [profile, activeView, permissionSession]);
   const selectedRaw = selectedId ? featureById(selectedId) : null;
   const selected = selectedRaw && canAccessGuideFeature(selectedRaw, permissionSession) ? selectedRaw : null;
@@ -468,7 +478,7 @@ export default function SmartGuide({
   useEffect(() => {
     if (!open) return;
     const scan = () => {
-      const items = discoverVisibleControls(activeView);
+      const items = dedupeDynamicFeatures(discoverVisibleControls(activeView));
       setDynamic(items);
       const signature = items.map(item => `${item.id}:${item.title}:${item.target || ""}`).join("|");
       if (signature !== discoveredSignatureRef.current) {
@@ -1635,7 +1645,7 @@ export default function SmartGuide({
 
             {browseMode === "all" ? (
               <>
-                <details className="smart-guide-fold"><summary><Compass /><span><small>الفهرس</small><strong>كل الميزات ضمن صلاحياتك</strong></span><b dir="ltr">{allAllowed.length + dynamic.filter(item => !featureById(item.id)).length}</b></summary><div className="smart-guide-feature-grid">
+                <details className="smart-guide-fold"><summary><Compass /><span><small>الفهرس</small><strong>كل الميزات</strong></span><b dir="ltr">{allAllowed.length + dynamic.filter(item => !featureById(item.id)).length}</b></summary><div className="smart-guide-feature-grid">
                   {allAllowed.map(feature => <button key={feature.id} type="button" onClick={() => chooseKnown(feature)}><span><Sparkles /></span><div><strong>{feature.title}</strong><small>{feature.group}</small></div>{masteryScore(profile,feature)>=.72?<i>متقن</i>:null}</button>)}
                   {dynamic.filter(item => !featureById(item.id)).map(item => <button key={item.id} type="button" onClick={() => chooseDynamic(item)}><span><MousePointer2 /></span><div><strong>{item.title}</strong><small>مكتشفة تلقائيًا</small></div></button>)}
                 </div></details>

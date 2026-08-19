@@ -1825,14 +1825,30 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .journey-philosophy-v2{grid-template-columns:48px minmax(0,1fr);gap:12px;padding:28px 22px!important}.journey-philosophy-mark{font-size:72px}.journey-philosophy-v2 h3{font-size:clamp(30px,9vw,42px)!important}
 }
 @media(max-width:520px){
-  .journey-close-v2{top:10px;margin:10px 10px -52px;width:38px!important;height:38px!important}
-  .journey-hero-v2{padding:46px 16px 28px!important;gap:18px}
+  .journey-close-v2{
+    position:fixed!important;top:12px!important;inset-inline-start:12px!important;inset-inline-end:auto!important;
+    margin:0!important;width:40px!important;height:40px!important;border-radius:14px!important;z-index:30!important;
+  }
+  .journey-hero-v2{padding:60px 16px 28px!important;gap:18px}
+  .journey-hero-copy{width:100%}
+  .journey-eyebrow-v2{font-size:9px!important}
   .journey-hero-v2 h2{max-width:6.8ch;font-size:clamp(38px,12.8vw,52px)!important;line-height:.96!important}
-  .journey-memory-core{width:min(78vw,230px)}
-  .journey-core-center{width:54%;padding:13px 8px 11px}
+  .journey-memory-core{width:min(74vw,220px)}
+  .journey-core-center{width:56%;padding:13px 8px 11px}
   .journey-core-center small{font-size:10px}
   .journey-core-center span{font-size:8px}
-  .journey-lifetime-v2{padding:28px 0!important}.journey-metrics{grid-template-columns:1fr 1fr;gap:7px}.journey-metric{min-height:118px;padding:14px}.journey-metrics-memory .journey-metric-feature{min-height:164px}.journey-metrics-memory .journey-metric-feature>b{font-size:46px}.journey-metric-primary{min-height:170px}.journey-metric-primary>b{font-size:48px}
+  .journey-lifetime-v2{padding:34px 0 28px!important}
+  .journey-section-head{margin-bottom:16px!important;gap:5px!important;padding-inline:2px}
+  .journey-section-head>div>span{font-size:9px!important;margin-bottom:5px}
+  .journey-section-head h3{font-size:clamp(22px,6.8vw,30px)!important;line-height:1.38!important;max-width:16ch}
+  .journey-section-head>small,.journey-scope-v2{font-size:9px!important;line-height:1.5!important}
+  .journey-metrics{grid-template-columns:1fr 1fr;gap:8px}
+  .journey-metric{min-height:104px;padding:13px 14px;border-radius:16px;gap:8px}
+  .journey-metric>span{font-size:9.5px}.journey-metric>b{font-size:34px}.journey-metric>small{font-size:8.5px;line-height:1.35}
+  .journey-metrics-memory .journey-metric-feature{grid-column:1/-1;grid-row:auto;min-height:112px;padding:15px 16px;justify-content:center;background:linear-gradient(145deg,rgba(41,73,62,.22),rgba(255,255,255,.012))}
+  .journey-metrics-memory .journey-metric-feature::before{width:54px;height:54px;inset:16px 16px auto auto;opacity:.62}
+  .journey-metrics-memory .journey-metric-feature>b{font-size:42px}
+  .journey-memory-note{display:none!important}
   .journey-current-v2{padding:18px!important}.journey-current-grid{grid-template-columns:1fr 1fr;gap:7px}.journey-current-grid article{min-height:86px;padding:13px}.journey-current-grid b{font-size:28px}
   .journey-stage-v2{grid-template-columns:30px 38px minmax(0,1fr);padding:12px!important}.journey-stage-v2 .journey-stage-mark{width:38px;height:38px}
   .journey-philosophy-v2{grid-template-columns:1fr}.journey-philosophy-mark{height:46px;font-size:68px}.journey-philosophy-v2 p{font-size:10px!important}
@@ -1841,8 +1857,9 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 @media(max-width:400px){
   .journey-hero-v2{padding-inline:14px!important}
   .journey-hero-v2 h2{font-size:clamp(34px,12.6vw,46px)!important;max-width:6.4ch}
-  .journey-metrics,.journey-current-grid{grid-template-columns:1fr}
-  .journey-metrics-memory .journey-metric-feature{grid-column:auto;min-height:150px}
-  .journey-metric,.journey-current-grid article{min-height:0}
+  .journey-metrics{grid-template-columns:1fr 1fr}
+  .journey-metric{min-height:96px;padding:12px}
+  .journey-metric>b{font-size:31px}
+  .journey-current-grid{grid-template-columns:1fr 1fr}
 }
 @media(prefers-reduced-motion:reduce){.journey-state-pulse{animation:none}}
