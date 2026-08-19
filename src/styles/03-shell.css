@@ -311,7 +311,11 @@
   html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .sidebar-brand>button:first-child{
     justify-content:center;padding-inline:0;gap:0;
   }
-  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .user-card{grid-template-columns:1fr;justify-items:center;gap:0}
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip{margin-inline:8px;min-width:0;max-width:none;width:44px;padding:0;justify-content:center;gap:0;border-radius:16px}
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>span,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>i,
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>button{display:none}
+  html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .demo-rail-chip>svg{width:16px;height:16px}
   /* Only the RESTING spine stands its groups open — there the labels are gone,
      so an open body is just a column of icons and nothing can hide. The moment
      the rail is approached and floats out at full width, the groups go back to
