@@ -8,6 +8,7 @@ import {
   CopyPlus,
   FileSearch,
   FileText,
+  FlaskConical,
   House,
   Info,
   Library,
@@ -2030,6 +2031,12 @@ export default function App() {
             <X />
           </button>
         </div>
+        {user.IsDemo ? (
+          <div className="demo-rail-chip" role="status" aria-label="بيئة Demo معزولة">
+            <FlaskConical aria-hidden="true" /><span>DEMO</span><i aria-hidden="true" />
+            <button type="button" onClick={resetDemo} title="إعادة البيئة التجريبية" aria-label="إعادة البيئة التجريبية"><RefreshCw /></button>
+          </div>
+        ) : null}
         <button
           className="command-search"
           type="button"
@@ -2175,16 +2182,13 @@ export default function App() {
         <div className="sidebar-footer">
           {/* The system's own identity, and the quietest possible door into its
               memory. Not a button — a line that answers when it is pressed. */}
-          <button
-            type="button"
-            className="rail-identity"
-            onClick={() => setJourneyOpen(true)}
-            title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات"
-          >
-            <span className="rail-identity-name">SCHEDULE</span>
-            <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
-            <span className="rail-identity-go" aria-hidden="true"><ChevronLeft /></span>
-          </button>
+          {user.IsDemo ? (
+            <button type="button" className="rail-identity" onClick={() => setJourneyOpen(true)} title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات">
+              <span className="rail-identity-name">SCHEDULE</span>
+              <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
+              <span className="rail-identity-go" aria-hidden="true"><ChevronLeft /></span>
+            </button>
+          ) : null}
           <div className="user-card">
             <div
               className={`user-avatar health-${health}`}
@@ -2234,12 +2238,6 @@ export default function App() {
         />
       ) : null}
       {health !== "online" ? connectionGate() : null}
-      {dataMode && !dataMode.real ? (
-        <div className="fake-data-banner no-print" role="alert">
-          <div><strong>DEMO · بيئة معزولة</strong><span>كل تعديل يخص جلستك فقط · بيانات الأشخاص مصطنعة · الإدارة للعرض فقط.</span></div>
-          {user.IsDemo ? <button type="button" data-guide-ignore="إجراء خاص ببيئة Demo يعيد بيانات الجلسة التجريبية فقط ولا ينتمي إلى رحلة استخدام النظام الأكاديمية" onClick={resetDemo} title="إعادة بيانات Demo الأصلية"><RefreshCw /> إعادة التجربة</button> : null}
-        </div>
-      ) : null}
       {/* The last minute, said out loud. Any key, tap or scroll dismisses it —
           the same activity that keeps the session alive — so the button is a
           courtesy for a reader who has stopped touching anything, not a toll. */}
@@ -2291,7 +2289,7 @@ export default function App() {
             onGo={go}
             view="intelligence"
             icon={<WandSparkles />}
-            label="القرار"
+            label="الذكاء"
           />
         ) : null}
         <button

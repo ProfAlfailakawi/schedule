@@ -1960,18 +1960,10 @@
 .install-login .install-step-icon{background:#17231f;color:#b6d8cc}
 .install-login .install-steps-grid li{background:#0d1412;border-color:#2b3630}
 
-/* Demo entry: deliberately tiny. It is a quiet product teaser, not a second login card. */
-.demo-entry-icon{
-  width:30px;height:30px;min-width:30px;padding:0;display:grid;place-items:center;align-self:center;
-  border:1px solid color-mix(in srgb,#8fc2ae 20%,#26312d);border-radius:10px;
-  background:color-mix(in srgb,#8fc2ae 7%,#0b100f);color:#8eaa9f;
-  cursor:pointer;opacity:.72;transition:opacity .16s var(--ease),transform .16s var(--ease),border-color .16s var(--ease),color .16s var(--ease);
-}
-.demo-entry-icon:hover{opacity:1;transform:translateY(-1px);border-color:color-mix(in srgb,#8fc2ae 42%,#26312d);color:#c8e2d8}
-.demo-entry-icon:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 65%,transparent);outline-offset:3px}
-.demo-entry-icon:disabled{opacity:.4;cursor:wait;transform:none}
-.demo-entry-icon svg{width:14px;height:14px}
-.demo-entry-icon .button-spinner{width:13px;height:13px}
+/* Dedicated demo entry: visually distinct, quiet, and explicit about isolation. */
+.demo-entry-panel{margin-top:22px;padding:18px;border:1px solid color-mix(in srgb,#78a896 28%,transparent);border-radius:20px;background:linear-gradient(145deg,color-mix(in srgb,#0f1c18 88%,transparent),color-mix(in srgb,#163027 58%,transparent));box-shadow:0 18px 44px color-mix(in srgb,#000 18%,transparent) inset,0 12px 30px color-mix(in srgb,#000 10%,transparent)}
+.demo-entry-copy{display:grid;gap:6px}.demo-entry-copy strong{font-size:1rem;color:#eef8f4}.demo-entry-copy small{color:#9eb8ad;line-height:1.7;font-size:.82rem}.demo-entry-badge{width:max-content;padding:4px 9px;border-radius:999px;background:color-mix(in srgb,#79b49d 16%,transparent);border:1px solid color-mix(in srgb,#79b49d 24%,transparent);color:#add2c3;font-size:.68rem;font-weight:750;letter-spacing:.08em}
+.demo-entry-button{margin-top:14px;width:100%;min-height:48px;display:flex;align-items:center;justify-content:center;gap:9px;border-radius:14px;border:1px solid color-mix(in srgb,#8bc5ae 38%,transparent);background:#d9eee6;color:#12362b;font-weight:750;cursor:pointer;transition:transform .18s var(--ease),box-shadow .18s var(--ease)}.demo-entry-button:hover{transform:translateY(-1px);box-shadow:0 12px 28px color-mix(in srgb,#000 14%,transparent)}.demo-entry-button svg{width:17px;height:17px}.demo-entry-button:disabled{opacity:.62;cursor:wait;transform:none}
 
 /* System administration in Demo is a true showroom: no interactive control can fire. */
 html[data-demo-admin-readonly="true"] .app-main button,
@@ -1981,3 +1973,8 @@ html[data-demo-admin-readonly="true"] .app-main textarea,
 html[data-demo-admin-readonly="true"] .app-main [role="button"]{pointer-events:none!important;cursor:not-allowed!important}
 html[data-demo-admin-readonly="true"] .app-main button:not(.plain-icon){opacity:.58}
 html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإدارة للعرض فقط";position:sticky;top:12px;z-index:35;display:block;width:max-content;max-width:calc(100% - 24px);margin:12px auto -8px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,#7a5712 92%,transparent);color:#fff8df;border:1px solid color-mix(in srgb,#fff 18%,transparent);font-size:.72rem;font-weight:750;box-shadow:0 8px 24px color-mix(in srgb,#000 14%,transparent)}
+
+/* Quiet Demo invitation. */
+.demo-entry-panel,.demo-entry-copy,.demo-entry-button{display:none!important}
+.demo-entry-icon{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid color-mix(in srgb,#8da59a 28%,transparent);border-radius:11px;background:color-mix(in srgb,#0d1714 78%,transparent);color:#8fa69b;box-shadow:0 7px 18px color-mix(in srgb,#000 13%,transparent);cursor:pointer;transition:border-color .16s var(--ease),color .16s var(--ease),background .16s var(--ease)}
+.demo-entry-icon:hover{color:#b3c9bf;border-color:color-mix(in srgb,#8fb6a5 48%,transparent);background:#101c18}.demo-entry-icon:focus-visible{outline:3px solid color-mix(in srgb,#2b7d69 25%,transparent);outline-offset:2px}.demo-entry-icon:disabled{opacity:.55;cursor:wait}.demo-entry-icon svg{width:16px;height:16px}.demo-entry-icon .button-spinner{width:14px;height:14px}

@@ -6,6 +6,7 @@ import {
   LockKeyhole,
   ShieldCheck,
   Sparkles,
+  FlaskConical,
 } from "lucide-react";
 import { Field, Notice, PrimaryButton } from "./ui";
 import InstallApp from "./InstallApp";
@@ -24,8 +25,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     [error, setError] = useState<string | null>(null),
     [identityOpen, setIdentityOpen] = useState(false),
     [demoLoading, setDemoLoading] = useState(false),
-    [demoEnabled, setDemoEnabled] = useState(false),
-    [demoEntryUrl, setDemoEntryUrl] = useState("");
+    [demoEnabled, setDemoEnabled] = useState(false);
   useEffect(() => {
     let alive = true;
     fetch("/api/demo/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
@@ -180,16 +180,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           <footer>
             <span>الجدول الأكاديمي</span>
             {demoEnabled ? (
-              <button
-                type="button"
-                className="demo-entry-icon"
-                onClick={enterDemo}
-                disabled={loading || demoLoading}
-                aria-label="تجربة النظام"
-                title="تجربة النظام"
-                data-guide-ignore="دخول اختياري إلى بيئة Demo معزولة"
-              >
-                {demoLoading ? <span className="button-spinner" /> : <Sparkles aria-hidden="true" />}
+              <button type="button" className="demo-entry-icon" onClick={enterDemo} disabled={loading || demoLoading} aria-label="تجربة النظام" title="تجربة النظام" data-guide-ignore="دخول اختياري إلى بيئة Demo معزولة">
+                {demoLoading ? <span className="button-spinner" /> : <FlaskConical aria-hidden="true" />}
               </button>
             ) : null}
             <InstallApp variant="login" />
