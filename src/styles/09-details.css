@@ -1896,3 +1896,242 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .journey-timeline-v2{margin-inline:14px!important;padding:34px 0!important}
   .journey-philosophy-v2,.journey-foot-v2{margin-inline:14px!important}
 }
+
+/* ========================================================================== 
+   V10 — Journey isolation + true portrait composition.
+   The Journey must own the entire visual stack while it is open; on phones in
+   portrait it is composed as a compact editorial surface rather than a scaled
+   desktop grid. Landscape keeps the desktop/tablet composition.
+   ========================================================================== */
+.journey-backdrop-v2{
+  z-index:5000!important;
+}
+
+@media (max-width:520px) and (orientation:portrait){
+  .journey-backdrop-v2{
+    padding:0!important;
+    align-items:stretch!important;
+    background:
+      radial-gradient(circle at 78% 4%,rgba(33,91,75,.26),transparent 30%),
+      radial-gradient(circle at 12% 76%,rgba(157,108,45,.10),transparent 28%),
+      #07100d!important;
+  }
+  .journey.journey-v2{
+    width:100%!important;
+    max-width:none!important;
+    max-height:100svh!important;
+    min-height:100svh!important;
+    border:0!important;
+    border-radius:0!important;
+    background-size:54px 54px,54px 54px,auto,auto!important;
+    scroll-padding-top:18px;
+  }
+  .journey-close-v2{
+    position:fixed!important;
+    top:max(12px,env(safe-area-inset-top))!important;
+    inset-inline-start:12px!important;
+    inset-inline-end:auto!important;
+    width:44px!important;
+    height:44px!important;
+    margin:0!important;
+    z-index:5010!important;
+    border-radius:15px!important;
+    background:rgba(6,16,13,.92)!important;
+    border-color:rgba(126,186,163,.26)!important;
+    box-shadow:0 0 0 4px rgba(42,132,105,.08),0 10px 28px rgba(0,0,0,.32)!important;
+  }
+
+  /* Hero: compact, readable, and deliberately separated from the close button. */
+  .journey-hero-v2{
+    min-height:0!important;
+    display:grid!important;
+    grid-template-columns:1fr!important;
+    gap:18px!important;
+    padding:max(68px,calc(env(safe-area-inset-top) + 58px)) 16px 26px!important;
+    border-bottom:1px solid rgba(184,206,197,.10)!important;
+    overflow:hidden!important;
+  }
+  .journey-hero-copy{
+    grid-row:auto!important;
+    width:100%!important;
+    padding:0!important;
+    justify-items:start!important;
+  }
+  .journey-eyebrow-v2{
+    max-width:calc(100% - 62px)!important;
+    font-size:9px!important;
+    letter-spacing:.08em!important;
+    gap:8px!important;
+  }
+  .journey-eyebrow-v2 i{width:22px!important}
+  .journey-hero-v2 h2{
+    width:100%!important;
+    max-width:none!important;
+    margin-top:16px!important;
+    gap:5px!important;
+    font-size:clamp(34px,10.8vw,44px)!important;
+    line-height:1.02!important;
+    letter-spacing:-.035em!important;
+  }
+  .journey-title-line{width:max-content;max-width:100%}
+  .journey-title-line-combo{
+    display:flex!important;
+    flex-wrap:nowrap!important;
+    align-items:baseline!important;
+    gap:.18em!important;
+    width:max-content!important;
+    max-width:100%!important;
+  }
+  .journey-hero-v2 h2 em{
+    margin-top:0!important;
+    transform:translateY(.12em)!important;
+  }
+  .journey-hero-v2 p{
+    max-width:34ch!important;
+    margin-top:16px!important;
+    font-size:10.5px!important;
+    line-height:1.72!important;
+    color:#809089!important;
+  }
+  .journey-signature{display:none!important}
+
+  /* The lifetime total becomes a strong but shallow capsule: 15,427 always fits. */
+  .journey-memory-core{
+    grid-row:auto!important;
+    width:min(82vw,300px)!important;
+    margin:0 auto!important;
+    justify-self:center!important;
+    aspect-ratio:1.22!important;
+    border-radius:34%!important;
+  }
+  .journey-core-halo{inset:2% 8%!important;border-radius:36%!important}
+  .journey-core-grid{inset:14% 18%!important}
+  .journey-core-orbit-a{inset:1% 8%!important}
+  .journey-core-orbit-b{inset:12% 18%!important}
+  .journey-core-center{
+    width:72%!important;
+    aspect-ratio:auto!important;
+    min-height:148px!important;
+    padding:16px 12px 14px!important;
+    border-radius:28px!important;
+    gap:4px!important;
+  }
+  .journey-core-center svg{width:24px!important;height:24px!important;margin-bottom:3px!important}
+  .journey-core-center b{
+    max-width:100%!important;
+    font-size:clamp(40px,13.2vw,54px)!important;
+    line-height:.96!important;
+    letter-spacing:-.06em!important;
+    white-space:nowrap!important;
+  }
+  .journey-core-center small{font-size:10.5px!important;margin-top:2px!important}
+  .journey-core-center span{font-size:8px!important;margin-top:2px!important}
+
+  /* Memory section: short header + two-column compact census. */
+  .journey-lifetime-v2{
+    margin-inline:14px!important;
+    padding:26px 0 22px!important;
+  }
+  .journey-section-head{
+    margin-bottom:14px!important;
+    padding-inline:0!important;
+    gap:4px!important;
+  }
+  .journey-section-head>div>span{font-size:8.5px!important;margin-bottom:4px!important}
+  .journey-section-head h3{
+    max-width:15ch!important;
+    font-size:clamp(20px,6vw,25px)!important;
+    line-height:1.35!important;
+    letter-spacing:-.02em!important;
+  }
+  .journey-section-head>small,.journey-scope-v2{
+    font-size:8.5px!important;
+    line-height:1.45!important;
+  }
+  .journey-metrics-memory{
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:8px!important;
+  }
+  .journey-metrics-memory .journey-metric,
+  .journey-metrics-memory .journey-metric-feature{
+    grid-column:auto!important;
+    grid-row:auto!important;
+    min-height:96px!important;
+    padding:12px!important;
+    border-radius:16px!important;
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:flex-start!important;
+    justify-content:space-between!important;
+    gap:5px!important;
+  }
+  .journey-metrics-memory .journey-metric-feature{
+    background:linear-gradient(145deg,rgba(41,73,62,.22),rgba(255,255,255,.012))!important;
+  }
+  .journey-metrics-memory .journey-metric-feature::before{display:none!important}
+  .journey-metrics-memory .journey-metric>span{font-size:9px!important;line-height:1.2!important}
+  .journey-metrics-memory .journey-metric>b{
+    font-size:clamp(28px,8.5vw,36px)!important;
+    line-height:1!important;
+    white-space:nowrap!important;
+  }
+  .journey-metrics-memory .journey-metric>small{
+    font-size:7.8px!important;
+    line-height:1.28!important;
+    color:#617069!important;
+  }
+  .journey-metrics-memory .journey-metric:last-child:nth-child(odd){grid-column:1/-1!important;min-height:82px!important}
+  .journey-memory-note{display:none!important}
+
+  /* Timeline becomes a horizontal snap story instead of five tall cards. */
+  .journey-timeline-v2{
+    margin-inline:0!important;
+    padding:28px 0 30px!important;
+  }
+  .journey-timeline-v2>.journey-section-head{padding-inline:14px!important}
+  .journey-timeline-v2 .journey-section-head h3{max-width:18ch!important}
+  .journey-stages-v2{
+    display:flex!important;
+    grid-template-columns:none!important;
+    gap:9px!important;
+    overflow-x:auto!important;
+    padding:2px 14px 10px!important;
+    margin:0!important;
+    scroll-snap-type:x mandatory;
+    scrollbar-width:none;
+    overscroll-behavior-inline:contain;
+  }
+  .journey-stages-v2::-webkit-scrollbar{display:none}
+  .journey-stages-v2::before{display:none!important}
+  .journey-stage-v2{
+    flex:0 0 min(76vw,270px)!important;
+    min-height:126px!important;
+    display:grid!important;
+    grid-template-columns:32px 38px minmax(0,1fr)!important;
+    align-items:center!important;
+    gap:9px!important;
+    padding:13px!important;
+    scroll-snap-align:start;
+  }
+  .journey-stage-v2 .journey-stage-mark{width:38px!important;height:38px!important}
+  .journey-stage-v2 .journey-stage-copy{margin-top:0!important}
+  .journey-stage-v2 .journey-stage-copy strong{font-size:12px!important}
+  .journey-stage-v2 .journey-stage-copy p{font-size:9px!important;line-height:1.55!important}
+
+  .journey-philosophy-v2{
+    margin-inline:14px!important;
+    grid-template-columns:1fr!important;
+    gap:0!important;
+    padding:22px 18px!important;
+    border-radius:19px!important;
+  }
+  .journey-philosophy-mark{display:none!important}
+  .journey-philosophy-v2 h3{font-size:clamp(25px,7.7vw,32px)!important;line-height:1.18!important}
+  .journey-philosophy-v2 p{margin-top:12px!important;font-size:9px!important;line-height:1.7!important}
+  .journey-foot-v2{
+    margin-inline:14px!important;
+    margin-top:28px!important;
+    padding-bottom:max(24px,env(safe-area-inset-bottom))!important;
+  }
+}
