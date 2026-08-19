@@ -2182,13 +2182,11 @@ export default function App() {
         <div className="sidebar-footer">
           {/* The system's own identity, and the quietest possible door into its
               memory. Not a button — a line that answers when it is pressed. */}
-          {user.IsDemo ? (
-            <button type="button" className="rail-identity" onClick={() => setJourneyOpen(true)} title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات" data-guide-ignore="مدخل تعريفي تسويقي إلى رحلة SCHEDULE ولا ينفذ إجراءً على بيانات الجدول">
-              <span className="rail-identity-name">SCHEDULE</span>
-              <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
-              <span className="rail-identity-go" aria-hidden="true"><ChevronLeft /></span>
-            </button>
-          ) : null}
+          <button type="button" className="rail-identity" onClick={() => setJourneyOpen(true)} title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات" data-guide-ignore="مدخل تعريفي تسويقي إلى رحلة SCHEDULE ولا ينفذ إجراءً على بيانات الجدول">
+            <span className="rail-identity-name">SCHEDULE</span>
+            <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
+            <span className="rail-identity-go" aria-hidden="true"><ChevronLeft /></span>
+          </button>
           <div className="user-card">
             <div
               className={`user-avatar health-${health}`}

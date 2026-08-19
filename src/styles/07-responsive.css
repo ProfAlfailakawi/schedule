@@ -1051,97 +1051,117 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
 }
 
 /* ==========================================================================
-   LOGIN — FIXED BUT BALANCED
-   Keep the page physically fixed while distributing the hero and access card
-   across the available viewport. Tall phones should not compress everything at
-   the top and leave a dead black field below.
+   LOGIN — VISUAL VIEWPORT LAYOUT
+   One source of truth for mobile Safari: JS writes --login-visual-height from
+   visualViewport. The story keeps its natural height and the access card owns
+   the remaining visible space, so no dead black strip is left below it.
    ========================================================================== */
 @media (pointer:coarse) and (max-width:760px) and (orientation:portrait){
   .apex-login{
-    position:fixed!important;inset:0!important;height:100dvh!important;
-    overflow:hidden!important;display:flex!important;flex-direction:column!important;
+    position:fixed!important;
+    inset:auto 0 auto 0!important;
+    top:var(--login-visual-top,0px)!important;
+    width:100%!important;
+    height:var(--login-visual-height,100dvh)!important;
+    min-height:0!important;
+    max-height:var(--login-visual-height,100dvh)!important;
+    overflow:hidden!important;
+    padding:max(10px,env(safe-area-inset-top)) 14px max(10px,env(safe-area-inset-bottom))!important;
+    display:flex!important;
+    flex-direction:column!important;
   }
   .apex-login-stage{
-    flex:1!important;height:auto!important;min-height:0!important;
-    display:grid!important;grid-template-columns:minmax(0,1fr)!important;
-    grid-template-rows:auto auto!important;
-    align-content:space-evenly!important;align-items:center!important;
-    gap:clamp(14px,2.2dvh,26px)!important;
-    padding:clamp(10px,2dvh,24px) 0!important;
+    flex:1 1 auto!important;
+    width:100%!important;
+    height:100%!important;
+    min-height:0!important;
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:auto minmax(0,1fr)!important;
+    align-content:stretch!important;
+    align-items:stretch!important;
+    gap:clamp(10px,1.45dvh,16px)!important;
+    padding:clamp(4px,.75dvh,8px) 0!important;
     overflow:hidden!important;
   }
-  .apex-login-story,.apex-login-access{width:100%;min-width:0}
-  .apex-login-story h1{font-size:clamp(34px,5.2dvh,48px)!important}
-  .apex-login-story>p{font-size:clamp(12px,1.65dvh,15px)!important}
-  .apex-login-principles{margin-top:clamp(10px,1.7dvh,18px)!important}
-  .apex-login-access{padding:clamp(18px,2.4dvh,28px)!important}
-  .apex-access-head strong{font-size:clamp(22px,2.9dvh,28px)!important}
-  .apex-login-form{margin-top:clamp(12px,1.8dvh,20px)!important;gap:clamp(10px,1.5dvh,16px)!important}
-  .apex-login-form .field input{min-height:clamp(46px,6dvh,58px)!important}
-  .apex-login-form .btn{min-height:clamp(48px,6dvh,58px)!important}
-  .apex-login-access footer{margin-top:clamp(12px,1.8dvh,20px)!important;padding-top:clamp(10px,1.5dvh,16px)!important}
-}
-
-/* Very short portrait phones: preserve the fixed contract by compressing just
-   enough to fit, rather than allowing page scroll. */
-@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (max-height:700px){
-  .apex-login-stage{align-content:center!important;gap:8px!important;padding:4px 0!important}
-  .apex-login-kicker{display:none!important}
-  .apex-login-story h1{font-size:30px!important;margin-top:0!important}
-  .apex-login-story>p{font-size:11px!important;margin-top:6px!important;line-height:1.4!important}
-  .apex-login-principles{display:none!important}
-  .apex-login-access{padding:14px!important}
-  .apex-access-head p{display:none!important}
-  .apex-login-form{margin-top:8px!important;gap:7px!important}
-  .apex-login-form .field input{min-height:40px!important}
-  .apex-login-form .btn{min-height:42px!important}
-  .apex-login-access footer{margin-top:8px!important;padding-top:7px!important}
-}
-
-/* ==========================================================================\n   LOGIN — TALL PHONE FILL\n   Use the spare vertical room on tall portrait phones to make the sign-in\n   surface feel intentional and substantial. This enlarges layout dimensions\n   (not browser zoom), so the fixed/no-scroll contract remains intact.\n   ========================================================================== */
-@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (min-height:701px){
-  .apex-login-stage{
-    align-content:center!important;
-    gap:clamp(12px,1.55dvh,20px)!important;
-    padding:clamp(5px,.9dvh,12px) 0!important;
+  .apex-login-story{
+    width:100%!important;
+    min-width:0!important;
+    align-self:start!important;
   }
   .apex-login-story h1{
-    font-size:clamp(37px,5.6dvh,52px)!important;
-    margin-top:clamp(8px,1.1dvh,13px)!important;
+    margin-top:clamp(7px,1dvh,10px)!important;
+    font-size:clamp(34px,5.2dvh,46px)!important;
+    line-height:.99!important;
   }
   .apex-login-story>p{
-    margin-top:clamp(9px,1.15dvh,14px)!important;
-    font-size:clamp(13px,1.78dvh,16px)!important;
-    line-height:1.58!important;
+    margin-top:clamp(7px,1dvh,10px)!important;
+    font-size:clamp(12px,1.6dvh,14px)!important;
+    line-height:1.52!important;
   }
   .apex-login-principles{
-    margin-top:clamp(12px,1.8dvh,20px)!important;
-    gap:clamp(7px,1vw,10px)!important;
+    margin-top:clamp(8px,1.25dvh,14px)!important;
+    gap:7px!important;
   }
-  .apex-login-principles>span{padding:8px 12px!important}
-  .apex-login-principles b{font-size:12px!important}
+  .apex-login-principles>span{padding:7px 9px!important}
+  .apex-login-principles b{font-size:11px!important}
+
   .apex-login-access{
-    padding:clamp(21px,2.75dvh,31px)!important;
-    border-radius:clamp(25px,3.1dvh,30px)!important;
+    width:100%!important;
+    min-width:0!important;
+    min-height:0!important;
+    height:100%!important;
+    align-self:stretch!important;
+    display:flex!important;
+    flex-direction:column!important;
+    padding:clamp(17px,2.3dvh,23px)!important;
+    border-radius:clamp(24px,3dvh,29px)!important;
+    overflow:hidden!important;
   }
-  .apex-access-head>span{font-size:11px!important}
-  .apex-access-head strong{font-size:clamp(24px,3.1dvh,30px)!important}
-  .apex-access-head p{
-    margin-top:clamp(5px,.75dvh,8px)!important;
-    font-size:clamp(12px,1.55dvh,14px)!important;
-  }
+  .apex-access-head>span{font-size:10px!important}
+  .apex-access-head strong{font-size:clamp(23px,2.9dvh,27px)!important}
+  .apex-access-head p{margin-top:4px!important;font-size:12px!important}
   .apex-login-form{
-    margin-top:clamp(14px,1.95dvh,22px)!important;
-    gap:clamp(11px,1.6dvh,17px)!important;
+    margin-top:clamp(10px,1.45dvh,15px)!important;
+    gap:clamp(8px,1.15dvh,12px)!important;
+    flex:0 0 auto!important;
   }
-  .apex-login-form .field{gap:6px!important}
-  .apex-login-form .field input{min-height:clamp(50px,6.35dvh,62px)!important}
-  .apex-login-form .btn{min-height:clamp(52px,6.55dvh,64px)!important}
+  .apex-login-form .field{gap:5px!important}
+  .apex-login-form .field input{min-height:clamp(44px,5.7dvh,54px)!important}
+  .apex-login-form .btn{min-height:clamp(46px,5.9dvh,56px)!important}
   .apex-login-access footer{
-    margin-top:clamp(14px,1.95dvh,22px)!important;
-    padding-top:clamp(12px,1.65dvh,18px)!important;
-    gap:10px!important;
+    margin-top:auto!important;
+    padding-top:clamp(9px,1.25dvh,13px)!important;
+    gap:8px!important;
   }
-  .install-login .install-trigger{width:36px!important;min-width:36px!important;height:36px!important}
-  .demo-entry-icon{width:36px!important;height:36px!important}
+  .install-login .install-trigger,.demo-entry-icon{
+    width:34px!important;min-width:34px!important;height:34px!important;
+  }
+}
+
+/* Short portrait phones keep the same viewport contract; only optional story
+   detail is removed, never the login controls. */
+@media (pointer:coarse) and (max-width:760px) and (orientation:portrait) and (max-height:700px){
+  .apex-login-stage{gap:7px!important;padding:2px 0!important}
+  .apex-login-kicker{display:none!important}
+  .apex-login-story h1{font-size:29px!important;margin-top:0!important}
+  .apex-login-story>p{font-size:10.5px!important;margin-top:4px!important;line-height:1.35!important}
+  .apex-login-principles{display:none!important}
+  .apex-login-access{padding:13px 15px!important}
+  .apex-access-head p{display:none!important}
+  .apex-login-form{margin-top:7px!important;gap:6px!important}
+  .apex-login-form .field input{min-height:39px!important}
+  .apex-login-form .btn{min-height:41px!important}
+  .apex-login-access footer{padding-top:6px!important}
+}
+
+/* Landscape uses the measured visual height as well, but keeps the compact
+   two-column login composition already expected on a phone held sideways. */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:650px){
+  .apex-login{
+    position:fixed!important;inset:auto 0 auto 0!important;
+    top:var(--login-visual-top,0px)!important;
+    height:var(--login-visual-height,100dvh)!important;min-height:0!important;
+    max-height:var(--login-visual-height,100dvh)!important;overflow:hidden!important;
+  }
 }
