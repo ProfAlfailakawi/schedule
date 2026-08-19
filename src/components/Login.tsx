@@ -177,7 +177,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               <strong>جرّب النظام بحرية</strong>
               <small>أضف واحذف وانقل داخل بيانات تجريبية مصطنعة. لا تصل هذه الجلسة إلى بيانات الجامعة الحقيقية.</small>
             </div>
-            <button type="button" className="demo-entry-button" onClick={enterDemo} disabled={loading || demoLoading}>
+            <button type="button" className="demo-entry-button" data-guide-ignore="دخول اختياري إلى بيئة Demo قبل المصادقة؛ المرشد يبدأ بعد دخول المستخدم إلى مساحة العمل" onClick={enterDemo} disabled={loading || demoLoading}>
               {demoLoading ? <span className="button-spinner" /> : <><Sparkles /> دخول فوري للتجربة <ArrowLeft /></>}
             </button>
           </div> : null}

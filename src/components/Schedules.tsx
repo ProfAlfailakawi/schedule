@@ -7096,7 +7096,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                                           </div>
                                           <p>{occupantCourse}</p>
                                           {occupantInstructor ? <small>{occupantInstructor}</small> : null}
-                                          <button type="button" className="schedule-hall-busy-open" onClick={() => { setHallBusyPreview(null); void openContext(occupant); }}>عرض الموعد</button>
+                                          <button type="button" className="schedule-hall-busy-open" data-guide-ignore="تنقل ثانوي من معاينة إشغال القاعة إلى تفاصيل الموعد الموجود؛ لا يغيّر بيانات الجدول" onClick={() => { setHallBusyPreview(null); void openContext(occupant); }}>عرض الموعد</button>
                                           {item.occupants.length > 1 ? <em>+{(item.occupants.length - 1).toLocaleString("ar-KW-u-nu-latn")} موعد متداخل</em> : null}
                                         </div>
                                       ) : null}

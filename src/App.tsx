@@ -2237,7 +2237,7 @@ export default function App() {
       {dataMode && !dataMode.real ? (
         <div className="fake-data-banner no-print" role="alert">
           <div><strong>DEMO · بيئة معزولة</strong><span>كل تعديل يخص جلستك فقط · بيانات الأشخاص مصطنعة · الإدارة للعرض فقط.</span></div>
-          {user.IsDemo ? <button type="button" onClick={resetDemo} title="إعادة بيانات Demo الأصلية"><RefreshCw /> إعادة التجربة</button> : null}
+          {user.IsDemo ? <button type="button" data-guide-ignore="إجراء خاص ببيئة Demo يعيد بيانات الجلسة التجريبية فقط ولا ينتمي إلى رحلة استخدام النظام الأكاديمية" onClick={resetDemo} title="إعادة بيانات Demo الأصلية"><RefreshCw /> إعادة التجربة</button> : null}
         </div>
       ) : null}
       {/* The last minute, said out loud. Any key, tap or scroll dismisses it —
