@@ -44,3 +44,24 @@ export function formatScheduleTimeRange(
   if (from === "—") return to;
   return `⁦${to} - ${from}⁩`;
 }
+
+
+/** Arabic UI duration token. Keeps each number attached to its unit so RTL
+ * layout can never split/reorder `10س 7د` into a corrupt visual sequence. */
+export function formatCompactDurationArabic(minutes: number | null | undefined): string {
+  const total = Math.max(0, Math.round(Number(minutes) || 0));
+  const hours = Math.floor(total / 60);
+  const mins = total % 60;
+  const nf = new Intl.NumberFormat("ar-KW-u-nu-arab", { maximumFractionDigits: 0 });
+  const parts: string[] = [];
+  if (hours) parts.push(`${nf.format(hours)}س`);
+  if (mins || !hours) parts.push(`${nf.format(mins)}د`);
+  return `⁧${parts.join(" ")}⁩`;
+}
+
+/** Standalone metric label for minutes in the product's Arabic reading order.
+ * Prose sentences should keep normal grammar; this helper is for metric/value UI. */
+export function formatMinuteMetricArabic(minutes: number | null | undefined): string {
+  const value = new Intl.NumberFormat("ar-KW-u-nu-arab", { maximumFractionDigits: 1 }).format(Number(minutes) || 0);
+  return `دقيقة ⁧${value}⁩`;
+}

@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useState}from"react";
 import{ArrowLeft,BookOpen,Building2,CalendarClock,CalendarDays,CheckCircle2,ChevronDown,Clock3,DoorOpen,GraduationCap,ShieldAlert,Sparkles,UsersRound}from"lucide-react";
 import{Notice,PrimaryButton}from"./ui";
 import InstallApp from"./InstallApp";
-import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, scheduleClockForDisplay }from"../utils/scheduleTime";
+import{SCHEDULE_DAY_END,SCHEDULE_DAY_SPAN,SCHEDULE_DAY_START, formatCompactDurationArabic, scheduleClockForDisplay }from"../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 
 interface DashboardProps{user:any;scopes:any[];canManageSchedule?:boolean;onNavigate?:(view:string)=>void;searchView?:string;reportView?:string}
@@ -118,7 +118,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
   {key:"today",label:"محاضرات اليوم",value:num(today.length)},
   criticalCount!=null?{key:"conflicts",label:"تعارضات حرجة",value:num(criticalCount),tone:criticalCount>0?"danger":undefined}:null,
   ws?{key:"rooms",label:"قاعات مشغولة",value:num(ws.peakOccupiedRooms)}:null,
-  overview?.metrics?.avgInstructorGap!=null?{key:"gap",label:"متوسط الفراغ",value:`${num(overview.metrics.avgInstructorGap)} د`}:null,
+  overview?.metrics?.avgInstructorGap!=null?{key:"gap",label:"متوسط الفراغ",value:formatCompactDurationArabic(overview.metrics.avgInstructorGap)}:null,
   living?.health?{key:"ready",label:"الجاهزية",value:`${num(percent(living.health.quality))}٪`}:null,
  ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger"}>;
 

@@ -1598,7 +1598,7 @@
 
 /* --- A professor's week, in the shape it actually has ----------------------
    Numbers already say how much waiting there is; this says where it falls.
-   Teaching is solid jade, waiting is a hatched brass stretch, and anything
+   Teaching is solid jade, waiting is a cool slate-blue hatched stretch, and anything
    under an hour is drawn as nothing at all — a short turnaround is a walk
    between buildings, and marking it would bury the waits that matter.
 
@@ -1638,10 +1638,10 @@
   position:absolute;inset-block:0;
   display:grid;place-items:center;
   font:600 9px/1 var(--font-mono);font-style:normal;
-  color:var(--brass);
+  color:color-mix(in srgb,#667f9e 86%,var(--ink));
   background:repeating-linear-gradient(
     -45deg,
-    color-mix(in srgb,var(--brass) 22%,transparent) 0 3px,
+    color-mix(in srgb,#667f9e 22%,transparent) 0 3px,
     transparent 3px 7px
   );
 }
@@ -3583,13 +3583,13 @@ button.twin-delta{width:100%}
 .week-shape-track{height:26px!important;border-radius:9px!important;background:color-mix(in srgb,var(--line-strong) 30%,var(--surface))!important;border:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
 .week-shape-track>b{inset-block:3px!important;border-radius:6px!important;background:var(--accent-strong)!important;box-shadow:0 1px 0 color-mix(in srgb,#fff 15%,transparent) inset}
 .week-shape-track>i.week-shape-wait{
-  inset-block:3px!important;border-radius:6px!important;color:color-mix(in srgb,var(--brass) 92%,#5a3a00)!important;
-  background:repeating-linear-gradient(-45deg,color-mix(in srgb,var(--brass) 32%,var(--surface)) 0 4px,color-mix(in srgb,var(--brass) 10%,var(--surface)) 4px 8px)!important;
-  outline:1px solid color-mix(in srgb,var(--brass) 30%,transparent);font-weight:750!important;
+  inset-block:3px!important;border-radius:6px!important;color:color-mix(in srgb,#667f9e 92%,var(--ink))!important;
+  background:repeating-linear-gradient(-45deg,color-mix(in srgb,#667f9e 30%,var(--surface)) 0 4px,color-mix(in srgb,#667f9e 9%,var(--surface)) 4px 8px)!important;
+  outline:1px solid color-mix(in srgb,#667f9e 34%,transparent);font-weight:750!important;
 }
 .week-shape-legend{display:flex!important;flex-wrap:wrap;gap:7px!important;margin-top:12px!important;margin-inline-start:56px!important;color:var(--muted)!important}
 .week-shape-legend>span{display:inline-flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid var(--line);border-radius:999px;background:var(--surface);font-size:.67rem;font-weight:650}
-.week-shape-legend>span>i{display:block;width:13px;height:8px;border-radius:3px}.week-shape-legend .teaching>i{background:var(--accent-strong)}.week-shape-legend .waiting>i{background:color-mix(in srgb,var(--brass) 38%,var(--surface));outline:1px solid color-mix(in srgb,var(--brass) 34%,transparent)}.week-shape-legend .idle>i{background:color-mix(in srgb,var(--line-strong) 42%,var(--surface))}
+.week-shape-legend>span>i{display:block;width:13px;height:8px;border-radius:3px}.week-shape-legend .teaching>i{background:var(--accent-strong)}.week-shape-legend .waiting>i{background:color-mix(in srgb,#667f9e 34%,var(--surface));outline:1px solid color-mix(in srgb,#667f9e 38%,transparent)}.week-shape-legend .idle>i{background:color-mix(in srgb,var(--line-strong) 42%,var(--surface))}
 
 /* Draft pre-publish repair is a complete workflow: fast individual actions,
    deliberate bulk deletion, and immediate revalidation. */

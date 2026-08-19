@@ -4781,7 +4781,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const weekMainScrollRef = useRef<HTMLDivElement | null>(null);
   const roomsRulerScrollRef = useRef<HTMLDivElement | null>(null);
   const roomsMainScrollRef = useRef<HTMLDivElement | null>(null);
+  const weekScrollOwnerRef = useRef<"top" | "ruler" | "main" | null>(null);
+  const weekScrollReleaseRef = useRef<number | null>(null);
   const syncWeekScroll = (source: "top" | "ruler" | "main", value: number) => {
+    // Programmatic scroll events from the two follower strips used to bounce
+    // back into the strip the user was dragging, which made RTL week scrolling
+    // spring toward the right. For one animation frame, the user's source is
+    // the sole owner; followers mirror it but can never answer back.
+    if (weekScrollOwnerRef.current && weekScrollOwnerRef.current !== source) return;
+    weekScrollOwnerRef.current = source;
     const targets = [
       source !== "top" ? weekTopScrollRef.current : null,
       source !== "ruler" ? weekRulerScrollRef.current : null,
@@ -4789,6 +4797,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     ];
     targets.forEach(target => {
       if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
+    });
+    if (weekScrollReleaseRef.current != null) cancelAnimationFrame(weekScrollReleaseRef.current);
+    weekScrollReleaseRef.current = requestAnimationFrame(() => {
+      weekScrollOwnerRef.current = null;
+      weekScrollReleaseRef.current = null;
     });
   };
   const syncRoomsScroll = (source: "ruler" | "main", value: number) => {
@@ -6548,7 +6561,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         onClick={() => void openContext(r)}
                       >
                         <time dir="ltr">
-                          <b>{scheduleClockForDisplay(r.fendtime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fstarttime)}</small>
+                          <b>{scheduleClockForDisplay(r.fstarttime)}</b><span>-</span><small>{scheduleClockForDisplay(r.fendtime)}</small>
                         </time>
                         <i />
                         <div>

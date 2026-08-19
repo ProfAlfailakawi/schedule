@@ -77,7 +77,7 @@ import {
   intelligenceDayLabels as dayLabels,
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
-import { formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES, scheduleClockForDisplay } from "../utils/scheduleTime";
+import { formatCompactDurationArabic, formatMinuteMetricArabic, formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES, scheduleClockForDisplay } from "../utils/scheduleTime";
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 
 /**
@@ -1755,7 +1755,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     return loads.filter((item:any) => Number(item.maxGap || 0) >= 180).sort((a:any,b:any) => Number(b.maxGap||0)-Number(a.maxGap||0)).slice(0, 12).map((item:any) => ({
       title: String(item.name || "أستاذ"),
       meta: `${Number(item.weeklyHours || 0).toLocaleString("ar-KW-u-nu-latn")} ساعة أسبوعيًا · ${Number(item.days || 0).toLocaleString("ar-KW-u-nu-latn")} أيام`,
-      value: `${Math.floor(Number(item.maxGap || 0) / 60)}س ${Number(item.maxGap || 0) % 60}د`,
+      value: formatCompactDurationArabic(Number(item.maxGap || 0)),
     }));
   }, [overview?.professorLoads]);
   const lateReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => rows.filter(row => twinMinutes(row.fstarttime) >= 16 * 60).sort((a,b) => twinMinutes(a.fstarttime) - twinMinutes(b.fstarttime)).slice(0, 12).map(row => ({
@@ -2143,10 +2143,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <span>مسودة داخلية</span><ChevronLeft aria-hidden="true" />
               </button>
               <button type="button" data-guide-ignore="يفتح شرحاً بصرياً لهذا المؤشر داخل مركز القيادة فقط" className="approval-metric-card" onClick={() => setInsightReason({
-                kicker:"راحة الجدول", title:"متوسط فراغ الأساتذة", metric:`${overview.metrics.avgInstructorGap}د`, tone:Number(overview.metrics.avgInstructorGap)>=180?"warn":"plain", icon:<CalendarClock />,
+                kicker:"راحة الجدول", title:"متوسط فراغ الأساتذة", metric:formatCompactDurationArabic(overview.metrics.avgInstructorGap), tone:Number(overview.metrics.avgInstructorGap)>=180?"warn":"plain", icon:<CalendarClock />,
                 summary:longGapReasonItems.length?"أصحاب الفراغات الأطول الآن:":"لا يوجد أستاذ بفراغ يومي يتجاوز 3 ساعات.",
                 items:longGapReasonItems,
-                facts:[{label:"المتوسط",value:`${overview.metrics.avgInstructorGap} دقيقة`},{label:"أكثر من 3س",value:String(longGapReasonItems.length)},{label:"القراءة",value:"إرشادية"}]
+                facts:[{label:"المتوسط",value:formatMinuteMetricArabic(overview.metrics.avgInstructorGap)},{label:"أكثر من 3س",value:String(longGapReasonItems.length)},{label:"القراءة",value:"إرشادية"}]
               })}>
                 <strong>{overview.metrics.avgInstructorGap}</strong>
                 <span>دقيقة متوسط الفراغ</span><ChevronLeft aria-hidden="true" />
@@ -2433,7 +2433,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   </div>
                   <span className={p.maxGap >= 180 ? "gap-warn" : ""}>
                     {p.maxGap
-                      ? `${Math.floor(p.maxGap / 60)}س ${p.maxGap % 60}د فراغ`
+                      ? `${formatCompactDurationArabic(p.maxGap)} فراغ`
                       : "بلا فراغ طويل"}
                   </span>
                   <ChevronLeft />
@@ -4657,9 +4657,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                   key={`w${i}`}
                                   className="week-shape-wait"
                                   style={{ insetInlineStart: `${wait.left}%`, width: `${wait.width}%` }}
-                                  title={`انتظار ${Math.floor(wait.minutes / 60)}س ${wait.minutes % 60}د`}
+                                  title={`انتظار ${formatCompactDurationArabic(wait.minutes)}`}
                                 >
-                                  {wait.width > 12 ? `${Math.round(wait.minutes / 60 * 10) / 10}س` : ""}
+                                  {wait.width > 12 ? formatCompactDurationArabic(wait.minutes) : ""}
                                 </i>
                               ))}
                               {day.blocks.map((block, i) => (
