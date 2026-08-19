@@ -7955,6 +7955,42 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           technology and diagnostics; blocking problems still use the existing
           conflict/error UI, and undo remains in the compact undo bar. */}
       {physicsNotice ? <span className="sr-only" role="status" aria-live="polite">{physicsNotice}</span> : null}
+      <div className="schedule-overview-stack no-print">
+      <section className="schedule-mini-stats">
+        <StatCard
+          icon={<CalendarDays />}
+          value={filteredRows.length}
+          label="موعد ظاهر"
+        />
+        <StatCard
+          icon={<Table2 />}
+          value={
+            new Set(filteredRows.map((x) => x.AdRoomCode + "|" + x.AdRoomHall)).size
+          }
+          label="قاعة مستخدمة"
+        />
+        <StatCard
+          icon={<Sparkles />}
+          value={new Set(filteredRows.map((x) => x.AdInstructorId)).size}
+          label="أستاذ مقرر"
+        />
+      </section>
+      <LivingScheduleLayer
+        user={user}
+        rows={filteredRows}
+        courses={courses}
+        instructors={instructors}
+        terms={terms}
+        collegeId={filterCollege}
+        sectionId={filterSection}
+        termId={filterTerm}
+        onOpenRow={openEdit}
+        onRefresh={loadRows}
+        experience={experience}
+        onEnsureWeek={() => setViewMode("week")}
+        onPanelOpenChange={setLivingPanelOpen}
+      />
+      </div>
       <Surface className="schedule-control">
         <div className="filter-strip">
           <Field label="الكلية"><select data-guide-target="schedule.filter.college" value={filterCollege || ""} onChange={(e)=>{const id=Number(e.target.value)||0;setFilterCollege(id);setFilterSection(id && !isPowerAdmin ? (resolveScopeSelection(scopes,id,false).defaultSectionId||0) : 0)}}><option value="">اختر الكلية</option>{filterColleges.map(c=><option key={c.AdCollegeId} value={c.AdCollegeId}>{c.AdCollegeName}</option>)}</select></Field>
@@ -8158,6 +8194,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             >
               <ArrowLeftRight /> أدوات البيانات
             </GhostButton> : null}
+            {workspaceToolsOpen && mode === "schedule" && workspaceReady && filterCollege && filterSection && filterTerm ? (
+              <div className="schedule-control-barter schedule-control-barter--inside-more">
+                <HallBarterBoard
+                  collegeId={filterCollege}
+                  sectionId={filterSection}
+                  termId={filterTerm}
+                  liveSerial={liveFeedSerial}
+                  onReservationsChange={setHallBarterReservations}
+                />
+              </div>
+            ) : null}
             {workspaceToolsOpen && permissions.includes(7) ? (
               <div className="schedule-publish-slot">
                 <SchedulePublish
@@ -8170,37 +8217,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             ) : null}
           </div>
         </div>
-        {mode === "schedule" && workspaceReady && filterCollege && filterSection && filterTerm ? (
-          <div className="schedule-control-barter">
-            <HallBarterBoard
-              collegeId={filterCollege}
-              sectionId={filterSection}
-              termId={filterTerm}
-              liveSerial={liveFeedSerial}
-              onReservationsChange={setHallBarterReservations}
-            />
-          </div>
-        ) : null}
       </Surface>
-      <section className="schedule-mini-stats">
-        <StatCard
-          icon={<CalendarDays />}
-          value={filteredRows.length}
-          label="موعد ظاهر"
-        />
-        <StatCard
-          icon={<Table2 />}
-          value={
-            new Set(filteredRows.map((x) => x.AdRoomCode + "|" + x.AdRoomHall)).size
-          }
-          label="قاعة مستخدمة"
-        />
-        <StatCard
-          icon={<Sparkles />}
-          value={new Set(filteredRows.map((x) => x.AdInstructorId)).size}
-          label="أستاذ مقرر"
-        />
-      </section>
       <ScheduleExperienceLayer
         experience={experience}
         isPowerAdmin={isPowerAdmin}
@@ -8209,21 +8226,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         onEnsureWeek={() => setViewMode("week")}
         rows={filteredRows}
         headless
-      />
-      <LivingScheduleLayer
-        user={user}
-        rows={filteredRows}
-        courses={courses}
-        instructors={instructors}
-        terms={terms}
-        collegeId={filterCollege}
-        sectionId={filterSection}
-        termId={filterTerm}
-        onOpenRow={openEdit}
-        onRefresh={loadRows}
-        experience={experience}
-        onEnsureWeek={() => setViewMode("week")}
-        onPanelOpenChange={setLivingPanelOpen}
       />
       {rowsLoading && !rows.length ? (
         <Surface className="sched-skeleton-surface">
