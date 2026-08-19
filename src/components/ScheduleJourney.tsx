@@ -182,7 +182,6 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
   const headline = useMemo(() => readingSentence(life?.terms || 0), [life]);
   const empty = Boolean(reading && (life?.terms || 0) === 0);
   const metricsReveal = useRevealOnce<HTMLElement>(sheet, 0.08, Boolean(reading && !empty));
-  const currentReveal = useRevealOnce<HTMLElement>(sheet, 0.08, Boolean(reading && !empty));
   const termCount = life?.terms || 0;
   const heroValue = life?.schedules ?? now?.schedules ?? termCount;
   const heroLabel = "مواعيد أكاديمية";
@@ -256,20 +255,6 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
               <p className="journey-memory-note"><i aria-hidden="true" />كل مؤشر هنا يضيف معنى مختلفاً للذاكرة، بلا تكرار.</p>
             </section>
 
-            <section className="journey-current journey-current-v2" ref={currentReveal.ref}>
-              <div className="journey-current-intro">
-                <span className="journey-current-kicker">الآن · هذا الفصل</span>
-                <strong>{now!.termName || "—"}</strong>
-                <p>صورة لحظية لما يتحرك الآن داخل مساحة العمل.</p>
-                <div className="journey-current-signal"><i aria-hidden="true" /><span>فصل فعّال داخل الذاكرة</span></div>
-              </div>
-              <div className={`journey-current-grid ${currentReveal.revealed ? "is-revealed" : ""}`}>
-                <article><b><Counted value={now!.schedules} duration={720} play={currentReveal.revealed} /></b><span>موعداً أكاديمياً</span></article>
-                <article><b><Counted value={now!.courses} duration={720} play={currentReveal.revealed} /></b><span>مقرراً</span></article>
-                <article><b><Counted value={now!.instructors} duration={720} play={currentReveal.revealed} /></b><span>عضو هيئة تدريس</span></article>
-                <article><b><Counted value={now!.rooms} duration={720} play={currentReveal.revealed} /></b><span>قاعة مستخدمة</span></article>
-              </div>
-            </section>
           </>
         )}
 
