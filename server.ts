@@ -339,10 +339,8 @@ let databaseDownRef: string | null = null;
  * so the interface can tell «الخادم واقف» from «قاعدة البيانات واقفة».
  */
 app.get("/api/demo/config", (_req, res) => {
-  const externalUrl = String(process.env.SCHEDULE_DEMO_URL || "").trim();
   res.json({
-    enabled: Repository.isDemoMode(),
-    entryUrl: Repository.isDemoMode() ? "" : externalUrl,
+    enabled: process.env.SCHEDULE_DEMO_ENABLED !== "false",
     sessionMinutes: 60,
     isolated: true,
     adminReadOnly: true,
@@ -368,9 +366,8 @@ app.use("/api", (_req, res, next) => {
 // A dedicated demo service binds every API request to the caller's own in-memory sandbox.
 // No demo request can fall through to another visitor's state. Production mode bypasses this entirely.
 app.use("/api", (req: Request, _res: Response, next: NextFunction) => {
-  if (!Repository.isDemoMode()) { next(); return; }
   const sessionId = getCookies(req)["session_id"];
-  if (!sessionId || req.path === "/auth/demo") { next(); return; }
+  if (!sessionId?.startsWith("demo_") || req.path === "/auth/demo") { next(); return; }
   (req as AuthenticatedRequest).demoSessionId = sessionId;
   if (!Repository.runDemoSandbox(sessionId, next)) next();
 });
@@ -383,7 +380,7 @@ app.use("/api", authMiddleware as express.RequestHandler);
 // server-side enforcement, so removing `disabled` in DevTools still cannot change it.
 const DEMO_READ_ONLY_PREFIXES = ["/users", "/permissions", "/user-scopes", "/system-backup"];
 app.use("/api", (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  if (!Repository.isDemoMode() || req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") { next(); return; }
+  if (!Repository.isDemoRequest() || req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") { next(); return; }
   if (req.path === "/auth/logout" || req.path === "/auth/heartbeat" || req.path === "/auth/presence" || req.path === "/demo/reset") { next(); return; }
   if (DEMO_READ_ONLY_PREFIXES.some(prefix => req.path === prefix || req.path.startsWith(`${prefix}/`))) {
     res.status(403).json({ error: "هذه شاشة عرض في البيئة التجريبية. الإدارة الحقيقية محمية ولا يمكن تعديلها من Demo." });
@@ -746,25 +743,25 @@ async function clientScopeDetails(scopes: any[]) {
 // --- AUTH API ---
 
 app.post("/api/auth/demo", rateLimitLogin, async (_req: Request, res: Response) => {
-  if (!Repository.isDemoMode()) {
-    res.status(404).json({ error: "الدخول التجريبي غير مفعّل على خدمة الإنتاج." });
+  if (process.env.SCHEDULE_DEMO_ENABLED === "false") {
+    res.status(404).json({ error: "الدخول التجريبي غير مفعّل." });
     return;
   }
   const sessionId = `demo_${randomBytes(32).toString("hex")}`;
   Repository.createDemoSandbox(sessionId, DEMO_SESSION_TTL_MS);
-  await Repository.createSession(sessionId, ROOT_ADMIN_USER_ID, DEMO_SESSION_TTL_MS);
-  res.setHeader("Set-Cookie", `session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
   try {
     const payload = await Repository.withDemoSandbox(sessionId, async () => {
+      await Repository.createSession(sessionId, ROOT_ADMIN_USER_ID, DEMO_SESSION_TTL_MS);
       const user = await Repository.getUserById(ROOT_ADMIN_USER_ID);
       if (!user) throw new Error("تعذر إنشاء هوية Demo");
       const permissions = (await Repository.getSecurityByUser(user.SystemUserId)).map(row => row.FormNameId);
       const scopes = await clientScopeDetails(await Repository.getUserAssigns(user.SystemUserId));
-      return { user: { ...safeSystemUser(user), IsRootAdmin: true, IsDemo: true }, permissions, scopes, data: activeDataMode(), demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } };
+      return { user: { ...safeSystemUser(user), IsRootAdmin: true, IsDemo: true }, permissions, scopes, data: "demo", demo: { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } };
     });
+    res.setHeader("Set-Cookie", `session_id=${sessionId}; Path=/; HttpOnly; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
     res.json(payload);
   } catch (error) {
-    await Repository.deleteSession(sessionId);
+    await Repository.withDemoSandbox(sessionId, () => Repository.deleteSession(sessionId)).catch(() => undefined);
     res.status(500).json({ error: error instanceof Error ? error.message : "تعذر بدء البيئة التجريبية" });
   }
 });
@@ -851,21 +848,21 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
   const permissions = userPerms.map(p => p.FormNameId);
   const scopes = await clientScopeDetails(req.scopes || []);
   // The interface says out loud when it is not on the university's database.
-  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoMode() }, permissions, scopes, data: activeDataMode(), demo: Repository.isDemoMode() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } : undefined });
+  res.json({ user: { ...safeUser, IsRootAdmin: Number(req.user.SystemUserId) === ROOT_ADMIN_USER_ID, IsDemo: Repository.isDemoRequest() }, permissions, scopes, data: Repository.isDemoRequest() ? "demo" : activeDataMode(), demo: Repository.isDemoRequest() ? { expiresInMs: DEMO_SESSION_TTL_MS, adminReadOnly: true } : undefined });
 });
 
 // Activity heartbeat: the server session still expires after 15 minutes of real
 // inactivity, while active users can keep the session alive without a fixed
 // browser-cookie deadline logging them out mid-work.
 app.post("/api/auth/heartbeat", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  const ttlMs = Repository.isDemoMode() ? DEMO_SESSION_TTL_MS : SERVER_IDLE_SESSION_MS;
+  const ttlMs = Repository.isDemoRequest() ? DEMO_SESSION_TTL_MS : SERVER_IDLE_SESSION_MS;
   const sessionId = getCookies(req)["session_id"];
-  if (sessionId && Repository.isDemoMode()) await Repository.refreshSession(sessionId, ttlMs);
-  res.json({ ok: true, idleTimeoutMs: ttlMs, demo: Repository.isDemoMode() });
+  if (sessionId && Repository.isDemoRequest()) await Repository.refreshSession(sessionId, ttlMs);
+  res.json({ ok: true, idleTimeoutMs: ttlMs, demo: Repository.isDemoRequest() });
 });
 
 app.post("/api/demo/reset", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
-  if (!Repository.isDemoMode()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
+  if (!Repository.isDemoRequest()) { res.status(404).json({ error: "هذه العملية متاحة للبيئة التجريبية فقط" }); return; }
   const sessionId = getCookies(req)["session_id"];
   if (!sessionId || !Repository.resetDemoSandbox(sessionId, DEMO_SESSION_TTL_MS)) { res.status(401).json({ error: "انتهت الجلسة التجريبية" }); return; }
   forgetAuthSession(sessionId);
@@ -2275,7 +2272,7 @@ function broadcastScheduleChange(demoSessionId = "") {
   scheduleEventSerial += 1;
   const payload = `id: ${scheduleEventSerial}\nevent: schedules\ndata: {"changedAt":${Date.now()}}\n\n`;
   for (const [response, client] of scheduleEventClients) {
-    if (Repository.isDemoMode() && demoSessionId && client.demoSessionId !== demoSessionId) continue;
+    if (demoSessionId && client.demoSessionId !== demoSessionId) continue;
     try { response.write(payload); } catch { scheduleEventClients.delete(response); }
   }
 }

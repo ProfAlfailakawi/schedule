@@ -31,20 +31,12 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     fetch("/api/demo/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
       if (!alive) return;
       setDemoEnabled(Boolean(data?.enabled));
-      setDemoEntryUrl(String(data?.entryUrl || "").trim());
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
   const enterDemo = async () => {
     setError(null);
-    if (!demoEnabled && demoEntryUrl) {
-      window.location.assign(demoEntryUrl);
-      return;
-    }
-    if (!demoEnabled) {
-      setError("بيئة Demo المعزولة غير مربوطة بهذه الخدمة بعد.");
-      return;
-    }
+    if (!demoEnabled) return;
     setDemoLoading(true);
     try {
       const res = await fetch("/api/auth/demo", { method: "POST" });
@@ -154,7 +146,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               <Notice inline>{error}</Notice>
             </div>
           ) : null}
-          {!demoEnabled ? <form className="apex-login-form" onSubmit={submit}>
+          <form className="apex-login-form" onSubmit={submit}>
             <Field label="اسم المستخدم" required>
               <input
                 autoFocus
@@ -184,19 +176,22 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 </>
               )}
             </PrimaryButton>
-          </form> : null}
-          {<div className="demo-entry-panel">
-            <div className="demo-entry-copy">
-              <span className="demo-entry-badge">تجربة النظام · مساحة معزولة</span>
-              <strong>جرّب النظام بحرية</strong>
-              <small>أضف واحذف وانقل داخل بيانات تجريبية مصطنعة. لا تصل هذه الجلسة إلى بيانات الجامعة الحقيقية.</small>
-            </div>
-            <button type="button" className="demo-entry-button" data-guide-ignore="دخول اختياري إلى بيئة Demo قبل المصادقة؛ المرشد يبدأ بعد دخول المستخدم إلى مساحة العمل" onClick={enterDemo} disabled={loading || demoLoading}>
-              {demoLoading ? <span className="button-spinner" /> : <><Sparkles /> تجربة النظام <ArrowLeft /></>}
-            </button>
-          </div>}
+          </form>
           <footer>
             <span>الجدول الأكاديمي</span>
+            {demoEnabled ? (
+              <button
+                type="button"
+                className="demo-entry-icon"
+                onClick={enterDemo}
+                disabled={loading || demoLoading}
+                aria-label="تجربة النظام"
+                title="تجربة النظام"
+                data-guide-ignore="دخول اختياري إلى بيئة Demo معزولة"
+              >
+                {demoLoading ? <span className="button-spinner" /> : <Sparkles aria-hidden="true" />}
+              </button>
+            ) : null}
             <InstallApp variant="login" />
             <small>{new Date().getFullYear()}</small>
           </footer>

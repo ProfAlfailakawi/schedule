@@ -253,7 +253,7 @@ const RELATION_CACHE_MS = 5 * 60 * 1000;
 let scheduleRelationCache: { expiresAt: number; courses: AdCourse[]; sections: AdSection[] } | null = null;
 function invalidateScheduleRelationCache() { scheduleRelationCache = null; }
 async function getCachedScheduleRelations(): Promise<{ courses: AdCourse[]; sections: AdSection[] }> {
-  if (!firestoreDb) return { courses: db.courses, sections: db.sections };
+  if (!firestoreDb || demoSandboxContext.getStore()) return { courses: db.courses, sections: db.sections };
   if (scheduleRelationCache && scheduleRelationCache.expiresAt > Date.now()) return scheduleRelationCache;
   const [courseSnap, sectionSnap] = await Promise.all([
     firestoreDb.collection("courses").get(),
@@ -273,7 +273,7 @@ function chunks<T>(values: T[], size = 30): T[][] {
   return out;
 }
 async function getFirestoreSchedulesForCourseIds(courseIds: number[], termId = 0): Promise<FSchedule[]> {
-  if (!firestoreDb || !courseIds.length) return [];
+  if (!firestoreDb || demoSandboxContext.getStore() || !courseIds.length) return [];
   const uniqueIds = [...new Set(courseIds.filter(Boolean))];
   // A current-term universe is usually smaller than a many-course historical scan.
   // A section is usually the opposite. Pick the path that minimizes document reads.
@@ -308,7 +308,7 @@ async function getFirestoreSchedulesForCourseIds(courseIds: number[], termId = 0
 async function hydrateFirestoreScheduleRows(rows: FSchedule[], preferredCourses?: AdCourse[], preferredSections?: AdSection[]): Promise<FSchedule[]> {
   if (!rows.length) return [];
   if (preferredCourses?.length && preferredSections?.length) return hydrateSchedules(rows, preferredCourses, preferredSections);
-  if (!firestoreDb) return hydrateSchedules(rows, preferredCourses || db.courses, preferredSections || db.sections);
+  if (!firestoreDb || demoSandboxContext.getStore()) return hydrateSchedules(rows, preferredCourses || db.courses, preferredSections || db.sections);
 
   // Conflict/room lookups normally touch only a handful of courses. Resolve just
   // those relations instead of loading the entire academic catalogue on the first
@@ -348,7 +348,7 @@ interface StoredSession {
 const demoSessions = new Map<string, StoredSession>();
 
 async function reserveFirestoreIds(key: CounterKey, count = 1): Promise<number> {
-  if (!firestoreDb) throw new Error("Firestore غير مهيأ");
+  if (!firestoreDb || demoSandboxContext.getStore()) throw new Error("Firestore غير مهيأ");
   if (!Number.isInteger(count) || count < 1) throw new Error("عدد المعرفات المطلوب غير صالح");
 
   const counterRef = firestoreDb.doc(FIRESTORE_COUNTER_DOC);
@@ -815,7 +815,7 @@ function backupDecode(value: any): any {
   if (value.__scheduleType === "timestamp") return Timestamp.fromMillis(Number(value.millis) || 0);
   if (value.__scheduleType === "date") return new Date(String(value.value || ""));
   if (value.__scheduleType === "bytes") return Buffer.from(String(value.base64 || ""), "base64");
-  if (value.__scheduleType === "reference" && firestoreDb) return firestoreDb.doc(String(value.path || ""));
+  if (value.__scheduleType === "reference" && firestoreDb && !demoSandboxContext.getStore()) return firestoreDb.doc(String(value.path || ""));
   // GeoPoint is not used by the application today. Keep its semantic shape on
   // import without adding a new runtime dependency; Firestore accepts plain
   // objects and no current reader relies on instanceof GeoPoint.
@@ -879,7 +879,7 @@ async function collectFirestoreCollection(ref: FirebaseFirestore.CollectionRefer
 }
 
 async function collectSystemDocuments(): Promise<SystemBackupDocument[]> {
-  if (!firestoreDb) return [];
+  if (!firestoreDb || demoSandboxContext.getStore()) return [];
   const output: SystemBackupDocument[] = [];
   const collections = (await firestoreDb.listCollections())
     .filter(collection => !SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collection.id));
@@ -1079,7 +1079,7 @@ function writeLocalExportJob(row: SystemExportJobRecord) {
 }
 
 async function latestSystemExportJob(rootAdminId = 1): Promise<SystemExportJobSummary | null> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     // Safety exports created by an import are deliberately invisible in the
     // manual export card. Fetch a small recent window and choose the newest
     // manual job without requiring a compound Firestore index.
@@ -1103,7 +1103,7 @@ async function startSystemExportJob(byUserId: number, rootAdminId = 1, forceNew 
   const id = randomUUID();
   const createdAt = new Date().toISOString();
 
-  if (!firestoreDb) {
+  if (!firestoreDb || demoSandboxContext.getStore()) {
     const backup = await makeSystemBackup(rootAdminId);
     const compressed = gzipSync(Buffer.from(JSON.stringify(backup), "utf8"), { level: 6 });
     fs.mkdirSync(LOCAL_EXPORT_DIR(), { recursive: true, mode: 0o700 });
@@ -1156,7 +1156,7 @@ async function startSystemExportJob(byUserId: number, rootAdminId = 1, forceNew 
 }
 
 async function getSystemExportJob(id: string, rootAdminId = 1): Promise<SystemExportJobSummary> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const doc = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id).get();
     if (!doc.exists) throw new Error("مهمة التصدير غير موجودة");
     const row = doc.data() as SystemExportJobRecord;
@@ -1179,7 +1179,7 @@ function isTransientBackupError(error: any): boolean {
 async function sleepMs(ms: number) { await new Promise(resolve => setTimeout(resolve, ms)); }
 
 async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<SystemExportJobSummary> {
-  if (!firestoreDb) return getSystemExportJob(id, rootAdminId);
+  if (!firestoreDb || demoSandboxContext.getStore()) return getSystemExportJob(id, rootAdminId);
   const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
   const doc = await root.get();
   if (!doc.exists) throw new Error("مهمة التصدير غير موجودة");
@@ -1273,7 +1273,7 @@ async function advanceSystemExportJob(id: string, rootAdminId = 1): Promise<Syst
   }
 }
 async function readSystemExportFile(id: string, rootAdminId = 1): Promise<{ summary: SystemExportJobSummary; chunks: Buffer[] }> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const root = firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).doc(id);
     const doc = await root.get();
     if (!doc.exists) throw new Error("مهمة التصدير غير موجودة");
@@ -1366,7 +1366,7 @@ async function readImportCollection(root: FirebaseFirestore.DocumentReference, c
 }
 
 async function latestSystemImportJob(rootAdminId = 1): Promise<SystemImportJobSummary | null> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const snap = await firestoreDb.collection(SYSTEM_IMPORT_JOB_COLLECTION).orderBy("createdAt", "desc").limit(1).get();
     if (!snap.docs.length) return null;
     const row = snap.docs[0].data() as SystemImportJobRecord;
@@ -1389,7 +1389,7 @@ async function startSystemImportJob(input: unknown, byUserId: number, rootAdminI
   const createdAt = new Date().toISOString();
   const importedCollections = Object.keys(backup.summary.collectionCounts || {}).filter(name => !SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(name));
 
-  if (!firestoreDb) {
+  if (!firestoreDb || demoSandboxContext.getStore()) {
     const safety = await startSystemExportJob(byUserId, rootAdminId, true, "safety");
     fs.mkdirSync(LOCAL_IMPORT_DIR(), { recursive: true, mode: 0o700 });
     fs.writeFileSync(localImportSourcePath(id), gzipSync(Buffer.from(JSON.stringify(backup), "utf8"), { level: 1 }), { mode: 0o600 });
@@ -1432,7 +1432,7 @@ async function startSystemImportJob(input: unknown, byUserId: number, rootAdminI
 }
 
 async function getSystemImportJob(id: string, rootAdminId = 1): Promise<SystemImportJobSummary> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const doc = await firestoreDb.collection(SYSTEM_IMPORT_JOB_COLLECTION).doc(id).get();
     if (!doc.exists) throw new Error("مهمة الاستيراد غير موجودة");
     const row = doc.data() as SystemImportJobRecord;
@@ -1445,7 +1445,7 @@ async function getSystemImportJob(id: string, rootAdminId = 1): Promise<SystemIm
 }
 
 async function applyImportedCollection(collectionName: string, desired: SystemBackupDocument[], rootAdminId: number): Promise<void> {
-  if (!firestoreDb) return;
+  if (!firestoreDb || demoSandboxContext.getStore()) return;
   if (SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collectionName)) return;
 
   // Identity collections stay reconciled in-place so the root administrator's
@@ -1486,7 +1486,7 @@ async function applyImportedCollection(collectionName: string, desired: SystemBa
 }
 
 async function advanceSystemImportJob(id: string, rootAdminId = 1): Promise<SystemImportJobSummary> {
-  if (!firestoreDb) {
+  if (!firestoreDb || demoSandboxContext.getStore()) {
     let row = readLocalImportJob(id);
     if (!row || row.rootAdminId !== rootAdminId) throw new Error("مهمة الاستيراد غير موجودة");
     if (row.status === "ready") return importJobSummary(row);
@@ -1624,7 +1624,7 @@ function validateSystemBackupPayload(input: unknown, rootAdminId = 1): SystemBac
 }
 
 async function deleteFirestoreTree(ref: FirebaseFirestore.CollectionReference | FirebaseFirestore.DocumentReference): Promise<void> {
-  if (!firestoreDb) return;
+  if (!firestoreDb || demoSandboxContext.getStore()) return;
   const recursiveDelete = (firestoreDb as any).recursiveDelete;
   if (typeof recursiveDelete === "function") {
     await recursiveDelete.call(firestoreDb, ref);
@@ -1643,7 +1643,7 @@ async function deleteFirestoreTree(ref: FirebaseFirestore.CollectionReference | 
 }
 
 async function clearPortableFirestoreData(preserveTopCollections = new Set<string>()): Promise<void> {
-  if (!firestoreDb) return;
+  if (!firestoreDb || demoSandboxContext.getStore()) return;
   const collections = await firestoreDb.listCollections();
   for (const collection of collections) {
     if (SYSTEM_EXPORT_EXCLUDED_COLLECTIONS.has(collection.id) || preserveTopCollections.has(collection.id)) continue;
@@ -1652,7 +1652,7 @@ async function clearPortableFirestoreData(preserveTopCollections = new Set<strin
 }
 
 async function writeFirestoreDocuments(documents: SystemBackupDocument[]): Promise<void> {
-  if (!firestoreDb) throw new Error("Firestore غير مهيأ");
+  if (!firestoreDb || demoSandboxContext.getStore()) throw new Error("Firestore غير مهيأ");
   const ordered = [...documents].sort((a, b) => a.path.split("/").length - b.path.split("/").length || a.path.localeCompare(b.path));
   for (let offset = 0; offset < ordered.length; offset += 350) {
     const batch = firestoreDb.batch();
@@ -1686,7 +1686,7 @@ async function pruneFirestoreDocumentToDesired(
 }
 
 async function reconcileTopLevelCollection(collectionName: string, desired: SystemBackupDocument[], protectedPaths = new Set<string>()): Promise<void> {
-  if (!firestoreDb) return;
+  if (!firestoreDb || demoSandboxContext.getStore()) return;
   const desiredPaths = new Set(desired.map(item => item.path));
   // Write the protected/root records first. During a failed import the main
   // administrator therefore always keeps a valid account and a route back to
@@ -1708,7 +1708,7 @@ function refreshSystemCachesAfterMutation() {
 async function makeSystemBackup(rootAdminId: number): Promise<SystemBackupPayload> {
   const createdAt = new Date().toISOString();
   const backupId = randomUUID();
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const documents = await collectSystemDocuments();
     const collectionCounts = systemBackupCollectionCounts(documents);
     const partial = { storage: "firestore" as const, documents };
@@ -1755,7 +1755,7 @@ async function createSystemRestorePointFromExport(
     collectionCounts: file.summary.collectionCounts,
     exportJobId,
   };
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(meta.id).set(meta, { merge: false });
     // Reference-based safety points obey the same retention rule as ordinary
     // restore points. The referenced safety export is protected while the point
@@ -1786,7 +1786,7 @@ async function saveSystemRestorePoint(action: string, byUserId: number, rootAdmi
     documentCount: snapshot.summary.documentCount,
     collectionCounts: snapshot.summary.collectionCounts,
   };
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const root = firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(meta.id);
     await root.set({ ...meta, backupFormat: snapshot.format, backupStorage: snapshot.storage, integrity: snapshot.integrity }, { merge: false });
     const documents = snapshot.documents || [];
@@ -1813,7 +1813,7 @@ async function saveSystemRestorePoint(action: string, byUserId: number, rootAdmi
 }
 
 async function listSystemRestorePoints(): Promise<SystemRestorePointSummary[]> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const snap = await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).orderBy("createdAt", "desc").limit(8).get();
     return snap.docs.map(doc => doc.data() as SystemRestorePointSummary);
   }
@@ -1826,7 +1826,7 @@ async function listSystemRestorePoints(): Promise<SystemRestorePointSummary[]> {
 }
 
 async function loadSystemRestorePoint(id: string, rootAdminId = 1): Promise<SystemBackupPayload> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const root = firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(id);
     const metaDoc = await root.get();
     if (!metaDoc.exists) throw new Error("نقطة التراجع غير موجودة");
@@ -1863,7 +1863,7 @@ async function loadSystemRestorePoint(id: string, rootAdminId = 1): Promise<Syst
 
 async function markRestorePointConsumed(id: string) {
   const consumedAt = new Date().toISOString();
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     await firestoreDb.collection(SYSTEM_RESTORE_COLLECTION).doc(id).set({ consumedAt }, { merge: true });
     return;
   }
@@ -1878,7 +1878,7 @@ async function markRestorePointConsumed(id: string) {
 
 async function replaceSystemFromBackup(input: SystemBackupPayload, rootAdminId = 1): Promise<SystemBackupPayload> {
   const backup = validateSystemBackupPayload(input, rootAdminId);
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     if (backup.storage !== "firestore") throw new Error("لا يمكن استيراد نسخة محلية إلى بيئة Firestore");
     const documents = backup.documents || [];
     const identityCollections = new Set(["users", "formSecurity", "formNames"]);
@@ -1904,7 +1904,7 @@ async function replaceSystemFromBackup(input: SystemBackupPayload, rootAdminId =
 }
 
 async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
-  if (firestoreDb) {
+  if (firestoreDb && !demoSandboxContext.getStore()) {
     const current = await collectSystemDocuments();
     const rootUserPath = `users/user_${rootAdminId}`;
     const rootUsers = current.filter(item => item.path === rootUserPath);
@@ -1938,11 +1938,12 @@ export const Repository = {
   // Demo sandbox helpers. A demo request sees only its own in-memory clone.
   isDemoMode: (): boolean => runningMode === "demo",
   currentDemoSessionId: (): string => demoSandboxContext.getStore()?.sessionId || "",
+  isDemoRequest: (): boolean => Boolean(demoSandboxContext.getStore()),
   createDemoSandbox: (sessionId: string, ttlMs: number): void => {
     demoSandboxes.set(sessionId, { state: createDemoSandboxState() as DBState, expiresAt: Date.now() + ttlMs });
   },
   resetDemoSandbox: (sessionId: string, ttlMs: number): boolean => {
-    if (runningMode !== "demo") return false;
+    if (!sessionId.startsWith("demo_")) return false;
     demoSandboxes.set(sessionId, { state: createDemoSandboxState() as DBState, expiresAt: Date.now() + ttlMs });
     return true;
   },
@@ -1972,7 +1973,7 @@ export const Repository = {
   createSession: async (sessionId: string, userId: number, ttlMs: number): Promise<void> => {
     const now = Date.now();
     const session: StoredSession = { sessionId, userId, createdAt: now, expiresAt: now + ttlMs };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       // `expiresAt` stays a number because the code compares it as one. The
       // Timestamp twin exists purely so Firestore's own TTL policy can sweep
       // abandoned sessions away — previously a closed browser left a document
@@ -1987,7 +1988,7 @@ export const Repository = {
   },
 
   getSession: async (sessionId: string): Promise<StoredSession | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("sessions").doc(sessionId);
       const snapshot = await ref.get();
       if (!snapshot.exists) return undefined;
@@ -2010,7 +2011,7 @@ export const Repository = {
 
   refreshSession: async (sessionId: string, ttlMs: number): Promise<void> => {
     const expiresAt = Date.now() + ttlMs;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("sessions").doc(sessionId);
       await ref.set({ expiresAt, expiresAtTtl: Timestamp.fromMillis(expiresAt) }, { merge: true });
       return;
@@ -2023,7 +2024,7 @@ export const Repository = {
 
   deleteSession: async (sessionId: string): Promise<void> => {
     announceIdentityChange();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("sessions").doc(sessionId).delete();
       return;
     }
@@ -2034,7 +2035,7 @@ export const Repository = {
   // Audit log: additive operational history. It is intentionally separate from legacy tables.
   createAuditLog: async (entry: Omit<AuditLogEntry, "id" | "timestamp">): Promise<AuditLogEntry> => {
     const row: AuditLogEntry = { ...entry, id: randomUUID(), timestamp: new Date().toISOString() };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("auditLogs").doc(row.id).set(row);
       return row;
     }
@@ -2047,7 +2048,7 @@ export const Repository = {
 
   getAuditLogs: async (limit = 250): Promise<AuditLogEntry[]> => {
     const safeLimit = Math.max(1, Math.min(1000, Number(limit) || 250));
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("auditLogs").orderBy("timestamp", "desc").limit(safeLimit).get();
       return snap.docs.map(doc => doc.data() as AuditLogEntry);
     }
@@ -2056,7 +2057,7 @@ export const Repository = {
 
   // Users
   getUsers: async (): Promise<SystemUser[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snapshot = await firestoreDb.collection("users").orderBy("SystemUserId", "asc").get();
       return snapshot.docs.map(doc => doc.data() as SystemUser);
     }
@@ -2064,7 +2065,7 @@ export const Repository = {
   },
 
   getUserById: async (id: number): Promise<SystemUser | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("users").doc(`user_${id}`).get();
       return doc.exists ? (doc.data() as SystemUser) : undefined;
     }
@@ -2072,7 +2073,7 @@ export const Repository = {
   },
 
   getUserByLogin: async (login: string): Promise<SystemUser | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       // Find exact matches first
       const snap = await firestoreDb.collection("users").where("SystemUserLogin", "==", login).get();
       if (!snap.empty) {
@@ -2089,7 +2090,7 @@ export const Repository = {
 
   createUser: async (user: Omit<SystemUser, "SystemUserId">): Promise<SystemUser> => {
     announceIdentityChange();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("users");
       const newUser = { ...user, IsDeleted: user.IsDeleted ?? false, SystemUserId: nextId };
       await firestoreDb.collection("users").doc(`user_${nextId}`).set(newUser);
@@ -2104,7 +2105,7 @@ export const Repository = {
 
   updateUser: async (id: number, fields: Partial<SystemUser>): Promise<SystemUser> => {
     announceIdentityChange();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("users").doc(`user_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("المستخدم غير موجود");
@@ -2136,7 +2137,7 @@ export const Repository = {
    * untouched: this closes the door, it does not rewrite history.
    */
   deleteUser: async (id: number): Promise<void> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const [permissions, scopes] = await Promise.all([
         firestoreDb.collection("formSecurity").where("SystemUserId", "==", id).get(),
         firestoreDb.collection("userScopes").where("SystemUserId", "==", id).get(),
@@ -2158,7 +2159,7 @@ export const Repository = {
 
   // FormSecurity
   getFormSecurity: async (): Promise<FormSecurity[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("formSecurity").get();
       return snap.docs.map(doc => doc.data() as FormSecurity).sort((a,b)=>(a.legacyId ?? 0)-(b.legacyId ?? 0));
     }
@@ -2166,7 +2167,7 @@ export const Repository = {
   },
 
   getSecurityByUser: async (userId: number): Promise<FormSecurity[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("formSecurity").where("SystemUserId", "==", userId).get();
       return snap.docs.map(doc => doc.data() as FormSecurity).sort((a,b)=>(a.legacyId ?? 0)-(b.legacyId ?? 0));
     }
@@ -2176,7 +2177,7 @@ export const Repository = {
   createSecurity: async (userId: number, formId: number): Promise<FormSecurity> => {
     announceIdentityChange();
     invalidateReference(REFERENCE_KEYS.formNames);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const legacyId = await reserveFirestoreIds("formSecurity");
       const row: FormSecurity = { legacyId, SystemUserId: userId, FormNameId: formId };
       await firestoreDb.collection("formSecurity").doc(`permission_${legacyId}`).set(row);
@@ -2190,7 +2191,7 @@ export const Repository = {
   updateSecurity: async (legacyId: number, userId: number, formId: number): Promise<FormSecurity> => {
     announceIdentityChange();
     invalidateReference(REFERENCE_KEYS.formNames);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("formSecurity").doc(`permission_${legacyId}`);
       const snap = await ref.get(); if (!snap.exists) throw new Error("الصلاحية غير موجودة");
       const row: FormSecurity = { legacyId, SystemUserId: userId, FormNameId: formId };
@@ -2205,7 +2206,7 @@ export const Repository = {
   deleteSecurity: async (legacyId: number): Promise<void> => {
     announceIdentityChange();
     invalidateReference(REFERENCE_KEYS.formNames);
-    if (firestoreDb) { await firestoreDb.collection("formSecurity").doc(`permission_${legacyId}`).delete(); return; }
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("formSecurity").doc(`permission_${legacyId}`).delete(); return; }
     db.formSecurity = db.formSecurity.filter(row => row.legacyId !== legacyId); saveDatabase();
   },
 
@@ -2223,7 +2224,7 @@ export const Repository = {
 
   // FormNames
   getFormNames: async (): Promise<FormName[]> => scopedCachedReference(REFERENCE_KEYS.formNames, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("formNames").orderBy("FormNameId", "asc").get();
       return snap.docs.map(doc => doc.data() as FormName);
     }
@@ -2232,7 +2233,7 @@ export const Repository = {
 
   // AdCollegeUserAssign
   getCollegeUserAssigns: async (): Promise<AdCollegeUserAssign[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("userScopes").get();
       return snap.docs.map(doc => doc.data() as AdCollegeUserAssign).sort((a,b)=>(a.legacyId ?? 0)-(b.legacyId ?? 0));
     }
@@ -2240,7 +2241,7 @@ export const Repository = {
   },
 
   getUserAssigns: async (userId: number): Promise<AdCollegeUserAssign[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("userScopes").where("SystemUserId", "==", userId).get();
       return snap.docs.map(doc => doc.data() as AdCollegeUserAssign).sort((a,b)=>(a.legacyId ?? 0)-(b.legacyId ?? 0));
     }
@@ -2249,7 +2250,7 @@ export const Repository = {
 
   createUserAssign: async (userId:number, collegeId:number, sectionId:number): Promise<AdCollegeUserAssign> => {
     announceIdentityChange();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const legacyId = await reserveFirestoreIds("userScopes");
       const row: AdCollegeUserAssign = { legacyId, SystemUserId:userId, AdCollegeId:collegeId, AdSectionId:sectionId };
       await firestoreDb.collection("userScopes").doc(`scope_${legacyId}`).set(row); return row;
@@ -2261,7 +2262,7 @@ export const Repository = {
 
   updateUserAssign: async (legacyId:number, userId:number, collegeId:number, sectionId:number): Promise<AdCollegeUserAssign> => {
     announceIdentityChange();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref=firestoreDb.collection("userScopes").doc(`scope_${legacyId}`); const snap=await ref.get();
       if(!snap.exists) throw new Error("صلاحية الكلية والقسم العلمي غير موجودة");
       const row:AdCollegeUserAssign={legacyId,SystemUserId:userId,AdCollegeId:collegeId,AdSectionId:sectionId}; await ref.set(row); return row;
@@ -2272,7 +2273,7 @@ export const Repository = {
 
   deleteUserAssign: async (legacyId:number): Promise<void> => {
     announceIdentityChange();
-    if(firestoreDb){await firestoreDb.collection("userScopes").doc(`scope_${legacyId}`).delete();return;}
+    if (firestoreDb && !demoSandboxContext.getStore()){await firestoreDb.collection("userScopes").doc(`scope_${legacyId}`).delete();return;}
     db.collegeUserAssign=db.collegeUserAssign.filter(row=>row.legacyId!==legacyId); saveDatabase();
   },
 
@@ -2296,7 +2297,7 @@ export const Repository = {
 
   // Terms
   getTerms: async (): Promise<AdTerm[]> => scopedCachedReference(REFERENCE_KEYS.terms, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("terms").orderBy("AdTermId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdTerm);
     }
@@ -2304,7 +2305,7 @@ export const Repository = {
   }),
 
   getTermById: async (id: number): Promise<AdTerm | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("terms").doc(`term_${id}`).get();
       return doc.exists ? (doc.data() as AdTerm) : undefined;
     }
@@ -2317,7 +2318,7 @@ export const Repository = {
   createTerm: async (name: string, dates?: { start?: string; weeks?: number }): Promise<AdTerm> => {
     invalidateReference(REFERENCE_KEYS.terms);
     const calendar = termCalendarFields(dates);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("terms");
       const newTerm = { AdTermId: nextId, AdTermName: name, ...calendar };
       await firestoreDb.collection("terms").doc(`term_${nextId}`).set(newTerm);
@@ -2333,7 +2334,7 @@ export const Repository = {
   updateTerm: async (id: number, name: string, dates?: { start?: string; weeks?: number }): Promise<AdTerm> => {
     invalidateReference(REFERENCE_KEYS.terms);
     const calendar = termCalendarFields(dates);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("terms").doc(`term_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("الفصل الدراسي غير موجود");
@@ -2353,7 +2354,7 @@ export const Repository = {
 
   deleteTerm: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.terms);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("terms").doc(`term_${id}`).delete();
       return;
     }
@@ -2363,7 +2364,7 @@ export const Repository = {
 
   // Colleges
   getColleges: async (): Promise<AdCollege[]> => scopedCachedReference(REFERENCE_KEYS.colleges, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("colleges").orderBy("AdCollegeId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdCollege);
     }
@@ -2371,7 +2372,7 @@ export const Repository = {
   }),
 
   getCollegeById: async (id: number): Promise<AdCollege | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("colleges").doc(`college_${id}`).get();
       return doc.exists ? (doc.data() as AdCollege) : undefined;
     }
@@ -2380,7 +2381,7 @@ export const Repository = {
 
   createCollege: async (code: string, name: string): Promise<AdCollege> => {
     invalidateReference(REFERENCE_KEYS.colleges);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("colleges");
       const newColl = { AdCollegeId: nextId, AdCollegeCode: code, AdCollegeName: name };
       await firestoreDb.collection("colleges").doc(`college_${nextId}`).set(newColl);
@@ -2395,7 +2396,7 @@ export const Repository = {
 
   updateCollege: async (id: number, code: string, name: string): Promise<AdCollege> => {
     invalidateReference(REFERENCE_KEYS.colleges);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("colleges").doc(`college_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("الكلية غير موجودة");
@@ -2413,7 +2414,7 @@ export const Repository = {
 
   deleteCollege: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.colleges);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("colleges").doc(`college_${id}`).delete();
       return;
     }
@@ -2423,7 +2424,7 @@ export const Repository = {
 
   // Sections
   getSections: async (): Promise<AdSection[]> => scopedCachedReference(REFERENCE_KEYS.sections, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("sections").orderBy("AdSectionId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdSection);
     }
@@ -2431,7 +2432,7 @@ export const Repository = {
   }),
 
   getSectionById: async (id: number): Promise<AdSection | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("sections").doc(`section_${id}`).get();
       return doc.exists ? (doc.data() as AdSection) : undefined;
     }
@@ -2439,7 +2440,7 @@ export const Repository = {
   },
 
   getSectionsByCollege: async (collegeId: number): Promise<AdSection[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("sections").where("AdCollegeId", "==", collegeId).get();
       return snap.docs.map(doc => doc.data() as AdSection);
     }
@@ -2448,7 +2449,7 @@ export const Repository = {
 
   createSection: async (collegeId: number, code: string, name: string): Promise<AdSection> => {
     invalidateReference(REFERENCE_KEYS.sections);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("sections");
       const newSec = { AdSectionId: nextId, AdCollegeId: collegeId, AdSectionCode: code, AdSectionName: name };
       await firestoreDb.collection("sections").doc(`section_${nextId}`).set(newSec);
@@ -2464,7 +2465,7 @@ export const Repository = {
 
   updateSection: async (id: number, collegeId: number, code: string, name: string): Promise<AdSection> => {
     invalidateReference(REFERENCE_KEYS.sections);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("sections").doc(`section_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("القسم غير موجود");
@@ -2482,7 +2483,7 @@ export const Repository = {
 
   deleteSection: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.sections);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("sections").doc(`section_${id}`).delete();
       invalidateScheduleRelationCache();
       return;
@@ -2493,7 +2494,7 @@ export const Repository = {
 
   // Instructors
   getInstructors: async (): Promise<AdInstructor[]> => scopedCachedReference(REFERENCE_KEYS.instructors, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("instructors").orderBy("AdInstructorId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdInstructor);
     }
@@ -2511,7 +2512,7 @@ export const Repository = {
     const rows = await Repository.getSchedulesByScope(filters);
     const ids = [...new Set(rows.map(row => Number(row.AdInstructorId)).filter(Boolean))];
     if (!ids.length) return [];
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docs = await Promise.all(ids.map(id => firestoreDb!.collection("instructors").doc(`instructor_${id}`).get()));
       return docs
         .filter(doc => doc.exists)
@@ -2526,7 +2527,7 @@ export const Repository = {
     Repository.getInstructorsByScheduleScope({ sectionId, termId }),
 
   getInstructorById: async (id: number): Promise<AdInstructor | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("instructors").doc(`instructor_${id}`).get();
       return doc.exists ? (doc.data() as AdInstructor) : undefined;
     }
@@ -2534,7 +2535,7 @@ export const Repository = {
   },
 
   getInstructorByCivil: async (civil: string): Promise<AdInstructor | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("instructors").where("AdInstructorCivil", "==", civil).get();
       return snap.empty ? undefined : (snap.docs[0].data() as AdInstructor);
     }
@@ -2543,7 +2544,7 @@ export const Repository = {
 
   createInstructor: async (civil: string, name: string, mobile: string): Promise<AdInstructor> => {
     invalidateReference(REFERENCE_KEYS.instructors);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("instructors");
       const newIns = { AdInstructorId: nextId, AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: mobile };
       await firestoreDb.collection("instructors").doc(`instructor_${nextId}`).set(newIns);
@@ -2561,7 +2562,7 @@ export const Repository = {
     // Only a real status is stored; anything else clears the field so the record
     // stays clean and an active teacher carries no status at all (Note 2).
     const statusField = status === "retired" || status === "sabbatical" ? { AdInstructorStatus: status } : {};
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("instructors").doc(`instructor_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("الأستاذ غير موجود");
@@ -2578,7 +2579,7 @@ export const Repository = {
 
   deleteInstructor: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.instructors);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("instructors").doc(`instructor_${id}`).delete();
       return;
     }
@@ -2588,7 +2589,7 @@ export const Repository = {
 
   // Courses
   getCourses: async (): Promise<AdCourse[]> => scopedCachedReference(REFERENCE_KEYS.courses, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const [courseSnap, sectionSnap] = await Promise.all([
         firestoreDb.collection("courses").orderBy("AdCourseId", "asc").get(),
         firestoreDb.collection("sections").get()
@@ -2602,7 +2603,7 @@ export const Repository = {
   }),
 
   getCourseById: async (id: number): Promise<AdCourse | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("courses").doc(`course_${id}`).get();
       if (!doc.exists) return undefined;
       const course = doc.data() as AdCourse;
@@ -2614,7 +2615,7 @@ export const Repository = {
   },
 
   getCoursesBySection: async (sectionId: number): Promise<AdCourse[]> => scopedCachedReference(`courses:${sectionId}`, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const [snap, sectionDoc] = await Promise.all([
         firestoreDb.collection("courses").where("AdSectionId", "==", sectionId).get(),
         firestoreDb.collection("sections").doc(`section_${sectionId}`).get()
@@ -2637,7 +2638,7 @@ export const Repository = {
     maxStudent: number
   ): Promise<AdCourse> => {
     invalidateReference(REFERENCE_KEYS.courses);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("courses");
       const newCourse: AdCourse = {
         AdCourseId: nextId,
@@ -2680,7 +2681,7 @@ export const Repository = {
     maxStudent: number
   ): Promise<AdCourse> => {
     invalidateReference(REFERENCE_KEYS.courses);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("courses").doc(`course_${id}`);
       const doc = await docRef.get();
       if (!doc.exists) throw new Error("المقرر غير موجود");
@@ -2716,7 +2717,7 @@ export const Repository = {
 
   deleteCourse: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.courses);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("courses").doc(`course_${id}`).delete();
       invalidateScheduleRelationCache();
       return;
@@ -2734,7 +2735,7 @@ export const Repository = {
     const sectionId = Number(filters.sectionId || 0);
     const termId = Number(filters.termId || 0);
     return scopedCachedSchedules(`${collegeId}:${sectionId}:${termId}`, async () => {
-      if (firestoreDb) {
+      if (firestoreDb && !demoSandboxContext.getStore()) {
         // The legacy SQL relationship is FSchedule -> AdCourse -> AdSection. Older
         // imported schedule rows therefore cannot be trusted to contain denormalized
         // AdCollegeId/AdSectionId fields. Resolve the academic hierarchy first, then
@@ -2792,7 +2793,7 @@ export const Repository = {
     const courseId = Number(row.AdCourseId || 0);
     const roomCode = String(row.AdRoomCode || "").trim();
     if (!termId) return [];
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const collection = firestoreDb.collection("schedules");
       const queries: Promise<any>[] = [];
       // Single-field indexed lookups keep live validation responsive; hydrate the
@@ -2831,7 +2832,7 @@ export const Repository = {
     const ids = [...new Set(courseIds.map(Number).filter(Boolean))];
     if (!ids.length) return [];
     return scopedCachedReference(`history:${ids.slice(0, 60).join(",")}`, async () => {
-      if (firestoreDb) {
+      if (firestoreDb && !demoSandboxContext.getStore()) {
         const snapshots = await Promise.all(
           chunks(ids).map(batch => firestoreDb!.collection("schedules").where("AdCourseId", "in", batch).get())
         );
@@ -2851,7 +2852,7 @@ export const Repository = {
     const code = String(roomCode || "").trim();
     const hall = String(roomHall || "").trim();
     if (!code) return [];
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("schedules").where("AdRoomCode", "==", code).get();
       const rows = snap.docs.map(doc => doc.data() as FSchedule)
         .filter(row => !hall || String(row.AdRoomHall || "").trim() === hall);
@@ -2863,7 +2864,7 @@ export const Repository = {
   },
 
   countSchedules: async (): Promise<number> => scopedCachedReference(REFERENCE_KEYS.scheduleCount, async () => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const aggregate = await firestoreDb.collection("schedules").count().get();
       return Number(aggregate.data().count || 0);
     }
@@ -2871,7 +2872,7 @@ export const Repository = {
   }),
 
   hasSchedulesForCourse: async (courseId: number): Promise<boolean> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("schedules").where("AdCourseId", "==", courseId).limit(1).get();
       return !snap.empty;
     }
@@ -2879,7 +2880,7 @@ export const Repository = {
   },
 
   getSchedules: async (): Promise<FSchedule[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const [scheduleSnap, courseSnap, sectionSnap] = await Promise.all([
         firestoreDb.collection("schedules").orderBy("id", "asc").get(),
         firestoreDb.collection("courses").get(),
@@ -2895,7 +2896,7 @@ export const Repository = {
   },
 
   getScheduleById: async (id: number): Promise<FSchedule | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("schedules").doc(`schedule_${id}`).get();
       if (!doc.exists) return undefined;
       const schedule = doc.data() as FSchedule;
@@ -2912,7 +2913,7 @@ export const Repository = {
   createSchedule: async (schedule: Omit<FSchedule, "id">): Promise<FSchedule> => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const nextId = await reserveFirestoreIds("schedules");
       const newSched = { ...schedule, id: nextId, rev: 1 };
       await firestoreDb.collection("schedules").doc(`schedule_${nextId}`).set(newSched);
@@ -2940,7 +2941,7 @@ export const Repository = {
   updateSchedule: async (id: number, fields: Partial<FSchedule>, expectedRev?: number): Promise<FSchedule> => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const docRef = firestoreDb.collection("schedules").doc(`schedule_${id}`);
       return await firestoreDb.runTransaction(async transaction => {
         const doc = await transaction.get(docRef);
@@ -2975,7 +2976,7 @@ export const Repository = {
   ): Promise<FSchedule[]> => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const refs = moves.map(m => firestoreDb!.collection("schedules").doc(`schedule_${m.id}`));
       // A WriteBatch cannot carry a precondition, so the party moves inside a
       // transaction instead: every revision is compared against the same read
@@ -3016,7 +3017,7 @@ export const Repository = {
   deleteSchedule: async (id: number): Promise<void> => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("schedules").doc(`schedule_${id}`).delete();
       return;
     }
@@ -3027,7 +3028,7 @@ export const Repository = {
   // Copy Schedule (atomic transaction / batch write)
   copySchedule: async (collegeId: number, sectionId: number, fromTermId: number, toTermId: number): Promise<number> => {
     invalidateSchedules();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       // FSchedule has no Section/College FK in legacy SQL. Resolve those values through
       // the current Course -> Section relationship before filtering/copying.
       const [source, target] = await Promise.all([
@@ -3080,7 +3081,7 @@ export const Repository = {
       rowCount: entry.rows.length,
       rows: entry.rows.map(item => ({ ...item }))
     };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleVersions").doc(row.id).set(row);
       return row;
     }
@@ -3094,7 +3095,7 @@ export const Repository = {
   getScheduleVersions: async (collegeId: number, sectionId: number, termId: number, limit = 60): Promise<ScheduleVersion[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     const safeLimit = Math.max(1, Math.min(100, Number(limit) || 60));
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       /**
        * Newest first, at the database, without the snapshots.
        *
@@ -3129,7 +3130,7 @@ export const Repository = {
   ): Promise<ScheduleVersion[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     const safeLimit = Math.max(1, Math.min(24, Number(limit) || 12));
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleVersions")
         .where("scopeKey", "==", scopeKey)
         .orderBy("createdAt", "desc")
@@ -3144,7 +3145,7 @@ export const Repository = {
   },
 
   getScheduleVersionById: async (id: string): Promise<ScheduleVersion | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleVersions").doc(id).get();
       return doc.exists ? doc.data() as ScheduleVersion : undefined;
     }
@@ -3161,7 +3162,7 @@ export const Repository = {
       scopeKey: `${entry.AdCollegeId}:${entry.AdSectionId}:${entry.AdTermId}`,
       status: entry.status || "open",
     };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleOpenDecisions").doc(row.id).set(row);
       return row;
     }
@@ -3175,7 +3176,7 @@ export const Repository = {
   getOpenDecisions: async (collegeId: number, sectionId: number, termId: number, limit = 100): Promise<ScheduleOpenDecision[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
     const safeLimit = Math.max(1, Math.min(250, Number(limit) || 100));
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleOpenDecisions").where("scopeKey", "==", scopeKey).limit(safeLimit).get();
       return snap.docs.map(doc => doc.data() as ScheduleOpenDecision).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
     }
@@ -3184,7 +3185,7 @@ export const Repository = {
 
   updateOpenDecision: async (id: string, fields: Partial<Pick<ScheduleOpenDecision, "title" | "detail" | "owner" | "dueAt" | "priority" | "status">>): Promise<ScheduleOpenDecision> => {
     const updatedAt = new Date().toISOString();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("scheduleOpenDecisions").doc(id);
       const doc = await ref.get();
       if (!doc.exists) throw new Error("القرار غير موجود");
@@ -3210,7 +3211,7 @@ export const Repository = {
       expiresAtTtl: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     }));
     if (!rows.length) return 0;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const batch = firestoreDb.batch();
       rows.forEach(row => batch.set(firestoreDb!.collection("clientTelemetry").doc(row.id), row));
       await batch.commit();
@@ -3225,7 +3226,7 @@ export const Repository = {
 
   getClientTelemetry: async (collegeId: number, sectionId: number, limit = 800): Promise<ClientTelemetryEntry[]> => {
     const safeLimit = Math.max(1, Math.min(1500, Number(limit) || 800));
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("clientTelemetry").where("AdSectionId", "==", sectionId).orderBy("timestamp", "desc").limit(safeLimit).get();
       return snap.docs.map(doc => doc.data() as ClientTelemetryEntry)
         .filter(row => !collegeId || Number(row.AdCollegeId) === collegeId)
@@ -3246,7 +3247,7 @@ export const Repository = {
       status: entry.status || "draft",
       rows: entry.rows.map(item => ({ ...item }))
     };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleDrafts").doc(row.id).set(row);
       return row;
     }
@@ -3259,7 +3260,7 @@ export const Repository = {
 
   updateScheduleDraft: async (id: string, fields: Partial<Pick<ScheduleDraft, "name" | "status" | "rows" | "publishedAt">>): Promise<ScheduleDraft> => {
     const updatedAt = new Date().toISOString();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("scheduleDrafts").doc(id);
       const doc = await ref.get();
       if (!doc.exists) throw new Error("المسودة غير موجودة");
@@ -3278,7 +3279,7 @@ export const Repository = {
 
   getScheduleDrafts: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleDraft[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleDrafts").where("scopeKey", "==", scopeKey).limit(100).get();
       return snap.docs.map(doc=>doc.data() as ScheduleDraft).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
     }
@@ -3286,7 +3287,7 @@ export const Repository = {
   },
 
   getScheduleDraftById: async (id: string): Promise<ScheduleDraft | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleDrafts").doc(id).get();
       return doc.exists ? doc.data() as ScheduleDraft : undefined;
     }
@@ -3298,7 +3299,7 @@ export const Repository = {
   createHallBarterRequest: async (entry: Omit<HallBarterRequest, "id" | "createdAt" | "updatedAt" | "status">): Promise<HallBarterRequest> => {
     const now = new Date().toISOString();
     const row: HallBarterRequest = { ...entry, id: randomUUID(), createdAt: now, updatedAt: now, status: "pending" };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("hallBarterRequests").doc(row.id).set(row);
       return row;
     }
@@ -3310,7 +3311,7 @@ export const Repository = {
   },
 
   getHallBarterRequestById: async (id: string): Promise<HallBarterRequest | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("hallBarterRequests").doc(id).get();
       return doc.exists ? doc.data() as HallBarterRequest : undefined;
     }
@@ -3319,7 +3320,7 @@ export const Repository = {
 
   getHallBarterRequests: async (termId: number): Promise<HallBarterRequest[]> => {
     const keep = (row: HallBarterRequest) => !termId || Number(row.AdTermId) === Number(termId);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const query = termId
         ? firestoreDb.collection("hallBarterRequests").where("AdTermId", "==", termId)
         : firestoreDb.collection("hallBarterRequests");
@@ -3332,7 +3333,7 @@ export const Repository = {
 
   updateHallBarterRequest: async (id: string, fields: Partial<Pick<HallBarterRequest, "status" | "respondedAt" | "responderUserId" | "responderName">>): Promise<HallBarterRequest> => {
     const updatedAt = new Date().toISOString();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("hallBarterRequests").doc(id);
       const doc = await ref.get();
       if (!doc.exists) throw new Error("طلب استعارة القاعة غير موجود");
@@ -3359,7 +3360,7 @@ export const Repository = {
       createdAt: new Date().toISOString(),
       views: 0
     };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleShareLinks").doc(row.id).set(row);
       return row;
     }
@@ -3372,7 +3373,7 @@ export const Repository = {
 
   getShareLinks: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleShareLink[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleShareLinks").where("scopeKey", "==", scopeKey).limit(50).get();
       return snap.docs.map(doc => doc.data() as ScheduleShareLink).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     }
@@ -3380,7 +3381,7 @@ export const Repository = {
   },
 
   getShareLink: async (id: string): Promise<ScheduleShareLink | undefined> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("scheduleShareLinks").doc(id).get();
       return doc.exists ? doc.data() as ScheduleShareLink : undefined;
     }
@@ -3388,7 +3389,7 @@ export const Repository = {
   },
 
   revokeShareLink: async (id: string): Promise<void> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleShareLinks").doc(id).set({ revoked: true }, { merge: true });
       return;
     }
@@ -3401,7 +3402,7 @@ export const Repository = {
   // Read counters are best-effort telemetry; a failed write must never block a reader.
   touchShareLink: async (id: string): Promise<void> => {
     const lastViewedAt = new Date().toISOString();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleShareLinks").doc(id)
         .set({ lastViewedAt, views: FieldValue.increment(1) }, { merge: true });
       return;
@@ -3421,7 +3422,7 @@ export const Repository = {
        not undefined. */
     for (const key of Object.keys(row) as Array<keyof ScheduleComment>)
       if (row[key] === undefined) delete row[key];
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleComments").doc(row.id).set(row);
       return row;
     }
@@ -3433,7 +3434,7 @@ export const Repository = {
   },
 
   getScheduleComments: async (scheduleId: number): Promise<ScheduleComment[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleComments").where("scheduleId", "==", scheduleId).limit(100).get();
       return snap.docs.map(doc=>doc.data() as ScheduleComment).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
     }
@@ -3451,7 +3452,7 @@ export const Repository = {
       row.source === "staff-card" && !row.resolved &&
       Number(row.AdCollegeId) === collegeId && Number(row.AdTermId) === termId &&
       (!sectionId || Number(row.AdSectionId) === sectionId);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleComments")
         .where("source", "==", "staff-card").where("AdTermId", "==", termId).limit(300).get();
       return snap.docs.map(doc => doc.data() as ScheduleComment).filter(keep)
@@ -3465,7 +3466,7 @@ export const Repository = {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const mine = (row: ScheduleComment) =>
       row.source === "staff-card" && Number(row.fromInstructorId) === instructorId && row.createdAt >= since;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleComments")
         .where("fromInstructorId", "==", instructorId).limit(60).get();
       return snap.docs.map(doc => doc.data() as ScheduleComment).filter(mine).length;
@@ -3490,7 +3491,7 @@ export const Repository = {
     const sameHand = (item: StudentNeed) =>
       item.fingerprint === row.fingerprint && Number(item.AdTermId) === Number(row.AdTermId)
       && Number(item.AdSectionId) === Number(row.AdSectionId);
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("studentNeeds")
         .where("fingerprint", "==", row.fingerprint).limit(20).get();
       const batch = firestoreDb.batch();
@@ -3519,7 +3520,7 @@ export const Repository = {
   getStudentNeedHistory: async (collegeId: number, sectionId: number): Promise<StudentNeed[]> => {
     const mine = (item: StudentNeed) =>
       Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("studentNeeds")
         .where("AdSectionId", "==", sectionId).limit(20000).get();
       return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
@@ -3531,7 +3532,7 @@ export const Repository = {
     const mine = (item: StudentNeed) =>
       Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId
       && Number(item.AdTermId) === termId;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("studentNeeds")
         .where("AdTermId", "==", termId).limit(5000).get();
       return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
@@ -3540,7 +3541,7 @@ export const Repository = {
   },
 
   setScheduleCommentResolved: async (id: string, resolved: boolean): Promise<void> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref=firestoreDb.collection("scheduleComments").doc(id); const doc=await ref.get();
       if (!doc.exists) throw new Error("التعليق غير موجود");
       await ref.set({ ...(doc.data() as ScheduleComment), resolved }, { merge: false });
@@ -3566,7 +3567,7 @@ export const Repository = {
    * is only ever one process, and this quietly does nothing.
    */
   markSchedulesChanged: async (): Promise<void> => {
-    if (!firestoreDb) return;
+    if (!firestoreDb || demoSandboxContext.getStore()) return;
     try {
       await firestoreDb.doc("_meta/schedulesChanged").set({
         changedAt: Date.now(),
@@ -3579,7 +3580,7 @@ export const Repository = {
   },
 
   watchSchedulesChanged: (onChange: () => void): (() => void) => {
-    if (!firestoreDb) return () => undefined;
+    if (!firestoreDb || demoSandboxContext.getStore()) return () => undefined;
     let first = true;
     const stop = firestoreDb.doc("_meta/schedulesChanged").onSnapshot(
       () => {
@@ -3594,7 +3595,7 @@ export const Repository = {
 
   getVisitingRoster: async (collegeId: number, sectionId: number, termId: number): Promise<number[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("visitingRosters").where("scopeKey", "==", scopeKey).limit(1).get();
       return snap.empty ? [] : ((snap.docs[0].data() as VisitingRoster).instructorIds || []);
     }
@@ -3608,7 +3609,7 @@ export const Repository = {
       id: scopeKey, scopeKey, collegeId, sectionId, termId,
       instructorIds: unique, updatedAt: new Date().toISOString()
     };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("visitingRosters").doc(scopeKey.replace(/:/g, "_")).set(row, { merge: false });
       return unique;
     }
@@ -3621,7 +3622,7 @@ export const Repository = {
   // mark them with a «منتدب» badge (Note 1).
   getAllDelegateInstructorIds: async (): Promise<number[]> => {
     const set = new Set<number>();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("visitingRosters").get();
       snap.docs.forEach(doc => ((doc.data() as VisitingRoster).instructorIds || []).forEach(id => set.add(Number(id))));
     } else {
@@ -3632,7 +3633,7 @@ export const Repository = {
 
   getScheduleConstraints: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleConstraint[]> => {
     const scopeKey = `${collegeId}:${sectionId}:${termId}`;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("scheduleConstraints").where("scopeKey", "==", scopeKey).limit(100).get();
       return snap.docs.map(doc=>doc.data() as ScheduleConstraint).sort((a,b)=>a.createdAt.localeCompare(b.createdAt));
     }
@@ -3645,7 +3646,7 @@ export const Repository = {
       ...entry, id: randomUUID(), createdAt: now, updatedAt: now,
       scopeKey: `${entry.AdCollegeId}:${entry.AdSectionId}:${entry.AdTermId}`
     };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleConstraints").doc(row.id).set(row);
       return row;
     }
@@ -3658,7 +3659,7 @@ export const Repository = {
 
   updateScheduleConstraint: async (id: string, fields: Partial<Pick<ScheduleConstraint, "label" | "enabled" | "time" | "maxMinutes" | "roomCode" | "roomHall" | "day">>): Promise<ScheduleConstraint> => {
     const updatedAt = new Date().toISOString();
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("scheduleConstraints").doc(id);
       const doc = await ref.get();
       if (!doc.exists) throw new Error("القاعدة غير موجودة");
@@ -3675,7 +3676,7 @@ export const Repository = {
   },
 
   deleteScheduleConstraint: async (id: string): Promise<void> => {
-    if (firestoreDb) { await firestoreDb.collection("scheduleConstraints").doc(id).delete(); return; }
+    if (firestoreDb && !demoSandboxContext.getStore()) { await firestoreDb.collection("scheduleConstraints").doc(id).delete(); return; }
     if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
     db.scheduleConstraints = db.scheduleConstraints.filter(row=>row.id!==id);
     saveDatabase();
@@ -3683,7 +3684,7 @@ export const Repository = {
 
   createScheduleDecisionMemory: async (entry: Omit<ScheduleDecisionMemory, "id" | "createdAt">): Promise<ScheduleDecisionMemory> => {
     const row: ScheduleDecisionMemory = { ...entry, id: randomUUID(), createdAt: new Date().toISOString() };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("scheduleDecisionMemories").doc(row.id).set(row);
       return row;
     }
@@ -3696,7 +3697,7 @@ export const Repository = {
 
   getScheduleDecisionMemories: async (collegeId:number, sectionId:number, limit=250): Promise<ScheduleDecisionMemory[]> => {
     const safeLimit=Math.max(1,Math.min(500,Number(limit)||250));
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap=await firestoreDb.collection("scheduleDecisionMemories").where("AdCollegeId","==",collegeId).where("AdSectionId","==",sectionId).limit(500).get();
       return snap.docs.map(doc=>doc.data() as ScheduleDecisionMemory).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,safeLimit);
     }
@@ -3705,7 +3706,7 @@ export const Repository = {
 
   getSchedulePublication: async (collegeId:number, sectionId:number, termId:number): Promise<SchedulePublication | undefined> => {
     const scopeKey=`${collegeId}:${sectionId}:${termId}`;
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc=await firestoreDb.collection("schedulePublications").doc(scopeKey).get();
       return doc.exists ? doc.data() as SchedulePublication : undefined;
     }
@@ -3715,7 +3716,7 @@ export const Repository = {
   upsertSchedulePublication: async (entry: Omit<SchedulePublication,"id"|"scopeKey"|"publishedAt">): Promise<SchedulePublication> => {
     const scopeKey=`${entry.AdCollegeId}:${entry.AdSectionId}:${entry.AdTermId}`;
     const row:SchedulePublication={...entry,id:scopeKey,scopeKey,publishedAt:new Date().toISOString()};
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("schedulePublications").doc(scopeKey).set(row);
       return row;
     }
@@ -3734,7 +3735,7 @@ export const Repository = {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
     const normalizedInput = rows.map(row => ({ ...row, AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId }));
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const current = await Repository.getSchedulesByScope({ collegeId, sectionId, termId });
       const currentIds = new Set(current.map(row=>row.id));
       const needsId = normalizedInput.filter(row=>!Number.isInteger(row.id)||row.id<=0||!currentIds.has(row.id));
@@ -3762,7 +3763,7 @@ export const Repository = {
 
   // Campus mobility (additive metadata; does not mutate legacy college/room schemas)
   getCampusMobilityProfile: async (collegeId: number): Promise<CampusMobilityProfile> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const doc = await firestoreDb.collection("campusMobilityProfiles").doc(`college_${collegeId}`).get();
       if (doc.exists) return doc.data() as CampusMobilityProfile;
     } else {
@@ -3785,7 +3786,7 @@ export const Repository = {
       updatedAt: profile.updatedAt || new Date().toISOString(),
       updatedBy: String(profile.updatedBy || "").slice(0, 120),
     };
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       await firestoreDb.collection("campusMobilityProfiles").doc(`college_${normalized.AdCollegeId}`).set(normalized);
       return normalized;
     }
@@ -3799,7 +3800,7 @@ export const Repository = {
 
   // Rooms
   getRooms: async (): Promise<AdRoom[]> => {
-    if (firestoreDb) {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("rooms").orderBy("AdRoomId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdRoom);
     }
@@ -3815,7 +3816,7 @@ export const Repository = {
     makeSystemBackup(rootAdminId),
 
   clearSystemExportJobs: async (rootAdminId = 1): Promise<void> => {
-    if (!firestoreDb) return;
+    if (!firestoreDb || demoSandboxContext.getStore()) return;
     const snap = await firestoreDb.collection(SYSTEM_EXPORT_JOB_COLLECTION).where("rootAdminId", "==", rootAdminId).get();
     const batch = firestoreDb.batch();
     snap.docs.forEach(doc => batch.delete(doc.ref));
