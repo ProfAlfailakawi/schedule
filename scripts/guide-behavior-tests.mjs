@@ -16,14 +16,29 @@ const read = file => fs.readFileSync(path.join(root,file),"utf8");
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "schedule-guide-test-"));
 const isolatedTypes = path.join(tmp,"types");
 fs.mkdirSync(isolatedTypes,{recursive:true});
+// smartGuide now imports shared helpers. Compile the dependency graph as CommonJS
+// inside an isolated temp package so Node can resolve extensionless TS imports
+// exactly as tsc emits them. This also avoids assuming the entry file is emitted
+// directly at tmp/smartGuide.js when tsc preserves the src/guide structure.
+fs.writeFileSync(path.join(tmp,"package.json"), '{"type":"commonjs"}\n');
 const tscCandidates = [path.join(root,"node_modules/.bin/tsc"), "/opt/nvm/versions/node/v22.16.0/bin/tsc", "tsc"];
 let compile = null;
 for (const bin of tscCandidates) {
-  const result = spawnSync(bin, ["src/guide/smartGuide.ts","--target","ES2022","--module","ESNext","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","bundler","--typeRoots",isolatedTypes,"--outDir",tmp], {cwd:root,encoding:"utf8"});
+  const result = spawnSync(bin, ["src/guide/smartGuide.ts","--target","ES2022","--module","CommonJS","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","node","--typeRoots",isolatedTypes,"--outDir",tmp], {cwd:root,encoding:"utf8"});
   if (!result.error) { compile=result; break; }
 }
 if (!compile || compile.status !== 0) {
   console.error("تعذر تحويل محرك المرشد للاختبار:\n" + String(compile?.stderr || compile?.stdout || "لم يوجد tsc"));
+  process.exit(1);
+}
+const emittedGuideCandidates = [
+  path.join(tmp,"guide","smartGuide.js"),
+  path.join(tmp,"src","guide","smartGuide.js"),
+  path.join(tmp,"smartGuide.js"),
+];
+const emittedGuide = emittedGuideCandidates.find(candidate => fs.existsSync(candidate));
+if (!emittedGuide) {
+  console.error("تعذر العثور على ملف smartGuide.js بعد تحويل محرك المرشد.");
   process.exit(1);
 }
 
@@ -36,7 +51,7 @@ globalThis.localStorage = {
   key:index => [...store.keys()][index] || null,
   get length(){ return store.size; },
 };
-const engine = await import(pathToFileURL(path.join(tmp,"smartGuide.js")).href + `?t=${Date.now()}`);
+const engine = await import(pathToFileURL(emittedGuide).href + `?t=${Date.now()}`);
 const reset = () => store.clear();
 
 // 1/2/3 — نموذج المستخدم والخبرة والتعثر.

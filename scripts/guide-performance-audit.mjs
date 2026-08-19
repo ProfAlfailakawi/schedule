@@ -8,11 +8,18 @@ import { pathToFileURL } from "node:url";
 const root=process.cwd();
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),"schedule-guide-perf-"));
 const isolatedTypes=path.join(tmp,"types");fs.mkdirSync(isolatedTypes,{recursive:true});
+// Compile the full guide dependency graph into an isolated CommonJS package.
+// The guide imports shared helpers, so tsc may emit guide/smartGuide.js rather
+// than smartGuide.js at the temp root.
+fs.writeFileSync(path.join(tmp,"package.json"),'{"type":"commonjs"}\n');
 const candidates=[path.join(root,"node_modules/.bin/tsc"),"/opt/nvm/versions/node/v22.16.0/bin/tsc","tsc"];
 let compiled=null;
-for(const bin of candidates){const result=spawnSync(bin,["src/guide/smartGuide.ts","--target","ES2022","--module","ESNext","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","bundler","--typeRoots",isolatedTypes,"--outDir",tmp],{cwd:root,encoding:"utf8"});if(!result.error){compiled=result;break;}}
+for(const bin of candidates){const result=spawnSync(bin,["src/guide/smartGuide.ts","--target","ES2022","--module","CommonJS","--lib","ES2022,DOM","--skipLibCheck","--moduleResolution","node","--typeRoots",isolatedTypes,"--outDir",tmp],{cwd:root,encoding:"utf8"});if(!result.error){compiled=result;break;}}
 if(!compiled||compiled.status!==0){console.error("تعذر تشغيل فحص أداء المرشد:\n"+String(compiled?.stderr||compiled?.stdout||"لم يوجد tsc"));process.exit(1);}
-const guide=await import(pathToFileURL(path.join(tmp,"smartGuide.js")).href+`?t=${Date.now()}`);
+const emittedGuideCandidates=[path.join(tmp,"guide","smartGuide.js"),path.join(tmp,"src","guide","smartGuide.js"),path.join(tmp,"smartGuide.js")];
+const emittedGuide=emittedGuideCandidates.find(candidate=>fs.existsSync(candidate));
+if(!emittedGuide){console.error("تعذر العثور على ملف smartGuide.js بعد تحويل محرك المرشد.");process.exit(1);}
+const guide=await import(pathToFileURL(emittedGuide).href+`?t=${Date.now()}`);
 const query="أبي هذا المقرر يصير يوم الأربعاء الساعة 11 بس لا أبي أغير الدكتور وإذا القاعة مشغولة دور لي أقرب قاعة";
 for(let warm=0;warm<3;warm++){for(let i=0;i<3000;i++){guide.dialectIntentTerms(query);guide.parseStructuredGuideIntent(query);}}
 const iterations=20000,start=performance.now();
