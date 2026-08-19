@@ -712,13 +712,13 @@ async function runTests() {
     assert(slip.includes("الاثنين"), "and the day it belongs to");
 
     // A deliberately different hour is a decision, not a slip, and is silent.
-    assert(offRhythm({ fmonday: true, fstarttime: "14:00", fendtime: "15:30" } as any, reading) === "",
+    assert(offRhythm({ fmonday: true, fstarttime: "14:00", fendtime: "15:20" } as any, reading) === "",
       "a different hour altogether is a decision, and is not remarked on");
     // An unusual LENGTH is remarked on, whatever the hour.
     const wrongLength = offRhythm({ fsunday: true, fstarttime: "08:00", fendtime: "10:30" } as any, reading);
     assert(wrongLength.includes("مدة"), `an off-pattern length is named (got "${wrongLength}")`);
     // Following the habit exactly says nothing at all.
-    assert(offRhythm({ fsunday: true, fstarttime: "09:10", fendtime: "10:10" } as any, reading) === "",
+    assert(offRhythm({ fsunday: true, fstarttime: "09:00", fendtime: "09:50" } as any, reading) === "",
       "a lecture that follows the habit is silent");
 
     // Refusing to guess: no habit, no claim.
@@ -730,7 +730,7 @@ async function runTests() {
     assert(learnRhythm([]).patterns.every(pattern => !pattern.breakMinutes && !pattern.durationMinutes),
       "an empty history states nothing");
     assert(describeRhythm(learnRhythm([])) === "", "and has no sentence to say");
-    assert(describeRhythm(reading).includes("10 دقائق") && describeRhythm(reading).includes("60 دقيقة"),
+    assert(describeRhythm(reading).includes("10 دقائق") && describeRhythm(reading).includes("50 دقيقة") && describeRhythm(reading).includes("80 دقيقة"),
       "the sentence carries both rhythms");
     // Arabic counts three ways; «10 فصلاً» reads as machine output.
     assert(describeRhythm(reading).includes("10 فصول"), "and counts the terms the way Arabic does");

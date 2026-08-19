@@ -6,10 +6,14 @@ export type HistoricalDayModel = {
   samples: number;
   share: number;
   ladder: string[];
+  /** Ranked starts for this exact history slice. Used to distinguish a genuinely unusual start from a merely less-common one. */
+  starts: Array<{ time: string; samples: number; share: number }>;
   durationMinutes: number;
   durationSamples: number;
   durationShare: number;
   durationRange: [number, number];
+  /** Ranked durations for the same course/day slice. */
+  durations: Array<{ minutes: number; samples: number; share: number }>;
   confidence: number;
   /** Evidence from the newest six terms; keeps a 2017-only habit from outranking today's department. */
   modernSamples: number;
@@ -106,8 +110,32 @@ function buildGroup(rows: FSchedule[], weights: Map<number, number>, modernTermI
     const minuteMode = weightedMode(minuteValues);
     const durationMode = weightedMode(durationValuesWeighted);
     const startCounts = new Map<string, number>();
-    for (const item of startValues) startCounts.set(item.value, (startCounts.get(item.value) || 0) + item.weight);
-    const ladder = [...startCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 8).map(([time]) => time).sort();
+    const startRawCounts = new Map<string, number>();
+    for (const item of startValues) {
+      startCounts.set(item.value, (startCounts.get(item.value) || 0) + item.weight);
+      startRawCounts.set(item.value, (startRawCounts.get(item.value) || 0) + 1);
+    }
+    const rankedStarts = [...startCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const ladder = rankedStarts.slice(0, 8).map(([time]) => time).sort();
+    const starts = rankedStarts.map(([time, weight]) => ({
+      time,
+      samples: startRawCounts.get(time) || 0,
+      share: minuteMode.total ? weight / minuteMode.total : 0,
+    }));
+
+    const durationCounts = new Map<number, number>();
+    const durationRawCounts = new Map<number, number>();
+    for (const item of durationValuesWeighted) {
+      durationCounts.set(item.value, (durationCounts.get(item.value) || 0) + item.weight);
+      durationRawCounts.set(item.value, (durationRawCounts.get(item.value) || 0) + 1);
+    }
+    const durations = [...durationCounts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0] - b[0])
+      .map(([minutes, weight]) => ({
+        minutes,
+        samples: durationRawCounts.get(minutes) || 0,
+        share: durationMode.total ? weight / durationMode.total : 0,
+      }));
     const minuteShare = minuteMode.total ? minuteMode.weight / minuteMode.total : 0;
     const durationShare = durationMode.total ? durationMode.weight / durationMode.total : 0;
     const modernSamples = mine.filter(row => modernTermIds.has(Number(row.AdTermId || 0))).length;
@@ -119,10 +147,12 @@ function buildGroup(rows: FSchedule[], weights: Map<number, number>, modernTermI
       samples: minuteValues.length,
       share: minuteShare,
       ladder,
+      starts,
       durationMinutes: Number(durationMode.value ?? 0),
       durationSamples: durationValuesWeighted.length,
       durationShare,
       durationRange: durationRaw.length ? [percentile(durationRaw, .1), percentile(durationRaw, .9)] : [0, 0],
+      durations,
       confidence,
       modernSamples,
       freshness,

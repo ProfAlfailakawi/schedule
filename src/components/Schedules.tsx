@@ -467,6 +467,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   // The row touched by the last write, so the grid can say "this one just
   // changed" for a few seconds instead of leaving the user to hunt for it.
   const [justChangedId, setJustChangedId] = useState<number | null>(null);
+  /** A busy hall stays inspectable: availability is guidance, not a dead disabled button. */
+  const [hallBusyPreview, setHallBusyPreview] = useState<string | null>(null);
   const lastSavedHydrated = useRef(false);
   let savedPrefs: any = {};
   try {
@@ -1805,57 +1807,77 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
 
   const historicalTimingNote = useCallback((row: Partial<FSchedule>): string | null => {
     const active = days.filter(day => Boolean((row as any)[day.key]));
-    if (!active.length || !row.fstarttime) return scheduleStartConventionNote(row);
-    const start = String(row.fstarttime || "");
-    const end = String(row.fendtime || "");
+    if (!active.length || !row.fstarttime) return null;
+    const start = String(row.fstarttime || "").slice(0, 5);
+    const end = String(row.fendtime || "").slice(0, 5);
     const startMinutes = mins(start), endMinutes = mins(end);
+    const duration = endMinutes > startMinutes ? endMinutes - startMinutes : 0;
+
+    /**
+     * A large course can have many perfectly normal clocks. "Most common" is
+     * not the same as "only normal". A start/duration is accepted when the
+     * course itself has repeated evidence for it over the ten-year window.
+     * Instructor identity is deliberately absent from this decision.
+     */
+    const isSupported = (samples: number, share: number) =>
+      samples >= 4 || (samples >= 2 && share >= 0.06);
+
     for (const day of active) {
       const reading = historicalReadingFor(row, day.key as DayKey);
-      const preferred = preferredStartForDrop(row, day.key as DayKey, start);
-      if (preferred !== start) {
-        const source = reading.basis === "course-pattern" ? "سجل هذا المقرر مع نمط الأيام"
-          : reading.basis === "course" ? "سجل هذا المقرر"
-          : reading.basis === "pattern" ? "سجل نمط الأيام في القسم"
-          : reading.basis === "department" ? "سجل القسم الحديث"
-          : "القاعدة المؤسسية";
-        return `${source}: ${day.label} يبدأ عادةً ${isolateLtrText(preferred)}، بينما اخترت ${isolateLtrText(start)}. تنبيه فقط — يمكنك تثبيت الوقت الجديد إذا كان مقصوداً.`;
-      }
-      const duration = endMinutes > startMinutes ? endMinutes - startMinutes : 0;
-
-      // The course's own history is the primary clock. A percentile range must
-      // never turn a different teaching period into "normal": if this course has
-      // repeatedly run 80 minutes, 90 minutes still deserves a warning even when
-      // a few old exceptions widened the historical range.
       const learned = reading.data;
-      if (learned && duration > 0 && learned.durationSamples >= 3 && learned.durationShare >= .35 && learned.durationMinutes > 0) {
-        const expected = Number(learned.durationMinutes);
-        if (Math.abs(duration - expected) >= 10) {
-          const expectedEnd = timeFromMins(startMinutes + expected);
-          const source = reading.basis === "course-pattern" ? "سجل هذا المقرر مع نمط الأيام"
-            : reading.basis === "course" ? "سجل هذا المقرر"
-            : reading.basis === "pattern" ? "سجل نمط الأيام في القسم"
-            : "سجل القسم";
-          return `${source}: ${day.label} مدته المعتادة ${expected.toLocaleString("ar-KW-u-nu-latn")} دقيقة (${isolateLtrText(formatScheduleTimeRange(start, expectedEnd))})، بينما أدخلت ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة (${isolateLtrText(formatScheduleTimeRange(start, end))}). تنبيه فقط — لا يمنع الحفظ.`;
+      const courseBased = reading.basis === "course-pattern" || reading.basis === "course";
+
+      if (courseBased && learned && learned.samples >= 4) {
+        const exactStart = (learned.starts || []).find(item => item.time === start);
+        const acceptedStart = Boolean(exactStart && isSupported(exactStart.samples, exactStart.share));
+
+        const exactDuration = duration > 0
+          ? (learned.durations || []).find(item => Number(item.minutes) === duration)
+          : null;
+        const acceptedDuration = !duration || Boolean(exactDuration && isSupported(exactDuration.samples, exactDuration.share));
+
+        // If both values are established in this course's own history there is
+        // nothing useful to tell the user, even when another start is #1.
+        if (acceptedStart && acceptedDuration) continue;
+
+        if (!acceptedStart && learned.samples >= 8 && (learned.starts || []).length) {
+          const normalStarts = (learned.starts || [])
+            .filter(item => isSupported(item.samples, item.share))
+            .slice(0, 5)
+            .map(item => displayClockCompact(item.time));
+          if (normalStarts.length) {
+            return `سجل المقرر نفسه خلال 10 سنوات لا يُظهر ${day.label} عند ${isolateLtrText(start)} ضمن أوقاته المتكررة. الأوقات المثبتة تاريخياً لهذا المقرر تشمل ${normalStarts.map(isolateLtrText).join("، ")}. راجع اللائحة إن كان هذا الاستثناء مقصوداً.`;
+          }
         }
+
+        if (!acceptedDuration && duration > 0 && learned.durationSamples >= 6 && (learned.durations || []).length) {
+          const normalDurations = (learned.durations || [])
+            .filter(item => isSupported(item.samples, item.share))
+            .slice(0, 4)
+            .map(item => `${item.minutes.toLocaleString("ar-KW-u-nu-latn")} دقيقة`);
+          if (normalDurations.length) {
+            return `مدة ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
+          }
+        }
+
+        // Course history exists but is not decisive: silence is safer than a
+        // weak warning. The regulation layer below still performs its own check.
         continue;
       }
+    }
 
-      // Only when the available history is too weak do we fall back to the
-      // institution's teaching-period convention: 50 minutes on Sun/Tue/Thu
-      // and 80 minutes on Mon/Wed. This fallback never overrides reliable course history.
-      if (duration > 0) {
-        const selectedKeys = active.map(item => item.key as RegDayKey);
-        const institutional = adviseDayPattern(selectedKeys, start, end);
-        if (institutional?.family === "mixed") {
-          return `${institutional.note} الوقت المختار هو ${isolateLtrText(formatScheduleTimeRange(start, end))}. تنبيه فقط — لا يمنع الحفظ.`;
-        }
-        if (institutional?.changed) {
-          return `${institutional.note} الوقت المعتاد لهذه الأيام هو ${isolateLtrText(formatScheduleTimeRange(start, institutional.suggestedEnd))}، بينما أدخلت ${isolateLtrText(formatScheduleTimeRange(start, end))}. تنبيه فقط — لا يمنع الحفظ.`;
-        }
+    // With no reliable course-specific history, only a real institutional
+    // duration mismatch deserves a note. We do not invent a preferred start.
+    if (duration > 0) {
+      const selectedKeys = active.map(item => item.key as RegDayKey);
+      const institutional = adviseDayPattern(selectedKeys, start, end);
+      if (institutional?.family === "mixed") return institutional.note;
+      if (institutional?.changed) {
+        return `${institutional.note} الفترة المدخلة ${isolateLtrText(formatScheduleTimeRange(start, end))}.`;
       }
     }
-    return scheduleStartConventionNote(row);
-  }, [historicalReadingFor, preferredStartForDrop]);
+    return null;
+  }, [historicalReadingFor]);
 
   const chooseHistoricalDropTime = useCallback(async (row: Partial<FSchedule>, day: DayKey, picked: string) => {
     const preferred = preferredStartForDrop(row, day, picked);
@@ -2174,6 +2196,28 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const currentInstructorName = instructorById.get(Number(form.AdInstructorId || 0))?.AdInstructorName || "";
   const currentRoomLabel = form.AdRoomCode && form.AdRoomHall ? `${form.AdRoomCode}/${form.AdRoomHall}` : "";
   const selectedDaySummary = selectedFormDays.map(day => day.label).join(" / ");
+  const hallAvailabilityReady = Boolean(selectedFormDays.length && form.fstarttime && form.fendtime && !timeRangeInvalid);
+  const hallAvailability = useMemo(() => {
+    const building = normalizeRoomToken(form.AdRoomCode);
+    const start = form.fstarttime ? mins(form.fstarttime) : 0;
+    const end = form.fendtime ? mins(form.fendtime) : 0;
+    return hallOptions.map(hall => {
+      const hallKey = normalizeRoomToken(hall);
+      const occupants = hallAvailabilityReady ? rows.filter(row => {
+        if (editId && Number(row.id) === Number(editId)) return false;
+        if (form.AdTermId && row.AdTermId && Number(row.AdTermId) !== Number(form.AdTermId)) return false;
+        if (normalizeRoomToken(row.AdRoomCode) !== building || normalizeRoomToken(row.AdRoomHall) !== hallKey) return false;
+        const sharesDay = selectedFormDays.some(day => Boolean((row as any)[day.key]));
+        if (!sharesDay) return false;
+        const otherStart = mins(row.fstarttime);
+        const otherEnd = mins(row.fendtime);
+        return otherStart < end && otherEnd > start;
+      }) : [];
+      return { hall, occupied: occupants.length > 0, occupants };
+    }).sort((a, b) => Number(a.occupied) - Number(b.occupied) || byArabic(a.hall, b.hall));
+  }, [hallOptions, hallAvailabilityReady, rows, editId, form.AdRoomCode, form.AdTermId, form.fstarttime, form.fendtime, selectedFormDays]);
+  const availableHallCount = hallAvailability.filter(item => !item.occupied).length;
+  const busyHallCount = hallAvailability.filter(item => item.occupied).length;
   const editorConflictCards = useMemo(() => conflicts.map((conflict: any, index: number) => {
     const other = rows.find(row => Number(row.id) === Number(conflict.otherId || conflict.rowId || -1));
     const detail = String(conflict?.detail || "").replace(/\s+/g, " ").trim();
@@ -2268,26 +2312,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       return { key: day.key, label: day.label, state, cue, icon, active };
     });
   }, [form, expectedStartMinuteForDay, preferredStartForDrop]);
-  const editorTimingInline = useMemo(() => {
-    if (!editorTimingNote || !form.fstarttime) return null;
-    const selectedKeys = selectedFormDays.map(day => day.key as RegDayKey);
-    const durationAdvice = form.fendtime ? adviseDayPattern(selectedKeys, form.fstarttime, form.fendtime) : null;
-    const durationMismatch = Boolean(durationAdvice && durationAdvice.family !== "mixed" && durationAdvice.changed);
-    const preferred = durationMismatch
-      ? [formatScheduleTimeRange(form.fstarttime, durationAdvice!.suggestedEnd)]
-      : [...new Set(editorTimingVisualDays.filter(day => day.active && day.state === "off" && day.cue && day.cue !== "—").map(day => day.cue))];
-    const affectedDays = durationMismatch
-      ? selectedFormDays.map(day => day.label)
-      : editorTimingVisualDays.filter(day => day.active && day.state === "off").map(day => day.label);
+  const editorTimingReviewCard = useMemo(() => {
+    if (!editorTimingNote) return null;
     return {
-      picked: durationMismatch && form.fendtime
-        ? formatScheduleTimeRange(form.fstarttime, form.fendtime)
-        : displayClockCompact(String(form.fstarttime || "")),
-      preferred,
-      affectedDays,
-      note: String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim(),
+      rule: "historical-timing",
+      article: "سجل المقرر + اللائحة",
+      severity: "low",
+      source: "history",
+      title: "وقت غير معتاد تاريخياً",
+      detail: String(editorTimingNote).replace(/^ملاحظة التوقيت:\s*/, "").replace(/\s+/g, " ").trim(),
+      icon: "history",
+      sourceLabel: "السجل التاريخي",
     };
-  }, [editorTimingNote, editorTimingVisualDays, selectedFormDays, form.fstarttime, form.fendtime]);
+  }, [editorTimingNote]);
   const editorRegulationCards = useMemo(() => editorRegulation.map((finding, index) => {
     const detail = String(finding.detail || "").replace(/\s+/g, " ").trim();
     const ruleIcon = finding.rule === "rotation" ? "history" : finding.rule === "consecutive-sections" ? "idea" : finding.rule === "sections-same-hour" ? "room" : index % 2 ? "room" : "idea";
@@ -2300,12 +2337,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       selectedDaysLabel: selectedFormDays.length ? selectedFormDays.length.toLocaleString("ar-KW-u-nu-latn") : "0",
     };
   }), [editorRegulation, formDurationMinutes, selectedFormDays.length]);
-  const editorSupplementalCards = useMemo(() => editorSupplementalReview.map((finding, index) => ({
-    ...finding,
-    detail: String(finding.detail || "").replace(/\s+/g, " ").trim(),
-    icon: finding.source === "history" ? "history" : index % 2 ? "room" : "idea",
-    sourceLabel: finding.source === "history" ? "السجل التاريخي" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
-  })), [editorSupplementalReview]);
+  const editorSupplementalCards = useMemo(() => {
+    const cards = editorSupplementalReview.map((finding, index) => ({
+      ...finding,
+      detail: String(finding.detail || "").replace(/\s+/g, " ").trim(),
+      icon: finding.source === "history" ? "history" : index % 2 ? "room" : "idea",
+      sourceLabel: finding.source === "history" ? "السجل التاريخي" : finding.source === "department" ? "قرار القسم" : "جاهزية الاعتماد",
+    }));
+    return editorTimingReviewCard ? [editorTimingReviewCard, ...cards] : cards;
+  }, [editorSupplementalReview, editorTimingReviewCard]);
   const editorRoomConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض قاعة" || card.typeLabel === "نطاق القاعة"), [editorConflictCards]);
   const editorInstructorConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض أستاذ"), [editorConflictCards]);
   const editorGenericConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel !== "تعارض قاعة" && card.typeLabel !== "نطاق القاعة" && card.typeLabel !== "تعارض أستاذ"), [editorConflictCards]);
@@ -2829,6 +2869,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     else delete document.documentElement.dataset.scheduleWorkspace;
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        setHallBusyPreview(null);
         // The editor is a whole page, not a drawer, so it has no close of its
         // own; Escape is the habit every other editor in the program already
         // answers to, and it must answer here too.
@@ -6968,26 +7009,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </div>
                 </Field>
-                {editorTimingInline ? (
-                  <div className="schedule-time-intelligence" role="status" aria-live="polite">
-                    <div className="schedule-time-intelligence-icon" aria-hidden="true"><Clock3 /></div>
-                    <div className="schedule-time-intelligence-copy">
-                      <div className="schedule-time-intelligence-head">
-                        <strong>وقت غير معتاد</strong>
-                        <em>مسموح</em>
-                      </div>
-                      <div className="schedule-time-intelligence-pills">
-                        <span><small>اخترت</small><b dir="ltr">{editorTimingInline.picked}</b></span>
-                        {editorTimingInline.preferred.length ? <span><small>المعتاد</small><b dir="ltr">{editorTimingInline.preferred.join(" / ")}</b></span> : null}
-                        {editorTimingInline.affectedDays.length ? <span><small>الأيام</small><b>{editorTimingInline.affectedDays.join(" / ")}</b></span> : null}
-                      </div>
-                      <details>
-                        <summary>لماذا؟</summary>
-                        <p>{editorTimingInline.note}</p>
-                      </details>
-                    </div>
-                  </div>
-                ) : null}
                 <div className="schedule-location-pair">
                   <div className="schedule-location-field schedule-location-field--building">
                     <Field label="رقم المبنى" required>
@@ -7028,25 +7049,60 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             </summary>
                             <div className="schedule-hall-picker-popover" role="group" aria-label={`قاعات المبنى ${form.AdRoomCode}`}>
                               <header>
-                                <div><small>اختيار سريع</small><strong>قاعات المبنى <bdi dir="ltr">{form.AdRoomCode}</bdi></strong></div>
+                                <div>
+                                  <small>اختيار سريع</small>
+                                  <strong>قاعات المبنى <bdi dir="ltr">{form.AdRoomCode}</bdi></strong>
+                                  {hallAvailabilityReady ? <p className="schedule-hall-picker-status"><b>{availableHallCount.toLocaleString("ar-KW-u-nu-latn")}</b> متاحة · <b>{busyHallCount.toLocaleString("ar-KW-u-nu-latn")}</b> مشغولة</p> : <p className="schedule-hall-picker-status">اختر الأيام والوقت لمعرفة المتاح فوراً</p>}
+                                </div>
                                 <span>{hallOptions.length.toLocaleString("ar-KW-u-nu-latn")}</span>
                               </header>
                               <div className="schedule-hall-picker-grid">
-                                {hallOptions.map(hall => (
-                                  <button
-                                    type="button"
-                                    data-guide-ignore="خيار قاعة داخل قائمة الاختيار السريع التابعة لحقل القاعة"
-                                    key={hall}
-                                    className={String(form.AdRoomHall) === String(hall) ? "active" : ""}
-                                    onClick={(event) => {
-                                      setForm((current) => ({ ...current, AdRoomHall: hall }));
-                                      event.currentTarget.closest("details")?.removeAttribute("open");
-                                    }}
-                                  >
-                                    <MapPin aria-hidden="true" />
-                                    <bdi dir="ltr">{hall}</bdi>
-                                  </button>
-                                ))}
+                                {hallAvailability.map(item => {
+                                  const occupant = item.occupants[0];
+                                  const occupantCourse = occupant
+                                    ? (occupant.AdCourseName || courseById.get(Number(occupant.AdCourseId || 0))?.CourseName || "مقرر")
+                                    : "";
+                                  const occupantInstructor = occupant
+                                    ? (instructorById.get(Number(occupant.AdInstructorId || 0))?.AdInstructorName || "")
+                                    : "";
+                                  const isActive = String(form.AdRoomHall) === String(item.hall);
+                                  const previewOpen = hallBusyPreview === item.hall;
+                                  return (
+                                    <div className={`schedule-hall-choice ${item.occupied ? "is-busy" : "is-free"}`} key={item.hall}>
+                                      <button
+                                        type="button"
+                                        data-guide-ignore="خيار قاعة داخل قائمة الاختيار السريع التابعة لحقل القاعة"
+                                        className={`${isActive ? "active" : ""} ${item.occupied ? "busy" : "free"}`}
+                                        aria-label={item.occupied ? `القاعة ${item.hall} مشغولة؛ اضغط لمعرفة الموعد` : `اختيار القاعة ${item.hall}`}
+                                        onClick={(event) => {
+                                          if (item.occupied) {
+                                            setHallBusyPreview(current => current === item.hall ? null : item.hall);
+                                            return;
+                                          }
+                                          setHallBusyPreview(null);
+                                          setForm((current) => ({ ...current, AdRoomHall: item.hall }));
+                                          event.currentTarget.closest("details")?.removeAttribute("open");
+                                        }}
+                                      >
+                                        <MapPin aria-hidden="true" />
+                                        <bdi dir="ltr">{item.hall}</bdi>
+                                        {item.occupied ? <span className="schedule-hall-busy-dot" aria-hidden="true" /> : null}
+                                      </button>
+                                      {previewOpen && occupant ? (
+                                        <div className="schedule-hall-busy-card" role="status">
+                                          <div className="schedule-hall-busy-card-head">
+                                            <strong><bdi dir="ltr">{item.hall}</bdi> مشغولة</strong>
+                                            <span dir="ltr">{formatScheduleTimeRange(occupant.fstarttime, occupant.fendtime)}</span>
+                                          </div>
+                                          <p>{occupantCourse}</p>
+                                          {occupantInstructor ? <small>{occupantInstructor}</small> : null}
+                                          <button type="button" className="schedule-hall-busy-open" onClick={() => { setHallBusyPreview(null); void openContext(occupant); }}>عرض الموعد</button>
+                                          {item.occupants.length > 1 ? <em>+{(item.occupants.length - 1).toLocaleString("ar-KW-u-nu-latn")} موعد متداخل</em> : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </div>
                           </details>
@@ -7175,7 +7231,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               <div>
                 <strong>فحص موانع الحفظ</strong>
                 <small>
-                  {validationIssues.length?"تحقق من الوقت والأيام":checking?"جاري الفحص...":blockingConflicts.length?"تعارض يمنع الحفظ":"لا يوجد مانع ظاهر"}
+                  {validationIssues.length?"تحقق من الوقت والأيام":checking?"جاري الفحص...":blockingConflicts.length?"تعارض يمنع الحفظ":editorTimingReviewCard?"ملاحظة وقت تحتاج مراجعة":"لا يوجد مانع ظاهر"}
                 </small>
               </div>
             </div>
