@@ -77,14 +77,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         <i />
         <i />
       </div>
-      <header className="apex-login-brand">
+      <header className="apex-login-brand apex-login-brand--mark-only" aria-hidden="true">
         <span className="apex-login-mark">
           <CalendarDays />
         </span>
-        <div>
-          <strong>SCHEDULE</strong>
-          <small>أكثر من عقد من العمل الأكاديمي.</small>
-        </div>
       </header>
       <section className="apex-login-stage">
         <div className="apex-login-story">

@@ -1978,3 +1978,12 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .demo-entry-panel,.demo-entry-copy,.demo-entry-button{display:none!important}
 .demo-entry-icon{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid color-mix(in srgb,#8da59a 28%,transparent);border-radius:11px;background:color-mix(in srgb,#0d1714 78%,transparent);color:#8fa69b;box-shadow:0 7px 18px color-mix(in srgb,#000 13%,transparent);cursor:pointer;transition:border-color .16s var(--ease),color .16s var(--ease),background .16s var(--ease)}
 .demo-entry-icon:hover{color:#b3c9bf;border-color:color-mix(in srgb,#8fb6a5 48%,transparent);background:#101c18}.demo-entry-icon:focus-visible{outline:3px solid color-mix(in srgb,#2b7d69 25%,transparent);outline-offset:2px}.demo-entry-icon:disabled{opacity:.55;cursor:wait}.demo-entry-icon svg{width:16px;height:16px}.demo-entry-icon .button-spinner{width:14px;height:14px}
+
+
+/* Login top copy was intentionally removed; retain only the small product mark
+   without reserving the old wordmark's vertical space. */
+.apex-login-brand.apex-login-brand--mark-only{justify-content:flex-start;min-height:0}
+.apex-login-brand.apex-login-brand--mark-only .apex-login-mark{display:grid}
+@media(max-width:900px){
+  .apex-login-brand.apex-login-brand--mark-only{position:absolute;inset-block-start:clamp(14px,3vw,24px);inset-inline-end:clamp(14px,3vw,24px)}
+}

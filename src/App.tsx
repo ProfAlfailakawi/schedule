@@ -2034,7 +2034,7 @@ export default function App() {
         {user.IsDemo ? (
           <div className="demo-rail-chip" role="status" aria-label="بيئة Demo معزولة">
             <FlaskConical aria-hidden="true" /><span>DEMO</span><i aria-hidden="true" />
-            <button type="button" onClick={resetDemo} title="إعادة البيئة التجريبية" aria-label="إعادة البيئة التجريبية" data-guide-ignore="إجراء خاص ببيئة Demo لإعادة تهيئة البيانات التجريبية؛ ليس ميزة تشغيلية تحتاج مسارًا في المرشد"><RefreshCw /></button>
+            <button type="button" onClick={resetDemo} title="إعادة البيئة التجريبية" aria-label="إعادة البيئة التجريبية" data-guide-ignore="إجراء خاص ببيئة Demo يعيد البيانات المصطنعة فقط ولا يمثل ميزة تشغيلية في النظام الحقيقي"><RefreshCw /></button>
           </div>
         ) : null}
         <button
@@ -2183,7 +2183,7 @@ export default function App() {
           {/* The system's own identity, and the quietest possible door into its
               memory. Not a button — a line that answers when it is pressed. */}
           {user.IsDemo ? (
-            <button type="button" className="rail-identity" onClick={() => setJourneyOpen(true)} title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات" data-guide-ignore="رابط هوية وتسويق خاص ببيئة Demo؛ ليس إجراءً تشغيليًا ضمن خطوات المرشد">
+            <button type="button" className="rail-identity" onClick={() => setJourneyOpen(true)} title="رحلة SCHEDULE — ما صنعه النظام عبر السنوات" data-guide-ignore="مدخل تعريفي تسويقي إلى رحلة SCHEDULE ولا ينفذ إجراءً على بيانات الجدول">
               <span className="rail-identity-name">SCHEDULE</span>
               <span className="rail-identity-line">أكثر من عقد من العمل الأكاديمي</span>
               <span className="rail-identity-go" aria-hidden="true"><ChevronLeft /></span>

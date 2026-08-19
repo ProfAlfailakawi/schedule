@@ -367,7 +367,9 @@ app.use("/api", (_req, res, next) => {
 // No demo request can fall through to another visitor's state. Production mode bypasses this entirely.
 app.use("/api", (req: Request, _res: Response, next: NextFunction) => {
   const sessionId = getCookies(req)["session_id"];
-  if (!sessionId?.startsWith("demo_") || req.path === "/auth/demo") { next(); return; }
+  // /journey is intentionally a marketing read of the real institutional
+  // aggregate. It must never inherit a visitor's synthetic Demo sandbox.
+  if (!sessionId?.startsWith("demo_") || req.path === "/auth/demo" || req.path === "/journey") { next(); return; }
   (req as AuthenticatedRequest).demoSessionId = sessionId;
   if (!Repository.runDemoSandbox(sessionId, next)) next();
 });

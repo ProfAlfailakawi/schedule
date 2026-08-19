@@ -830,3 +830,19 @@
 
 /* Fixed mobile scale contract, portrait and landscape. */
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:none}body,#root,.app-shell,.apex-login{max-width:100vw}@media (pointer:coarse){html,body,#root{touch-action:pan-x pan-y}button,a,[role="button"],input,select,textarea{touch-action:manipulation}}@media screen and (orientation:landscape) and (max-height:600px){html{font-size:100%}.app-shell,.apex-login{min-width:100%;width:100%}}
+
+
+/* Fixed mobile scale across every screen and nested screen, including landscape.
+   `pinch-zoom` is deliberately absent; one-finger horizontal/vertical panning
+   remains available to dense schedule/query surfaces. */
+@media (pointer:coarse){
+  html,body,#root{
+    -webkit-text-size-adjust:100%!important;
+    text-size-adjust:100%!important;
+    touch-action:pan-x pan-y!important;
+  }
+  input,textarea,select{font-size:max(16px,1em)}
+}
+@media (pointer:coarse) and (orientation:landscape){
+  html,body,#root{zoom:1!important;transform:none!important}
+}
