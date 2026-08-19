@@ -137,7 +137,7 @@ export default function ScheduleViewsMenu({
                 <div className="views-manage-row" key={view.id}>
                   <span>{view.name}</span>
                   <button type="button" onClick={() => onToggleFavorite(view)}
-                    title={view.favorite ? "إزالة من المفضلة" : "إضافة إلى المفضلة (٣ كحد أقصى)"}
+                    title={view.favorite ? "إزالة من المفضلة" : "إضافة إلى المفضلة (3 كحد أقصى)"}
                     aria-pressed={Boolean(view.favorite)}>
                     <Star aria-hidden="true" />
                   </button>

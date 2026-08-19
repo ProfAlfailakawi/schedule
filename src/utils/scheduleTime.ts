@@ -52,7 +52,7 @@ export function formatCompactDurationArabic(minutes: number | null | undefined):
   const total = Math.max(0, Math.round(Number(minutes) || 0));
   const hours = Math.floor(total / 60);
   const mins = total % 60;
-  const nf = new Intl.NumberFormat("ar-KW-u-nu-arab", { maximumFractionDigits: 0 });
+  const nf = new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits: 0 });
   const parts: string[] = [];
   if (hours) parts.push(`${nf.format(hours)}س`);
   if (mins || !hours) parts.push(`${nf.format(mins)}د`);
@@ -62,7 +62,7 @@ export function formatCompactDurationArabic(minutes: number | null | undefined):
 /** Standalone metric label for minutes in the product's Arabic reading order.
  * Prose sentences should keep normal grammar; this helper is for metric/value UI. */
 export function formatMinuteMetricArabic(minutes: number | null | undefined): string {
-  const value = new Intl.NumberFormat("ar-KW-u-nu-arab", { maximumFractionDigits: 1 }).format(Number(minutes) || 0);
+  const value = new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits: 1 }).format(Number(minutes) || 0);
   return `دقيقة ⁧${value}⁩`;
 }
 

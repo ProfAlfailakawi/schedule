@@ -3955,11 +3955,28 @@ button.twin-delta{width:100%}
   grid-template-columns:minmax(0,1.1fr) minmax(90px,2fr) 52px;
 }
 
-/* V13 — Decision Center is a full-screen destination, not a drawer over the timetable. */
-.living-overlay{z-index:2600!important;background:var(--canvas)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
-.living-overlay .living-panel{width:100vw!important;max-width:none!important;height:100dvh!important;max-height:100dvh!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;animation:fade .16s var(--ease) both!important}
-.living-overlay .living-panel-body{width:min(1500px,100%);margin-inline:auto}
-.living-overlay .living-panel-head,.living-overlay .living-scene-nav,.living-overlay .living-experience-tools{padding-inline:max(var(--s6),calc((100vw - 1500px)/2 + var(--s6)))}
+/* V16 — Decision Center owns the screen without stretching its old drawer
+   geometry across the viewport. The destination is full-screen; the working
+   canvas is centred and bounded at the density users already know. */
+.living-overlay{
+  z-index:2600!important;background:var(--canvas)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important;
+  display:grid!important;place-items:center!important;padding:clamp(18px,2.6vw,34px)!important;
+}
+.living-overlay .living-panel{
+  width:min(1180px,100%)!important;max-width:1180px!important;
+  height:calc(100dvh - clamp(36px,5.2vw,68px))!important;max-height:940px!important;
+  margin:0!important;border:1px solid var(--line)!important;border-radius:30px!important;
+  background:var(--canvas)!important;box-shadow:var(--shadow-lg)!important;overflow:hidden!important;
+  animation:sheet-up .22s var(--ease-out) both!important;
+}
+.living-overlay .living-panel-head{padding:var(--s5) var(--s6)!important}
+.living-overlay .living-scene-nav{padding:var(--s3) var(--s6)!important}
+.living-overlay .living-experience-tools{padding-inline:var(--s6)!important}
+.living-overlay .living-panel-body{width:100%!important;max-width:none!important;margin:0!important;padding:var(--s6) var(--s6) var(--s8)!important}
+@media(max-width:760px){
+  .living-overlay{padding:0!important;place-items:stretch!important}
+  .living-overlay .living-panel{width:100%!important;max-width:none!important;height:100dvh!important;max-height:none!important;border:0!important;border-radius:0!important}
+}
 .living-command-deck .living-pulse-core{transform:translateY(8px)}
 .week-shape-title{margin-top:24px!important;margin-bottom:10px!important}
 .week-shape-track>i.week-shape-wait{color:#52687f!important}

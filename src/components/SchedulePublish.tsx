@@ -299,7 +299,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               hidden={step !== "kind"}
             >
               <header className="share-step-head">
-                <small>الخطوة ١ من ٣</small>
+                <small>الخطوة 1 من 3</small>
                 <h3 id="publish-step-kind-title">لمن سيُنشر الجدول؟</h3>
                 <p>اختر تجربة القراءة المناسبة؛ يمكن إدارة النوعين من المكان نفسه.</p>
               </header>
@@ -341,7 +341,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               hidden={step !== "options"}
             >
               <header className="share-step-head">
-                <small>الخطوة ٢ من ٣</small>
+                <small>الخطوة 2 من 3</small>
                 <h3 id="publish-step-options-title">مدة الرابط وما سيظهر فيه</h3>
                 <p>{kind === "department" ? "رابط قراءة عام للجدول ضمن الصلاحية المحددة." : "مدخل واحد آمن يفتح لكل أستاذ بطاقته فقط."}</p>
               </header>
@@ -390,7 +390,7 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
               hidden={step !== "links"}
             >
               <header className="share-step-head">
-                <small>الخطوة ٣ من ٣</small>
+                <small>الخطوة 3 من 3</small>
                 <h3 id="publish-step-links-title">الروابط المنشورة</h3>
                 <p>انسخ الرابط أو أضفه إلى التقويم أو أوقفه، من دون تغيير الجدول الأصلي.</p>
               </header>
