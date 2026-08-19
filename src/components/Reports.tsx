@@ -1379,8 +1379,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                         data-count={cell.taken}
                         data-mine={cell.mine ? "1" : undefined}
                         className={roomPick?.room === room.name && roomPick?.point === cell.point ? "picked" : ""}
-                        title={`${room.name} · ${scheduleClockForDisplay(clock(cell.point))} · ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
-                        aria-label={`${room.name} الساعة ${scheduleClockForDisplay(clock(cell.point))}، ${cell.taken ? `${cell.taken} يوم` : "فاضية"}`}
+                        title={`${room.name} · ${scheduleClockForDisplay(clock(cell.point))} · ${cell.taken ? `يوم ${cell.taken}` : "فاضية"}`}
+                        aria-label={`${room.name} الساعة ${scheduleClockForDisplay(clock(cell.point))}، ${cell.taken ? `يوم ${cell.taken}` : "فاضية"}`}
                         aria-pressed={roomPick?.room === room.name && roomPick?.point === cell.point}
                         onClick={() => setRoomPick(current =>
                           current?.room === room.name && current?.point === cell.point
@@ -1545,7 +1545,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                     <div className="time-slot-panel" id={`query-time-slot-${slot.key}`}>
                       <div className="time-slot-panel-head">
                         <div><strong>{scheduleClockForDisplay(slot.key)}</strong><small>{num(slot.count)} موعد · {num(slot.courses)} مقرر · {num(slot.instructors)} أستاذ</small></div>
-                        <span>{slot.rooms.length ? `${num(slot.rooms.length)} قاعة` : "بدون قاعات"}</span>
+                        <span>{slot.rooms.length ? `قاعة ${num(slot.rooms.length)}` : "بدون قاعات"}</span>
                       </div>
                       <div className="time-slot-grid">
                         {slot.rows.map(row => {

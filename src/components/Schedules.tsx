@@ -215,8 +215,8 @@ const formatTermLabel = (value: number) => {
   if (!count) return "—";
   if (count === 1) return "فصل واحد";
   if (count === 2) return "فصلان";
-  if (count <= 10) return `${count} فصول`;
-  return `${count} فصلًا`;
+  if (count <= 10) return `فصول ${count}`;
+  return `فصلًا ${count}`;
 };
 
 const formatChangeLabel = (value: number) => {
@@ -1850,7 +1850,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           const normalDurations = (learned.durations || [])
             .filter(item => isSupported(item.samples, item.share))
             .slice(0, 4)
-            .map(item => `${item.minutes.toLocaleString("ar-KW-u-nu-latn")} دقيقة`);
+            .map(item => `دقيقة ${item.minutes.toLocaleString("ar-KW-u-nu-latn")}`);
           if (normalDurations.length) {
             return `مدة ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
           }
@@ -9196,7 +9196,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   aria-pressed={expandedDay === d.key}
                   onClick={() => setExpandedDay((current) => (current === d.key ? null : (d.key as DayKey)))}
                   style={{ ["--reading" as any]: `${dayLoad.share[d.key] || 0}%` }}
-                  title={`${expandedDay === d.key ? "العودة إلى الأسبوع كاملاً" : `عرض ${d.label} وحده`} · ${Math.round((dayLoad.minutesByDay[d.key] || 0) / 60)} ساعة تدريس`}
+                  title={`${expandedDay === d.key ? "العودة إلى الأسبوع كاملاً" : `عرض ${d.label} وحده`} · ساعة تدريس ${Math.round((dayLoad.minutesByDay[d.key] || 0) / 60)}`}
                 >
                   <span>{d.label}</span>
                   <b title="عدد المواعيد في هذا اليوم">{dayCounts[d.key] || 0}</b>

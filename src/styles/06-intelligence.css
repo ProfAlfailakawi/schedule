@@ -3954,3 +3954,13 @@ button.twin-delta{width:100%}
 .fairness-rows>div{
   grid-template-columns:minmax(0,1.1fr) minmax(90px,2fr) 52px;
 }
+
+/* V13 — Decision Center is a full-screen destination, not a drawer over the timetable. */
+.living-overlay{z-index:2600!important;background:var(--canvas)!important;-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+.living-overlay .living-panel{width:100vw!important;max-width:none!important;height:100dvh!important;max-height:100dvh!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;animation:fade .16s var(--ease) both!important}
+.living-overlay .living-panel-body{width:min(1500px,100%);margin-inline:auto}
+.living-overlay .living-panel-head,.living-overlay .living-scene-nav,.living-overlay .living-experience-tools{padding-inline:max(var(--s6),calc((100vw - 1500px)/2 + var(--s6)))}
+.living-command-deck .living-pulse-core{transform:translateY(8px)}
+.week-shape-title{margin-top:24px!important;margin-bottom:10px!important}
+.week-shape-track>i.week-shape-wait{color:#52687f!important}
+.week-shape-track>i.week-shape-wait>span{display:inline-flex;align-items:center;justify-content:center;min-height:18px;padding:2px 7px;border-radius:999px;border:1px solid color-mix(in srgb,#607b99 22%,var(--line));background:color-mix(in srgb,var(--surface) 88%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 2px 8px color-mix(in srgb,#23384e 10%,transparent);color:color-mix(in srgb,#425d79 84%,var(--ink));font:700 9px/1 var(--font-mono);white-space:nowrap}

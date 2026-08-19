@@ -186,6 +186,7 @@ export default function HallBarterBoard({
 
   return (
     <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="بورصة القاعات الساكنة بين الكليات">
+      {open ? <button type="button" className="hall-barter-screen-close" onClick={() => setOpen(false)} aria-label="إغلاق البورصة" title="إغلاق البورصة"><X aria-hidden="true" /></button> : null}
       <button type="button" className="hall-barter-summary" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className="hall-barter-mark"><Building2 aria-hidden="true" /><ArrowLeftRight aria-hidden="true" /></span>
         <span className="hall-barter-summary-copy">
@@ -227,7 +228,7 @@ export default function HallBarterBoard({
                       <strong>{row.requesterSectionName}</strong>
                       {windowLine(row)}
                     </div>
-                    <div className="hall-barter-confidence"><b>{row.confidence}%</b><span>ثبات الفراغ</span><small>{row.historyTerms} فصول</small></div>
+                    <div className="hall-barter-confidence"><b>{row.confidence}%</b><span>ثبات الفراغ</span><small>فصول {row.historyTerms}</small></div>
                     <div className="hall-barter-actions">
                       <PrimaryButton type="button" disabled={busyId === row.id} onClick={() => void respond(row.id, "approve")}><Check />موافقة</PrimaryButton>
                       <SecondaryButton type="button" disabled={busyId === row.id} onClick={() => void respond(row.id, "reject")}><X />رفض</SecondaryButton>
@@ -265,8 +266,8 @@ export default function HallBarterBoard({
                   <article key={opportunity.id}>
                     <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{opportunity.ownerSectionName}</small></div>
                     <div className="hall-barter-opportunity-meta">
-                      <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>{Math.round(opportunity.durationMinutes / 30) * 30} دقيقة</small></div>
-                      <div className="hall-barter-confidence"><b>{opportunity.confidence}%</b><span>ثبات الفراغ</span><small>{opportunity.historyTerms} فصول · {opportunity.ownerShare}% تاريخيًا</small></div>
+                      <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>دقيقة {Math.round(opportunity.durationMinutes / 30) * 30}</small></div>
+                      <div className="hall-barter-confidence"><b>{opportunity.confidence}%</b><span>ثبات الفراغ</span><small>فصول {opportunity.historyTerms} · {opportunity.ownerShare}% تاريخيًا</small></div>
                     </div>
                     <PrimaryButton type="button" disabled={busyId === opportunity.id} onClick={() => void request(opportunity)}><ArrowLeftRight />اطلب استعارة النطاق</PrimaryButton>
                   </article>

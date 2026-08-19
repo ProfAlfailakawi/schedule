@@ -77,7 +77,7 @@ import {
   intelligenceDayLabels as dayLabels,
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
-import { formatCompactDurationArabic, formatMinuteMetricArabic, formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES, scheduleClockForDisplay } from "../utils/scheduleTime";
+import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetricArabic, formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES, scheduleClockForDisplay } from "../utils/scheduleTime";
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 
 /**
@@ -1754,7 +1754,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const loads = Array.isArray(overview?.professorLoads) ? overview.professorLoads : [];
     return loads.filter((item:any) => Number(item.maxGap || 0) >= 180).sort((a:any,b:any) => Number(b.maxGap||0)-Number(a.maxGap||0)).slice(0, 12).map((item:any) => ({
       title: String(item.name || "أستاذ"),
-      meta: `${Number(item.weeklyHours || 0).toLocaleString("ar-KW-u-nu-latn")} ساعة أسبوعيًا · ${Number(item.days || 0).toLocaleString("ar-KW-u-nu-latn")} أيام`,
+      meta: `${formatUnitMetricArabic(Number(item.weeklyHours || 0), "ساعة أسبوعيًا")} · ${formatUnitMetricArabic(Number(item.days || 0), "أيام")}`,
       value: formatCompactDurationArabic(Number(item.maxGap || 0)),
     }));
   }, [overview?.professorLoads]);
@@ -1776,7 +1776,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const title = String(alert?.title || "تنبيه ذكي");
     const base = { kicker:"تفاصيل التنبيه", title, metric:String(index + 1), tone:(alert?.severity === "critical" || alert?.severity === "high" || alert?.severity === "danger" ? "bad" : alert?.severity === "ok" ? "good" : "warn") as InsightReason["tone"] };
     if (/مانع اعتماد|تعارض|حجز|مزدوج/.test(title)) return { ...base, icon:<ShieldAlert />, summary:"هذه هي الموانع الفعلية التي كوّنت الرقم:", items:conflictReasonItems, facts:[{label:"الموانع",value:String(overview?.metrics?.criticalConflicts || 0)},{label:"النوع",value:"حجز فعلي"},{label:"اللائحة",value:"تحذيرية"}] };
-    if (/فراغ/.test(title)) return { ...base, icon:<CalendarClock />, summary:"الأساتذة الذين تجاوز لديهم الفراغ 3 ساعات:", items:longGapReasonItems, facts:[{label:"الأساتذة",value:String(longGapReasonItems.length)},{label:"الحد",value:"3 ساعات"},{label:"القراءة",value:"إرشادية"}] };
+    if (/فراغ/.test(title)) return { ...base, icon:<CalendarClock />, summary:"الأساتذة الذين تجاوز لديهم الفراغ 3 ساعات:", items:longGapReasonItems, facts:[{label:"الأساتذة",value:String(longGapReasonItems.length)},{label:"الحد",value:formatUnitMetricArabic(3,"ساعات",0)},{label:"القراءة",value:"إرشادية"}] };
     if (/متأخر|بعد 4|وقت/.test(title)) return { ...base, icon:<Clock3 />, summary:`المواعيد التي تبدأ من ${scheduleClockForDisplay("16:00")} فأكثر:`, items:lateReasonItems, facts:[{label:"المواعيد",value:String(lateReasonItems.length)},{label:"من",value:scheduleClockForDisplay("16:00")},{label:"النوع",value:"توقيت"}] };
     if (/بيانات|سجل/.test(title)) return { ...base, icon:<FileClock />, summary:"السجلات التي ينقصها شيء محدد:", items:invalidReasonItems, facts:[{label:"السجلات",value:String(invalidReasonItems.length)},{label:"الحالة",value:"تحتاج إكمال"}] };
     if (/توزيع|أيام/.test(title)) return { ...base, icon:<BarChart3 />, summary:"هذا هو توزيع الحمل بين الأيام:", items:dayBalanceReasonItems, facts:[{label:"التفاوت",value:`${overview?.metrics?.imbalance || 0}٪`},{label:"الأيام",value:String(dayBalanceReasonItems.length)}] };
@@ -2929,7 +2929,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <History />
                 <span>
                   متوسط الفراغ التاريخي:{" "}
-                  <b>{genome.dna?.avgGap ?? "—"} دقيقة</b>. هذه قراءة نمطية
+                  <b>{formatUnitMetricArabic(genome.dna?.avgGap ?? "—", "دقيقة", 0)}</b>. هذه قراءة نمطية
                   وليست قاعدة إلزامية.
                 </span>
               </div>
@@ -4641,7 +4641,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   if (!shape) return null;
                   return (
                     <>
-                      <h3>شكل الأسبوع</h3>
+                      <h3 className="week-shape-title">شكل الأسبوع</h3>
                       <div className="week-shape" aria-label="توزيع المواعيد والانتظار عبر الأسبوع">
                         <div className="week-shape-scale" aria-hidden="true">
                           {shape.hours.map(m => (
@@ -4659,7 +4659,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                                   style={{ insetInlineStart: `${wait.left}%`, width: `${wait.width}%` }}
                                   title={`انتظار ${formatCompactDurationArabic(wait.minutes)}`}
                                 >
-                                  {wait.width > 12 ? formatCompactDurationArabic(wait.minutes) : ""}
+                                  {wait.width > 12 ? <span>{formatCompactDurationArabic(wait.minutes)}</span> : null}
                                 </i>
                               ))}
                               {day.blocks.map((block, i) => (

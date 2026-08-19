@@ -702,11 +702,11 @@ export default function App() {
         }
       }
       hoverClicked = true;
-      const controlLabel = labelOf(control);
-      const naturallyRepeatable = /التالي|السابق|اليوم|الأسبوع التالي|الأسبوع السابق|تكبير|تصغير|تمرير|صفحة تالية|صفحة سابقة/.test(controlLabel);
+      const clickedControlLabel = labelOf(control);
+      const naturallyRepeatable = /التالي|السابق|اليوم|الأسبوع التالي|الأسبوع السابق|تكبير|تصغير|تمرير|صفحة تالية|صفحة سابقة/.test(clickedControlLabel);
       const explicit = control.getAttribute("data-guide-target") || control.closest<HTMLElement>("[data-guide-target]")?.getAttribute("data-guide-target") || "";
       if (explicit && featureById(explicit)) recordFeatureEvent(userId, explicit, "attempt");
-      const key = explicit || `${activeView}:${controlLabel}`;
+      const key = explicit || `${activeView}:${clickedControlLabel}`;
       if (naturallyRepeatable) return;
       const now = Date.now();
       const list = [...(repeated.get(key) || []).filter(value => now - value < 8000), now];
@@ -721,7 +721,7 @@ export default function App() {
         noteHint(userId, `repeat:${key}`, false);
         noteFriction(userId, explicit ? `تكرار · ${explicit}` : `تكرار · ${activeView}`);
         telemetryBreadcrumb(`المرشد · تكرار ${explicit || activeView}`); telemetryGuide(`journey|${explicit || activeView}|1|control|repeat`);
-        setGuideHint({ key:`repeat:${key}`, title: friction.confidence === "high" ? "هذه الخطوة لا تسير كالمعتاد" : "يمكنني مساعدتك هنا", detail: controlLabel ? `تكرر استخدام «${controlLabel}» دون انتقال واضح. يمكنني شرحها أو نقلك إلى المكان الصحيح.` : "تكررت المحاولة نفسها أكثر من المعتاد.", level: friction.confidence === "high" ? "strong" : "soft" });
+        setGuideHint({ key:`repeat:${key}`, title: friction.confidence === "high" ? "هذه الخطوة لا تسير كالمعتاد" : "يمكنني مساعدتك هنا", detail: clickedControlLabel ? `تكرر استخدام «${clickedControlLabel}» دون انتقال واضح. يمكنني شرحها أو نقلك إلى المكان الصحيح.` : "تكررت المحاولة نفسها أكثر من المعتاد.", level: friction.confidence === "high" ? "strong" : "soft" });
       }
     };
     const onPointerOver = (event: PointerEvent) => {
@@ -2245,7 +2245,7 @@ export default function App() {
           <span className="idle-warning-ring" aria-hidden="true" />
           <div>
             <strong>الجلسة تنتهي خلال دقيقة</strong>
-            <span>{user.IsDemo ? "تنتهي جلسة Demo بعد ٦٠ دقيقة من عدم النشاط. أي ضغطة تكفي لمتابعة التجربة." : "لحمايتك، يُغلق الحساب بعد ١٥ دقيقة بلا حركة. أي ضغطة تكفي لمتابعة العمل."}</span>
+            <span>{user.IsDemo ? "تنتهي جلسة Demo بعد دقيقة ٦٠ من عدم النشاط. أي ضغطة تكفي لمتابعة التجربة." : "لحمايتك، يُغلق الحساب بعد دقيقة ١٥ بلا حركة. أي ضغطة تكفي لمتابعة العمل."}</span>
           </div>
           <PrimaryButton type="button" onClick={() => setIdleWarning(false)}>
             أكمل العمل

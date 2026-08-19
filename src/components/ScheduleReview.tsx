@@ -220,16 +220,16 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     if (finding.title.includes("أستاذ")) {
       const names = [...new Set(affectedRows.map(row => instructors.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"))];
       if (names.length === 1) return names[0];
-      if (names.length > 1) return `${names.length.toLocaleString("ar-KW-u-nu-latn")} أساتذة`;
+      if (names.length > 1) return `أساتذة ${names.length.toLocaleString("ar-KW-u-nu-latn")}`;
     }
     if (finding.title.includes("قاعة")) {
       const rooms = [...new Set(affectedRows.map(row => `${row.AdRoomCode}/${row.AdRoomHall}`).filter(room => room !== "/"))];
       if (rooms.length === 1) return `القاعة ${rooms[0]}`;
-      if (rooms.length > 1) return `${rooms.length.toLocaleString("ar-KW-u-nu-latn")} قاعات`;
+      if (rooms.length > 1) return `قاعات ${rooms.length.toLocaleString("ar-KW-u-nu-latn")}`;
     }
     if (finding.source === "history") return "السجل التاريخي";
     if (finding.source === "department") return "سياسة القسم";
-    return finding.rowIds.length ? `${finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")} موعد` : "تنبيه تشغيلي";
+    return finding.rowIds.length ? `موعد ${finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")}` : "تنبيه تشغيلي";
   };
 
   const findingPreview = (finding: ReviewFindingGroup) => {

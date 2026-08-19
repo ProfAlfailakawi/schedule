@@ -8207,3 +8207,11 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   outline-offset: 3px;
   box-shadow: 0 12px 34px color-mix(in srgb, var(--accent, #176f62) 18%, transparent);
 }
+
+/* V13 — Hall barter opens as its own full-screen workspace. */
+.schedule-control-barter .hall-barter-board.is-open,.hall-barter-board.is-open{position:fixed!important;inset:0!important;z-index:2700!important;width:100vw!important;max-width:none!important;height:100dvh!important;max-height:100dvh!important;margin:0!important;display:flex!important;flex-direction:column!important;border:0!important;border-radius:0!important;background:var(--canvas)!important;box-shadow:none!important;overflow:hidden!important}
+.hall-barter-board.is-open .hall-barter-summary{flex:none!important;width:100%!important;max-width:1500px!important;margin-inline:auto!important;padding-inline:max(24px,calc((100vw - 1500px)/2 + 24px))!important;border-radius:0!important;border-inline:0!important;border-top:0!important;background:var(--surface)!important}
+.hall-barter-board.is-open .hall-barter-body{flex:1!important;min-height:0!important;width:min(1500px,100%)!important;margin-inline:auto!important;padding:24px clamp(16px,3vw,40px) 48px!important;overflow:auto!important;overscroll-behavior:contain!important;border-top:0!important}
+.hall-barter-screen-close{position:fixed;inset-block-start:max(14px,env(safe-area-inset-top));inset-inline-start:max(14px,env(safe-area-inset-left));z-index:2710;width:44px;height:44px;display:grid;place-items:center;border:1px solid var(--line);border-radius:15px;background:color-mix(in srgb,var(--surface) 94%,transparent);color:var(--ink-2);box-shadow:var(--shadow-sm);cursor:pointer}
+.hall-barter-screen-close:hover{background:var(--surface-2);color:var(--ink)}.hall-barter-screen-close svg{width:19px;height:19px}
+@media(max-width:680px){.hall-barter-board.is-open .hall-barter-summary{padding-inline:64px 14px!important}.hall-barter-board.is-open .hall-barter-body{padding:16px 12px calc(32px + env(safe-area-inset-bottom))!important}}

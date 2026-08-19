@@ -133,6 +133,10 @@ function readingSentence(terms: number): string {
 }
 
 export default function ScheduleJourney({ version, onClose }: { version?: string; onClose: () => void }) {
+  useEffect(() => {
+    document.documentElement.dataset.journeyOpen = "true";
+    return () => { delete document.documentElement.dataset.journeyOpen; };
+  }, []);
   const [reading, setReading] = useState<JourneyReading | null>(null);
   const [failed, setFailed] = useState(false);
   const sheet = useRef<HTMLDivElement | null>(null);

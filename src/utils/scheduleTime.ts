@@ -65,3 +65,17 @@ export function formatMinuteMetricArabic(minutes: number | null | undefined): st
   const value = new Intl.NumberFormat("ar-KW-u-nu-arab", { maximumFractionDigits: 1 }).format(Number(minutes) || 0);
   return `دقيقة ⁧${value}⁩`;
 }
+
+
+/** Generic numeric metric in the product's Arabic visual reading order.
+ * Use for compact value/unit UI, not grammatical prose. */
+export function formatUnitMetricArabic(
+  value: number | string | null | undefined,
+  unit: string,
+  maximumFractionDigits = 1,
+): string {
+  const raw = typeof value === "number"
+    ? new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits }).format(Number.isFinite(value) ? value : 0)
+    : String(value ?? "0").trim();
+  return `${unit} ⁧${raw || "0"}⁩`;
+}
