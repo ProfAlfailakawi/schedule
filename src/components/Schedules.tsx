@@ -4782,14 +4782,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const roomsRulerScrollRef = useRef<HTMLDivElement | null>(null);
   const roomsMainScrollRef = useRef<HTMLDivElement | null>(null);
   const weekScrollOwnerRef = useRef<"top" | "ruler" | "main" | null>(null);
-  const weekScrollReleaseRef = useRef<number | null>(null);
+  const weekScrollReleaseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncWeekScroll = (source: "top" | "ruler" | "main", value: number) => {
-    // Programmatic scroll events from the two follower strips used to bounce
-    // back into the strip the user was dragging, which made RTL week scrolling
-    // spring toward the right. For one animation frame, the user's source is
-    // the sole owner; followers mirror it but can never answer back.
     if (weekScrollOwnerRef.current && weekScrollOwnerRef.current !== source) return;
     weekScrollOwnerRef.current = source;
+    if (weekScrollReleaseRef.current != null) clearTimeout(weekScrollReleaseRef.current);
+    weekScrollReleaseRef.current = setTimeout(() => {
+      weekScrollOwnerRef.current = null;
+      weekScrollReleaseRef.current = null;
+    }, 150);
+
     const targets = [
       source !== "top" ? weekTopScrollRef.current : null,
       source !== "ruler" ? weekRulerScrollRef.current : null,
@@ -4798,13 +4800,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     targets.forEach(target => {
       if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
     });
-    if (weekScrollReleaseRef.current != null) cancelAnimationFrame(weekScrollReleaseRef.current);
-    weekScrollReleaseRef.current = requestAnimationFrame(() => {
-      weekScrollOwnerRef.current = null;
-      weekScrollReleaseRef.current = null;
-    });
   };
+  const roomsScrollOwnerRef = useRef<"ruler" | "main" | null>(null);
+  const roomsScrollReleaseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncRoomsScroll = (source: "ruler" | "main", value: number) => {
+    if (roomsScrollOwnerRef.current && roomsScrollOwnerRef.current !== source) return;
+    roomsScrollOwnerRef.current = source;
+    if (roomsScrollReleaseRef.current != null) clearTimeout(roomsScrollReleaseRef.current);
+    roomsScrollReleaseRef.current = setTimeout(() => {
+      roomsScrollOwnerRef.current = null;
+      roomsScrollReleaseRef.current = null;
+    }, 150);
+
     const target = source === "ruler" ? roomsMainScrollRef.current : roomsRulerScrollRef.current;
     if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
   };

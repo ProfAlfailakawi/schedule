@@ -355,7 +355,7 @@
      day back to 220px.  Horizontal travel is preferable to recreating the
      4–8px cards this layout was built to remove. */
   .week-surface{padding:var(--s3)}
-  .week-scroll-main{scroll-snap-type:x proximity}
+  .week-scroll-main{scroll-snap-type:none}
   .week-calendar{--week-gutter:46px}
   /* A focused day may fit the phone when it is quiet, but a twelve-lane day
      keeps its real readable width and scrolls intentionally instead of being

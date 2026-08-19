@@ -442,7 +442,6 @@ button.schedule-radar:hover{filter:brightness(.96)}
 }
 .week-time-head,.week-day-head{
   position:sticky;top:0;z-index:4;
-  scroll-snap-align:start;
   min-height:52px;
   display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   border-bottom:1px solid var(--line);
@@ -6074,8 +6073,7 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 
 .week-strip-scroll-top .week-scroll-spacer{width:var(--week-strip-canvas,var(--week-overview-width,1800px))}
 .week-strips-scroll{
-  scroll-snap-type:x proximity;
-  scroll-padding-inline:var(--week-strip-label,128px);
+  scroll-snap-type:none;
 }
 .week-strips{
   width:var(--week-strip-canvas,1800px);
