@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -22,7 +22,24 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     [password, setPassword] = useState(""),
     [loading, setLoading] = useState(false),
     [error, setError] = useState<string | null>(null),
-    [identityOpen, setIdentityOpen] = useState(false);
+    [identityOpen, setIdentityOpen] = useState(false),
+    [demoLoading, setDemoLoading] = useState(false),
+    [demoEnabled, setDemoEnabled] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/demo/config", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => { if (alive) setDemoEnabled(Boolean(data?.enabled)); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+  const enterDemo = async () => {
+    setError(null); setDemoLoading(true);
+    try {
+      const res = await fetch("/api/auth/demo", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "تعذر بدء البيئة التجريبية");
+      onLoginSuccess(data);
+    } catch (err: any) { setError(err.message || "تعذر بدء البيئة التجريبية"); }
+    finally { setDemoLoading(false); }
+  };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -123,7 +140,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               <Notice inline>{error}</Notice>
             </div>
           ) : null}
-          <form className="apex-login-form" onSubmit={submit}>
+          {!demoEnabled ? <form className="apex-login-form" onSubmit={submit}>
             <Field label="اسم المستخدم" required>
               <input
                 autoFocus
@@ -153,7 +170,17 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                 </>
               )}
             </PrimaryButton>
-          </form>
+          </form> : null}
+          {demoEnabled ? <div className="demo-entry-panel">
+            <div className="demo-entry-copy">
+              <span className="demo-entry-badge">DEMO · مساحة معزولة</span>
+              <strong>جرّب النظام بحرية</strong>
+              <small>أضف واحذف وانقل داخل بيانات تجريبية مصطنعة. لا تصل هذه الجلسة إلى بيانات الجامعة الحقيقية.</small>
+            </div>
+            <button type="button" className="demo-entry-button" onClick={enterDemo} disabled={loading || demoLoading}>
+              {demoLoading ? <span className="button-spinner" /> : <><Sparkles /> دخول فوري للتجربة <ArrowLeft /></>}
+            </button>
+          </div> : null}
           <footer>
             <span>الجدول الأكاديمي</span>
             <InstallApp variant="login" />

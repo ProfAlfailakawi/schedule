@@ -63,6 +63,7 @@ interface Props {
   onNavigate?: (mode: AdminMode) => void;
   permissions?: number[];
   rootAdmin?: boolean;
+  demoReadOnly?: boolean;
 }
 
 interface BackupPreview {
@@ -185,6 +186,7 @@ export default function AdminUsers({
   onNavigate,
   permissions = [],
   rootAdmin = false,
+  demoReadOnly = false,
 }: Props) {
   const [page, setPage] = useState<PageMode>("index"),
     [error, setError] = useState<string | null>(null),
@@ -206,6 +208,11 @@ export default function AdminUsers({
     [resetPhrase, setResetPhrase] = useState(""),
     [backupMessage, setBackupMessage] = useState<string | null>(null),
     [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null);
+  useEffect(() => {
+    if (!demoReadOnly) return;
+    document.documentElement.dataset.demoAdminReadonly = "true";
+    return () => { delete document.documentElement.dataset.demoAdminReadonly; };
+  }, [demoReadOnly]);
   const exportRunner = useRef(0);
   const importRunner = useRef(0);
   const [query, setQuery] = useState(""),
@@ -230,6 +237,8 @@ export default function AdminUsers({
     [scopeCollege, setScopeCollege] = useState(0),
     [scopeSection, setScopeSection] = useState(0);
   const api = async (url: string, init?: RequestInit) => {
+    if (demoReadOnly && init?.method && !["GET", "HEAD"].includes(String(init.method).toUpperCase()))
+      throw new Error("الإدارة للعرض فقط في البيئة التجريبية");
     // Defensive read: a non-JSON body is a busy gateway, not a crash to leak.
     const r = await fetch(url, init);
     const body = await r.text();

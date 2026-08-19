@@ -1370,3 +1370,7 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
   .smart-guide-intent-fold>.smart-guide-intent-results{max-height:44dvh;padding:8px}
   .smart-guide-live-fold[open]>.smart-guide-live-controls{max-height:50dvh!important;padding:8px}
 }
+
+/* Demo status is informative, not alarming: permanent, compact, and resettable. */
+.fake-data-banner{justify-content:space-between;text-align:start;background:linear-gradient(90deg,#60450f,#816018);box-shadow:0 8px 28px color-mix(in srgb,#000 10%,transparent)}
+.fake-data-banner>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.fake-data-banner button{display:inline-flex;align-items:center;gap:7px;padding:6px 10px;border:1px solid #ffffff35;border-radius:999px;background:#ffffff18;color:#fff;font-size:var(--t-xs);font-weight:700;cursor:pointer}.fake-data-banner button:hover{background:#ffffff26}.fake-data-banner button svg{width:14px;height:14px}

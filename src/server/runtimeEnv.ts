@@ -36,8 +36,9 @@ export function configureRuntimeEnvironment(): string {
   // must never redirect a new revision to another Firebase project/database.
   if (runningOnCloudRun) {
     process.env.NODE_ENV = "production";
-    process.env.DATA_MODE = "firestore";
-    // Production Firestore is already populated. Never seed/replace it from a bundled snapshot.
+    // A dedicated demo revision may opt in explicitly. Production remains Firestore by default.
+    // The demo service never opens the production business store; its data is per-session in memory.
+    process.env.DATA_MODE = process.env.SCHEDULE_DEMO_SERVICE === "true" ? "demo" : "firestore";
     process.env.AUTO_IMPORT_LEGACY_DATA = "false";
   }
 

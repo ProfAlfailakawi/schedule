@@ -1,4 +1,5 @@
 import fs from "fs";
+import { AsyncLocalStorage } from "async_hooks";
 import { cachedReference, cachedSchedules, invalidateReference, invalidateSchedules, REFERENCE_KEYS } from "./referenceCache";
 import path from "path";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "crypto";
@@ -36,6 +37,7 @@ import {
 } from "../types";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
+import { createDemoSandboxState } from "./demoSandbox";
 
 // Runtime state must not live inside the replaceable application release. A number of
 // deployment/upload tools synchronize an archive by deleting destination files that are
@@ -61,9 +63,7 @@ function configurePrivateDatabasePaths(mode: "demo" | "firestore") {
   if (process.env.NODE_ENV === "production" && isInsideRelease) {
     throw new Error("SCHEDULE_PRIVATE_DIR must be outside the application release directory in production");
   }
-  if (isCloudRunRuntime() && mode === "demo") {
-    throw new Error("Cloud Run requires DATA_MODE=firestore because its writable filesystem is ephemeral.");
-  }
+
 
   fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
   const privateDbFile = path.join(privateDir, "db.json");
@@ -192,33 +192,33 @@ interface LegacySnapshot extends DBState {
   migrationMeta?: Record<string, unknown>;
 }
 
-let db: DBState = {
-  users: [],
-  formNames: [],
-  formSecurity: [],
-  collegeUserAssign: [],
-  terms: [],
-  colleges: [],
-  sections: [],
-  instructors: [],
-  courses: [],
-  schedules: [],
-  rooms: [],
-  auditLogs: [],
-  scheduleVersions: [],
-  scheduleDrafts: [],
-  scheduleOpenDecisions: [],
-  clientTelemetry: [],
-  scheduleComments: [],
-  studentNeeds: [],
-  schedulePublications: [],
-  scheduleConstraints: [],
-  visitingRosters: [],
-  scheduleDecisionMemories: [],
-  campusMobilityProfiles: [],
-  scheduleShareLinks: [],
-  hallBarterRequests: []
+let baseDb: DBState = {
+  users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
+  courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
+  clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [],
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: []
 };
+
+type DemoSandboxRecord = { state: DBState; expiresAt: number };
+const demoSandboxContext = new AsyncLocalStorage<{ sessionId: string; state: DBState }>();
+const demoSandboxes = new Map<string, DemoSandboxRecord>();
+function currentDb(): DBState { return demoSandboxContext.getStore()?.state || baseDb; }
+function replaceCurrentDb(next: DBState): void { const context = demoSandboxContext.getStore(); if (context) context.state = next; else baseDb = next; }
+const db = new Proxy({} as DBState, {
+  get: (_target, prop) => (currentDb() as any)[prop],
+  set: (_target, prop, value) => { (currentDb() as any)[prop] = value; return true; },
+  ownKeys: () => Reflect.ownKeys(currentDb()),
+  getOwnPropertyDescriptor: (_target, prop) => ({ configurable: true, enumerable: true, value: (currentDb() as any)[prop] }),
+});
+
+// Shared process caches are excellent for production, but a demo cache would
+// become a covert bridge between visitors. Demo requests always read their own state.
+function scopedCachedReference<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  return demoSandboxContext.getStore() ? loader() : cachedReference(key, loader);
+}
+function scopedCachedSchedules<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  return demoSandboxContext.getStore() ? loader() : cachedSchedules(key, loader);
+}
 
 let firestoreDb: Firestore | null = null;
 
@@ -512,8 +512,8 @@ export async function initDatabase() {
   const requestedMode: "demo" | "firestore" = requested === "demo" ? "demo" : "firestore";
   // Cloud Run instances are replaceable and their writable filesystem is ephemeral,
   // so a local JSON database there is not storage at all.
-  const mode: "demo" | "firestore" = isCloudRunRuntime() ? "firestore" : requestedMode;
-  if (mode !== requestedMode) console.log("Cloud Run detected: using Firestore instead of ephemeral local JSON mode.");
+  const mode: "demo" | "firestore" = requestedMode;
+  if (isCloudRunRuntime() && mode === "demo") console.log("Cloud Run demo service: using isolated in-memory sandboxes; no Firestore business data is opened.");
   if (mode === "demo") {
     console.warn("=".repeat(72));
     console.warn("DATA_MODE=demo — بيانات تجريبية، ليست بيانات الجامعة الحقيقية.");
@@ -605,7 +605,7 @@ export async function initDatabase() {
   if (fs.existsSync(DB_FILE)) {
     try {
       const content = fs.readFileSync(DB_FILE, "utf-8");
-      db = JSON.parse(content);
+      baseDb = JSON.parse(content);
       if (!Array.isArray(db.auditLogs)) db.auditLogs = [];
       if (!Array.isArray(db.scheduleVersions)) db.scheduleVersions = [];
       if (!Array.isArray(db.scheduleDrafts)) db.scheduleDrafts = [];
@@ -643,7 +643,8 @@ export function saveDatabase() {
   if (!fs.existsSync(DB_DIR)) {
     fs.mkdirSync(DB_DIR, { recursive: true, mode: 0o700 });
   }
-  const serialized = JSON.stringify(db, null, 2);
+  if (demoSandboxContext.getStore()) return;
+  const serialized = JSON.stringify(currentDb(), null, 2);
   const temporaryFile = path.join(DB_DIR, `.db-${process.pid}-${Date.now()}.tmp`);
   const backupTemporaryFile = path.join(DB_DIR, `.db-backup-${process.pid}-${Date.now()}.tmp`);
 
@@ -1895,7 +1896,7 @@ async function replaceSystemFromBackup(input: SystemBackupPayload, rootAdminId =
     await reconcileTopLevelCollection("formNames", documents.filter(item => item.path.startsWith("formNames/")));
   } else {
     if (backup.storage !== "local-json") throw new Error("لا يمكن استيراد نسخة Firestore إلى وضع البيانات المحلي");
-    db = JSON.parse(JSON.stringify(backup.state || {})) as DBState;
+    replaceCurrentDb(JSON.parse(JSON.stringify(backup.state || {})) as DBState);
     saveDatabase();
   }
   refreshSystemCachesAfterMutation();
@@ -1922,10 +1923,10 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
     if (!root) throw new Error("حساب الإدارة الرئيسي غير موجود");
     const formNames = [...db.formNames];
     const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
-    db = {
+    replaceCurrentDb({
       users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
       auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: []
-    };
+    });
     saveDatabase();
   }
   refreshSystemCachesAfterMutation();
@@ -1933,6 +1934,32 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
 export const Repository = {
   /** Lets the server drop any cached identity the moment accounts change. */
   onIdentityChanged: (listener: () => void) => { identityListeners.add(listener); },
+
+  // Demo sandbox helpers. A demo request sees only its own in-memory clone.
+  isDemoMode: (): boolean => runningMode === "demo",
+  currentDemoSessionId: (): string => demoSandboxContext.getStore()?.sessionId || "",
+  createDemoSandbox: (sessionId: string, ttlMs: number): void => {
+    demoSandboxes.set(sessionId, { state: createDemoSandboxState() as DBState, expiresAt: Date.now() + ttlMs });
+  },
+  resetDemoSandbox: (sessionId: string, ttlMs: number): boolean => {
+    if (runningMode !== "demo") return false;
+    demoSandboxes.set(sessionId, { state: createDemoSandboxState() as DBState, expiresAt: Date.now() + ttlMs });
+    return true;
+  },
+  withDemoSandbox: async <T>(sessionId: string, fn: () => T | Promise<T>): Promise<T> => {
+    const record = demoSandboxes.get(sessionId);
+    if (!record || record.expiresAt <= Date.now()) {
+      demoSandboxes.delete(sessionId);
+      throw new Error("DEMO_SESSION_EXPIRED");
+    }
+    return await demoSandboxContext.run({ sessionId, state: record.state }, fn);
+  },
+  runDemoSandbox: (sessionId: string, fn: () => void): boolean => {
+    const record = demoSandboxes.get(sessionId);
+    if (!record || record.expiresAt <= Date.now()) { demoSandboxes.delete(sessionId); return false; }
+    demoSandboxContext.run({ sessionId, state: record.state }, fn);
+    return true;
+  },
 
   // Password helpers
   simpleHash,
@@ -1975,6 +2002,7 @@ export const Repository = {
     if (!session) return undefined;
     if (session.expiresAt <= Date.now()) {
       demoSessions.delete(sessionId);
+      demoSandboxes.delete(sessionId);
       return undefined;
     }
     return session;
@@ -1989,6 +2017,8 @@ export const Repository = {
     }
     const session = demoSessions.get(sessionId);
     if (session) demoSessions.set(sessionId, { ...session, expiresAt });
+    const sandbox = demoSandboxes.get(sessionId);
+    if (sandbox) demoSandboxes.set(sessionId, { ...sandbox, expiresAt });
   },
 
   deleteSession: async (sessionId: string): Promise<void> => {
@@ -1998,6 +2028,7 @@ export const Repository = {
       return;
     }
     demoSessions.delete(sessionId);
+    demoSandboxes.delete(sessionId);
   },
 
   // Audit log: additive operational history. It is intentionally separate from legacy tables.
@@ -2191,7 +2222,7 @@ export const Repository = {
   },
 
   // FormNames
-  getFormNames: async (): Promise<FormName[]> => cachedReference(REFERENCE_KEYS.formNames, async () => {
+  getFormNames: async (): Promise<FormName[]> => scopedCachedReference(REFERENCE_KEYS.formNames, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("formNames").orderBy("FormNameId", "asc").get();
       return snap.docs.map(doc => doc.data() as FormName);
@@ -2264,7 +2295,7 @@ export const Repository = {
   },
 
   // Terms
-  getTerms: async (): Promise<AdTerm[]> => cachedReference(REFERENCE_KEYS.terms, async () => {
+  getTerms: async (): Promise<AdTerm[]> => scopedCachedReference(REFERENCE_KEYS.terms, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("terms").orderBy("AdTermId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdTerm);
@@ -2331,7 +2362,7 @@ export const Repository = {
   },
 
   // Colleges
-  getColleges: async (): Promise<AdCollege[]> => cachedReference(REFERENCE_KEYS.colleges, async () => {
+  getColleges: async (): Promise<AdCollege[]> => scopedCachedReference(REFERENCE_KEYS.colleges, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("colleges").orderBy("AdCollegeId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdCollege);
@@ -2391,7 +2422,7 @@ export const Repository = {
   },
 
   // Sections
-  getSections: async (): Promise<AdSection[]> => cachedReference(REFERENCE_KEYS.sections, async () => {
+  getSections: async (): Promise<AdSection[]> => scopedCachedReference(REFERENCE_KEYS.sections, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("sections").orderBy("AdSectionId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdSection);
@@ -2461,7 +2492,7 @@ export const Repository = {
   },
 
   // Instructors
-  getInstructors: async (): Promise<AdInstructor[]> => cachedReference(REFERENCE_KEYS.instructors, async () => {
+  getInstructors: async (): Promise<AdInstructor[]> => scopedCachedReference(REFERENCE_KEYS.instructors, async () => {
     if (firestoreDb) {
       const snap = await firestoreDb.collection("instructors").orderBy("AdInstructorId", "asc").get();
       return snap.docs.map(doc => doc.data() as AdInstructor);
@@ -2556,7 +2587,7 @@ export const Repository = {
   },
 
   // Courses
-  getCourses: async (): Promise<AdCourse[]> => cachedReference(REFERENCE_KEYS.courses, async () => {
+  getCourses: async (): Promise<AdCourse[]> => scopedCachedReference(REFERENCE_KEYS.courses, async () => {
     if (firestoreDb) {
       const [courseSnap, sectionSnap] = await Promise.all([
         firestoreDb.collection("courses").orderBy("AdCourseId", "asc").get(),
@@ -2582,7 +2613,7 @@ export const Repository = {
     return course ? hydrateCourses([course], db.sections)[0] : undefined;
   },
 
-  getCoursesBySection: async (sectionId: number): Promise<AdCourse[]> => cachedReference(`courses:${sectionId}`, async () => {
+  getCoursesBySection: async (sectionId: number): Promise<AdCourse[]> => scopedCachedReference(`courses:${sectionId}`, async () => {
     if (firestoreDb) {
       const [snap, sectionDoc] = await Promise.all([
         firestoreDb.collection("courses").where("AdSectionId", "==", sectionId).get(),
@@ -2702,7 +2733,7 @@ export const Repository = {
     const collegeId = Number(filters.collegeId || 0);
     const sectionId = Number(filters.sectionId || 0);
     const termId = Number(filters.termId || 0);
-    return cachedSchedules(`${collegeId}:${sectionId}:${termId}`, async () => {
+    return scopedCachedSchedules(`${collegeId}:${sectionId}:${termId}`, async () => {
       if (firestoreDb) {
         // The legacy SQL relationship is FSchedule -> AdCourse -> AdSection. Older
         // imported schedule rows therefore cannot be trusted to contain denormalized
@@ -2799,7 +2830,7 @@ export const Repository = {
   getScheduleHistoryForCourses: async (courseIds: number[]): Promise<FSchedule[]> => {
     const ids = [...new Set(courseIds.map(Number).filter(Boolean))];
     if (!ids.length) return [];
-    return cachedReference(`history:${ids.slice(0, 60).join(",")}`, async () => {
+    return scopedCachedReference(`history:${ids.slice(0, 60).join(",")}`, async () => {
       if (firestoreDb) {
         const snapshots = await Promise.all(
           chunks(ids).map(batch => firestoreDb!.collection("schedules").where("AdCourseId", "in", batch).get())
@@ -2831,7 +2862,7 @@ export const Repository = {
       .sort((a,b)=>a.id-b.id);
   },
 
-  countSchedules: async (): Promise<number> => cachedReference(REFERENCE_KEYS.scheduleCount, async () => {
+  countSchedules: async (): Promise<number> => scopedCachedReference(REFERENCE_KEYS.scheduleCount, async () => {
     if (firestoreDb) {
       const aggregate = await firestoreDb.collection("schedules").count().get();
       return Number(aggregate.data().count || 0);

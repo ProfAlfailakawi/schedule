@@ -1959,3 +1959,17 @@
 .install-steps-grid li>div{min-width:0}.install-steps-grid li b{font-size:12px}.install-steps-grid li small{font-size:10.5px;line-height:1.45}
 .install-login .install-step-icon{background:#17231f;color:#b6d8cc}
 .install-login .install-steps-grid li{background:#0d1412;border-color:#2b3630}
+
+/* Dedicated demo entry: visually distinct, quiet, and explicit about isolation. */
+.demo-entry-panel{margin-top:22px;padding:18px;border:1px solid color-mix(in srgb,#78a896 28%,transparent);border-radius:20px;background:linear-gradient(145deg,color-mix(in srgb,#0f1c18 88%,transparent),color-mix(in srgb,#163027 58%,transparent));box-shadow:0 18px 44px color-mix(in srgb,#000 18%,transparent) inset,0 12px 30px color-mix(in srgb,#000 10%,transparent)}
+.demo-entry-copy{display:grid;gap:6px}.demo-entry-copy strong{font-size:1rem;color:#eef8f4}.demo-entry-copy small{color:#9eb8ad;line-height:1.7;font-size:.82rem}.demo-entry-badge{width:max-content;padding:4px 9px;border-radius:999px;background:color-mix(in srgb,#79b49d 16%,transparent);border:1px solid color-mix(in srgb,#79b49d 24%,transparent);color:#add2c3;font-size:.68rem;font-weight:750;letter-spacing:.08em}
+.demo-entry-button{margin-top:14px;width:100%;min-height:48px;display:flex;align-items:center;justify-content:center;gap:9px;border-radius:14px;border:1px solid color-mix(in srgb,#8bc5ae 38%,transparent);background:#d9eee6;color:#12362b;font-weight:750;cursor:pointer;transition:transform .18s var(--ease),box-shadow .18s var(--ease)}.demo-entry-button:hover{transform:translateY(-1px);box-shadow:0 12px 28px color-mix(in srgb,#000 14%,transparent)}.demo-entry-button svg{width:17px;height:17px}.demo-entry-button:disabled{opacity:.62;cursor:wait;transform:none}
+
+/* System administration in Demo is a true showroom: no interactive control can fire. */
+html[data-demo-admin-readonly="true"] .app-main button,
+html[data-demo-admin-readonly="true"] .app-main input,
+html[data-demo-admin-readonly="true"] .app-main select,
+html[data-demo-admin-readonly="true"] .app-main textarea,
+html[data-demo-admin-readonly="true"] .app-main [role="button"]{pointer-events:none!important;cursor:not-allowed!important}
+html[data-demo-admin-readonly="true"] .app-main button:not(.plain-icon){opacity:.58}
+html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإدارة للعرض فقط";position:sticky;top:12px;z-index:35;display:block;width:max-content;max-width:calc(100% - 24px);margin:12px auto -8px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,#7a5712 92%,transparent);color:#fff8df;border:1px solid color-mix(in srgb,#fff 18%,transparent);font-size:.72rem;font-weight:750;box-shadow:0 8px 24px color-mix(in srgb,#000 14%,transparent)}

@@ -124,6 +124,7 @@ interface SessionUser {
   IsLocked: boolean;
   AdInstructorId?: number;
   IsRootAdmin?: boolean;
+  IsDemo?: boolean;
 }
 interface SearchHit {
   id: number | string;
@@ -846,6 +847,7 @@ export default function App() {
     let warnTimer = 0;
     let heartbeatBusy = false;
     const HEARTBEAT_EVERY_MS = 4 * 60 * 1000;
+    const idleLogoutMs = user.IsDemo ? 60 * 60 * 1000 : IDLE_LOGOUT_MS;
     /**
      * The session ends with a warning, not a trapdoor.
      *
@@ -859,7 +861,7 @@ export default function App() {
       window.clearTimeout(timer);
       window.clearTimeout(warnTimer);
       setIdleWarning(false);
-      const remaining = Math.max(0, IDLE_LOGOUT_MS - (Date.now() - lastActivityAt));
+      const remaining = Math.max(0, idleLogoutMs - (Date.now() - lastActivityAt));
       warnTimer = window.setTimeout(() => setIdleWarning(true), Math.max(0, remaining - IDLE_WARNING_MS));
       timer = window.setTimeout(() => void logout(), remaining);
     };
@@ -888,7 +890,7 @@ export default function App() {
     );
     const visibility = () => {
       if (document.visibilityState !== "visible") return;
-      if (Date.now() - lastActivityAt >= IDLE_LOGOUT_MS) {
+      if (Date.now() - lastActivityAt >= idleLogoutMs) {
         void logout();
         return;
       }
@@ -1254,6 +1256,14 @@ export default function App() {
     setActiveView("dashboard");
     window.history.replaceState({}, "", "/");
   };
+  const resetDemo = async () => {
+    if (!user?.IsDemo) return;
+    if (!window.confirm("إعادة البيئة التجريبية إلى حالتها الأصلية؟ ستُحذف تعديلات هذه الجلسة فقط.")) return;
+    const response = await fetch("/api/demo/reset", { method: "POST" });
+    if (!response.ok) return;
+    navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_API_CACHE" });
+    window.location.assign("/");
+  };
   useEffect(() => {
     if (!user) return;
     setUsage(safeStorage.json(`schedule-usage-${user.SystemUserId}`, {}));
@@ -1499,7 +1509,7 @@ export default function App() {
         );
       case "users":
         return isPowerAdmin && hasPerm(11) ? (
-          <AdminUsers mode="users" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} />
+          <AdminUsers mode="users" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
@@ -1510,25 +1520,26 @@ export default function App() {
             onNavigate={go}
             permissions={permissions}
             rootAdmin={Boolean(user.IsRootAdmin)}
+            demoReadOnly={Boolean(user.IsDemo)}
           />
         ) : (
           unauthorized()
         );
       case "scopes":
         return isPowerAdmin && hasPerm(15) ? (
-          <AdminUsers mode="scopes" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} />
+          <AdminUsers mode="scopes" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
       case "audit":
         return isPowerAdmin && allowed.admin ? (
-          <AdminUsers mode="audit" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} />
+          <AdminUsers mode="audit" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
       case "backup":
         return user.IsRootAdmin ? (
-          <AdminUsers mode="backup" onNavigate={go} permissions={permissions} rootAdmin />
+          <AdminUsers mode="backup" onNavigate={go} permissions={permissions} rootAdmin demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
@@ -1945,6 +1956,7 @@ export default function App() {
       className={`app-shell ${contextRail ? "context-rail-active" : ""} task-${taskFamily} role-${isPowerAdmin ? "admin" : "scheduler"}`}
       dir="rtl"
       data-role={isPowerAdmin ? "admin" : "scheduler"}
+      data-demo={user.IsDemo ? "true" : "false"}
     >
       <header className={`mobile-topbar no-print ${online ? "" : "offline"}`}>
         <button
@@ -2224,8 +2236,8 @@ export default function App() {
       {health !== "online" ? connectionGate() : null}
       {dataMode && !dataMode.real ? (
         <div className="fake-data-banner no-print" role="alert">
-          <strong>بيانات تجريبية</strong>
-          <span>هذه ليست قاعدة بيانات الجامعة. أي تعديل هنا لن يظهر في الجدول الحقيقي.</span>
+          <div><strong>DEMO · بيئة معزولة</strong><span>كل تعديل يخص جلستك فقط · بيانات الأشخاص مصطنعة · الإدارة للعرض فقط.</span></div>
+          {user.IsDemo ? <button type="button" onClick={resetDemo} title="إعادة بيانات Demo الأصلية"><RefreshCw /> إعادة التجربة</button> : null}
         </div>
       ) : null}
       {/* The last minute, said out loud. Any key, tap or scroll dismisses it —
@@ -2236,7 +2248,7 @@ export default function App() {
           <span className="idle-warning-ring" aria-hidden="true" />
           <div>
             <strong>الجلسة تنتهي خلال دقيقة</strong>
-            <span>لحمايتك، يُغلق الحساب بعد ١٥ دقيقة بلا حركة. أي ضغطة تكفي لمتابعة العمل.</span>
+            <span>{user.IsDemo ? "تنتهي جلسة Demo بعد ٦٠ دقيقة من عدم النشاط. أي ضغطة تكفي لمتابعة التجربة." : "لحمايتك، يُغلق الحساب بعد ١٥ دقيقة بلا حركة. أي ضغطة تكفي لمتابعة العمل."}</span>
           </div>
           <PrimaryButton type="button" onClick={() => setIdleWarning(false)}>
             أكمل العمل
