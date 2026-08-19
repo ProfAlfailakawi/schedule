@@ -1,3 +1,4 @@
+import { controlLabel } from "../utils/controlLabel";
 export type GuideRisk = "read" | "prepare" | "write" | "sensitive";
 export type GuideConfidence = "low" | "medium" | "high";
 export type GuideOutcome = "attempt" | "started" | "completed" | "failed" | "abandoned" | "helped" | "resolvedAfterHelp";
@@ -171,7 +172,7 @@ export function discoverVisibleControls(activeView: string): DynamicGuideFeature
     const featureId = element.getAttribute("data-guide-feature-id") || owner?.getAttribute("data-guide-feature-id") || "";
     const target = element.getAttribute("data-guide-target") || owner?.getAttribute("data-guide-target") || "";
     const stableKey = element.getAttribute("data-guide-stable-id") || "";
-    const label = String(element.getAttribute("data-guide-title") || element.getAttribute("aria-label") || element.getAttribute("title") || element.textContent || "").replace(/\s+/g," ").trim().slice(0,72);
+    const label = controlLabel(element, 72);
     if (!label || label.length < 2) return;
     const parent = element.parentElement?.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target],[data-guide-stable-id],[aria-label],section,nav,header,footer");
     const parentKey = String(parent?.getAttribute("data-guide-feature-id") || parent?.getAttribute("data-guide-target") || parent?.getAttribute("data-guide-stable-id") || parent?.getAttribute("aria-label") || parent?.tagName || "");

@@ -27,6 +27,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
+import { controlLabel } from "./utils/controlLabel";
 
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
@@ -569,7 +570,7 @@ export default function App() {
       const style = window.getComputedStyle(element);
       return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden";
     };
-    const labelOf = (element: HTMLElement | null) => String(element?.getAttribute("aria-label") || element?.getAttribute("title") || element?.textContent || "").replace(/\s+/g, " ").trim().slice(0, 110);
+    const labelOf = (element: HTMLElement | null) => controlLabel(element, 110);
     const currentDialog = () => [...document.querySelectorAll<HTMLElement>('[role="dialog"],.modal,.dialog,.drawer')].find(visible) || null;
     const currentError = () => [...document.querySelectorAll<HTMLElement>('[role="alert"],.notice,.error,.field-error,.validation-error')].filter(visible).map(labelOf).find(text => /تعذر|خطأ|غير صالح|مطلوب|لا يمكن|فشل|تعارض/.test(text)) || "";
     const publish = () => {
@@ -687,7 +688,7 @@ export default function App() {
     let hoverTimer: number | null = null;
     let hoverKey = "";
     let hoverClicked = false;
-    const labelOf = (element: HTMLElement) => String(element.getAttribute("aria-label") || element.getAttribute("title") || element.textContent || "").replace(/\s+/g," ").trim().slice(0,72);
+    const labelOf = (element: HTMLElement) => controlLabel(element, 72);
     const onClick = (event: MouseEvent) => {
       const raw = event.target instanceof HTMLElement ? event.target : null;
       const control = raw?.closest<HTMLElement>("[data-guide-target],button,a,[role='button']");
@@ -695,7 +696,7 @@ export default function App() {
       if (activeView !== "schedules" && activeView !== "intelligence") {
         const card = raw?.closest<HTMLElement>(".record-card,.catalog-master button,.master-list button");
         if (card) {
-          const label = String(card.getAttribute("aria-label") || card.getAttribute("title") || card.textContent || "").replace(/\s+/g," ").trim().slice(0,96);
+          const label = controlLabel(card, 96);
           const page = featureById(`page.${activeView}`);
           setGuideContext({ view: activeView, title: page?.title || "هذه الشاشة", summary: page?.summary || "", currentFeatureId: page?.id, selected: label ? { course: label } : null, whatHappens: page?.summary || "" });
         }

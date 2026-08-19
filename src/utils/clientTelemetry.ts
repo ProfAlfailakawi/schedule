@@ -1,3 +1,4 @@
+import { controlLabel } from "./controlLabel";
 type TelemetryScope = { collegeId?: number; sectionId?: number; termId?: number };
 type Breadcrumb = { at: string; action: string };
 type Pending = {
@@ -128,8 +129,7 @@ export function installClientTelemetry() {
   const onClick = (event: MouseEvent) => {
     const target = event.target instanceof Element ? event.target.closest<HTMLElement>('button,a,[role="button"]') : null;
     if (!target) return;
-    const label = String(target.getAttribute("aria-label") || target.getAttribute("title") || target.textContent || "")
-      .replace(/\s+/g, " ").trim().slice(0, 56);
+    const label = controlLabel(target, 56);
     const kind = target.tagName === "A" ? "رابط" : "زر";
     telemetryBreadcrumb(label ? `${kind}: ${label}` : kind);
   };

@@ -33,6 +33,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { controlLabel } from "../utils/controlLabel";
 
 import { scheduleClockForDisplay } from "../utils/scheduleTime";import {
   type DynamicGuideFeature,
@@ -146,7 +147,7 @@ function targetNow(id?: string) {
 function liveTargetLabel(id?: string) {
   const element = targetNow(id);
   if (!element) return "";
-  return String(element.getAttribute("aria-label") || element.getAttribute("title") || element.textContent || "").replace(/\s+/g, " ").trim().slice(0, 72);
+  return controlLabel(element, 72);
 }
 
 function hydrateGuideSteps(steps: TourStep[]) {
@@ -663,8 +664,7 @@ export default function SmartGuide({
         recordFeatureEvent(userId, knownFeature.id, "helped");
         markFeatureSeen(userId, knownFeature.id);
       } else {
-        const title = String(carrier.getAttribute("data-guide-title") || carrier.getAttribute("aria-label") || carrier.getAttribute("title") || carrier.textContent || "")
-          .replace(/\s+/g, " ").trim().slice(0, 72) || "هذا العنصر";
+        const title = controlLabel(carrier, 72) || "هذا العنصر";
         const stableKey = carrier.getAttribute("data-guide-stable-id") || "";
         const id = stableDynamicControlId(activeView, {
           title, kind:carrier.tagName.toLowerCase(), featureId, target, stableKey,
