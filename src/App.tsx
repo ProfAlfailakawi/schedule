@@ -1976,6 +1976,7 @@ export default function App() {
           onClick={() => go("dashboard")}
           aria-label="العودة إلى لوحة العمل"
           aria-current={activeView === "dashboard" ? "page" : undefined}
+          data-guide-target="page.dashboard"
         >
           <ScheduleSignature size="micro" showTagline={false} />
         </button>
@@ -2011,6 +2012,7 @@ export default function App() {
           <button
             onClick={() => go("dashboard")}
             aria-label="العودة إلى لوحة العمل"
+            data-guide-target="page.dashboard"
           >
             <ScheduleSignature size="compact" />
           </button>
