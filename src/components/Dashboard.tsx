@@ -224,7 +224,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
       })}
      </div>
      <div className="daybar-scale" aria-hidden="true">
-      {[8,11,14,17,20].map(hour=><span key={hour} style={{insetInlineStart:spot(hour*60)}} dir="ltr">{String(hour).padStart(2,"0")}</span>)}
+      {[8,11,14,17,20].map(hour=><span key={hour} style={{right:spot(hour*60)}}>{String(hour).padStart(2,"0")}</span>)}
      </div>
     </div>
     {/* On a weekend the row below is Sunday's schedule, not today's — saying

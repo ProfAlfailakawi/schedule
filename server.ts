@@ -8,7 +8,7 @@ import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } fr
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
-import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
+import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, fastConflictScan, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
@@ -57,6 +57,11 @@ configureRuntimeEnvironment();
 
 const app = express();
 const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
+const ACADEMIC_TIME_ZONE = process.env.SCHEDULE_TIME_ZONE || "Asia/Kuwait";
+const academicWeekday = (date = new Date()) => {
+  const short = new Intl.DateTimeFormat("en-US", { weekday: "short", timeZone: ACADEMIC_TIME_ZONE }).format(date);
+  return ({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 } as Record<string, number>)[short] ?? date.getDay();
+};
 
 
 // User-facing reference lists follow one ordering contract everywhere: Arabic
@@ -945,19 +950,18 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const terms = await Repository.getTerms();
   const latestTermId = Number(sortTermsNewestServer(terms)[0]?.AdTermId || 0);
   const latestTerm = terms.find(term => term.AdTermId === latestTermId);
-  const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges, scheduleCount] = await Promise.all([
-    Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges(), Repository.countSchedules()
+  const [allCourses, latestTermSchedules, allInstructors, allSections, allColleges] = await Promise.all([
+    Repository.getCourses(), Repository.getSchedulesByScope({ termId: latestTermId }), Repository.getInstructors(), Repository.getSections(), Repository.getColleges()
   ]);
   const assignedSectionIds = new Set((req.scopes || []).map(scope => Number(scope.AdSectionId)));
 
   const latestScopedSchedules = latestTermSchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
-  const scopedCourses = allCourses.filter(course => assignedSectionIds.has(Number(course.AdSectionId)));
 
   // ASP.NET DayOfWeek returned 0 for Sunday, but the legacy view checked d == 7.
   // Therefore Sunday, Friday and Saturday retain Sunday's rows while dname stays blank.
   // `weekend` lets the screen say so out loud instead of labelling Sunday's
   // lectures with Friday's date, which is what the client's own clock did.
-  const weekday = new Date().getDay();
+  const weekday = academicWeekday();
   const weekend = weekday === 5 || weekday === 6;
   let dayKey: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday" = "fsunday";
   let dayName = weekday === 0 ? "الأحد" : weekday === 5 ? "الجمعة" : weekday === 6 ? "السبت" : "";
@@ -987,32 +991,38 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const visibleTableRows = req.user.IsAdminUser
     ? daySchedules
     : daySchedules.filter(row => assignedSectionIds.has(Number(row.AdSectionId)));
-  const instructorIds = new Set(latestScopedSchedules.map(row => row.AdInstructorId));
   const coursesById = new Map(allCourses.map(course => [course.AdCourseId, course]));
   const instructorsById = new Map(allInstructors.map(instructor => [instructor.AdInstructorId, instructor]));
   const sectionsById = new Map(allSections.map(section => [section.AdSectionId, section]));
   const collegesById = new Map(allColleges.map(college => [college.AdCollegeId, college]));
 
-  const metrics = req.user.IsAdminUser ? {
-    courses: allCourses.length,
-    schedules: scheduleCount,
-    terms: terms.length,
-    instructors: allInstructors.length
-  } : {
-    courses: scopedCourses.length,
-    schedules: latestScopedSchedules.length,
-    terms: terms.length,
-    instructors: instructorIds.size
-  };
-
-  // Modern workspace analytics are additive: legacy dashboard fields above remain untouched.
+  // Dashboard statistics are a single current-term reading. Previously the admin
+  // appointment tile used the lifetime schedule count while its delta/sparkline
+  // compared it with one academic term; courses and instructors had the same
+  // master-catalogue-vs-term mismatch. That made mathematically valid numbers
+  // tell an invalid story. Resolve the visible scope first, then derive every
+  // comparable headline from exactly that same row universe.
   const linkedInstructorId = Number(req.user.AdInstructorId || 0);
   const personalRows = linkedInstructorId ? latestTermSchedules.filter(row => row.AdInstructorId === linkedInstructorId) : [];
   const workspaceRows = req.user.IsAdminUser ? latestTermSchedules : (linkedInstructorId ? personalRows : latestScopedSchedules);
+  const metrics = {
+    courses: new Set(workspaceRows.map(row => Number(row.AdCourseId)).filter(Boolean)).size,
+    schedules: workspaceRows.length,
+    terms: terms.length,
+    instructors: new Set(workspaceRows.map(row => Number(row.AdInstructorId)).filter(Boolean)).size
+  };
+
+  // Modern workspace analytics are additive: all figures below use the same
+  // current-term scope as the headline metrics above.
   const dayDefs = [
     ["fsunday", "الأحد"], ["fmonday", "الاثنين"], ["ftuesday", "الثلاثاء"], ["fwednesday", "الأربعاء"], ["fthursday", "الخميس"]
   ] as const;
-  const roomKey = (row: any) => `${String(row.AdRoomCode || "").trim()} / ${String(row.AdRoomHall || "").trim()}`;
+  const cleanRoomPart = (value: unknown) => String(value || "")
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const roomKey = (row: any) => `${cleanRoomPart(row.AdRoomCode)} / ${cleanRoomPart(row.AdRoomHall)}`;
   const uniqueRooms = Array.from(new Set(workspaceRows.map(roomKey).filter(key => key !== " / ")));
   const minute = (value: string) => { const [h,m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
   const slotRooms = new Map<string, Set<string>>();
@@ -1020,12 +1030,22 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const roomLoad = new Map<string, number>();
   for (const row of workspaceRows) {
     const start = minute(row.fstarttime), end = minute(row.fendtime);
-    const hour = String(row.fstarttime || "").slice(0,2) || "--";
-    hourLoad.set(hour, (hourLoad.get(hour) || 0) + 1);
+    if (!(end > start)) continue;
     const rKey = roomKey(row);
-    roomLoad.set(rKey, (roomLoad.get(rKey) || 0) + 1);
+    const hasRoom = rKey !== " / ";
     for (const [key] of dayDefs) if (row[key]) {
-      for (let slot = Math.floor(start / 30); slot < Math.ceil(end / 30); slot++) {
+      // Workload is about actual weekly meeting occurrences, not database rows.
+      // A Sunday/Tuesday lecture therefore contributes twice, once on each day.
+      // Peak-time load counts every teaching hour the meeting overlaps rather
+      // than only its starting hour, so a 13:30–15:00 lecture is visible in both.
+      for (let hour = SCHEDULE_DAY_START; hour < SCHEDULE_DAY_END; hour += 60) {
+        if (start < hour + 60 && end > hour) {
+          const keyHour = String(Math.floor(hour / 60)).padStart(2, "0");
+          hourLoad.set(keyHour, (hourLoad.get(keyHour) || 0) + 1);
+        }
+      }
+      if (hasRoom) roomLoad.set(rKey, (roomLoad.get(rKey) || 0) + 1);
+      if (hasRoom) for (let slot = Math.floor(start / 30); slot < Math.ceil(end / 30); slot++) {
         const bucket = `${key}:${slot}`;
         if (!slotRooms.has(bucket)) slotRooms.set(bucket, new Set());
         slotRooms.get(bucket)!.add(rKey);
@@ -1035,9 +1055,9 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   const peakOccupiedRooms = Math.max(0, ...Array.from(slotRooms.values()).map(set => set.size));
   const roomOccupancyPeak = uniqueRooms.length ? Math.round((peakOccupiedRooms / uniqueRooms.length) * 100) : 0;
   const weekdayLoad = dayDefs.map(([key,label]) => ({ key, label, count: workspaceRows.filter(row => Boolean(row[key])).length }));
-  const busiestHours = Array.from(hourLoad.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([hour,count])=>({ hour: `${hour}:00`, count }));
-  const busiestRooms = Array.from(roomLoad.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([room,count])=>({ room, count }));
-  const personalToday = personalRows.filter(row => Boolean(row[dayKey])).sort((a,b)=>String(a.fstarttime).localeCompare(String(b.fstarttime)));
+  const busiestHours = Array.from(hourLoad.entries()).sort((a,b)=>b[1]-a[1] || a[0].localeCompare(b[0])).slice(0,5).map(([hour,count])=>({ hour: `${hour}:00`, count }));
+  const busiestRooms = Array.from(roomLoad.entries()).sort((a,b)=>b[1]-a[1] || arabicUiCollator.compare(a[0],b[0])).slice(0,5).map(([room,count])=>({ room, count }));
+  const personalToday = weekend ? [] : personalRows.filter(row => Boolean(row[dayKey])).sort((a,b)=>String(a.fstarttime).localeCompare(String(b.fstarttime)));
 
   /**
    * The same headline numbers, one term earlier.
@@ -1057,10 +1077,9 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
   // The last four terms, oldest first. A single comparison shows a jump; four
   // points show a direction, which is the thing a coordinator is deciding
   // against. The reads are cached, so this costs nothing after the first visit.
-  const recentTermIds = terms
+  const recentTermIds = sortTermsNewestServer(terms)
     .map(term => Number(term.AdTermId) || 0)
-    .filter(id => id && id <= latestTermId)
-    .sort((a, b) => b - a)
+    .filter(Boolean)
     .slice(0, 4)
     .reverse();
   const history = await Promise.all(recentTermIds.map(async termId => {
@@ -1073,7 +1092,7 @@ app.get("/api/dashboard", requireAuth, async (req: AuthenticatedRequest, res: Re
       termName: terms.find(term => Number(term.AdTermId) === termId)?.AdTermName || "",
       schedules: scoped.length,
       rooms: new Set(scoped.map(roomKey).filter(key => key !== " / ")).size,
-      instructors: new Set(scoped.map(row => row.AdInstructorId)).size
+      instructors: new Set(scoped.map(row => Number(row.AdInstructorId)).filter(Boolean)).size
     };
   }));
   const previous = history.length > 1 ? history[history.length - 2] : null;
@@ -5427,14 +5446,17 @@ app.get("/api/reports/department-balance", requirePermission(14), requirePowerAd
       lateRows: analysis.metrics.lateRows,
     };
   }).sort((a, b) => b.rows - a.rows);
+  const universityConflicts = fastConflictScan(termRows).pairs;
   res.json({
     termId,
     termName: terms.find(term => term.AdTermId === termId)?.AdTermName || "",
     departments,
     totals: {
       departments: departments.length,
-      rows: departments.reduce((sum, item) => sum + item.rows, 0),
-      conflicts: departments.reduce((sum, item) => sum + item.conflicts, 0),
+      rows: termRows.length,
+      // A cross-department collision appears in both department analyses. The
+      // university headline must count the pair once, not once per side.
+      conflicts: universityConflicts,
     },
   });
 });

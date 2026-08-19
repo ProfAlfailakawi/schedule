@@ -199,7 +199,7 @@
   font:600 var(--t-xs)/1.6 var(--font-mono);
 }
 
-.daybar{min-width:0}
+.daybar{min-width:0;direction:rtl}
 /*
    ── شكل اليوم ──────────────────────────────────────────────────────────────
  *
@@ -213,7 +213,7 @@
  * and it answers it at a glance instead of demanding a reading.
  */
 .daybar-track{
-  position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;
+  position:relative;display:grid;grid-auto-flow:column;grid-auto-columns:1fr;direction:rtl;
   /* `align-items:end` shrank every column to its own content — 22px instead of
      72 — so a bar asking for "100%" got 100% of twenty-two pixels and the whole
      shape read as a row of hairlines. Stretch gives each column the track's
@@ -252,10 +252,11 @@
 }
 @media (prefers-reduced-motion:reduce){.daybar-hour>i{transition:none}}
 
-.daybar-scale{position:relative;height:18px;margin-top:var(--s2)}
+.daybar-scale{position:relative;height:18px;margin-top:var(--s2);direction:rtl}
 .daybar-scale span{
   position:absolute;top:0;transform:translateX(50%);
   color:var(--muted-2);font:500 var(--t-xs)/1 var(--font-mono);
+  direction:ltr;unicode-bidi:isolate;
 }
 .deck-clear{
   display:inline-flex;align-items:center;gap:var(--s2);
