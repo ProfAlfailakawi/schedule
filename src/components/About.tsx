@@ -1,6 +1,5 @@
 import React from "react";
 import { AtSign, Globe2, GraduationCap, Mail, Phone } from "lucide-react";
-import ScheduleSignature, { SCHEDULE_DEFINITION } from "./ScheduleSignature";
 
 // The install invitation moved to the dashboard, where a first-time visitor
 // actually lands — see components/InstallApp.tsx. It no longer sits on the
@@ -59,13 +58,16 @@ export default function About() {
   return (
     <div className="about-editorial visual-minimal">
       <header className="about-editorial-hero">
-        <ScheduleSignature size="compact" className="about-signature" />
+        <span>SCHEDULE · التحكم الأكاديمي</span>
         <h1>
           الجدول الدراسي،
           <br />
           كمنتج يُفهم من أول نظرة.
         </h1>
-        <p>{SCHEDULE_DEFINITION}</p>
+        <p>
+          منظومة صُممت لمسؤولي إعداد الجداول الدراسية: بناء الجدول، مراجعته،
+          البحث فيه وإخراج تقاريره داخل مساحة واحدة واضحة وهادئة.
+        </p>
       </header>
       <section className="about-editorial-people">
         <Person
