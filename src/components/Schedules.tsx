@@ -1435,6 +1435,57 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * first-load branch already covers.
    */
   const rowsForeign = rowsScope !== "" && rowsScope !== `${filterCollege}|${filterSection}|${filterTerm}`;
+
+  /**
+   * ── جيران الفصل يوضعون على الرف قبل أن يُطلبوا ─────────────────────────────
+   *
+   * The shelf makes RETURNING to a term instant; this makes ARRIVING instant
+   * for the switches people actually make. A coordinator browsing history
+   * walks the term list in order — previous term, next term — so the moment
+   * one board settles, its two chronological neighbours are read quietly in
+   * the background and shelved. By the time the reader reaches for either,
+   * it paints in a frame like any shelved board, and the network read that
+   * follows is the same silent revalidation every shelf hit gets.
+   *
+   * Deliberately narrow: two neighbours only, never recursive (a prefetched
+   * board does not prefetch ITS neighbours — only a board the reader actually
+   * opened does), idle-scheduled, aborted the moment the scope moves on, and
+   * skipped entirely for anything already shelved. Failures are swallowed:
+   * this is a courtesy, not a dependency, and the normal path is untouched.
+   */
+  useEffect(() => {
+    const stamp = `${filterCollege}|${filterSection}|${filterTerm}`;
+    if (!filterCollege || !filterSection || !filterTerm) return;
+    if (rowsScope !== stamp) return;                       // the board itself must be settled
+    if (!terms.length) return;
+    const ordered = sortTermsNewest<AdTerm>(terms);
+    const at = ordered.findIndex(term => Number(term.AdTermId) === filterTerm);
+    if (at < 0) return;
+    const neighbours = [ordered[at + 1], ordered[at - 1]]  // الأقدم مباشرة ثم الأحدث مباشرة
+      .filter(Boolean)
+      .map(term => Number(term!.AdTermId))
+      .filter(termId => !boardShelf.has(shelfKey(`${filterCollege}|${filterSection}|${termId}`)));
+    if (!neighbours.length) return;
+    const controller = new AbortController();
+    const cancelIdle = whenIdle(() => {
+      void (async () => {
+        for (const termId of neighbours) {
+          if (controller.signal.aborted) return;
+          try {
+            const res = await fetch(`/api/schedules?collegeId=${filterCollege}&sectionId=${filterSection}&termId=${termId}`, { signal: controller.signal });
+            if (!res.ok) continue;
+            const rows = await res.json();
+            if (!Array.isArray(rows)) continue;
+            shelveBoard(shelfKey(`${filterCollege}|${filterSection}|${termId}`), {
+              rows, instructors: null, courses: null, visitingIds: null, at: Date.now(),
+            });
+          } catch { /* a prefetch owes nobody an apology */ }
+        }
+      })();
+    }, 2500);
+    return () => { cancelIdle(); controller.abort(); };
+  }, [rowsScope, filterCollege, filterSection, filterTerm, terms]);
+
   const rowsScopeRef = useRef("");
   const shelfKey = (stamp: string) => `${Number(user?.SystemUserId || 0)}:${stamp}`;
 
