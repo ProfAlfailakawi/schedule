@@ -8210,14 +8210,18 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
    returns to the calm, centred proportions of the original board. */
 .schedule-control-barter .hall-barter-board.is-open,.hall-barter-board.is-open{
   position:fixed!important;inset:0!important;z-index:2700!important;
-  width:100vw!important;max-width:none!important;height:100dvh!important;max-height:100dvh!important;
+  width:auto!important;max-width:none!important;height:100dvh!important;max-height:100dvh!important;
   margin:0!important;padding:clamp(18px,2.4vw,34px)!important;display:block!important;
   border:0!important;border-radius:0!important;background:var(--canvas)!important;box-shadow:none!important;
   overflow:auto!important;overscroll-behavior:contain!important;
 }
 .hall-barter-board.is-open .hall-barter-summary{
   width:min(1180px,calc(100vw - clamp(36px,4.8vw,68px)))!important;min-height:112px!important;
-  margin:0 auto!important;padding:22px 72px 22px 26px!important;
+  /* The close control is fixed to the *physical* left, which in RTL is the
+     inline END. The clearance therefore belongs on the left; reserving it on
+     the right left the ✕ sitting on top of the chevron on every window
+     narrower than the card's 1180px ceiling. */
+  margin:0 auto!important;padding:22px 26px 22px 72px!important;
   border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line))!important;border-radius:28px!important;
   background:var(--surface)!important;box-shadow:var(--shadow-sm)!important;
 }
@@ -8238,7 +8242,27 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 @media(max-width:680px){
   .schedule-control-barter .hall-barter-board.is-open,.hall-barter-board.is-open{padding:12px!important}
   .hall-barter-board.is-open .hall-barter-summary,.hall-barter-board.is-open .hall-barter-body{width:100%!important;border-radius:22px!important}
-  .hall-barter-board.is-open .hall-barter-summary{padding:18px 56px 18px 14px!important}
+  .hall-barter-board.is-open .hall-barter-summary{padding:18px 14px 18px 56px!important}
   .hall-barter-board.is-open .hall-barter-body{padding:16px 12px calc(26px + env(safe-area-inset-bottom))!important;margin-top:10px!important}
   .hall-barter-screen-close{top:max(12px,env(safe-area-inset-top));left:max(12px,env(safe-area-inset-left));width:42px;height:42px}
+}
+
+/* === Horizontal scroll: one range for every surface of the same timeline ===
+   The week/rooms timeline is drawn across stacked scrollers — a proxy
+   scrollbar, a sticky hour ruler, and the grid — that must translate by the
+   same number of pixels. Only the grid carried `scrollbar-gutter:stable`,
+   and because it is a scroll container the browser reserved that gutter even
+   though `overflow-y` is hidden and no vertical scrollbar can ever appear.
+   The reservation shrank the grid's client box by ~11px, which made its
+   scrollable range ~11px LONGER than the ruler's. The ruler then clamped at
+   its own end, and that clamped offset used to be mirrored back into the
+   grid — the drift the user filmed.
+
+   The gutter is inert here (nothing vertical scrolls inside these boxes), so
+   removing it costs no layout: the canvas keeps its exact width, every column,
+   card and hour position is untouched, and the viewport simply stops hiding a
+   sliver it was reserving for a scrollbar that never comes. */
+.week-scroll-main,
+.rooms-main-scroll{
+  scrollbar-gutter:auto;
 }

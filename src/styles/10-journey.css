@@ -1,0 +1,500 @@
+/* ==========================================================================
+   رحلة SCHEDULE
+   The only screen in this application that is not an instrument. It is read,
+   often by someone who has never opened the system, and frequently from a
+   phone. So it is written as four acts on one fixed dark canvas.
+
+   Three constraints shape everything below.
+
+   1. The palette is LOCAL, not themed. A light-mode reader and a dark-mode
+      reader must be sent the same page, so every colour here is a literal
+      value scoped to `.jr-root` rather than a workspace token.
+   2. Contrast is the feature. The previous version placed grey body copy on
+      near-black and became unreadable on a phone in daylight; the text ramp
+      below never drops under ~7:1 for body copy.
+   3. Numerals are isolated. `dir="ltr"` on `.jr-num` plus `unicode-bidi:isolate`
+      keeps a thousands separator attached to its number — Arabic text around a
+      Latin numeral was reordering 9,418 into "9 ,418".
+   ========================================================================== */
+
+.jr-root{
+  --jr-ink:#f4f8f5;          /* headlines */
+  --jr-ink-2:#c3cfc9;        /* body copy — the floor for readable prose */
+  --jr-ink-3:#8b9a93;        /* captions */
+  --jr-brass:#d6ab68;
+  --jr-accent:#63c3a9;
+  --jr-canvas:#080d0c;
+  --jr-canvas-2:#0d1413;
+  --jr-line:#233029;
+  --jr-line-soft:#1a231f;
+
+  position:fixed;
+  inset:0;
+  z-index:3000;
+  background:var(--jr-canvas);
+  color:var(--jr-ink);
+  font-family:var(--font-ui);
+}
+
+/* The sheet owns the scrolling so the page underneath never moves. */
+.jr-sheet{
+  position:absolute;
+  inset:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+  scrollbar-color:#2c3a34 transparent;
+}
+.jr-sheet::-webkit-scrollbar{width:10px}
+.jr-sheet::-webkit-scrollbar-thumb{background:#2c3a34;border:3px solid transparent;background-clip:padding-box;border-radius:999px}
+
+/* ── Weather: two soft light sources and a hairline grid. Purely decorative,
+      pinned behind everything, and never intercepting a pointer. ────────── */
+.jr-weather{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.jr-weather>i:nth-child(1){
+  position:absolute;inset-block-start:-22vh;inset-inline-end:-18vw;
+  width:max(min(74vw,900px),420px);height:max(min(74vw,900px),420px);border-radius:50%;
+  background:radial-gradient(circle,rgb(47 133 116 / .34),transparent 66%);
+  filter:blur(26px);
+}
+.jr-weather>i:nth-child(2){
+  position:absolute;inset-block-end:-20vh;inset-inline-start:-20vw;
+  width:max(min(66vw,780px),380px);height:max(min(66vw,780px),380px);border-radius:50%;
+  background:radial-gradient(circle,rgb(154 111 45 / .26),transparent 68%);
+  filter:blur(30px);
+}
+.jr-weather>i:nth-child(3){
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(to left,rgb(255 255 255 / .028) 1px,transparent 1px),
+    linear-gradient(to bottom,rgb(255 255 255 / .028) 1px,transparent 1px);
+  background-size:92px 92px;
+  mask-image:radial-gradient(ellipse 88% 66% at 50% 34%,#000 12%,transparent 82%);
+  -webkit-mask-image:radial-gradient(ellipse 88% 66% at 50% 34%,#000 12%,transparent 82%);
+}
+
+.jr-close{
+  position:fixed;
+  z-index:12;
+  inset-block-start:max(18px,env(safe-area-inset-top));
+  inset-inline-end:max(18px,env(safe-area-inset-right));
+  width:46px;height:46px;
+  display:grid;place-items:center;
+  border:1px solid #2b3a33;border-radius:16px;
+  background:rgb(13 20 19 / .82);
+  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+  color:var(--jr-ink-2);
+  cursor:pointer;
+  transition:background .18s ease,color .18s ease,border-color .18s ease;
+}
+.jr-close:hover{background:#16211e;color:var(--jr-ink);border-color:#3a4b43}
+.jr-close:focus-visible{outline:2px solid var(--jr-accent);outline-offset:3px}
+.jr-close svg{width:19px;height:19px}
+
+/* ── Shared act rhythm ─────────────────────────────────────────────────── */
+.jr-act{
+  position:relative;
+  z-index:1;
+  width:min(1080px,100%);
+  margin-inline:auto;
+  padding-inline:clamp(20px,4.4vw,44px);
+  padding-block:clamp(46px,7vh,92px);
+}
+.jr-act + .jr-act{border-top:1px solid var(--jr-line-soft)}
+
+.jr-eyebrow{
+  display:inline-flex;align-items:center;gap:10px;
+  color:var(--jr-brass);
+  font-size:12px;font-weight:650;letter-spacing:.16em;
+}
+.jr-eyebrow>i{width:30px;height:1px;background:var(--jr-brass);opacity:.7}
+
+.jr-act-head{max-width:44ch}
+.jr-act-head>span{
+  display:block;color:var(--jr-brass);
+  font-size:12px;font-weight:650;letter-spacing:.14em;
+}
+.jr-act-head>h3{
+  margin:12px 0 0;
+  font-size:clamp(25px,3.1vw,40px);
+  line-height:1.16;
+  font-weight:600;
+  letter-spacing:-.03em;
+  color:var(--jr-ink);
+}
+.jr-act-head>p{
+  margin:12px 0 0;
+  color:var(--jr-ink-2);
+  font-size:clamp(13px,1.15vw,15px);
+  line-height:1.75;
+}
+
+/* `.jr-num` is the only place Latin digits are allowed to sit inside Arabic
+   prose, and it is isolated so the separator cannot be reordered. */
+.jr-num{
+  unicode-bidi:isolate;
+  font-variant-numeric:tabular-nums;
+  font-feature-settings:"tnum" 1;
+}
+
+/* ── ١ · الأثر ─────────────────────────────────────────────────────────── */
+.jr-hero{
+  min-height:min(100svh,860px);
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:0;
+  padding-block:clamp(64px,10vh,120px) clamp(52px,8vh,96px);
+}
+.jr-headline{
+  margin:clamp(18px,2.4vh,28px) 0 0;
+  font-size:clamp(44px,7.4vw,104px);
+  line-height:1.0;
+  font-weight:600;
+  letter-spacing:-.05em;
+  color:var(--jr-ink);
+}
+.jr-headline em{color:var(--jr-brass);font-style:normal}
+.jr-lede{
+  max-width:52ch;
+  margin:clamp(18px,2.6vh,30px) 0 0;
+  color:var(--jr-ink-2);
+  font-size:clamp(14px,1.35vw,18px);
+  line-height:1.85;
+}
+
+.jr-headnum{
+  margin-top:clamp(30px,5vh,58px);
+  padding-top:clamp(24px,3.4vh,34px);
+  border-top:1px solid var(--jr-line);
+  display:grid;
+  gap:6px;
+  justify-items:start;
+}
+.jr-headnum>b{
+  font-size:clamp(56px,10.5vw,132px);
+  line-height:.92;
+  font-weight:600;
+  letter-spacing:-.055em;
+  color:var(--jr-ink);
+  text-shadow:0 0 62px rgb(99 195 169 / .18);
+}
+.jr-headnum>span{
+  margin-top:4px;
+  color:var(--jr-ink-2);
+  font-size:clamp(14px,1.3vw,17px);
+  font-weight:550;
+}
+.jr-headnum>small{color:var(--jr-ink-3);font-size:12px;letter-spacing:.04em}
+
+.jr-scroll-cue{
+  margin-top:clamp(22px,3.4vh,38px);
+  display:inline-flex;align-items:center;gap:9px;
+  color:var(--jr-ink-3);
+  font-size:11.5px;letter-spacing:.06em;
+}
+.jr-scroll-cue>i{
+  width:1px;height:26px;
+  background:linear-gradient(to bottom,transparent,var(--jr-brass));
+  opacity:.85;
+}
+@media (prefers-reduced-motion:no-preference){
+  .jr-scroll-cue>i{animation:jr-cue 2.1s var(--ease-out,ease) infinite}
+}
+@keyframes jr-cue{
+  0%{transform:scaleY(.25);transform-origin:top;opacity:.25}
+  55%{transform:scaleY(1);transform-origin:top;opacity:.9}
+  100%{transform:scaleY(1);transform-origin:bottom;opacity:0}
+}
+
+.jr-mark{
+  margin-top:clamp(28px,4.4vh,48px);
+  display:flex;align-items:center;gap:14px;
+  color:var(--jr-ink-3);
+}
+.jr-mark>b{font-size:12px;font-weight:700;letter-spacing:.34em;color:var(--jr-ink-2)}
+.jr-mark>i{flex:0 0 44px;height:1px;background:var(--jr-line)}
+.jr-mark>small{font-size:10px;letter-spacing:.2em}
+
+/* ── States ────────────────────────────────────────────────────────────── */
+.jr-state{display:grid;gap:8px;justify-items:start}
+.jr-state>strong{font-size:clamp(19px,2.1vw,25px);font-weight:600;color:var(--jr-ink)}
+.jr-state>span{color:var(--jr-ink-2);font-size:14px;line-height:1.75}
+.jr-state-pulse{
+  width:9px;height:9px;border-radius:50%;background:var(--jr-accent);
+  box-shadow:0 0 0 0 rgb(99 195 169 / .5);
+  animation:jr-pulse 1.9s ease-out infinite;
+}
+@keyframes jr-pulse{
+  70%{box-shadow:0 0 0 13px rgb(99 195 169 / 0)}
+  100%{box-shadow:0 0 0 0 rgb(99 195 169 / 0)}
+}
+
+/* ── ٢ · المقياس ───────────────────────────────────────────────────────
+      Five readings as typography, not as boxes. A hairline between columns
+      does the work a card border used to do, and costs no contrast. ────── */
+.jr-figures{
+  margin-top:clamp(30px,4.6vh,54px);
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:clamp(14px,1.8vw,26px);
+}
+.jr-figure{
+  position:relative;
+  padding-inline-start:clamp(14px,1.8vw,26px);
+  border-inline-start:1px solid var(--jr-line);
+  display:grid;
+  gap:5px;
+  align-content:start;
+}
+.jr-figure:last-child{border-inline-start:0;padding-inline-start:0}
+.jr-figure>b{
+  font-size:clamp(30px,3.6vw,50px);
+  line-height:1;
+  font-weight:600;
+  letter-spacing:-.04em;
+  color:var(--jr-ink);
+}
+.jr-figure>strong{
+  margin-top:4px;
+  font-size:clamp(12px,1.05vw,14px);
+  font-weight:600;
+  color:var(--jr-accent);
+}
+.jr-figure>small{color:var(--jr-ink-3);font-size:11.5px;line-height:1.6}
+
+/* ── ٣ · المسار ────────────────────────────────────────────────────────
+      One rail, five stations. The rail is drawn on the list, so the stations
+      stay plain content and reflow into a vertical spine on a phone. ───── */
+.jr-rail{
+  position:relative;
+  margin:clamp(34px,5vh,60px) 0 0;
+  padding:0;
+  list-style:none;
+  display:grid;
+  grid-template-columns:repeat(5,minmax(0,1fr));
+  gap:clamp(12px,1.6vw,22px);
+}
+.jr-rail::before{
+  content:"";
+  position:absolute;
+  inset-block-start:21px;
+  inset-inline:6px;
+  height:1px;
+  background:linear-gradient(to left,
+    transparent,
+    color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)) 14%,
+    color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)) 86%,
+    transparent);
+}
+.jr-station{position:relative;display:grid;gap:10px;align-content:start;padding-top:0}
+.jr-station-node{
+  position:relative;
+  z-index:1;
+  width:42px;height:42px;
+  display:grid;place-items:center;
+  border:1px solid #34453d;border-radius:14px;
+  /* Opaque, so the rail passes behind the node rather than through it. */
+  background:var(--jr-canvas-2);
+  color:var(--jr-accent);
+  box-shadow:0 0 0 5px var(--jr-canvas);
+}
+/* The first station is where the story starts; it carries the brass. */
+.jr-station:first-child .jr-station-node{
+  border-color:color-mix(in srgb,var(--jr-brass) 46%,#34453d);
+  color:var(--jr-brass);
+}
+.jr-station-node svg{width:19px;height:19px}
+.jr-station-no{
+  color:var(--jr-brass);
+  font-size:11px;font-weight:700;letter-spacing:.14em;
+  font-variant-numeric:tabular-nums;
+  unicode-bidi:isolate;
+}
+.jr-station>strong{font-size:clamp(15px,1.35vw,18px);font-weight:600;color:var(--jr-ink)}
+.jr-station>p{margin:0;color:var(--jr-ink-2);font-size:12.5px;line-height:1.75}
+
+/* ── ٤ · الفلسفة ───────────────────────────────────────────────────────── */
+.jr-creed{text-align:center}
+.jr-creed-eyebrow{
+  display:block;color:var(--jr-brass);
+  font-size:12px;font-weight:650;letter-spacing:.14em;
+}
+.jr-creed blockquote{
+  margin:clamp(16px,2.4vh,26px) 0 0;
+  font-size:clamp(28px,4.6vw,60px);
+  line-height:1.14;
+  font-weight:600;
+  letter-spacing:-.04em;
+  color:var(--jr-ink);
+}
+.jr-creed blockquote em{color:var(--jr-brass);font-style:normal}
+.jr-creed>p{
+  max-width:56ch;
+  margin:clamp(16px,2.4vh,26px) auto 0;
+  color:var(--jr-ink-2);
+  font-size:clamp(13px,1.2vw,16px);
+  line-height:1.85;
+}
+
+/* ── Close ─────────────────────────────────────────────────────────────── */
+.jr-foot{
+  position:relative;z-index:1;
+  width:min(1080px,100%);
+  margin-inline:auto;
+  padding:clamp(26px,3.4vh,38px) clamp(20px,4.4vw,44px) calc(clamp(26px,3.4vh,38px) + env(safe-area-inset-bottom));
+  border-top:1px solid var(--jr-line-soft);
+  display:flex;align-items:end;justify-content:space-between;gap:18px;flex-wrap:wrap;
+}
+.jr-foot>div>span{display:block;color:var(--jr-brass);font-size:11px;font-weight:650;letter-spacing:.14em}
+.jr-foot>div>strong{display:block;margin-top:7px;font-size:clamp(13px,1.15vw,15px);font-weight:600;color:var(--jr-ink)}
+.jr-foot>small{color:var(--jr-ink-3);font-size:11px;letter-spacing:.2em}
+
+/* ── Arrival ───────────────────────────────────────────────────────────
+      `backwards`, never `both`: an animation left in effect keeps a transform
+      matrix on the element forever, which turns every one of these into a
+      stacking context and a containing block for fixed children. */
+@media (prefers-reduced-motion:no-preference){
+  .jr-root{animation:jr-fade .26s var(--ease-out,ease) backwards}
+  .jr-hero>*{animation:jr-lift .58s var(--ease-out,ease) backwards}
+  .jr-hero>.jr-headline{animation-delay:.04s}
+  .jr-hero>.jr-lede{animation-delay:.09s}
+  .jr-hero>.jr-headnum{animation-delay:.14s}
+  .jr-hero>.jr-scroll-cue{animation-delay:.19s}
+  .jr-hero>.jr-mark{animation-delay:.24s}
+
+  .jr-figures>.jr-figure,
+  .jr-rail>.jr-station{opacity:0;transform:translateY(12px)}
+  .jr-figures.is-in>.jr-figure,
+  .jr-rail.is-in>.jr-station{
+    animation:jr-lift .54s var(--ease-out,ease) forwards;
+    animation-delay:calc(var(--i,0) * .07s);
+  }
+}
+@keyframes jr-fade{from{opacity:0}to{opacity:1}}
+@keyframes jr-lift{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+
+/* ==========================================================================
+   Responsive — the journey has to read on a laptop, a tablet, a phone held
+   upright, and a phone turned sideways. Each of those is a different reading
+   posture, not just a different width.
+   ========================================================================== */
+
+/* Tablet / small laptop: five columns stop being five columns. */
+@media (max-width:1000px){
+  .jr-figures{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:clamp(20px,3vh,30px)}
+  .jr-figure:nth-child(3n){border-inline-start:0;padding-inline-start:0}
+  .jr-figure:last-child{border-inline-start:1px solid var(--jr-line);padding-inline-start:clamp(14px,1.8vw,26px)}
+  .jr-figure:nth-child(3n):last-child{border-inline-start:0;padding-inline-start:0}
+
+  .jr-rail{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:clamp(24px,3.4vh,34px)}
+  .jr-rail::before{display:none}
+}
+
+/* Phone, upright. The rail becomes a vertical spine — the shape a journey
+   actually has on a tall screen. */
+@media (max-width:640px){
+  .jr-act{padding-block:clamp(40px,6vh,60px)}
+  .jr-close{width:42px;height:42px;border-radius:14px}
+  .jr-close svg{width:17px;height:17px}
+
+  .jr-hero{min-height:min(100svh,760px)}
+  .jr-headline{font-size:clamp(40px,12.5vw,58px);letter-spacing:-.045em}
+  .jr-lede{font-size:14.5px;line-height:1.8}
+  .jr-headnum>b{font-size:clamp(52px,17vw,74px)}
+
+  .jr-figures{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:clamp(16px,4vw,22px) clamp(14px,4vw,20px);
+  }
+  .jr-figure,
+  .jr-figure:last-child{
+    border-inline-start:0;
+    padding-inline-start:0;
+    padding-top:14px;
+    border-top:1px solid var(--jr-line);
+  }
+  .jr-figure>b{font-size:clamp(28px,8.6vw,38px)}
+  /* The leading figure takes the full measure so the remaining four settle
+     into an even 2×2 instead of leaving one orphan in the last row. */
+  .jr-figure:first-child{grid-column:1 / -1;border-top-color:var(--jr-brass)}
+  .jr-figure:first-child>b{font-size:clamp(44px,13vw,62px)}
+
+  .jr-rail{
+    grid-template-columns:minmax(0,1fr);
+    row-gap:0;
+    padding-inline-start:0;
+  }
+  .jr-rail::before{
+    display:block;
+    /* The spine runs down the centre of the 42px node column, which sits at the
+       inline START of the row — the right-hand side in RTL. */
+    inset-block:14px 30px;
+    inset-inline-start:21px;
+    inset-inline-end:auto;
+    width:1px;height:auto;
+    background:linear-gradient(to bottom,
+      transparent,
+      color-mix(in srgb,var(--jr-brass) 46%,var(--jr-line)) 8%,
+      color-mix(in srgb,var(--jr-accent) 30%,var(--jr-line)) 92%,
+      transparent);
+  }
+  .jr-station{
+    grid-template-columns:42px minmax(0,1fr);
+    grid-template-areas:"node no" "node title" "node body";
+    column-gap:16px;
+    row-gap:4px;
+    padding-block:clamp(14px,2.4vh,20px);
+  }
+  .jr-station-node{grid-area:node;align-self:start}
+  .jr-station-no{grid-area:no}
+  .jr-station>strong{grid-area:title}
+  .jr-station>p{grid-area:body;margin-top:4px}
+
+  .jr-mark{gap:10px;flex-wrap:nowrap}
+  .jr-mark>b{font-size:11px;letter-spacing:.26em}
+  .jr-mark>i{flex:1 1 auto}
+  .jr-mark>small{font-size:9px;letter-spacing:.14em;white-space:nowrap}
+
+  .jr-creed blockquote{font-size:clamp(27px,8.6vw,40px)}
+  .jr-foot{align-items:start;gap:14px}
+}
+
+/* Phone, sideways. Height is the scarce resource, so vertical rhythm is
+   compressed and the hero stops reserving a full screen. */
+@media (orientation:landscape) and (max-height:560px){
+  .jr-act{padding-block:clamp(26px,7vh,40px)}
+  .jr-hero{min-height:0;padding-block:clamp(34px,9vh,52px) clamp(26px,7vh,40px)}
+  .jr-headline{font-size:clamp(32px,7.2vh,52px)}
+  .jr-lede{font-size:13px;line-height:1.7;max-width:60ch}
+  .jr-headnum{margin-top:clamp(16px,4vh,24px);padding-top:clamp(14px,3vh,20px)}
+  .jr-scroll-cue{display:none}
+  .jr-headnum>b{font-size:clamp(40px,13vh,72px)}
+  .jr-mark{margin-top:clamp(16px,4vh,24px)}
+  .jr-figures{grid-template-columns:repeat(5,minmax(0,1fr));row-gap:16px}
+  .jr-figure>b{font-size:clamp(24px,6.4vh,36px)}
+  .jr-rail{grid-template-columns:repeat(5,minmax(0,1fr))}
+  .jr-rail::before{display:block;inset-block-start:21px;inset-inline:6px;width:auto;height:1px}
+  .jr-station{
+    grid-template-columns:none;grid-template-areas:none;
+    padding-block:0;row-gap:8px;
+  }
+  .jr-station>p{font-size:11.5px;line-height:1.65}
+  .jr-creed blockquote{font-size:clamp(26px,7.4vh,42px)}
+}
+
+/* A phone turned sideways is still a phone: keep the vertical spine when the
+   viewport is too narrow for five real columns. */
+@media (orientation:landscape) and (max-height:560px) and (max-width:700px){
+  .jr-figures{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .jr-rail{grid-template-columns:repeat(3,minmax(0,1fr));row-gap:22px}
+  .jr-rail::before{display:none}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .jr-figures>.jr-figure,
+  .jr-rail>.jr-station{opacity:1;transform:none;animation:none}
+  .jr-state-pulse{animation:none}
+}

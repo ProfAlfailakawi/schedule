@@ -4781,39 +4781,63 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const weekMainScrollRef = useRef<HTMLDivElement | null>(null);
   const roomsRulerScrollRef = useRef<HTMLDivElement | null>(null);
   const roomsMainScrollRef = useRef<HTMLDivElement | null>(null);
-  const weekScrollOwnerRef = useRef<"top" | "ruler" | "main" | null>(null);
-  const weekScrollReleaseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const syncWeekScroll = (source: "top" | "ruler" | "main", value: number) => {
-    if (weekScrollOwnerRef.current && weekScrollOwnerRef.current !== source) return;
-    weekScrollOwnerRef.current = source;
-    if (weekScrollReleaseRef.current != null) clearTimeout(weekScrollReleaseRef.current);
-    weekScrollReleaseRef.current = setTimeout(() => {
-      weekScrollOwnerRef.current = null;
-      weekScrollReleaseRef.current = null;
-    }, 150);
-
-    const targets = [
-      source !== "top" ? weekTopScrollRef.current : null,
-      source !== "ruler" ? weekRulerScrollRef.current : null,
-      source !== "main" ? weekMainScrollRef.current : null,
-    ];
-    targets.forEach(target => {
-      if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
-    });
+  /*
+   * One timeline, several scrollers.
+   *
+   * Week and Rooms both draw a single horizontal timeline across stacked
+   * surfaces: a slim proxy scrollbar above, a sticky hour ruler, and the grid
+   * itself. They have to move as one — but they are *not* interchangeable.
+   * The grid reserves a scrollbar gutter the ruler does not, so its scrollable
+   * range is about a dozen pixels longer. Mirroring an offset a shorter
+   * surface cannot reach makes the browser clamp it silently.
+   *
+   * The previous mirror handed "ownership" to whichever surface scrolled last
+   * and released it on a 150ms timer. That is the bug the user filmed: the
+   * clamped follower kept its own, shorter offset, and the first scroll event
+   * that arrived after the timer expired — the tail of a trackpad fling, a
+   * scrollbar reflow, anything — made the follower the new owner and wrote its
+   * clamped offset back into the surface the hand had just dragged. The grid
+   * drifted to the right on its own after the gesture had ended.
+   *
+   * So ownership is not timed any more; it is not needed at all. Every
+   * programmatic write remembers the offset the follower *actually landed on*,
+   * and the scroll event that write provokes is recognised by that offset and
+   * dropped. A mirrored surface can therefore never become a source, and no
+   * clamped value can ever travel back upstream. Only a hand moves the grid.
+   */
+  /** Where the mirror last parked each surface. A surface still sitting on
+   *  that offset was put there by us, so its scroll events are echoes — not a
+   *  hand. The entry survives until the surface genuinely moves elsewhere,
+   *  which is what keeps a follower parked at its clamped end from being read
+   *  as a new gesture every time the browser re-fires its scroll event. */
+  const scrollEchoRef = useRef<WeakMap<Element, number>>(new WeakMap());
+  const mirrorHorizontalScroll = (source: HTMLElement | null | undefined, targets: Array<HTMLElement | null>) => {
+    if (!source) return;
+    const echo = scrollEchoRef.current;
+    const value = source.scrollLeft;
+    const driven = echo.get(source);
+    if (driven !== undefined && Math.abs(driven - value) <= 1) return;
+    echo.delete(source);
+    for (const target of targets) {
+      if (!target || target === source) continue;
+      if (Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
+      // Record where it *actually* landed, not what we asked for: a surface
+      // with a shorter range clamps, and the clamped offset is the one its own
+      // scroll event will report.
+      echo.set(target, target.scrollLeft);
+    }
   };
-  const roomsScrollOwnerRef = useRef<"ruler" | "main" | null>(null);
-  const roomsScrollReleaseRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const syncRoomsScroll = (source: "ruler" | "main", value: number) => {
-    if (roomsScrollOwnerRef.current && roomsScrollOwnerRef.current !== source) return;
-    roomsScrollOwnerRef.current = source;
-    if (roomsScrollReleaseRef.current != null) clearTimeout(roomsScrollReleaseRef.current);
-    roomsScrollReleaseRef.current = setTimeout(() => {
-      roomsScrollOwnerRef.current = null;
-      roomsScrollReleaseRef.current = null;
-    }, 150);
-
-    const target = source === "ruler" ? roomsMainScrollRef.current : roomsRulerScrollRef.current;
-    if (target && Math.abs(target.scrollLeft - value) > 1) target.scrollLeft = value;
+  const syncWeekScroll = (source: "top" | "ruler" | "main", _value?: number) => {
+    const element = source === "top"
+      ? weekTopScrollRef.current
+      : source === "ruler"
+        ? weekRulerScrollRef.current
+        : weekMainScrollRef.current;
+    mirrorHorizontalScroll(element, [weekTopScrollRef.current, weekRulerScrollRef.current, weekMainScrollRef.current]);
+  };
+  const syncRoomsScroll = (source: "ruler" | "main", _value?: number) => {
+    const element = source === "ruler" ? roomsRulerScrollRef.current : roomsMainScrollRef.current;
+    mirrorHorizontalScroll(element, [roomsRulerScrollRef.current, roomsMainScrollRef.current]);
   };
 
   const weekStripHourMarks = useMemo(() => {
@@ -4975,6 +4999,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         }}
         aria-label={`${title} · ${code} · شعبة ${r.SCode || "—"} · ${who} · ${arabicDays(r) || "بلا أيام"} · ${formatScheduleTimeRange(r.fstarttime, r.fendtime)}${place ? ` · قاعة ${place}` : ""}`}
         data-row-id={r.id}
+        /* «أشر لي» describes what it is pointed at. Without this the card fell
+           back to the generic "an interactive element" sentence, which is the
+           least useful thing to say about the object the whole screen is made
+           of. */
+        data-guide-description="بطاقة موعد داخل الجدول: اضغطها لقراءة الموعد وتحليله، أو اسحبها إلى يوم أو ساعة أو قاعة أخرى لنقلها بعد فحص التعارض."
         data-code-row={classicCodeSecondary ? "secondary" : undefined}
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
         style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
@@ -8487,6 +8516,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   {...trackGrip}
                   key={row.id}
                   data-row-id={row.id}
+                  data-guide-description="بطاقة موعد داخل الجدول: اضغطها لقراءة الموعد وتحليله، أو اسحبها إلى يوم أو ساعة أو قاعة أخرى لنقلها بعد فحص التعارض."
                   className={`rooms-card ${lensClass(row)} ${xrayClass(row)} ${physicsRelationClass(row)} ${draggingId === row.id ? "ripple-source" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${keyMove?.rowId === row.id ? "week-keymove-source" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
                   style={cardStyle}
                   draggable={!physics.supported && !rowPending}

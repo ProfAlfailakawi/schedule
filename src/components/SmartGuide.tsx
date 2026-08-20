@@ -646,7 +646,23 @@ export default function SmartGuide({
     const select = (event:PointerEvent) => {
       const raw = event.target instanceof HTMLElement ? event.target : null;
       if (!raw || raw.closest(".smart-guide,.guide-point-banner,.guide-screen-handoff") || raw.closest("[data-guide-ignore]")) return;
-      const carrier = raw.closest<HTMLElement>("[data-guide-feature-id],[data-guide-target],[data-guide-stable-id],button,a,[role='button'],select,input,textarea,[draggable='true']");
+      /*
+       * What counts as something a reader can point at.
+       *
+       * This list used to name only the obvious controls, which left the most
+       * important object on the main screen out of «أشر لي» entirely: a lecture
+       * card is an <article> with a tabindex, not a <button>, and it stops being
+       * draggable the moment the pointer-physics engine takes over. Pressing one
+       * in point mode therefore fell through to the card's own handler and
+       * OPENED the lecture — the exact action the mode promises not to perform.
+       *
+       * A schedule row and anything the keyboard can reach are interactive by
+       * definition, so both are carriers now.
+       */
+      const carrier = raw.closest<HTMLElement>(
+        "[data-guide-feature-id],[data-guide-target],[data-guide-stable-id],button,a,[role='button']," +
+        "select,input,textarea,[draggable='true'],[data-row-id],[tabindex]:not([tabindex='-1'])",
+      );
       if (!carrier) return;
       // Capture pointerdown, not click: this prevents drag/drop or press handlers from starting underneath the guide.
       event.preventDefault();

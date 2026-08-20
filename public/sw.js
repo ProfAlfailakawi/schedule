@@ -9,6 +9,17 @@ const CACHEABLE_API_PREFIXES=[
   "/api/audit-logs","/api/form-names","/api/admin-user-options"
 ];
 const isCacheableApi=pathname=>CACHEABLE_API_PREFIXES.some(prefix=>pathname===prefix||pathname.startsWith(prefix+"/")||pathname.startsWith(prefix+"?"));
+/*
+ * A build asset carries its own content hash in its filename, so the bytes at
+ * that URL can never change. Those are the only requests here that may be
+ * answered from the cache WITHOUT touching the network — and they are also the
+ * heaviest: the stylesheet and the schedule chunk are together most of what a
+ * cold start has to download. Under the old network-first rule every launch
+ * waited on a round trip for each of them before the app could paint, which is
+ * the difference between "instant" and "several seconds" on a weak connection.
+ * A new release publishes new filenames, so a stale copy is impossible.
+ */
+const isHashedAsset=pathname=>pathname.startsWith("/assets/")&&/-[A-Za-z0-9_-]{8,}\.(?:js|css)$/.test(pathname);
 self.addEventListener("install",event=>{event.waitUntil(caches.open(SHELL_CACHE).then(async cache=>{
   await cache.addAll(SHELL).catch(()=>undefined);
   // Fetch the shell document once at install so the very first offline launch
@@ -55,6 +66,18 @@ self.addEventListener("fetch",event=>{
   }
   event.respondWith((async()=>{
     const cache=await caches.open(SHELL_CACHE);
+    /* Immutable by filename: answer from disk and do not wait for the wire. */
+    if(isHashedAsset(url.pathname)){
+      const stored=await cache.match(request);
+      if(stored)return stored;
+      try{
+        const response=await fetch(request);
+        if(response.ok)cache.put(request,response.clone()).catch(()=>undefined);
+        return response;
+      }catch{
+        return new Response("Not found",{status:404});
+      }
+    }
     try{
       const response=await fetch(request);
       if(response.ok)cache.put(request,response.clone()).catch(()=>undefined);

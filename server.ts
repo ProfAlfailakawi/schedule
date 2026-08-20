@@ -7332,11 +7332,23 @@ async function startServer() {
     // the browser. Fonts/images are content-addressed or stable public assets and
     // remain safely cacheable. The service worker itself is deliberately no-store
     // because its URL is not hashed.
+    /**
+     * A build asset's filename contains a hash of its own bytes, so the content
+     * at that URL is immutable by construction — a changed file is a changed
+     * URL. Revalidating those on every launch cost a network round trip per
+     * asset before the application could paint, on exactly the connections that
+     * can least afford one. Anything that does NOT carry a hash keeps the strict
+     * revalidation rule, so an interrupted transfer of an unhashed file still
+     * cannot be adopted as a long-lived copy.
+     */
+    const hashedAsset = /-[A-Za-z0-9_-]{8,}\.(?:js|css)$/;
     app.use(express.static(distPath, {
       setHeaders(res, filePath) {
         const name = path.basename(filePath);
         if (name === "index.html" || name === "sw.js") {
           res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+        } else if (hashedAsset.test(name)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
         } else if (/\.(?:js|css)$/i.test(filePath)) {
           res.setHeader("Cache-Control", "no-cache, must-revalidate, max-age=0");
         } else if (/\.(?:woff2?|png|svg|jpg|webp)$/i.test(filePath)) {

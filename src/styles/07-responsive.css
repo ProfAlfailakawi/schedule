@@ -1079,10 +1079,17 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     display:grid!important;
     grid-template-columns:minmax(0,1fr)!important;
     grid-template-rows:auto auto!important;
-    align-content:start!important;
+    /* The story and the card are one composition, so the height the phone has
+       to spare is shared around them instead of being dumped underneath. With
+       `start` the pair sat against the notch and left a fifth of the screen
+       empty below the card — the screen looked like it had run out of content
+       rather than come to rest. Centring, lifted slightly by the extra bottom
+       padding so it lands on the optical centre rather than the arithmetic
+       one, gives the same two rows a deliberate position on every phone. */
+    align-content:center!important;
     align-items:start!important;
     gap:clamp(14px,1.7svh,18px)!important;
-    padding:clamp(7px,1svh,11px) 0!important;
+    padding:clamp(7px,1svh,11px) 0 clamp(18px,3.4svh,40px)!important;
     overflow:hidden!important;
   }
   .apex-login-story{width:100%!important;min-width:0!important}

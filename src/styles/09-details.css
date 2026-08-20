@@ -238,8 +238,19 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
    ========================================================================== */
 
 @media (prefers-reduced-motion:no-preference){
-  /* Screens assemble top-down instead of appearing all at once. */
-  .content-stack>*{animation:rise .42s var(--ease-out) both}
+  /* Screens assemble top-down instead of appearing all at once.
+     `backwards`, never `both`. An animated `transform` computes to a matrix
+     for as long as the animation is *in effect*, and `both`/`forwards` keeps
+     it in effect for the life of the element. Every card in the stack was
+     therefore left holding an identity matrix — enough to make it a stacking
+     context AND the containing block for `position:fixed` descendants. Two
+     full-screen surfaces were sealed inside a card because of it: مركز القرار
+     (`.living-overlay`, z-index 2600) and بورصة القاعات
+     (`.hall-barter-board.is-open`, z-index 2700) both collapsed into a strip
+     painted *under* the toolbar they live next to. `backwards` shows the
+     `from` state before the run and then releases the element back to its own
+     styles — the arrival is identical, and nothing stays trapped. */
+  .content-stack>*{animation:rise .42s var(--ease-out) backwards}
   .content-stack>*:nth-child(1){animation-delay:0s}
   .content-stack>*:nth-child(2){animation-delay:.05s}
   .content-stack>*:nth-child(3){animation-delay:.1s}
