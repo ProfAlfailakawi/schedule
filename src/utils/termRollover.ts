@@ -1,5 +1,6 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
+import { learnRhythm, offRhythm } from "./departmentRhythm";
 
 /**
  * ── ما الذي ينتقل من الفصل الماضي، وما الذي يحتاج قراراً ────────────────────
@@ -51,6 +52,41 @@ export interface RolloverReading {
   concerns: RolloverConcern[];
   /** The size of what is being read, so no number is quoted without its base. */
   sourceRows: number;
+  /**
+   * How much of the copy already looks like this department wrote it.
+   *
+   * The reading above answers «هل ينتقل؟» — is the course still in the
+   * catalogue, is the teacher still here, does the hall still exist. It is a
+   * check against the *record*. What it never asked is whether the result
+   * would look like this department's own work: a lecture can survive every
+   * one of those tests and still land at 08:55 in a department that has begun
+   * at 08:50 for six years.
+   *
+   * That habit is already learned elsewhere — `learnRhythm` reads the start
+   * ladders, lecture lengths and turnarounds out of the department's own
+   * history, and `offRhythm` says in one sentence when a row breaks them. All
+   * this does is run them over what is about to be copied, before it is
+   * copied, so the coordinator sees which appointments would arrive wrong by
+   * their own standard rather than discovering it a week into the term.
+   *
+   * Null when the history is too thin to have a habit at all. A department in
+   * its first year has no style yet, and inventing one from eight lectures
+   * would be worse than saying nothing.
+   */
+  style: RolloverStyle | null;
+}
+
+export interface RolloverStyle {
+  /** Rows that carry cleanly AND sit inside the department's habit. */
+  inStyle: number;
+  /** Rows that carry cleanly but would arrive against it. */
+  offStyle: number;
+  /** inStyle as a share of the two, 0–100. */
+  share: number;
+  /** Named examples, so the share can be checked rather than believed. */
+  notes: Array<{ row: FSchedule; text: string }>;
+  /** The base the habit was read from. */
+  learnedFrom: { rows: number; terms: number };
 }
 
 const roomKey = (row: FSchedule) =>
@@ -68,12 +104,17 @@ const REASONS: Record<RolloverFlag, string> = {
  * @param catalogue   the department's courses as they stand TODAY
  * @param instructors every instructor on record, with their current status
  * @param liveRooms   halls in use anywhere in the system now
+ * @param history     every row this department has ever had, across terms —
+ *                    the base its style is read from. More is strictly better:
+ *                    a habit is what survives across terms, and one term of it
+ *                    is a coincidence. Omitted, the style reading is null.
  */
 export function readTermRollover(
   sourceRows: FSchedule[],
   catalogue: AdCourse[],
   instructors: AdInstructor[],
   liveRooms: string[],
+  history: FSchedule[] = [],
 ): RolloverReading {
   const courseById = new Map(catalogue.map(course => [course.AdCourseId, course]));
   const instructorById = new Map(instructors.map(person => [person.AdInstructorId, person]));
@@ -121,8 +162,37 @@ export function readTermRollover(
   const taughtLastTerm = new Set(sourceRows.map(row => row.AdCourseId));
   const newCourses = catalogue.filter(course => !taughtLastTerm.has(course.AdCourseId));
 
+  /* Style is read only over the rows that would actually be copied — a row
+     already flagged for a decision will be looked at by a person anyway, and
+     telling them it is also five minutes off its usual start is noise stacked
+     on a question they have not answered yet. */
+  const flagged = new Set(concerns.map(concern => concern.row.id));
+  const carrying = sourceRows.filter(row => !flagged.has(row.id));
+  const rhythm = history.length ? learnRhythm(history) : null;
+  let style: RolloverStyle | null = null;
+  if (rhythm && rhythm.patterns.length) {
+    const notes: Array<{ row: FSchedule; text: string }> = [];
+    let inStyle = 0;
+    for (const row of carrying) {
+      const said = offRhythm(row as unknown as Parameters<typeof offRhythm>[0], rhythm);
+      if (said) notes.push({ row, text: said });
+      else inStyle += 1;
+    }
+    const total = inStyle + notes.length;
+    style = total
+      ? {
+          inStyle,
+          offStyle: notes.length,
+          share: Math.round((inStyle / total) * 100),
+          notes,
+          learnedFrom: rhythm.learnedFrom,
+        }
+      : null;
+  }
+
   return {
     confident: sourceRows.length - concerns.length,
+    style,
     newCourses,
     unavailableInstructors: [...unavailable.values()],
     changedCourses: [...changed.values()],
@@ -142,5 +212,8 @@ export function describeRollover(reading: RolloverReading): string {
   if (reading.changedCourses.length) parts.push(`${countOf(reading.changedCourses.length, AR.course)} تغيّرت بياناته`);
   if (reading.retiredRooms.length) parts.push(`${countOf(reading.retiredRooms.length, AR.room)} لم تعد مستخدمة`);
   if (reading.concerns.length) parts.push(`${countOf(reading.concerns.length, AR.decision)} يستحق المراجعة`);
+  /* Leads the tail rather than the head: the counts answer «ماذا ينتقل؟», and
+     this answers «وهل سيبدو كجدولي؟» — the second question, in second place. */
+  if (reading.style) parts.push(`${ar(reading.style.share)}٪ بأسلوب قسمك`);
   return parts.join(" · ");
 }

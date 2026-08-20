@@ -3846,3 +3846,58 @@ button.twin-delta{width:100%}
 .week-shape-title{margin-top:24px!important;margin-bottom:10px!important}
 .week-shape-track>i.week-shape-wait{color:#52687f!important}
 .week-shape-track>i.week-shape-wait>span{display:inline-flex;align-items:center;justify-content:center;min-height:18px;padding:2px 7px;border-radius:999px;border:1px solid color-mix(in srgb,#607b99 22%,var(--line));background:color-mix(in srgb,var(--surface) 88%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);box-shadow:0 2px 8px color-mix(in srgb,#23384e 10%,transparent);color:color-mix(in srgb,#425d79 84%,var(--ink));font:700 9px/1 var(--font-mono);white-space:nowrap}
+
+/* ── ثلاث خطوات، مرسومة ─────────────────────────────────────────────────────
+   The numerals carry the sequence, so the words beside them can stop
+   explaining that there is one. */
+.genesis-steps{
+  display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);
+  margin:var(--s2) 0 0;padding:0;list-style:none;
+}
+.genesis-steps li{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:5px 11px 5px 7px;
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);
+}
+.genesis-steps b{
+  width:19px;height:19px;display:grid;place-items:center;
+  border-radius:50%;background:var(--accent-soft);color:var(--accent);
+  font-size:10px;font-weight:800;
+}
+.genesis-steps span{font-size:var(--t-xs);font-weight:650;color:var(--ink-2)}
+
+/* ── بصمة القسم داخل المسودة ────────────────────────────────────────────────
+   A dial and two counts. The dial is the answer; the counts are how it was
+   reached; the line under them is the base it was read from, because a share
+   quoted without its base is a claim rather than a measurement. */
+.genesis-style{
+  display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:var(--s4);
+  margin-top:var(--s3);padding:var(--s4);
+  border:1px solid color-mix(in srgb,var(--accent) 20%,var(--line));
+  border-radius:var(--r-md);
+  background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 6%,var(--surface)),var(--surface));
+}
+.genesis-style-dial{
+  width:74px;height:74px;display:grid;place-items:center;align-content:center;gap:1px;
+  border-radius:50%;
+  background:conic-gradient(var(--accent) var(--share,0%),color-mix(in srgb,var(--accent) 13%,transparent) 0);
+  position:relative;
+}
+.genesis-style-dial::before{
+  content:"";position:absolute;inset:7px;border-radius:50%;background:var(--surface);
+}
+.genesis-style-dial>*{position:relative}
+.genesis-style-dial b{font-size:17px;font-weight:750;color:var(--ink);letter-spacing:-.02em}
+.genesis-style-dial small{font-size:8.5px;color:var(--muted)}
+.genesis-style-read{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);min-width:0}
+.genesis-style-read span{display:inline-flex;align-items:center;gap:6px;font-size:var(--t-xs);font-weight:650;color:var(--ink-2)}
+.genesis-style-read svg{width:14px;height:14px}
+.genesis-style-read .is-good svg{color:var(--success)}
+.genesis-style-read .is-off svg{color:var(--warning)}
+.genesis-style-read b{font-size:var(--t-sm);font-weight:750;color:var(--ink)}
+.genesis-style-read em{flex-basis:100%;font-style:normal;font-size:10px;color:var(--muted)}
+@media (max-width:640px){
+  .genesis-style{grid-template-columns:1fr;justify-items:center;text-align:center}
+  .genesis-style-read{justify-content:center}
+}

@@ -232,7 +232,26 @@ export default function SmartGuide({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [browseMode, setBrowseMode] = useState<"forYou" | "here" | "new" | "all">("forYou");
-  const [sheetLevel, setSheetLevel] = useState<"peek" | "medium" | "full">("peek");
+  /**
+   * ── ما الذي يراه من يفتح المرشد لأول مرة ────────────────────────────────
+   *
+   * On the phone the sheet opens at «peek», and peek deliberately hides the
+   * goal picker, the hints, the footer and the settings so the first screen is
+   * short. For somebody who has used the guide before that is right: they know
+   * what is folded away and how to raise it.
+   *
+   * For somebody opening it for the first time it is exactly wrong. The one
+   * thing built to orient a newcomer — «ابدأ حسب هدفك» — is the thing peek
+   * hides, and the only affordance saying otherwise is a four-pixel bar. So
+   * the first opening is the one that starts raised, and every opening after
+   * it goes back to staying out of the way.
+   *
+   * The flag is the same one the goal button already reads to decide whether
+   * it says «ابدأ حسب هدفك» or «غيّر هدفك», so the two can never disagree.
+   */
+  const [sheetLevel, setSheetLevel] = useState<"peek" | "medium" | "full">(
+    () => (loadGuideProfile(userId).onboardingDone ? "peek" : "medium"),
+  );
   const [iconIntro, setIconIntro] = useState<{ key:string; title:string; summary:string } | null>(null);
   const [screenHandoff, setScreenHandoff] = useState<{ title:string; detail:string } | null>(null);
   const [routineDraft, setRoutineDraft] = useState<{ sequence: string[]; name: string } | null>(null);
@@ -516,7 +535,7 @@ export default function SmartGuide({
       setRoutineDraft(null);
       setGoalOpen(false);
       setBrowseMode("forYou");
-      setSheetLevel("peek");
+      setSheetLevel(loadGuideProfile(userId).onboardingDone ? "peek" : "medium");
       setIconIntro(null);
       setScreenHandoff(null);
       clearLifecycleTimers();
@@ -1482,7 +1501,19 @@ export default function SmartGuide({
         <div className="smart-guide-outside-dismiss no-print" role="presentation" onPointerDown={onClose} />
       ) : null}
       <aside hidden={drawerHidden} className={`smart-guide visual-minimal no-print level-${sheetLevel} ${drawerHidden ? "is-screen-action" : ""}`} ref={drawerRef} role="dialog" aria-label="مرشد SCHEDULE" aria-modal={!drawerHidden && !pointMode && !located && !preview} aria-hidden={drawerHidden || pointMode || located || preview ? true : undefined} tabIndex={-1} dir="rtl">
-        <button type="button" className="smart-guide-sheet-handle" aria-label="تغيير ارتفاع المرشد" onPointerDown={onSheetPointerDown} onPointerUp={onSheetPointerUp}><i /></button>
+        <button
+          type="button"
+          className="smart-guide-sheet-handle"
+          /* Says what raising it would reveal, not merely that it can be raised.
+             A fade at the edge would be the usual hint, but the folded sections
+             are display:none rather than clipped — there is nothing underneath
+             to fade into, and drawing one would promise content that is not
+             there. A label can tell the truth at no cost in pixels. */
+          aria-label={sheetLevel === "peek" ? "ارفع المرشد — الهدف والتلميحات والإعدادات" : "تغيير ارتفاع المرشد"}
+          title={sheetLevel === "peek" ? "ارفع للمزيد" : "تغيير الارتفاع"}
+          onPointerDown={onSheetPointerDown}
+          onPointerUp={onSheetPointerUp}
+        ><i /></button>
         <header className="smart-guide-hero">
           <div>
             <span className="smart-guide-kicker"><Bot aria-hidden="true" /> مرشد SCHEDULE <i aria-hidden="true">·</i> <b>{pageTitle}</b></span>

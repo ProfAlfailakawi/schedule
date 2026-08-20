@@ -1,27 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sortByName } from "../utils/sorting";
-import {
-  Activity,
-  ArchiveRestore,
-  Building2,
-  Check,
-  DatabaseBackup,
-  Download,
-  Eraser,
-  FileCheck2,
-  ChevronLeft,
-  KeyRound,
-  Landmark,
-  ScrollText,
-  Search,
-  ShieldCheck,
-  Trash2,
-  Upload,
-  UserCog,
-  UsersRound,
-  RefreshCw,
-  X,
-} from "lucide-react";
+import { Activity, ArchiveRestore, Building2, Check, ChevronLeft, DatabaseBackup, Download, Eraser, FileArchive, FileCheck2, KeyRound, Landmark, RefreshCw, Save, ScrollText, Search, ShieldCheck, Trash2, Upload, UserCog, UsersRound, X } from "lucide-react";
 import {
   AddButton,
   Badge,
@@ -1141,7 +1120,17 @@ export default function AdminUsers({
           <div>
             <span className="surface-kicker">نسخة سيادية كاملة</span>
             <h2>كل بيانات النظام الدائمة في ملف واحد</h2>
-            <p>كل سجل دائم في قاعدة النظام يُكتشف ويُضم تلقائيًا: المستخدمون وكلمات المرور المشفّرة، الصلاحيات، الكليات، الأقسام، المقررات، الأساتذة، القاعات، الفصول، الجداول، النسخ الزمنية، المسودات، النشر، الاستبيانات، السجل، الأرشيف والبيانات الوصفية — بما فيها أي مجموعات دائمة تُضاف لاحقًا.</p>
+            {/* Sixteen collection names, listed inside one sentence after a
+                colon. Nobody reads a list in that shape — they scan it for the
+                one they care about, which is what a grid of names is for. The
+                clause that is NOT a name, that future collections are included
+                too, is the only part that stays a sentence. */}
+            <ul className="vault-contents" aria-label="ما يشمله الملف">
+              {["المستخدمون","كلمات المرور المشفّرة","الصلاحيات","الكليات","الأقسام","المقررات","الأساتذة","القاعات","الفصول","الجداول","النسخ الزمنية","المسودات","النشر","الاستبيانات","السجل","الأرشيف"].map(name => (
+                <li key={name}>{name}</li>
+              ))}
+            </ul>
+            <p className="vault-contents-note">يُكتشف كل ذلك تلقائيًا — بما فيه أي مجموعات دائمة تُضاف لاحقًا.</p>
           </div>
           <div className="system-vault-state">
             <span>{backupStatus?.data?.real ? "البيانات الحقيقية" : "وضع محلي"}</span>
@@ -1152,7 +1141,13 @@ export default function AdminUsers({
         <div className="system-vault-grid">
           <Surface className="system-vault-action vault-export">
             <span className="vault-action-icon"><Download /></span>
-            <div><small>01</small><h3>تصدير كامل</h3><p>تصدير متدرج وآمن: يحفظ تقدمه بعد كل دفعة، ثم يبني ملف JSON مضغوطًا مع SHA-256 دون إبقاء المتصفح منتظرًا لطلب واحد طويل.</p></div>
+            <div><small>01</small><h3>تصدير كامل</h3>
+              <ul className="tool-lede-chips vault-chips">
+                <li><Save aria-hidden="true" />يحفظ تقدمه بعد كل دفعة</li>
+                <li><FileArchive aria-hidden="true" />JSON مضغوط</li>
+                <li><ShieldCheck aria-hidden="true" />بصمة SHA-256</li>
+              </ul>
+            </div>
             {exportJob ? (
               <div className={`vault-export-progress status-${exportJob.status}`}>
                 <div className="vault-export-progress-head">

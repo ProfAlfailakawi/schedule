@@ -1988,3 +1988,73 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .install-login .install-trigger.discoverable::after{
   box-shadow:0 0 0 2px #0d1211,0 0 0 3px color-mix(in srgb,var(--brass) 15%,transparent);
 }
+
+/* ── ترويسة أداة: أيقونة، عنوان، ورقائق ─────────────────────────────────────
+   The shape a tool introduces itself with. What a paragraph used to spend a
+   sentence listing — the five things in the file, the two keys a row is matched
+   by — is a list, and is drawn as one. What genuinely is a sentence stays a
+   sentence: a promise that nothing will be written, that nothing is deleted.
+   Those are the lines a chip cannot carry, and they keep their <small>. */
+.tool-lede{
+  display:grid;grid-template-columns:36px minmax(0,1fr);align-items:start;gap:var(--s3);
+  padding:var(--s4);
+  border:1px solid var(--line);border-radius:var(--r-md);
+  background:var(--surface-2);
+}
+.tool-lede-mark{
+  width:36px;height:36px;display:grid;place-items:center;
+  border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent);
+}
+.tool-lede-mark svg{width:17px;height:17px}
+.tool-lede>div{min-width:0;display:grid;gap:var(--s2)}
+.tool-lede strong{font-size:var(--t-sm);font-weight:650;line-height:1.5;color:var(--ink)}
+.tool-lede-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0;padding:0;list-style:none}
+.tool-lede-chips li{
+  display:inline-flex;align-items:center;gap:6px;
+  padding:4px 10px;
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);
+  color:var(--ink-2);font-size:var(--t-xs);font-weight:600;
+}
+.tool-lede-chips svg{width:13px;height:13px;color:var(--muted)}
+.tool-lede small{color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+@media (max-width:640px){
+  .tool-lede{grid-template-columns:30px minmax(0,1fr);gap:var(--s2);padding:var(--s3)}
+  .tool-lede-mark{width:30px;height:30px}
+  .tool-lede-mark svg{width:15px;height:15px}
+}
+
+/* ── ما يشمله الملف ─────────────────────────────────────────────────────────
+   Sixteen names that used to run together inside one sentence. As a wrapped
+   grid the reader scans for the one they came to check instead of reading to
+   the end to find out whether it is there. */
+.vault-contents{
+  display:flex;flex-wrap:wrap;gap:5px;
+  margin:var(--s2) 0 0;padding:0;list-style:none;
+}
+.vault-contents li{
+  padding:3px 9px;
+  border:1px solid var(--line);border-radius:var(--r-full);
+  background:var(--surface);
+  color:var(--ink-2);font-size:11px;font-weight:600;
+}
+.vault-contents-note{margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.vault-chips{margin-top:var(--s2)}
+
+/* ── ما يعمل وما لا يعمل على الهاتف ─────────────────────────────────────────
+   A state, a limit and a way out. Three marks so the reader finds the one that
+   applies to them without reading past the two that do not. */
+.gate-facts{
+  display:flex;flex-wrap:wrap;gap:var(--s2);
+  margin:var(--s2) 0 0;padding:0;list-style:none;
+}
+.gate-facts li{
+  flex:1 1 92px;min-width:0;
+  display:grid;justify-items:center;gap:2px;
+  padding:9px 7px;
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface);text-align:center;
+}
+.gate-facts svg{width:16px;height:16px;color:var(--muted)}
+.gate-facts b{font-size:11.5px;font-weight:700;color:var(--ink)}
+.gate-facts span{font-size:10.5px;color:var(--muted);line-height:1.4}

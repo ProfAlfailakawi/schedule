@@ -15,6 +15,8 @@ import {
   Edit2,
   Expand,
   Eye,
+  List as ListIcon,
+  Move,
   EyeOff,
   Focus,
   GripVertical,
@@ -655,6 +657,33 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     rippleKey = useRef("");
   const replayAbortRef = useRef<AbortController | null>(null);
   const replayRequestSeqRef = useRef(0);
+  /**
+   * ── ليش انتقل هذا الموعد — بلا أن يسأل أحد ──────────────────────────────
+   *
+   * The archive can already answer this. The server replays the placement a
+   * lecture was moved away from, sweeps the week as it stood that day, and
+   * names whatever had taken the slot. It has been able to do that all along.
+   *
+   * The trouble was where the answer lived: select a lecture, switch to the
+   * analysis tab, press «كيف وصل القرار إلى هذا الشكل؟», wait for the server,
+   * then read down a timeline until a line explains itself. Five steps to a
+   * fact that belongs in the first sentence — which is why the person who
+   * built it did not remember it was there.
+   *
+   * So it moves to the front, under two rules. It costs nothing on the way in:
+   * the fetch waits for an idle moment and aborts the instant the selection
+   * changes, so the panel opens at the speed it always did. And it says
+   * nothing unless the archive genuinely does — `reasonForMove` returns null
+   * for a move that was somebody's preference, and a blank is the honest
+   * rendering of that, not a reason invented to fill the line.
+   *
+   * The same fetch primes the full anatomy, so pressing the line opens the
+   * timeline with no second request. Surfacing it made it faster, not slower.
+   */
+  const [moveNote, setMoveNote] = useState<{ text: string; against?: string; moves: number } | null>(null);
+  const moveNoteAbortRef = useRef<AbortController | null>(null);
+  const moveNoteSeqRef = useRef(0);
+  const replayPrimedRef = useRef<{ id: number; payload: any } | null>(null);
   const guideOperationRef = useRef<{ featureId:string; transactionId?:string; startedAt:number; task?:string; expected?:string } | null>(null);
   const normalReviewTrackedRef = useRef(false);
   const normalSearchTrackedRef = useRef<{query:string;startedAt:number;completed?:boolean} | null>(null);
@@ -2661,6 +2690,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     setCommentText("");
     setContextSolutions([]);
     setReplay(null);
+    moveNoteAbortRef.current?.abort();
+    moveNoteAbortRef.current = null;
+    moveNoteSeqRef.current += 1;
+    replayPrimedRef.current = null;
+    setMoveNote(null);
     setContextRelatedOpen(false);
     setContextCommentsOpen(false);
     try {
@@ -2700,6 +2734,42 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     setReplayLoading(false);
     setReplay(null);
   };
+  useEffect(() => {
+    const row = context?.selected;
+    if (!row?.id) { setMoveNote(null); return; }
+    let cancelled = false;
+    const seq = ++moveNoteSeqRef.current;
+    const cancelIdle = whenIdle(() => {
+      if (cancelled || seq !== moveNoteSeqRef.current) return;
+      const controller = new AbortController();
+      moveNoteAbortRef.current = controller;
+      void (async () => {
+        try {
+          const payload = await fetchJson(`/api/intelligence/replay/${row.id}`, { signal: controller.signal });
+          if (cancelled || seq !== moveNoteSeqRef.current) return;
+          const events: any[] = Array.isArray(payload?.events) ? payload.events : [];
+          replayPrimedRef.current = { id: row.id, payload };
+          const moves = events.filter(event => event?.type === "move").length;
+          /* The most recent move that the archive can actually explain — an
+             older one is true but stale, and the reader is asking about now. */
+          const spoken = [...events].reverse().find(event => event?.why);
+          setMoveNote(spoken ? { text: String(spoken.why), against: spoken.whyAgainst || undefined, moves } : null);
+        } catch {
+          /* Silence. A failed lookup and an unexplained move look the same to
+             the reader, and neither is worth a line of apology in the panel. */
+        } finally {
+          if (moveNoteAbortRef.current === controller) moveNoteAbortRef.current = null;
+        }
+      })();
+    }, 2000);
+    return () => {
+      cancelled = true;
+      cancelIdle();
+      moveNoteAbortRef.current?.abort();
+      moveNoteAbortRef.current = null;
+    };
+  }, [context?.selected?.id]);
+
   const loadReplay = async (row: FSchedule) => {
     replayAbortRef.current?.abort();
     const controller = new AbortController();
@@ -2710,6 +2780,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const currentPlace = [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة";
     const currentDays = arabicDays(row) || "بدون أيام";
     const currentTime = formatScheduleTimeRange(row.fstarttime, row.fendtime);
+    /* Already fetched while the panel sat idle — open on what we hold. */
+    const primed = replayPrimedRef.current;
+    if (primed && primed.id === row.id && primed.payload) {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+      setReplay({
+        ...primed.payload,
+        title: primed.payload?.title || row.AdCourseName || "الموعد الحالي",
+        subtitle: primed.payload?.subtitle || `${currentDays} · ${currentTime} · ${currentPlace}`,
+        summary: primed.payload?.summary || "تمت قراءة السجل التاريخي لهذا الموعد.",
+        events: Array.isArray(primed.payload?.events) ? primed.payload.events : [],
+        currentFacts: { days: currentDays, time: currentTime, place: currentPlace },
+        emptyMessage: primed.payload?.emptyMessage || "لا توجد تغييرات تاريخية موثّقة لهذا الموعد حتى الآن.",
+      });
+      setReplayLoading(false);
+      return;
+    }
     setReplayLoading(true);
     setReplay({
       title: row.AdCourseName || "الموعد الحالي",
@@ -8138,9 +8225,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             </span>
             <div>
               <strong>{mobileViewGate === "week" ? "عرض الأسبوع" : "عرض المباني والقاعات"} للقراءة فقط على الهاتف</strong>
-              <p>
-                يمكنك تصفّح هذا العرض بوضوح كامل، لكن السحب والنقل المباشر داخله يعملان من الكمبيوتر فقط. إذا أردت التعديل أو إضافة موعد من الهاتف، استخدم «قائمة» فهي متاحة للتحرير والإنشاء.
-              </p>
+              {/* Two facts and a way out — a state, a limit, and where to go
+                  instead. The sentence spent twenty-nine words saying that,
+                  and the reader wanted to know which of the three applied to
+                  them. Three marks answer that at a glance. */}
+              <ul className="gate-facts">
+                <li><Eye aria-hidden="true" /><b>القراءة</b><span>كاملة هنا</span></li>
+                <li><Move aria-hidden="true" /><b>السحب</b><span>من الكمبيوتر</span></li>
+                <li><ListIcon aria-hidden="true" /><b>للتعديل</b><span>افتح «قائمة»</span></li>
+              </ul>
             </div>
             <button type="button" onClick={() => setMobileViewGate(null)}>فهمت · متابعة العرض</button>
           </div>
@@ -10597,6 +10690,27 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 <i style={{ ["--cost" as any]: `${context.decisionCost?.score || 0}%` }} />
               </article>
             </div>
+            {/* One line, and only when the archive earned it. Pressing it opens
+                the full anatomy — already in hand, so it opens at once. */}
+            {moveNote ? (
+              <button
+                type="button"
+                className="context-move-note context-tab-overview"
+                data-guide-ignore="يفتح تشريح القرار المحمّل مسبقاً — عرض فقط ولا يغيّر الجدول"
+                onClick={() => { setContextTab("analysis"); void loadReplay(context.selected); }}
+              >
+                <span className="context-move-mark" aria-hidden="true"><History /></span>
+                <span className="context-move-copy">
+                  <small>
+                    {moveNote.moves > 1
+                      ? `انتقل ${moveNote.moves.toLocaleString("ar-KW-u-nu-latn")} مرات · آخر مرة`
+                      : "انتقل مرة واحدة · السبب"}
+                  </small>
+                  <strong>{moveNote.text}</strong>
+                </span>
+                <ChevronLeft className="context-move-go" aria-hidden="true" />
+              </button>
+            ) : null}
             {(context.courseLife || context.offeringLife) ? (
               <details className="context-life-details context-tab-analysis">
                 <summary><History aria-hidden="true" /><span>السيرة التاريخية</span><ChevronDown aria-hidden="true" /></summary>

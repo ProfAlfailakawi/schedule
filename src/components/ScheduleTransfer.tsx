@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, Check, CheckCircle2, ChevronLeft, Copy, Download, History, Plus, RotateCcw, ShieldAlert, Upload, UserMinus, UserPlus, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, ChevronLeft, Clock, Copy, Download, Fingerprint, History, Plus, RotateCcw, ShieldAlert, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
@@ -395,7 +395,21 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         <div className="transfer-body">
           {tab === "export" ? (
             <>
-              <p>تصدير الفصل الدراسي الحالي ببياناته الكاملة (المقررات، الأساتذة، الأوقات، القاعات، الأيام) مباشرة إلى ملف Excel أو JSON للأرشفة والمشاركة.</p>
+              {/* The paragraph listed five things the file contains, inside
+                  brackets, in a sentence. They are a list — so they are drawn
+                  as one, and the sentence keeps only what a list cannot say. */}
+              <div className="tool-lede">
+                <span className="tool-lede-mark"><Download aria-hidden="true" /></span>
+                <div>
+                  <strong>الفصل كاملاً، في ملف واحد</strong>
+                  <ul className="tool-lede-chips">
+                    <li><BookOpen aria-hidden="true" />المقررات</li>
+                    <li><UsersRound aria-hidden="true" />الأساتذة</li>
+                    <li><Clock aria-hidden="true" />الأوقات</li>
+                    <li><Building2 aria-hidden="true" />القاعات</li>
+                  </ul>
+                </div>
+              </div>
               <div className="transfer-import-actions">
                 <PrimaryButton type="button" data-guide-feature-id="schedule.tool.data" onClick={() => void exportTerm("xlsx")} disabled={!scopeReady || busy}>
                   <Download /> {busy ? "جاري التصدير…" : "تصدير إلى ملف Excel (.xlsx)"}
@@ -409,7 +423,19 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
           {tab === "import" ? (
             <>
-              <p>يُطابَق كل صف بـ <b>رمز المقرر</b> و<b>الرقم المدني للأستاذ</b>، لا بالمعرّفات الداخلية. لا يُكتب شيء قبل أن ترى الحصيلة وتوافق.</p>
+              <div className="tool-lede">
+                <span className="tool-lede-mark"><Fingerprint aria-hidden="true" /></span>
+                <div>
+                  <strong>يُطابَق بالرمز، لا بالمعرّف الداخلي</strong>
+                  <ul className="tool-lede-chips">
+                    <li><BookOpen aria-hidden="true" />رمز المقرر</li>
+                    <li><UsersRound aria-hidden="true" />الرقم المدني</li>
+                  </ul>
+                  {/* The one thing no chip can carry: that nothing is written
+                      until a person has seen the outcome and agreed to it. */}
+                  <small>لا يُكتب شيء قبل أن ترى الحصيلة وتوافق.</small>
+                </div>
+              </div>
               <input
                 ref={fileRef}
                 type="file"
@@ -478,7 +504,16 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
           {tab === "visiting" ? (
             <>
-              <p>قائمة المنتدبين لهذا الفصل. من تختاره هنا يظهر في الجدول بعلامة «منتدب» بجانب اسمه، ويمكنك بدء الفصل الجديد بنسخ قائمة فصل سابق بدل كتابتها من جديد.</p>
+              <div className="tool-lede">
+                <span className="tool-lede-mark"><UserPlus aria-hidden="true" /></span>
+                <div>
+                  <strong>المنتدبون في هذا الفصل</strong>
+                  <ul className="tool-lede-chips">
+                    <li><Check aria-hidden="true" />يظهر بعلامة «منتدب»</li>
+                    <li><Copy aria-hidden="true" />انسخ قائمة فصل سابق</li>
+                  </ul>
+                </div>
+              </div>
               <div className="roster-copy">
                 <select value={copyFrom || ""} onChange={e => setCopyFrom(Number(e.target.value) || 0)}>
                   <option value="">انسخ من فصل…</option>
@@ -568,7 +603,19 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
           {tab === "retire" ? (
             <>
-              <p>لأستاذ تقاعد أو استقال أو تفرّغ: تنتقل كل مواعيده في هذا الفصل إلى بديل بضغطة واحدة، أو تُترك بلا أستاذ لتوزَّع لاحقاً. لا يُحذف أي موعد.</p>
+              <div className="tool-lede">
+                <span className="tool-lede-mark"><UserMinus aria-hidden="true" /></span>
+                <div>
+                  <strong>أستاذ تقاعد أو تفرّغ</strong>
+                  <ul className="tool-lede-chips">
+                    <li><ArrowLeftRight aria-hidden="true" />تنتقل مواعيده إلى بديل</li>
+                    <li><UserPlus aria-hidden="true" />أو تُترك لتوزَّع لاحقاً</li>
+                  </ul>
+                  {/* Kept as a sentence on purpose: it is a promise about what
+                      will NOT happen, and a chip cannot make a promise. */}
+                  <small>لا يُحذف أي موعد.</small>
+                </div>
+              </div>
               <div className="transfer-swap">
                 <label>
                   <span>من</span>

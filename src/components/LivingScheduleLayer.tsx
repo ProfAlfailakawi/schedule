@@ -12,6 +12,7 @@ import {
   CircleHelp,
   Dna,
   FileClock,
+  Fingerprint,
   Gauge,
   History,
   Network,
@@ -896,14 +897,21 @@ export default function LivingScheduleLayer({
               {scene === "brief" ? <BriefScene brief={living.brief} /> : null}
               {scene === "genesis" ? (
                 <div className="genesis-scene">
+                  {/* Three numbered marks instead of the sentence that used to
+                      describe them. The paragraph said «اختر المصدر، ثم أنشئ،
+                      ثم راجع» — which is the shape of the controls directly
+                      below it, written out in words. Drawing the shape says the
+                      same thing without asking to be read. */}
                   <div className="genesis-hero">
                     <Dna />
                     <div>
                       <small>بداية الفصل</small>
-                      <h3>ابنِ مسودة أولية للفصل الحالي خلال خطوة واحدة</h3>
-                      <p>
-                        اختر الفصل المصدر أولاً، ثم أنشئ منه مسودة للفصل المفتوح الآن. بعدها راجع الجودة والقيود قبل أي نشر.
-                      </p>
+                      <h3>مسودة الفصل، في ثلاث خطوات</h3>
+                      <ol className="genesis-steps" aria-label="خطوات بناء المسودة">
+                        <li><b>١</b><span>اختر المصدر</span></li>
+                        <li><b>٢</b><span>أنشئ المسودة</span></li>
+                        <li><b>٣</b><span>راجع قبل النشر</span></li>
+                      </ol>
                     </div>
                   </div>
                   {rollover && rollover.sourceRows ? (
@@ -917,6 +925,40 @@ export default function LivingScheduleLayer({
                         {rollover.retiredRooms?.length ? <span><b className="num">{rollover.retiredRooms.length}</b> قاعة متوقفة</span> : null}
                         {rollover.concernCount ? <span className="is-concern"><b className="num">{rollover.concernCount}</b> قراراً يستحق المراجعة</span> : null}
                       </div>
+                      {/* ── وهل سيبدو كجدولك؟ ─────────────────────────────────
+                          The counts above say what survives the copy. This says
+                          whether the survivors look like this department's own
+                          work — read from its start ladders and lecture lengths
+                          across every term it has, not from the source term
+                          alone. Absent entirely when the history is too thin to
+                          have a habit: a department in its first year has no
+                          style to be measured against. */}
+                      {rollover.style ? (
+                        <div className="genesis-style">
+                          <div className="genesis-style-dial" style={{ ["--share" as any]: `${rollover.style.share}%` }}>
+                            <b className="num">{rollover.style.share}٪</b>
+                            <small>بأسلوب قسمك</small>
+                          </div>
+                          <div className="genesis-style-read">
+                            <span className="is-good"><Fingerprint aria-hidden="true" /><b className="num">{rollover.style.inStyle}</b> على النمط</span>
+                            {rollover.style.offStyle ? <span className="is-off"><AlertTriangle aria-hidden="true" /><b className="num">{rollover.style.offStyle}</b> خارجه</span> : null}
+                            <em>مقروء من {rollover.style.learnedFrom?.terms || 0} فصلاً · {rollover.style.learnedFrom?.rows || 0} موعد</em>
+                          </div>
+                        </div>
+                      ) : null}
+                      {rollover.style?.notes?.length ? (
+                        <ul className="genesis-concerns genesis-style-notes">
+                          {rollover.style.notes.map((note: any) => (
+                            <li key={`style-${note.id}`}>
+                              <strong>{note.course || `موعد ${note.id}`}</strong>
+                              <span>شعبة {note.section} · {note.text}</span>
+                            </li>
+                          ))}
+                          {rollover.style.offStyle > rollover.style.notes.length
+                            ? <li className="genesis-concerns-more">و{rollover.style.offStyle - rollover.style.notes.length} أخرى.</li>
+                            : null}
+                        </ul>
+                      ) : null}
                       {rollover.concerns?.length ? (
                         <ul className="genesis-concerns">
                           {rollover.concerns.slice(0, 6).map((concern: any) => (

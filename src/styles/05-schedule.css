@@ -7507,3 +7507,38 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
     min-height:38px!important;padding:0 12px!important;
   }
 }
+
+/* ── لماذا انتقل هذا الموعد ──────────────────────────────────────────────────
+   A sentence, not a metric, so it does not join the four-card grid above it —
+   it sits under them as one quiet row. Muted until touched, because the panel
+   should still lead with the lecture and not with its history. It renders only
+   when the archive can name a cause, so an empty line never appears. */
+.context-move-note{
+  width:100%;
+  display:grid;grid-template-columns:30px minmax(0,1fr) 14px;
+  align-items:center;gap:var(--s3);
+  margin-top:var(--s3);
+  padding:var(--s3);
+  border:1px solid var(--line);
+  border-radius:var(--r-md);
+  background:var(--surface-2);
+  color:var(--ink);text-align:start;
+  transition:border-color .16s var(--ease),background .16s var(--ease);
+}
+.context-move-note:hover{
+  border-color:color-mix(in srgb,var(--accent) 32%,var(--line));
+  background:var(--accent-softer);
+}
+.context-move-mark{
+  width:30px;height:30px;display:grid;place-items:center;
+  border-radius:var(--r-sm);background:var(--surface-3);color:var(--muted);
+}
+.context-move-note:hover .context-move-mark{background:var(--accent-soft);color:var(--accent)}
+.context-move-mark svg{width:15px;height:15px}
+.context-move-copy{min-width:0;display:grid;gap:2px}
+.context-move-copy small{color:var(--muted);font-size:var(--t-xs);line-height:1.5}
+.context-move-copy strong{
+  font-size:var(--t-sm);font-weight:600;line-height:1.6;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
+}
+.context-move-go{width:14px;height:14px;color:var(--muted-2)}

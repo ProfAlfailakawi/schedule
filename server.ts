@@ -4692,9 +4692,27 @@ app.get("/api/intelligence/rollover", requirePermission(7), async (req: Authenti
   const liveRooms = [...new Set(everyRow
     .map(row => [String(row.AdRoomCode || "").trim(), String(row.AdRoomHall || "").trim()].filter(Boolean).join("/"))
     .filter(Boolean))];
-  const reading = readTermRollover(source, catalogue, instructors, liveRooms);
+  /* The department's own history, every term of it. `everyRow` is already in
+     hand for the retired-hall sweep, so the style reading costs one filter and
+     no extra read. */
+  const history = everyRow.filter(row =>
+    Number(row.AdCollegeId) === collegeId && Number(row.AdSectionId) === sectionId);
+  const reading = readTermRollover(source, catalogue, instructors, liveRooms, history);
   res.json({
     ...reading,
+    // Same reason as the concerns below: the screen names a few, not all.
+    style: reading.style ? {
+      inStyle: reading.style.inStyle,
+      offStyle: reading.style.offStyle,
+      share: reading.style.share,
+      learnedFrom: reading.style.learnedFrom,
+      notes: reading.style.notes.slice(0, 6).map(note => ({
+        id: note.row.id,
+        course: note.row.AdCourseName || "",
+        section: note.row.SCode,
+        text: note.text,
+      })),
+    } : null,
     // The rows themselves are heavy and the screen only lists a few.
     concerns: reading.concerns.slice(0, 40).map(concern => ({
       id: concern.row.id,
