@@ -357,13 +357,25 @@
   font-variant-numeric:tabular-nums;letter-spacing:0;
 }
 .delta i{font-style:normal;font-size:9px;line-height:1}
-.delta-up{background:var(--success-soft);color:var(--success)}
-.delta-down{background:var(--warning-soft);color:var(--warning)}
-.delta-flat{background:var(--surface-3);color:var(--muted-2);padding-inline:var(--s2)}
+/* ── لماذا فقدت هذه الشارات لونها ────────────────────────────────────────────
+   `.deck-metrics span{color:var(--muted)}` is one class and one type — (0,1,1)
+   — and these modifiers were one class each, so inside the metrics deck every
+   rise and fall was repainted the same grey. The badge kept its green tint in
+   the background while the arrow and the number went colourless, which reads as
+   a design choice rather than the bug it is: up and down stopped being
+   distinguishable at a glance, and that distinction is the whole point of them.
+   Qualifying each modifier with `.delta` makes them (0,2,0) and settles it
+   everywhere, not only in the deck — and it is the honest selector anyway,
+   since none of these three means anything on an element that is not a delta. */
+.delta.delta-up{background:var(--success-soft);color:var(--success)}
+.delta.delta-down{background:var(--warning-soft);color:var(--warning)}
+.delta.delta-flat{background:var(--surface-3);color:var(--muted);padding-inline:var(--s2)}
 .deck-compare-note{
   display:flex;align-items:center;flex-wrap:wrap;gap:var(--s1) var(--s2);
   margin-top:calc(var(--s2) * -1);
-  color:var(--muted-2);font-size:var(--t-xs);
+  /* --muted-2 measured 4.36 here and 4.19 inside the <em>, which sits on the
+     darker --surface-3. --muted clears both (4.69 / 4.51). */
+  color:var(--muted);font-size:var(--t-xs);
 }
 .deck-compare-note b{color:var(--muted);font-weight:600}
 .deck-compare-note i{font-style:normal;opacity:.6}
@@ -708,7 +720,11 @@
 .master-search:focus-within{border-color:var(--accent);background:var(--surface);box-shadow:var(--ring)}
 .master-search>svg{width:16px;height:16px;color:var(--muted)}
 .master-search input{
-  flex:1;min-width:0;min-height:0;
+  /* Same shape as .query-ask: the wrapper draws the field and the input
+     inside it is transparent and one line tall, so the top and bottom of
+     something that looks exactly like a text box answered nothing when
+     clicked. Stretching costs no layout — the 44px is already occupied. */
+  flex:1;min-width:0;min-height:0;align-self:stretch;
   border:0;outline:0;background:transparent;padding:0;
   font-size:var(--t-body);color:var(--ink);
 }
@@ -980,9 +996,14 @@
   min-width:0;font-size:var(--t-sm);font-weight:600;
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
+/* --muted-2 is the quietest ink there is: it clears the floor on white and on
+   --surface-3's lighter neighbour, but reads 4.19 on --surface-3 itself, which
+   is exactly the tint this chip sits on. --muted is one step up and measures
+   4.51 there. Darkening the token instead would have pushed --muted-2 past
+   --muted and inverted the hierarchy everywhere else it is used. */
 .permission-choice-grid>button small{
   padding:1px var(--s2);border-radius:var(--r-full);
-  background:var(--surface-3);color:var(--muted-2);
+  background:var(--surface-3);color:var(--muted);
   font:600 10px/1.5 var(--font-mono);
   direction:ltr;unicode-bidi:isolate;
 }
