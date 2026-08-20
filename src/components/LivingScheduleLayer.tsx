@@ -260,7 +260,37 @@ export default function LivingScheduleLayer({
     }
     const shared = readLiving(livingScopeKey(collegeId, sectionId, termId));
     if (shared) { setLiving(shared); return; }
-    void loadLiving();
+    /**
+     * ── ولماذا لا يبدأ هذا مع اللوحة ────────────────────────────────────────
+     *
+     * Measured on production, this one read took 16.8 seconds for a department
+     * of sixty appointments. Not because of the sixty: the analysis needs the
+     * whole university's term to see a hall or a teacher shared with another
+     * department, and six readings then run across all of it. That breadth is
+     * the point of the reading and is not a fault.
+     *
+     * What was a fault is that it started in the same breath as the board.
+     * The board itself is ready in about half a second — the workspace read is
+     * 556ms for this same scope — so the schedule was being held behind an
+     * analysis of the entire university that nobody was waiting to look at yet.
+     *
+     * One idle beat, with a timeout so it always fires. That timeout is the
+     * whole difference from the guard this replaced: the old one waited on the
+     * deferred bundle, which department accounts never load at all, so their
+     * command deck waited forever. This waits for a moment of quiet, and takes
+     * it by force if quiet never comes.
+     */
+    const idle = window as typeof window & {
+      requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    const handle = idle.requestIdleCallback
+      ? idle.requestIdleCallback(() => { void loadLiving(); }, { timeout: 1500 })
+      : window.setTimeout(() => { void loadLiving(); }, 200);
+    return () => {
+      if (idle.cancelIdleCallback && idle.requestIdleCallback) idle.cancelIdleCallback(handle);
+      else window.clearTimeout(handle);
+    };
   }, [experience?.living, collegeId, sectionId, termId, rows.length]);
   useEffect(() => {
     if (!selected) return;
