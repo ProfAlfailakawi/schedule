@@ -279,9 +279,33 @@ function chunks<T>(values: T[], size = 30): T[][] {
 async function getFirestoreSchedulesForCourseIds(courseIds: number[], termId = 0): Promise<FSchedule[]> {
   if (!firestoreDb || demoSandboxContext.getStore() || !courseIds.length) return [];
   const uniqueIds = [...new Set(courseIds.filter(Boolean))];
-  // A current-term universe is usually smaller than a many-course historical scan.
-  // A section is usually the opposite. Pick the path that minimizes document reads.
-  if (termId && uniqueIds.length > 30) {
+  /**
+   * ── لماذا لم يعد ثلاثون هو الحدّ ────────────────────────────────────────
+   *
+   * The branch below reads EVERY schedule row in the term — every college,
+   * every department in the university — and then keeps the handful that
+   * belong to the courses asked for. At a threshold of thirty courses that
+   * fired for essentially every real department: a department with sixty
+   * courses paid for the whole university's term to see its own sixty.
+   *
+   * The reasoning it was written on ("a current-term universe is usually
+   * smaller than a many-course historical scan") is sound only when there is
+   * no termId — an unbounded historical scan really is worse. With a term in
+   * hand the comparison inverts, and the arithmetic is not close:
+   *
+   *     chunked   ceil(N/30) queries, run in parallel, so ONE round trip of
+   *               latency, and only the matching documents are read.
+   *     whole-term one query, but every document in the term is read.
+   *
+   * For one department that is a hundred documents against many thousands.
+   * The chunked path also has the composite index it needs — AdCourseId +
+   * AdTermId, declared in firestore.indexes.json — so it is indexed, not a
+   * scan. The only thing chunking costs is concurrent queries, which is why a
+   * ceiling remains: past six hundred courses the fan-out is wide enough that
+   * one sweep of the term is the calmer read. No real department reaches it;
+   * a university-wide maintenance pass does.
+   */
+  if (termId && uniqueIds.length > 600) {
     const snap = await firestoreDb.collection("schedules").where("AdTermId", "==", termId).get();
     const allowed = new Set(uniqueIds);
     return snap.docs.map(doc => doc.data() as FSchedule).filter(row => allowed.has(Number(row.AdCourseId)));
