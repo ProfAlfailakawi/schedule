@@ -62,6 +62,18 @@
   animation:rise .25s var(--ease-out) both;
 }
 .query-more>.field.wide{grid-column:1/-1}
+/* ── الحقلان اللذان لا يسعهما عمود واحد ─────────────────────────────────────
+   The grid gives every filter a 190px lane, which is right for «القاعة» or
+   «المبنى» and wrong for exactly two of them: an Arabic course name runs past
+   it and a native <select> has no way to wrap, and «الفترة» has to fit TWO
+   controls plus their من/إلى labels in the same lane — which is how «08:00 ص»
+   became «08…». Both take two lanes wherever the grid has two to give; below
+   that width the whole form is a single column already and the question does
+   not arise. */
+@media (min-width:760px){
+  .query-more>.query-course-field,
+  .query-more>.query-period-field{grid-column:span 2}
+}
 .query-chips{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);margin-top:var(--s4)}
 .query-chips>span{
   display:inline-flex;align-items:center;min-height:28px;padding:0 var(--s3);

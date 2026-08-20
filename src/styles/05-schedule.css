@@ -7546,3 +7546,61 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;
 }
 .context-move-go{width:14px;height:14px;color:var(--muted-2)}
+
+/* ── تعذّر نقل الموعد ────────────────────────────────────────────────────────
+   A refusal is the one moment the reader is owed the whole answer, so this is
+   pinned above the work rather than printed into the board — the board scrolls
+   sideways, and the old notice lived inside that scroller, which is why the
+   third reason was off-screen and the first two were the same wall said twice.
+
+   Both edges are anchored and the box is centred with auto margins, never with
+   a transform: the width has to be settled before any transform runs, and a
+   box with one inset shrinks to the space left over rather than the space it
+   was given. Same lesson as .idle-warning, same shape. */
+.move-refusal{
+  position:fixed;
+  inset-block-start:calc(var(--s5) + env(safe-area-inset-top,0px));
+  inset-inline:var(--s4);
+  margin-inline:auto;
+  width:fit-content;
+  max-width:min(560px,calc(100vw - var(--s4) * 2));
+  z-index:2300;
+  display:grid;grid-template-columns:34px minmax(0,1fr) 30px;
+  align-items:start;gap:var(--s3);
+  padding:var(--s4);
+  border:1px solid color-mix(in srgb,var(--danger) 34%,var(--line));
+  border-radius:var(--r-lg);
+  background:color-mix(in srgb,var(--danger-soft) 88%,var(--surface));
+  box-shadow:var(--shadow-lg,0 18px 40px rgba(0,0,0,.18));
+  animation:rise .2s var(--ease-out) both;
+}
+.move-refusal-mark{
+  width:34px;height:34px;display:grid;place-items:center;
+  border-radius:var(--r-sm);background:var(--danger-soft);color:var(--danger);
+}
+.move-refusal-mark svg{width:17px;height:17px}
+.move-refusal-body{min-width:0;display:grid;gap:var(--s2)}
+.move-refusal-body>strong{font-size:var(--t-sm);font-weight:700;color:var(--danger)}
+/* One wall per line. A list is read; a sentence stitched with dashes is not. */
+.move-refusal-body ul{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.move-refusal-body li{
+  display:grid;grid-template-columns:16px minmax(0,1fr);align-items:start;gap:var(--s2);
+  color:var(--ink-2);font-size:var(--t-xs);line-height:1.6;
+}
+.move-refusal-body li svg{width:14px;height:14px;margin-top:2px;color:var(--muted)}
+.move-refusal-body li.is-room svg{color:var(--info)}
+.move-refusal-body li.is-instructor svg{color:var(--warning)}
+.move-refusal-body li.is-cohort svg{color:var(--accent)}
+/* The sentence that stops a refusal from reading as data loss. */
+.move-refusal-body>small{color:var(--muted);font-size:10.5px;line-height:1.6}
+.move-refusal>button{
+  width:30px;height:30px;display:grid;place-items:center;
+  border:0;background:transparent;border-radius:var(--r-sm);color:var(--muted);
+}
+.move-refusal>button:hover{background:var(--surface-2);color:var(--ink)}
+.move-refusal>button svg{width:15px;height:15px}
+@media (max-width:640px){
+  .move-refusal{grid-template-columns:28px minmax(0,1fr) 26px;gap:var(--s2);padding:var(--s3)}
+  .move-refusal-mark{width:28px;height:28px}
+  .move-refusal-mark svg{width:15px;height:15px}
+}

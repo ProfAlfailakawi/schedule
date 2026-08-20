@@ -11,6 +11,10 @@ steps:
       - 'push'
       - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
 
+  # ── لندن: الوجهة الأصلية، تبقى كما هي ─────────────────────────────────────
+  # This is the region the load balancer has always pointed at and the one the
+  # Studio trigger was created for. It deploys first and unchanged, so a failure
+  # in the step below can never leave production without a fresh revision.
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
     entrypoint: 'gcloud'
     args:
@@ -21,6 +25,36 @@ steps:
       - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
       - '--region'
       - 'europe-west2'
+      - '--platform'
+      - 'managed'
+      - '--quiet'
+
+  # ── الدوحة: نسخة مطابقة، أقرب إلى الكويت بعشرة أضعاف ──────────────────────
+  #
+  # Measured from the same client on the same day: Doha answered /api/health in
+  # 280–375ms where London took 385–640ms. The global load balancer sends each
+  # visitor to the nearest healthy backend, so a coordinator in Kuwait stops
+  # paying for a round trip to England on every read and every save.
+  #
+  # The reason this step lives HERE, in the same build as London, is the only
+  # thing that makes a second region safe: both regions receive the identical
+  # image from the identical commit, in one build. A region deployed on its own
+  # schedule would eventually serve older code to whoever happens to be nearest
+  # it — which is worse than being slow, because nothing on screen would say so.
+  #
+  # If this step ever fails, London has already been updated above and keeps
+  # serving; the load balancer simply stops routing to a backend that fails its
+  # health check. Losing Doha costs latency, never correctness.
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'schedule'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/schedule:$COMMIT_SHA'
+      - '--region'
+      - 'me-central1'
       - '--platform'
       - 'managed'
       - '--quiet'

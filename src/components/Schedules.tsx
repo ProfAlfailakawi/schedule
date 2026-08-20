@@ -15,6 +15,7 @@ import {
   Edit2,
   Expand,
   Eye,
+  GraduationCap,
   List as ListIcon,
   Move,
   EyeOff,
@@ -39,6 +40,7 @@ import {
   MessageSquareText,
   Plus,
   Radio,
+  ShieldAlert,
   Search,
   ShieldCheck,
   Sparkles,
@@ -722,6 +724,22 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * The same fetch primes the full anatomy, so pressing the line opens the
    * timeline with no second request. Surfacing it made it faster, not slower.
    */
+  /**
+   * ── لماذا رُفض النقل — مرفوعاً فوق اللوحة ───────────────────────────────
+   *
+   * The refusal used to be one run-on string joined by «—» and printed into a
+   * notice that lives INSIDE the horizontally scrolling board, so a reader saw
+   * «تعذر النقل: القاعة B7/F31 مشغولة في نفس الوقت — القاعة B 7/F 31 مشغولة…»
+   * clipped at the edge of the scroller, with the third reason off-screen
+   * entirely and the first two saying the same thing twice.
+   *
+   * A refusal is the one moment the reader is owed the WHOLE answer: they just
+   * tried to move a lecture and the system said no. So it is lifted out of the
+   * scroller into a floating card, one line per distinct wall, each carrying
+   * the icon of what kind of wall it is — a hall, a person, a cohort. The list
+   * is already deduplicated upstream in buildDecision.
+   */
+  const [refusal, setRefusal] = useState<{ reasons: Array<{ kind: "room" | "instructor" | "cohort" | "other"; text: string }>; summary: string } | null>(null);
   const [moveNote, setMoveNote] = useState<{ text: string; against?: string; moves: number } | null>(null);
   const moveNoteAbortRef = useRef<AbortController | null>(null);
   const moveNoteSeqRef = useRef(0);
@@ -5906,10 +5924,20 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       clearRipple();
       setPhysicsField({});
       presence.send({ holding: null, cell: null });
-      const details = (decision?.reasons || []).slice(0, 3).join(" — ");
-      const reason = details || decision?.summary || "هذا الموضع غير متاح وفق قواعد الجدول.";
-      setError(`تعذر النقل: ${reason}`);
-      setPhysicsNotice(`رفض النقل: ${reason}`);
+      const list = (decision?.reasons || []).slice(0, 4).map((text: string) => {
+        /* Classified by what the sentence is actually about, so each line can
+           carry the right mark instead of a generic warning triangle. */
+        const kind: "room" | "instructor" | "cohort" | "other" =
+          /قاعة|القاعة/.test(text) ? "room"
+            : /أستاذ|الأستاذ|هيئة/.test(text) ? "instructor"
+              : /طلاب|الطلاب|شعبة/.test(text) ? "cohort"
+                : "other";
+        return { kind, text: String(text) };
+      });
+      const summary = decision?.summary || "هذا الموضع غير متاح وفق قواعد الجدول.";
+      setRefusal(list.length ? { reasons: list, summary } : { reasons: [{ kind: "other", text: summary }], summary });
+      /* The screen-reader line stays a sentence — one utterance, not four. */
+      setPhysicsNotice(`رفض النقل: ${list.map(item => item.text).join(". ") || summary}`);
     },
   });
   const focusGeometryRef = useRef(focusMode);
@@ -8416,6 +8444,30 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
 
   return (
     <div className={`content-stack schedule-page ${phoneReadOnly ? "schedule-phone" : ""}`.trim()}>
+      {/* Lifted clear of the board's horizontal scroller so nothing can clip it,
+          and given one line per wall instead of a sentence stitched with dashes. */}
+      {refusal ? (
+        <div className="move-refusal no-print" role="alertdialog" aria-live="assertive" aria-label="تعذر نقل الموعد">
+          <span className="move-refusal-mark" aria-hidden="true"><ShieldAlert /></span>
+          <div className="move-refusal-body">
+            <strong>تعذر نقل الموعد</strong>
+            <ul>
+              {refusal.reasons.map((item, index) => (
+                <li key={`${item.kind}-${index}`} className={`is-${item.kind}`}>
+                  {item.kind === "room" ? <Building2 aria-hidden="true" />
+                    : item.kind === "instructor" ? <UsersRound aria-hidden="true" />
+                      : item.kind === "cohort" ? <GraduationCap aria-hidden="true" />
+                        : <AlertTriangle aria-hidden="true" />}
+                  <span>{item.text}</span>
+                </li>
+              ))}
+            </ul>
+            <small>لم يتغيّر شيء في الجدول — الموعد ما زال مكانه.</small>
+          </div>
+          <button type="button" onClick={() => setRefusal(null)} aria-label="إغلاق" title="إغلاق"
+            data-guide-ignore="إغلاق رسالة رفض النقل فقط ولا يغيّر الجدول"><X aria-hidden="true" /></button>
+        </div>
+      ) : null}
       {focusMode ? (
         <button
           type="button"

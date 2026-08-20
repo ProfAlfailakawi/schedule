@@ -1094,12 +1094,22 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 {halls.map(value => <option key={value}>{value}</option>)}
               </select>
             </Field>
-            <Field label="المقرر">
-              <select value={filters.courseId || ""} onChange={event => set("courseId", Number(event.target.value) || 0)}>
+            {/* Wrapped so the course can claim two columns of the filter grid:
+                a 190px lane clipped «أسس نفسية لتكنولوجيا التعليم» to «أسس نفسية
+                لتكنولوجيا التعل…», and a native select cannot wrap its way out.
+                The title carries the whole name for the rare one that is longer
+                still, so nothing is ever unreadable. */}
+            <div className="field query-course-field">
+              <label>المقرر</label>
+              <select
+                value={filters.courseId || ""}
+                onChange={event => set("courseId", Number(event.target.value) || 0)}
+                title={selectedCourse ? cleanOptionText(selectedCourse.CourseName) : "كل المقررات"}
+              >
                 <option value="">الكل</option>
                 {courseOptions.map(row => <option key={row.AdCourseId} value={row.AdCourseId}>{cleanOptionText(row.CourseName)}</option>)}
               </select>
-            </Field>
+            </div>
             <div className="field query-period-field">
               <label>الفترة</label>
               <div className="time-pair query-period-pair">

@@ -166,7 +166,31 @@ export function buildDecision(key: string, ripple: any, why: any, whyNot: any, c
   const quality = classifyDecision(ripple, why, conflicts, hardBlocked);
   const positives = Array.isArray(why?.positives) ? why.positives.filter(Boolean).slice(0, 3) : [];
   const tradeoffs = [...(Array.isArray(why?.tradeoffs) ? why.tradeoffs : []), ...(Array.isArray(why?.warnings) ? why.warnings : []), ...(Array.isArray(whyNot?.tradeoffs) ? whyNot.tradeoffs : []), ...(Array.isArray(whyNot?.warnings) ? whyNot.warnings : [])].filter(Boolean).slice(0, 3);
-  const conflictReasons = conflicts.map(item => item?.message || item?.detail).filter(Boolean).slice(0, 3);
+  /**
+   * ── نفس المانع لا يُقال مرتين ───────────────────────────────────────────
+   *
+   * Two appointments sitting in one hall produce two refusals that say the
+   * same sentence, and the hall code arrives spelled differently in each —
+   * «B7/F31» from one record and «B 7/F 31» from another, because the stored
+   * room and hall fields carry their own stray spaces. Joined end to end the
+   * reader was told the identical thing twice in a row and had to work out
+   * that it was one wall, not two.
+   *
+   * Collapsing on a whitespace-blind key keeps the first spelling of each
+   * distinct reason and drops the echoes, so what remains is the list of
+   * genuinely different walls in the way.
+   */
+  const seenReason = new Set<string>();
+  const conflictReasons = conflicts
+    .map(item => item?.message || item?.detail)
+    .filter(Boolean)
+    .filter((text: string) => {
+      const key = String(text).replace(/\s+/g, "").trim();
+      if (seenReason.has(key)) return false;
+      seenReason.add(key);
+      return true;
+    })
+    .slice(0, 3);
   const rippleEffects = Array.isArray(ripple?.effects) ? ripple.effects.map((item: any) => item?.text).filter(Boolean) : [];
   const reasons = quality === "suboptimal" || quality === "impossible"
     ? [...conflictReasons, ...tradeoffs, ...rippleEffects].filter(Boolean).slice(0, 4)
