@@ -1898,14 +1898,28 @@ export default function App() {
     if (user) safeStorage.set(`schedule-onboarding-v3-${user.SystemUserId}`, "done");
     setOnboardingStep(-1);
   };
+  const noKeyboard = typeof window !== "undefined"
+    && (window.matchMedia?.("(pointer: coarse)").matches ?? false)
+    && !(window.matchMedia?.("(any-hover: hover)").matches ?? false);
   const onboardingSteps = isPowerAdmin
     ? [
-        {
-          icon: <Command />,
-          eyebrow: "أسرع وصول",
-          title: "كل البرنامج تحت ⌘K",
-          copy: "دكتور · مقرر · قاعة · أمر طبيعي",
-        },
+        /* The first card of the tour taught a keyboard shortcut. On a phone
+           there is no keyboard to press it with, so the very first thing a new
+           reader was told was the one thing they could not do. Same idea, named
+           by the door that actually exists on their device. */
+        noKeyboard
+          ? {
+              icon: <Search />,
+              eyebrow: "أسرع وصول",
+              title: "كل البرنامج في بحث واحد",
+              copy: "دكتور · مقرر · قاعة · أمر طبيعي",
+            }
+          : {
+              icon: <Command />,
+              eyebrow: "أسرع وصول",
+              title: "كل البرنامج تحت ⌘K",
+              copy: "دكتور · مقرر · قاعة · أمر طبيعي",
+            },
         {
           icon: <WandSparkles />,
           eyebrow: "مختبر القرار",

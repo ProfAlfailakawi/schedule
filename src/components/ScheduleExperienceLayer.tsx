@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
+import { livingScopeKey, readLiving, writeLiving } from "../utils/livingCache";
 import { Notice } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
@@ -242,10 +243,18 @@ export function useScheduleExperience({
         setInsightError("");
         try {
           const q = query(collegeId, sectionId, termId);
+          /* The decision deck asks for this same analysis the instant a scope
+             appears, and this bundle runs a beat later on idle. If it already
+             answered for this exact scope, the server is not asked twice —
+             the genome and the constraints are still read normally. */
+          const key = livingScopeKey(collegeId, sectionId, termId);
+          const held = readLiving(key);
           const [l, g, c] = await Promise.all([
-            fetchJson(`/api/intelligence/living?${q}`, {
-              signal: controller.signal,
-            }),
+            held !== null
+              ? Promise.resolve(held)
+              : fetchJson(`/api/intelligence/living?${q}`, {
+                  signal: controller.signal,
+                }),
             fetchJson(`/api/intelligence/genome?${q}`, {
               signal: controller.signal,
             }),
@@ -253,6 +262,7 @@ export function useScheduleExperience({
               signal: controller.signal,
             }),
           ]);
+          if (held === null) writeLiving(key, l);
           setLiving(l);
           setGenome(g);
           setConstraints(Array.isArray(c) ? c : []);

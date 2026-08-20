@@ -62,17 +62,30 @@ const LENS_FOR_MODE: Record<ReportMode, Lens> = {
   searchAdvanced: "list", reportDepartment: "list"
 };
 
-const LENSES: Array<{ id: Lens; label: string; icon: React.ReactNode }> = [
-  { id: "list", label: "الكل", icon: <LayoutList /> },
-  { id: "week", label: "الأسبوع", icon: <CalendarDays /> },
-  { id: "instructor", label: "الأساتذة", icon: <UserRound /> },
-  { id: "room", label: "القاعات", icon: <Building2 /> },
-  { id: "matrix", label: "القاعات × الأوقات", icon: <Table2 /> },
-  { id: "time", label: "الأوقات", icon: <Clock3 /> },
-  { id: "fairness", label: "العدالة", icon: <Scale /> },
+/**
+ * ── العدسات، وما تحمله كل واحدة ─────────────────────────────────────────────
+ *
+ * Every tab carried its own label twice: once as the word on it, and again as
+ * the tooltip. A tooltip that repeats the label tells a first-time reader
+ * nothing, and two of these words tell them nothing on their own either —
+ * «العدالة» does not say what is being weighed, and «ميزان الأقسام» does not
+ * say what is on the scales. The reader had to open them to find out.
+ *
+ * So each one now states what it holds, and that sentence is what hovering
+ * shows. «العدالة» also gains the noun it was missing: it measures the spread
+ * of weekly teaching load between staff, and nothing else.
+ */
+const LENSES: Array<{ id: Lens; label: string; hint: string; icon: React.ReactNode }> = [
+  { id: "list", label: "الكل", hint: "كل مواعيد النطاق في قائمة واحدة", icon: <LayoutList /> },
+  { id: "week", label: "الأسبوع", hint: "الأسبوع كشبكة أيام وأوقات", icon: <CalendarDays /> },
+  { id: "instructor", label: "الأساتذة", hint: "مواعيد كل أستاذ وحمله الأسبوعي", icon: <UserRound /> },
+  { id: "room", label: "القاعات", hint: "ما تشغله كل قاعة ومتى تفرغ", icon: <Building2 /> },
+  { id: "matrix", label: "القاعات × الأوقات", hint: "شبكة تقاطع كل قاعة مع كل وقت", icon: <Table2 /> },
+  { id: "time", label: "الأوقات", hint: "توزّع المواعيد على ساعات اليوم", icon: <Clock3 /> },
+  { id: "fairness", label: "عدالة الحمل", hint: "تفاوت الحمل الأسبوعي بين الأساتذة", icon: <Scale /> },
   /* Main administrator only — see `shownLenses`. It is the one reading nobody
      else is allowed to see, so it must not appear as a locked door to them. */
-  { id: "balance", label: "ميزان الأقسام", icon: <Landmark /> }
+  { id: "balance", label: "ميزان الأقسام", hint: "كل أقسام الفصل، قسمٌ في كل سطر", icon: <Landmark /> }
 ];
 
 const DAYS = [
@@ -1136,7 +1149,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             tabIndex={lens === item.id ? 0 : -1}
             onClick={() => selectLens(item.id)}
             onKeyDown={event => moveLensFocus(event, index)}
-            title={item.label}
+            title={item.hint}
           >
             {React.cloneElement(item.icon as React.ReactElement, { "aria-hidden": true })}
             <span>{item.label}</span>

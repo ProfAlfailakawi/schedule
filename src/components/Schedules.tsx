@@ -1671,9 +1671,37 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
 
           let nextTerm = savedTerm && lookup.terms.some(term => Number(term.AdTermId) === savedTerm) ? savedTerm : 0;
           // A previously saved term that was later removed should not strand the
-          // user on an empty selector. Only stale saved state falls forward; a
-          // genuine first visit (no saved term) remains explicit as before.
+          // user on an empty selector. Only stale saved state falls forward.
           if (savedTerm && !nextTerm) nextTerm = Number(lookup.terms[0]?.AdTermId || 0);
+          /**
+           * ── ولماذا لم يعد الفصل يُترك فارغاً حين يكون النطاق معروفاً ─────────
+           *
+           * A first visit used to leave the term unset on purpose — the reader
+           * should say which term they mean rather than be shown one. That is
+           * the right instinct for somebody with several colleges in front of
+           * them and nothing to go on.
+           *
+           * It is the wrong outcome for a department account, and that is most
+           * accounts. Their college and section are resolved for them from
+           * their own scope a few lines above, so the program already knows
+           * exactly whose schedule is being asked for — and then shows an empty
+           * board anyway, because the one remaining field was left blank. The
+           * server, asked with no term at all, would have answered with the
+           * newest one; the screen simply never asked.
+           *
+           * So the term is filled in only when the rest of the scope is already
+           * certain. A reader with no resolved department still chooses, exactly
+           * as before — nothing is guessed on their behalf.
+           *
+           * The newest OPEN term, not merely the newest: terms marked ended are
+           * history, and landing a new reader inside a closed one would answer
+           * the wrong question confidently.
+           */
+          if (!nextTerm && nextCollege && nextSection) {
+            const byNewest = sortTermsNewest(lookup.terms as any[]);
+            const open = byNewest.find(term => !isTermClosed(term as any, lookup.terms as any[]));
+            nextTerm = Number((open || byNewest[0])?.AdTermId || 0);
+          }
 
           setFilterCollege(nextCollege);
           setFilterSection(nextSection);
