@@ -695,7 +695,9 @@
   /* The scope line still has to come first among what is left, because a board
      read against the wrong term is worse than a board found late. */
   .schedule-page>.schedule-control{order:0}
-  .schedule-page>.schedule-mini-stats{order:1}
+  /* The readings follow the scope card. Addressed by their wrapper, since that
+     is what the page actually holds now. */
+  .schedule-page>.schedule-overview-stack{order:1}
 }
 
 
@@ -745,6 +747,12 @@
 @media screen and (orientation:portrait){
   .schedule-phone>.page-heading{order:-5}
   .schedule-phone>.schedule-control{order:-4}
+  /* The readings and مركز القرار travel together in one wrapper now, and they
+     belong immediately under the الكلية/القسم/الفصل card — you are told what you
+     are looking at, then what it reads. The two rules below address the pieces
+     by their old, un-wrapped names and no longer match anything; they are kept
+     only so a future reader can see what this slot used to hold. */
+  .schedule-phone>.schedule-overview-stack{order:-3}
   .schedule-phone>.living-command-deck{order:-3}
   .schedule-phone>.schedule-agenda-surface,
   .schedule-phone>.sched-skeleton-surface{order:-2}
@@ -1201,8 +1209,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
    compact three-across strip: same numbers, a quarter of the paper.
    ══════════════════════════════════════════════════════════════════════════ */
 @media screen and (max-width:768px){
-  .schedule-page>.schedule-overview-stack{order:1}
-
   .schedule-overview-stack>.schedule-mini-stats{
     grid-template-columns:repeat(3,minmax(0,1fr));
     gap:8px;
