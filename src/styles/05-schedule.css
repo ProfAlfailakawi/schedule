@@ -7584,7 +7584,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   inset-inline:var(--s4);
   margin-inline:auto;
   width:fit-content;
-  max-width:min(400px,calc(100vw - var(--s4) * 2));
+  max-width:min(440px,calc(100vw - var(--s4) * 2));
   z-index:2300;
   display:grid;grid-template-columns:34px minmax(0,1fr) 30px;
   align-items:start;gap:var(--s3);
@@ -7607,20 +7607,23 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 /* Icon, name, state - three columns, one glance. The mark already says "hall",
    so the word is dropped and the code carries the line. */
 .move-refusal-body li{
-  display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:center;gap:var(--s2);
+  display:grid;grid-template-columns:16px minmax(0,1fr) auto;align-items:start;gap:var(--s2);
   color:var(--ink-2);font-size:var(--t-xs);line-height:1.5;
 }
+/* The course name is the one thing the line exists to say, so it is never
+   clipped. It wraps instead, and carries a light weight so a long name reads as
+   quiet detail rather than shouting. */
 .move-refusal-body li>b{
-  min-width:0;font-weight:650;color:var(--ink);
-  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  min-width:0;font-weight:300;color:var(--ink);
+  white-space:normal;overflow-wrap:anywhere;line-height:1.45;
 }
 .move-refusal-body li>em{
-  font-style:normal;font-size:10px;color:var(--muted);
+  font-style:normal;font-size:10px;color:var(--muted);margin-block-start:1px;
   padding:1px 6px;border-radius:999px;
   background:color-mix(in srgb,var(--muted) 12%,transparent);
   white-space:nowrap;
 }
-.move-refusal-body li svg{width:14px;height:14px;color:var(--muted)}
+.move-refusal-body li svg{width:14px;height:14px;margin-block-start:2px;color:var(--muted)}
 .move-refusal-body li.is-room svg{color:var(--info)}
 .move-refusal-body li.is-instructor svg{color:var(--warning)}
 .move-refusal-body li.is-cohort svg{color:var(--accent)}

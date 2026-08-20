@@ -600,37 +600,42 @@ type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: s
  * Both refusal paths - the one the drag decides locally and the one the save
  * returns - run through here, so a wall reads the same however it was found.
  */
-const condenseRefusalReasons = (texts: string[]): RefusalReason[] =>
-  texts.filter(Boolean).slice(0, 3).map((text: string): RefusalReason => {
-    /* Classified by what the sentence is actually about, so each line can carry
-       the right mark instead of a generic warning triangle. */
+const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string }>): RefusalReason[] =>
+  (items || []).slice(0, 3).map((item): RefusalReason => {
+    const message = String(item?.message || "").replace(/[،,]/g, " ").replace(/\s+/g, " ").trim();
+    const detail = String(item?.detail || "").replace(/\s+/g, " ").trim();
     const kind: RefusalReason["kind"] =
-      /قاعة|القاعة/.test(text) ? "room"
-        : /أستاذ|الأستاذ|هيئة/.test(text) ? "instructor"
-          : /طلاب|الطلاب|شعبة/.test(text) ? "cohort"
+      item?.type === "room" || /قاعة|القاعة/.test(message) ? "room"
+        : item?.type === "instructor" || /أستاذ|الأستاذ|هيئة|^د\./.test(message) ? "instructor"
+          : item?.type === "cohort" || /طلاب|الطلاب|شعبة/.test(message) ? "cohort"
             : "other";
-    const bare = String(text).replace(/\s+/g, " ").trim();
-    /* Stray commas sit inside these sentences in the stored records, so they are
-       treated as spaces before the tail is matched - otherwise the trim silently
-       gives up and the long sentence comes back whole. */
-    const entity = bare
-      .replace(/[،,]/g, " ")
-      .replace(/\s+/g, " ")
-      .replace(/^(القاعة|قاعة|الأستاذ|أستاذ|عضو هيئة التدريس)\s*/, "")
-      .replace(/\s*(مشغولة|محجوزة|مشغول)?\s*(لديه\s*محاضرة)?\s*(في|خلال)?\s*نفس\s*الوقت\s*\.?$/, "")
-      .replace(/\s*لديه\s*محاضرة\s*$/, "")
-      .replace(/\s*(مشغولة|محجوزة)\s*$/, "")
-      .trim();
-    /* The chip would repeat what the icon and the name already say unless the
-       trim actually isolated a name. When it did not, the sentence stands alone
-       rather than being echoed beside itself. */
-    const shortened = Boolean(entity) && entity !== bare;
-    const state = !shortened ? ""
-      : kind === "room" ? "مشغولة"
-        : kind === "instructor" ? "لديه محاضرة"
-          : kind === "cohort" ? "تعارض طلاب"
-            : "";
-    return { kind, text: bare, entity: shortened ? entity : bare, state };
+
+    /* The wall has a name, and it sits in one of two places: inside the message
+       when the server names it ("القاعة B7/F31 مشغولة"), or in the detail when
+       the message is only a state ("الأستاذ مرتبط بموعد آخر" + "مقدمة في
+       تكنولوجيا · 10:00"). Reading both is what keeps the line short; stitching
+       them and trimming the result is what made it long and truncated. */
+    const named =
+      /* A hall code carries a digit or a slash. Without that guard the capture
+         happily takes the next word, and "القاعة محجوزة" names the hall
+         "محجوزة". */
+      message.match(/(?:^|\s)القاعة\s+(\S*[\d/]\S*)/)?.[1]
+      || message.match(/(?:^|\s)(?:الأستاذ|أ\.|د\.)\s*(.+?)\s+(?:لديه|مرتبط|مشغول|محجوز)/)?.[1]
+      || "";
+    /* The detail leads with the other lecture's name and follows it with time
+       and place after a separator. The name alone is the useful half. */
+    const fromDetail = detail.split("·")[0].replace(/\s*[-—]\s*$/, "").trim();
+    const entity = (named || fromDetail || message).trim();
+
+    const state = kind === "room" ? "القاعة مشغولة"
+      : kind === "instructor" ? "الأستاذ مشغول"
+        : kind === "cohort" ? "تعارض طلاب"
+          : "";
+    /* Never print the state twice: if the name we found IS the message, the chip
+       would only echo the line beside it. */
+    const echo = !entity || entity === message || (state && entity.includes(state));
+    return { kind, text: [message, detail].filter(Boolean).join(" — "),
+      entity: echo ? message || detail : entity, state: echo ? "" : state };
   });
 
 export default function Schedules({ mode, user, scopes = [], permissions = [], onNavigate }: Props) {
@@ -801,7 +806,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       ? error.conflicts.map((item: any) => [item?.message, item?.detail].filter(Boolean).join(" — ")).filter(Boolean)
       : [];
     if (!walls.length) return false;
-    const reasons = condenseRefusalReasons(walls.map(String));
+    const reasons = condenseRefusalReasons(error.conflicts);
     if (!reasons.length) return false;
     setRefusal({ reasons, summary: String(error?.message || "تعذّر هذا الموضع وفق قواعد الجدول.") });
     /* One utterance for the screen reader, not four. */
@@ -817,6 +822,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   }, []);
 
   const [refusal, setRefusal] = useState<{ reasons: Array<{ kind: "room" | "instructor" | "cohort" | "other"; text: string; entity: string; state: string }>; summary: string } | null>(null);
+  /* A refusal is read in a couple of seconds and then it is only in the way.
+     It leaves on its own, and any new attempt clears it sooner. */
+  useEffect(() => {
+    if (!refusal) return;
+    const timer = window.setTimeout(() => setRefusal(null), 9000);
+    return () => window.clearTimeout(timer);
+  }, [refusal]);
+
   const [moveNote, setMoveNote] = useState<{ text: string; against?: string; moves: number } | null>(null);
   const moveNoteAbortRef = useRef<AbortController | null>(null);
   const moveNoteSeqRef = useRef(0);
@@ -5941,6 +5954,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     evaluateTarget: evaluatePhysicsTarget,
     onStart: (row) => {
       setPhysicsNotice("");
+      /* A refusal describes the attempt that just failed. Lifting another card
+         starts a new question, so the old answer must go - it was standing over
+         three later moves and describing none of them. */
+      setRefusal(null);
       const known = refusedCells.current.get(Number(row.id));
       setPhysicsField(known ? Object.fromEntries([...known].map(cell => [cell, "impossible"])) : {});
       setError(null);
@@ -5986,6 +6003,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     },
     onDropRequest: (request) => {
       clearRipple();
+      setRefusal(null);
       setPhysicsField({});
       presence.send({ holding: null, cell: null });
       const room = (request.target as any)?.room as { code: string; hall: string } | undefined;
@@ -6024,7 +6042,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       }
       setPhysicsField(refusedCell ? { [refusedCell]: "impossible" } : {});
       presence.send({ holding: null, cell: null });
-      const list = condenseRefusalReasons((decision?.reasons || []).map(String));
+      /* The structured blockers, not the sentences built from them: the pieces
+         are what make a short line possible. */
+      const raw = Array.isArray(decision?.conflicts) && decision.conflicts.length
+        ? decision.conflicts
+        : (decision?.reasons || []).map((text: string) => ({ message: String(text) }));
+      const list = condenseRefusalReasons(raw as any);
       const summary = decision?.summary || "هذا الموضع غير متاح وفق قواعد الجدول.";
       setRefusal(list.length ? { reasons: list, summary } : { reasons: [{ kind: "other", text: summary, entity: summary, state: "" }], summary });
       /* The screen-reader line stays a sentence — one utterance, not four. */
