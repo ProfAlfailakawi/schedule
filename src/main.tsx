@@ -269,4 +269,35 @@ const announceBoot=()=>{
 };
 requestAnimationFrame(announceBoot);
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) window.addEventListener("load",()=>navigator.serviceWorker.register("/sw.js").catch(()=>undefined));
+/*
+ * A tab that was already open when a new version shipped keeps running the old
+ * one until someone happens to reload. Nothing said so, so a fixed bug looked
+ * unfixed and the same ground got tested twice.
+ *
+ * The worker itself already claims its clients; what was missing was telling
+ * the person. A new worker taking over means the code on screen is stale, so
+ * the page reloads once - guarded against the reload loop that a claim on first
+ * install would otherwise cause, and never mid-drag or mid-edit, where a reload
+ * would throw away work in progress.
+ */
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register("/sw.js").then(registration => {
+      if (!registration) return;
+      window.setInterval(() => { void registration.update().catch(() => undefined); }, 300_000);
+    }).catch(() => undefined);
+  });
+  let refreshing = false;
+  const busy = () =>
+    document.documentElement.classList.contains("schedule-physics-active")
+    || Boolean(document.querySelector("dialog[open],[role='dialog'],[aria-busy='true']"));
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    /* The very first install also fires this, and there is nothing stale to
+       replace on a page that just loaded the current build. */
+    if (refreshing || !navigator.serviceWorker.controller) return;
+    if (performance.now() < 5000) return;
+    refreshing = true;
+    const reload = () => { if (busy()) { window.setTimeout(reload, 4000); return; } window.location.reload(); };
+    reload();
+  });
+}
