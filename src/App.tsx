@@ -1002,10 +1002,27 @@ export default function App() {
         const res = await fetch("/api/auth/me"),
           data = await res.json();
         if (res.ok && data.user) {
-          /* A new sign-in must never inherit the last one's answers. */
-    void forgetCachedReads();
+          /**
+           * ── متى يُنسى ما قُرئ سابقاً ──────────────────────────────────
+           *
+           * A new sign-in must never inherit the last one's answers — that is
+           * still true, and it is why this exists. But this effect does not
+           * run on sign-in; it runs on every boot that finds a live session.
+           * Wiping the read cache here therefore wiped it on every reload, on
+           * every return to the tab, for the same person on the same account —
+           * and the schedule, which the worker had been serving instantly from
+           * cache, went back to Firestore every single time.
+           *
+           * The fix is the identity this code already writes on the next line.
+           * Forget the previous reads only when the account is genuinely a
+           * different one, or when there is nothing to compare against.
+           */
+          const signedIn = String(data.user?.SystemUserId || 0);
+          let previous = "";
+          try { previous = localStorage.getItem("schedule-last-user") || ""; } catch { /* private mode */ }
+          if (previous !== signedIn) void forgetCachedReads();
     setUser(data.user);
-    try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
+    try { localStorage.setItem("schedule-last-user", signedIn); } catch { /* private mode */ }
           setPermissions(
             Array.isArray(data.permissions) ? data.permissions : [],
           );

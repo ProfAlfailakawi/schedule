@@ -734,6 +734,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const [filterCollege, setFilterCollege] = useState(0),
     [filterSection, setFilterSection] = useState(0),
     [filterTerm, setFilterTerm] = useState(0),
+    /**
+     * ── أي فصل تخصّ هذه الصفوف؟ ─────────────────────────────────────────
+     *
+     * The loader has always refused to PAINT an answer that arrives after the
+     * reader moved on. What it never did is clear the board in the meantime,
+     * and the skeleton only stood in when there were no rows at all — true on
+     * the first load, false on every later one. So changing the term left the
+     * previous term's lectures on screen, at full strength and fully live,
+     * until the new read came back.
+     *
+     * A reader who does not notice the small «يقرأ الجدول…» can drag, edit or
+     * delete one of them, believing they are working in the term named in the
+     * header above. The write would land on the term the row really belongs
+     * to — the one they thought they had left.
+     *
+     * So the rows now carry the scope they were read for, and the board is
+     * shown only while that matches what is selected. The skeleton already
+     * existed for exactly this beat; it simply was not asked.
+     */
+    [rowsScope, setRowsScope] = useState(""),
     [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
   const [departmentStartRhythm, setDepartmentStartRhythm] = useState<DepartmentStartRhythm | null>(null);
   const [formStartRhythm, setFormStartRhythm] = useState<DepartmentStartRhythm | null>(null);
@@ -1366,6 +1386,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   useEffect(() => () => presence.dispose(), [presence]);
   /** `silent` refreshes without the reading indicator — the live channel uses
    *  it so a colleague's change slides in without the screen looking busy. */
+  /**
+   * The rows on screen were read for a scope. If that is not the scope now
+   * selected, they are another term's board and must not be shown — never
+   * mind touched. Empty stamp means nothing has loaded yet, which the
+   * first-load branch already covers.
+   */
+  const rowsForeign = rowsScope !== "" && rowsScope !== `${filterCollege}|${filterSection}|${filterTerm}`;
+
   const loadRows = async (opts?: { silent?: boolean }) => {
     const scope = scopeRef.current;
     const p = new URLSearchParams();
@@ -1385,9 +1413,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // longer on screen, and must never be painted onto the one that is.
       const now = scopeRef.current;
       if (stamp !== `${now.collegeId}|${now.sectionId}|${now.termId}`) return;
-      if (token === loadToken.current) setRows(data);
+      if (token === loadToken.current) { setRows(data); setRowsScope(stamp); }
     } catch (error: any) {
-      if (error?.name !== "AbortError") throw error;
+      if (error?.name !== "AbortError") {
+        /* A failed read must not leave the previous term's board standing in
+           for one that never arrived. Drop the rows and stamp the scope, so
+           the screen says «لا مواعيد» honestly instead of holding a skeleton
+           for ever or showing somebody else's term. */
+        if (token === loadToken.current) { setRows([]); setRowsScope(stamp); }
+        throw error;
+      }
     } finally {
       if (token === loadToken.current) setRowsLoading(false);
     }
@@ -8531,7 +8566,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         rows={filteredRows}
         headless
       />
-      {rowsLoading && !rows.length ? (
+      {(rowsLoading && !rows.length) || rowsForeign ? (
         <Surface className="sched-skeleton-surface">
           <ScheduleSkeleton viewMode={viewMode} />
         </Surface>
