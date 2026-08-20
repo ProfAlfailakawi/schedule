@@ -443,6 +443,29 @@ const WeekPeekLayer = React.forwardRef<
 });
 
 /**
+ * One lecture card, and the reason it is wrapped instead of rewritten.
+ *
+ * A board render used to rebuild every card: one keystroke in the quick search
+ * cost 808 card renders on a 117-card term, and every square a dragged card
+ * crossed cost another full set. The cards themselves had not changed — React
+ * was rebuilding identical trees so that one of them could gain a class.
+ *
+ * `renderWeekCardBody` is therefore left exactly as it was, markup and all, and
+ * only wrapped: this boundary re-runs it when — and only when — the card's
+ * signature changes. The comparator looks at nothing else, so the drawing
+ * closure may be stale; `weekCardSignature` is what makes that safe, and it is
+ * written to include every value the body reads, visual or behavioural. When in
+ * doubt a value belongs IN the signature: an over-full signature only costs a
+ * render, while a missing one shows a stale card.
+ */
+const WeekCardBoundary = React.memo(
+  function WeekCardBoundary({ draw }: { sig: string; draw: () => React.ReactElement }) {
+    return draw();
+  },
+  (previous, next) => previous.sig === next.sig,
+);
+
+/**
  * The board, drawn as light before its data arrives.
  *
  * A schedule loads by fetching a term's rows, and for a beat the surface was
@@ -4987,7 +5010,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * competing with it. Nothing is clipped: the card is as tall as its lecture,
    * and the lines it cannot fit are dropped whole rather than cut in half.
    */
-  const renderWeekCard = (r: FSchedule, d: { key: DayKey; label: string }, style: React.CSSProperties, widthShare = 1) => {
+  const renderWeekCardBody = (r: FSchedule, d: { key: DayKey; label: string }, style: React.CSSProperties, widthShare = 1) => {
     const c = courseById.get(r.AdCourseId);
     const i = instructorById.get(r.AdInstructorId);
     const code = c?.CourseCode || r.AdCourseName || "—";
@@ -5060,7 +5083,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         onPointerLeave={() => closePeek(r.id)}
         onFocus={(e) => openPeek(r, e.currentTarget)}
         onBlur={() => closePeek(r.id)}
-        key={`${d.key}-${r.id}`}
       >
         <GripVertical data-physics-handle="true" className="week-drag-handle" />
         {denseWeekStrips ? (
@@ -5112,6 +5134,60 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       </article>
     );
   };
+
+  /**
+   * Everything a card's drawing depends on, flattened into one string.
+   *
+   * Two kinds of value live here. The obvious kind is what the card *shows* —
+   * its course, its hour, its hue, its classes, its geometry. The second kind is
+   * what its *handlers read*: `picking` decides whether a press selects or
+   * opens, and the drag engine is switched off by view, mode and keyboard-carry.
+   * A stale handler acting on a stale flag would be a far worse bug than a
+   * missed render, so those are in the signature too.
+   *
+   * Sets and maps are never serialised whole: what matters to THIS card is its
+   * own membership, and that is what is read.
+   */
+  const weekCardSignature = (r: FSchedule, d: { key: DayKey; label: string }, style: React.CSSProperties, widthShare: number) => {
+    const c = courseById.get(r.AdCourseId);
+    const i = instructorById.get(r.AdInstructorId);
+    const code = c?.CourseCode || r.AdCourseName || "—";
+    const title = r.AdCourseName || c?.CourseName || code;
+    const who = i?.AdInstructorName || "بدون أستاذ";
+    const rowPending = pendingWriteIds.has(r.id);
+    const denseIdentityMode = denseWeekStrips ? weekStripIdentityMode(r, title, who, String(code)) : "single";
+    const undoId = recentMoves[r.id];
+    return [
+      // board-wide: anything that changes how every card draws or behaves
+      denseWeekStrips, hueBy, picking, physicsActive, physics.supported,
+      mode, editor, viewMode, presentationMode, keyMove?.rowId ?? "",
+      // the row itself
+      r.id, (r as any).rev ?? 0, r.AdCourseId, r.AdInstructorId, r.SCode,
+      r.fstarttime, r.fendtime, r.AdRoomCode, r.AdRoomHall, r.AdCourseName,
+      r.fsunday, r.fmonday, r.ftuesday, r.fwednesday, r.fthursday,
+      // what the row resolves to
+      code, title, who, placeOf(r), hueFor(code, title, i?.AdInstructorName, placeOf(r)),
+      // geometry and layout mode
+      d.key, widthShare, denseIdentityMode,
+      denseWeekStrips ? weekStripCodeRow(r, title, String(code), denseIdentityMode) : "headline",
+      style.insetInlineStart, style.insetInlineEnd, style.top, style.width, style.height, style.zIndex,
+      // this row's membership of every live set
+      rowPending, draggingId === r.id, physicsOrigin?.id === r.id, justChangedId === r.id,
+      reviewFocus.has(r.id), multiSelect.has(r.id), liveClash.ids.has(r.id),
+      visitingIds.has(r.AdInstructorId), undoId || "",
+      undoId ? String(Boolean(undoLog.find(item => item.id === undoId && !item.usedAt))) : "",
+      // the class helpers already encode lens, x-ray, relation and hue focus
+      lensClass(r), xrayClass(r), physicsRelationClass(r), hueFocusClass(r),
+    ].join("\u0001");
+  };
+
+  const renderWeekCard = (r: FSchedule, d: { key: DayKey; label: string }, style: React.CSSProperties, widthShare = 1) => (
+    <WeekCardBoundary
+      key={`${d.key}-${r.id}`}
+      sig={weekCardSignature(r, d, style, widthShare)}
+      draw={() => renderWeekCardBody(r, d, style, widthShare)}
+    />
+  );
   /** One switch decides what colour answers: "which course?" or "whose?" */
   /** «مبنى/قاعة», or the honest absence of one — one spelling, used everywhere. */
   const placeOf = (r: FSchedule) => roomIdentity(r.AdRoomCode, r.AdRoomHall).label || "بدون قاعة";

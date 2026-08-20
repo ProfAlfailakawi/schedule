@@ -380,6 +380,17 @@ html[data-schedule-workspace="focus"] .schedule-control{
 
 /* --- Spotlight / command palette ------------------------------------------ */
 
+/* These sheets sit ON the board, so they have to clear everything the board
+   floats above itself. 120 was chosen when the tallest thing under them was a
+   card; the sticky hour ruler (320) arrived later and began painting straight
+   through an open lecture panel — the white clock strip cutting across the
+   reading card. Focus mode had already been patched around this with a 2200
+   override, which is why it only ever showed in the normal view.
+
+   480 follows the ladder this file already keeps: above the ruler (320), the
+   hover peek (400) and a lifted card (420); still below the schedule dialogs
+   (500–620), the command palette (600) and every confirm (1400+), so anything
+   opened ON TOP of one of these sheets still lands on top. */
 .spotlight-backdrop,
 .schedule-context-backdrop,
 .intel-drawer-backdrop,
@@ -387,7 +398,7 @@ html[data-schedule-workspace="focus"] .schedule-control{
 .living-overlay,
 .one-decision-backdrop,
 .signature-backdrop{
-  position:fixed;inset:0;z-index:120;
+  position:fixed;inset:0;z-index:480;
   background:color-mix(in srgb,var(--nav) 62%,transparent);
   animation:fade .18s var(--ease) both;
 }

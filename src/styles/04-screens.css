@@ -1841,12 +1841,6 @@
 
 /* Product journey / about: editorial, not dashboard-like. */
 .journey.visual-minimal{border-radius:34px;box-shadow:var(--shadow-lg)}
-.journey.visual-minimal .journey-close{inline-size:44px;block-size:44px;border-radius:15px}
-.journey.visual-minimal .journey-figure,
-.journey.visual-minimal .journey-grid>article,
-.journey.visual-minimal .journey-current,
-.journey.visual-minimal .journey-lifetime{border-radius:22px}
-.journey.visual-minimal .journey-strata i{border-radius:999px}
 .about-editorial.visual-minimal .editorial-person{border-radius:26px;overflow:hidden}
 .about-editorial.visual-minimal .editorial-photo{border-radius:22px;overflow:hidden}
 .about-editorial.visual-minimal .editorial-contact a,
@@ -1885,17 +1879,7 @@
 .install-steps-grid li small{display:block;margin-top:2px;color:var(--muted);font-size:11px;line-height:1.55}
 .install-steps-grid li svg{display:inline;width:12px;height:12px;vertical-align:-2px}
 .install-go{min-height:42px;border-radius:13px}
-
-/* Journey timeline: card-based stations. */
-.journey-stages{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:12px}
-.journey-stage{position:relative;display:grid;gap:10px;padding:16px;border:1px solid var(--line);border-radius:20px;background:linear-gradient(160deg,var(--surface),var(--surface-2));box-shadow:var(--shadow-sm)}
-.journey-stage::after{content:"";position:absolute;inset-block-start:26px;inset-inline-end:-10px;width:20px;height:2px;background:color-mix(in srgb,var(--accent) 24%,var(--line))}
-.journey-stage:last-child::after{display:none}
-.journey-stage-mark{width:42px;height:42px;display:grid;place-items:center;border-radius:15px;background:var(--accent-soft);color:var(--accent)}
-.journey-stage-mark svg{width:20px;height:20px}
-.journey-stage-copy{display:grid;gap:4px}.journey-stage-copy small{font-size:10px;font-weight:700;color:var(--muted)}.journey-stage-copy strong{font-size:13px}.journey-stage-copy p{margin:0;color:var(--ink-2);font-size:11px;line-height:1.7}
-@media (max-width:980px){.journey-stages{grid-template-columns:repeat(2,minmax(0,1fr))}.journey-stage::after{display:none}}
-@media (max-width:640px){.schedule-confirm-card{width:min(94vw,390px);padding:18px;border-radius:22px}.schedule-confirm-copy strong{font-size:20px}.install-pop{width:min(92vw,320px)}.journey-stages{grid-template-columns:1fr}}
+@media (max-width:640px){.schedule-confirm-card{width:min(94vw,390px);padding:18px;border-radius:22px}.schedule-confirm-copy strong{font-size:20px}.install-pop{width:min(92vw,320px)}}
 
 /* ── Contextual delete confirmation ----------------------------------------
  * Small deletes borrow the source button's position instead of opening a full
