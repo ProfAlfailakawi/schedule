@@ -495,7 +495,14 @@ export default function App() {
         handles.push(() => window.clearTimeout(id));
       }
     };
-    onIdle(() => { void loadSchedules().catch(() => undefined); }, 1500);
+    onIdle(() => {
+      void loadSchedules().catch(() => undefined);
+      /* The ANSWER, not only the code: the workspace read starts now, lands on
+         the warm-start shelf, and the board's loader claims it on arrival —
+         so the first visit to the schedule finds both its chunk and its data
+         already in hand. */
+      warmScheduleWorkspace(Number(user.SystemUserId || 0));
+    }, 1500);
     onIdle(() => { void loadIntelligence().catch(() => undefined); }, 4000);
     onIdle(() => { void loadReports().catch(() => undefined); }, 7000);
     return () => handles.forEach(cancel => cancel());

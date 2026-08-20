@@ -186,6 +186,48 @@ function whenIdle(run: () => void, timeout = 1500): () => void {
   return () => window.clearTimeout(id);
 }
 
+/**
+ * ── ذاكرة الفصول التي رآها القارئ في هذه الجلسة ─────────────────────────────
+ *
+ * Switching terms used to pay the network on every switch — including a switch
+ * BACK to a term the reader was looking at two seconds earlier. The rows were
+ * gone the moment the scope changed, so the board could only wait.
+ *
+ * This shelf keeps the last boards seen this session, keyed by reader and
+ * scope. A switch to a shelved scope paints it instantly — no skeleton, no
+ * wait — while the network read still fires exactly as before and silently
+ * replaces the shelf copy when it lands. The reader sees their board at the
+ * speed of a render; the truth still arrives at the speed of the wire.
+ *
+ * Why this cannot show a colleague's stale board for long, and cannot corrupt
+ * anything even if it did: every entry is at most minutes old and is
+ * revalidated the instant it is shown; the server refuses any write built on
+ * an out-of-date row (`rev` optimistic concurrency); and the live channel
+ * already announces every write to every open board. The shelf changes what
+ * the reader WAITS for, never what the system believes.
+ *
+ * Module-level on purpose — it must survive leaving the schedule screen and
+ * coming back. Capped LRU so an afternoon of browsing thirty terms holds the
+ * dozen that matter and quietly forgets the rest.
+ */
+type ShelvedBoard = {
+  rows: FSchedule[];
+  instructors: AdInstructor[] | null;
+  courses: AdCourse[] | null;
+  visitingIds: number[] | null;
+  at: number;
+};
+const boardShelf = new Map<string, ShelvedBoard>();
+const BOARD_SHELF_CAP = 12;
+const shelveBoard = (key: string, board: ShelvedBoard) => {
+  boardShelf.delete(key);
+  boardShelf.set(key, board);
+  if (boardShelf.size > BOARD_SHELF_CAP) {
+    const oldest = boardShelf.keys().next().value as string | undefined;
+    if (oldest) boardShelf.delete(oldest);
+  }
+};
+
 const AGENDA_PAGE_SIZE = 60;
 
 /* Hidden for now, deliberately not deleted. The data model/endpoints stay in
@@ -1394,6 +1436,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    */
   const rowsForeign = rowsScope !== "" && rowsScope !== `${filterCollege}|${filterSection}|${filterTerm}`;
   const rowsScopeRef = useRef("");
+  const shelfKey = (stamp: string) => `${Number(user?.SystemUserId || 0)}:${stamp}`;
 
   const loadRows = async (opts?: { silent?: boolean }) => {
     const scope = scopeRef.current;
@@ -1419,9 +1462,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
      * not blank the board the reader is working in.
      */
     if (rowsScopeRef.current && rowsScopeRef.current !== stamp) {
-      rowsScopeRef.current = "";
-      setRowsScope("");
-      setRows([]);
+      /* A scope seen earlier this session paints from the shelf in the same
+         frame — the read below still fires and silently replaces it. Only a
+         scope never seen clears to the skeleton. */
+      const held = boardShelf.get(shelfKey(stamp));
+      if (held) {
+        setRows(held.rows);
+        setRowsScope(stamp);
+        rowsScopeRef.current = stamp;
+      } else {
+        rowsScopeRef.current = "";
+        setRowsScope("");
+        setRows([]);
+      }
     }
     if (!opts?.silent) setRowsLoading(true);
     try {
@@ -1431,7 +1484,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // longer on screen, and must never be painted onto the one that is.
       const now = scopeRef.current;
       if (stamp !== `${now.collegeId}|${now.sectionId}|${now.termId}`) return;
-      if (token === loadToken.current) { setRows(data); setRowsScope(stamp); rowsScopeRef.current = stamp; }
+      if (token === loadToken.current) {
+        setRows(data);
+        setRowsScope(stamp);
+        rowsScopeRef.current = stamp;
+        /* Shelve rows without discarding the richer names a workspace read may
+           already have put here for the same scope. */
+        const prior = boardShelf.get(shelfKey(stamp));
+        shelveBoard(shelfKey(stamp), {
+          rows: data,
+          instructors: prior?.instructors ?? null,
+          courses: prior?.courses ?? null,
+          visitingIds: prior?.visitingIds ?? null,
+          at: Date.now(),
+        });
+      }
     } catch (error: any) {
       if (error?.name !== "AbortError") {
         /* A failed read must not leave the previous term's board standing in
@@ -1565,7 +1632,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // section was picked, so the editor never loses a name it must display.
       setInstructors(Array.isArray(data?.instructors) ? sortByName(data.instructors, (row: any) => row.AdInstructorName) : []);
       setCourses(Array.isArray(data?.courses) ? sortByName(data.courses, (row: any) => row.CourseName) : []);
-      setVisitingIds(new Set((Array.isArray(data?.visitingInstructorIds) ? data.visitingInstructorIds : []).map(Number).filter(Boolean)));
+      const visiting = (Array.isArray(data?.visitingInstructorIds) ? data.visitingInstructorIds : []).map(Number).filter(Boolean);
+      setVisitingIds(new Set(visiting));
+      shelveBoard(shelfKey(nextScopeKey), {
+        rows: Array.isArray(data?.rows) ? data.rows : [],
+        instructors: Array.isArray(data?.instructors) ? sortByName(data.instructors, (row: any) => row.AdInstructorName) : null,
+        courses: Array.isArray(data?.courses) ? sortByName(data.courses, (row: any) => row.CourseName) : null,
+        visitingIds: visiting,
+        at: Date.now(),
+      });
       onContext?.(context);
       if (firstPaintForScope) requestAnimationFrame(() => telemetryTiming("schedule.ready", performance.now() - uiStarted));
       return context;
@@ -1593,10 +1668,24 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
        */
       const requestedScope = `${collegeId}|${sectionId}|${termId}`;
       if (appliedScope.current && appliedScope.current !== requestedScope) {
-        appliedScope.current = "";
-        rowsScopeRef.current = "";
-        setRowsScope("");
-        setRows([]);
+        const held = boardShelf.get(shelfKey(requestedScope));
+        if (held) {
+          /* Instant paint of the shelved board — rows, and the names that came
+             with them if a workspace read shelved them. The network read below
+             proceeds untouched and replaces all of this on arrival. */
+          setRows(held.rows);
+          if (held.instructors) setInstructors(held.instructors);
+          if (held.courses) setCourses(held.courses);
+          if (held.visitingIds) setVisitingIds(new Set(held.visitingIds));
+          setRowsScope(requestedScope);
+          rowsScopeRef.current = requestedScope;
+          appliedScope.current = requestedScope;
+        } else {
+          appliedScope.current = "";
+          rowsScopeRef.current = "";
+          setRowsScope("");
+          setRows([]);
+        }
       }
       // The shelf answers first, the wire answers last: the snapshot paints the
       // board immediately and the network response quietly replaces it.

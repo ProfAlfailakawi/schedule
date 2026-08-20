@@ -83,7 +83,22 @@ export async function cachedReference<T>(key: string, load: () => Promise<T>): P
  * every write clears it, because the schedule is the one thing in this product
  * that genuinely changes minute to minute.
  */
-const SCHEDULE_TTL_MS = 12_000;
+/* ── لماذا خمس دقائق وليست اثنتي عشرة ثانية ─────────────────────────────────
+   Twelve seconds was written when expiry was the only change signal. It is not
+   any more: every write path calls invalidateSchedules(), and a Firestore
+   beacon (watchSchedulesChanged) tells every OTHER instance to drop its rows
+   the moment anyone writes anywhere. Correctness therefore comes from
+   invalidation; the TTL is only the parachute for a beacon that failed to
+   fire. A parachute does not need to open every twelve seconds.
+
+   What the old value actually did, measured on production: a coordinator
+   browsing history — terms that ended years ago and change never — paid the
+   full Firestore read again after every twelve quiet seconds: 600–1900ms per
+   term switch, and 16 seconds for the university-wide analysis read, all for
+   rows that had not moved since 2018. Five minutes keeps a browsing session
+   warm end to end while the beacon still delivers every real change within a
+   heartbeat of it happening. */
+const SCHEDULE_TTL_MS = 300_000;
 const scheduleStore = new Map<string, { value: unknown; expiresAt: number; loading?: Promise<unknown> }>();
 
 /**
