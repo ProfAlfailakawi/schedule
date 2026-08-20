@@ -2410,6 +2410,7 @@ function listenForScheduleChangesAcrossInstances() {
     clearScheduleCacheQuietly();
     hallBarterSerial += 1;
     hallBarterBoardCache.clear();
+    livingResponseCache.clear();
     broadcastScheduleChange();
   });
 }
@@ -4459,10 +4460,38 @@ function rowSignatureServer(row:any){return `${row.AdCourseId||0}:${row.SCode||"
 // All routes below are additive. They read the verified schedule tables and either
 // return analysis or create a draft/memory record; none bypasses the existing
 // schedule CRUD validation or publication gate.
+/**
+ * ── ردّ التحليل يُحسب مرة، لا مرة لكل سائل ──────────────────────────────────
+ *
+ * The living reading hydrates the university's whole term and runs six
+ * analyses over it. Measured on production, a cold run cost the single-threaded
+ * server up to 27 seconds — and every viewer of the same term paid it again
+ * after the row-cache turned over, even though the answer had not changed.
+ *
+ * The finished JSON is therefore kept per scope and served as-is. Nothing new
+ * decides when it dies: it is cleared by exactly the two signals that already
+ * clear every schedule cache in this file — a write on this instance
+ * (onSchedulesInvalidated) and the cross-instance beacon below — plus a short
+ * TTL as the same parachute the row cache wears. Demo sessions bypass it
+ * entirely: their world is per-visitor and must never leak between sandboxes.
+ */
+const livingResponseCache = new Map<string, { at: number; body: string }>();
+const LIVING_RESPONSE_TTL_MS = 120_000;
+onSchedulesInvalidated(() => livingResponseCache.clear());
+
 app.get("/api/intelligence/living", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const { collegeId, sectionId, termId, section } = await resolveSmartContext(req);
   if (!collegeId || !sectionId || !termId || !section) { res.status(400).json({ error: "لا يوجد قسم أو فصل دراسي متاح للتحليل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  const livingKey = `${collegeId}:${sectionId}:${termId}`;
+  const isDemoLiving = Boolean(Repository.currentDemoSessionId());
+  if (!isDemoLiving) {
+    const held = livingResponseCache.get(livingKey);
+    if (held && Date.now() - held.at < LIVING_RESPONSE_TTL_MS) {
+      res.type("application/json").send(held.body);
+      return;
+    }
+  }
   const [scheduleData, courses, instructors, terms, constraints] = await Promise.all([
     scopedScheduleUniverse(collegeId,sectionId,termId), Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(), Repository.getScheduleConstraints(collegeId, sectionId, termId)
   ]);
@@ -4477,14 +4506,16 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
      from cache, so it is left to run without a further pause. */
   const brief = buildOneMinuteBrief(rows, universe, courses, instructors);
   const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
-  res.json({
+  const livingPayload = {
     context:{collegeId,sectionId,termId,sectionName:section.AdSectionName,termName:terms.find(t=>t.AdTermId===termId)?.AdTermName||""},
     pulse,health,fairness,fragility,roomIntelligence,
     topology,brief,
     memory:buildDecisionMemoryInsight(memories),
     constraints:{count:constraints.filter(c=>c.enabled).length},
     capabilities:{powerAdmin:true,emergency:true,genesis:true,decisionMemory:true,meetingIntelligence:true}
-  });
+  };
+  if (!isDemoLiving) livingResponseCache.set(livingKey, { at: Date.now(), body: JSON.stringify(livingPayload) });
+  res.json(livingPayload);
 });
 
 app.post("/api/intelligence/why", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
