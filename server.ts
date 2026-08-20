@@ -712,6 +712,26 @@ async function resolveSmartContext(req: AuthenticatedRequest) {
   return { collegeId, sectionId, termId, section };
 }
 
+/**
+ * ── نَفَس بين تحليل وتحليل ──────────────────────────────────────────────────
+ *
+ * The readings below are pure CPU over the whole term of the university, and
+ * Node runs them on the one thread it has. Measured on production: while a
+ * single `/api/intelligence/living` computed, `/api/health` — which reads
+ * nothing at all — took 6387ms to answer, against 194ms on the same server a
+ * moment earlier. The server was not slow. It was unable to speak.
+ *
+ * That is not one reader waiting for their own analysis; it is every other
+ * person using the system frozen for as long as it runs.
+ *
+ * Yielding between the readings hands the loop back so queued requests are
+ * served in the gaps. It makes nothing faster — the same work is done in the
+ * same order and the answers are identical — but the freeze becomes the length
+ * of the longest single reading instead of the sum of all of them, and a health
+ * check, a presence ping or somebody else's schedule can land in between.
+ */
+const breathe = () => new Promise<void>(resolve => setImmediate(resolve));
+
 async function scopedScheduleUniverse(collegeId: number, sectionId: number, termId: number) {
   const [rows, universe] = await Promise.all([
     Repository.getSchedulesByScope({ collegeId, sectionId, termId }),
@@ -4447,12 +4467,14 @@ app.get("/api/intelligence/living", requirePermission(7), async (req: Authentica
     scopedScheduleUniverse(collegeId,sectionId,termId), Repository.getCourses(), Repository.getInstructors(), Repository.getTerms(), Repository.getScheduleConstraints(collegeId, sectionId, termId)
   ]);
   const {rows,universe}=scheduleData;
-  const pulse = buildSchedulePulse(rows, universe, courses, instructors);
-  const health = buildScheduleHealth2(rows, universe, courses, instructors);
-  const fairness = buildFairnessEngine(rows, instructors);
-  const fragility = buildFragilityMap(rows, universe, courses, instructors);
-  const roomIntelligence = buildRoomResilience(rows, universe);
-  const topology = buildConflictTopology(rows, universe, courses, instructors);
+  const pulse = buildSchedulePulse(rows, universe, courses, instructors); await breathe();
+  const health = buildScheduleHealth2(rows, universe, courses, instructors); await breathe();
+  const fairness = buildFairnessEngine(rows, instructors); await breathe();
+  const fragility = buildFragilityMap(rows, universe, courses, instructors); await breathe();
+  const roomIntelligence = buildRoomResilience(rows, universe); await breathe();
+  const topology = buildConflictTopology(rows, universe, courses, instructors); await breathe();
+  /* Cheap by comparison: every reading it needs is memoised above and answers
+     from cache, so it is left to run without a further pause. */
   const brief = buildOneMinuteBrief(rows, universe, courses, instructors);
   const memories = await Repository.getScheduleDecisionMemories(collegeId, sectionId, 120);
   res.json({

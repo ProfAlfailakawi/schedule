@@ -1550,6 +1550,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const nextScopeKey = `${context.collegeId}|${context.sectionId}|${context.termId}`;
       const firstPaintForScope = appliedScope.current !== nextScopeKey;
       appliedScope.current = nextScopeKey;
+      /* The rows about to be painted belong to THIS scope. Stamping them here
+         is what lets the board know, on the next scope change, that what it is
+         holding is another term's — the plain `/api/schedules` path stamps them
+         too, and both must agree or the guard reads a scope nothing came from. */
+      setRowsScope(nextScopeKey);
+      rowsScopeRef.current = nextScopeKey;
       if (Array.isArray(data?.colleges) && data.colleges.length) setColleges(sortByName(data.colleges, (row: any) => row.AdCollegeName));
       if (Array.isArray(data?.sections) && data.sections.length) setSections(sortByName(data.sections, (row: any) => row.AdSectionName));
       if (Array.isArray(data?.terms) && data.terms.length) setTerms(sortTermsNewest<AdTerm>(data.terms));
@@ -1571,6 +1577,27 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (termId) query.set("termId", String(termId));
       if (resolve) query.set("resolve", "1");
       const url = `/api/schedules/workspace?${query}`;
+      /**
+       * ── ولماذا لم يكفِ إصلاح المسار الآخر ──────────────────────────────────
+       *
+       * Changing the term goes through THIS loader, not the plain one. The
+       * plain `/api/schedules` path was taught to let go of the previous
+       * term's rows the moment the scope changed; this path was not, and this
+       * is the path a reader actually takes. So the board went on showing the
+       * term they had just left — live, draggable, editable — until the new
+       * read came back, which on production took seconds.
+       *
+       * Released here, before the request is even sent, and only when the
+       * scope genuinely differs from the one already painted: a silent refresh
+       * of the same term must not blank the board somebody is working in.
+       */
+      const requestedScope = `${collegeId}|${sectionId}|${termId}`;
+      if (appliedScope.current && appliedScope.current !== requestedScope) {
+        appliedScope.current = "";
+        rowsScopeRef.current = "";
+        setRowsScope("");
+        setRows([]);
+      }
       // The shelf answers first, the wire answers last: the snapshot paints the
       // board immediately and the network response quietly replaces it.
       let networkSettled = false;
