@@ -459,6 +459,48 @@ export default function App() {
   const [guideProfileRevision, setGuideProfileRevision] = useState(0);
   const [ambientDismissedKey, setAmbientDismissedKey] = useState("");
   useEffect(() => { setTelemetryOwner(Number(user?.SystemUserId || 0)); }, [user?.SystemUserId]);
+  /**
+   * ── الشاشات الثقيلة تُحمَّل قبل أن تُطلب ──────────────────────────────────
+   *
+   * Every workspace except the dashboard is a lazy chunk, fetched the moment
+   * it is first opened — which means the most-used screen in the product, the
+   * schedule board (~133KB gzipped), made its reader watch a download bar on
+   * every fresh session at the exact moment they asked to work.
+   *
+   * The session sits idle on the dashboard for seconds after sign-in; those
+   * seconds now pay for the navigation. The chunks come down in the order a
+   * coordinator actually reaches for them — the board first, then the
+   * intelligence centre, then reports — each on its own idle beat so none of
+   * them competes with whatever the dashboard itself is still fetching. A
+   * chunk that arrives here is a no-op when the route later imports it: same
+   * promise, already resolved, so navigation becomes render-only.
+   *
+   * Failures are swallowed on purpose: this is a warm-up, not a dependency,
+   * and the route's own import (with its reload guard in safeLazy) remains
+   * the authority if the network dropped a prefetch.
+   */
+  useEffect(() => {
+    if (!user) return;
+    const w = window as typeof window & {
+      requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number;
+      cancelIdleCallback?: (h: number) => void;
+    };
+    const handles: Array<() => void> = [];
+    const onIdle = (run: () => void, timeout: number) => {
+      if (w.requestIdleCallback) {
+        const id = w.requestIdleCallback(run, { timeout });
+        handles.push(() => w.cancelIdleCallback?.(id));
+      } else {
+        const id = window.setTimeout(run, Math.min(timeout, 1200));
+        handles.push(() => window.clearTimeout(id));
+      }
+    };
+    onIdle(() => { void loadSchedules().catch(() => undefined); }, 1500);
+    onIdle(() => { void loadIntelligence().catch(() => undefined); }, 4000);
+    onIdle(() => { void loadReports().catch(() => undefined); }, 7000);
+    return () => handles.forEach(cancel => cancel());
+  }, [user?.SystemUserId]);
+
   useEffect(() => {
     const refresh = (event: Event) => {
       const detail = (event as CustomEvent).detail;

@@ -9,7 +9,15 @@ export default defineConfig({
   build: {
     // Route chunks are intentionally small; the warning would only be noise.
     chunkSizeWarningLimit: 700,
-    cssCodeSplit: false,
+    /* Split, so a stylesheet can leave the render-blocking path at all.
+       `false` fused every sheet into one file, which silently swallowed the
+       styles/deferred.css split: journey and print styles — needed by no first
+       paint anywhere — were shipped inside the one file every screen must
+       finish downloading before it may draw. With the default split, the entry
+       keeps its single blocking stylesheet (the eight files index.css still
+       imports, order intact) and the deferred pair becomes its own file that
+       arrives in parallel. */
+    cssCodeSplit: true,
     rollupOptions: {
       output: {
         // One-time deployment namespace. It forces every browser to request a

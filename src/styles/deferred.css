@@ -1,0 +1,13 @@
+/* ==========================================================================
+   SCHEDULE — DEFERRED PRESENTATION
+   The two stylesheets nothing on a first paint can need: the journey page
+   (its own route) and print (a medium the screen never renders). They were
+   the final two imports of index.css, so loading them later — in this same
+   order — lands every rule exactly where the cascade already had it.
+
+   The one rule the SCREEN depends on from 08-print is `.print-portal-root
+   {display:none}`; a blocking duplicate lives in 01-foundation so the hidden
+   report sheets can never flash while this file is still on the wire.
+   ========================================================================== */
+@import "./10-journey.css";
+@import "./08-print.css";

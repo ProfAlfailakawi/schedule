@@ -11,5 +11,6 @@
 @import "./styles/06-intelligence.css";
 @import "./styles/09-details.css";
 @import "./styles/07-responsive.css";
-@import "./styles/10-journey.css";
-@import "./styles/08-print.css";
+/* 10-journey and 08-print moved to deferred.css — loaded in parallel, off the
+   render-blocking path. They were the LAST two imports, so loading them after
+   everything else preserves the cascade order exactly as it stands here. */

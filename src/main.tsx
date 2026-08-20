@@ -5,6 +5,11 @@ import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import {safeStorage} from "./utils/safeStorage";
 import {toEnglishDigits} from "./utils/digits";
 import "./index.css";
+/* The journey and print styles, fetched in parallel the instant the app boots
+   but never allowed to block the first paint. A visitor landing directly on
+   the journey page gets them within the same breath — the SPA cannot render
+   anything before this module runs anyway, so the race is unlosable. */
+void import("./styles/deferred.css");
 
 /**
  * Mobile viewport lock.

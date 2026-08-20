@@ -24,6 +24,13 @@
 
 /* --- Design tokens -------------------------------------------------------- */
 
+/* Blocking duplicate of 08-print's one screen-critical rule. Print styles now
+   arrive off the render path (styles/deferred.css); without this guard the
+   hidden report sheets would flash fully visible for the moment that file is
+   still on the wire. Identical declaration, so order between the two copies
+   can never matter. */
+.print-portal-root{display:none}
+
 :root{
   color-scheme:light;
 
