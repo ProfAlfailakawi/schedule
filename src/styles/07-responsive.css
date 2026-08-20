@@ -1180,3 +1180,53 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   .schedule-overview-stack>.schedule-mini-stats .stat-card strong{font-size:19px;line-height:1.15}
   .schedule-overview-stack>.schedule-mini-stats .stat-card span{margin-top:1px;font-size:10.5px;line-height:1.3}
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PHONE — «اختر قراءة» becomes a strip of tiles, not a column of banners
+   ══════════════════════════════════════════════════════════════════════════
+   Each reading was a full-width card ~230px tall: an icon, a title, a sentence
+   of explanation and a number, stacked. Five of them filled two whole screens
+   before the reader reached the reading they wanted, and the sentence — which
+   only repeats what the title says — took most of the room.
+
+   Two across, and the tile says what the rest of this product says: a small
+   mark, the number, one word. The explanatory sentence stays in the button's
+   aria-label, so a screen reader still hears it; the eye does not have to.
+   ══════════════════════════════════════════════════════════════════════════ */
+/* Written child-first (0,2,0) rather than as bare `.insight-preview` (0,1,0).
+   The base rule lives in another stylesheet, and relying on which file the
+   bundler injects last is not a layout — it is a coin toss that lands
+   differently in dev and in the build. */
+@media (max-width:640px){
+  .insight-preview-rail .insight-preview-list{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:8px;
+  }
+  .insight-preview-list>.insight-preview{
+    grid-template-columns:minmax(0,1fr);
+    grid-template-rows:auto auto auto;
+    min-height:0;
+    padding:11px 10px 12px;
+    gap:2px;
+    border-radius:16px;
+    justify-items:center;
+    text-align:center;
+  }
+  .insight-preview-list>.insight-preview>.insight-preview-icon{
+    grid-row:auto;order:0;
+    width:26px;height:26px;border-radius:9px;
+  }
+  .insight-preview-list>.insight-preview>.insight-preview-icon svg{width:14px;height:14px}
+  /* The base rule pins this to `grid-column:2`. Declaring a one-column
+     template does not undo an explicit placement — the grid just invents an
+     implicit second column to honour it, which is the 2-track layout that
+     kept showing up. The placement has to be released, not overruled. */
+  .insight-preview-list>.insight-preview>b{
+    order:1;grid-column:auto;justify-self:center;margin-block-start:0;
+    font-size:20px;line-height:1.15;
+  }
+  .insight-preview-list>.insight-preview>.insight-preview-copy{order:2;gap:0;justify-items:center;text-align:center}
+  .insight-preview-list>.insight-preview>.insight-preview-copy strong{font-size:11.5px;line-height:1.3}
+  /* The sentence repeats the title; the aria-label still carries it. */
+  .insight-preview-list>.insight-preview>.insight-preview-copy small{display:none}
+}

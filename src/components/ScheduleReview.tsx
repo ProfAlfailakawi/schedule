@@ -44,7 +44,20 @@ type ReviewFindingGroup = RegulationFinding & {
   groupedCount: number;
 };
 
-const groupFindingKey = (finding: RegulationFinding) => [finding.approvalEffect, finding.source, finding.article, finding.title].join("::");
+/**
+ * The title without the count it carries.
+ *
+ * A rule that fires on five appointments titles itself «خارج المعتاد تاريخياً (5)»,
+ * and one that fires on two titles itself «… (2)». Both are the same finding, but
+ * the count was part of the grouping key — so the review listed the same heading
+ * three and four times, each with its own little number, and the reader had to
+ * add them up. The number belongs to the group, not to its name.
+ */
+const findingBaseTitle = (title: string) =>
+  String(title || "").replace(/\s*\([\d\u0660-\u0669\u06F0-\u06F9\u066B\u066C,،\s]+\)\s*$/u, "").trim();
+
+const groupFindingKey = (finding: RegulationFinding) =>
+  [finding.approvalEffect, finding.source, finding.article, findingBaseTitle(finding.title)].join("::");
 
 const findingStatus = (finding: RegulationFinding) => {
   if (finding.approvalEffect === "block") return "يمنع الاعتماد";
@@ -74,15 +87,19 @@ function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSc
   const [open, setOpen] = React.useState(false);
   const { who, rows } = group;
   const single = rows.length === 1;
+  /* The chip is labelled «شعب», so it counts sections. It used to count rows,
+     and a section that meets in two separate blocks is two rows — which is how
+     an instructor with a handful of sections was announced as having eleven. */
+  const sectionCount = new Set(rows.map(row => `${row.AdCourseId}:${row.SCode}`)).size;
   return (
     <div className={`review-person ${open ? "open" : ""}`}>
-      <button type="button" className="review-person-head" onClick={() => !single && setOpen(v => !v)} aria-expanded={single ? undefined : open}>
+      <button type="button" className="review-person-head" data-guide-ignore="طيّ شعب أستاذ داخل ملاحظة مراجعة — عرض فقط، لا يغيّر الجدول" onClick={() => !single && setOpen(v => !v)} aria-expanded={single ? undefined : open}>
         <strong>{who}</strong>
         {single ? (
           <small dir="ltr">{courses.get(rows[0].AdCourseId)?.CourseCode || rows[0].AdCourseName || "—"} · شعبة {rows[0].SCode}</small>
         ) : (
           <>
-            <span className="review-person-count">{rows.length.toLocaleString("ar-KW-u-nu-latn")} شعب</span>
+            <span className="review-person-count" title={`${rows.length.toLocaleString("ar-KW-u-nu-latn")} موعد`}>{sectionCount.toLocaleString("ar-KW-u-nu-latn")} شعب</span>
             <ChevronDown className="review-person-chevron" aria-hidden="true" />
           </>
         )}
@@ -119,6 +136,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   const [readinessChecked, setReadinessChecked] = useState(false);
   const [readinessError, setReadinessError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [quietOpen, setQuietOpen] = useState(false);
 
   useEffect(() => {
     if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setReadinessChecked(true); setReadinessError(true); return; }
@@ -176,6 +194,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     }
     return [...buckets.entries()].map(([groupKey, bucket]) => ({
       ...bucket.base,
+      title: findingBaseTitle(bucket.base.title) || bucket.base.title,
       groupKey,
       rowIds: [...bucket.rowIds],
       groupedItems: bucket.items,
@@ -278,6 +297,10 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
   const renderCompactRows = (rowIds: number[], limit = 6) => {
     const uniqueRows = [...new Set(rowIds)].map(id => byId.get(id)).filter(Boolean) as FSchedule[];
     if (!uniqueRows.length) return null;
+    /* When every row belongs to the same person, the heading above has already
+       said so — repeating the name on each line is the same word six times and
+       pushes the thing that actually differs (section, days, hour) aside. */
+    const oneOwner = new Set(uniqueRows.map(row => row.AdInstructorId)).size === 1;
     return (
       <>
         <div className="review-subject-rows">
@@ -289,7 +312,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
               <article key={`subject-row-${row.id}`} className="review-row-card compact">
                 <span className="rrc-code" dir="ltr">{code}</span>
                 <div className="rrc-main">
-                  <strong>{who}</strong>
+                  {oneOwner ? null : <strong>{who}</strong>}
                   <small>شعبة {row.SCode} · {days || "بلا أيام"}</small>
                 </div>
                 <time className="rrc-time" dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
@@ -316,50 +339,31 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     </article>
   );
 
-  return (
-    // The printable sheet lives inside this dialog, so the wrapper itself can
-    // never be `no-print` — doing so hid the very report the print button was
-    // meant to produce. Only the on-screen dialog is suppressed on paper.
-    <div className="review-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="review-sheet no-print visual-minimal" role="dialog" aria-modal="true" aria-label="مراجعة الاعتماد">
-        <header className={`review-head tone-${tone}`}>
-          <svg className="review-ring" viewBox="0 0 64 64" role="img" aria-label={`مطابقة ${DECISION_1912_LABEL} ${score} من 100`}>
-            <circle className="ring-track" cx="32" cy="32" r="26" />
-            <circle
-              className="ring-value"
-              cx="32" cy="32" r="26"
-              strokeDasharray={`${(score / 100) * ringLength} ${ringLength}`}
-            />
-            <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
-            <text x="32" y="45" className="ring-unit">/ 100</text>
-          </svg>
-          <div className="review-title">
-            <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
-            <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
-            <p>{scopeLine}</p>
-            {readinessError ? <small>تمت مراجعة قرار 1913/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
-          </div>
-          <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
-        </header>
 
-        {/* The whole term as one bar: every appointment counted once. */}
-        <div className="review-spread" role="img" aria-label="توزيع المواعيد حسب الملاحظات">
-          <div className="spread-bar">
-            {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} title={`${spread.high} يمنع`} /> : null}
-            {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} title={`${spread.medium} يراجَع`} /> : null}
-            {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={`${spread.low} ملاحظة`} /> : null}
-            {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
-          </div>
-          <div className="spread-keys">
-            <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
-            <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
-            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>
-            <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
-          </div>
-        </div>
+  /**
+   * Two shelves, because two kinds of finding are being read for two reasons.
+   *
+   * A block or a review is a question addressed to the reader: it wants a
+   * decision before the schedule is adopted. A «ملاحظة» is not — it is the
+   * system saying it noticed something and is fine either way. Six of those,
+   * each rendered as a full card the height of a real problem, is how a clean
+   * schedule ends up looking alarming: the reader scrolls past six tall red-
+   * shaped things to reach the one that actually matters.
+   *
+   * So the notes collapse into a single line that names them and counts them.
+   * Nothing is hidden — the line lists what is inside and opens to the exact
+   * same cards. Below the threshold they stay expanded, because folding two
+   * notes behind a click buys nothing.
+   */
+  const pressingFindings = groupedFindings.filter(finding => finding.approvalEffect !== "note");
+  const quietFindings = groupedFindings.filter(finding => finding.approvalEffect === "note");
+  const quietNames = quietFindings.slice(0, 3).map(finding => finding.title).join(" · ");
+  const quietPreview = quietFindings.length > 3
+    ? `${quietNames} · و${(quietFindings.length - 3).toLocaleString("ar-KW-u-nu-latn")} غيرها`
+    : quietNames;
+  const quietRows = new Set(quietFindings.flatMap(finding => finding.rowIds)).size;
 
-        <div className="review-body">
-          {groupedFindings.length ? groupedFindings.map(finding => (
+  const renderFinding = (finding: ReviewFindingGroup) => (
             <article key={finding.groupKey} className={`review-finding severity-${findingTone(finding)} ${open === finding.groupKey ? "open" : ""}`}>
               <button type="button" data-guide-ignore="فتح تفاصيل ملاحظة داخل مراجعة الاعتماد فقط" onClick={() => setOpen(current => (current === finding.groupKey ? null : finding.groupKey))}>
                 <span className="review-mark" aria-hidden="true">{findingIcon(finding)}</span>
@@ -459,7 +463,77 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                 </div>
               ) : null}
             </article>
-          )) : (
+  );
+
+
+  return (
+    // The printable sheet lives inside this dialog, so the wrapper itself can
+    // never be `no-print` — doing so hid the very report the print button was
+    // meant to produce. Only the on-screen dialog is suppressed on paper.
+    <div className="review-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="review-sheet no-print visual-minimal" role="dialog" aria-modal="true" aria-label="مراجعة الاعتماد">
+        <header className={`review-head tone-${tone}`}>
+          <svg className="review-ring" viewBox="0 0 64 64" role="img" aria-label={`مطابقة ${DECISION_1912_LABEL} ${score} من 100`}>
+            <circle className="ring-track" cx="32" cy="32" r="26" />
+            <circle
+              className="ring-value"
+              cx="32" cy="32" r="26"
+              strokeDasharray={`${(score / 100) * ringLength} ${ringLength}`}
+            />
+            <text x="32" y="34" className="ring-number">{score.toLocaleString("ar-KW-u-nu-latn")}</text>
+            <text x="32" y="45" className="ring-unit">/ 100</text>
+          </svg>
+          <div className="review-title">
+            <span className="surface-kicker">مراجعة الاعتماد · {DECISION_1912_LABEL}</span>
+            <h2>{!readinessChecked ? "أتحقق من موانع الاعتماد…" : blocking.length ? "يوجد ما يمنع الاعتماد" : readinessError ? "تعذر فحص الموانع خارج القسم" : findings.length ? "جاهز مع تنبيهات" : "مطابق للتنبيهات المعتمدة"}</h2>
+            <p>{scopeLine}</p>
+            {readinessError ? <small>تمت مراجعة قرار 1913/2016 محلياً، لكن تعذر التأكد الآن من الحجوزات المتعارضة خارج نطاق القسم.</small> : null}
+          </div>
+          <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
+        </header>
+
+        {/* The whole term as one bar: every appointment counted once. */}
+        <div className="review-spread" role="img" aria-label="توزيع المواعيد حسب الملاحظات">
+          <div className="spread-bar">
+            {spread.high ? <i className="seg-high" style={{ width: share(spread.high) }} title={`${spread.high} يمنع`} /> : null}
+            {spread.medium ? <i className="seg-medium" style={{ width: share(spread.medium) }} title={`${spread.medium} يراجَع`} /> : null}
+            {spread.low ? <i className="seg-low" style={{ width: share(spread.low) }} title={`${spread.low} ملاحظة`} /> : null}
+            {spread.clean ? <i className="seg-clean" style={{ width: share(spread.clean) }} title={`${spread.clean} سليم`} /> : null}
+          </div>
+          <div className="spread-keys">
+            <span className="seg-high"><AlertTriangle aria-hidden="true" /><b>{spread.high.toLocaleString("ar-KW-u-nu-latn")}</b><small>يمنع</small></span>
+            <span className="seg-medium"><Info aria-hidden="true" /><b>{spread.medium.toLocaleString("ar-KW-u-nu-latn")}</b><small>يراجَع</small></span>
+            <span className="seg-low"><ClipboardCheck aria-hidden="true" /><b>{spread.low.toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>
+            <span className="seg-clean"><CheckCircle2 aria-hidden="true" /><b>{spread.clean.toLocaleString("ar-KW-u-nu-latn")}</b><small>سليم</small></span>
+          </div>
+        </div>
+
+        <div className="review-body">
+          {groupedFindings.length ? (
+            <>
+              {pressingFindings.map(renderFinding)}
+              {!quietFindings.length ? null : quietFindings.length < 3 ? quietFindings.map(renderFinding) : (
+                <section className={`review-quiet ${quietOpen ? "open" : ""}`}>
+                  <button
+                    type="button"
+                    className="review-quiet-toggle"
+                    data-guide-ignore="طيّ الملاحظات اللائحية داخل نافذة المراجعة فقط"
+                    onClick={() => setQuietOpen(current => !current)}
+                    aria-expanded={quietOpen}
+                  >
+                    <span className="review-mark" aria-hidden="true"><CheckCircle2 /></span>
+                    <span className="review-copy">
+                      <strong>{quietFindings.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظات لا تمنع الاعتماد</strong>
+                      <small>{quietPreview}</small>
+                    </span>
+                    <i>{quietRows.toLocaleString("ar-KW-u-nu-latn")} موعد</i>
+                    <ChevronDown aria-hidden="true" />
+                  </button>
+                  {quietOpen ? <div className="review-quiet-list">{quietFindings.map(renderFinding)}</div> : null}
+                </section>
+              )}
+            </>
+          ) : (
             <div className="review-clear">
               <CheckCircle2 />
               <strong>لا ملاحظات</strong>
