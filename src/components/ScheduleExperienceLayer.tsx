@@ -278,9 +278,14 @@ export function useScheduleExperience({
       requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
       cancelIdleCallback?: (id: number) => void;
     };
+    /* Same dwell discipline as the decision deck, same reason: these three
+       reads ride the whole-university hydration, and firing them per hop is
+       what let one browsing session pile ten seconds of queue onto the next
+       board read. Six seconds staggers this bundle slightly BEHIND the deck's
+       five, so the two never land on the server in the same breath. */
     const idleId = idleApi.requestIdleCallback
-      ? idleApi.requestIdleCallback(() => { void loadInsights(); }, { timeout: 1200 })
-      : window.setTimeout(() => { void loadInsights(); }, 360);
+      ? idleApi.requestIdleCallback(() => { void loadInsights(); }, { timeout: 6000 })
+      : window.setTimeout(() => { void loadInsights(); }, 6000);
     return () => {
       if (idleApi.cancelIdleCallback && idleApi.requestIdleCallback) idleApi.cancelIdleCallback(idleId);
       else window.clearTimeout(idleId);

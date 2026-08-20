@@ -284,9 +284,17 @@ export default function LivingScheduleLayer({
       requestIdleCallback?: (cb: () => void, options?: { timeout: number }) => number;
       cancelIdleCallback?: (handle: number) => void;
     };
+    /* Five seconds of dwell, not one and a half. The tape of a real browsing
+       session showed why: a reader walking the term list fires this on nearly
+       every hop, each flight hydrates the university's whole term on the
+       server's one thread, and the NEXT board read queues behind that — a
+       56KB schedule read measured at ten seconds during the storm. A reader
+       still moving does not need the decision deck yet; one who has stopped
+       for five seconds does, and the cleanup below cancels the timer the
+       moment the scope moves on, so a walk fires nothing at all. */
     const handle = idle.requestIdleCallback
-      ? idle.requestIdleCallback(() => { void loadLiving(); }, { timeout: 1500 })
-      : window.setTimeout(() => { void loadLiving(); }, 200);
+      ? idle.requestIdleCallback(() => { void loadLiving(); }, { timeout: 5000 })
+      : window.setTimeout(() => { void loadLiving(); }, 5000);
     return () => {
       if (idle.cancelIdleCallback && idle.requestIdleCallback) idle.cancelIdleCallback(handle);
       else window.clearTimeout(handle);

@@ -1449,7 +1449,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    *
    * Deliberately narrow: two neighbours only, never recursive (a prefetched
    * board does not prefetch ITS neighbours — only a board the reader actually
-   * opened does), idle-scheduled, aborted the moment the scope moves on, and
+   * opened does), idle-scheduled within 900ms — the tape showed readers hop
+   * every four to five seconds, so the shelf must be stocked inside two — and
+   * aborted the moment the scope moves on, and
    * skipped entirely for anything already shelved. Failures are swallowed:
    * this is a courtesy, not a dependency, and the normal path is untouched.
    */
@@ -1482,7 +1484,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           } catch { /* a prefetch owes nobody an apology */ }
         }
       })();
-    }, 2500);
+    }, 900);
     return () => { cancelIdle(); controller.abort(); };
   }, [rowsScope, filterCollege, filterSection, filterTerm, terms]);
 
