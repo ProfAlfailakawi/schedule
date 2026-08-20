@@ -38,7 +38,7 @@ import {
   WhyResult,
 } from "./LivingScheduleScenes";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
-import { livingScopeKey, readLiving, writeLiving } from "../utils/livingCache";
+import { livingScopeKey, readLiving, sharedLiving } from "../utils/livingCache";
 import type { ScheduleExperience } from "./ScheduleExperienceLayer";
 import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
@@ -232,11 +232,15 @@ export default function LivingScheduleLayer({
     const request = ++livingRequest.current;
     try {
       const q = contextQuery();
-      const d = await json(`/api/intelligence/living${q ? `?${q}` : ""}`);
+      /* Shared with the experience layer, which asks for the same analysis in
+         the same burst. Whoever gets here first issues the read; the rest wait
+         on it. The staleness guard below is unchanged and still decides whether
+         this component may use what comes back. */
+      const d = await sharedLiving(
+        livingScopeKey(collegeId, sectionId, termId),
+        () => json(`/api/intelligence/living${q ? `?${q}` : ""}`),
+      );
       if (request !== livingRequest.current) return;
-      /* Published for the experience layer, which asks for the same analysis a
-         beat later and would otherwise make the server compute it twice. */
-      writeLiving(livingScopeKey(collegeId, sectionId, termId), d);
       setLiving(d);
       if (!selectedId && rows[0]) setSelectedId(rows[0].id);
     } catch (e: any) {

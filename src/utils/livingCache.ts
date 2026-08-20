@@ -46,7 +46,40 @@ export function writeLiving(key: string, value: unknown): void {
   }
 }
 
+/**
+ * ── ولماذا لم تكفِ النتيجة وحدها ────────────────────────────────────────────
+ *
+ * Caching the result assumed the second reader arrives after the first has
+ * answered. Measured on production, they do not: four reads of the same
+ * analysis finished within three hundred milliseconds of each other, which
+ * means all four had already started before any of them could write anything
+ * to cache. A result cache cannot collapse a burst it is in the middle of.
+ *
+ * So the request is shared while it is still in the air. The one thing this
+ * must not do is carry one reader's abort into another's, and it does not: the
+ * shared read is issued WITHOUT any caller's signal. A reader whose scope
+ * changed simply discards what comes back — every caller here already checks
+ * that before using it — and the read itself completes once, for everyone.
+ *
+ * The cost is that changing scope no longer cancels an analysis already in
+ * flight. That is the right trade: it is one request that would have finished
+ * anyway, against three identical ones that never needed to start.
+ */
+const inflight = new Map<string, Promise<unknown>>();
+
+export function sharedLiving<T>(key: string, load: () => Promise<T>): Promise<T> {
+  const held = readLiving<T>(key);
+  if (held !== null) return Promise.resolve(held);
+  const running = inflight.get(key);
+  if (running) return running as Promise<T>;
+  const request = load()
+    .then(value => { writeLiving(key, value); return value; })
+    .finally(() => { if (inflight.get(key) === request) inflight.delete(key); });
+  inflight.set(key, request);
+  return request;
+}
+
 /** Dropped when a write lands, so a stale analysis never outlives its schedule. */
 export function forgetLiving(key?: string): void {
-  if (key) store.delete(key); else store.clear();
+  if (key) { store.delete(key); inflight.delete(key); } else { store.clear(); inflight.clear(); }
 }

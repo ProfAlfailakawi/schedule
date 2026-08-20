@@ -13,7 +13,7 @@ import {
   X,
 } from "lucide-react";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
-import { livingScopeKey, readLiving, writeLiving } from "../utils/livingCache";
+import { livingScopeKey, sharedLiving } from "../utils/livingCache";
 import { Notice } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
@@ -248,13 +248,11 @@ export function useScheduleExperience({
              answered for this exact scope, the server is not asked twice —
              the genome and the constraints are still read normally. */
           const key = livingScopeKey(collegeId, sectionId, termId);
-          const held = readLiving(key);
           const [l, g, c] = await Promise.all([
-            held !== null
-              ? Promise.resolve(held)
-              : fetchJson(`/api/intelligence/living?${q}`, {
-                  signal: controller.signal,
-                }),
+            /* No signal here, deliberately: this read is shared with the
+               decision deck, and one layer's abort must never cancel the
+               other's. The scope guard after the await still applies. */
+            sharedLiving(key, () => fetchJson(`/api/intelligence/living?${q}`)),
             fetchJson(`/api/intelligence/genome?${q}`, {
               signal: controller.signal,
             }),
@@ -262,7 +260,6 @@ export function useScheduleExperience({
               signal: controller.signal,
             }),
           ]);
-          if (held === null) writeLiving(key, l);
           setLiving(l);
           setGenome(g);
           setConstraints(Array.isArray(c) ? c : []);
