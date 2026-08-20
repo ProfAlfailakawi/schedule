@@ -68,10 +68,6 @@ button.schedule-radar:hover{filter:brightness(.96)}
   background:var(--danger-soft);color:var(--danger);
   border-color:color-mix(in srgb,var(--danger) 32%,transparent);
 }
-.radar-notes{
-  background:var(--warning-soft);color:var(--warning);
-  border-color:color-mix(in srgb,var(--warning) 30%,transparent);
-}
 .radar-clean{background:var(--success-soft);color:var(--success)}
 .week-event.live-clash,.agenda-card.live-clash,.rooms-card.live-clash{
   outline:2px solid var(--danger);outline-offset:1px;
@@ -106,34 +102,12 @@ button.schedule-radar:hover{filter:brightness(.96)}
 .scope-inline-note strong{font-size:var(--t-xs);font-weight:600;color:var(--brass);letter-spacing:.06em}
 .scope-inline-note span{font-size:var(--t-sm);color:var(--ink-2)}
 
-.scope-filter-chip,.intel-fixed-scope{
-  min-height:56px;display:flex;flex-direction:column;justify-content:center;gap:2px;
-  padding:var(--s2) var(--s4);
-  border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2);
-}
-.scope-filter-chip span,.intel-fixed-scope small{font-size:var(--t-xs);color:var(--muted)}
-.scope-filter-chip strong,.intel-fixed-scope strong{font-size:var(--t-sm);font-weight:600}
-.intel-fixed-scope span{font-size:var(--t-sm);color:var(--muted)}
-
 .schedule-mini-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3)}
 .schedule-mini-stats .stat-card{min-height:76px;padding:var(--s3) var(--s4)}
 .schedule-mini-stats .stat-icon{width:36px;height:36px}
 .schedule-mini-stats .stat-card strong{font-size:22px}
 
 /* --- X-ray strip ---------------------------------------------------------- */
-
-.academic-xray{
-  position:relative;
-  display:grid;
-  grid-template-columns:auto minmax(0,1fr) auto auto;
-  align-items:center;
-  gap:var(--s4);
-  min-height:76px;
-  padding:var(--s3) var(--s5);
-  border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));
-  border-radius:var(--r-lg);
-  background:var(--accent-softer);
-}
 .xray-beam{display:flex;align-items:center;gap:var(--s2);color:var(--accent);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.1em}
 .xray-beam svg{width:15px;height:15px}
 .xray-main{min-width:0}
@@ -148,11 +122,6 @@ button.schedule-radar:hover{filter:brightness(.96)}
 }
 .xray-relations svg{width:12px;height:12px}
 .xray-relations b{color:var(--ink);font-weight:600}
-.academic-xray>button{
-  width:34px;height:34px;display:grid;place-items:center;
-  border-radius:var(--r-xs);color:var(--muted);
-}
-.academic-xray>button:hover{background:var(--surface);color:var(--ink)}
 
 /* --- Agenda list ---------------------------------------------------------- */
 
@@ -1740,26 +1709,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .replay-meta time{font-variant-numeric:tabular-nums}
 .replay-meta em{font-style:normal}
-
-.replay-still{
-  display:grid;grid-template-columns:28px minmax(0,1fr);gap:var(--s4);
-  margin-top:var(--s4);padding:var(--s4);
-  border:1px dashed var(--line-strong);border-radius:var(--r-md);
-  background:var(--surface);
-}
-.replay-still-line{position:relative;display:block;height:100%;min-height:52px}
-.replay-still-line i{
-  position:absolute;inset-inline-end:50%;transform:translateX(50%);inset-block:4px 0;
-  width:2px;border-radius:2px;
-  background:linear-gradient(var(--line-strong),transparent);
-}
-.replay-still-line b{
-  position:absolute;inset-inline-end:50%;transform:translateX(50%);top:2px;
-  width:12px;height:12px;border-radius:50%;
-  background:var(--surface);border:2px solid var(--accent);
-}
-.replay-still strong{display:block;font-size:var(--t-sm);font-weight:650;color:var(--ink)}
-.replay-still p{margin:var(--s2) 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
 .replay-empty-state{padding:16px 18px;border:1px dashed var(--line);border-radius:16px;background:var(--surface-2);color:var(--muted);font-size:var(--t-sm);line-height:1.8;text-align:center}
 .replay-empty-state-rich{display:grid;gap:8px;justify-items:center}
 .replay-empty-state-rich strong{font-size:var(--t-sm);font-weight:700;color:var(--ink)}
@@ -1813,10 +1762,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .ghost-semester-readout{
   display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
   color:var(--muted);font-size:var(--t-xs);
-}
-.experience-inline-error{
-  grid-column:1/-1;padding:var(--s3) var(--s4);border-radius:var(--r-sm);
-  background:var(--danger-soft);color:var(--danger);font-size:var(--t-sm);
 }
 .experience-close{
   position:absolute;top:var(--s5);inset-inline-end:var(--s5);z-index:5;
@@ -2337,12 +2282,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   width:7px;height:7px;border-radius:50%;
   background:var(--success);
 }
-
-.decision-fingerprint{margin:10px 0 0;padding:12px 14px;border-radius:16px;border:1px solid color-mix(in srgb,var(--line) 88%,transparent);background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 86%,transparent),var(--surface));box-shadow:var(--shadow-sm)}
-.decision-fingerprint header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
-.decision-fingerprint header span{display:flex;align-items:center;gap:7px;color:var(--ink-2);font-size:12px;font-weight:700}
-.decision-fingerprint header small{color:var(--muted);font-size:11px}
-.decision-fingerprint>strong{display:block;color:var(--ink);font-size:13px;line-height:1.7;margin-bottom:10px}
 .decision-fingerprint-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .decision-fingerprint-grid span{display:block;padding:9px 10px;border-radius:12px;background:color-mix(in srgb,var(--surface-2) 82%,transparent);border:1px solid color-mix(in srgb,var(--line) 72%,transparent)}
 .decision-fingerprint-grid b{display:block;color:var(--muted);font-size:10px;margin-bottom:4px}
@@ -2733,7 +2672,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .week-density-block:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .week-density-block.lens-miss{opacity:.24;filter:saturate(.35)}
-.week-density-block.density-flagged{border-color:color-mix(in srgb,var(--warning) 52%,var(--line-strong));box-shadow:0 0 0 2px color-mix(in srgb,var(--warning) 16%,transparent)}
 .gravity-field-active .week-density-block{pointer-events:none;opacity:.32;transform:none}
 .week-density-copy{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden}
 .week-density-copy small{
@@ -3278,63 +3216,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    A 32-bucket sweep of the hour: each bar is how many lectures are live at that
    instant. It turns «9 معاً» from a number into a shape — a spike at noon reads
    as a wall, a plateau reads as a long crowded stretch. Decorative and inert. */
-.fan-crowd{display:flex;flex-direction:column;gap:5px}
-.fan-crowd-cap{
-  display:flex;align-items:center;gap:6px;
-  font-size:var(--t-xs);color:var(--muted);letter-spacing:-.1px;
-}
-.fan-crowd-cap .num{
-  font:700 11px var(--font-mono);color:var(--accent-ink,var(--accent));
-  padding:1px 6px;border-radius:var(--r-full);
-  background:color-mix(in srgb,var(--accent) 14%,transparent);
-}
-.fan-crowd-bars{
-  display:flex;align-items:flex-end;gap:2px;height:30px;
-  padding:4px 6px;border-radius:var(--r-sm);
-  background:color-mix(in srgb,var(--ink) 5%,var(--surface-2));
-  border:1px solid color-mix(in srgb,var(--line) 70%,transparent);
-}
-.fan-crowd-bars i{
-  flex:1 1 0;min-width:0;height:var(--h,10%);
-  border-radius:2px 2px 1px 1px;
-  background:color-mix(in srgb,var(--accent) calc(var(--lit,.6)*100%),var(--surface-3));
-  transform-origin:bottom;animation:crowd-rise .5s var(--ease-spring) both;
-  animation-delay:calc(var(--i,0)*8ms);
-}
-.fan-crowd-bars i[data-peak="true"]{
-  background:linear-gradient(180deg,color-mix(in srgb,var(--brass) 92%,transparent),var(--accent));
-  box-shadow:0 0 8px -2px color-mix(in srgb,var(--brass) 70%,transparent);
-}
 @keyframes crowd-rise{from{transform:scaleY(.04);opacity:0}to{transform:scaleY(1);opacity:1}}
 /* The axis: one slot per bucket, mirroring the bars' own track, so the caret
    lands exactly under the wall it marks. */
-.fan-crowd-axis{
-  display:flex;gap:2px;height:5px;margin-top:-1px;padding:0 6px;
-}
-.fan-crowd-axis i{flex:1 1 0;min-width:0;position:relative}
-.fan-crowd-axis i[data-peak="true"]::after{
-  content:"";position:absolute;inset-inline:0;inset-block-start:1px;height:3px;
-  border-radius:var(--r-full);
-  background:var(--brass);
-  box-shadow:0 0 7px -1px color-mix(in srgb,var(--brass) 80%,transparent);
-  animation:fade .5s var(--ease-out) both;animation-delay:.28s;
-}
-.fan-crowd-scale{
-  display:flex;justify-content:space-between;padding:0 6px;
-  font:600 8.5px var(--font-mono);color:var(--muted-2,var(--muted));
-  letter-spacing:.2px;opacity:.75;
-}
 /* «الذروة 11:00» — the hour the wall stands, said in words beside the count. */
-.fan-crowd-at{
-  font-style:normal;margin-inline-start:auto;
-  display:inline-flex;align-items:center;gap:3px;
-  font-size:var(--t-xs);color:var(--brass);
-}
-.fan-crowd-at time{font:650 10px var(--font-mono);letter-spacing:.2px}
-@media (prefers-reduced-motion:reduce){
-  .fan-crowd-bars i{animation:none}
-  .fan-crowd-axis i[data-peak="true"]::after{animation:none}
-}
 .week-fan-cards{
   overflow-y:auto;overscroll-behavior:contain;
   display:flex;flex-direction:column;gap:6px;
@@ -3477,40 +3362,12 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 }
 .rooms-scale span{position:absolute;transform:translateX(50%);font-variant-numeric:tabular-nums;white-space:nowrap}
 .rooms-rows{min-width:var(--rooms-canvas-width,1706px);display:flex;flex-direction:column;gap:var(--s2)}
-.rooms-rows:has(.rooms-compare-room){min-width:var(--rooms-canvas-width,1706px)}
 .rooms-week-room{
   overflow:clip;
   border:1px solid var(--line);border-radius:var(--r-md);
   background:var(--surface);
   content-visibility:auto;contain-intrinsic-size:auto 284px;
 }
-.rooms-compare-room{contain-intrinsic-size:auto 132px}
-.rooms-compare-row{display:grid;grid-template-columns:74px 82px minmax(0,1fr);align-items:stretch}
-.rooms-compare-room-head{
-  display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:5px;
-  padding:var(--s3);border-inline-end:1px solid var(--line);
-  background:var(--surface-2);
-}
-.rooms-compare-room-head strong{font:700 12px/1 var(--font-mono);color:var(--ink)}
-.rooms-compare-room-head small{color:var(--muted);font-size:10px;white-space:nowrap}
-.rooms-compare-room-head small b{color:var(--ink-2);font-weight:700}
-.rooms-compare-days{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;padding-block:4px;border-inline-end:1px solid var(--line);background:color-mix(in srgb,var(--surface-2) 64%,transparent)}
-.rooms-compare-days span{height:68px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:2px 4px;color:var(--ink-2);font-size:10px;font-weight:620}
-.rooms-compare-days span small{display:block;font:inherit;line-height:1.25;white-space:nowrap}
-.rooms-compare-days span+span{border-top:1px solid color-mix(in srgb,var(--line) 64%,transparent)}
-.rooms-week-room-head{
-  position:sticky;inset-inline-start:0;z-index:12;
-  width:250px;max-width:calc(100vw - 56px);
-  min-height:40px;display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
-  padding:var(--s2) var(--s4);
-  border-inline-end:1px solid var(--line);border-bottom:1px solid var(--line);
-  border-end-end-radius:var(--r-sm);
-  background:color-mix(in srgb,var(--surface-2) 96%,transparent);
-  box-shadow:-10px 0 22px -24px rgb(0 0 0 / .28);
-}
-.rooms-week-room-head strong{font:700 13px/1 var(--font-mono);color:var(--ink)}
-.rooms-week-room-head small{color:var(--muted);font-size:10px}
-.rooms-week-room-head small b{color:var(--ink-2);font-weight:650}
 .rooms-week-days{display:flex;flex-direction:column}
 .rooms-row{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;gap:0}
 .rooms-week-days .rooms-row{min-height:54px}
@@ -3540,17 +3397,9 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   overflow:hidden;
 }
 .rooms-week-days .rooms-track{min-height:54px;border:0;border-radius:0;background:transparent}
-.rooms-compact-track{height:auto;border:0;border-radius:0;background:transparent}
 .rooms-hourline{position:absolute;inset-block:0;width:0;border-inline-start:1px dashed color-mix(in srgb,var(--line) 78%,transparent)}
 .rooms-hourline-terminal{border-inline-start-style:solid;border-inline-start-color:var(--line-strong)}
-.rooms-slot-preview{
-  position:absolute;inset-block:3px;z-index:2;pointer-events:none;border-radius:7px;
-  background:color-mix(in srgb,var(--accent) 14%,transparent);
-  border:1px solid color-mix(in srgb,var(--accent) 56%,transparent);
-  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent);
-}
 .rooms-track:hover{background:color-mix(in srgb,var(--accent) 3%,transparent)}
-.rooms-track:has(.rooms-slot-preview){background:color-mix(in srgb,var(--accent) 4%,transparent)}
 .schedule-row-pending{opacity:.82;filter:saturate(.88)}
 .schedule-row-pending::after{content:"جارٍ التثبيت";position:absolute;inset-inline-start:6px;top:4px;font:700 10px/1 var(--font-ui);color:var(--warning);background:color-mix(in srgb,var(--surface) 78%,transparent);padding:2px 5px;border-radius:999px;border:1px solid color-mix(in srgb,var(--warning) 28%,transparent)}
 /* «الآن» — the same brass the week grid uses for the current hour, and for the
@@ -3625,12 +3474,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   color:color-mix(in srgb,var(--label) 52%,transparent);
   letter-spacing:-.08px;
 }
-.rooms-card.rooms-card-compact{justify-content:flex-start;gap:1px;padding:4px 5px 11px;border-radius:5px}
-.rooms-card.rooms-card-compact::after{
-  content:"";position:absolute;right:var(--actual-right,0);bottom:0;
-  width:var(--actual-width,100%);height:3px;
-  border-radius:3px 3px 0 0;background:var(--edge);opacity:.92;
-}
 /*
    ── أرضية القراءة على لوح القاعات ──────────────────────────────────────────
  *
@@ -3644,9 +3487,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
  * the teacher hold at every size, the code leaves first, and nothing prints
  * below the size at which Arabic stops being language.
  */
-.rooms-card.rooms-card-compact b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10.5px;font-weight:530;line-height:1.12}
-.rooms-card.rooms-card-compact span{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:390;line-height:1.08}
-.rooms-card.rooms-card-compact em{display:block;font-weight:420}
 .rooms-week-days .rooms-card b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11.5px;font-weight:540;line-height:1.18;letter-spacing:-.08px}
 .rooms-week-days .rooms-card span{flex:none;display:block;min-height:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:10px;font-weight:390;line-height:1.12;letter-spacing:-.08px}
 .rooms-week-days .rooms-card em{display:block;position:absolute;left:5px;bottom:4px;top:auto;right:auto;font:430 10px/1 var(--font-mono);font-style:normal;color:color-mix(in srgb,var(--label) 58%,transparent);letter-spacing:-.08px}
@@ -3654,16 +3494,8 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    already says it; subject and instructor never disappear. */
 .rooms-card{container-type:inline-size}
 @container (max-width:90px){
-  .rooms-card:not(.rooms-card-compact){padding-inline:4px}
-  .rooms-card:not(.rooms-card-compact) b{font-size:10.5px;font-weight:520;letter-spacing:0;padding-inline-end:24px}
-  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:10px;font-weight:390;letter-spacing:0}
-  .rooms-card:not(.rooms-card-compact) em{display:block;font-size:9px;font-weight:420;max-width:22px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 }
 @container (max-width:44px){
-  .rooms-card:not(.rooms-card-compact){padding-inline:2px}
-  .rooms-card:not(.rooms-card-compact) b{font-size:9.75px;font-weight:510;letter-spacing:-.15px}
-  .rooms-card:not(.rooms-card-compact) span{display:block;font-size:9.25px;font-weight:380}
-  .rooms-card:not(.rooms-card-compact) em{display:block;font-size:8.75px;font-weight:410}
 }
 .rooms-empty{color:var(--muted);font-size:var(--t-sm);padding:var(--s4) 0}
 .rooms-card .week-moved-pill{top:2px;inset-inline-end:2px}
@@ -3957,7 +3789,6 @@ html.schedule-physics-active .rooms-paint{display:none}
   .rooms-surface{padding:var(--s3)}
   .rooms-scale,.rooms-row{grid-template-columns:54px minmax(0,1fr)}
   .rooms-scale-week,.rooms-compare-row{grid-template-columns:54px 62px minmax(0,1fr)}
-  .rooms-week-room-head{padding-inline:var(--s3)}
   .rooms-row>.rooms-day-label{padding-inline:var(--s3) var(--s1);font-size:10px}
   .rooms-row>.rooms-day-label::before{display:none}
 }
@@ -4252,19 +4083,6 @@ html.schedule-physics-active .rooms-paint{display:none}
   border:1px solid color-mix(in srgb,var(--warning) 14%,var(--line));
   border-radius:20px;background:linear-gradient(180deg,color-mix(in srgb,var(--warning-soft) 14%,var(--surface)),var(--surface));
 }
-.decision-section-head{
-  display:flex;align-items:center;justify-content:space-between;gap:12px;min-inline-size:0;
-  color:var(--warning);
-}
-.decision-section-head>div{display:flex;align-items:center;gap:8px;min-inline-size:0}
-.decision-section-head svg{inline-size:16px;block-size:16px;flex:none}
-.decision-section-head strong{font-size:var(--t-sm);font-weight:760;line-height:1.4;white-space:normal}
-.decision-section-head em{
-  flex:none;display:inline-flex;align-items:center;min-block-size:26px;padding:4px 10px;
-  border:1px solid color-mix(in srgb,var(--line) 76%,transparent);border-radius:999px;
-  background:color-mix(in srgb,var(--surface-2) 86%,var(--surface));color:var(--muted);
-  font-style:normal;font-size:10px;font-weight:760;line-height:1;white-space:nowrap;
-}
 .decision-note-list{display:grid;grid-template-columns:1fr;gap:10px;min-inline-size:0}
 .decision-note{
   --decision-tone:var(--warning);
@@ -4299,12 +4117,9 @@ html.schedule-physics-active .rooms-paint{display:none}
   white-space:normal!important;overflow:visible!important;text-overflow:clip!important;max-block-size:none!important;
   -webkit-line-clamp:unset!important;-webkit-box-orient:initial!important;overflow-wrap:break-word;word-break:normal;
 }
-.decision-section-more{display:block;color:var(--muted);font-size:var(--t-xs);line-height:1.5}
 
 @container (max-width:360px){
   .decision-section{padding:13px;border-radius:17px}
-  .decision-section-head{align-items:flex-start;gap:8px}
-  .decision-section-head em{padding-inline:8px}
   .decision-note{grid-template-columns:36px minmax(0,1fr);gap:10px;padding:12px}
   .decision-note-icon{inline-size:36px;block-size:36px;border-radius:12px}
   .decision-note-body strong{font-size:.91rem}
@@ -5413,8 +5228,6 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .rooms-paint{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
 .rooms-paint span{font-size:9px;font-weight:650;color:var(--accent);white-space:nowrap}
 .rooms-drag-handle{display:none}
-.rooms-card .rooms-insight{opacity:0}
-.rooms-card:hover .rooms-insight,.rooms-card:focus-within .rooms-insight{opacity:1}
 .schedule-physics-float.physics-view-rooms{min-width:min(260px,70vw)}
 
 /* Context selection and high-frequency appointment surfaces stay visually
@@ -5452,19 +5265,6 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 }
 .decision-card-icon svg{inline-size:18px;block-size:18px}
 .decision-card-body{display:grid;gap:5px;min-inline-size:0;max-inline-size:100%;color:var(--ink)}
-.decision-card-meta{
-  display:flex;align-items:center;justify-content:space-between;gap:8px;min-inline-size:0;flex-wrap:wrap;
-}
-.decision-card-meta span{
-  margin:0;color:color-mix(in srgb,var(--decision-tone) 82%,var(--muted));font-size:.69rem;font-weight:800;line-height:1.35;
-  white-space:normal;overflow:visible;text-overflow:clip;
-}
-.decision-card-meta em{
-  display:inline-flex;align-items:center;min-block-size:23px;padding:4px 8px;border-radius:999px;
-  border:1px solid color-mix(in srgb,var(--decision-tone) 13%,var(--line));
-  background:color-mix(in srgb,var(--decision-tone) 7%,var(--surface));color:color-mix(in srgb,var(--decision-tone) 80%,var(--muted));
-  font-style:normal;font-size:.61rem;font-weight:800;line-height:1;white-space:nowrap;
-}
 .decision-card-title{
   display:block!important;margin:0;color:var(--ink);font-size:.92rem;font-weight:760;line-height:1.55;
   white-space:normal!important;overflow:visible!important;text-overflow:clip!important;max-block-size:none!important;
@@ -5475,19 +5275,11 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   white-space:normal!important;overflow:visible!important;text-overflow:clip!important;max-block-size:none!important;
   -webkit-line-clamp:unset!important;-webkit-box-orient:initial!important;overflow-wrap:break-word;word-break:normal;
 }
-.decision-more{
-  inline-size:100%;min-inline-size:0;padding:2px 2px 0;border-top:1px solid color-mix(in srgb,var(--line) 72%,transparent);
-  color:var(--muted);font-size:var(--t-xs);line-height:1.6;
-}
-.decision-more summary{cursor:pointer;padding:8px 0;font-weight:700;color:var(--ink-2)}
-.decision-more div{display:grid;gap:7px;padding-block-end:4px}
-.decision-more p{margin:0;white-space:normal;overflow-wrap:break-word}
 
 @container (max-width:360px){
   .decision-stack{padding:13px}
   .decision-card{grid-template-columns:36px minmax(0,1fr);gap:10px;padding:12px}
   .decision-card-icon{inline-size:36px;block-size:36px;border-radius:12px}
-  .decision-card-meta{align-items:flex-start}
 }
 
 
@@ -5627,26 +5419,6 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   border:1px solid color-mix(in srgb,var(--danger) 22%,transparent);
 }
 .decision-note--feature{grid-template-columns:minmax(0,1fr);gap:14px;padding:16px;border-radius:22px}
-.timing-pill-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px}
-.timing-pill{
-  display:grid;gap:8px;justify-items:center;text-align:center;padding:13px 8px;
-  border:1px solid color-mix(in srgb,var(--line) 78%,transparent);border-radius:18px;
-  background:color-mix(in srgb,var(--surface) 96%,transparent);
-}
-.timing-pill-day{color:var(--ink);font-size:.74rem;font-weight:790;line-height:1.3}
-.timing-pill-mark{
-  display:grid;place-items:center;inline-size:34px;block-size:34px;
-  border:1px solid color-mix(in srgb,var(--line) 76%,transparent);border-radius:12px;
-  background:color-mix(in srgb,var(--surface) 92%,var(--surface-2));color:var(--muted);
-}
-.timing-pill-mark svg{inline-size:16px;block-size:16px}
-.timing-pill strong{color:var(--ink);font-size:1.06rem;font-weight:840;line-height:1;font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate}
-.timing-pill--match{border-color:color-mix(in srgb,var(--success) 18%,var(--line));background:color-mix(in srgb,var(--success-soft) 55%,var(--surface))}
-.timing-pill--match .timing-pill-mark{border-color:color-mix(in srgb,var(--success) 18%,var(--line));background:color-mix(in srgb,var(--success) 10%,var(--surface));color:var(--success)}
-.timing-pill--off{border-color:color-mix(in srgb,var(--warning) 18%,var(--line));background:color-mix(in srgb,var(--warning-soft) 58%,var(--surface))}
-.timing-pill--off .timing-pill-mark{border-color:color-mix(in srgb,var(--warning) 18%,var(--line));background:color-mix(in srgb,var(--warning) 10%,var(--surface));color:var(--warning)}
-.timing-pill--inactive,.timing-pill--empty{opacity:.76;background:color-mix(in srgb,var(--surface-2) 92%,var(--surface))}
-.timing-pill--inactive .timing-pill-mark,.timing-pill--empty .timing-pill-mark{color:var(--muted);background:color-mix(in srgb,var(--surface-2) 95%,var(--surface))}
 .regulation-metric-strip,.regulation-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .regulation-metric-strip>div,.regulation-facts>div{
   display:grid;gap:5px;padding:12px 10px;
@@ -6719,13 +6491,6 @@ html[data-schedule-workspace="focus"] .week-focus-fullscreen .week-calendar{
 }
 .rooms-row>.rooms-day-label{font-size:10px!important;justify-content:flex-start}
 .rooms-row>.rooms-day-label::before{inset-inline-start:4px!important;width:3px!important;height:3px!important}
-.rooms-week-room-head{
-  width:148px!important;
-  max-width:calc(100vw - 34px)!important;
-  padding-inline:10px!important;
-}
-.rooms-week-room-head strong{font-size:11.5px!important}
-.rooms-week-room-head small{font-size:9px!important}
 
 /* Course/layer filters mean the same thing in rooms as in week. */
 .rooms-card.hue-folded{display:none!important}
@@ -6775,11 +6540,6 @@ html[data-schedule-workspace="focus"] .schedule-focus-exit:focus-visible{opacity
   box-shadow:-5px 0 12px color-mix(in srgb,var(--ink) 3%,transparent)!important;
 }
 .rooms-row>.rooms-day-label{font-size:9.8px!important;padding-inline:6px 4px!important}
-.rooms-week-room-head{
-  inset-inline-start:0!important;
-  border-radius:0 0 0 8px!important;
-  box-shadow:-6px 0 14px color-mix(in srgb,var(--ink) 3%,transparent)!important;
-}
 
 /* Building/room filters stay fully inside the visible viewport and scroll only
    their own ribbon. RTL starts at the first ordered item rather than a clipped
@@ -6860,10 +6620,6 @@ html[data-schedule-workspace="focus"] .schedule-agenda-surface{
   display:none!important;
 }
 .rooms-week-days .rooms-track{position:relative;z-index:1;overflow:hidden}
-.rooms-week-room-head{
-  z-index:150!important;
-  background:var(--surface)!important;
-}
 
 /* Same line grammar as the week: major hours are solid, half-hour slot
    divisions are dashed and quieter. Cards remain above both layers. */
@@ -7356,39 +7112,6 @@ html.schedule-physics-active .week-strip-slot.field-tier::before{pointer-events:
   width:var(--rooms-canvas-width,1706px)!important;
   min-width:var(--rooms-canvas-width,1706px)!important;
 }
-.rooms-week-room-head{
-  position:sticky!important;
-  inset-inline-start:0!important;
-  z-index:175!important;
-  grid-column:1!important;
-  grid-row:1!important;
-  align-self:stretch!important;
-  width:var(--rooms-room-label,112px)!important;
-  min-width:var(--rooms-room-label,112px)!important;
-  max-width:none!important;
-  min-height:0!important;
-  height:auto!important;
-  display:flex!important;
-  flex-direction:column!important;
-  align-items:flex-start!important;
-  justify-content:center!important;
-  gap:5px!important;
-  padding:9px!important;
-  border:0!important;
-  border-inline-end:1px solid color-mix(in srgb,var(--line-strong) 78%,var(--line))!important;
-  border-radius:0!important;
-  background:var(--surface-2)!important;
-  box-shadow:-5px 0 12px color-mix(in srgb,var(--ink) 3%,transparent)!important;
-  overflow:hidden!important;
-}
-.rooms-week-room-head strong,
-.rooms-week-room-head small{
-  max-width:100%!important;
-  white-space:nowrap!important;
-  overflow:hidden!important;
-  text-overflow:ellipsis!important;
-}
-.rooms-week-room-head strong{font-variant-numeric:tabular-nums!important}
 .rooms-week-days{
   grid-column:2!important;
   grid-row:1!important;
@@ -7586,7 +7309,6 @@ html[data-schedule-workspace="focus"] .rooms-scale{
   width:var(--rooms-canvas-width,1706px)!important;
   min-width:var(--rooms-canvas-width,1706px)!important;
 }
-.rooms-week-room-head{display:none!important}
 .rooms-week-days{
   grid-column:auto!important;
   grid-row:auto!important;

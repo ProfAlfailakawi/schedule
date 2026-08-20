@@ -1488,11 +1488,15 @@ export default function SmartGuide({
             <span className="smart-guide-kicker"><Bot aria-hidden="true" /> مرشد SCHEDULE <i aria-hidden="true">·</i> <b>{pageTitle}</b></span>
             <strong className="smart-guide-hero-state">{isExpert ? "جاهز" : "كيف أساعدك؟"}</strong>
           </div>
+          {/* Three glyphs with no words were the guide's least discoverable part:
+              «أشر لي» is its best idea and looked like a crosshair nobody presses.
+              Each action now says its own name; only the close keeps a bare ✕,
+              which needs no translation. */}
           <div className="smart-guide-hero-tools">
-            <button type="button" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { beginScreenHandoff("وضع أشر لي", "سأخفي المرشد وأنتظر اختيارك؛ الضغط لن يُنفذ العنصر."); setPointMode(true); })} aria-label="أشر لي" title="أشر لي"><Target /></button>
-            <button type="button" onClick={() => runIconAction("now", "ماذا يحدث الآن؟", "ألخص حالة الشاشة الحالية وما يستحق الانتباه دون تغيير أي بيانات.", showWhatHappensNow)} aria-label="ماذا يحدث الآن؟" title="ماذا يحدث الآن؟"><BrainCircuit /></button>
-            <button type="button" onClick={() => runIconAction("resume", "أكمل من حيث توقفت", "أعيدك إلى آخر مهمة وخطوتها الحالية، ثم أترك القرار لك.", resumeTask)} aria-label="أكمل من حيث توقفت" title="أكمل من حيث توقفت"><History /></button>
-            <button type="button" className="smart-guide-close" onClick={onClose} aria-label="إغلاق"><X aria-hidden="true" /></button>
+            <button type="button" className="smart-guide-hero-action" onClick={() => runIconAction("point", "أشر لي", "اضغط أي عنصر في الشاشة وسأشرح وظيفته دون تنفيذ الضغط.", () => { beginScreenHandoff("وضع أشر لي", "سأخفي المرشد وأنتظر اختيارك؛ الضغط لن يُنفذ العنصر."); setPointMode(true); })} aria-label="أشر لي" title="اضغط أي عنصر وسأشرحه دون تنفيذه"><Target /><span>أشر لي</span></button>
+            <button type="button" className="smart-guide-hero-action" onClick={() => runIconAction("now", "ماذا يحدث الآن؟", "ألخص حالة الشاشة الحالية وما يستحق الانتباه دون تغيير أي بيانات.", showWhatHappensNow)} aria-label="ماذا يحدث الآن؟" title="ملخص حالة الشاشة الآن"><BrainCircuit /><span>ماذا الآن</span></button>
+            <button type="button" className="smart-guide-hero-action" onClick={() => runIconAction("resume", "أكمل من حيث توقفت", "أعيدك إلى آخر مهمة وخطوتها الحالية، ثم أترك القرار لك.", resumeTask)} aria-label="أكمل من حيث توقفت" title="العودة إلى آخر مهمة"><History /><span>أكمل</span></button>
+            <button type="button" className="smart-guide-close" onClick={onClose} aria-label="إغلاق" title="إغلاق"><X aria-hidden="true" /></button>
           </div>
         </header>
 
@@ -1521,10 +1525,14 @@ export default function SmartGuide({
           return <button type="button" className="smart-guide-pending-task" onClick={resumeTask} aria-label={`متابعة المهمة: ${task.title}`}><History /><span><small>مهمة معلقة · اضغط للمتابعة</small><strong>{task.title}</strong></span><ChevronLeft /></button>;
         })() : null}
 
-        {!profile.onboardingDone && !isExpert ? (
+        {/* This used to vanish the moment a goal was picked, so anyone who chose
+            the wrong one had no way back to the question. It is a single closed
+            line, so leaving it costs nothing and returning is always possible;
+            after the first choice it simply asks a different question. */}
+        {(
           <section className={`smart-guide-onboarding ${goalOpen ? "is-open" : ""}`}>
             <button type="button" className="smart-guide-onboarding-toggle" onClick={() => { setGoalOpen(value => !value); setSheetLevel("full"); }} aria-expanded={goalOpen}>
-              <Compass aria-hidden="true" /><span>ابدأ حسب هدفك</span><ChevronLeft aria-hidden="true" />
+              <Compass aria-hidden="true" /><span>{profile.onboardingDone ? "غيّر هدفك" : "ابدأ حسب هدفك"}</span><ChevronLeft aria-hidden="true" />
             </button>
             {goalOpen ? <div>
               <button type="button" onClick={() => onboardingChoose("build")}><CalendarDays /><span><strong>بناء جدول</strong></span></button>
@@ -1532,7 +1540,7 @@ export default function SmartGuide({
               <button type="button" onClick={() => onboardingChoose("reports")}><BarChart3 /><span><strong>بحث وتقارير</strong></span></button>
             </div> : null}
           </section>
-        ) : null}
+        )}
 
         <label className="smart-guide-search" role="search">
           <Search aria-hidden="true" />
@@ -1549,11 +1557,20 @@ export default function SmartGuide({
         ) : null}
 
         <nav className="smart-guide-browse" aria-label="أقسام المرشد">
-          <button className={browseMode === "forYou" ? "active" : ""} type="button" onClick={() => selectBrowseMode("forYou")}><Target /><span>لك</span></button>
-          <button className={browseMode === "here" ? "active" : ""} type="button" onClick={() => selectBrowseMode("here")}><LayoutDashboard /><span>هنا</span></button>
-          <button className={browseMode === "new" ? "active" : ""} type="button" onClick={() => selectBrowseMode("new")}><Sparkles /><span>الجديد</span>{unreadSummary.total ? <i title={`${formatGuideCount(unreadSummary.total)} عناصر جديدة`}>{formatGuideCount(unreadSummary.total)}</i> : null}</button>
-          <button className={browseMode === "all" ? "active" : ""} type="button" onClick={() => selectBrowseMode("all")}><Compass /><span>الكل</span></button>
+          <button className={browseMode === "forYou" ? "active" : ""} type="button" title="ما يناسب عملك الآن" onClick={() => selectBrowseMode("forYou")}><Target /><span>لك</span></button>
+          <button className={browseMode === "here" ? "active" : ""} type="button" title="ما يخص الشاشة المفتوحة أمامك" onClick={() => selectBrowseMode("here")}><LayoutDashboard /><span>هنا</span></button>
+          <button className={browseMode === "new" ? "active" : ""} type="button" title="ما استُجدّ ولم تره بعد" onClick={() => selectBrowseMode("new")}><Sparkles /><span>الجديد</span>{unreadSummary.total ? <i title={`${formatGuideCount(unreadSummary.total)} عناصر جديدة`}>{formatGuideCount(unreadSummary.total)}</i> : null}</button>
+          <button className={browseMode === "all" ? "active" : ""} type="button" title="كل ما يعرفه المرشد عن النظام" onClick={() => selectBrowseMode("all")}><Compass /><span>الكل</span></button>
         </nav>
+        {/* Four one-word tabs are compact but not self-explanatory — «لك» and
+            «هنا» in particular. One line says what the open tab is showing, so
+            the words never have to be guessed. */}
+        <p className="smart-guide-browse-caption">{
+          browseMode === "forYou" ? "ما يناسب عملك الآن، مرتّبًا حسب استخدامك."
+            : browseMode === "here" ? "ما يخص الشاشة المفتوحة أمامك فقط."
+              : browseMode === "new" ? "ما استُجدّ من الميزات وما ظهر في الشاشة ولم تره بعد."
+                : "كل ما يعرفه المرشد عن النظام."
+        }</p>
         {unreadSummary.total && browseMode !== "new" ? <button type="button" className="smart-guide-unread-brief" onClick={() => selectBrowseMode("new")}><Sparkles /><span><strong>{formatGuideCount(unreadSummary.total)} جديد</strong><small>تحديثات للميزات وعناصر ظهرت في الشاشة؛ اضغط لمعرفة التفاصيل أو لمسح العداد.</small></span><ChevronLeft /></button> : null}
 
         {context?.view === activeView && context?.selected ? (

@@ -100,7 +100,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   background:var(--success-soft);color:var(--success);font-size:var(--t-xs);
 }
 .twin-constraint-score.warn{background:var(--warning-soft);color:var(--warning)}
-.metric-priority{border-color:color-mix(in srgb,var(--brass) 30%,var(--line)) !important}
 /* --- Report sheet on screen ------------------------------------------------
    The print stylesheet already makes these sheets beautiful on paper; on screen
    they used to inherit almost nothing, so a thirteen-column sheet crammed into
@@ -266,7 +265,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   .deck-bar{animation:none}
 
   /* Gauges draw their arc once, from empty. */
-  .gauge-value{animation:gauge-sweep .95s var(--ease-out) both}
 
   /* Bars grow from the baseline. */
   .bar-columns i{animation:bar-grow .7s var(--ease-out) both}
@@ -277,7 +275,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   .bar-rows i>b{animation:bar-stretch .7s var(--ease-out) both}
 
   /* Day blocks slide in along the ribbon. */
-  .daybar-block{animation:rise .5s var(--ease-out) both}
 }
 
 @keyframes gauge-sweep{from{stroke-dashoffset:214}to{stroke-dashoffset:0}}
@@ -797,12 +794,6 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-subject-cases{display:grid}
 .review-subject-cases p{margin:0;padding:10px 13px;color:var(--ink-2);font-size:var(--t-sm);line-height:1.75;border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent)}
 .review-subject-cases p:first-child{border-top:0}
-.review-subfinding-list{display:grid;gap:8px}
-.review-subfinding{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
-.review-subfinding header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px}
-.review-subfinding strong{font-size:var(--t-sm);font-weight:700;color:var(--ink)}
-.review-subfinding small{font-size:11px;color:var(--muted-2);font-weight:780}
-.review-subfinding p{margin:0;color:var(--ink-2);font-size:var(--t-sm);line-height:1.8}
 
 .review-body{min-height:0;flex:1;overflow-y:auto}
 .review-finding{border-bottom:1px solid var(--line)}
@@ -1331,8 +1322,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 }
 .share-survey-shortcut>button:hover:not(:disabled){background:var(--accent-softer)}
 .share-survey-shortcut>button:disabled{opacity:.55}
-.share-survey-notice{display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2);color:var(--success);font-size:var(--t-xs)}
-.share-survey-notice svg{width:14px;height:14px;flex:none}
 @media screen and (max-width:600px){
   .share-survey-shortcut{grid-template-columns:38px minmax(0,1fr);padding:var(--s3)}
   .share-survey-shortcut-icon{width:38px;height:38px}

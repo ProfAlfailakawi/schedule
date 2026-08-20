@@ -1125,14 +1125,6 @@
 .scenario-fields{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
 .change-ledger,.change-list{display:flex;flex-direction:column;gap:var(--s2)}
 .change-list article{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);font-size:var(--t-sm)}
-.twin-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--s2);padding:var(--s5)}
-.twin-steps article{padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
-.twin-steps article>span{
-  width:28px;height:28px;display:grid;place-items:center;border-radius:var(--r-xs);
-  background:var(--ink);color:var(--surface);font-size:var(--t-xs);font-weight:600;
-}
-.twin-steps strong{display:block;margin-top:var(--s3);font-size:var(--t-sm);font-weight:600}
-.twin-steps p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-xs);line-height:1.55}
 
 /* History / drafts */
 .drafts-card,.versions-card{padding:var(--s5)}
@@ -1189,7 +1181,6 @@
 .warn,.hot,.limited{color:var(--warning)}
 .danger,.error{color:var(--danger)}
 .neutral,.unknown{color:var(--muted)}
-.metric-priority{font-weight:600}
 
 
 /* ==========================================================================
@@ -2051,7 +2042,6 @@
   background:color-mix(in srgb,var(--accent) 42%,transparent);
   transition:background .16s var(--ease);
 }
-.campus-flow-bar.is-peak i{background:var(--brass)}
 .campus-flow-bar:hover i{background:var(--accent)}
 .campus-flow-bar b{font:700 var(--t-sm)/1 var(--font-mono);color:var(--ink);font-variant-numeric:tabular-nums}
 .campus-flow-bar span{font:500 9.5px/1 var(--font-mono);color:var(--muted);letter-spacing:-.2px}
@@ -2454,7 +2444,6 @@
    a snap carousel; room grids keep their native width and scroll; a concise
    note explains why desktop is the more complete reading surface.
    ========================================================================== */
-.query-wide-mobile-note{display:none}
 .occupancy-loading{min-height:260px;border-top:1px solid var(--line)}
 
 @media screen and (max-width:760px){
@@ -2473,15 +2462,6 @@
   .query-canvas-actions{width:100%;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s2)}
   .query-canvas-actions>button{justify-content:center;min-width:0;padding-inline:var(--s2)}
   .query-canvas-actions>button:last-child{grid-column:1/-1}
-
-  .query-wide-mobile-note{
-    display:flex;align-items:flex-start;gap:var(--s3);
-    margin:var(--s3) var(--s4) 0;padding:var(--s3) var(--s4);
-    border:1px solid color-mix(in srgb,var(--accent) 22%,var(--line));
-    border-radius:var(--r-md);background:var(--accent-softer);color:var(--muted);
-    font-size:var(--t-xs);line-height:1.65;
-  }
-  .query-wide-mobile-note strong{flex:none;color:var(--accent-ink);font-size:var(--t-xs)}
 
   .lens-week{
     display:flex;gap:var(--s3);overflow-x:auto;scroll-snap-type:x mandatory;
@@ -2518,15 +2498,6 @@
 /* ==========================================================================
    FINAL POLISH — DECISION CENTRE + MOBILE GATES
    ========================================================================== */
-.intel-onboarding{
-  display:flex;align-items:center;justify-content:space-between;gap:var(--s4);
-  padding:var(--s4) var(--s5);border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));
-  border-radius:var(--r-lg);background:linear-gradient(135deg,var(--accent-softer),var(--surface));
-}
-.intel-onboarding>div{display:flex;align-items:center;gap:var(--s3);min-width:0}
-.intel-onboarding svg{width:22px;height:22px;color:var(--accent);flex:none}
-.intel-onboarding span{display:grid;gap:2px}.intel-onboarding strong{font-size:var(--t-sm);font-weight:700}.intel-onboarding small{color:var(--muted);font-size:var(--t-xs);line-height:1.6}
-.intel-onboarding button{flex:none;border:0;border-radius:999px;padding:8px 14px;background:var(--accent);color:var(--accent-contrast);font:600 var(--t-xs)/1 var(--font);cursor:pointer}
 
 .insight-page-head{align-items:center}
 .insight-page-title{min-width:0;flex:1;display:grid;gap:3px}
@@ -2585,8 +2556,7 @@
 .term-compare .compare-result>article,.term-compare .compare-result>div{padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface);text-align:center}.term-compare .compare-result strong{display:block;font-size:var(--t-h4);font-weight:750;direction:ltr}.term-compare .compare-result span{display:block;margin-top:4px;color:var(--muted);font-size:var(--t-xs)}
 .compare-diff{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s3);margin-top:var(--s4)}.compare-column{border:1px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}.compare-column>h3{display:flex;justify-content:space-between;align-items:center;margin:0;padding:var(--s3) var(--s4);border-bottom:1px solid var(--line);font-size:var(--t-sm)}.compare-rows{max-height:440px;overflow:auto}
 
-/* Range on an RTL page was mirrored by the browser. Canvas math is left-based, so the range is LTR too. */
-.time-travel-slider{direction:ltr}.time-travel-stage{direction:ltr}.time-travel-caption{direction:ltr}.time-travel-meta{direction:rtl}
+/* Range on an RTL page was mirrored by the browser. Canvas math is left-based, so the range is LTR too. */.time-travel-stage{direction:ltr}.time-travel-meta{direction:rtl}
 
 /* Shared phone gate: wide analytical canvases are intentionally desktop-only. */
 .mobile-desktop-gate{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:color-mix(in srgb,#06110e 54%,transparent);backdrop-filter:blur(8px)}
@@ -2600,7 +2570,6 @@
   .term-compare .compare-result,.compare-diff{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media screen and (max-width:640px){
-  .intel-onboarding{align-items:flex-start}.intel-onboarding>div{align-items:flex-start}.intel-onboarding button{align-self:center}
   .insight-page-head{top:68px;gap:var(--s2)}.insight-back{max-width:42%;white-space:normal;line-height:1.35}.insight-title-line{gap:var(--s2)}
   .spatial-metrics{grid-template-columns:1fr}.genome-days{grid-template-columns:1fr}.scenario-fields{grid-template-columns:1fr}.scenario-days{display:grid;grid-template-columns:repeat(2,1fr)}
   .term-compare .compare-result,.compare-diff,.twin-score-row,.version-diff{grid-template-columns:1fr}
@@ -3429,8 +3398,6 @@ button.twin-delta{width:100%}
 }
 
 /* ── Guided intelligence without visual noise ───────────────────────────── */
-.intel-workspace-guide{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:16px;padding:14px 16px;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:20px;background:linear-gradient(135deg,var(--accent-softer),var(--surface));box-shadow:var(--shadow-sm)}
-.intel-workspace-guide>div{display:flex;align-items:center;gap:9px}.intel-workspace-guide>div>svg{width:20px;height:20px;color:var(--accent)}.intel-workspace-guide>div>span{display:grid}.intel-workspace-guide small{font-size:10px;color:var(--muted)}.intel-workspace-guide strong{font-size:var(--t-sm)}.intel-workspace-guide ol{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0;padding:0;list-style:none}.intel-workspace-guide li{display:grid;gap:1px;padding-inline:10px;border-inline-start:1px solid var(--line)}.intel-workspace-guide li b{font-size:var(--t-xs)}.intel-workspace-guide li small{line-height:1.45}.intel-workspace-guide>button{border:0;border-radius:999px;padding:9px 15px;background:var(--accent);color:var(--accent-contrast);font:650 var(--t-xs)/1 var(--font);cursor:pointer;white-space:nowrap}
 
 /* Decision notebook lives beside Ask Schedule because questions and unresolved
    decisions are the same workflow, not separate destinations. */
@@ -3449,31 +3416,15 @@ button.twin-delta{width:100%}
 .accuracy-strip{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:8px}.accuracy-strip article{display:grid;gap:1px;padding:12px;border:1px solid var(--line);border-radius:15px;background:var(--surface-2)}.accuracy-strip span,.accuracy-strip small{font-size:10px;color:var(--muted)}.accuracy-strip strong{font-size:var(--t-lg)}.version-scrubber{display:grid;grid-template-columns:minmax(160px,auto) 1fr auto;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}.version-scrubber>div{display:grid;gap:1px}.version-scrubber>div strong{font-size:var(--t-xs)}.version-scrubber input{accent-color:var(--accent);width:100%}.version-scrubber>small{font-size:10px;color:var(--muted);white-space:nowrap}.postmortem-card{display:grid;grid-template-columns:minmax(150px,.55fr) 1fr;gap:14px;padding:14px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,var(--surface-2),var(--surface))}.postmortem-card>div{display:flex;align-items:center;gap:9px}.postmortem-card>div>svg{width:22px;height:22px;color:var(--accent)}.postmortem-card>div>span{display:grid}.postmortem-card small{font-size:10px;color:var(--muted)}.postmortem-card strong{font-size:var(--t-sm)}.postmortem-card ul{display:grid;gap:5px;margin:0;padding-inline-start:18px;color:var(--ink-2);font-size:var(--t-xs)}.edit-heatmap{display:grid;gap:10px;padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2);overflow:hidden}.edit-heatmap-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.edit-heatmap-head>span{display:grid}.edit-heatmap-head small{font-size:10px;color:var(--muted)}.edit-heatmap-grid{display:grid;grid-template-columns:64px repeat(16,minmax(22px,1fr));gap:4px;align-items:center;overflow:auto;padding-bottom:4px}.edit-heatmap-grid>small,.edit-heatmap-grid>b{font-size:9px;color:var(--muted);font-weight:500}.edit-heatmap-grid>span{height:25px;min-width:22px;border-radius:7px;display:grid;place-items:center;background:color-mix(in srgb,var(--accent) var(--heat-pct,10%),var(--surface));color:var(--ink);font-size:9px;font-weight:650}
 
 /* Decision-center onboarding lives in the existing panel. */
-.living-help-trigger,.living-panel-help{width:40px;height:40px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}.living-help-trigger:hover,.living-panel-help:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}.living-help-trigger svg,.living-panel-help svg{width:17px;height:17px}.decision-guide-note{display:grid;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line);background:linear-gradient(90deg,var(--accent-softer),var(--surface))}.decision-guide-head{display:flex;gap:9px;align-items:flex-start}.decision-guide-head>svg{width:19px;height:19px;color:var(--accent);flex:none}.decision-guide-head>div{display:grid;gap:2px}.decision-guide-head strong{font-size:var(--t-sm)}.decision-guide-head p{margin:0;color:var(--muted);font-size:var(--t-xs);line-height:1.6}.decision-guide-tags{display:flex;flex-wrap:wrap;gap:6px}.decision-guide-tags span{padding:5px 8px;border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));border-radius:999px;background:var(--surface);font-size:10px;color:var(--ink-2)}.decision-guide-actions{display:flex;justify-content:flex-end}.decision-guide-actions button{border:0;border-radius:999px;padding:8px 14px;background:var(--accent);color:var(--accent-contrast);font:650 var(--t-xs)/1 var(--font);cursor:pointer}
+.living-help-trigger,.living-panel-help{width:40px;height:40px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer}.living-help-trigger:hover,.living-panel-help:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}.living-help-trigger svg,.living-panel-help svg{width:17px;height:17px}
 
-@media (max-width:1050px){.policy-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.policy-result{grid-template-columns:1fr}.policy-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}.intel-workspace-guide{grid-template-columns:1fr auto}.intel-workspace-guide ol{grid-column:1/-1}}
-@media (max-width:720px){.intel-workspace-guide{grid-template-columns:1fr}.intel-workspace-guide ol{grid-template-columns:1fr}.intel-workspace-guide>button{justify-self:end}.health-advanced-row,.unwritten-rules-list{grid-template-columns:repeat(2,minmax(0,1fr))}.policy-controls{grid-template-columns:1fr}.policy-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.accuracy-strip{grid-template-columns:1fr 1fr}.accuracy-strip article:first-child{grid-column:1/-1}.version-scrubber{grid-template-columns:1fr}.postmortem-card{grid-template-columns:1fr}.edit-heatmap-grid{grid-template-columns:58px repeat(16,24px)}}
+@media (max-width:1050px){.policy-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.policy-result{grid-template-columns:1fr}.policy-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}}
+@media (max-width:720px){.health-advanced-row,.unwritten-rules-list{grid-template-columns:repeat(2,minmax(0,1fr))}.policy-controls{grid-template-columns:1fr}.policy-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.accuracy-strip{grid-template-columns:1fr 1fr}.accuracy-strip article:first-child{grid-column:1/-1}.version-scrubber{grid-template-columns:1fr}.postmortem-card{grid-template-columns:1fr}.edit-heatmap-grid{grid-template-columns:58px repeat(16,24px)}}
 .unwritten-rules-list article{grid-template-columns:auto minmax(0,1fr) auto}.unwritten-rules-list article>button{width:30px;height:30px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--accent);display:grid;place-items:center;cursor:pointer}.unwritten-rules-list article>button svg{width:14px;height:14px}
 .living-panel-head{grid-template-columns:44px minmax(0,1fr) 34px 34px}
 
 /* Manual help only: one deliberate question mark opens a true layer over the
    workspace. Nothing is injected into the intelligence canvas itself. */
-.decision-guide-backdrop,.intel-guide-backdrop{
-  position:fixed;inset:0;z-index:1600;display:grid;place-items:center;padding:24px;
-  background:color-mix(in srgb,#07110f 58%,transparent);backdrop-filter:blur(9px);
-}
-.decision-guide-modal,.intel-guide-modal{
-  width:min(720px,100%);padding:22px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));
-  border-radius:28px;background:linear-gradient(180deg,var(--surface),color-mix(in srgb,var(--surface-2) 72%,var(--surface)));
-  box-shadow:0 30px 100px color-mix(in srgb,#000 28%,transparent);display:grid;gap:18px;
-}
-.decision-guide-modal>header,.intel-guide-modal>header{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:13px;align-items:center}
-.decision-guide-modal>header>span,.intel-guide-modal>header>span{width:44px;height:44px;border-radius:15px;display:grid;place-items:center;background:var(--accent-softer);color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 20%,var(--line))}
-.decision-guide-modal>header>span svg,.intel-guide-modal>header>span svg{width:20px;height:20px}.decision-guide-modal>header small,.intel-guide-modal>header small{display:block;color:var(--muted);font-size:10px}.decision-guide-modal>header strong,.intel-guide-modal>header strong{display:block;margin-top:3px;font-size:20px}.decision-guide-modal>header>button,.intel-guide-modal>header>button{width:38px;height:38px;border:0;border-radius:999px;background:var(--surface-2);color:var(--muted);display:grid;place-items:center;cursor:pointer}.decision-guide-modal>header>button:hover,.intel-guide-modal>header>button:hover{color:var(--ink)}
-.decision-guide-modal-grid,.intel-guide-steps{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.decision-guide-modal-grid article,.intel-guide-steps article{display:grid;grid-template-columns:auto minmax(0,1fr);gap:11px;align-items:center;padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--surface)}.decision-guide-modal-grid article>svg,.intel-guide-steps article>svg{width:19px;height:19px;color:var(--accent)}.decision-guide-modal-grid strong,.intel-guide-steps strong{display:block;font-size:var(--t-sm)}.decision-guide-modal-grid small,.intel-guide-steps small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-xs);line-height:1.55}
-.intel-guide-steps{grid-template-columns:repeat(3,minmax(0,1fr))}.intel-guide-steps article{grid-template-columns:auto auto minmax(0,1fr)}.intel-guide-steps article>b{font:700 10px/1 var(--font-mono);color:var(--muted-2)}
-.decision-guide-modal>footer,.intel-guide-modal>footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:2px;color:var(--muted);font-size:var(--t-xs)}.decision-guide-modal>footer button,.intel-guide-modal>footer button{border:0;border-radius:999px;padding:10px 17px;background:var(--accent);color:var(--accent-contrast);font:650 var(--t-xs)/1 var(--font);cursor:pointer}
-@media(max-width:720px){.decision-guide-backdrop,.intel-guide-backdrop{padding:14px}.decision-guide-modal,.intel-guide-modal{padding:18px;border-radius:22px}.decision-guide-modal-grid,.intel-guide-steps{grid-template-columns:1fr}.intel-guide-steps article{grid-template-columns:auto auto minmax(0,1fr)}.decision-guide-modal>footer,.intel-guide-modal>footer{align-items:flex-start;flex-direction:column}.decision-guide-modal>footer button,.intel-guide-modal>footer button{align-self:stretch}}
 
 /* Approval deck: a quiet entry page, with room for the heading before the cards. */
 .insight-preview-rail{padding:clamp(14px,2vw,22px);border:1px solid color-mix(in srgb,var(--line) 88%,transparent);border-radius:24px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 96%,transparent),color-mix(in srgb,var(--surface-2) 62%,var(--surface)));overflow:visible}
@@ -3521,8 +3472,6 @@ button.twin-delta{width:100%}
 .genome-details .genome-patterns b{display:inline-flex!important;align-items:center;gap:7px;padding:8px 10px;border-radius:12px;background:var(--surface);border:1px solid var(--line);white-space:nowrap}
 .genome-details .genome-patterns b small{font-weight:650}.genome-details .genome-patterns b strong{font-size:.88rem}
 .genome-details .genome-deviations{margin-top:12px}.genome-details .genome-deviations article{padding:12px 14px}.genome-details .genome-deviations p{margin:3px 0 0;line-height:1.5}
-
-.smart-instructor-query{position:relative;display:flex;align-items:center}.smart-instructor-query>svg{position:absolute;inset-inline-start:12px;width:17px;height:17px;color:var(--muted);pointer-events:none}.smart-instructor-query input{padding-inline-start:38px!important}
 
 /* Every long intelligence drawer keeps its last card above the browser/home
    indicator instead of trapping it under the viewport edge. */
@@ -3667,9 +3616,6 @@ button.twin-delta{width:100%}
 .visual-minimal.query-page .query-more select,
 .visual-minimal.query-page .query-more input{background:var(--surface);border-radius:12px}
 .visual-minimal.query-page .query-live-nudge{border-radius:999px;box-shadow:var(--shadow-xs)}
-.visual-minimal.query-page .query-answer{overflow:hidden}
-.visual-minimal.query-page .lens-card{position:relative;overflow:hidden}
-.visual-minimal.query-page .lens-card>header svg{inline-size:19px;block-size:19px;color:var(--accent)}
 .visual-minimal.query-page .occupancy-pick{border-radius:24px;box-shadow:var(--shadow-lg)}
 .visual-minimal.query-page .occupancy-pick header>button{border:0;background:transparent;color:var(--muted);cursor:pointer}
 .visual-minimal.query-page .occupancy-pick header>button:hover{color:var(--ink)}
@@ -3720,8 +3666,6 @@ button.twin-delta{width:100%}
 .visual-minimal.intelligence-page .decision-card,
 .visual-minimal.intelligence-page .room-window-days>article,
 .visual-minimal.intelligence-page .approval-status-grid>article{border-radius:22px}
-.visual-minimal.intelligence-page .insight-card>header svg,
-.visual-minimal.intelligence-page .intel-card>header svg{color:var(--accent)}
 .visual-minimal.intelligence-page .insight-method{font-size:.72rem;color:var(--muted);line-height:1.65}
 .visual-minimal.intelligence-page .guide-simulation-flow>span{border-radius:18px;background:var(--surface-2)}
 

@@ -263,32 +263,6 @@
 
 /* --- Gauges --------------------------------------------------------------- */
 
-.deck-gauges{
-  display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
-  gap:var(--s3);
-}
-.gauge{
-  position:relative;margin:0;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  padding:var(--s5) var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-xl);
-  background:var(--surface);
-}
-.gauge svg{width:96px;height:96px;transform:rotate(-90deg)}
-.gauge circle{fill:none;stroke-width:7;stroke-linecap:round}
-.gauge-track{stroke:color-mix(in srgb,var(--line) 92%,transparent)}
-.gauge-value{stroke:var(--accent);transition:stroke-dasharray .7s var(--ease-out)}
-.gauge-brass .gauge-value{stroke:var(--brass)}
-.gauge-warning .gauge-value{stroke:var(--warning)}
-.gauge b{
-  position:absolute;top:calc(var(--s5) + 34px);
-  display:flex;align-items:baseline;gap:1px;
-  font-size:24px;font-weight:600;line-height:1;
-  font-variant-numeric:tabular-nums;letter-spacing:-.02em;
-}
-.gauge b i{font-style:normal;font-size:var(--t-xs);color:var(--muted)}
-.gauge figcaption{margin-top:var(--s3);color:var(--muted);font-size:var(--t-sm)}
-
 /* --- One decision --------------------------------------------------------- */
 
 .deck-decision{
@@ -1073,7 +1047,6 @@
   font-size:clamp(30px,3.6vw,44px);line-height:1.18;font-weight:600;letter-spacing:-.03em;
 }
 .about-editorial-hero p{max-width:60ch;margin-top:var(--s4);color:var(--muted);font-size:15px;line-height:1.8}
-.about-editorial-divider{height:1px;background:var(--line)}
 
 /* Install-as-app (Idea 4): an icon in the identity bar, with the steps in a
    small elegant popover on demand. No standing paragraph. */
@@ -1526,11 +1499,6 @@
 .vault-file-picker.disabled{opacity:.58;cursor:not-allowed;pointer-events:none}
 .vault-import-progress{border-color:color-mix(in srgb,var(--accent) 28%,var(--line));background:color-mix(in srgb,var(--accent-softer) 42%,var(--surface))}
 .vault-import-progress .vault-export-progress-track i{background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 78%,var(--success)),var(--success))}
-.vault-preview-card.inside-card {
-  margin: var(--s2) 0 var(--s4) 0;
-  border-radius: var(--radius-lg);
-  border: 1px dashed color-mix(in srgb, var(--success) 60%, transparent);
-}
 .vault-counts span svg {
   color: var(--success);
   opacity: 0.9;
@@ -1608,37 +1576,11 @@
   .apex-login-identity-trigger--pulse::before{opacity:0.4;transform:none}
   .apex-login-pulse-rings i{opacity:0}
 }
-.login-identity-backdrop{
-  position:fixed;inset:0;z-index:1700;display:grid;place-items:center;padding:24px;
-  background:color-mix(in srgb,#07100d 58%,transparent);backdrop-filter:blur(12px) saturate(.86);
-  -webkit-backdrop-filter:blur(12px) saturate(.86);
-  animation:loginIdentityIn .18s var(--ease) both;
-}
 @keyframes loginIdentityIn{from{opacity:0}to{opacity:1}}
-.login-identity-popover{position:relative;width:min(520px,calc(100vw - 32px));animation:loginIdentityCard .22s var(--ease) both}
 @keyframes loginIdentityCard{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
-.login-identity-close{
-  position:absolute;inset-block-start:16px;inset-inline-start:16px;z-index:2;
-  display:grid;place-items:center;width:40px;height:40px;padding:0;border:1px solid rgba(255,255,255,.12);border-radius:14px;
-  background:rgba(255,255,255,.055);color:#a8b1ad;cursor:pointer;transition:background .16s var(--ease),color .16s var(--ease);
-}
-.login-identity-close:hover{background:rgba(255,255,255,.1);color:#fff}.login-identity-close svg{width:18px;height:18px}
-.rail-identity.login-identity-card{
-  min-height:248px;padding:58px 46px 42px!important;border:1px solid rgba(255,255,255,.06)!important;border-radius:34px!important;
-  background:#0d1714!important;box-shadow:0 32px 90px rgba(0,0,0,.38)!important;
-  display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;text-align:center!important;gap:10px!important;
-}
-.login-identity-card .rail-identity-name{
-  color:#919c96!important;font-size:clamp(21px,4.5vw,31px)!important;font-weight:650!important;letter-spacing:.29em!important;line-height:1.2!important;
-}
-.login-identity-card .rail-identity-line{
-  color:#737f79!important;font-size:clamp(17px,3vw,24px)!important;font-weight:450!important;line-height:1.65!important;letter-spacing:0!important;
-}
-.login-identity-card .rail-identity-go{margin-top:8px!important;color:#8e7b51!important;opacity:.72!important}
 @media(max-width:680px){
   .apex-access-title-row{gap:10px}
   .apex-login-identity-trigger{width:36px;height:36px;border-radius:12px}
-  .login-identity-backdrop{padding:16px}.rail-identity.login-identity-card{min-height:220px;padding:54px 30px 34px!important;border-radius:28px!important}
 }
 
 
@@ -1688,11 +1630,6 @@
 .visual-minimal.dashboard-page .deck-chip,
 .visual-minimal.dashboard-page .deck-live,
 .visual-minimal.dashboard-page .deck-action{border-radius:999px}
-.visual-minimal.dashboard-page .deck-card header p,
-.visual-minimal.dashboard-page .deck-card .deck-card-subtitle,
-.visual-minimal.dashboard-page .deck-summary-note{display:none}
-.visual-minimal.dashboard-page .deck-stat,
-.visual-minimal.dashboard-page .deck-kpi{border-radius:22px}
 .visual-minimal.admin-page .system-vault-seal,
 .visual-minimal.admin-page .vault-action-icon,
 .visual-minimal.admin-page .form-intro>span{border-radius:18px}
@@ -1950,9 +1887,6 @@
 .install-login .install-steps-grid li{background:#0d1412;border-color:#2b3630}
 
 /* Dedicated demo entry: visually distinct, quiet, and explicit about isolation. */
-.demo-entry-panel{margin-top:22px;padding:18px;border:1px solid color-mix(in srgb,#78a896 28%,transparent);border-radius:20px;background:linear-gradient(145deg,color-mix(in srgb,#0f1c18 88%,transparent),color-mix(in srgb,#163027 58%,transparent));box-shadow:0 18px 44px color-mix(in srgb,#000 18%,transparent) inset,0 12px 30px color-mix(in srgb,#000 10%,transparent)}
-.demo-entry-copy{display:grid;gap:6px}.demo-entry-copy strong{font-size:1rem;color:#eef8f4}.demo-entry-copy small{color:#9eb8ad;line-height:1.7;font-size:.82rem}.demo-entry-badge{width:max-content;padding:4px 9px;border-radius:999px;background:color-mix(in srgb,#79b49d 16%,transparent);border:1px solid color-mix(in srgb,#79b49d 24%,transparent);color:#add2c3;font-size:.68rem;font-weight:750;letter-spacing:.08em}
-.demo-entry-button{margin-top:14px;width:100%;min-height:48px;display:flex;align-items:center;justify-content:center;gap:9px;border-radius:14px;border:1px solid color-mix(in srgb,#8bc5ae 38%,transparent);background:#d9eee6;color:#12362b;font-weight:750;cursor:pointer;transition:transform .18s var(--ease),box-shadow .18s var(--ease)}.demo-entry-button:hover{transform:translateY(-1px);box-shadow:0 12px 28px color-mix(in srgb,#000 14%,transparent)}.demo-entry-button svg{width:17px;height:17px}.demo-entry-button:disabled{opacity:.62;cursor:wait;transform:none}
 
 /* System administration in Demo is a true showroom: no interactive control can fire. */
 html[data-demo-admin-readonly="true"] .app-main button,
@@ -1960,7 +1894,6 @@ html[data-demo-admin-readonly="true"] .app-main input,
 html[data-demo-admin-readonly="true"] .app-main select,
 html[data-demo-admin-readonly="true"] .app-main textarea,
 html[data-demo-admin-readonly="true"] .app-main [role="button"]{pointer-events:none!important;cursor:not-allowed!important}
-html[data-demo-admin-readonly="true"] .app-main button:not(.plain-icon){opacity:.58}
 html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإدارة للعرض فقط";position:sticky;top:12px;z-index:35;display:block;width:max-content;max-width:calc(100% - 24px);margin:12px auto -8px;padding:7px 12px;border-radius:999px;background:color-mix(in srgb,#7a5712 92%,transparent);color:#fff8df;border:1px solid color-mix(in srgb,#fff 18%,transparent);font-size:.72rem;font-weight:750;box-shadow:0 8px 24px color-mix(in srgb,#000 14%,transparent)}
 
 /* ==========================================================================

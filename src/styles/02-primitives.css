@@ -13,7 +13,6 @@
   background:var(--surface);
   box-shadow:var(--shadow-sm);
 }
-.surface-pad{padding:var(--s6)}
 .form-card,.smart-form{padding:var(--s7)}
 
 .surface-head{
@@ -303,7 +302,6 @@
 /* A whisper, not a label: the "first section for this course" note guides
    without competing with the elegant field it sits under — thinner, lighter,
    set in the italic that marks an aside. */
-.section-hint{font-weight:400;font-style:italic;color:color-mix(in srgb,var(--muted-2) 82%,transparent);letter-spacing:-.1px}
 
 .form-intro{
   display:grid;
@@ -582,9 +580,6 @@
 .stat-card small{display:block;margin-top:2px;color:var(--muted-2);font-size:var(--t-xs)}
 
 /* --- Meters --------------------------------------------------------------- */
-
-.thin-meter{height:5px;overflow:hidden;border-radius:var(--r-full);background:var(--surface-3)}
-.thin-meter i{display:block;height:100%;border-radius:var(--r-full);background:var(--accent);transition:width .5s var(--ease-out)}
 
 /* --- Empty / loading states ------------------------------------------------ */
 

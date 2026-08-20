@@ -162,7 +162,6 @@
      week. The marks are pseudo-elements, so they need suppressing by hand. */
   [data-presence-cell]::after{display:none !important}
   [data-presence-hold],[data-presence-edit]{outline:0 !important}
-  .report-paper{box-shadow:none !important;border:0 !important;padding:0 !important;min-height:0 !important;background:#fff !important;color:#111 !important}
 
   /* --- sheet ------------------------------------------------------------- */
 
@@ -458,11 +457,6 @@
     width:4.4mm;height:3.2mm;border:.5pt solid #1f6b5c;display:inline-block;
     print-color-adjust:exact !important;-webkit-print-color-adjust:exact !important;
   }
-  .print-legend .legend-taken{
-    background:#dde9e5;
-    background-image:repeating-linear-gradient(-45deg,#1f6b5c 0 .5pt,transparent .5pt 2.2pt);
-  }
-  .print-legend .legend-free{background:#fff;border-color:#9aa3a0}
 
   /* --- halls x hours ------------------------------------------------------ */
   /* The sheet a department has kept on paper for years, printed as paper. */
