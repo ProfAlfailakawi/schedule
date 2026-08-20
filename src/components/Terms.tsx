@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { CalendarDays, Sparkles, Trash2 } from "lucide-react";
-import { sortTermsNewest, suggestNextTermName } from "../utils/termSequence";
+import { isTermClosed, sortTermsNewest, suggestNextTermName } from "../utils/termSequence";
 import {
   AddButton,
   EmbeddedAction,
@@ -38,6 +38,9 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
      guess its own semester, and a guess that is re-read forever drifts. */
   const [start, setStart] = useState("");
   const [weeks, setWeeks] = useState("");
+  /* Whether teaching in this term is over. Room borrowing between departments
+     is meaningless once it is, so the schedule screen reads this mark. */
+  const [closed, setClosed] = useState(false);
   const load = async () => {
     setLoading(true);
     try {
@@ -67,7 +70,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
       setEditId(null);
       // Note 29: pre-fill the next term in sequence so the common case is one click.
       setName(suggestedTerm);
-      setStart(""); setWeeks("16");
+      setStart(""); setWeeks("16"); setClosed(false);
       setMode("create");
       setError(null);
     },
@@ -75,6 +78,10 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
       setEditId(x.AdTermId);
       setName(x.AdTermName);
       setStart(x.AdTermStart || ""); setWeeks(String(x.AdTermWeeks || ""));
+      /* Show the mark that is actually in force, including the one inferred for
+         the ten years of terms that pre-date the field, so saving makes the
+         state explicit instead of quietly re-opening an old term. */
+      setClosed(isTermClosed(x, items));
       setMode("edit");
       setError(null);
     };
@@ -90,7 +97,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
           method: mode === "edit" ? "PUT" : "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ AdTermName: name.trim(),
-            AdTermStart: start || undefined, AdTermWeeks: Number(weeks) || undefined }),
+            AdTermStart: start || undefined, AdTermWeeks: Number(weeks) || undefined,
+            AdTermClosed: closed }),
         },
       ),
       d = await r.json();
@@ -173,6 +181,18 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                 />
               </Field>
             </div>
+            <label className="term-closed-toggle">
+              <input
+                type="checkbox"
+                checked={closed}
+                onChange={(e) => setClosed(e.target.checked)}
+                aria-label="انتهى هذا الفصل الدراسي"
+              />
+              <span>
+                <strong>انتهى هذا الفصل الدراسي</strong>
+                <small>تُخفى أدوات استعارة القاعات بين الأقسام، فلا معنى لاستعارة قاعة في فصل انتهى. الجدول نفسه يبقى كما هو للقراءة والتقارير.</small>
+              </span>
+            </label>
             <p className="smart-term-hint">
               {start
                 ? "التقويم المُشترَك سيبدأ وينتهي بهذين التاريخين بالضبط."
@@ -234,8 +254,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
                       {activeId === x.AdTermId ? <span className="sr-only">، محدد</span> : null}
                     </>
                   )}
-                  subtitle="مرجع الجداول والتقارير"
-                  meta={<MetaPill label="الترتيب" value={String(i + 1)} />}
+                  subtitle={isTermClosed(x, items) ? "فصل منتهٍ · للقراءة والتقارير" : "الفصل الجاري · مرجع الجداول"}
+                  meta={<MetaPill label="الحالة" value={isTermClosed(x, items) ? "منتهٍ" : "جارٍ"} />}
                 />
               ))}
             </RecordDeck>

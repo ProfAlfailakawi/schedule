@@ -132,12 +132,16 @@ function simpleHash(password: string): string {
 }
 
 /** A term's calendar, normalised — or nothing at all, which is also an answer. */
-function termCalendarFields(dates?: { start?: string; weeks?: number }): Partial<AdTerm> {
+function termCalendarFields(dates?: { start?: string; weeks?: number; closed?: boolean }): Partial<AdTerm> {
   const out: Partial<AdTerm> = {};
   const start = String(dates?.start || "").trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(start) && !Number.isNaN(Date.parse(start))) out.AdTermStart = start;
   const weeks = Number(dates?.weeks || 0);
   if (Number.isInteger(weeks) && weeks >= 1 && weeks <= 30) out.AdTermWeeks = weeks;
+  /* Only a real boolean is stored. "Not stated" has its own meaning — see
+     isTermClosed() — and must not collapse into false, which would silently
+     re-open every historical term. */
+  if (typeof dates?.closed === "boolean") out.AdTermClosed = dates.closed;
   return out;
 }
 
@@ -2315,7 +2319,7 @@ export const Repository = {
   /* `dates` is optional so every existing name-only caller stays valid, and so
      a term created without a calendar is still a term. Undefined fields are
      stripped rather than written: Firestore rejects an explicit undefined. */
-  createTerm: async (name: string, dates?: { start?: string; weeks?: number }): Promise<AdTerm> => {
+  createTerm: async (name: string, dates?: { start?: string; weeks?: number; closed?: boolean }): Promise<AdTerm> => {
     invalidateReference(REFERENCE_KEYS.terms);
     const calendar = termCalendarFields(dates);
     if (firestoreDb && !demoSandboxContext.getStore()) {
@@ -2331,7 +2335,7 @@ export const Repository = {
     return newTerm;
   },
 
-  updateTerm: async (id: number, name: string, dates?: { start?: string; weeks?: number }): Promise<AdTerm> => {
+  updateTerm: async (id: number, name: string, dates?: { start?: string; weeks?: number; closed?: boolean }): Promise<AdTerm> => {
     invalidateReference(REFERENCE_KEYS.terms);
     const calendar = termCalendarFields(dates);
     if (firestoreDb && !demoSandboxContext.getStore()) {

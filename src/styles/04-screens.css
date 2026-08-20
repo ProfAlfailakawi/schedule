@@ -2035,3 +2035,40 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
   .install-modal-backdrop{align-items:center;padding:24px}
   .install-pop.install-pop-login-modal{max-height:min(76vh,580px)!important}
 }
+
+/* The end-of-term mark. A checkbox with the consequence written beside it,
+   because "this term is over" quietly removes a feature from another screen. */
+.term-closed-toggle{
+  display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:10px;
+  margin-top:var(--s4);padding:12px 14px;
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface-2);cursor:pointer;
+}
+.term-closed-toggle:hover{border-color:var(--line-strong)}
+.term-closed-toggle>input{width:18px;height:18px;margin:2px 0 0;accent-color:var(--accent);cursor:pointer}
+.term-closed-toggle>span{display:grid;gap:3px;min-width:0}
+.term-closed-toggle strong{font-size:13px;font-weight:650;color:var(--ink)}
+.term-closed-toggle small{font-size:11.5px;line-height:1.65;color:var(--muted)}
+
+/* ── The install control is a footer glyph, not a button ───────────────────
+   In the sign-in footer it sits directly beside the demo flask, which is a bare
+   glyph: no border, no fill, muted ink. The install trigger kept the boxed
+   treatment it wears elsewhere in the application, so one lone rounded square
+   floated in a row of quiet marks and pulled the eye to the least important
+   thing on the screen. Same size, same hit area, same weight as its neighbour;
+   it announces itself on hover, and its brass dot still marks "installable". */
+.install-login .install-trigger{
+  border-color:transparent;
+  background:transparent;
+  color:#6d7a73;
+}
+.install-login .install-trigger:hover,
+.install-login .install-trigger:focus-visible,
+.install-login .install-trigger.active{
+  border-color:transparent;
+  background:color-mix(in srgb,#ffffff 7%,transparent);
+  color:#dfe8e3;
+}
+.install-login .install-trigger.discoverable::after{
+  box-shadow:0 0 0 2px #0d1211,0 0 0 3px color-mix(in srgb,var(--brass) 15%,transparent);
+}

@@ -1397,7 +1397,8 @@ app.post("/api/terms", requirePermission(5), async (req: Request, res: Response)
     return;
   }
   const newTerm = await Repository.createTerm(AdTermName,
-    { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0 });
+    { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0,
+      closed: typeof req.body.AdTermClosed === "boolean" ? req.body.AdTermClosed : undefined });
   res.status(201).json(newTerm);
 });
 
@@ -1410,7 +1411,8 @@ app.put("/api/terms/:id", requirePermission(5), async (req: Request, res: Respon
   }
   try {
     const updated = await Repository.updateTerm(id, AdTermName,
-      { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0 });
+      { start: req.body.AdTermStart, weeks: Number(req.body.AdTermWeeks) || 0,
+        closed: typeof req.body.AdTermClosed === "boolean" ? req.body.AdTermClosed : undefined });
     res.json(updated);
   } catch (e: any) {
     res.status(404).json({ error: e.message });
@@ -1709,7 +1711,7 @@ async function roomScopeNotice(row:any){
 }
 
 /**
- * ── بورصة القاعات الساكنة بين الكليات ──────────────────────────────────────
+ * ── استعارة القاعات الساكنة بين الأقسام ──────────────────────────────────────
  *
  * No room is declared "owned" in the legacy schema. Ownership is therefore a
  * reading of ten years of behaviour: the section that used a room most often,
@@ -2161,13 +2163,13 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const barterNotes:any[] = [];
   if(barterReservation)barterNotes.push({
     type:"hallBarter",severity:"high",soft:false,rowId:0,otherId:0,
-    message:`القاعة ${candidate.AdRoomCode}/${candidate.AdRoomHall} محجوزة رقمياً عبر بورصة القاعات`,
+    message:`القاعة ${candidate.AdRoomCode}/${candidate.AdRoomHall} محجوزة رقمياً عبر استعارة القاعات`,
     detail:`نافذة الاستعارة المعتمدة ${HALL_BARTER_DAY_LABEL.get(barterReservation.day)||""} ${formatScheduleTimeRange(barterReservation.startTime, barterReservation.endTime)}.`
   });
   if(borrowerWindowViolation)barterNotes.push({
     type:"hallBarterWindow",severity:"high",soft:false,rowId:0,otherId:0,
     message:"الموعد يتجاوز نافذة الاستعارة المعتمدة",
-    detail:"استخدم القاعة داخل اليوم والوقت المعتمدين فقط، أو اطلب نافذة إضافية من بورصة القاعات قبل الحفظ."
+    detail:"استخدم القاعة داخل اليوم والوقت المعتمدين فقط، أو اطلب نافذة إضافية من استعارة القاعات قبل الحفظ."
   });
   const softTravel = await interCampusWarnings(candidate, all);
   /* The department's own habit, broken. Not an error — a lecture beginning at
@@ -2589,7 +2591,7 @@ app.post("/api/hall-barter/requests", requirePermission(7), async (req: Authenti
   if(!isScopeAllowed(req,collegeId,sectionId)&&!req.user.IsAdminUser){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const board=await buildHallBarterBoard(req,collegeId,sectionId,termId);
   const opportunity=board.opportunities.find((item:any)=>item.id===opportunityId);
-  if(!opportunity){res.status(409).json({error:"هذه النافذة لم تعد متاحة كما كانت. حدّث البورصة واختر نافذة أخرى."});return;}
+  if(!opportunity){res.status(409).json({error:"هذه النافذة لم تعد متاحة كما كانت. حدّث القائمة واختر نافذة أخرى."});return;}
   if(Number(opportunity.ownerCollegeId)===collegeId&&Number(opportunity.ownerSectionId)===sectionId){res.status(409).json({error:"لا يمكن للقسم استعارة قاعة من نفسه."});return;}
   const request=await Repository.createHallBarterRequest({
     AdTermId:termId,roomCode:opportunity.roomCode,roomHall:opportunity.roomHall,day:opportunity.day,
@@ -2734,7 +2736,7 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
       active.some(day=>request.day===day&&scheduleOverlap(String(row.fstarttime||""),String(row.fendtime||""),String(request.startTime||""),String(request.endTime||"")))
     );
     if(foreign){
-      add({id:`barter:${row.id}:${foreign.id}`,type:"hallBarter",title:`القاعة ${row.AdRoomCode}/${row.AdRoomHall} محجوزة عبر بورصة القاعات`,detail:`نافذة معتمدة ${HALL_BARTER_DAY_LABEL.get(foreign.day)||""} ${formatScheduleTimeRange(String(foreign.startTime||""),String(foreign.endTime||""))}.`,rowIds:[Number(row.id)]});
+      add({id:`barter:${row.id}:${foreign.id}`,type:"hallBarter",title:`القاعة ${row.AdRoomCode}/${row.AdRoomHall} محجوزة عبر استعارة القاعات`,detail:`نافذة معتمدة ${HALL_BARTER_DAY_LABEL.get(foreign.day)||""} ${formatScheduleTimeRange(String(foreign.startTime||""),String(foreign.endTime||""))}.`,rowIds:[Number(row.id)]});
     }
     if(mine.length&&active.some(day=>!mine.some((request:any)=>request.day===day&&timeToMinutes(String(row.fstarttime||""))>=timeToMinutes(String(request.startTime||""))&&timeToMinutes(String(row.fendtime||""))<=timeToMinutes(String(request.endTime||""))))){
       add({id:`barter-window:${row.id}`,type:"hallBarterWindow",title:"الموعد يتجاوز نافذة الاستعارة المعتمدة",detail:"استخدم القاعة داخل اليوم والوقت المعتمدين، أو اطلب نافذة إضافية قبل الاعتماد.",rowIds:[Number(row.id)]});

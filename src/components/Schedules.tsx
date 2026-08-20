@@ -104,7 +104,7 @@ import {
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, sortByName } from "../utils/sorting";
-import { previousYearSameTermName, sameTermName, sortTermsNewest } from "../utils/termSequence";
+import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
@@ -401,6 +401,48 @@ function WeekPeek({ anchor, title, who, code, section, days: dayText, from, to, 
 }
 
 /**
+ * The hover card, and why it owns its own state.
+ *
+ * Pointing at a lecture used to set state on the schedule screen itself. That
+ * screen renders every card on the board, so brushing the pointer across a week
+ * re-ran the whole board once per card the pointer touched — measured at 50–80ms
+ * a hover on a term with 126 appointments, and it grows with the term. The
+ * *recomputation* had already been memoised away; what remained was React
+ * re-rendering several hundred cards to produce byte-identical output, purely so
+ * a tooltip could move.
+ *
+ * The tooltip now keeps its own state behind an imperative handle. A card calls
+ * `open`/`close` through a ref that never changes identity, so the board is not
+ * re-rendered at all — only this component is. Everything the card shows is
+ * still derived from live data, through `describe`, at the moment it is shown.
+ */
+export type WeekPeekHandle = {
+  open(row: FSchedule, element: HTMLElement | null): void;
+  close(rowId: number): void;
+};
+
+type PeekDescription = React.ComponentProps<typeof WeekPeek>;
+
+const WeekPeekLayer = React.forwardRef<
+  WeekPeekHandle,
+  { describe: (row: FSchedule) => Omit<PeekDescription, "anchor"> }
+>(function WeekPeekLayer({ describe }, ref) {
+  const [peek, setPeek] = useState<{ row: FSchedule; x: number; y: number } | null>(null);
+  React.useImperativeHandle(ref, () => ({
+    open(row, element) {
+      if (!element) return;
+      const rect = element.getBoundingClientRect();
+      setPeek({ row, x: rect.left + rect.width / 2, y: rect.top });
+    },
+    close(rowId) {
+      setPeek(current => (current?.row.id === rowId ? null : current));
+    },
+  }), []);
+  if (!peek) return null;
+  return <WeekPeek anchor={{ x: peek.x, y: peek.y }} {...describe(peek.row)} />;
+});
+
+/**
  * The board, drawn as light before its data arrives.
  *
  * A schedule loads by fetching a term's rows, and for a beat the surface was
@@ -662,12 +704,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * a column. This one is measured against the window: it opens beside the card
    * it describes and steps back inside whichever edge it would have crossed.
    */
-  const [peek, setPeek] = useState<{ row: FSchedule; x: number; y: number } | null>(null);
-  const openPeek = (row: FSchedule, element: HTMLElement | null) => {
-    if (!element) return;
-    const rect = element.getBoundingClientRect();
-    setPeek({ row, x: rect.left + rect.width / 2, y: rect.top });
-  };
+  /* The hover card lives in its own layer (see WeekPeekLayer): pointing at a
+     lecture must not re-render the board that draws every lecture. These two
+     handles never change identity, so the card handlers stay stable too. */
+  const peekRef = useRef<WeekPeekHandle | null>(null);
+  const openPeek = (row: FSchedule, element: HTMLElement | null) => peekRef.current?.open(row, element);
+  const closePeek = (rowId: number) => peekRef.current?.close(rowId);
 
   /**
    * Painting a new appointment straight onto an empty column.
@@ -2280,7 +2322,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       summary = detail || "نفس الأيام ونفس الوقت.";
     } else if (conflict.type === "hallBarter") {
       title = `القاعة ${roomLabel || "—"} محجوزة رقمياً`;
-      titleSecondary = "عبر بورصة القاعات";
+      titleSecondary = "عبر استعارة القاعات";
       summary = detail;
     } else if (conflict.type === "hallBarterWindow") {
       title = conflict.message || "الموعد يتجاوز نافذة الاستعارة";
@@ -4212,6 +4254,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * test; where it does not — and ten years of terms do not — the newest term
    * is taken as the current one, which is this department's own convention.
    */
+  /** A finished term keeps its schedule, but loses the tools that only make
+   *  sense while teaching is still ahead. */
+  const selectedTermClosed = useMemo(
+    () => isTermClosed(terms.find(term => term.AdTermId === filterTerm), terms),
+    [terms, filterTerm],
+  );
+
   const termIsRunning = useMemo(() => {
     const term = terms.find((item: any) => Number(item.AdTermId) === Number(filterTerm));
     if (!term) return false;
@@ -5008,9 +5057,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
         style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
-        onPointerLeave={() => setPeek(current => (current?.row.id === r.id ? null : current))}
+        onPointerLeave={() => closePeek(r.id)}
         onFocus={(e) => openPeek(r, e.currentTarget)}
-        onBlur={() => setPeek(current => (current?.row.id === r.id ? null : current))}
+        onBlur={() => closePeek(r.id)}
         key={`${d.key}-${r.id}`}
       >
         <GripVertical data-physics-handle="true" className="week-drag-handle" />
@@ -8243,7 +8292,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             >
               <ArrowLeftRight /> أدوات البيانات
             </GhostButton> : null}
-            {workspaceToolsOpen && mode === "schedule" && workspaceReady && filterCollege && filterSection && filterTerm ? (
+            {/* Borrowing a room from another department only means something while
+                the term is still being taught. On a term marked as finished the
+                whole market is withdrawn rather than left to offer windows in a
+                week nobody will attend. */}
+            {workspaceToolsOpen && mode === "schedule" && workspaceReady && filterCollege && filterSection && filterTerm && !selectedTermClosed ? (
               <div className="schedule-control-barter schedule-control-barter--inside-more">
                 <HallBarterBoard
                   collegeId={filterCollege}
@@ -8545,9 +8598,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     void openContext(row);
                   }}
                   onPointerEnter={(e) => { if (!physicsActive) openPeek(row, e.currentTarget); }}
-                  onPointerLeave={() => setPeek(current => (current?.row.id === row.id ? null : current))}
+                  onPointerLeave={() => closePeek(row.id)}
                   onFocus={(e) => openPeek(row, e.currentTarget)}
-                  onBlur={() => setPeek(current => (current?.row.id === row.id ? null : current))}
+                  onBlur={() => closePeek(row.id)}
                   tabIndex={0}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") { void openContext(row); return; }
@@ -9875,25 +9928,25 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           Rooms and week now open the same Quick Create card, the same peek and
           the same physics overlay immediately in the view where the gesture
           happened; no state is left waiting for a later switch to week. */}
-      {peek ? (
-        <WeekPeek
-          anchor={{ x: peek.x, y: peek.y }}
-          title={peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "مقرر"}
-          who={`${instructorById.get(peek.row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(peek.row.AdInstructorId) ? " · منتدب" : ""}`}
-          code={courseById.get(peek.row.AdCourseId)?.CourseCode || "—"}
-          section={String(peek.row.SCode || "—")}
-          days={arabicDays(peek.row)}
-          from={peek.row.fstarttime}
-          to={peek.row.fendtime}
-          room={[peek.row.AdRoomCode, peek.row.AdRoomHall].filter(Boolean).join("/")}
-          hue={hueFor(
-            courseById.get(peek.row.AdCourseId)?.CourseCode || peek.row.AdCourseName || "—",
-            peek.row.AdCourseName || courseById.get(peek.row.AdCourseId)?.CourseName || "",
-            instructorById.get(peek.row.AdInstructorId)?.AdInstructorName,
-            placeOf(peek.row),
-          )}
-        />
-      ) : null}
+      <WeekPeekLayer
+        ref={peekRef}
+        describe={(row) => ({
+          title: row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "مقرر",
+          who: `${instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(row.AdInstructorId) ? " · منتدب" : ""}`,
+          code: courseById.get(row.AdCourseId)?.CourseCode || "—",
+          section: String(row.SCode || "—"),
+          days: arabicDays(row),
+          from: row.fstarttime,
+          to: row.fendtime,
+          room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/"),
+          hue: hueFor(
+            courseById.get(row.AdCourseId)?.CourseCode || row.AdCourseName || "—",
+            row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "",
+            instructorById.get(row.AdInstructorId)?.AdInstructorName,
+            placeOf(row),
+          ),
+        })}
+      />
       {quick ? (
         <QuickCreatePopover
           seed={quick}

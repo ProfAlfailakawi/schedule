@@ -151,7 +151,12 @@
 .jr-headline{
   margin:clamp(18px,2.4vh,28px) 0 0;
   font-size:clamp(44px,7.4vw,104px);
-  line-height:1.0;
+  /* Arabic display type needs the room a Latin headline does not. At 1.0 the
+     hamza riding on the alef of «أثراً» climbed into the descenders of the line
+     above and the two lines read as one smudged word. 1.14 is the tightest
+     setting where the tallest mark on the second line still clears the lowest
+     on the first at every size in the clamp. */
+  line-height:1.14;
   font-weight:600;
   letter-spacing:-.05em;
   color:var(--jr-ink);
@@ -325,7 +330,8 @@
 .jr-creed blockquote{
   margin:clamp(16px,2.4vh,26px) 0 0;
   font-size:clamp(28px,4.6vw,60px);
-  line-height:1.14;
+  /* Same reason as the headline: two Arabic display lines need clearance. */
+  line-height:1.24;
   font-weight:600;
   letter-spacing:-.04em;
   color:var(--jr-ink);
@@ -401,7 +407,7 @@
   .jr-close svg{width:17px;height:17px}
 
   .jr-hero{min-height:min(100svh,760px)}
-  .jr-headline{font-size:clamp(40px,12.5vw,58px);letter-spacing:-.045em}
+  .jr-headline{font-size:clamp(40px,12.5vw,58px);letter-spacing:-.045em;line-height:1.16}
   .jr-lede{font-size:14.5px;line-height:1.8}
   .jr-headnum>b{font-size:clamp(52px,17vw,74px)}
 

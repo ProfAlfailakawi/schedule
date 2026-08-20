@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-19T23:01:02.956Z",
+  "generatedAt": "2026-08-20T01:00:17.225Z",
   "fingerprints": [
     "src/App.tsx|NavButton|intelligence مركز الذكاء|<NavButton activeView={activeView} onGo={go} view=\"intelligence\" icon={<WandSparkles />} label=\"مركز الذكاء\" />",
     "src/App.tsx|NavButton|scheduleCopy نسخ فصل|<NavButton activeView={activeView} onGo={go} view=\"scheduleCopy\" icon={<CopyPlus />} label=\"نسخ فصل\" />",
@@ -78,7 +78,7 @@
     "src/components/HallBarterBoard.tsx|PrimaryButton|button approve موافقة|<PrimaryButton type=\"button\" disabled={busyId === row.id} onClick={() => void respond(row.id, \"approve\")}>",
     "src/components/HallBarterBoard.tsx|PrimaryButton|button اطلب استعارة النطاق|<PrimaryButton type=\"button\" disabled={busyId === opportunity.id} onClick={() => void request(opportunity)}>",
     "src/components/HallBarterBoard.tsx|SecondaryButton|button reject رفض|<SecondaryButton type=\"button\" disabled={busyId === row.id} onClick={() => void respond(row.id, \"reject\")}>",
-    "src/components/HallBarterBoard.tsx|button|button hall-barter-summary hall-barter-mark true true hall-barter-summary-copy بين الكليات · موافقة رقمية بورصة القاعات الساكنة بورصة تتعلم |<button type=\"button\" className=\"hall-barter-summary\" onClick={() => setOpen(value => !value)} aria-expanded={open}>",
+    "src/components/HallBarterBoard.tsx|button|button hall-barter-summary hall-barter-mark true true hall-barter-summary-copy بين الكليات · موافقة رقمية استعارة القاعات بين الأقسام استعار|<button type=\"button\" className=\"hall-barter-summary\" onClick={() => setOpen(value => !value)} aria-expanded={open}>",
     "src/components/InstallApp.tsx|button|button install-go true ثبّت الآن|<button type=\"button\" className=\"install-go\" onClick={install}>",
     "src/components/InstallApp.tsx|button|إغلاق button إغلاق true|<button type=\"button\" onClick={() => setOpen(false)} aria-label=\"إغلاق\">",
     "src/components/InstructorPicker.tsx|button|button btn btn-ghost إلغاء|<button type=\"button\" className=\"btn btn-ghost\" onClick={() => { setAdding(false); setError(null); }}>",

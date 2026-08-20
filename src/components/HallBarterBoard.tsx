@@ -130,6 +130,15 @@ export default function HallBarterBoard({
     void load(true);
   }, [liveSerial, load]);
 
+  /* Open, this board is a full-screen destination. Say so on the document so the
+     floating dock and the guide step aside, exactly as they do for the journey —
+     otherwise they float in the middle of the sheet. */
+  useEffect(() => {
+    if (!open) return;
+    document.documentElement.dataset.barterOpen = "true";
+    return () => { delete document.documentElement.dataset.barterOpen; };
+  }, [open]);
+
   useEffect(() => {
     if (!open) return;
     const dismiss = (event: PointerEvent) => {
@@ -185,13 +194,13 @@ export default function HallBarterBoard({
   );
 
   return (
-    <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="بورصة القاعات الساكنة بين الكليات">
-      {open ? <button type="button" className="hall-barter-screen-close" onClick={() => setOpen(false)} aria-label="إغلاق البورصة" title="إغلاق البورصة" data-guide-ignore="زر إغلاق شاشة بورصة القاعات فقط؛ لا ينفذ ميزة تشغيلية ولا يحتاج خطوة إرشادية مستقلة"><X aria-hidden="true" /></button> : null}
+    <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="استعارة القاعات بين الأقسام">
+      {open ? <button type="button" className="hall-barter-screen-close" onClick={() => setOpen(false)} aria-label="إغلاق استعارة القاعات" title="إغلاق استعارة القاعات" data-guide-ignore="زر إغلاق شاشة استعارة القاعات فقط؛ لا ينفذ ميزة تشغيلية ولا يحتاج خطوة إرشادية مستقلة"><X aria-hidden="true" /></button> : null}
       <button type="button" className="hall-barter-summary" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className="hall-barter-mark"><Building2 aria-hidden="true" /><ArrowLeftRight aria-hidden="true" /></span>
         <span className="hall-barter-summary-copy">
           <small>بين الكليات · موافقة رقمية</small>
-          <strong>{open ? "بورصة القاعات الساكنة" : "بورصة"}</strong>
+          <strong>{open ? "استعارة القاعات بين الأقسام" : "استعارة قاعة"}</strong>
           <em>تتعلم من آخر عشر سنوات، ولا تعرض إلا نافذة متكررة الفراغ ومجانية الآن.</em>
         </span>
         <span className="hall-barter-summary-stats">
@@ -206,7 +215,7 @@ export default function HallBarterBoard({
         <div className="hall-barter-body">
           <div className="hall-barter-guard">
             <ShieldCheck aria-hidden="true" />
-            <div><strong>الاستعارة تحجز نافذة القاعة فقط</strong><span>لا ينشئ النظام محاضرة وهمية ولا يغيّر مقررًا. البورصة تفصل البنين والبنات بالكامل، وبعد الموافقة يظل إنشاء الموعد الحقيقي عبر محرر الجدول المعتاد مع فحص التضارب نفسه.</span></div>
+            <div><strong>الاستعارة تحجز نافذة القاعة فقط</strong><span>لا ينشئ النظام محاضرة وهمية ولا يغيّر مقررًا. والاستعارة تفصل البنين والبنات بالكامل، وبعد الموافقة يظل إنشاء الموعد الحقيقي عبر محرر الجدول المعتاد مع فحص التضارب نفسه.</span></div>
             <GhostButton type="button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />تحديث</GhostButton>
           </div>
           <div className="hall-barter-memory">

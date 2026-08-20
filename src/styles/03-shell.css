@@ -1382,7 +1382,15 @@ html[data-schedule-workspace="focus"] .schedule-page>.schedule-agenda-surface{
 /* Compact Demo status stays in navigation chrome and never covers content. */
 .demo-rail-chip{margin:4px 14px 8px;min-height:32px;padding:4px 6px 4px 10px;display:flex;align-items:center;gap:7px;width:max-content;max-width:calc(100% - 28px);border:1px solid color-mix(in srgb,#b78a3a 34%,transparent);border-radius:999px;background:color-mix(in srgb,#8a641c 12%,var(--nav));color:#c7a86c;font-size:10px;font-weight:800;letter-spacing:.12em}.demo-rail-chip>svg{width:13px;height:13px}.demo-rail-chip>i{width:5px;height:5px;border-radius:50%;background:#55b99a;box-shadow:0 0 0 3px color-mix(in srgb,#55b99a 12%,transparent)}.demo-rail-chip>button{display:grid;place-items:center;width:24px;height:24px;padding:0;margin-inline-start:1px;border:0;border-radius:50%;background:transparent;color:inherit;cursor:pointer}.demo-rail-chip>button:hover{background:color-mix(in srgb,#fff 7%,transparent)}.demo-rail-chip>button svg{width:12px;height:12px}
 
-/* V13 — Journey owns the complete visual stack while it is open. */
+/* V13 — Journey owns the complete visual stack while it is open.
+   بورصة القاعات is the other full-screen destination and gets the same
+   treatment: the floating dock and the guide were painting on top of it, in the
+   middle of the sheet, which read as two loose controls dropped over the page. */
+html[data-barter-open="true"] .smart-guide-fab,
+html[data-barter-open="true"] .smart-guide,
+html[data-barter-open="true"] .smart-guide-ambient-next,
+html[data-barter-open="true"] .schedule-dock,
+html[data-barter-open="true"] .quick-create,
 html[data-journey-open="true"] .smart-guide-fab,
 html[data-journey-open="true"] .smart-guide,
 html[data-journey-open="true"] .smart-guide-ambient-next,

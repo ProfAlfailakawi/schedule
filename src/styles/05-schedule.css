@@ -8266,3 +8266,44 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .rooms-main-scroll{
   scrollbar-gutter:auto;
 }
+
+/* === بورصة sits in the tools row, so it dresses like the tools row ========
+   Closed, the market is one more control beside «أدوات البيانات» and «مراجعة
+   الاعتماد» — but it was rendering as a bordered white pill among flat ghost
+   buttons, which made it read as a different kind of thing and drew the eye
+   first. These values are the ghost button's own, measured from its peers:
+   38px tall, 12.5px/600 label, 8px gap, 11px radius, no border, no fill. */
+.schedule-control-barter .hall-barter-board:not(.is-open){
+  border:0!important;
+  border-radius:11px!important;
+  background:transparent!important;
+  box-shadow:none!important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary{
+  min-height:38px!important;
+  grid-template-columns:auto auto!important;
+  gap:8px!important;
+  padding:0 12px!important;
+  border-radius:11px!important;
+  align-items:center!important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary:hover{
+  background:var(--surface-2)!important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-mark{
+  width:16px!important;height:16px!important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-mark>svg:first-child{
+  width:16px!important;height:16px!important;
+}
+.schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary-copy strong{
+  font-size:12.5px!important;
+  font-weight:600!important;
+  line-height:1!important;
+  color:var(--ink)!important;
+}
+@media(max-width:760px){
+  .schedule-control-barter .hall-barter-board:not(.is-open) .hall-barter-summary{
+    min-height:38px!important;padding:0 12px!important;
+  }
+}

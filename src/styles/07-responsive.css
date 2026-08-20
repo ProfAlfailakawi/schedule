@@ -178,7 +178,7 @@
      screens. The schedule's own rides above it rather than on top of it, so
      neither ever steals the other's press. */
   /* No rail on a phone: the board IS the window, so the dock centres on it. */
-  .schedule-dock{--dock-rail:0px;bottom:calc(70px + env(safe-area-inset-bottom))}
+  .schedule-dock{bottom:calc(70px + env(safe-area-inset-bottom))}
   .undo-bar{bottom:calc(70px + 52px + env(safe-area-inset-bottom))}
 
   /* The phone dock — the few places one moves between, plus "more" for the rest:
@@ -762,6 +762,22 @@
   .schedule-phone .schedule-tool-actions{gap:8px}
 }
 
+/* ──────────────────────────────────────────────────────────────────────────
+   The dock centres on the board, and the board is the whole window until the
+   rail actually takes space.
+
+   `--dock-rail` reserves the sidebar's width so the dock lands in the middle of
+   the work rather than the middle of the viewport. But the rail only occupies
+   layout at 1120px and above; below that it is off-canvas. The default kept the
+   full 266px, the folded-rail override lived inside a min-width:1120px query and
+   the zero override inside max-width:768px — so every window between 769px and
+   1119px pushed the dock a quarter of the screen off to one side, centred on a
+   rail that was not there. One rule for "the rail is not on screen".
+   ────────────────────────────────────────────────────────────────────────── */
+@media screen and (max-width:1119px){
+  .schedule-dock{--dock-rail:0px}
+}
+
 /* An open off-canvas navigation drawer owns the phone/tablet surface. Hide both
    floating docks while it is open so schedule controls can never sit on top of
    the account card or intercept a tap intended for the menu. Desktop keeps its
@@ -1166,4 +1182,42 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     width:100vw!important;height:100svh!important;min-height:100svh!important;
     max-height:100svh!important;overflow:hidden!important;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PHONE — the scope comes first, and the readings are a strip, not a stack
+   ══════════════════════════════════════════════════════════════════════════
+   Two things went wrong once the mini-stats and مركز القرار were wrapped in
+   `.schedule-overview-stack`.
+
+   1. The phone order rules below still address `.schedule-phone > …`, so they
+      stopped matching the moment the readings moved one level down. The
+      readings and the decision deck ended up ABOVE the الكلية/القسم/الفصل card
+      — you were asked what you are looking at only after being shown it.
+   2. Three full-width cards, 73px each plus gaps, spent 243px of a phone
+      screen on three numbers before the timetable could start.
+
+   The wrapper is ordered after the scope card, and the readings become one
+   compact three-across strip: same numbers, a quarter of the paper.
+   ══════════════════════════════════════════════════════════════════════════ */
+@media screen and (max-width:768px){
+  .schedule-page>.schedule-overview-stack{order:1}
+
+  .schedule-overview-stack>.schedule-mini-stats{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+  }
+  .schedule-overview-stack>.schedule-mini-stats .stat-card{
+    min-height:0;
+    grid-template-columns:minmax(0,1fr);
+    gap:2px;
+    padding:9px 8px;
+    border-radius:14px;
+    text-align:center;
+  }
+  /* The icon is decoration next to a number this small; the label already says
+     what the number counts. */
+  .schedule-overview-stack>.schedule-mini-stats .stat-icon{display:none}
+  .schedule-overview-stack>.schedule-mini-stats .stat-card strong{font-size:19px;line-height:1.15}
+  .schedule-overview-stack>.schedule-mini-stats .stat-card span{margin-top:1px;font-size:10.5px;line-height:1.3}
 }

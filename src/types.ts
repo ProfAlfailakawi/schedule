@@ -43,6 +43,16 @@ export interface AdTerm {
    */
   AdTermStart?: string;
   AdTermWeeks?: number;
+  /**
+   * Whether this term is over.
+   *
+   * Set explicitly by a coordinator; absent on the ten years of terms that
+   * pre-date the flag. Anything that reads it should go through
+   * `isTermClosed()` in utils/termSequence, which supplies the sane default —
+   * only the newest term is still live — rather than treating "absent" as
+   * "open" and offering room-borrowing on a term that ended years ago.
+   */
+  AdTermClosed?: boolean;
 }
 
 export interface AdCollege {

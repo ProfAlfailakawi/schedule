@@ -68,3 +68,33 @@ export function sortTermsNewest<T extends { AdTermId?: number; AdTermName?: stri
     termChronology(b) - termChronology(a) || Number(b.AdTermId || 0) - Number(a.AdTermId || 0)
   );
 }
+
+/**
+ * Is this term over?
+ *
+ * A coordinator can say so outright, and that answer always wins. But ten years
+ * of terms exist that pre-date the flag entirely, and treating "nobody said" as
+ * "still running" is the wrong default: it offered room-borrowing between
+ * departments on a term that finished in 2018, where nothing can be borrowed
+ * because nothing is scheduled any more.
+ *
+ * So an unmarked term is judged by its position: the newest term in the list is
+ * the live one, and everything behind it has been overtaken. The list is already
+ * sorted newest-first everywhere it is served, but the order is verified here
+ * rather than assumed — a caller passing an arbitrary array still gets a right
+ * answer.
+ */
+export function isTermClosed(
+  term: { AdTermId?: number; AdTermClosed?: boolean } | null | undefined,
+  allTerms: ReadonlyArray<{ AdTermId?: number }> = [],
+): boolean {
+  if (!term) return false;
+  if (typeof term.AdTermClosed === "boolean") return term.AdTermClosed;
+  if (!allTerms.length) return false;
+  const newestId = allTerms.reduce(
+    (best, row) => (Number(row?.AdTermId || 0) > best ? Number(row?.AdTermId || 0) : best),
+    0,
+  );
+  if (!newestId) return false;
+  return Number(term.AdTermId || 0) !== newestId;
+}
