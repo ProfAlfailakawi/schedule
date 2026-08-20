@@ -1840,7 +1840,6 @@
 .cmdk.visual-minimal .cmdk-foot{opacity:.78}
 
 /* Product journey / about: editorial, not dashboard-like. */
-.journey.visual-minimal{border-radius:34px;box-shadow:var(--shadow-lg)}
 .about-editorial.visual-minimal .editorial-person{border-radius:26px;overflow:hidden}
 .about-editorial.visual-minimal .editorial-photo{border-radius:22px;overflow:hidden}
 .about-editorial.visual-minimal .editorial-contact a,

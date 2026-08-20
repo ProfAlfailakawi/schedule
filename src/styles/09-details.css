@@ -1247,10 +1247,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   display:none;
 }
 /* Accumulated terms, suggested rather than illustrated: lines that thin out. */
-.journey-strata{
-  display:flex;align-items:flex-end;justify-content:center;gap:5px;
-  height:44px;margin-top:var(--s3);
-}
 /*
    Weight 650 is not a face this document owns.
    The typeface is self-hosted at 300/400/500/600/700 (01-foundation.css), so a
@@ -1260,7 +1256,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
    here now names a weight that exists and states its own colour, so nothing is
    left to inheritance or to synthesis.
 */
-.journey-timeline strong{font-size:var(--t-body);font-weight:700;color:var(--ink)}
 
 /* The repair chain, stated before it is written: what moves, why, and the cost. */
 .repair-sheet{width:min(560px,100%)}
@@ -1432,13 +1427,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   display:grid!important;place-items:center!important;border-radius:16px!important;
 }
 .review-close-icon-button svg{width:22px!important;height:22px!important;margin:0!important}
-@keyframes journey-strata-arrive{
-  from{transform:scaleY(.18);opacity:.08}
-  to{transform:scaleY(1);opacity:calc(.28 + var(--i) * .05)}
-}
-@keyframes journey-section-arrive{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
-
-
 /* Fit the approval review into the desktop viewport by using existing vertical
    space before creating an inner scroll. */
 @media (min-width:900px) and (min-height:760px){
@@ -1551,63 +1539,11 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
   .schedule-time-intelligence-head{align-items:flex-start}
 }
 
-@keyframes journeyMemoryPulse{0%{box-shadow:0 0 0 0 rgba(106,164,142,.42)}70%{box-shadow:0 0 0 10px rgba(106,164,142,0)}100%{box-shadow:0 0 0 0 rgba(106,164,142,0)}}
-@keyframes journeyOrbitA{to{transform:rotate(342deg)}}
-@keyframes journeyOrbitB{to{transform:rotate(394deg)}}
-
-
 /* V7 — portrait is intentionally composed as a compact mobile surface, not a shrunken desktop. */
-@media (max-width:520px) and (orientation:portrait){
-  .journey.journey-v2{overflow-x:hidden}
-  .journey-hero-v2{padding:64px 16px 22px!important;gap:24px!important}
-  .journey-hero-copy{padding-top:4px}
-  .journey-eyebrow-v2{max-width:calc(100% - 58px)}
-  .journey-hero-v2 h2{margin-top:18px!important;max-width:7.5ch!important;font-size:clamp(38px,12vw,50px)!important;line-height:.98!important;gap:12px!important}
-  .journey-title-line-combo{align-items:flex-start!important;gap:.18em!important}
-  .journey-hero-v2 h2 em{margin-top:.14em!important;transform:translateY(.14em)!important}
-  .journey-hero-v2 p{margin-top:24px!important;font-size:11.5px!important;line-height:1.82!important}
-  .journey-signature{display:none!important}
-  .journey-memory-core{width:min(90vw,330px)!important;margin-top:0}
-  .journey-core-center{width:72%!important;min-width:0!important;padding:20px 12px 17px!important;border-radius:30%!important}
-  .journey-core-center svg{width:27px;height:27px;margin-bottom:5px}
-  .journey-core-center b{font-size:clamp(40px,13.4vw,58px)!important;line-height:.9!important;letter-spacing:-.055em!important;white-space:nowrap}
-  .journey-core-center small{font-size:11px!important;margin-top:3px}
-  .journey-core-center span{font-size:8.5px!important;margin-top:2px}
-  .journey-lifetime-v2{margin-inline:14px!important;padding:28px 0 24px!important}
-  .journey-section-head{margin-bottom:14px!important}
-  .journey-section-head h3{max-width:100%!important;font-size:clamp(20px,6.4vw,27px)!important;line-height:1.35!important}
-  .journey-metrics-memory{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
-  .journey-metrics-memory .journey-metric,
-  .journey-metrics-memory .journey-metric-feature{grid-column:auto!important;grid-row:auto!important;min-height:78px!important;padding:12px 14px!important;border-radius:15px!important;display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"label value" "desc value"!important;align-items:center!important;align-content:center!important;gap:3px 12px!important;justify-content:stretch!important}
-  .journey-metrics-memory .journey-metric-feature{background:linear-gradient(145deg,rgba(41,73,62,.22),rgba(255,255,255,.012))!important}
-  .journey-metrics-memory .journey-metric-feature::before{display:none!important}
-  .journey-metrics-memory .journey-metric>span{grid-area:label;font-size:10px!important;align-self:end}
-  .journey-metrics-memory .journey-metric>b{grid-area:value;font-size:clamp(28px,9vw,38px)!important;align-self:center;white-space:nowrap}
-  .journey-metrics-memory .journey-metric>small{grid-area:desc;font-size:8.5px!important;line-height:1.35!important;align-self:start}
-  .journey-timeline-v2{margin-inline:14px!important;padding:34px 0!important}
-  .journey-philosophy-v2,.journey-foot-v2{margin-inline:14px!important}
-}
 
 @media (max-width:520px) and (orientation:portrait){
 
   /* Hero: compact, readable, and deliberately separated from the close button. */
-  .journey-hero-v2{
-    min-height:0!important;
-    display:grid!important;
-    grid-template-columns:1fr!important;
-    gap:18px!important;
-    padding:max(68px,calc(env(safe-area-inset-top) + 58px)) 16px 26px!important;
-    border-bottom:1px solid rgba(184,206,197,.10)!important;
-    overflow:hidden!important;
-  }
 
   /* The lifetime total becomes a strong but shallow capsule: 15,427 always fits. */
-  .journey-memory-core{
-    grid-row:auto!important;
-    width:min(82vw,300px)!important;
-    margin:0 auto!important;
-    justify-self:center!important;
-    aspect-ratio:1.22!important;
-    border-radius:34%!important;
-  }
 }

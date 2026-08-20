@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
 
 export type JourneyReading = {
@@ -227,7 +228,19 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
     { key: "terms", label: "فصل دراسي", value: life.terms, note: "طبقات من الذاكرة" },
   ] : [];
 
-  return (
+  /*
+   * Rendered into <body>, never where it was invoked.
+   *
+   * The rail opens this screen, so it used to render inside `.sidebar` — a
+   * fixed element with `z-index: 61`. That is a stacking context, and a context
+   * caps everything inside it: the sheet's own `z-index: 3000` counted only
+   * against its siblings in the rail, so the schedule's sticky hour ruler (320)
+   * painted straight through the story. A full-screen surface cannot depend on
+   * which button happened to open it, and a portal is the only thing that makes
+   * that true. React context and event bubbling follow the React tree, so
+   * nothing else about the component changes.
+   */
+  const sheet_ = (
     <div
       /* Deliberately NOT `.journey-backdrop`: the previous design left ~900 lines
          of rules on that class across two stylesheets, and inheriting any of it
@@ -353,4 +366,5 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
       </div>
     </div>
   );
+  return typeof document === "undefined" ? sheet_ : createPortal(sheet_, document.body);
 }
