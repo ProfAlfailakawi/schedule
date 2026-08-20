@@ -2286,7 +2286,7 @@ export default function App() {
           <span className="idle-warning-ring" aria-hidden="true" />
           <div>
             <strong>الجلسة تنتهي خلال دقيقة</strong>
-            <span>{user.IsDemo ? "تنتهي جلسة Demo بعد دقيقة 60 من عدم النشاط. أي ضغطة تكفي لمتابعة التجربة." : "لحمايتك، يُغلق الحساب بعد دقيقة 15 بلا حركة. أي ضغطة تكفي لمتابعة العمل."}</span>
+            <span>{user.IsDemo ? "تنتهي جلسة Demo بعد 60 دقيقة من عدم النشاط. أي ضغطة تكفي لمتابعة التجربة." : "لحمايتك، يُغلق الحساب بعد 15 دقيقة بلا حركة. أي ضغطة تكفي لمتابعة العمل."}</span>
           </div>
           <PrimaryButton type="button" onClick={() => setIdleWarning(false)}>
             أكمل العمل

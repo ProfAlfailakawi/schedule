@@ -1393,6 +1393,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * first-load branch already covers.
    */
   const rowsForeign = rowsScope !== "" && rowsScope !== `${filterCollege}|${filterSection}|${filterTerm}`;
+  const rowsScopeRef = useRef("");
 
   const loadRows = async (opts?: { silent?: boolean }) => {
     const scope = scopeRef.current;
@@ -1405,6 +1406,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     loadAbort.current?.abort();
     const controller = new AbortController();
     loadAbort.current = controller;
+    /**
+     * The previous term's rows leave the screen NOW, not when the new ones
+     * arrive. Gating the board alone was not enough: the counters above it —
+     * appointments shown, halls used, staff — are read from the same array,
+     * so they went on quoting the term the reader had just left, and the
+     * conflict chip with them. Emptying the array at the moment the scope
+     * changes takes every one of them out together, and the skeleton that
+     * already covers an empty board covers this too.
+     *
+     * Only on a real change of scope. A silent refresh of the same term must
+     * not blank the board the reader is working in.
+     */
+    if (rowsScopeRef.current && rowsScopeRef.current !== stamp) {
+      rowsScopeRef.current = "";
+      setRowsScope("");
+      setRows([]);
+    }
     if (!opts?.silent) setRowsLoading(true);
     try {
       const data = await fetchJson(`/api/schedules${p.size ? `?${p}` : ""}`, { signal: controller.signal });
@@ -1413,14 +1431,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // longer on screen, and must never be painted onto the one that is.
       const now = scopeRef.current;
       if (stamp !== `${now.collegeId}|${now.sectionId}|${now.termId}`) return;
-      if (token === loadToken.current) { setRows(data); setRowsScope(stamp); }
+      if (token === loadToken.current) { setRows(data); setRowsScope(stamp); rowsScopeRef.current = stamp; }
     } catch (error: any) {
       if (error?.name !== "AbortError") {
         /* A failed read must not leave the previous term's board standing in
            for one that never arrived. Drop the rows and stamp the scope, so
            the screen says «لا مواعيد» honestly instead of holding a skeleton
            for ever or showing somebody else's term. */
-        if (token === loadToken.current) { setRows([]); setRowsScope(stamp); }
+        if (token === loadToken.current) { setRows([]); setRowsScope(stamp); rowsScopeRef.current = stamp; }
         throw error;
       }
     } finally {

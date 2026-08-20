@@ -7080,8 +7080,12 @@ html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
 /* Guide edit hand-off: first identify the exact lecture, then open its editor. */
 [data-guide-edit-target="true"]{overflow:visible!important}
 .guide-edit-target-pin{
-  position:absolute;z-index:120;inset-block-start:-24px;inset-inline-start:50%;
-  transform:translateX(-50%);padding:4px 8px;border-radius:999px;
+  /* Same logical-inset/physical-transform mix as .guide-screen-handoff had:
+     in Arabic it drifted a full width off its own card. Auto margins centre it
+     on either axis of direction. */
+  position:absolute;z-index:120;inset-block-start:-24px;
+  inset-inline:0;margin-inline:auto;width:fit-content;
+  padding:4px 8px;border-radius:999px;
   background:var(--accent);color:var(--accent-contrast);font:750 10px/1 var(--font);
   box-shadow:0 8px 22px rgba(20,45,38,.18);pointer-events:none;white-space:nowrap;
 }

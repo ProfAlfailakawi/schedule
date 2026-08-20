@@ -549,11 +549,23 @@ html[data-schedule-workspace="focus"] .schedule-control{
 .idle-warning{
   position:fixed;
   inset-block-end:calc(var(--s5) + env(safe-area-inset-bottom,0px));
-  inset-inline-start:50%;
-  transform:translateX(50%);
+  /* ── لماذا لم تكن تُقاس على عرض الشاشة ──────────────────────────────────
+     This used to anchor one edge at 50% and slide back by half its own width
+     with a transform. Visually that centres it, but the WIDTH is settled
+     before the transform runs: a fixed box with only a start inset shrinks to
+     fit whatever space remains after that inset — half the viewport. On a
+     375px phone that is 187px, so `max-width:335px` never came into play and
+     the sentence was squeezed into a 40px column three hundred pixels tall.
+     On a desktop half of 1440 is wider than the cap, which is why it only
+     ever looked wrong on a phone.
+     Anchoring both edges hands it the whole width, and auto margins centre it
+     honestly — no transform, so it is also no longer direction-dependent. */
+  inset-inline:var(--s4);
+  margin-inline:auto;
+  width:fit-content;
   z-index:80;
   display:flex;align-items:center;gap:var(--s4);
-  max-width:min(560px,calc(100vw - var(--s5) * 2));
+  max-width:min(560px,calc(100vw - var(--s4) * 2));
   padding:var(--s3) var(--s4);
   border:1px solid color-mix(in srgb,var(--warning) 34%,var(--line));
   border-radius:var(--r-lg);
@@ -561,7 +573,7 @@ html[data-schedule-workspace="focus"] .schedule-control{
   box-shadow:var(--shadow-lg,0 18px 40px rgba(0,0,0,.18));
   animation:idle-warning-in .32s cubic-bezier(.2,.8,.3,1) both;
 }
-.idle-warning>div{display:flex;flex-direction:column;gap:2px;min-width:0}
+.idle-warning>div{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
 .idle-warning strong{font-size:var(--t-sm);font-weight:700;color:var(--warning)}
 .idle-warning span{font-size:var(--t-xs);color:var(--ink-2);line-height:1.6}
 .idle-warning .btn{flex:none;min-height:38px}
@@ -571,9 +583,16 @@ html[data-schedule-workspace="focus"] .schedule-control{
   background:conic-gradient(var(--warning) var(--sweep,0turn),color-mix(in srgb,var(--warning) 20%,transparent) 0);
   animation:idle-warning-sweep 60s linear both;
 }
-@keyframes idle-warning-in{from{opacity:0;transform:translateX(50%) translateY(12px)}to{opacity:1;transform:translateX(50%) translateY(0)}}
+@keyframes idle-warning-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 @keyframes idle-warning-sweep{from{--sweep:1turn}to{--sweep:0turn}}
 @property --sweep{syntax:"<angle>";inherits:false;initial-value:0turn}
+/* On a narrow screen three things in a row leaves the sentence a sliver, so
+   the button takes its own line and the words take the width. */
+@media (max-width:520px){
+  .idle-warning{flex-wrap:wrap;gap:var(--s3);padding:var(--s3)}
+  .idle-warning>div{flex:1 1 150px}
+  .idle-warning .btn{flex:1 0 100%}
+}
 @media (prefers-reduced-motion:reduce){
   .idle-warning{animation:none}
   .idle-warning-ring{animation:none;background:var(--warning)}
@@ -743,7 +762,11 @@ html[data-schedule-workspace="focus"] .schedule-control{
 [data-guide-hot="true"]{position:relative!important;z-index:95!important;outline:3px solid color-mix(in srgb,var(--accent) 58%,transparent)!important;outline-offset:5px!important;box-shadow:0 0 0 9px color-mix(in srgb,var(--accent) 12%,transparent),0 18px 40px rgba(15,23,42,.18)!important;border-radius:14px;animation:guideTargetBreathe 1.8s ease-in-out infinite alternate}
 @keyframes guideTargetBreathe{from{filter:brightness(1)}to{filter:brightness(1.04)}}
 body.guide-point-mode [data-guide-target],body.guide-point-mode button,body.guide-point-mode a,body.guide-point-mode select{cursor:crosshair!important}body.guide-point-mode [data-guide-target]:hover,body.guide-point-mode button:hover,body.guide-point-mode a:hover{outline:2px dashed color-mix(in srgb,var(--accent) 62%,transparent)!important;outline-offset:5px!important}
-.guide-point-banner{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:2240;max-width:min(620px,calc(100vw - 28px));display:flex;align-items:center;gap:10px;padding:10px 13px;border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:18px;background:color-mix(in srgb,var(--surface) 95%,transparent);box-shadow:0 20px 55px rgba(15,23,42,.24);backdrop-filter:blur(18px);color:var(--ink)}.guide-point-banner>svg{width:18px;color:var(--accent);flex:none}.guide-point-banner span{font-size:10.5px;line-height:1.5}.guide-point-banner strong{margin-inline-end:5px}.guide-point-banner button{margin-inline-start:auto;border:0;background:none;color:var(--muted);font-size:10px}
+/* Anchored on both edges rather than one, for the reason spelled out at
+   .idle-warning: a box with a single inset shrinks to fit the space left
+   over — half the screen — so its max-width never applied and the line
+   wrapped into a narrow stack on a phone. */
+.guide-point-banner{position:fixed;inset-inline:14px;margin-inline:auto;width:fit-content;bottom:22px;z-index:2240;max-width:min(620px,calc(100vw - 28px));display:flex;align-items:center;gap:10px;padding:10px 13px;border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:18px;background:color-mix(in srgb,var(--surface) 95%,transparent);box-shadow:0 20px 55px rgba(15,23,42,.24);backdrop-filter:blur(18px);color:var(--ink)}.guide-point-banner>svg{width:18px;color:var(--accent);flex:none}.guide-point-banner span{font-size:10.5px;line-height:1.5}.guide-point-banner strong{margin-inline-end:5px}.guide-point-banner button{margin-inline-start:auto;border:0;background:none;color:var(--muted);font-size:10px}
 
 .guide-ghost-layer{position:fixed;inset:0;z-index:145;pointer-events:none;background:radial-gradient(circle at center,transparent 35%,rgba(9,14,27,.08));}.guide-ghost-ring{position:fixed;border:2px solid color-mix(in srgb,var(--accent) 75%,white);border-radius:18px;box-shadow:0 0 0 9999px rgba(6,11,24,.22),0 0 0 7px color-mix(in srgb,var(--accent) 14%,transparent),0 18px 50px rgba(15,23,42,.25);animation:guideRing .9s ease-in-out infinite alternate;pointer-events:none}.guide-ghost-hand{position:fixed;width:27px;height:27px;color:var(--accent);filter:drop-shadow(0 5px 10px rgba(15,23,42,.35));animation:guideHand 1.2s ease-in-out infinite alternate;pointer-events:none}.guide-ghost-card{position:fixed;width:min(310px,calc(100vw - 30px));pointer-events:auto;padding:12px 13px;border:1px solid color-mix(in srgb,var(--accent) 25%,var(--line));border-radius:18px;background:var(--surface);box-shadow:0 22px 60px rgba(15,23,42,.28);display:grid;gap:7px}.guide-ghost-card>small{font-size:9px;color:var(--accent)}.guide-ghost-card>strong{font-size:12px;line-height:1.6}.guide-ghost-card>div{display:flex;justify-content:flex-end;gap:6px}.guide-ghost-card button{height:34px;padding:0 10px;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);font-size:9.5px;color:var(--ink)}.guide-ghost-card button.primary{display:flex;align-items:center;gap:4px;background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}.guide-ghost-card button svg{width:13px}@keyframes guideRing{from{transform:scale(.995)}to{transform:scale(1.012)}}@keyframes guideHand{from{transform:translate(-2px,-2px)}to{transform:translate(5px,5px)}}
 
@@ -913,13 +936,21 @@ body.guide-point-mode .smart-guide{opacity:0;pointer-events:none;transform:trans
 .smart-guide-new-head{align-items:center;gap:8px}.smart-guide-mark-all{min-height:30px;padding:0 9px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--accent);font:inherit;font-size:8.5px;font-weight:750;white-space:nowrap}
 .smart-guide-new-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}.smart-guide-new-summary>article{display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
 .smart-guide-new-summary svg{width:15px;color:var(--accent);flex:none}.smart-guide-new-summary span{display:grid;gap:1px}.smart-guide-new-summary strong{font-size:13px}.smart-guide-new-summary small{font-size:8.5px;line-height:1.35;color:var(--muted)}
-.guide-screen-handoff{position:fixed;z-index:2250;inset-inline-start:50%;inset-block-start:max(18px,env(safe-area-inset-top));transform:translateX(-50%);width:min(420px,calc(100vw - 28px));display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:17px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 18px 50px rgba(15,23,42,.24);backdrop-filter:blur(18px);pointer-events:none;animation:guideHandoffIn .22s var(--ease) both}
+/* ── لماذا كان يختفي خارج الشاشة ────────────────────────────────────────
+   `inset-inline-start:50%` resolves to `right:50%` in Arabic, which puts
+   the box's RIGHT edge at the centre; centring it then needs a shift to
+   the right. The transform shifted it left instead — `translateX` is
+   physical and does not flip with the document — carrying the box a full
+   width past the centre. Measured on a 375px phone it landed at
+   left:-345 of a 352px box: seven visible pixels. Both edges plus auto
+   margins centre it without a transform, in either direction. */
+.guide-screen-handoff{position:fixed;z-index:2250;inset-inline:14px;margin-inline:auto;inset-block-start:max(18px,env(safe-area-inset-top));width:min(420px,calc(100vw - 28px));display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:10px;padding:11px 13px;border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));border-radius:17px;background:color-mix(in srgb,var(--surface) 96%,transparent);box-shadow:0 18px 50px rgba(15,23,42,.24);backdrop-filter:blur(18px);pointer-events:none;animation:guideHandoffIn .22s var(--ease) both}
 .guide-screen-handoff>span{width:34px;height:34px;display:grid;place-items:center;border-radius:12px;background:var(--accent-soft);color:var(--accent)}.guide-screen-handoff>span svg{width:16px}.guide-screen-handoff>div{display:grid;gap:2px;min-width:0}.guide-screen-handoff strong{font-size:11px}.guide-screen-handoff small{font-size:9.3px;line-height:1.45;color:var(--muted)}
-@keyframes guideHandoffIn{from{opacity:0;transform:translate(-50%,-9px) scale(.985)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@keyframes guideHandoffIn{from{opacity:0;transform:translateY(-9px) scale(.985)}to{opacity:1;transform:none}}
 @media(max-width:560px){
   .smart-guide-icon-intro{grid-template-columns:auto minmax(0,1fr);align-items:start}.smart-guide-icon-intro-actions{grid-column:1/-1;justify-content:flex-end}
   .smart-guide-clarification{grid-template-columns:auto minmax(0,1fr)}.smart-guide-clarification>button{grid-column:2;justify-self:start;padding:0}
-  .smart-guide-new-head{align-items:center}.smart-guide-new-summary{gap:5px}.smart-guide-new-summary>article{padding:7px 8px;border-radius:12px}.smart-guide-new-summary strong{font-size:11px}.smart-guide-new-summary small{font-size:7.7px}.guide-screen-handoff{inset-block-start:max(9px,env(safe-area-inset-top));width:calc(100vw - 18px);padding:8px 9px;border-radius:14px}.guide-screen-handoff>span{width:29px;height:29px;border-radius:10px}.guide-screen-handoff strong{font-size:10px}.guide-screen-handoff small{font-size:8.4px}
+  .smart-guide-new-head{align-items:center}.smart-guide-new-summary{gap:5px}.smart-guide-new-summary>article{padding:7px 8px;border-radius:12px}.smart-guide-new-summary strong{font-size:11px}.smart-guide-new-summary small{font-size:7.7px}.guide-screen-handoff{inset-block-start:max(9px,env(safe-area-inset-top));inset-inline:9px;width:auto;padding:8px 9px;border-radius:14px}.guide-screen-handoff>span{width:29px;height:29px;border-radius:10px}.guide-screen-handoff strong{font-size:10px}.guide-screen-handoff small{font-size:8.4px}
   .guide-point-banner span{white-space:normal;min-width:0}
 }
 @media(prefers-reduced-motion:reduce){.guide-screen-handoff{animation:none!important}}
