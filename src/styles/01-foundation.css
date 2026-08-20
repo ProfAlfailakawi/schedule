@@ -40,12 +40,20 @@
   /* Ink */
   --ink:#131817;
   --ink-2:#3b4441;
-  --muted:#6d7873;
-  /* 4.6:1 on white. The old #98a29d measured 2.6:1 — under the readable floor
-     while carrying real text: placeholders, the command-palette group titles,
-     the review overflow line. A hint the reader has to lean in for is not a
-     quieter voice, it is a missing one. */
-  --muted-2:#77837e;
+  /* Measured on all three surfaces this text actually lands on, not just white.
+     #6d7873 read 4.58 on white and passed — then failed at 4.26 on --surface-2
+     and 3.95 on --surface-3, which is where most of it sits: cards, chips,
+     badges. Checking a colour against the one background it is rarely on is
+     how forty elements across five screens ended up under the floor at once.
+     Now: 5.22 / 4.86 / 4.51. */
+  --muted:#646f69;
+  /* The note that used to sit here claimed 4.6:1 on white for #77837e. It is
+     3.94 — recomputed by hand and in the browser, both agreeing. The old
+     #98a29d it replaced really was 2.6, so the direction was right and the
+     arithmetic was not. This carries the quietest text there is: placeholders,
+     command-palette group titles, the review overflow line.
+     Now: 4.86 / 4.51 / 4.19. */
+  --muted-2:#69746e;
   --line:#e3e6e0;
   --line-strong:#ccd2cb;
 
@@ -65,8 +73,12 @@
   --accent-ink:#0f4239;
   --accent-contrast:#ffffff;
 
-  /* Editorial brass */
-  --brass:#9a6f2d;
+  /* Editorial brass.
+     #9a6f2d measured 4.17 on --surface-2 — and brass is not decoration only,
+     it carries the eyebrow above every page title at 11px. Darkened to 4.90;
+     the hue is untouched, so nothing that uses brass as a wash or an icon
+     reads differently, and the small text it labels pages with is legible. */
+  --brass:#8d6423;
   --brass-soft:#f3ead9;
 
   /* Semantics */
@@ -138,7 +150,10 @@
   --ink:#eef2ef;
   --ink-2:#c9d1cd;
   --muted:#93a09a;
-  --muted-2:#71807a;
+  /* Dark had the same hole as light, one token over: #71807a read 4.42 / 4.10 /
+     3.71 across the three surfaces. #83908a clears all three (5.51 / 5.11 /
+     4.62) and stays a step quieter than --muted, which the hierarchy needs. */
+  --muted-2:#83908a;
   --line:#212b28;
   --line-strong:#324039;
 

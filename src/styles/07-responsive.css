@@ -1230,3 +1230,103 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
   /* The sentence repeats the title; the aria-label still carries it. */
   .insight-preview-list>.insight-preview>.insight-preview-copy small{display:none}
 }
+
+/* ── مساحة اللمس، لا مساحة الرسم ─────────────────────────────────────────────
+   Row actions are drawn 42×36 because that is what a 45px table row can hold,
+   and repainting them at 44 would push every table on the phone taller — a
+   layout change to solve an input problem. The paint stays; the touch area
+   grows underneath it.
+
+   The clearances were measured before choosing 44, not after: the edit/delete
+   pair sits 8px apart, so 42→44 spends 1px a side and leaves 6px between them;
+   rows repeat every 45px with a 36px button, so 36→44 spends 4px a side into a
+   9px gap and leaves 1px. Neither overlay reaches its neighbour, so no tap can
+   land on the wrong row — which is the failure this was supposed to prevent,
+   not cause. Coarse pointers only: a mouse does not need the help, and on
+   desktop the overlay would only enlarge the hover region misleadingly. */
+@media (pointer:coarse){
+  .icon-action{position:relative}
+  .icon-action::after{
+    content:"";position:absolute;
+    top:50%;inset-inline-start:50%;
+    width:max(100%,44px);height:max(100%,44px);
+    transform:translate(50%,-50%);
+  }
+  html[dir="ltr"] .icon-action::after{transform:translate(-50%,-50%)}
+}
+
+/* The ask field is 52px tall and only 26px of it answered to a tap.
+   The form draws the field — background, border, radius — and the input inside
+   it is transparent and only as tall as one line of text, vertically centred.
+   So the top and bottom 13px of something that looks exactly like a text box
+   did nothing when touched. Stretching the input costs no pixel of layout: the
+   form already occupies that height, and the input has no paint of its own.
+   Every pointer benefits, so this is not gated on touch. */
+.query-ask input{align-self:stretch}
+
+@media (pointer:coarse){
+  /* The dock is 44px tall and its controls are 32. Six pixels of dead band ran
+     above and below each one, at the bottom edge of the screen where the thumb
+     lands least precisely. The overlay claims that band, and takes 2px into the
+     gaps between the buttons — the smallest gap is 4px, so two neighbours meet
+     exactly and never overlap. The row now has no dead pixel: every point in
+     the dock belongs to exactly one control. Width stays as drawn; 44 a side
+     would need 12px more than the row has. */
+  .schedule-dock button{position:relative}
+  .schedule-dock button::after{
+    content:"";position:absolute;
+    inset-block:-6px;inset-inline:-2px;
+  }
+
+  /* 21px of text acting as a button, alone inside a 44px row — the clearance
+     was already there, nothing was using it. */
+  .editorial-text-action{position:relative}
+  .editorial-text-action::after{
+    content:"";position:absolute;
+    inset-block:-11.5px;inset-inline:0;
+  }
+}
+
+@media (pointer:coarse){
+  /* Sign-out and the theme toggle: 30×30, two pixels apart, in a card with 19px
+     of unused height above and below them. The height is free, so take it.
+     The width is NOT taken, deliberately — one of these two logs the user out,
+     and the two pixels between them are the only thing standing between a
+     slightly-off thumb and the end of the session. Widening both to meet in
+     the middle would make the easier target the more dangerous one. Dead space
+     next to a destructive control is a feature. */
+  .user-card-tools>button{position:relative}
+  .user-card-tools>button::after{
+    content:"";position:absolute;
+    inset-block:-7px;inset-inline:0;
+  }
+
+  /* The rail's group heading is 29px with nothing below it — the first nav link
+     starts immediately — and 16px of empty margin above. So it grows upward
+     only. Scoped to a section that follows another, because that margin is what
+     is being spent and only those sections have it. */
+  .nav-section+.nav-section .nav-section-title{position:relative}
+  .nav-section+.nav-section .nav-section-title::after{
+    content:"";position:absolute;
+    inset-block:-15px 0;inset-inline:0;
+  }
+}
+
+@media (pointer:coarse){
+  /* The guide's own header: three 34px actions and a close, in a 47px row that
+     centres them — 6px spare above, 8px below, and 3px between the actions.
+     Vertical is where the room is, so vertical is what gets claimed. The three
+     actions take 1px each into their 3px gaps and meet without overlapping;
+     the close button has 145px of clear space beside it and can afford the
+     full 44 on both axes. */
+  .smart-guide-hero-tools>button,
+  .smart-guide-close{position:relative}
+  .smart-guide-hero-tools>button::after{
+    content:"";position:absolute;
+    inset-block:-5px;inset-inline:-1px;
+  }
+  .smart-guide-close::after{
+    content:"";position:absolute;
+    inset-block:-5px;inset-inline:-5px;
+  }
+}
