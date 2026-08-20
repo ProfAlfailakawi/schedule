@@ -590,6 +590,49 @@ function isPhoneDevice() {
   return shortEdge <= 600 && (mobileUa || coarse);
 }
 
+type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: string; entity: string; state: string };
+
+/**
+ * One sentence of refusal, reduced to the fact it carries.
+ *
+ * The server says "القاعة B7/F31 مشغولة في نفس الوقت". The icon beside the line
+ * already says "hall", so the words are noise and the code is the whole point.
+ * Both refusal paths - the one the drag decides locally and the one the save
+ * returns - run through here, so a wall reads the same however it was found.
+ */
+const condenseRefusalReasons = (texts: string[]): RefusalReason[] =>
+  texts.filter(Boolean).slice(0, 3).map((text: string): RefusalReason => {
+    /* Classified by what the sentence is actually about, so each line can carry
+       the right mark instead of a generic warning triangle. */
+    const kind: RefusalReason["kind"] =
+      /قاعة|القاعة/.test(text) ? "room"
+        : /أستاذ|الأستاذ|هيئة/.test(text) ? "instructor"
+          : /طلاب|الطلاب|شعبة/.test(text) ? "cohort"
+            : "other";
+    const bare = String(text).replace(/\s+/g, " ").trim();
+    /* Stray commas sit inside these sentences in the stored records, so they are
+       treated as spaces before the tail is matched - otherwise the trim silently
+       gives up and the long sentence comes back whole. */
+    const entity = bare
+      .replace(/[،,]/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/^(القاعة|قاعة|الأستاذ|أستاذ|عضو هيئة التدريس)\s*/, "")
+      .replace(/\s*(مشغولة|محجوزة|مشغول)?\s*(لديه\s*محاضرة)?\s*(في|خلال)?\s*نفس\s*الوقت\s*\.?$/, "")
+      .replace(/\s*لديه\s*محاضرة\s*$/, "")
+      .replace(/\s*(مشغولة|محجوزة)\s*$/, "")
+      .trim();
+    /* The chip would repeat what the icon and the name already say unless the
+       trim actually isolated a name. When it did not, the sentence stands alone
+       rather than being echoed beside itself. */
+    const shortened = Boolean(entity) && entity !== bare;
+    const state = !shortened ? ""
+      : kind === "room" ? "مشغولة"
+        : kind === "instructor" ? "لديه محاضرة"
+          : kind === "cohort" ? "تعارض طلاب"
+            : "";
+    return { kind, text: bare, entity: shortened ? entity : bare, state };
+  });
+
 export default function Schedules({ mode, user, scopes = [], permissions = [], onNavigate }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
@@ -739,6 +782,40 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * the icon of what kind of wall it is — a hall, a person, a cohort. The list
    * is already deduplicated upstream in buildDecision.
    */
+  /* Squares the server has already refused for a given lecture, remembered for
+     the session. Without this the board forgets a wall the moment the card
+     returns home, and offers the same impossible square again on the next lift.
+     Keyed by lecture so one card's wall is never drawn on another's board. */
+  const refusedCells = useRef<Map<number, Set<string>>>(new Map());
+  /**
+   * Show a refusal the server returned, the same way a refusal the drag decided
+   * locally is shown.
+   *
+   * These were two different experiences for one event: the local one got the
+   * card with a mark per wall, the server one got a plain banner holding every
+   * wall stitched into a single line. Returns false when the failure is not a
+   * refusal at all, so ordinary errors keep the ordinary banner.
+   */
+  const presentMoveRefusal = useCallback((error: any, rowId: number, cell: string) => {
+    const walls = Array.isArray(error?.conflicts)
+      ? error.conflicts.map((item: any) => [item?.message, item?.detail].filter(Boolean).join(" — ")).filter(Boolean)
+      : [];
+    if (!walls.length) return false;
+    const reasons = condenseRefusalReasons(walls.map(String));
+    if (!reasons.length) return false;
+    setRefusal({ reasons, summary: String(error?.message || "تعذّر هذا الموضع وفق قواعد الجدول.") });
+    /* One utterance for the screen reader, not four. */
+    setPhysicsNotice(`رفض النقل: ${walls.join(". ")}`);
+    /* The square the server just refused must stop being drawn as available. */
+    if (rowId && cell) {
+      const known = refusedCells.current.get(rowId) || new Set<string>();
+      known.add(cell);
+      refusedCells.current.set(rowId, known);
+      setPhysicsField(prev => ({ ...prev, [cell]: "impossible" }));
+    }
+    return true;
+  }, []);
+
   const [refusal, setRefusal] = useState<{ reasons: Array<{ kind: "room" | "instructor" | "cohort" | "other"; text: string; entity: string; state: string }>; summary: string } | null>(null);
   const [moveNote, setMoveNote] = useState<{ text: string; against?: string; moves: number } | null>(null);
   const moveNoteAbortRef = useRef<AbortController | null>(null);
@@ -1015,6 +1092,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     }
     if (!res.ok) {
       const failure: any = new Error(data.error || `تعذر إتمام العملية (${res.status}).`);
+      /* The blockers the server listed are the whole substance of a refusal.
+         Dropping them left the caller with one stitched sentence and no way to
+         show a wall per line. */
+      if (Array.isArray(data?.conflicts) && data.conflicts.length) failure.conflicts = data.conflicts;
       if (res.status === 409 && data?.conflict === "revision") {
         failure.revisionConflict = true;
         failure.current = data.current;
@@ -4371,7 +4452,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // A refusal to overwrite is a decision to hand back, not a message to show.
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
       else {
-        setError(friendlyError(e));
+        if (!presentMoveRefusal(e, Number(row?.id || 0), placementFieldKey(day, chosenStart, undefined))) setError(friendlyError(e));
         /*
          * A refusal that only says "no" leaves the reader exactly where they
          * were, holding the same card and the same problem. The engine that
@@ -4533,7 +4614,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // A refusal to overwrite is a decision to hand back, not a message to show.
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
       else {
-        setError(friendlyError(e));
+        if (!presentMoveRefusal(e, Number(row?.id || 0), placementFieldKey(day, start, physicsRoomKey({ code: building, hall })))) setError(friendlyError(e));
         /*
          * A refusal that only says "no" leaves the reader exactly where they
          * were, holding the same card and the same problem. The engine that
@@ -5860,7 +5941,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     evaluateTarget: evaluatePhysicsTarget,
     onStart: (row) => {
       setPhysicsNotice("");
-      setPhysicsField({});
+      const known = refusedCells.current.get(Number(row.id));
+      setPhysicsField(known ? Object.fromEntries([...known].map(cell => [cell, "impossible"])) : {});
       setError(null);
       // Colleagues learn the card is in the air the moment it leaves the board,
       // not when it lands — which is the only window in which knowing helps.
@@ -5924,45 +6006,25 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       presence.send({ holding: null, cell: null });
       setPhysicsNotice("تم إلغاء السحب دون حفظ أي تغيير.");
     },
-    onInvalid: (decision) => {
+    onInvalid: (decision, target) => {
       clearRipple();
-      setPhysicsField({});
+      /* A refusal is the ground truth about that square. Wiping the whole field
+         used to erase it too, so the square went back to looking available the
+         moment the card returned - and a second attempt met the same wall. The
+         refused square is kept, marked impossible, and it stays that way for
+         the rest of the session. */
+      const refusedRow = Number(decision?.key?.split(":")[0]) || 0;
+      const refusedCell = target
+        ? placementFieldKey(target.day as DayKey, target.start, physicsRoomKey((target as any).room))
+        : "";
+      if (refusedRow && refusedCell) {
+        const known = refusedCells.current.get(refusedRow) || new Set<string>();
+        known.add(refusedCell);
+        refusedCells.current.set(refusedRow, known);
+      }
+      setPhysicsField(refusedCell ? { [refusedCell]: "impossible" } : {});
       presence.send({ holding: null, cell: null });
-      const list = (decision?.reasons || []).slice(0, 3).map((text: string) => {
-        /* Classified by what the sentence is actually about, so each line can
-           carry the right mark instead of a generic warning triangle. */
-        const kind: "room" | "instructor" | "cohort" | "other" =
-          /قاعة|القاعة/.test(text) ? "room"
-            : /أستاذ|الأستاذ|هيئة/.test(text) ? "instructor"
-              : /طلاب|الطلاب|شعبة/.test(text) ? "cohort"
-                : "other";
-        /* The sentence carries one fact - which hall, which colleague - wrapped
-           in words the icon already says. Strip it to the name and let the mark
-           and a two-word state carry the rest; the full sentence stays on hover
-           and in the screen-reader line, so nothing is actually lost. */
-        const bare = String(text).replace(/\s+/g, " ").trim();
-        /* Stray commas sit inside these sentences in the stored records, so the
-           tail is matched with them treated as spaces - otherwise the trim
-           silently gives up and the long sentence comes back. */
-        const entity = bare
-          .replace(/[،,]/g, " ")
-          .replace(/\s+/g, " ")
-          .replace(/^(القاعة|قاعة|الأستاذ|أستاذ|عضو هيئة التدريس)\s*/, "")
-          .replace(/\s*(مشغولة|محجوزة|مشغول)?\s*(لديه\s*محاضرة)?\s*(في|خلال)?\s*نفس\s*الوقت\s*\.?$/, "")
-          .replace(/\s*لديه\s*محاضرة\s*$/, "")
-          .replace(/\s*(مشغولة|محجوزة)\s*$/, "")
-          .trim();
-        /* The chip repeats what the icon and the name already say unless the
-           trim actually found a name to isolate. When it did not, the sentence
-           stands alone rather than being echoed beside itself. */
-        const shortened = Boolean(entity) && entity !== bare;
-        const state = !shortened ? ""
-          : kind === "room" ? "مشغولة"
-            : kind === "instructor" ? "لديه محاضرة"
-              : kind === "cohort" ? "تعارض طلاب"
-                : "";
-        return { kind, text: bare, entity: shortened ? entity : bare, state };
-      });
+      const list = condenseRefusalReasons((decision?.reasons || []).map(String));
       const summary = decision?.summary || "هذا الموضع غير متاح وفق قواعد الجدول.";
       setRefusal(list.length ? { reasons: list, summary } : { reasons: [{ kind: "other", text: summary, entity: summary, state: "" }], summary });
       /* The screen-reader line stays a sentence — one utterance, not four. */
@@ -6682,7 +6744,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       setMessage(`نُفِّذت السلسلة — ${countOf(repair.moves.length, AR.move)}، والتداخل من ${repair.before} إلى ${repair.after}.`);
     } catch (e: any) {
       if (e?.revisionConflict) setClash({ current: e.current, yours: null });
-      else setError(friendlyError(e));
+      else if (!presentMoveRefusal(e, 0, "")) setError(friendlyError(e));
       void loadRows({ silent: true });
     } finally {
       setSaving(false);

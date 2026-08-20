@@ -22,7 +22,10 @@ interface Options {
   onDecision?: (decision: SchedulePhysicsDecision | null, target: SchedulePhysicsTarget | null) => void;
   onDropRequest: (request: SchedulePhysicsDropRequest) => void;
   onCancel?: (reason: "escape" | "outside" | "same" | "invalid") => void;
-  onInvalid?: (decision: SchedulePhysicsDecision | null) => void;
+  /* The refused target travels with the refusal: a square the save rejected
+     must stop being drawn as available, and the board cannot mark what it was
+     never told. */
+  onInvalid?: (decision: SchedulePhysicsDecision | null, target: SchedulePhysicsTarget | null) => void;
   /** Week-only continuity guard: magnetic guidance may assist the pointer, never tug against its active horizontal direction. */
   preservePointerDirectionX?: boolean;
 }
@@ -175,7 +178,7 @@ export default function useSchedulePhysics(options: Options) {
       destination: { x: session.sourceRect.left, y: session.sourceRect.top },
     };
     setState(prev => ({ ...prev, phase: "returning" }));
-    if (reason === "invalid") optionsRef.current.onInvalid?.(session.decision);
+    if (reason === "invalid") optionsRef.current.onInvalid?.(session.decision, session.target || null);
     else optionsRef.current.onCancel?.(reason);
   }, [clearEvaluation]);
 
