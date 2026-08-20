@@ -193,8 +193,13 @@ export default function useSchedulePhysics(options: Options) {
       return;
     }
     const immediate = optionsRef.current.previewTarget?.(session.row, target) || null;
+    /* The local read is instant but partial: it knows this department's board,
+       not the term. Marking it settled let an optimistic green stand as a
+       verdict, and a drop inside that window was refused on the server. It
+       stays fast and it stays visible - it just no longer claims to be final
+       until the term-wide answer lands. */
     const first: SchedulePhysicsDecision = immediate
-      ? { ...immediate, key, loading: false }
+      ? { ...immediate, key, loading: true }
       : {
           key, quality: "unknown", title: "أقرأ أثر القرار…", summary: "أحسب الموانع والفراغ والضغط والجودة دون حفظ أي شيء.",
           reasons: [], positives: [], tradeoffs: [], conflicts: [], ripple: null, why: null, whyNot: null, loading: true, dataAvailable: false,

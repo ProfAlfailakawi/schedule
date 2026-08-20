@@ -739,7 +739,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * the icon of what kind of wall it is — a hall, a person, a cohort. The list
    * is already deduplicated upstream in buildDecision.
    */
-  const [refusal, setRefusal] = useState<{ reasons: Array<{ kind: "room" | "instructor" | "cohort" | "other"; text: string }>; summary: string } | null>(null);
+  const [refusal, setRefusal] = useState<{ reasons: Array<{ kind: "room" | "instructor" | "cohort" | "other"; text: string; entity: string; state: string }>; summary: string } | null>(null);
   const [moveNote, setMoveNote] = useState<{ text: string; against?: string; moves: number } | null>(null);
   const moveNoteAbortRef = useRef<AbortController | null>(null);
   const moveNoteSeqRef = useRef(0);
@@ -5872,10 +5872,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // Fired on target change, never per pixel — so this cannot flood the beat.
       presence.send({ cell: { day: target.day, start: target.start,
         ...((target as any).room ? { room: `${(target as any).room.code}|${(target as any).room.hall}` } : {}) } });
-      setPhysicsField((prev) => ({
-        ...prev,
-        [placementFieldKey(target.day as DayKey, target.start, physicsRoomKey(target.room))]: decision.quality,
-      }));
+      setPhysicsField((prev) => {
+        const cell = placementFieldKey(target.day as DayKey, target.start, physicsRoomKey(target.room));
+        /* A local "impossible" is trustworthy - it saw the clash itself. A local
+           "good" is only an absence of evidence, so it is not painted onto the
+           trail until the server confirms it. */
+        if (decision.loading && (decision.quality === "excellent" || decision.quality === "good")) return prev;
+        return { ...prev, [cell]: decision.quality };
+      });
       const base = decision.ripple || {};
       setRipple({
         ...base,
@@ -5924,7 +5928,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       clearRipple();
       setPhysicsField({});
       presence.send({ holding: null, cell: null });
-      const list = (decision?.reasons || []).slice(0, 4).map((text: string) => {
+      const list = (decision?.reasons || []).slice(0, 3).map((text: string) => {
         /* Classified by what the sentence is actually about, so each line can
            carry the right mark instead of a generic warning triangle. */
         const kind: "room" | "instructor" | "cohort" | "other" =
@@ -5932,10 +5936,35 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             : /أستاذ|الأستاذ|هيئة/.test(text) ? "instructor"
               : /طلاب|الطلاب|شعبة/.test(text) ? "cohort"
                 : "other";
-        return { kind, text: String(text) };
+        /* The sentence carries one fact - which hall, which colleague - wrapped
+           in words the icon already says. Strip it to the name and let the mark
+           and a two-word state carry the rest; the full sentence stays on hover
+           and in the screen-reader line, so nothing is actually lost. */
+        const bare = String(text).replace(/\s+/g, " ").trim();
+        /* Stray commas sit inside these sentences in the stored records, so the
+           tail is matched with them treated as spaces - otherwise the trim
+           silently gives up and the long sentence comes back. */
+        const entity = bare
+          .replace(/[،,]/g, " ")
+          .replace(/\s+/g, " ")
+          .replace(/^(القاعة|قاعة|الأستاذ|أستاذ|عضو هيئة التدريس)\s*/, "")
+          .replace(/\s*(مشغولة|محجوزة|مشغول)?\s*(لديه\s*محاضرة)?\s*(في|خلال)?\s*نفس\s*الوقت\s*\.?$/, "")
+          .replace(/\s*لديه\s*محاضرة\s*$/, "")
+          .replace(/\s*(مشغولة|محجوزة)\s*$/, "")
+          .trim();
+        /* The chip repeats what the icon and the name already say unless the
+           trim actually found a name to isolate. When it did not, the sentence
+           stands alone rather than being echoed beside itself. */
+        const shortened = Boolean(entity) && entity !== bare;
+        const state = !shortened ? ""
+          : kind === "room" ? "مشغولة"
+            : kind === "instructor" ? "لديه محاضرة"
+              : kind === "cohort" ? "تعارض طلاب"
+                : "";
+        return { kind, text: bare, entity: shortened ? entity : bare, state };
       });
       const summary = decision?.summary || "هذا الموضع غير متاح وفق قواعد الجدول.";
-      setRefusal(list.length ? { reasons: list, summary } : { reasons: [{ kind: "other", text: summary }], summary });
+      setRefusal(list.length ? { reasons: list, summary } : { reasons: [{ kind: "other", text: summary, entity: summary, state: "" }], summary });
       /* The screen-reader line stays a sentence — one utterance, not four. */
       setPhysicsNotice(`رفض النقل: ${list.map(item => item.text).join(". ") || summary}`);
     },
@@ -6507,8 +6536,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       target?.day === day &&
       target?.start === start &&
       (roomKey === undefined ? targetRoomKey === undefined : targetRoomKey === roomKey);
+    /* A green square is a promise the save will succeed, so it is withheld
+       until the server has actually said so. While the verdict is in flight the
+       target reads as "under review" - never as approval. */
+    const live = physics.state.decision?.quality || sampled || "unknown";
+    const awaiting = Boolean(physics.state.decision?.loading);
     const quality = active
-      ? physics.state.decision?.quality || sampled || "unknown"
+      ? (awaiting && (live === "excellent" || live === "good") ? "pending" : live)
       : sampled || "";
     return `${active ? `physics-target physics-${quality}` : ""} ${sampled ? `gravity-slot gravity-${sampled}` : ""} ${shade ? `field-tier tier-${shade}` : ""} ${rank ? `suggested-slot suggested-${rank}` : ""}`.trim();
   };
@@ -8450,19 +8484,20 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         <div className="move-refusal no-print" role="alertdialog" aria-live="assertive" aria-label="تعذر نقل الموعد">
           <span className="move-refusal-mark" aria-hidden="true"><ShieldAlert /></span>
           <div className="move-refusal-body">
-            <strong>تعذر نقل الموعد</strong>
+            <strong>تعذّر النقل</strong>
             <ul>
               {refusal.reasons.map((item, index) => (
-                <li key={`${item.kind}-${index}`} className={`is-${item.kind}`}>
+                <li key={`${item.kind}-${index}`} className={`is-${item.kind}`} title={item.text}>
                   {item.kind === "room" ? <Building2 aria-hidden="true" />
                     : item.kind === "instructor" ? <UsersRound aria-hidden="true" />
                       : item.kind === "cohort" ? <GraduationCap aria-hidden="true" />
                         : <AlertTriangle aria-hidden="true" />}
-                  <span>{item.text}</span>
+                  <b>{item.entity}</b>
+                  {item.state ? <em>{item.state}</em> : null}
                 </li>
               ))}
             </ul>
-            <small>لم يتغيّر شيء في الجدول — الموعد ما زال مكانه.</small>
+            <small>الموعد لم يتحرّك.</small>
           </div>
           <button type="button" onClick={() => setRefusal(null)} aria-label="إغلاق" title="إغلاق"
             data-guide-ignore="إغلاق رسالة رفض النقل فقط ولا يغيّر الجدول"><X aria-hidden="true" /></button>

@@ -185,7 +185,10 @@ export function buildDecision(key: string, ripple: any, why: any, whyNot: any, c
     .map(item => item?.message || item?.detail)
     .filter(Boolean)
     .filter((text: string) => {
-      const key = String(text).replace(/\s+/g, "").trim();
+      /* The stored records carry stray spaces AND stray commas - "B7/F31" and
+         "B 7/F 31 ... في, نفس، الوقت" are one hall. Both are noise, so both are
+         dropped before comparing. */
+      const key = String(text).replace(/[\s،,.\-–—]+/g, "").trim();
       if (seenReason.has(key)) return false;
       seenReason.add(key);
       return true;
