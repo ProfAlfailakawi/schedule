@@ -85,8 +85,6 @@
   .schedule-editor .conflict-panel{position:static}
   /* The count is decided by the container now (02-primitives), not by the
      window — a fixed track count here would re-pin it and undo that. */
-  .week-lens{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .week-lens-clear,.week-lens-note{grid-column:1/-1;justify-content:center}
 
   .quality-hero{grid-template-columns:minmax(0,1fr);text-align:start}
   .quality-orbit{justify-self:start;width:150px;height:150px}
@@ -146,7 +144,6 @@
   .week-legend-cap,.week-legend-basis{order:1}
   .week-legend-search{order:2;flex:1;min-width:0}
   .week-legend-search input{width:100%}
-  .week-legend-texture{order:3}
   .week-legend-clear{order:4}
   .week-legend-chips{order:5;flex-basis:100%;padding-block:1px}
   /* A chip is a touch target before it is a label. */
@@ -156,7 +153,6 @@
   .week-legend-basis>button{min-height:30px}
   .week-legend-clear,.week-legend-search,.week-legend-texture{min-height:34px}
   /* On a narrow line the word can go; the icon and its pressed state carry it. */
-  .week-legend-texture:not(.is-on) span{display:none}
 
   .app-main{padding:var(--s5) var(--gutter) calc(var(--s10) + 58px + env(safe-area-inset-bottom))}
   .content-stack{gap:var(--s4)}
@@ -301,8 +297,6 @@
   .slot-why{grid-area:why}
 
   /* Schedule */
-  .week-lens{grid-template-columns:repeat(2,minmax(0,1fr));padding:var(--s4)}
-  .week-lens-clear{grid-column:1/-1;justify-content:center}
   .schedule-control{padding:var(--s4);gap:var(--s3)}
   .schedule-tools{padding-top:var(--s3)}
   .schedule-tool-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr))}
@@ -582,8 +576,6 @@
   .favorite-grid{grid-template-columns:minmax(0,1fr)}
   .stat-card{min-height:74px;padding:var(--s3) var(--s4)}
   .stat-card strong{font-size:22px}
-  .week-lens{grid-template-columns:minmax(0,1fr)}
-  .week-lens-clear,.week-lens-note{grid-column:1}
 }
 
 /* --------------------------------------------------------------------------

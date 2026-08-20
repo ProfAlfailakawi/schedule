@@ -160,6 +160,30 @@ interface Props {
 type EditorMode = "index" | "create" | "edit";
 type CreateSeed = { day?: DayKey; start?: string; end?: string; roomCode?: string; roomHall?: string };
 type DecisionFingerprint = { summary: string; before: string; after: string; place: string; quality: string; count: number; when: number };
+/**
+ * Run this after the thing the reader is actually waiting for.
+ *
+ * Opening a department fires six reads at once, and only one of them draws the
+ * timetable: the other five are advisory — how each course is taught, the
+ * department's start rhythm, settled drift, the instructors' inbox. They are
+ * useful and none of them is on screen in the first moment, yet they left the
+ * browser at the same instant as the board and competed with it for the network
+ * and for the server's attention.
+ *
+ * So they wait for an idle moment. The timeout is the promise that "idle" never
+ * means "never" on a busy screen, and the returned canceller keeps the effect's
+ * cleanup honest.
+ */
+function whenIdle(run: () => void, timeout = 1500): () => void {
+  const w = window as any;
+  if (typeof w.requestIdleCallback === "function") {
+    const id = w.requestIdleCallback(run, { timeout });
+    return () => w.cancelIdleCallback?.(id);
+  }
+  const id = window.setTimeout(run, 180);
+  return () => window.clearTimeout(id);
+}
+
 const AGENDA_PAGE_SIZE = 60;
 
 /* Hidden for now, deliberately not deleted. The data model/endpoints stay in
@@ -1191,6 +1215,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   useEffect(() => {
     if (!filterSection) { setNature(new Map()); return; }
     let alive = true;
+    const cancelIdle = whenIdle(() => {
     fetch(`/api/courses/nature?sectionId=${filterSection}`)
       .then(response => (response.ok ? response.json() : null))
       .then(data => {
@@ -1198,6 +1223,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         setNature(new Map(Object.entries(data.nature).map(([id, value]) => [Number(id), value as CourseNature])));
       })
       .catch(() => undefined);
+    });
     return () => { alive = false; };
   }, [filterSection]);
 
@@ -1787,11 +1813,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     }
     let alive = true;
     const query = new URLSearchParams({ collegeId: String(filterCollege), sectionId: String(filterSection || 0), termId: String(filterTerm || 0) });
-    void fetch(`/api/intelligence/department-start-rhythm?${query}`, { credentials: "include" })
-      .then(response => (response.ok ? response.json() : null))
-      .then(data => { if (alive) setDepartmentStartRhythm(data?.department?.days ? data : null); })
-      .catch(() => { if (alive) setDepartmentStartRhythm(null); });
-    return () => { alive = false; };
+    const cancelIdle = whenIdle(() => {
+      void fetch(`/api/intelligence/department-start-rhythm?${query}`, { credentials: "include" })
+        .then(response => (response.ok ? response.json() : null))
+        .then(data => { if (alive) setDepartmentStartRhythm(data?.department?.days ? data : null); })
+        .catch(() => { if (alive) setDepartmentStartRhythm(null); });
+    });
+    return () => { alive = false; cancelIdle(); };
   }, [mode, workspaceReady, filterCollege, filterSection, filterTerm, liveFeedSerial]);
 
   // The editor may be pointed at another department by an administrator. Never
@@ -6151,15 +6179,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   useEffect(() => {
     if (mode !== "schedule" || !workspaceReady || !filterCollege) { setDrift(null); return; }
     let alive = true;
-    void fetch(`/api/intelligence/settled-drift?collegeId=${filterCollege}&sectionId=${filterSection}`,
-      { credentials: "include" })
-      .then(response => (response.ok ? response.json() : null))
-      .then(data => {
-        if (!alive) return;
-        setDrift(data?.watching && data.total ? data : null);
-      })
-      .catch(() => undefined);
-    return () => { alive = false; };
+    const cancelIdle = whenIdle(() => {
+      void fetch(`/api/intelligence/settled-drift?collegeId=${filterCollege}&sectionId=${filterSection}`,
+        { credentials: "include" })
+        .then(response => (response.ok ? response.json() : null))
+        .then(data => {
+          if (!alive) return;
+          setDrift(data?.watching && data.total ? data : null);
+        })
+        .catch(() => undefined);
+    });
+    return () => { alive = false; cancelIdle(); };
     // liveFeedSerial changes when the live channel reports a write anywhere.
   }, [mode, workspaceReady, filterCollege, filterSection, liveFeedSerial]);
   const loadInbox = useCallback(() => {
@@ -6170,7 +6200,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       .then(data => setInbox(Array.isArray(data) ? data : []))
       .catch(() => undefined);
   }, [mode, workspaceReady, filterCollege, filterSection, filterTerm]);
-  useEffect(loadInbox, [loadInbox]);
+  /* The inbox is read on arrival, but it is not what the reader opened the
+     department to see — so it waits its turn behind the board. A direct call
+     (after answering a note) still runs immediately through loadInbox itself. */
+  useEffect(() => whenIdle(loadInbox), [loadInbox]);
 
   /**
    * ── The command registry ──────────────────────────────────────────────────

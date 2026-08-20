@@ -168,6 +168,30 @@ const ACADEMIC_PERM: Record<AcademicTab, number> = {
   courses: 6,
 };
 
+/**
+ * Forget every cached read from the previous session.
+ *
+ * The service worker keeps answers to /api/schedules, /api/dashboard and the
+ * rest so an offline launch has something real to show. That is right within
+ * one session and wrong across two: a session that ended WITHOUT the logout
+ * button — an expired cookie, a closed browser, a second account on the same
+ * device — left its answers behind, and the next person to sign in could be
+ * served the previous person's schedule the first time the network hiccuped.
+ *
+ * So the cache is emptied when identity changes, at BOTH ends: on the way out
+ * and on the way in. The message is the normal path; the direct delete is the
+ * belt, because a freshly installed worker has no controller yet and would
+ * silently ignore the message.
+ */
+async function forgetCachedReads() {
+  try { navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_API_CACHE" }); } catch { /* no worker */ }
+  try {
+    if (typeof caches === "undefined") return;
+    const names = await caches.keys();
+    await Promise.all(names.filter(name => name.startsWith("schedule-api")).map(name => caches.delete(name)));
+  } catch { /* storage denied — the network path still answers */ }
+}
+
 const pathByView: Record<View, string> = {
   dashboard: "/Home/Index",
   terms: "/AdTerm/Index",
@@ -978,7 +1002,9 @@ export default function App() {
         const res = await fetch("/api/auth/me"),
           data = await res.json();
         if (res.ok && data.user) {
-          setUser(data.user);
+          /* A new sign-in must never inherit the last one's answers. */
+    void forgetCachedReads();
+    setUser(data.user);
     try { localStorage.setItem("schedule-last-user", String(data.user?.SystemUserId || 0)); } catch { /* private mode */ }
           setPermissions(
             Array.isArray(data.permissions) ? data.permissions : [],
@@ -1249,9 +1275,7 @@ export default function App() {
   };
   const logout = async () => {
     await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
-    navigator.serviceWorker?.controller?.postMessage({
-      type: "CLEAR_API_CACHE",
-    });
+    await forgetCachedReads();
     setUser(null);
     setPermissions([]);
     setScopes([]);
@@ -1263,7 +1287,7 @@ export default function App() {
     if (!window.confirm("إعادة البيئة التجريبية إلى حالتها الأصلية؟ ستُحذف تعديلات هذه الجلسة فقط.")) return;
     const response = await fetch("/api/demo/reset", { method: "POST" });
     if (!response.ok) return;
-    navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_API_CACHE" });
+    await forgetCachedReads();
     window.location.assign("/");
   };
   useEffect(() => {

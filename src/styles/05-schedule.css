@@ -525,22 +525,6 @@ button.schedule-radar:hover{filter:brightness(.96)}
 }
 .week-calendar[data-expanded] .week-day-collapsed,
 .week-calendar[data-expanded] .week-day-head:has(.week-day-toggle[aria-pressed="false"]){display:none}
-
-.week-overflow{
-  position:absolute;
-  inset-inline-end:6px;
-  z-index:30;
-  min-width:34px;height:22px;
-  display:inline-flex;align-items:center;justify-content:center;
-  border-radius:var(--r-full);
-  border:1px solid color-mix(in srgb,var(--brass) 40%,var(--line));
-  background:color-mix(in srgb,var(--brass-soft) 88%,var(--surface));
-  color:var(--brass);
-  font-size:var(--t-xs);font-weight:600;font-variant-numeric:tabular-nums;
-  direction:ltr;
-  box-shadow:var(--shadow-xs);
-}
-.week-overflow:hover{background:var(--brass);color:var(--surface)}
 .week-day-head{border-inline-start:1px solid var(--line)}
 /* The hour gutter stays pinned to the reading edge while the week scrolls. */
 .week-time-head,.week-times{
@@ -950,15 +934,6 @@ button.schedule-radar:hover{filter:brightness(.96)}
 }
 
 .week-drag-handle{display:none}
-.week-insight{
-  position:absolute;top:3px;inset-inline-end:3px;
-  width:20px;height:20px;display:grid;place-items:center;
-  border-radius:var(--r-xs);background:transparent;color:var(--muted-2);
-  opacity:0;transition:opacity .16s var(--ease),background .16s var(--ease);
-}
-.week-event:hover .week-insight,.week-event:focus-within .week-insight{opacity:1}
-.week-insight svg{width:13px;height:13px}
-.week-insight:hover{background:var(--surface);color:var(--accent)}
 
 .week-event.ripple-source{opacity:.72;border-style:dashed}
 .week-event.ghost-semester-event{opacity:.4}
@@ -1282,27 +1257,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    colour and lifts slightly; everything else stays exactly where it is, drained
    of colour, so the week remains whole while one question is asked of it.
    -------------------------------------------------------------------------- */
-.week-lens{
-  display:grid;
-  grid-template-columns:repeat(4,minmax(0,1fr)) auto;
-  align-items:end;gap:var(--s3);
-  padding:var(--s4) var(--s5);
-  border-bottom:1px solid var(--line);
-}
-.week-lens .field label{font-size:var(--t-xs)}
-.week-lens select,.week-lens input{min-height:38px;background-color:var(--surface-2)}
-.week-lens.active{background:color-mix(in srgb,var(--accent) 4%,transparent)}
-.week-lens-clear{
-  display:inline-flex;align-items:center;gap:var(--s2);
-  min-height:38px;padding:0 var(--s3);
-  border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
-  border-radius:var(--r-full);
-  background:var(--surface);color:var(--accent);
-  font-size:var(--t-xs);
-}
-.week-lens-clear svg{width:13px;height:13px}
-.week-lens-clear b{font-variant-numeric:tabular-nums}
-.week-lens-clear:hover{border-color:var(--accent);background:var(--accent-softer)}
 
 .week-event.lens-miss,.week-chip.lens-miss{
   opacity:.16;
@@ -1405,7 +1359,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   background:var(--success-soft);color:var(--success);
 }
 .conflict-head>span svg{width:20px;height:20px}
-.conflict-panel:has(.conflict-list) .conflict-head>span{background:var(--danger-soft);color:var(--danger)}
 .conflict-head>div{min-width:0}
 .conflict-head strong{display:block;font-size:var(--t-h4);font-weight:600}
 .conflict-head small{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.5}
@@ -1419,18 +1372,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .conflict-clear>svg{width:34px;height:34px}
 .conflict-clear strong{font-size:var(--t-h4);font-weight:600}
 .conflict-clear span{max-width:34ch;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
-
-.conflict-list{display:flex;flex-direction:column;gap:var(--s2);padding:var(--s5)}
-.conflict-list article{
-  display:grid;grid-template-columns:auto minmax(0,1fr);
-  align-items:start;gap:var(--s3);
-  padding:var(--s4);
-  border:1px solid color-mix(in srgb,var(--danger) 22%,var(--line));
-  border-radius:var(--r-md);
-  background:color-mix(in srgb,var(--danger-soft) 55%,var(--surface));
-}
-.conflict-list strong{grid-column:2;font-size:var(--t-sm);font-weight:600;line-height:1.5}
-.conflict-list span{grid-column:2;margin-top:2px;color:var(--muted);font-size:var(--t-xs);line-height:1.6}
 
 .solver-box{
   padding:var(--s5);border-top:1px solid var(--line);background:var(--surface-2);
@@ -1607,12 +1548,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .context-title small,.drawer-title small{display:block;color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.09em}
 .context-title h2,.drawer-title h2{margin-top:var(--s1);font-size:var(--t-h2);font-weight:600}
 .context-title p,.drawer-title p{margin-top:var(--s1);color:var(--muted);font-size:var(--t-sm);line-height:1.7}
-
-.context-conflicts,.context-clear{margin-top:var(--s5);padding:var(--s4);border-radius:var(--r-md);font-size:var(--t-sm)}
-.context-conflicts{display:flex;gap:var(--s3);background:var(--danger-soft);color:var(--danger)}
-.context-conflicts strong,.context-conflicts span{display:block}
-.context-conflicts span{margin-top:2px;opacity:.85;line-height:1.65}
-.context-clear{display:flex;align-items:center;gap:var(--s2);background:var(--success-soft);color:var(--success)}
 
 .context-relations{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--s2);margin-top:var(--s5)}
 .context-relations article{
@@ -2453,14 +2388,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-times span{border-bottom:0;color:var(--muted-2);font-size:10px;padding-top:4px}
 .week-times span:nth-child(2n){visibility:hidden}
 .week-times{box-shadow:1px 0 0 color-mix(in srgb,var(--line) 80%,transparent)}
-.week-time-end{
-  position:absolute;inset-inline:0;bottom:0;z-index:2;
-  transform:translateY(50%);
-  display:flex;justify-content:center;
-  color:var(--muted-2);
-  font:500 10px/1 var(--font-mono);font-style:normal;
-  pointer-events:none;
-}
 
 /* --- Day headers carry the day's weight ----------------------------------- */
 .week-time-head,.week-day-head{min-height:42px}
@@ -2560,43 +2487,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-event:has(.week-code) .week-when{padding-inline-end:52px}
 
 /* --- The lens: a toolbar, not a form --------------------------------------- */
-.week-lens{
-  display:grid;
-  grid-template-columns:minmax(220px,1.35fr) minmax(140px,.72fr) minmax(180px,.88fr) minmax(270px,1.22fr) auto;
-  align-items:center;
-  gap:var(--s2);
-  padding:var(--s3) var(--s5);
-  direction:rtl;
-}
-.week-lens .field{
-  display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:6px;
-  width:100%;min-width:0;
-  min-height:34px;padding:0 var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-full);
-  background:var(--surface-2);
-}
-.week-lens .field>label,.week-lens .field>span{
-  font-size:10.5px;color:var(--muted);font-weight:600;white-space:nowrap;
-}
-.week-lens select,.week-lens input{
-  width:100%;min-width:0;min-height:32px;max-width:none;
-  border:0;background:transparent;
-  font-size:var(--t-sm);
-  padding-inline:2px;
-}
-.week-lens select:focus-visible,.week-lens input:focus-visible{outline:none}
-.week-lens .field:focus-within{border-color:var(--accent);background:var(--surface)}
-.week-lens .time-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:center;gap:4px;direction:ltr;min-width:0}
-.week-lens .time-pair input{max-width:none}
-.week-lens-clear{
-  display:inline-flex;align-items:center;gap:6px;
-  min-height:34px;padding:0 var(--s3);
-  border:1px solid color-mix(in srgb,var(--accent) 45%,transparent);
-  border-radius:var(--r-full);
-  background:var(--accent-softer);color:var(--accent-ink);
-  font-size:var(--t-sm);font-weight:600;
-}
-.week-lens-clear:hover{background:var(--accent-soft)}
 
 /* While a room is in the lens, its free half-hours glow faintly: the grid
    flips from "what happens in G24" to "when can I still use G24" — which is
@@ -2635,13 +2525,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    ========================================================================== */
 /* A weave holding a flagged lecture announces itself — otherwise "أظهرها على
    الجدول" would light a card the reader can't see, hidden inside the band. */
-.week-bundle.bundle-flagged{
-  border-color:var(--warning);
-  box-shadow:0 0 0 2px color-mix(in srgb,var(--warning) 45%,transparent),var(--shadow-sm);
-  animation:bundle-flag-pulse 1.1s var(--ease) 2;
-}
 @keyframes bundle-flag-pulse{0%,100%{box-shadow:0 0 0 2px color-mix(in srgb,var(--warning) 45%,transparent),var(--shadow-sm)}50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--warning) 26%,transparent),var(--shadow-md)}}
-@media (prefers-reduced-motion:reduce){.week-bundle.bundle-flagged{animation:none}}
 
 /* --- Density is a level of information, not a smaller font -----------------
    When a collision cannot keep a 112px card floor inside the week's bounded
@@ -2650,206 +2534,17 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    different, and a restrained colour fingerprint.  The user's next press
    expands the day itself, where every original card returns at full geometry.
    No overlay, fan, rotated label or microtype is involved. */
-.week-density-block{
-  position:absolute;inset-inline:5px;z-index:25;
-  display:grid;grid-template-columns:minmax(0,1fr) auto;
-  grid-template-rows:1fr 4px;
-  align-items:center;gap:4px 10px;
-  min-height:0;padding:6px 9px 5px;
-  border:1px solid color-mix(in srgb,var(--line-strong) 78%,var(--accent) 22%);
-  border-radius:var(--r-sm);
-  background:
-    linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 92%,var(--accent) 8%),var(--surface));
-  color:var(--ink-2);text-align:start;overflow:hidden;
-  box-shadow:0 1px 0 color-mix(in srgb,#fff 42%,transparent) inset,var(--shadow-xs);
-  cursor:pointer;
-  transition:border-color .16s var(--ease),box-shadow .16s var(--ease),background .16s var(--ease),transform .16s var(--ease);
-}
-.week-density-block:hover{
-  border-color:color-mix(in srgb,var(--accent) 42%,var(--line-strong));
-  background:color-mix(in srgb,var(--surface) 94%,var(--accent) 6%);
-  box-shadow:var(--shadow-sm);transform:translateY(-1px);
-}
-.week-density-block:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.week-density-block.lens-miss{opacity:.24;filter:saturate(.35)}
-.gravity-field-active .week-density-block{pointer-events:none;opacity:.32;transform:none}
-.week-density-copy{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px;overflow:hidden}
-.week-density-copy small{
-  color:var(--muted);font-size:10px;font-weight:550;line-height:1.1;white-space:nowrap;
-}
-.week-density-copy strong{
-  color:var(--ink);font-size:12px;font-weight:650;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
-}
-.week-density-copy strong b{font:750 13px/1 var(--font-mono);color:var(--accent-ink)}
-.week-density-meta{display:flex;align-items:center;justify-content:flex-end;gap:7px;min-width:0;color:var(--muted);white-space:nowrap}
-.week-density-meta time{font:600 10px/1 var(--font-mono);font-variant-numeric:tabular-nums}
-.week-density-meta i{font-style:normal;font-size:10px}
-.week-density-meta i b{font:650 10px/1 var(--font-mono)}
-.week-density-meta em{
-  display:inline-flex;align-items:center;gap:3px;font-style:normal;
-  color:var(--accent-ink);font-size:10px;font-weight:620;
-}
-.week-density-meta svg{width:12px;height:12px}
-.week-density-hues{
-  grid-column:1/-1;align-self:end;height:4px;display:flex;gap:2px;min-width:0;overflow:hidden;
-}
-.week-density-hues i{
-  flex:1 1 0;min-width:5px;height:100%;border-radius:var(--r-full);
-  background:hsl(var(--hue,158) 34% 48% / .72);
-}
 /* A thirty-minute collision still has to fit inside its truthful time height.
    It keeps the same 10–12px reading floor and drops secondary prose instead
    of shrinking it. */
-.week-density-block[data-tight="true"]{padding-block:4px;grid-template-rows:1fr 3px}
-.week-density-block[data-tight="true"] .week-density-copy small,
-.week-density-block[data-tight="true"] .week-density-meta i,
-.week-density-block[data-tight="true"] .week-density-meta em{display:none}
-.week-density-block[data-tight="true"] .week-density-copy strong{font-size:11px}
-.week-density-block[data-tight="true"] .week-density-meta time{font-size:10px}
-
-.week-bundle{
-  position:absolute;inset-inline:4px;z-index:24;
-  display:flex;flex-direction:column;gap:3px;
-  padding:4px 5px 5px;
-  border:1px solid var(--line-strong);
-  border-radius:var(--r-sm);
-  background:var(--surface);
-  box-shadow:var(--shadow-xs);
-  overflow:hidden;
-  transition:box-shadow .16s var(--ease),border-color .16s var(--ease),opacity .16s var(--ease);
-}
-.week-bundle:hover{box-shadow:var(--shadow-sm)}
 /* A drag in progress must see the slots underneath, not the block: it steps
    out of the pointer's way and dims to say so. */
-.gravity-field-active .week-bundle{pointer-events:none;opacity:.35}
-.week-bundle.lens-miss{opacity:.22;filter:saturate(.35)}
-.week-bundle-head{
-  flex:none;
-  display:flex;align-items:center;gap:5px;
-  padding:1px 3px;
-  border-radius:var(--r-xs);
-  font-size:10px;font-weight:650;color:var(--ink-2);
-  white-space:nowrap;cursor:pointer;
-  transition:background .14s var(--ease),color .14s var(--ease);
-}
-.week-bundle-head:hover{background:var(--accent-softer);color:var(--accent-ink)}
-.week-bundle-head b{font:700 12px/1 var(--font-mono);color:var(--ink)}
-.week-bundle-head time{margin-inline-start:auto;font:600 8.5px/1 var(--font-mono);color:var(--muted)}
-.week-bundle-head svg{width:11px;height:11px;opacity:.6}
-.week-bundle-hits{
-  padding:0 5px;border-radius:var(--r-full);
-  background:var(--accent-soft);color:var(--accent-ink);
-  font:600 8.5px/1.7 var(--font-ui);font-style:normal;
-}
-.week-bundle-bands{
-  flex:1;min-height:0;
-  display:flex;flex-direction:column;gap:2px;
-  overflow:hidden;
-}
-.week-bundle-band{
-  --tint:hsl(var(--hue,158) 34% 96%);
-  --edge:hsl(var(--hue,158) 34% 44%);
-  --label:hsl(var(--hue,158) 42% 23%);
-  flex:1 1 0;min-height:11px;
-  display:flex;align-items:center;gap:6px;
-  padding:0 6px;
-  border-radius:5px;
-  border-inline-start:3px solid var(--edge);
-  background:var(--tint);
-  cursor:grab;
-  transition:filter .14s var(--ease);
-}
-.week-bundle-band:hover{filter:brightness(.97)}
-.week-bundle-band:active{cursor:grabbing}
-.week-bundle-band.lens-miss{opacity:.3;filter:saturate(.3)}
-:root[data-theme="dark"] .week-bundle-band{
-  --tint:hsl(var(--hue,158) 21% 15%);
-  --edge:hsl(var(--hue,158) 36% 58%);
-  --label:hsl(var(--hue,158) 46% 88%);
-}
-:root[data-theme="dark"] .week-bundle-band:hover{filter:brightness(1.12)}
-.week-band-identity{
-  flex:1;min-width:0;display:flex;align-items:baseline;gap:3px;overflow:hidden;
-  color:var(--label);white-space:nowrap;
-}
-.week-band-identity strong{
-  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  /* 1.1 clipped the descenders of the course name from below on a roomy band;
-     1.28 clears «ج/ح/ع/ي» — the dense two-column weave overrides this back to a
-     tight 1 where every pixel is spoken for. */
-  font-size:9.25px;font-weight:600;line-height:1.28;
-}
-.week-band-identity small{
-  min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:8.5px;font-weight:300;line-height:1.2;color:color-mix(in srgb,var(--label) 72%,transparent);
-}
-.week-band-identity small::before{
-  content:"·";margin-inline-end:4px;color:color-mix(in srgb,var(--label) 40%,transparent);
-}
-.week-bundle-band em{
-  font:600 8.5px/1 var(--font-mono);font-style:normal;
-  color:color-mix(in srgb,var(--label) 62%,transparent);
-  font-variant-numeric:tabular-nums;
-}
 /* In the densest weave, a vertical list physically hid rows 6–9 inside a
    fifty-minute block. Two calm columns turn eight items into four rows and
    nine into five: every lecture remains visible without growing over the next
    hour. Course and instructor keep the line; code is a tiny seal. */
-.week-bundle-bands[data-dense="true"],
-.week-bundle-bands[data-crush="true"]{
-  display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
-  grid-auto-flow:row;grid-auto-rows:minmax(0,1fr);gap:1px;
-}
-.week-bundle-bands[data-dense="true"] .week-bundle-band,
-.week-bundle-bands[data-crush="true"] .week-bundle-band{
-  min-width:0;min-height:0;
-  padding:1px 3px;
-  gap:2px;
-  border-inline-start-width:2px;
-  border-radius:4px;
-  align-items:center;
-  justify-content:flex-start;
-  flex-direction:row;
-}
 /* The crowded band goes back to one professional row: course, teacher, then
    the course number as the tiniest seal. Nothing stacks, so nothing collides. */
-.week-bundle-bands[data-dense="true"] .week-band-identity,
-.week-bundle-bands[data-crush="true"] .week-band-identity{
-  flex:1;min-width:0;display:flex;align-items:center;gap:0;overflow:hidden;
-  color:var(--label);white-space:nowrap;
-}
-.week-bundle-bands[data-dense="true"] .week-band-identity strong,
-.week-bundle-bands[data-crush="true"] .week-band-identity strong{
-  flex:1 1 56%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  line-height:1.16;letter-spacing:-.1px;
-}
-.week-bundle-bands[data-dense="true"] .week-band-identity strong{font-size:4.95px;font-weight:480}
-.week-bundle-bands[data-crush="true"] .week-band-identity strong{font-size:4.7px;font-weight:475}
-.week-bundle-bands[data-dense="true"] .week-band-identity small,
-.week-bundle-bands[data-crush="true"] .week-band-identity small{
-  flex:0 1 39%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  line-height:1.18;letter-spacing:-.08px;color:color-mix(in srgb,var(--label) 80%,transparent);
-}
-.week-bundle-bands[data-dense="true"] .week-band-identity small{font-size:4.55px;font-weight:260}
-.week-bundle-bands[data-crush="true"] .week-band-identity small{font-size:4.75px;font-weight:260}
-.week-bundle-bands[data-dense="true"] .week-band-identity small::before,
-.week-bundle-bands[data-crush="true"] .week-band-identity small::before{
-  content:"·";margin-inline-end:.5px;color:color-mix(in srgb,var(--label) 30%,transparent);
-}
-.week-bundle-bands[data-dense="true"] .week-bundle-band em,
-.week-bundle-bands[data-crush="true"] .week-bundle-band em{
-  flex:none;display:block;font-style:normal;font-variant-numeric:tabular-nums;
-  color:color-mix(in srgb,var(--label) 56%,transparent);
-  letter-spacing:-.08px;
-}
-.week-bundle-bands[data-dense="true"] .week-bundle-band em{font:300 4px/1 var(--font-mono)}
-.week-bundle-bands[data-crush="true"] .week-bundle-band em{font:300 3.8px/1 var(--font-mono)}
-.week-bundle-bands[data-crush="true"] .week-bundle-band{
-  background:color-mix(in srgb,var(--tint) 90%,white 10%);
-}
-.week-bundle-bands[data-crush="true"] .week-bundle-band:hover{
-  background:color-mix(in srgb,var(--tint) 94%,white 6%);
-}
 
 /* --- The fan ---------------------------------------------------------------
    A fixed panel rather than a child of the column, so no overflow clips it
@@ -2892,55 +2587,7 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 @media (prefers-reduced-motion:reduce){
   .sched-skeleton .sk-line,.sched-skeleton .sk-chip,.sched-skeleton .sk-card,.sched-skeleton .sk-col-head{animation:sk-fade .42s var(--ease-out) both}
 }
-
-.week-fan-backdrop{
-  position:fixed;inset:0;z-index:340;
-  background:
-    radial-gradient(120% 90% at 50% 40%,transparent 30%,color-mix(in srgb,var(--ink) 16%,transparent) 100%),
-    color-mix(in srgb,var(--ink) 10%,transparent);
-  -webkit-backdrop-filter:blur(2px) saturate(1.05);
-  backdrop-filter:blur(2px) saturate(1.05);
-  animation:fade .22s var(--ease-out) both;
-}
-.week-fan{
-  position:fixed;z-index:350;
-  width:min(324px,calc(100vw - 24px));
-  max-height:min(488px,82vh);
-  display:flex;flex-direction:column;gap:8px;
-  padding:14px;
-  /* A whisper of light across the top edge lifts the panel off the backdrop —
-     the sheet catches the room's light rather than sitting flat on it. */
-  background:
-    linear-gradient(180deg,color-mix(in srgb,var(--accent) 5%,transparent),transparent 68px),
-    var(--surface);
-  border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));
-  border-radius:var(--r-lg);
-  box-shadow:
-    0 1px 0 0 color-mix(in srgb,#fff 6%,transparent) inset,
-    var(--shadow-lg);
-  animation:sheet-up .3s var(--ease-spring) both;
-}
-.week-fan>header{display:flex;align-items:center;gap:8px;padding-bottom:9px;position:relative}
 /* A gradient hairline seals the header off from the deck without a hard rule. */
-.week-fan>header::after{
-  content:"";position:absolute;inset-inline:-2px;bottom:0;height:1px;
-  background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 34%,var(--line)) 22%,color-mix(in srgb,var(--accent) 34%,var(--line)) 78%,transparent);
-}
-.week-fan>header b{flex:1;font-size:var(--t-sm);font-weight:650;letter-spacing:-.1px}
-.week-fan>header time{
-  font:650 10.5px var(--font-mono);color:var(--accent-ink,var(--accent));
-  padding:2px 7px;border-radius:var(--r-full);
-  background:color-mix(in srgb,var(--accent) 12%,transparent);
-  letter-spacing:.2px;
-}
-.week-fan>header button{
-  width:26px;height:26px;display:grid;place-items:center;
-  border-radius:var(--r-full);color:var(--muted);
-  transition:background .14s var(--ease),color .14s var(--ease);
-}
-.week-fan>header button:hover{background:var(--surface-3);color:var(--ink)}
-.week-fan>header button svg{width:14px;height:14px}
-.week-fan>p{font-size:var(--t-xs);color:var(--muted);line-height:1.55}
 /* --- Fetching a new week over an old one --------------------------------------
    The board deliberately keeps the previous scope on screen while the next one
    loads, so it never blinks to empty. The cost is that a stale week can be
@@ -2988,15 +2635,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   border:1px solid var(--line);border-radius:var(--r-lg);
   background:var(--surface-2);
   animation:rise .24s var(--ease-out) both;
-}
-.week-legend-cap{
-  display:inline-flex;align-items:center;gap:5px;flex:none;
-  font-size:var(--t-xs);color:var(--muted);letter-spacing:-.1px;
-}
-.week-legend-cap .num{
-  font:700 10px var(--font-mono);color:var(--accent-ink,var(--accent));
-  padding:1px 6px;border-radius:var(--r-full);
-  background:color-mix(in srgb,var(--accent) 14%,transparent);
 }
 /* Asking the key a question. Appears only once the strip overflows, which the
    measurement put at about a dozen courses. */
@@ -3148,26 +2786,10 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-legend-clear svg{width:12px;height:12px}
 /* The texture switch, standing inside the key it qualifies. Its own swatch
    wears the weave when it is on, so the button demonstrates what it does. */
-.week-legend-texture{
-  flex:none;display:inline-flex;align-items:center;gap:5px;
-  min-height:28px;padding:0 10px;border-radius:var(--r-full);
-  border:1px solid var(--line);background:var(--surface);
-  color:var(--muted);font-size:var(--t-xs);
-  transition:color .16s var(--ease),border-color .16s var(--ease),background .16s var(--ease);
-}
-.week-legend-texture svg{width:13px;height:13px}
-.week-legend-texture:hover{color:var(--ink);border-color:var(--accent)}
-.week-legend-texture.is-on{
-  color:var(--accent-ink,var(--accent));
-  border-color:color-mix(in srgb,var(--accent) 50%,var(--line));
-  background:color-mix(in srgb,var(--accent) 12%,var(--surface));
-  font-weight:600;
-}
 /* Lit and hushed. Opacity only — no geometry moves, so a focus can never shift
    a card by a pixel or interfere with a drag in flight. */
 .week-event.hue-shade,.week-bundle-band.hue-shade{opacity:.2}
 .week-event.hue-lit{box-shadow:0 0 0 1px hsl(var(--hue,158) 62% 55% / .7),var(--shadow-sm);z-index:5}
-.week-bundle-band.hue-lit{box-shadow:0 0 0 1px hsl(var(--hue,158) 62% 55% / .7)}
 @media (prefers-reduced-motion:reduce){
   .week-legend{animation:none}
   .week-legend-chip{transition:none}
@@ -3196,16 +2818,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
     transparent 0 var(--cb-off,4px)
   );
 }
-:root[data-colorblind="true"] .week-bundle-band{position:relative}
-:root[data-colorblind="true"] .week-bundle-band::before{
-  content:"";position:absolute;inset-block:0;inset-inline-start:0;width:3px;
-  pointer-events:none;opacity:.8;
-  background-image:repeating-linear-gradient(
-    var(--cb-angle,0deg),
-    color-mix(in srgb,var(--ink) 58%,transparent) 0 var(--cb-on,2px),
-    transparent 0 var(--cb-off,4px)
-  );
-}
 /* The hover card and the legend say the texture too, so the key and the card
    agree. */
 :root[data-colorblind="true"] .week-peek{
@@ -3220,16 +2832,8 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 /* The axis: one slot per bucket, mirroring the bars' own track, so the caret
    lands exactly under the wall it marks. */
 /* «الذروة 11:00» — the hour the wall stands, said in words beside the count. */
-.week-fan-cards{
-  overflow-y:auto;overscroll-behavior:contain;
-  display:flex;flex-direction:column;gap:6px;
-  padding:2px 2px 10px;
-}
 /* Each card arrives a beat after the one before it — the hand being dealt. */
-.week-fan-slot{animation:fan-in .34s var(--ease-spring) both;animation-delay:calc(var(--i,0)*28ms)}
 @keyframes fan-in{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
-.week-fan-slot .week-event{box-shadow:var(--shadow-xs)}
-.week-fan-slot .week-event:hover{box-shadow:var(--shadow-sm)}
 /* --- Fan cards breathe --------------------------------------------------------
    In the grid a card's height encodes its duration, so it uses size containment
    and drops lines as it shrinks. In the fan there is no such constraint: the
@@ -3239,14 +2843,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    fixed-height card used to hide. Arabic needs the descender room: the grid's
    tight line-heights clipped «ج/ح/ع/ي» from below here, where the card is the
    whole focus rather than a tile. */
-.week-fan-slot .week-event{
-  container-type:inline-size;
-  min-height:58px;height:auto;
-  padding-block:7px;gap:2px;
-}
-.week-fan-slot .week-title{line-height:1.45;-webkit-line-clamp:2;padding-block-end:2px}
-.week-fan-slot .week-who{line-height:1.5;padding-block-end:2px}
-.week-fan-slot .week-when{display:flex;margin-top:2px}
 
 /* --- The deck is colour-coded ------------------------------------------------
    In the grid every card wears the accent so a lane reads as one instrument.
@@ -3255,40 +2851,14 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
    a colour, a different course stands out at a glance. Scoped to the fan and
    guarded by :not() so a selected / lensed / flagged card keeps its own state
    colour untouched — the schedule's own logic is never overridden. */
-.week-fan-slot .week-event{--fan-hue:var(--hue,158)}
-.week-fan-slot .week-event:not(.week-picked):not(.review-flagged){
-  border-color:color-mix(in srgb,hsl(var(--fan-hue) 46% 50%) 26%,var(--line));
-  border-inline-start-color:hsl(var(--fan-hue) 58% 52%);
-}
-:root[data-theme="dark"] .week-fan-slot .week-event:not(.week-picked):not(.review-flagged){
-  border-color:color-mix(in srgb,hsl(var(--fan-hue) 40% 56%) 30%,var(--line));
-  border-inline-start-color:hsl(var(--fan-hue) 52% 60%);
-}
 /* Hover choreography: the card lifts a hair toward the reader and its spine
    throws a soft coloured light — the one you are about to grab announces itself.
    No transform is used (physics owns transform during a drag); only shadow and
    the spine width move, so a hover can never collide with a lift-in-progress. */
-.week-fan-slot .week-event{
-  transition:box-shadow .18s var(--ease),border-inline-start-width .16s var(--ease),background .2s var(--ease);
-}
-.week-fan-slot .week-event:hover{
-  border-inline-start-width:5px;
-  box-shadow:
-    0 6px 18px -8px hsl(var(--fan-hue,158) 55% 45% / .5),
-    var(--shadow-sm);
-}
-.week-fan-slot .week-event:focus-visible{
-  outline:2px solid hsl(var(--fan-hue,158) 60% 55%);outline-offset:1px;
-}
 /* The deal: each card lands a beat after the last, sliding in along the spine. */
-.week-fan-slot{animation:fan-deal .38s var(--ease-spring) both;animation-delay:calc(var(--i,0)*32ms)}
 @keyframes fan-deal{
   from{opacity:0;transform:translateY(12px) translateX(6px) scale(.975)}
   to{opacity:1;transform:none}
-}
-@media (prefers-reduced-motion:reduce){
-  .week-fan-slot{animation:none}
-  .week-fan-slot .week-event{transition:none}
 }
 
 /* --- Narrow cards stay horizontal --------------------------------------------
@@ -3301,12 +2871,6 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   .week-code{display:block;font-size:9.5px;font-weight:420;line-height:1.12}
   .week-title{font-size:10.25px;font-weight:520;-webkit-line-clamp:1;letter-spacing:0}
   .week-who{display:block;font-size:9.75px;font-weight:380;opacity:.88}
-}
-
-@media (prefers-reduced-motion:reduce){
-  .week-fan{animation:none}
-  .week-fan-slot{animation:none}
-  .week-bundle-weave i{transition:none}
 }
 
 /* --- The card that just moved says so ---------------------------------------
@@ -3662,8 +3226,6 @@ html.schedule-physics-active .rooms-paint{display:none}
 }
 
 /* --- Lens feedback --------------------------------------------------------- */
-.week-lens-note{flex-basis:100%;color:var(--muted);font-size:var(--t-xs)}
-.week-lens-note.warn{color:var(--danger)}
 
 /* --- The reading panel stays inside the window ------------------------------
    Its position is clamped from the measured height now; this is the second
@@ -3678,52 +3240,10 @@ html.schedule-physics-active .rooms-paint{display:none}
 /* --- Lens chips: the label is not part of the value -------------------------
    «المبنىالكل» read as one word. The label now sits behind a hairline with
    real breathing room, so the field says «المبنى | الكل». */
-.week-lens .field{gap:0;padding:0;overflow:visible}
-.week-lens .field>label,.week-lens .field>span{
-  padding:0 var(--s3);
-  margin-inline-end:var(--s2);
-  border-inline-end:1px solid var(--line);
-  color:var(--muted-2);
-  line-height:32px;
-}
-.week-lens select,.week-lens input{padding-inline:0 var(--s3)}
-.week-lens .time-pair{padding-inline:var(--s2) var(--s3)}
-.week-lens-note{grid-column:1/-1}
 
 /* One room or a working set of rooms, from the same lens. A native multiple
    select hides its state behind modifier keys; this menu says the count on the
    closed control and keeps every choice visible as a checkbox. */
-.week-room-multiselect{position:relative;z-index:18}
-.week-room-multiselect details{position:relative;min-width:142px}
-.week-room-multiselect summary{
-  min-height:32px;display:flex;align-items:center;justify-content:space-between;gap:var(--s2);
-  padding-inline-end:var(--s3);cursor:pointer;list-style:none;color:var(--ink-2);font-size:var(--t-sm);
-}
-.week-room-multiselect summary::-webkit-details-marker{display:none}
-.week-room-multiselect summary::after{content:"⌄";color:var(--muted-2);font-size:11px}
-.week-room-multiselect summary b{
-  min-width:19px;height:19px;display:grid;place-items:center;border-radius:var(--r-full);
-  background:var(--accent);color:var(--accent-contrast);font-size:9px;
-}
-.week-room-menu{
-  position:absolute;top:calc(100% + 8px);inset-inline-start:0;z-index:80;
-  width:min(300px,80vw);max-height:310px;overflow-y:auto;
-  padding:var(--s2);border:1px solid var(--line);border-radius:var(--r-md);
-  background:var(--surface);box-shadow:var(--shadow-lg);
-}
-.week-room-menu header{
-  display:flex;align-items:center;justify-content:space-between;gap:var(--s3);
-  padding:var(--s2) var(--s2) var(--s3);border-bottom:1px solid var(--line);
-}
-.week-room-menu header strong{font-size:var(--t-xs);font-weight:650}
-.week-room-menu header button{color:var(--accent);font-size:var(--t-xs);font-weight:600}
-.week-room-menu>label{
-  min-height:38px;display:flex;align-items:center;gap:var(--s3);
-  padding:0 var(--s2);border-radius:var(--r-xs);cursor:pointer;
-}
-.week-room-menu>label:hover{background:var(--surface-2)}
-.week-room-menu input{width:16px;height:16px;min-height:0;accent-color:var(--accent)}
-.week-room-menu>label span{font:600 var(--t-xs)/1 var(--font-mono);color:var(--ink-2)}
 
 /* --- Choosing which rooms the matrix shows ---------------------------------- */
 .rooms-picker{
@@ -6344,24 +5864,6 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 /* === True focus mode ========================================================
    The timetable becomes the application. Everything else disappears; Escape
    or the almost-invisible corner control is the only chrome left. */
-html[data-schedule-workspace="focus"] .week-surface.week-focus-fullscreen{
-  position:fixed!important;
-  inset:0!important;
-  z-index:1500!important;
-  width:100vw!important;
-  height:100dvh!important;
-  max-width:none!important;
-  margin:0!important;
-  padding:0!important;
-  border:0!important;
-  border-radius:0!important;
-  box-shadow:none!important;
-  background:var(--surface)!important;
-  display:flex!important;
-  flex-direction:column!important;
-  gap:0!important;
-  overflow:hidden!important;
-}
 /* Legacy `.week-focus-fullscreen` is no longer emitted. Focus preserves all
    live timetable feedback layers; only shell chrome is removed in 03-shell. */
 /* Focus removes furniture, never interaction. The scrollbar, ripple forecast,
@@ -6370,22 +5872,6 @@ html[data-schedule-workspace="focus"] .week-surface>.week-note,
 html[data-schedule-workspace="focus"] .week-surface>.week-legend,
 html[data-schedule-workspace="focus"] .week-surface>.week-daystrip{
   display:none!important;
-}
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-scroll-main{
-  flex:1 1 auto!important;
-  min-height:0!important;
-  height:100dvh!important;
-  max-height:none!important;
-  margin:0!important;
-  border:0!important;
-  overflow:auto!important;
-  scrollbar-gutter:stable;
-}
-html[data-schedule-workspace="focus"] .week-focus-fullscreen .week-strips,
-html[data-schedule-workspace="focus"] .week-focus-fullscreen .week-calendar{
-  min-height:100%!important;
-  border-radius:0!important;
-  border-block:0!important;
 }
 .schedule-focus-exit{
   position:fixed;
@@ -7355,14 +6841,6 @@ html[data-schedule-workspace="focus"] .schedule-page>.week-surface,
 html[data-schedule-workspace="focus"] .schedule-page>.rooms-surface{
   overflow-y:auto!important;
   overflow-x:hidden!important;
-}
-html[data-schedule-workspace="focus"] .week-focus-fullscreen>.week-scroll-main{
-  flex:0 0 auto!important;
-  min-height:0!important;
-  height:auto!important;
-  max-height:none!important;
-  overflow-x:auto!important;
-  overflow-y:hidden!important;
 }
 html[data-schedule-workspace="focus"] .week-ruler-scroll,
 html[data-schedule-workspace="focus"] .rooms-ruler-scroll{
