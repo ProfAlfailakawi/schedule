@@ -2156,7 +2156,14 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                   <thead><tr><th>القاعة</th>{roomLoad.slots.map((point: number) => <th key={point} className="print-ltr">{scheduleClockForDisplay(clock(point))}</th>)}<th>الإشغال</th></tr></thead>
                   <tbody>{pageRooms.map((room: any) => <tr key={room.key}>
                     <th className="print-ltr">{room.name}</th>
-                    {room.cells.map((cell: any) => <td key={cell.point} className={`print-heat print-heat-${Math.min(5, cell.taken)}`}>{cell.taken > 1 ? cell.taken : ""}</td>)}
+                    {/* The number lives in its own element so the sheet can give
+                        it the badge the screen gives it — this grid is the one
+                        readers meet first, and it earns the extra care. */}
+                    {room.cells.map((cell: any) => (
+                      <td key={cell.point} className={`print-heat print-heat-${Math.min(5, cell.taken)}`}>
+                        {cell.taken > 1 ? <span>{cell.taken}</span> : null}
+                      </td>
+                    ))}
                     <td className="print-ltr"><strong>{room.rate}%</strong></td>
                   </tr>)}</tbody>
                 </table>

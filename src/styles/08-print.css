@@ -1889,3 +1889,70 @@
     max-width:210mm !important;
   }
 }
+
+/* ==========================================================================
+   ── شبكة إشغال القاعات: الورقة التي تُقرأ أولاً ─────────────────────────────
+   This one grid opens the rooms report and is the sheet people actually look
+   at, so it is drawn with the care the screen version has: each hour is a
+   rounded tile rather than a table cell, the busiest ones carry a warm rule,
+   and the count sits in its own pale badge instead of floating on the colour.
+   Scoped to `.print-occupancy-table` — no other report is touched by any of
+   this, and the heat scale itself is unchanged.
+   ========================================================================== */
+@media print{
+  .print-occupancy-table{border-collapse:separate !important;border-spacing:.7mm .5mm !important;border:0 !important}
+
+  .print-occupancy-table thead th{
+    border:0 !important;background:transparent !important;
+    color:#5c6663 !important;font-size:6.4pt !important;font-weight:700 !important;
+    letter-spacing:.02em !important;padding:0 0 .6mm !important;
+  }
+
+  .print-occupancy-table tbody th{
+    border:0 !important;background:transparent !important;
+    text-align:right !important;padding-inline-end:1.6mm !important;
+    font-size:7.6pt !important;font-weight:700 !important;color:#0f4239 !important;
+  }
+
+  .print-occupancy-table .print-heat{
+    position:relative !important;
+    border:0 !important;border-radius:1.6mm !important;
+    height:6.2mm !important;padding:0 !important;
+    color:#0f4239 !important;font-weight:700 !important;
+    vertical-align:middle !important;
+  }
+  /* The heat scale is the whole point of this grid, so it is restated here —
+     these rules sit after the base above and must not be overridden by it. */
+  .print-occupancy-table .print-heat{background:#f4f6f5 !important}
+  /* One step deeper than the old flat table: on paper a pale tint reads as
+     "empty", and the whole value of this grid is that a busy hour LOOKS busy
+     from across a desk. The badge below keeps every number legible on the
+     darker end. */
+  .print-occupancy-table .print-heat-1{background:#dbeae5 !important}
+  .print-occupancy-table .print-heat-2{background:#a9cdc2 !important}
+  .print-occupancy-table .print-heat-3{background:#7fb6a6 !important}
+  .print-occupancy-table .print-heat-4{background:#4f9280 !important;color:#08241e !important}
+  .print-occupancy-table .print-heat-5{background:#2b7666 !important;color:#fff !important}
+  /* The count in its own pale disc, so a dark tile never swallows the number. */
+  .print-occupancy-table .print-heat > span{
+    display:inline-block !important;
+    min-width:3.6mm !important;padding:.15mm .7mm !important;
+    border-radius:99mm !important;
+    background:#ffffffe6 !important;color:#0d3029 !important;
+    font-size:6.4pt !important;font-weight:800 !important;line-height:1.5 !important;
+  }
+  /* The busy end of the scale earns the college's own gold as a hairline. */
+  .print-occupancy-table .print-heat-3,
+  .print-occupancy-table .print-heat-4,
+  .print-occupancy-table .print-heat-5{
+    box-shadow:inset 0 0 0 .25mm #c29b4055 !important;
+  }
+  .print-occupancy-table .print-heat-5{color:#fff !important}
+
+  /* The share reads as a quiet figure at the end of its row, not as a cell. */
+  .print-occupancy-table tbody td:last-child{
+    border:0 !important;background:transparent !important;
+    color:#2b7666 !important;font-size:7.2pt !important;
+  }
+  .print-occupancy-table tbody td:last-child strong{font-weight:800 !important}
+}
