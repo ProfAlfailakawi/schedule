@@ -1782,7 +1782,10 @@
    physical page.
    ========================================================================== */
 @media print{
-  html[data-print-rotate="1"]{ --safari-rot-scale:.88; }
+  /* The scale is arithmetic, not taste. Rotated, a 297×210 sheet needs 297·s
+     of vertical room (paper gives ~271mm once a print dialog's own margins are
+     taken) and 210·s of horizontal room (paper gives ~185mm): s ≤ 0.879. */
+  html[data-print-rotate="1"]{ --safari-rot-scale:.86; }
 
   html[data-print-rotate="1"] body,
   html[data-print-rotate="1"] #app-print-root{
@@ -1799,9 +1802,18 @@
     max-width:210mm !important;
   }
 
+  /* A block wider than its container hangs off the LEFT in RTL, and where it
+     hangs from depends on the paper — which makes the rotation offset
+     unknowable. Forcing the CONTAINER to ltr pins the sheet's left edge at
+     x=0 on every paper size; the sheet itself restores rtl for its content,
+     so nothing inside is reversed. */
+  html[data-print-rotate="1"] .print-report.print-wide,
+  html[data-print-rotate="1"] .print-comprehensive-pages{direction:ltr !important}
+
   html[data-print-rotate="1"] .print-report.print-wide .print-explicit-page,
   html[data-print-rotate="1"] .print-comprehensive-page{
     box-sizing:border-box !important;
+    direction:rtl !important;
     width:297mm !important;
     min-width:297mm !important;
     max-width:297mm !important;
@@ -1809,25 +1821,15 @@
     min-height:210mm !important;
     max-height:210mm !important;
     overflow:hidden !important;
-    margin:0 0 87mm 0 !important;
-    /* The two closing terms centre the shrunken sheet on the paper:
-       half the freed width (105mm·(1−s)) and half the freed height. */
-    transform:
-      translate(
-        calc(87mm + 210mm * var(--safari-rot-scale) + 105mm * (1 - var(--safari-rot-scale))),
-        calc(148.5mm * (1 - var(--safari-rot-scale)))
-      )
-      rotate(90deg)
-      scale(var(--safari-rot-scale)) !important;
+    /* Reserve exactly the vertical room the ROTATED sheet occupies (297·s),
+       minus the 210mm the unrotated box already contributes to the flow. */
+    margin:0 0 calc(297mm * var(--safari-rot-scale) - 210mm) 0 !important;
+    /* Rotating about the top-left maps the sheet to x ∈ [−210·s, 0]; the
+       translate walks it back so it starts at the paper's own left edge. */
+    transform:translateX(calc(210mm * var(--safari-rot-scale))) rotate(90deg) scale(var(--safari-rot-scale)) !important;
     transform-origin:0 0 !important;
     break-inside:avoid-page !important;
     page-break-inside:avoid !important;
-  }
-
-  html[data-print-rotate="1"] .print-report.print-wide .print-explicit-page + .print-explicit-page,
-  html[data-print-rotate="1"] .print-comprehensive-page + .print-comprehensive-page{
-    break-before:page !important;
-    page-break-before:always !important;
   }
 
   /* The comprehensive book wrapper must not re-impose landscape width around

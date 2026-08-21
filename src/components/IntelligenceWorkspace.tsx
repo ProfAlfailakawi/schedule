@@ -198,29 +198,47 @@ interface DeckCard {
  * bug — pressing a card changed the content a thousand pixels below the fold
  * and never scrolled to it.
  */
+/**
+ * ── افتح القراءة من أعلى الصفحة ─────────────────────────────────────────────
+ *
+ * Two bugs lived here, and the second one hid inside the fix for the first.
+ *
+ *  1. Measuring one frame after the state change measured the panel React had
+ *     not swapped yet.
+ *  2. The real one: `.insight-page-head` is `position: sticky; top: 84px`. A
+ *     stuck element's `getBoundingClientRect().top` reports where it is STUCK
+ *     — 84 — not where it lives in the document. So the arithmetic
+ *     `rect.top + scrollY` resolved to "roughly where you already are", the
+ *     guard then decided the page was close enough, and nothing moved. It was
+ *     never a timing problem at heart; it was measuring a lie.
+ *
+ * A sticky element cannot answer "where do you begin?", so it is not asked.
+ * The destination is the workspace container itself, measured through the
+ * offset chain — a value stickiness cannot touch — and the reading always
+ * opens at the top of its own page.
+ */
+const documentTop = (node: HTMLElement | null) => {
+  let top = 0;
+  let walker: HTMLElement | null = node;
+  while (walker) {
+    top += walker.offsetTop;
+    walker = walker.offsetParent as HTMLElement | null;
+  }
+  return top;
+};
+
 const liftToTop = (instant: boolean) => {
-  /* One frame is NOT after the commit: React had often not swapped the rail
-     for the page head yet, so this measured the OLD strip — sometimes landing
-     mid-page, sometimes not moving at all, and the opened reading sat above
-     or below wherever the reader happened to be. Two frames guarantees the
-     new panel is painted; a bounded retry covers a slow first paint; and a
-     settle pass re-checks after the panels below have taken their height. */
   let tries = 0;
   const measure = () => {
-    const target = [
+    const page = document.querySelector<HTMLElement>(".intelligence-page");
+    const marker = [
       ...document.querySelectorAll<HTMLElement>(".insight-page-head, .insight-preview-rail"),
     ].find(el => el.getClientRects().length > 0);
-    if (!target) { if (tries++ < 8) requestAnimationFrame(measure); return; }
-    const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 8);
-    if (Math.abs(window.scrollY - top) >= 8) window.scrollTo({ top, behavior: instant ? "auto" : "smooth" });
-    window.setTimeout(() => {
-      const settled = [
-        ...document.querySelectorAll<HTMLElement>(".insight-page-head, .insight-preview-rail"),
-      ].find(el => el.getClientRects().length > 0);
-      if (!settled) return;
-      const settledTop = Math.max(0, settled.getBoundingClientRect().top + window.scrollY - 8);
-      if (Math.abs(window.scrollY - settledTop) > 24) window.scrollTo({ top: settledTop, behavior: "auto" });
-    }, instant ? 60 : 420);
+    if (!page && !marker) { if (tries++ < 8) requestAnimationFrame(measure); return; }
+    /* A few pixels of air above the page so it does not butt against the
+       shell's own header. */
+    const top = Math.max(0, documentTop(page || marker!) - 12);
+    if (Math.abs(window.scrollY - top) >= 4) window.scrollTo({ top, behavior: instant ? "auto" : "smooth" });
   };
   requestAnimationFrame(() => requestAnimationFrame(measure));
 };

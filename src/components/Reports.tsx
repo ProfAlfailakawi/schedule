@@ -128,6 +128,34 @@ function QueryTimeSelect({ value, onChange, label }: { value: string; onChange: 
 }
 
 const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-latn");
+/**
+ * ── كم سطراً تتسع الورقة فعلاً ───────────────────────────────────────────────
+ *
+ * These counts were tuned against what a page LOOKED like, not against the
+ * sheet it lands on, and the difference produced a blank page after every
+ * printout. Measured: one list page of sixteen rows is 277.6mm tall, while the
+ * paper offers 210mm in landscape and about 271mm in a portrait dialog with
+ * default margins — so every logical page spilled a sliver onto a sheet of its
+ * own, and the reader met a trail of near-empty pages.
+ *
+ * Each number below is now the measured maximum that fits a landscape sheet
+ * with room to spare for long Arabic names (verified by rendering to PDF and
+ * counting sheets: 10 rows fit, 11 spill). Portrait sheets keep their own,
+ * larger budget. The layout, typography and every design decision are
+ * untouched — only how many items are asked to stand on one page.
+ */
+const PAGE_ROWS = {
+  list: 10,          // wide  · 277.6mm at 16 → 195mm at 10
+  instructorRows: 7, // wide  · rows inside one instructor's block
+  roomOccupancy: 6,  // wide  · the heat grid is the tallest row of them all
+  roomFree: 8,       // wide
+  roomDirectory: 16, // wide  · compact, three per line
+  matrixLines: 3,    // wide  · each line is a full hall × hours band
+  timeGroups: 7,     // upright
+  fairnessRows: 9,   // upright
+  balanceRows: 8,    // wide
+} as const;
+
 const COMPREHENSIVE_FIRST_PAGE_ROWS = 23;
 const COMPREHENSIVE_NEXT_PAGE_ROWS = 23;
 const minutes = (value: string) => { const [h, m] = String(value || "0:0").split(":").map(Number); return (h || 0) * 60 + (m || 0); };
@@ -1997,7 +2025,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "list") {
-    const pages = paginateItems(rows, 16);
+    const pages = paginateItems(rows, PAGE_ROWS.list);
     return (
       <div className="print-report print-wide print-query-report print-query-list-report">
         {pages.length ? pages.map((pageRows, pageIndex) => (
@@ -2011,7 +2039,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
             <div className="print-query-list">
               {pageRows.map((row, index) => {
                 const course = courseOf(row), instructor = instructorOf(row);
-                const serial = pageIndex * 16 + index + 1;
+                const serial = pageIndex * PAGE_ROWS.list + index + 1;
                 return (
                   <article key={row.id}>
                     <span className="print-list-index">{String(serial).padStart(2, "0")}</span>
@@ -2072,7 +2100,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
 
   if (kind === "instructor") {
     const groups = groupRows(rows, row => instructorOf(row)?.AdInstructorName || "بدون أستاذ");
-    const pages = groups.flatMap(group => paginateItems(group.rows, 10).map(groupRows => ({ group, rows: groupRows })));
+    const pages = groups.flatMap(group => paginateItems(group.rows, PAGE_ROWS.instructorRows).map(groupRows => ({ group, rows: groupRows })));
     return (
       <div className="print-report print-wide print-query-report print-query-groups-report">
         {pages.length ? pages.map((page, pageIndex) => {
@@ -2116,11 +2144,11 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
       const bucket = resultByRoom.get(key);
       if (bucket) bucket.push(row); else resultByRoom.set(key, [row]);
     });
-    const roomPages = roomLoad?.rooms?.length ? paginateItems(roomLoad.rooms, 8) : [];
+    const roomPages = roomLoad?.rooms?.length ? paginateItems(roomLoad.rooms, PAGE_ROWS.roomOccupancy) : [];
     const freeRooms = roomDay !== "week" && roomLoad?.rooms?.length ? roomLoad.rooms.filter((room: any) => room.windows.length) : [];
-    const freePages = paginateItems(freeRooms, 12);
+    const freePages = paginateItems(freeRooms, PAGE_ROWS.roomFree);
     const directory = [...resultByRoom.entries()].sort(([a], [b]) => byArabic(a, b));
-    const directoryPages = paginateItems(directory, 24);
+    const directoryPages = paginateItems(directory, PAGE_ROWS.roomDirectory);
     const totalPages = roomPages.length + freePages.length + directoryPages.length;
     const scope = `${scopeLine}${scopeLine ? " · " : ""}${selectedDayLabel}`;
     return (
@@ -2184,7 +2212,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "matrix") {
-    const pages = matrix?.lines?.length ? paginateItems(matrix.lines, 4) : [];
+    const pages = matrix?.lines?.length ? paginateItems(matrix.lines, PAGE_ROWS.matrixLines) : [];
     return (
       <div className="print-report print-wide print-query-report print-query-matrix-report">
         {pages.length ? pages.map((pageLines: any[], pageIndex) => (
@@ -2209,7 +2237,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   if (kind === "time") {
     const groups = groupRows(rows, row => row.fstarttime).sort((a, b) => a.key.localeCompare(b.key));
     const maxCount = Math.max(1, ...groups.map(group => group.rows.length));
-    const pages = paginateItems(groups, 10);
+    const pages = paginateItems(groups, PAGE_ROWS.timeGroups);
     return (
       <div className="print-report print-upright print-query-report print-time-report">
         {pages.length ? pages.map((pageGroups, pageIndex) => (
@@ -2236,7 +2264,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
        page fits the letterhead, score block and page meta as one indivisible
        unit in WebKit/Chromium, while 39 instructors still need only four pages
        (10/10/10/9) instead of producing a stranded footer/blank sheet. */
-    const pages = fairness?.rows?.length ? paginateItems(fairness.rows, 10) : [];
+    const pages = fairness?.rows?.length ? paginateItems(fairness.rows, PAGE_ROWS.fairnessRows) : [];
     return (
       <div className="print-report print-upright print-query-report print-fairness-new">
         {pages.length ? pages.map((pageRows: any[], pageIndex) => (
@@ -2263,7 +2291,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   }
 
   if (kind === "balance") {
-    const pages = balance?.departments?.length ? paginateItems(balance.departments, 12) : [];
+    const pages = balance?.departments?.length ? paginateItems(balance.departments, PAGE_ROWS.balanceRows) : [];
     return (
       <div className="print-report print-wide print-query-report print-balance-report">
         {pages.length ? pages.map((pageDepartments: any[], pageIndex) => (

@@ -98,6 +98,9 @@ const Schedules = safeLazy(loadSchedules);
 const Reports = safeLazy(loadReports);
 const AdminUsers = safeLazy(loadAdminUsers);
 const About = safeLazy(loadAbout);
+/* The welcome stage is a first-run surface: it must not sit in the payload
+   every returning user downloads. */
+const Onboarding = safeLazy(() => import("./components/Onboarding"));
 const loadJourney = () => import("./components/ScheduleJourney");
 const ScheduleJourney = safeLazy(loadJourney);
 const IntelligenceWorkspace = safeLazy(loadIntelligence);
@@ -1947,73 +1950,6 @@ export default function App() {
     if (user) safeStorage.set(`schedule-onboarding-v4-${user.SystemUserId}`, "done");
     setOnboardingStep(-1);
   };
-  const noKeyboard = typeof window !== "undefined"
-    && (window.matchMedia?.("(pointer: coarse)").matches ?? false)
-    && !(window.matchMedia?.("(any-hover: hover)").matches ?? false);
-  const onboardingSteps = isPowerAdmin
-    ? [
-        /* The first card of the tour taught a keyboard shortcut. On a phone
-           there is no keyboard to press it with, so the very first thing a new
-           reader was told was the one thing they could not do. Same idea, named
-           by the door that actually exists on their device. */
-        noKeyboard
-          ? {
-              icon: <Search />,
-              eyebrow: "أسرع وصول",
-              title: "كل البرنامج في بحث واحد",
-              copy: "دكتور · مقرر · قاعة · أمر طبيعي",
-            }
-          : {
-              icon: <Command />,
-              eyebrow: "أسرع وصول",
-              title: "كل البرنامج تحت ⌘K",
-              copy: "دكتور · مقرر · قاعة · أمر طبيعي",
-            },
-        {
-          icon: <WandSparkles />,
-          eyebrow: "مختبر القرار",
-          title: "جرّب قبل ما تغيّر",
-          copy: "كل تغيير يبقى مسودة حتى تعتمده.",
-        },
-        {
-          icon: <ShieldCheck />,
-          eyebrow: "عزل الصلاحيات",
-          title: "مسؤول القسم يرى ما يحتاجه فقط",
-          copy: "لك كل الشاشات؛ المنسّق يرى قسمه فقط.",
-        },
-        {
-          icon: <WifiOff />,
-          eyebrow: "حماية إضافية",
-          title: "إذا انقطع الإنترنت، الحفظ يتوقف",
-          copy: "يتوقف البرنامج مؤقتاً لحماية العمل، ويعود تلقائياً عندما يرجع الاتصال.",
-        },
-      ]
-    : [
-        {
-          icon: <CalendarDays />,
-          eyebrow: "مساحة عمل محدودة",
-          title: "كل ما تحتاجه للجدول في أربع وجهات",
-          copy: "لوحة · جدول · تقارير.",
-        },
-        {
-          icon: <Command />,
-          eyebrow: "أسرع وصول",
-          title: "اسأل البرنامج مباشرة",
-          copy: "مثال: «فراغات د. أحمد الثلاثاء»",
-        },
-        {
-          icon: <ShieldCheck />,
-          eyebrow: "خصوصية القسم",
-          title: "قسمك فقط… مع حماية الحجز بالكامل",
-          copy: "حجوزات الأقسام الأخرى محسوبة دون كشف تفاصيلها.",
-        },
-        {
-          icon: <WifiOff />,
-          eyebrow: "حماية الحفظ",
-          title: "لا كتابة أثناء انقطاع الاتصال",
-          copy: "يتوقف البرنامج مؤقتاً عند انقطاع الاتصال، ويعود تلقائياً عندما يرجع الإنترنت.",
-        },
-      ];
   const guideProfile = user ? loadGuideProfile(Number(user.SystemUserId)) : null;
   const guideIntroduced = Boolean(guideProfile?.launcherIntroduced);
   const guideAllowedFeatures = user ? allAllowedGuideFeatures(permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)) : [];
@@ -2675,43 +2611,9 @@ export default function App() {
         </div>
       ) : null}
       {onboardingStep >= 0 ? (
-        <div className="onboarding-backdrop no-print">
-          {/* One welcome, whole and scannable. The old tour asked four presses
-              to learn four sentences; nobody owes a dialog four presses. All
-              the facts stand together on one card, each arriving with a small
-              stagger so the eye is led down the list once — and one press
-              starts the actual work. */}
-          <section
-            className="onboarding-card"
-            role="dialog"
-            aria-modal="true"
-            aria-label="جولة تعريفية"
-          >
-            <header className="onboarding-hero">
-              <span className="onboarding-hero-brand">SCHEDULE</span>
-              <h2>{isPowerAdmin ? "مساحة التحكم الأكاديمي، كاملةً بين يديك" : "مساحة قسمك جاهزة"}</h2>
-              <p>{onboardingSteps.length.toLocaleString("ar-KW-u-nu-latn")} حقائق تكفيك الآن — والمرشد الحي يشرح البقية وقت حاجتك.</p>
-            </header>
-            <ul className="onboarding-facts">
-              {onboardingSteps.map((step, index) => (
-                <li key={index} style={{ ["--fact-i" as any]: index }}>
-                  <span className="onboarding-fact-icon" aria-hidden="true">{step.icon}</span>
-                  <div>
-                    <small>{step.eyebrow}</small>
-                    <strong>{step.title}</strong>
-                    <p>{step.copy}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="onboarding-actions">
-              <PrimaryButton onClick={finishOnboarding} data-guide-ignore="يغلق بطاقة الترحيب الأولى فقط ولا ينفذ إجراءً في النظام">
-                ابدأ العمل
-                <ChevronLeft />
-              </PrimaryButton>
-            </div>
-          </section>
-        </div>
+        <Suspense fallback={null}>
+          <Onboarding isPowerAdmin={isPowerAdmin} onFinish={finishOnboarding} />
+        </Suspense>
       ) : null}
     </div>
   );

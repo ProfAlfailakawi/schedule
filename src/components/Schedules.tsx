@@ -238,6 +238,12 @@ const AGENDA_PAGE_SIZE = 60;
    place so team notes can be restored later without rebuilding the feature. */
 const TEAM_NOTES_ENABLED = false;
 
+/* «بديل اليوم» — one-day cancel/cover exceptions. Complete and working, held
+   back until the department chooses to run day-level exceptions. Its sheet,
+   its four server routes and the calendar's EXDATE support all stay in place;
+   flipping this to `true` is the whole of switching it on. */
+const DAY_SUBSTITUTE_ENABLED = false;
+
 const SHORT_LECTURE_DAYS = new Set<DayKey>(["fsunday", "ftuesday", "fthursday"]);
 const LONG_LECTURE_DAYS = new Set<DayKey>(["fmonday", "fwednesday"]);
 const SHORT_LECTURE_MINUTES = 50;
@@ -1445,8 +1451,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
-  /* بديل اليوم: dated one-day facts over a lecture — cancel or cover. Opens
-     from the context panel; records exceptions, never touches the row. */
+  /**
+   * بديل اليوم — dated one-day facts over a lecture (cancel / cover).
+   *
+   * Built, tested and deliberately WITHDRAWN from the interface for now: the
+   * department is not ready to run day-level exceptions, and a door nobody is
+   * meant to open should not be visible. The component, its server routes and
+   * the calendar's EXDATE support all remain intact and unreferenced from the
+   * UI, so turning this flag to `true` is the whole of switching it on.
+   * (Same pattern as TEAM_NOTES_ENABLED.)
+   */
   const [dayToolRow, setDayToolRow] = useState<FSchedule | null>(null);
   /* متى نلتقي؟ — the committee-window finder over this term's own schedules. */
   const [meetingOpen, setMeetingOpen] = useState(false);
@@ -11083,15 +11097,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 </button>
               </div>
               <div className="context-actions-main">
-                <button
-                  type="button"
-                  className="btn btn-secondary context-day-tool"
-                  data-guide-ignore="يفتح أداة استثناءات اليوم الواحد — لا يغيّر الموعد الأسبوعي"
-                  title="إلغاء أو تغطية هذه المحاضرة ليوم واحد محدد"
-                  onClick={() => setDayToolRow(context.selected)}
-                >
-                  <CalendarDays /> بديل اليوم
-                </button>
+                {DAY_SUBSTITUTE_ENABLED ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary context-day-tool"
+                    data-guide-ignore="يفتح أداة استثناءات اليوم الواحد — لا يغيّر الموعد الأسبوعي"
+                    title="إلغاء أو تغطية هذه المحاضرة ليوم واحد محدد"
+                    onClick={() => setDayToolRow(context.selected)}
+                  >
+                    <CalendarDays /> بديل اليوم
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="btn btn-secondary context-edit"

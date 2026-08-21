@@ -77,6 +77,22 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
     });
   }, []);
 
+  /* «تحديد الكل» acts on what is ON SCREEN, which is what a search box makes
+     the reader expect: filter to a division, take all of it, clear the filter,
+     filter again, take that too. Selecting a hidden name would be a surprise. */
+  const shownIds = useMemo(() => options.map(person => person.AdInstructorId), [options]);
+  const allShownPicked = shownIds.length > 0 && shownIds.every(id => picked.has(id));
+  const toggleAllShown = useCallback(() => {
+    setAnswer(null);
+    setPicked(current => {
+      const next = new Set(current);
+      if (shownIds.every(id => next.has(id))) shownIds.forEach(id => next.delete(id));
+      else shownIds.forEach(id => next.add(id));
+      return next;
+    });
+  }, [shownIds]);
+  const clearAll = useCallback(() => { setAnswer(null); setPicked(new Set()); }, []);
+
   const ask = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -131,6 +147,29 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
           </label>
         </div>
 
+        <div className="meeting-slots-bulk">
+          <button
+            type="button"
+            className="meeting-slots-bulk-btn"
+            data-guide-ignore="اختيار جماعي داخل نافذة الاجتماع فقط ولا يغيّر الجدول"
+            onClick={toggleAllShown}
+            disabled={!shownIds.length}
+          >
+            {allShownPicked
+              ? (query.trim() ? "أزل تحديد الظاهرين" : "أزل تحديد الكل")
+              : (query.trim() ? `حدّد الظاهرين (${options.length})` : `تحديد الكل (${options.length})`)}
+          </button>
+          {picked.size ? (
+            <button
+              type="button"
+              className="meeting-slots-bulk-btn is-quiet"
+              data-guide-ignore="تفريغ اختيار المشاركين داخل النافذة فقط"
+              onClick={clearAll}
+            >
+              تفريغ الاختيار
+            </button>
+          ) : null}
+        </div>
         <ul className="meeting-slots-people" aria-label="المشاركون">
           {options.map(person => (
             <li key={person.AdInstructorId}>
