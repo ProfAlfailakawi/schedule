@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BrainCircuit, CalendarDays, Layers, ShieldCheck, Sparkles, X } from "lucide-react";
-import { CollegeEmblem } from "./ui";
 
 export type JourneyReading = {
   scoped: boolean;
@@ -357,21 +356,16 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
           </p>
         </section>
 
+        {/* The journey closes on the people who built it and the system's own
+            name — nothing else. This is SCHEDULE's story, not an institutional
+            page; the college's emblem belongs on the official printed sheets,
+            and only there. */}
         <footer className="jr-foot">
           <div>
             <span>التأسيس والتطوير</span>
             <strong>د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</strong>
           </div>
-          {/* The story closes on the institution it was written for: the
-              college's own seal beside the system's name. The slit is carved
-              in the sheet's dark canvas colour so the mark sits IN the page,
-              not pasted onto it. */}
-          <div className="jr-foot-brand">
-            <span className="jr-college-mark" aria-label="كلية التربية الأساسية">
-              <CollegeEmblem size={34} paper="#0c1512" />
-            </span>
-            <small dir="ltr">SCHEDULE{version ? ` · ${version}` : ""}</small>
-          </div>
+          <small dir="ltr">SCHEDULE{version ? ` · ${version}` : ""}</small>
         </footer>
       </div>
     </div>
