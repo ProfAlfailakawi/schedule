@@ -7359,8 +7359,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   onChange={(e) => {
                     const to = Number(e.target.value) || 0;
                     setCopyToTerm(to);
-                    // Idea 1: a new term is usually last year's same semester with
-                    // light edits — so pre-pick that as the source to copy from.
+                    /* A new term is usually last year's same semester with light
+                       edits, so an EMPTY source is worth filling in for the
+                       reader. But it was filled in every time — including over
+                       a source they had just chosen by hand: pick «الفصل الأول
+                       2017/2018», then pick a destination, and the source you
+                       chose was silently replaced. A suggestion may only speak
+                       into a blank; once a person has answered, the answer
+                       stands. */
+                    if (copyFromTerm) return;
                     const destName = terms.find((t) => t.AdTermId === to)?.AdTermName;
                     const wantName = previousYearSameTermName(destName);
                     const match = wantName ? terms.find((t) => sameTermName(t.AdTermName, wantName)) : null;
