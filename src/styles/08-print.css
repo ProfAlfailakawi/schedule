@@ -1436,6 +1436,9 @@
     padding-top:1.8mm !important;
     break-inside:avoid !important;
     page-break-inside:avoid !important;
+    /* Never a signature block alone on a sheet of its own. */
+    break-before:avoid !important;
+    page-break-before:avoid !important;
   }
   .print-comprehensive-page-meta{
     display:grid !important;
@@ -1648,6 +1651,26 @@
   .print-report:not(.print-comprehensive) .print-explicit-page-meta{
     margin-top:3mm !important;
     flex:none !important;
+    /* ── الحارس الأخير ضد الورقة شبه البيضاء ─────────────────────────────
+       Row counts are tuned so a page fits either paper, but data decides the
+       last millimetre: one unusually long course name can push a page a few
+       millimetres past the sheet. What spills then is the footer alone, and a
+       sheet carrying nothing but a footer IS the blank page people see.
+       Refusing to begin the footer on a fresh sheet moves the break earlier —
+       the footer stays with its own page, and no sheet is ever handed a
+       lonely strip. */
+    break-before:avoid !important;
+    page-break-before:avoid !important;
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+  }
+
+  /* A letterhead must never be split across two sheets either. */
+  .print-report .print-head{
+    break-inside:avoid !important;
+    page-break-inside:avoid !important;
+    break-after:avoid !important;
+    page-break-after:avoid !important;
   }
 }
 

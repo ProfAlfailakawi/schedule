@@ -904,11 +904,19 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const root = document.documentElement;
     root.dataset.printKind = kind;
     /* Safari ignores `@page size` entirely, so a wide sheet meets a portrait
-       page there no matter what the stylesheet asks. When the person opted in,
-       each explicit page is painted rotated inside the portrait page instead —
-       geometry only, scoped to this attribute, invisible to every other
-       engine. Portrait sheets (الأوقات، عدالة الحمل) are left exactly as-is. */
-    if (SAFARI_PRINT_ENGINE && safariLandscape && kind !== "time" && kind !== "fairness") {
+       page there no matter what the stylesheet asks. Each explicit page is
+       painted rotated inside Safari's portrait page instead — geometry only,
+       scoped to this attribute, invisible to every other engine.
+
+       The comprehensive report does not ask: it is the department's formal
+       landscape document — thirteen columns and a signature block — and a
+       portrait sheet is simply the wrong paper for it. So it rotates ALWAYS on
+       Safari, with no switch to remember and nothing for the reader to know.
+       The other reports keep the opt-in, and the two portrait sheets
+       (الأوقات، عدالة الحمل) are never rotated at all. */
+    const alwaysLandscape = kind === "comprehensive";
+    const optedLandscape = safariLandscape && kind !== "time" && kind !== "fairness";
+    if (SAFARI_PRINT_ENGINE && (alwaysLandscape || optedLandscape)) {
       root.dataset.printRotate = "1";
     }
     let leftForPrint = false;
@@ -1272,8 +1280,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 onClick={toggleSafariLandscape}
                 aria-pressed={safariLandscape}
                 title={safariLandscape
-                  ? "مفعّل: التقارير العريضة تُطبع أفقياً تلقائياً في Safari. ولإخفاء سطر الرابط والتاريخ ألغِ «طباعة الترويسات والتذييلات» مرة واحدة من نافذة الطباعة."
-                  : "Safari يتجاهل اتجاه الصفحة، فيطبع التقارير العريضة طولياً. فعّل هذا الخيار لتُطبع أفقياً تلقائياً."}
+                  ? "مفعّل: التقارير العريضة تُطبع أفقياً تلقائياً في Safari (والتقرير الشامل أفقي دائماً بلا هذا الخيار). ولإخفاء سطر الرابط والتاريخ ألغِ «طباعة الترويسات والتذييلات» مرة واحدة من نافذة الطباعة."
+                  : "Safari يتجاهل اتجاه الصفحة، فيطبع التقارير العريضة طولياً. فعّل هذا الخيار لتُطبع أفقياً تلقائياً (التقرير الشامل أفقي دائماً)."}
               >
                 <RotateCcw aria-hidden="true" />
                 <span>أفقي تلقائياً</span>
