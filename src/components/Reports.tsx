@@ -153,7 +153,10 @@ const PAGE_ROWS = {
   instructorRows: 7,  // one teacher per sheet, deliberately — this report reads best that way
   roomOccupancy: 18,  // a heat row is 7.1mm and the sheet's furniture 62.6mm — twenty fit, eighteen fit with room for long hall names
   roomFree: 14,       // free-window blocks
-  roomDirectory: 38,  // a directory entry is 4mm; forty-three fit, thirty-eight leave margin
+  /* The directory is one room to a LINE now, not four little boxes to a line:
+     measured at 7.4mm a row against 58.4mm of page furniture, so nineteen fit
+     and the old box-era number would have spilled. */
+  roomDirectory: 17,
   matrixLines: 4,     // a hall × hours band per line
   timeGroups: 10,     // 9.3mm a group
   fairnessRows: 11,   // the score block costs 122mm before a single row is drawn: 12 rows measured 211mm, 11 fit
@@ -2190,11 +2193,34 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
               return (
                 <section className="print-explicit-page" key={`room-directory-${directoryIndex + 1}`}>
                   <PrintLetterhead title={`${titles[kind]} — دليل القاعات`} scope={scope} college={collegeName} footer={false} />
+                  {/* The directory used to be a field of small boxes in four
+                      columns: on paper it read as scattered fragments rather
+                      than a list you could run your eye down. It is the same
+                      three facts, set as a proper table in the same hand as
+                      the grid on the opening page — one room to a line, its
+                      count and its weekly hours in their own columns. */}
                   <section className="print-room-directory">
                     <h2>مواعيد القاعات في نطاق الاستعلام</h2>
-                    {pageEntries.map(([room, roomRows]) => (
-                      <div key={room} className="print-room-line"><strong className="print-ltr">{room}</strong><span>{roomRows.length} موعد</span><em>{Math.round(roomRows.reduce((t, row) => t + duration(row) * Math.max(1, dayFlags(row).length), 0) / 60)} س</em></div>
-                    ))}
+                    <table className="print-room-directory-table">
+                      <thead>
+                        <tr><th>القاعة</th><th>المواعيد</th><th>الساعات أسبوعياً</th><th>الأيام المشغولة</th></tr>
+                      </thead>
+                      <tbody>
+                        {pageEntries.map(([room, roomRows]) => {
+                          const hours = Math.round(roomRows.reduce((t, row) => t + duration(row) * Math.max(1, dayFlags(row).length), 0) / 60);
+                          const days = new Set<string>();
+                          roomRows.forEach(row => dayFlags(row).forEach(day => days.add(day.flag)));
+                          return (
+                            <tr key={room}>
+                              <th className="print-ltr">{room}</th>
+                              <td>{roomRows.length}</td>
+                              <td>{hours}</td>
+                              <td>{days.size}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </section>
                   <PrintPageMeta page={pageNumber} total={totalPages} college={collegeName} date={issueDate} />
                 </section>

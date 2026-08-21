@@ -1956,3 +1956,46 @@
   }
   .print-occupancy-table tbody td:last-child strong{font-weight:800 !important}
 }
+
+/* ── دليل القاعات: قائمة تُقرأ، لا شظايا ────────────────────────────────────
+   Same report, second sheet. It was four columns of little boxes, which on
+   paper reads as scattered fragments; it is now one room to a line with its
+   figures in their own columns, drawn in the same hand as the grid that opens
+   the report. Scoped to this table alone. */
+@media print{
+  .print-room-directory{display:block !important}
+  .print-room-directory h2{margin:0 0 2.4mm !important}
+
+  .print-room-directory-table{
+    width:100% !important;
+    border-collapse:separate !important;border-spacing:0 .6mm !important;border:0 !important;
+    table-layout:fixed !important;
+  }
+  .print-room-directory-table thead th{
+    border:0 !important;background:transparent !important;
+    color:#5c6663 !important;font-size:6.6pt !important;font-weight:700 !important;
+    text-align:center !important;padding:0 0 .8mm !important;
+  }
+  .print-room-directory-table thead th:first-child{text-align:right !important;padding-inline-start:2mm !important}
+  .print-room-directory-table tbody th,
+  .print-room-directory-table tbody td{
+    border:0 !important;
+    background:#f4f7f6 !important;
+    padding:1.6mm 1.2mm !important;
+    font-size:8pt !important;text-align:center !important;vertical-align:middle !important;
+  }
+  .print-room-directory-table tbody th{
+    text-align:right !important;padding-inline-start:2.4mm !important;
+    font-weight:700 !important;color:#0f4239 !important;
+    border-start-start-radius:1.6mm !important;border-end-start-radius:1.6mm !important;
+    box-shadow:inset .5mm 0 0 #c29b4066 !important;
+  }
+  .print-room-directory-table tbody td:last-child{
+    border-start-end-radius:1.6mm !important;border-end-end-radius:1.6mm !important;
+  }
+  .print-room-directory-table tbody td{color:#33403c !important}
+  .print-room-directory-table tbody tr{break-inside:avoid !important;page-break-inside:avoid !important}
+  /* Column widths: the hall's name gets the room it needs, the figures are narrow. */
+  .print-room-directory-table thead th:first-child{width:34% !important}
+  .print-room-directory-table thead th:not(:first-child){width:22% !important}
+}
