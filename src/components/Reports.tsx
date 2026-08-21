@@ -859,7 +859,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       };
     });
     const totalRate = Math.round(rooms.reduce((total: number, room: any) => total + room.rate, 0) / Math.max(1, rooms.length));
-    return { slots, rooms: rooms.sort((a: any, b: any) => b.rate - a.rate || byRoomLabel(a.name, b.name)), totalRate, days };
+    /* The grid is a MAP of the estate, not a ranking of it: a reader looks up
+       a hall by its number, so the rows run in room order — building then
+       hall, numerically. It used to lead with the busiest room, which is why
+       «9/F13» sat above «7/F31» and the sheet read as if it had no order at
+       all. The occupancy share is still on every row for whoever wants it. */
+    return { slots, rooms: rooms.sort((a: any, b: any) => byRoomLabel(a.name, b.name)), totalRate, days };
   }, [occupancy, roomDay]);
 
   // --- output --------------------------------------------------------------

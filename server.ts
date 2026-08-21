@@ -1324,7 +1324,9 @@ app.get("/api/colleges/:id/mobility", requireAuth, async (req: AuthenticatedRequ
   const history=cachedHistory&&cachedHistory.expiresAt>Date.now()?cachedHistory.history:await Repository.getSchedulesByScope({collegeId});
   if(!cachedHistory||cachedHistory.expiresAt<=Date.now())collegeMobilityHistoryCache.set(collegeId,{history,expiresAt:Date.now()+10*60*1000});
   const usage=new Map<string,number>();history.forEach((row:any)=>{const b=normalizedBuilding(row.AdRoomCode);if(b)usage.set(b,(usage.get(b)||0)+1);});
-  const buildings=[...usage.entries()].sort((a,b)=>b[1]-a[1]).map(([code,count])=>({code,count}));
+  /* This list is walked to fill in a travel-time matrix, so it is ordered the
+     way a person looks a building up — by its number — not by how busy it is. */
+  const buildings=[...usage.entries()].sort((a,b)=>byRoom(a[0],"",b[0],"")).map(([code,count])=>({code,count}));
   res.json({collegeId,collegeName:college.AdCollegeName,profile,buildings,source:"historical-room-usage"});
 });
 

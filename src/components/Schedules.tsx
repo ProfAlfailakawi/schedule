@@ -2739,7 +2739,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         return otherStart < end && otherEnd > start;
       }) : [];
       return { hall, occupied: occupants.length > 0, occupants };
-    }).sort((a, b) => Number(a.occupied) - Number(b.occupied) || byArabic(a.hall, b.hall));
+      /* Free halls lead — that is what this chooser is for — and within each
+         group the halls run in their own numeric order. */
+    }).sort((a, b) => Number(a.occupied) - Number(b.occupied) || byRoomPart(a.hall, b.hall));
   }, [hallOptions, hallAvailabilityReady, rows, editId, form.AdRoomCode, form.AdTermId, form.fstarttime, form.fendtime, selectedFormDays]);
   const availableHallCount = hallAvailability.filter(item => !item.occupied).length;
   const busyHallCount = hallAvailability.filter(item => item.occupied).length;
