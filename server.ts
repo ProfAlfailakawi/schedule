@@ -8,6 +8,7 @@ import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } fr
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
+import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
@@ -1888,7 +1889,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
       flush();
     }
   }
-  opportunities.sort((a,b)=>b.confidence-a.confidence||b.durationMinutes-a.durationMinutes||a.roomCode.localeCompare(b.roomCode,"ar"));
+  opportunities.sort((a,b)=>b.confidence-a.confidence||b.durationMinutes-a.durationMinutes||byRoom(a.roomCode,a.roomHall,b.roomCode,b.roomHall));
   const shaped=requests.map(request=>hallBarterRequestShape(request,sections,colleges));
   const sameCampusRequests=shaped.filter(request=>sameHallCampusGender(request.requesterCollegeName,request.ownerCollegeName));
   const body={
@@ -5805,7 +5806,10 @@ app.get("/api/reports/room-load", requireAnyPermission([7, 8, 9, 10, 14, 16, 17]
     termId,
     dayStart: SCHEDULE_DAY_START,
     dayEnd: SCHEDULE_DAY_END,
-    rooms: [...rooms.values()].sort((a, b) => a.room.localeCompare(b.room, "ar") || a.hall.localeCompare(b.hall, "ar"))
+    /* Building first, hall second, each by its NUMBER: «7/31» before «8/22»,
+       and «9» before «10» — a plain locale compare read them as words and put
+       ten before nine. */
+    rooms: [...rooms.values()].sort((a, b) => byRoom(a.room, a.hall, b.room, b.hall))
   });
 });
 

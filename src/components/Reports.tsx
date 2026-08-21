@@ -13,6 +13,7 @@ import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
+import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 
 /**
@@ -545,12 +546,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const termById = useMemo(() => new Map(terms.map(x => [x.AdTermId, x])), [terms]);
   const departmentInstructorIds = useMemo(() => Array.from(new Set(all.filter(row => (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) && (!filters.termId || Number(row.AdTermId) === Number(filters.termId))).map(row => Number(row.AdInstructorId)).filter(Boolean))), [all, filters.sectionId, filters.termId]);
 
-  const buildings = useMemo(() => uniqueTextOptions(all.map(s => s.AdRoomCode)).sort(byArabic), [all]);
+  const buildings = useMemo(() => uniqueTextOptions(all.map(s => s.AdRoomCode)).sort(byRoomPart), [all]);
   const halls = useMemo(() => uniqueTextOptions(
     all
       .filter(s => !filters.building || optionKey(s.AdRoomCode) === optionKey(filters.building))
       .map(s => s.AdRoomHall),
-  ).sort(byArabic), [all, filters.building]);
+  ).sort(byRoomPart), [all, filters.building]);
 
   /** One predicate serves every lens. Nothing is mode-specific any more. */
   const results = useMemo(() => {
@@ -705,7 +706,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         load: rows.reduce((total, row) => total + duration(row) * DAYS.filter(day => (row as any)[day.flag]).length, 0),
         days: new Set(rows.flatMap(row => DAYS.filter(day => (row as any)[day.flag]).map(day => day.key))).size
       }))
-      .sort((a, b) => byArabic(a.name, b.name));
+      .sort((a, b) => byRoomLabel(a.name, b.name));
   }, [results, instructorById]);
 
   const byTime = useMemo(() => {
@@ -715,7 +716,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       .map(([key, rows]) => {
         const courses = new Set(rows.map(row => Number(row.AdCourseId || 0)).filter(Boolean)).size;
         const instructors = new Set(rows.map(row => Number(row.AdInstructorId || 0)).filter(Boolean)).size;
-        const rooms = [...new Set(rows.map(row => [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")).filter(Boolean))].sort(byArabic);
+        const rooms = [...new Set(rows.map(row => [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")).filter(Boolean))].sort(byRoomLabel);
         const days = new Set(rows.flatMap(row => DAYS.filter(day => (row as any)[day.flag]).map(day => day.key))).size;
         return { key, rows, count: rows.length, courses, instructors, rooms, days };
       })
@@ -786,7 +787,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const placed = results.filter(row => row.fstarttime && row.fendtime && (row.AdRoomCode || row.AdRoomHall));
     if (!placed.length) return null;
 
-    const buildings = uniqueTextOptions(placed.map(row => row.AdRoomCode)).sort(byArabic);
+    const buildings = uniqueTextOptions(placed.map(row => row.AdRoomCode)).sort(byRoomPart);
     const scoped = placed.filter(row =>
       (!matrixBuilding || optionKey(row.AdRoomCode) === optionKey(matrixBuilding)) &&
       (!matrixHall || optionKey(row.AdRoomHall).includes(optionKey(matrixHall))));
@@ -802,7 +803,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       const hall = cleanOptionText(row.AdRoomHall);
       const key = `${optionKey(building)}|${optionKey(hall)}`;
       return [key, { key, building, hall }] as const;
-    })).values()].sort((a, b) => byArabic(a.building, b.building) || byArabic(a.hall, b.hall));
+    })).values()].sort((a, b) => byRoom(a.building, a.hall, b.building, b.hall));
 
     const lines = halls.flatMap(room => DAY_GROUPS.map(group => {
       const inRoom = scoped.filter(row =>
@@ -858,7 +859,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       };
     });
     const totalRate = Math.round(rooms.reduce((total: number, room: any) => total + room.rate, 0) / Math.max(1, rooms.length));
-    return { slots, rooms: rooms.sort((a: any, b: any) => b.rate - a.rate || byArabic(a.name, b.name)), totalRate, days };
+    return { slots, rooms: rooms.sort((a: any, b: any) => b.rate - a.rate || byRoomLabel(a.name, b.name)), totalRate, days };
   }, [occupancy, roomDay]);
 
   // --- output --------------------------------------------------------------
@@ -1846,7 +1847,7 @@ function groupRows(rows: FSchedule[], keyOf: (row: FSchedule) => string) {
   });
   return [...groups.entries()]
     .map(([key, group]) => ({ key, rows: group }))
-    .sort((a, b) => byArabic(a.key, b.key));
+    .sort((a, b) => byRoomLabel(a.key, b.key));
 }
 
 function paginateComprehensiveRows(rows: FSchedule[]) {
@@ -2138,7 +2139,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
     const roomPages = roomLoad?.rooms?.length ? paginateItems(roomLoad.rooms, PAGE_ROWS.roomOccupancy) : [];
     const freeRooms = roomDay !== "week" && roomLoad?.rooms?.length ? roomLoad.rooms.filter((room: any) => room.windows.length) : [];
     const freePages = paginateItems(freeRooms, PAGE_ROWS.roomFree);
-    const directory = [...resultByRoom.entries()].sort(([a], [b]) => byArabic(a, b));
+    const directory = [...resultByRoom.entries()].sort(([a], [b]) => byRoomLabel(a, b));
     const directoryPages = paginateItems(directory, PAGE_ROWS.roomDirectory);
     const totalPages = roomPages.length + freePages.length + directoryPages.length;
     const scope = `${scopeLine}${scopeLine ? " · " : ""}${selectedDayLabel}`;

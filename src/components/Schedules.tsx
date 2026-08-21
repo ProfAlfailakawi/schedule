@@ -109,7 +109,7 @@ import {
 } from "./scheduleWorkspace";
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
-import { byArabic, sortByName } from "../utils/sorting";
+import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
 import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
@@ -140,10 +140,11 @@ import { GUIDE_ACTIONS, allAllowedGuideFeatures, canRunGuideAction, featureById,
    refers to are the same colour. Red is absent on purpose: it belongs to
    conflicts, and a colleague is not one. */
 const PRESENCE_HUES = [200, 262, 38, 96, 288, 178];
+/* Rooms are read as an address, not as a word: building first, hall second,
+   and each compared by its number — «7/31» before «8/22», «9» before «10». */
 const byRoomIdentity = (a: { building?: string; hall?: string; label?: string }, b: { building?: string; hall?: string; label?: string }) =>
-  byArabic(a.building || a.label || "", b.building || b.label || "") ||
-  byArabic(a.hall || "", b.hall || "") ||
-  byArabic(a.label || "", b.label || "");
+  byRoom(a.building || a.label || "", a.hall || "", b.building || b.label || "", b.hall || "") ||
+  byRoomLabel(a.label || "", b.label || "");
 import { buildWeekDensityPlan, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../utils/weekVisual";
 import {
   formatScheduleTimeRange,
@@ -1204,16 +1205,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     });
     return map;
   }, [rows]);
-  const buildingOptions = useMemo(() => [...estate.values()].map(item => item.label).sort(byArabic), [estate]);
+  const buildingOptions = useMemo(() => [...estate.values()].map(item => item.label).sort(byRoomPart), [estate]);
   const hallOptions = useMemo(() => {
     const code = normalizeRoomToken(form.AdRoomCode);
     if (!code) return [] as string[];
-    return [...(estate.get(code)?.halls.values() || [])].sort(byArabic);
+    return [...(estate.get(code)?.halls.values() || [])].sort(byRoomPart);
   }, [estate, form.AdRoomCode]);
   /* The same reading, asked about any building rather than the form's — the
      quick card names its own building and needs the halls that go with it. */
   const hallsOf = useCallback(
-    (building: string) => [...(estate.get(normalizeRoomToken(building))?.halls.values() || [])].sort(byArabic),
+    (building: string) => [...(estate.get(normalizeRoomToken(building))?.halls.values() || [])].sort(byRoomPart),
     [estate],
   );
 
@@ -3005,7 +3006,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     () => [...new Map(filteredRows
       .map(row => roomIdentity(row.AdRoomCode, row.AdRoomHall))
       .filter(room => room.buildingKey)
-      .map(room => [room.buildingKey, room.building] as const)).values()].sort(byArabic),
+      .map(room => [room.buildingKey, room.building] as const)).values()].sort(byRoomPart),
     [filteredRows]
   );
   /**
@@ -3025,7 +3026,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (lens.building && room.buildingKey !== normalizeRoomToken(lens.building)) return;
       if (!seen.has(room.key)) seen.set(room.key, { building: room.building, hall: room.hall, label: room.label || room.hall });
     });
-    return [...seen.values()].sort((a, b) => byArabic(a.label, b.label));
+    return [...seen.values()].sort((a, b) => byRoom(a.building, a.hall, b.building, b.hall));
   }, [filteredRows, lens.building]);
   const weekLensCount = useMemo(() => filteredRows.filter(lensMatches).length, [filteredRows, lens]);
 
@@ -4921,7 +4922,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const allBuildings = [...new Map(allRooms
       .filter(room => room.buildingKey)
       .map(room => [room.buildingKey, { key: room.buildingKey, label: room.building, count: buildingCounts.get(room.buildingKey) || 0 }] as const)
-    ).values()].sort((a, b) => byArabic(a.label, b.label));
+    ).values()].sort((a, b) => byRoomPart(a.label, b.label));
     // One pass builds every room/day bucket. The full-week view therefore
     // costs one O(rows × five-days) index, not five complete room renders.
     const byDayRoom = new Map<string, FSchedule[]>();

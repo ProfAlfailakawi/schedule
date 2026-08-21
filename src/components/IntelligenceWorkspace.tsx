@@ -68,7 +68,7 @@ import type {
 import IntelligenceContextBar from "./IntelligenceContextBar";
 import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
-import { sortByName } from "../utils/sorting";
+import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import {
@@ -1616,7 +1616,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             .sort((a,b) => {
               const aSame=a.code===String(before.AdRoomCode||"").trim()?0:1;
               const bSame=b.code===String(before.AdRoomCode||"").trim()?0:1;
-              return aSame-bSame || a.code.localeCompare(b.code,"ar") || a.hall.localeCompare(b.hall,"ar");
+              return aSame-bSame || byRoom(a.code, a.hall, b.code, b.hall);
             });
           if(candidates[0]) {
             after.AdRoomCode=candidates[0].code;
