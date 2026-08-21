@@ -145,15 +145,19 @@ const num = (value: number) => Number(value || 0).toLocaleString("ar-KW-u-nu-lat
  * untouched — only how many items are asked to stand on one page.
  */
 const PAGE_ROWS = {
-  list: 10,          // wide  · 277.6mm at 16 → 195mm at 10
-  instructorRows: 7, // wide  · rows inside one instructor's block
-  roomOccupancy: 6,  // wide  · the heat grid is the tallest row of them all
-  roomFree: 8,       // wide
-  roomDirectory: 16, // wide  · compact, three per line
-  matrixLines: 3,    // wide  · each line is a full hall × hours band
-  timeGroups: 7,     // upright
-  fairnessRows: 9,   // upright
-  balanceRows: 8,    // wide
+  /* Measured on real sheets at 297×210mm, then tuned so a page is FULL without
+     ever spilling. The first pass fixed the spill and left some reports at 41%
+     of the paper — which turns one page of content into three. Percentages
+     below are the measured fill after this tuning. */
+  list: 10,           // 93% full · 13.9mm a row, and rows wrap on long names
+  instructorRows: 7,  // one teacher per sheet, deliberately — this report reads best that way
+  roomOccupancy: 7,   // the heat grid: the tallest unit on any sheet
+  roomFree: 11,       // free-window blocks
+  roomDirectory: 22,  // three compact entries to a line
+  matrixLines: 4,     // a hall × hours band per line
+  timeGroups: 10,     // 9.3mm a group
+  fairnessRows: 11,   // the score block costs 122mm before a single row is drawn: 12 rows measured 211mm, 11 fit
+  balanceRows: 14,    // 8.0mm a department
 } as const;
 
 const COMPREHENSIVE_FIRST_PAGE_ROWS = 23;

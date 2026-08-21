@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sortByName } from "../utils/sorting";
-import { Activity, ArchiveRestore, Building2, Check, ChevronLeft, DatabaseBackup, Download, Eraser, FileArchive, FileCheck2, KeyRound, Landmark, RefreshCw, Save, ScrollText, Search, ShieldCheck, Trash2, Upload, UserCog, UsersRound, X } from "lucide-react";
+import { Activity, ArchiveRestore, Building2, Check, ChevronLeft, CopyPlus, DatabaseBackup, Download, Eraser, FileArchive, FileCheck2, KeyRound, Landmark, RefreshCw, Save, ScrollText, Search, ShieldCheck, Trash2, Upload, UserCog, UsersRound, X } from "lucide-react";
 import {
   AddButton,
   Badge,
@@ -24,7 +24,10 @@ import {
   FormSecurity,
 } from "../types";
 
-export type AdminMode = "users" | "permissions" | "scopes" | "audit" | "backup";
+/* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
+   rail beside the users, the scopes and the log. It keeps its own screen and
+   its own URL — this only moves the door it is opened from. */
+export type AdminMode = "users" | "permissions" | "scopes" | "audit" | "backup" | "copyTerm";
 type PageMode = "index" | "create" | "edit";
 interface SafeUser {
   SystemUserId: number;
@@ -799,6 +802,7 @@ export default function AdminUsers({
       ? { value: "scopes", label: "النطاقات", icon: <Building2 /> }
       : null,
     { value: "audit", label: "السجل", icon: <ScrollText /> },
+    rootAdmin ? { value: "copyTerm", label: "نسخ فصل", icon: <CopyPlus /> } : null,
     rootAdmin ? { value: "backup", label: "النسخة الاحتياطية", icon: <DatabaseBackup /> } : null,
   ].filter(Boolean) as Array<{ value: string; label: string; icon: React.ReactNode }>;
   // One header line for the whole console: the section rail plus whatever the

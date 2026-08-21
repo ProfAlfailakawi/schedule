@@ -204,6 +204,9 @@ const pathByView: Record<View, string> = {
   courses: "/AdCourse/Index",
   schedules: "/FSchedule/Index",
   scheduleCopy: "/FSchedule/CopySchedule",
+  /* The rail's own name for the same screen — translated before it is ever
+     navigated to, and mapped here so the route table stays total. */
+  copyTerm: "/FSchedule/CopySchedule",
   intelligence: "/Schedule/Intelligence",
   searchInstructor: "/FSchedule/InstructorReport",
   searchRoom: "/FSchedule/RoomReport",
@@ -1480,6 +1483,7 @@ export default function App() {
         ) : (
           unauthorized()
         );
+      case "copyTerm":
       case "scheduleCopy":
         return isPowerAdmin && hasPerm(7) && user.IsRootAdmin ? (
           <Schedules mode="copy" user={user} scopes={scopes} permissions={permissions} onNavigate={(view) => go(view as View)} />
@@ -1604,7 +1608,7 @@ export default function App() {
         );
       case "users":
         return isPowerAdmin && hasPerm(11) ? (
-          <AdminUsers mode="users" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
+          <AdminUsers mode="users" onNavigate={adminGo} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
@@ -1612,7 +1616,7 @@ export default function App() {
         return isPowerAdmin && hasPerm(12) ? (
           <AdminUsers
             mode="permissions"
-            onNavigate={go}
+            onNavigate={adminGo}
             permissions={permissions}
             rootAdmin={Boolean(user.IsRootAdmin)}
             demoReadOnly={Boolean(user.IsDemo)}
@@ -1622,19 +1626,19 @@ export default function App() {
         );
       case "scopes":
         return isPowerAdmin && hasPerm(15) ? (
-          <AdminUsers mode="scopes" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
+          <AdminUsers mode="scopes" onNavigate={adminGo} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
       case "audit":
         return isPowerAdmin && allowed.admin ? (
-          <AdminUsers mode="audit" onNavigate={go} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
+          <AdminUsers mode="audit" onNavigate={adminGo} permissions={permissions} rootAdmin={Boolean(user.IsRootAdmin)} demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
       case "backup":
         return user.IsRootAdmin ? (
-          <AdminUsers mode="backup" onNavigate={go} permissions={permissions} rootAdmin demoReadOnly={Boolean(user.IsDemo)} />
+          <AdminUsers mode="backup" onNavigate={adminGo} permissions={permissions} rootAdmin demoReadOnly={Boolean(user.IsDemo)} />
         ) : (
           unauthorized()
         );
@@ -1946,6 +1950,12 @@ export default function App() {
           .toLowerCase()
           .includes(query.trim().toLowerCase())),
   );
+  /* The console rail speaks in AdminMode values; «نسخ فصل» is the one station
+     whose screen lives outside the admin component, so it is translated here
+     instead of teaching the rail about views. */
+  const adminGo = (mode: AdminMode) =>
+    go(mode === "copyTerm" ? ("scheduleCopy" as View) : (mode as unknown as View));
+
   const finishOnboarding = () => {
     if (user) safeStorage.set(`schedule-onboarding-v4-${user.SystemUserId}`, "done");
     setOnboardingStep(-1);
@@ -2163,15 +2173,6 @@ export default function App() {
                   label="إدارة النظام"
                 />
               ) : null}
-              {allowed.schedule && user.IsRootAdmin ? (
-                <NavButton
-                  activeView={activeView}
-                  onGo={go}
-                  view="scheduleCopy"
-                  icon={<CopyPlus />}
-                  label="نسخ فصل"
-                />
-              ) : null}
             </NavSection>
           ) : isPowerAdmin && allowed.admin ? (
             <NavSection
@@ -2200,15 +2201,6 @@ export default function App() {
                 icon={<SlidersHorizontal />}
                 label="إدارة النظام"
               />
-              {allowed.schedule && user.IsRootAdmin ? (
-                <NavButton
-                  activeView={activeView}
-                  onGo={go}
-                  view="scheduleCopy"
-                  icon={<CopyPlus />}
-                  label="نسخ فصل"
-                />
-              ) : null}
             </NavSection>
           ) : null}
         </nav>
