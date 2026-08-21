@@ -2275,10 +2275,11 @@ export default function App() {
       {idleWarning ? (
         <div className="idle-warning no-print" role="alertdialog" aria-live="assertive" aria-label="الجلسة على وشك الانتهاء">
           <span className="idle-warning-ring" aria-hidden="true" />
-          <div>
-            <strong>الجلسة تنتهي خلال دقيقة</strong>
-            <span>{user.IsDemo ? "تنتهي جلسة Demo بعد 60 دقيقة من عدم النشاط. أي ضغطة تكفي لمتابعة التجربة." : "لحمايتك، يُغلق الحساب بعد 15 دقيقة بلا حركة. أي ضغطة تكفي لمتابعة العمل."}</span>
-          </div>
+          {/* One line, not two: the title says the whole thing, and any key,
+              tap or scroll dismisses it anyway. The policy sentence made the
+              card tall enough to collide with the live-guide button on a phone;
+              the button below is the action, so the explanation was only cost. */}
+          <strong>الجلسة تنتهي خلال دقيقة</strong>
           <PrimaryButton type="button" onClick={() => setIdleWarning(false)}>
             أكمل العمل
           </PrimaryButton>

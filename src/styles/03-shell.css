@@ -843,7 +843,7 @@ html[data-schedule-workspace="focus"] .schedule-control{
   inset-inline:var(--s4);
   margin-inline:auto;
   width:fit-content;
-  z-index:80;
+  z-index:90;
   display:flex;align-items:center;gap:var(--s4);
   max-width:min(560px,calc(100vw - var(--s4) * 2));
   padding:var(--s3) var(--s4);
@@ -853,9 +853,8 @@ html[data-schedule-workspace="focus"] .schedule-control{
   box-shadow:var(--shadow-lg,0 18px 40px rgba(0,0,0,.18));
   animation:idle-warning-in .32s cubic-bezier(.2,.8,.3,1) both;
 }
-.idle-warning>div{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}
+.idle-warning>strong{min-width:0;flex:1 1 auto}
 .idle-warning strong{font-size:var(--t-sm);font-weight:700;color:var(--warning)}
-.idle-warning span{font-size:var(--t-xs);color:var(--ink-2);line-height:1.6}
 .idle-warning .btn{flex:none;min-height:38px}
 /* A minute, drawn: the ring empties as the session does. */
 .idle-warning-ring{
@@ -868,9 +867,20 @@ html[data-schedule-workspace="focus"] .schedule-control{
 @property --sweep{syntax:"<angle>";inherits:false;initial-value:0turn}
 /* On a narrow screen three things in a row leaves the sentence a sliver, so
    the button takes its own line and the words take the width. */
+/* Below 900px the live-guide launcher sits bottom-left and the centred warning
+   is wide enough to reach it — its left edge lands inside the launcher on every
+   phone and most tablets. Lifting the warning above the launcher stacks them
+   vertically instead of letting one cover the other. 112px clears the
+   tallest launcher (58px) and its "جديد" badge with an 18px gap. */
+@media (max-width:900px){
+  .idle-warning{inset-block-end:calc(112px + env(safe-area-inset-bottom,0px))}
+}
 @media (max-width:520px){
+  /* Title and ring share the top row; the button takes the width below. With
+     the policy line gone the whole card is now about half its old height, so
+     it no longer reaches up into the live-guide button. */
   .idle-warning{flex-wrap:wrap;gap:var(--s3);padding:var(--s3)}
-  .idle-warning>div{flex:1 1 150px}
+  .idle-warning>strong{flex:1 1 150px}
   .idle-warning .btn{flex:1 0 100%}
 }
 @media (prefers-reduced-motion:reduce){
