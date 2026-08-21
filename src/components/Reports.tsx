@@ -151,9 +151,9 @@ const PAGE_ROWS = {
      below are the measured fill after this tuning. */
   list: 10,           // 93% full · 13.9mm a row, and rows wrap on long names
   instructorRows: 7,  // one teacher per sheet, deliberately — this report reads best that way
-  roomOccupancy: 7,   // the heat grid: the tallest unit on any sheet
-  roomFree: 11,       // free-window blocks
-  roomDirectory: 22,  // three compact entries to a line
+  roomOccupancy: 18,  // a heat row is 7.1mm and the sheet's furniture 62.6mm — twenty fit, eighteen fit with room for long hall names
+  roomFree: 14,       // free-window blocks
+  roomDirectory: 38,  // a directory entry is 4mm; forty-three fit, thirty-eight leave margin
   matrixLines: 4,     // a hall × hours band per line
   timeGroups: 10,     // 9.3mm a group
   fairnessRows: 11,   // the score block costs 122mm before a single row is drawn: 12 rows measured 211mm, 11 fit
