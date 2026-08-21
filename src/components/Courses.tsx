@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { BookOpen, Building2, Clock3, Trash2, Users } from "lucide-react";
-import { sortByName } from "../utils/sorting";
+import { sortByName, byArabic } from "../utils/sorting";
 import { decimalText, numericText } from "../utils/digits";
 import {
   AddButton,
@@ -83,7 +83,10 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
           new Set<string>(
             items.map((x) => String(x.CourseName || "").trim()).filter(Boolean),
           ),
-        ).sort((a, b) => a.localeCompare(b, "ar")),
+        /* Course names carry numbers («رياضيات 2» beside «رياضيات 10»), and a
+           plain compare reads them as text and puts ten before two. byArabic
+           counts as well as it spells. */
+        ).sort(byArabic),
       [items],
     );
   const reset = () => {
