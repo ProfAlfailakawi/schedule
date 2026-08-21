@@ -266,6 +266,9 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     flushSync(() => {});
     const ua = navigator.userAgent || "";
     const isWebKitSafari = /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(ua);
+    /* Landscape like every other sheet this program prints; Safari cannot be
+       told that through `@page`, so it is told through geometry instead. */
+    if (isWebKitSafari) document.documentElement.dataset.printRotate = "1";
     let leftForPrint = false;
     let resumed = false;
     const resume = () => {
@@ -273,6 +276,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       resumed = true;
       window.removeEventListener("afterprint", resume);
       document.removeEventListener("visibilitychange", onVisibilityChange);
+      delete document.documentElement.dataset.printRotate;
     };
     const onVisibilityChange = () => {
       if (document.visibilityState === "hidden") leftForPrint = true;
@@ -561,7 +565,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       {/* The signed sheet. */}
       <PrintPortal>
         <div className="print-sheet-modal">
-          <div className="print-report print-upright print-review-report">
+          <div className="print-report print-wide print-review-report">
             <section className="print-explicit-page print-review-page">
               <PrintLetterhead title={`مراجعة الاعتماد · ${DECISION_1912_LABEL}`} scope={scopeLine} />
               <section className={`print-review-hero tone-${tone}`}>

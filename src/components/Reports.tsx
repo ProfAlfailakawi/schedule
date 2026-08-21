@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, Clock3, LayoutList,
-  Landmark, Printer, RotateCcw, Scale, Search, SlidersHorizontal, Table2, UserRound, X
+  Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
@@ -301,19 +301,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   }));
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
-  /* Safari-only: print wide sheets rotated inside Safari's portrait page so
-     they come out landscape without touching the orientation dropdown. Off by
-     default; remembered once chosen. */
-  const [safariLandscape, setSafariLandscape] = useState<boolean>(() => {
-    try { return localStorage.getItem("schedule-print-rotate") === "1"; } catch { return false; }
-  });
-  const toggleSafariLandscape = () => {
-    setSafariLandscape(current => {
-      const next = !current;
-      try { localStorage.setItem("schedule-print-rotate", next ? "1" : "0"); } catch { /* private mode */ }
-      return next;
-    });
-  };
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [visibleLimit, setVisibleLimit] = useState(150);
@@ -903,22 +890,16 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
     const root = document.documentElement;
     root.dataset.printKind = kind;
-    /* Safari ignores `@page size` entirely, so a wide sheet meets a portrait
-       page there no matter what the stylesheet asks. Each explicit page is
-       painted rotated inside Safari's portrait page instead — geometry only,
-       scoped to this attribute, invisible to every other engine.
-
-       The comprehensive report does not ask: it is the department's formal
-       landscape document — thirteen columns and a signature block — and a
-       portrait sheet is simply the wrong paper for it. So it rotates ALWAYS on
-       Safari, with no switch to remember and nothing for the reader to know.
-       The other reports keep the opt-in, and the two portrait sheets
-       (الأوقات، عدالة الحمل) are never rotated at all. */
-    const alwaysLandscape = kind === "comprehensive";
-    const optedLandscape = safariLandscape && kind !== "time" && kind !== "fairness";
-    if (SAFARI_PRINT_ENGINE && (alwaysLandscape || optedLandscape)) {
-      root.dataset.printRotate = "1";
-    }
+    /* ── ورقة واحدة لكل التقارير: عرضية ─────────────────────────────────
+       Every report in this program is designed on a wide sheet, and the two
+       that were set portrait were the two that kept arriving broken: a wide
+       design meeting a narrow page loses its left edge, and the reader has to
+       know about a switch to get their own document printed properly.
+       So there is no switch and no exception any more. Chrome asks for the
+       landscape page through `@page`; Safari ignores that, so the sheet is
+       painted rotated inside Safari's portrait page — geometry only, and
+       invisible to every other engine. */
+    if (SAFARI_PRINT_ENGINE) root.dataset.printRotate = "1";
     let leftForPrint = false;
     let resumed = false;
     /* Two different things end here, and they must not end together.
@@ -1272,21 +1253,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           <div className="query-canvas-actions">
-            {SAFARI_PRINT_ENGINE ? (
-              <button
-                type="button"
-                className={`safari-landscape-toggle ${safariLandscape ? "on" : ""}`}
-                data-guide-ignore="خيار عرض للطباعة في Safari فقط — لا يغيّر أي بيانات"
-                onClick={toggleSafariLandscape}
-                aria-pressed={safariLandscape}
-                title={safariLandscape
-                  ? "مفعّل: التقارير العريضة تُطبع أفقياً تلقائياً في Safari (والتقرير الشامل أفقي دائماً بلا هذا الخيار). ولإخفاء سطر الرابط والتاريخ ألغِ «طباعة الترويسات والتذييلات» مرة واحدة من نافذة الطباعة."
-                  : "Safari يتجاهل اتجاه الصفحة، فيطبع التقارير العريضة طولياً. فعّل هذا الخيار لتُطبع أفقياً تلقائياً (التقرير الشامل أفقي دائماً)."}
-              >
-                <RotateCcw aria-hidden="true" />
-                <span>أفقي تلقائياً</span>
-              </button>
-            ) : null}
             <button
               type="button"
               className="query-print-icon"
@@ -2257,7 +2223,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
     const maxCount = Math.max(1, ...groups.map(group => group.rows.length));
     const pages = paginateItems(groups, PAGE_ROWS.timeGroups);
     return (
-      <div className="print-report print-upright print-query-report print-time-report">
+      <div className="print-report print-wide print-query-report print-time-report">
         {pages.length ? pages.map((pageGroups, pageIndex) => (
           <section className="print-explicit-page" key={`time-page-${pageIndex + 1}`}>
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />
@@ -2284,7 +2250,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
        (10/10/10/9) instead of producing a stranded footer/blank sheet. */
     const pages = fairness?.rows?.length ? paginateItems(fairness.rows, PAGE_ROWS.fairnessRows) : [];
     return (
-      <div className="print-report print-upright print-query-report print-fairness-new">
+      <div className="print-report print-wide print-query-report print-fairness-new">
         {pages.length ? pages.map((pageRows: any[], pageIndex) => (
           <section className="print-explicit-page" key={`fairness-page-${pageIndex + 1}`}>
             <PrintLetterhead title={titles[kind]} scope={scopeLine} college={collegeName} footer={false} />

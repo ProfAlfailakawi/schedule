@@ -14,8 +14,11 @@
 @page{size:297mm 210mm;margin:10mm 8mm 14mm}
 /* Named page for the genuinely wide sheets — the week grid and the matrices. */
 @page wide{size:297mm 210mm;margin:10mm 8mm 14mm}
-/* Kept so existing sheets that already asked for portrait stay correct. */
-@page upright{size:A4 portrait;margin:14mm 12mm 18mm}
+/* ── ورقة واحدة: عرضية ───────────────────────────────────────────────────
+   Every sheet this program prints is designed wide. `upright` is kept only so
+   that any rule still naming it lands on the same landscape paper as the rest
+   instead of quietly opening a second, narrower world. */
+@page upright{size:297mm 210mm;margin:10mm 8mm 14mm}
 
 @media print{
   /**
@@ -176,7 +179,7 @@
        content box without ever colliding with it. */
     padding-bottom:2mm !important;
   }
-  .print-report.print-upright{page:upright}
+  .print-report.print-upright{page:wide}
   /* Wide evidence tables ask for the wide page by name. */
   .print-report.print-wide{page:wide}
 
@@ -1578,7 +1581,7 @@
   margin:0;
 }
 @page upright{
-  size:210mm 297mm;
+  size:297mm 210mm;
   margin:0;
 }
 @page{
@@ -1686,13 +1689,13 @@
    ========================================================================== */
 @media print{
   html[data-print-kind="fairness"] .print-report.print-fairness-new,
-  body .print-report.print-fairness-new.print-upright{
-    page:upright !important;
+  body .print-report.print-fairness-new{
+    page:wide !important;
   }
 
   html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page,
-  body .print-report.print-fairness-new.print-upright .print-explicit-page{
-    page:upright !important;
+  body .print-report.print-fairness-new .print-explicit-page{
+    page:wide !important;
     box-sizing:border-box !important;
     display:block !important;
     width:auto !important;
@@ -1713,19 +1716,19 @@
   }
 
   html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page:last-child,
-  body .print-report.print-fairness-new.print-upright .print-explicit-page:last-child{
+  body .print-report.print-fairness-new .print-explicit-page:last-child{
     break-after:auto !important;
     page-break-after:auto !important;
   }
 
   html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page + .print-explicit-page,
-  body .print-report.print-fairness-new.print-upright .print-explicit-page + .print-explicit-page{
+  body .print-report.print-fairness-new .print-explicit-page + .print-explicit-page{
     break-before:auto !important;
     page-break-before:auto !important;
   }
 
   html[data-print-kind="fairness"] .print-report.print-fairness-new .print-explicit-page-meta,
-  body .print-report.print-fairness-new.print-upright .print-explicit-page-meta{
+  body .print-report.print-fairness-new .print-explicit-page-meta{
     margin-top:3mm !important;
     break-before:avoid !important;
     page-break-before:avoid !important;
@@ -1775,13 +1778,13 @@
    advances with `break-after` only, so there is no phantom sheet between pages.
    ========================================================================== */
 @media print{
-  body .print-report.print-review-report.print-upright{
-    page:upright !important;
+  body .print-report.print-review-report{
+    page:wide !important;
     width:auto !important;max-width:none !important;
     margin:0 !important;padding:0 !important;
   }
   body .print-report.print-review-report .print-review-page{
-    page:upright !important;
+    page:wide !important;
     box-sizing:border-box !important;
     display:block !important;
     width:auto !important;min-width:0 !important;max-width:none !important;
