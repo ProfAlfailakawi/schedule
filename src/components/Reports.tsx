@@ -913,13 +913,24 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     }
     let leftForPrint = false;
     let resumed = false;
+    /* Two different things end here, and they must not end together.
+       Restoring the live stream is safe at any moment. STRIPPING THE PRINT
+       ATTRIBUTES IS NOT: a preview can still be open, and Safari re-lays the
+       preview out when the document changes — so a timer that cleared them
+       mid-preview re-flowed the sheets and produced the broken portrait
+       letterheads. The attributes now come off only when the printing is
+       really over: afterprint, or the moment the reader comes back to the
+       page. The timer restores the stream and nothing else. */
+    const clearPrintFlags = () => {
+      delete root.dataset.printKind;
+      delete root.dataset.printRotate;
+    };
     const resume = () => {
       if (resumed) return;
       resumed = true;
       window.removeEventListener("afterprint", resume);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      delete root.dataset.printKind;
-      delete root.dataset.printRotate;
+      clearPrintFlags();
       openReportEvents();
     };
     const onVisibilityChange = () => {
@@ -935,10 +946,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     }
     if (!invoked) window.print();
 
-    /* If a browser no-ops the print command, don't leave live updates paused.
-       This runs only after the direct print invocation and therefore cannot
-       consume Safari's user activation. */
-    window.setTimeout(() => { if (!leftForPrint) resume(); }, 2500);
+    /* If a browser no-ops the print command, don't leave live updates paused —
+       but leave the sheet exactly as the printer sees it. */
+    window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
   };
 
   const groups = lens === "instructor" ? byInstructor : [];

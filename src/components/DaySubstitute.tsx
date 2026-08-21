@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlarmClockOff, CalendarClock, Check, MessageCircle, ShieldCheck, Trash2, UserCheck, X } from "lucide-react";
 import { GhostButton, SecondaryButton } from "./ui";
 import { whatsappNumber } from "../utils/reachInstructor";
-import { scheduleClockForDisplay } from "../utils/scheduleTime";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 /**
  * ── بديل اليوم ───────────────────────────────────────────────────────────────
@@ -137,8 +137,9 @@ export default function DaySubstitute({ row, instructorName, onClose, onRecorded
     }
   }, [row.id, date, load, onRecorded]);
 
+  /* END - START, like every other range the program prints. */
   const timeRange = useMemo(
-    () => `${scheduleClockForDisplay(row.fstarttime)} – ${scheduleClockForDisplay(row.fendtime)}`,
+    () => formatScheduleTimeRange(row.fstarttime, row.fendtime),
     [row.fstarttime, row.fendtime],
   );
   const room = [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / ");

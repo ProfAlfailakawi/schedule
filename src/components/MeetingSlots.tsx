@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarCheck2, Check, Search, Users, X } from "lucide-react";
 import { PrimaryButton } from "./ui";
-import { scheduleClockForDisplay } from "../utils/scheduleTime";
+import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 /**
  * ── متى نلتقي؟ ──────────────────────────────────────────────────────────────
@@ -39,8 +39,10 @@ async function readJson(url: string, init?: RequestInit) {
   return body;
 }
 
-const range = (start: string, end: string) =>
-  `${scheduleClockForDisplay(start)} – ${scheduleClockForDisplay(end)}`;
+/* The university's approved reading order for a range is END - START, and it
+   is the same everywhere in this program. A window here must not be the one
+   place that reads the other way round. */
+const range = (start: string, end: string) => formatScheduleTimeRange(start, end);
 
 export default function MeetingSlots({ instructors, termId, onClose }: {
   instructors: PersonOption[];

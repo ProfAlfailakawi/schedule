@@ -1333,10 +1333,9 @@
    A logical page now owns only its content. @page owns the physical paper.
    ========================================================================== */
 @media print{
-  html[data-print-kind="comprehensive"],
-  html[data-print-kind="comprehensive"] body,
-  html[data-print-kind="comprehensive"] #app-print-root,
-  html[data-print-kind="comprehensive"] .print-only{
+  body:has(.print-comprehensive),
+  body:has(.print-comprehensive) #app-print-root,
+  body:has(.print-comprehensive) .print-only{
     width:auto !important;
     min-width:0 !important;
     height:auto !important;
@@ -1406,9 +1405,12 @@
 
   .print-comprehensive-page{
     box-sizing:border-box !important;
-    width:297mm !important;
+    /* Same reasoning as the sheets above: take the printable width, never
+       exceed the paper. The rotate rules below re-pin an exact 297mm box,
+       which is correct there because that geometry is computed, not assumed. */
+    width:100% !important;
     max-width:297mm !important;
-    min-width:297mm !important;
+    min-width:0 !important;
     height:auto !important;
     min-height:0 !important;
     max-height:none !important;
@@ -1582,17 +1584,27 @@
 }
 
 @media print{
-  html[data-print-kind]:not([data-print-kind="comprehensive"]),
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) body,
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) #app-print-root,
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-only{
+  /* ── الهندسة لا تُعلَّق على سِمة تختفي ────────────────────────────────
+     These rules hung off `html[data-print-kind]` — an attribute the print
+     press sets on the way in and clears on the way out, INCLUDING from a
+     2.5-second safety timer that fires while a print PREVIEW is still open.
+     The moment it cleared, every page in that open preview lost its width,
+     its padding and its page breaks at once, and the sheet re-flowed into a
+     narrow column pinned to one side: the letterhead broke one word per line
+     and half the paper went blank. Reports whose layout did not lean on these
+     rules survived it; the rest did not — which is exactly the "some are
+     beautiful and some are not" split.
+     The sheet's own classes live as long as the sheet does, so the geometry
+     hangs off those now. `data-print-kind` is left only for genuinely
+     kind-specific tweaks, where its disappearance costs nothing. */
+  html,body,#app-print-root,.print-only{
     height:auto !important;
     min-height:0 !important;
     max-height:none !important;
     overflow:visible !important;
   }
 
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-explicit-page{
+  .print-report:not(.print-comprehensive) .print-explicit-page{
     box-sizing:border-box !important;
     display:block !important;
     height:auto !important;
@@ -1604,26 +1616,36 @@
     margin:0 !important;
   }
 
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-wide .print-explicit-page{
-    width:297mm !important;
-    min-width:297mm !important;
+  /* ── لا تفترض أن الورقة كلها لك ──────────────────────────────────────────
+     The sheet was pinned to the paper's FULL width (297mm / 210mm). A print
+     dialog that keeps its own margins — Safari's does, and it cannot be told
+     otherwise from CSS — then leaves less room than that, and a block wider
+     than the printable area hangs off its left edge in RTL. What lives on the
+     left is the letterhead's college name and the footer's date: exactly the
+     two things that came out clipped.
+     So the page now TAKES the printable width and merely refuses to exceed
+     the paper. With zero margins (Chrome) it resolves to the same 297mm as
+     before; with a dialog's margins it simply fits. */
+  .print-report.print-wide:not(.print-comprehensive) .print-explicit-page{
+    width:100% !important;
+    min-width:0 !important;
     max-width:297mm !important;
     padding:8mm 8mm 9mm !important;
   }
 
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-upright .print-explicit-page{
-    width:210mm !important;
-    min-width:210mm !important;
+  .print-report.print-upright:not(.print-comprehensive) .print-explicit-page{
+    width:100% !important;
+    min-width:0 !important;
     max-width:210mm !important;
     padding:12mm 12mm 13mm !important;
   }
 
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-explicit-page + .print-explicit-page{
+  .print-report:not(.print-comprehensive) .print-explicit-page + .print-explicit-page{
     break-before:page !important;
     page-break-before:always !important;
   }
 
-  html[data-print-kind]:not([data-print-kind="comprehensive"]) .print-explicit-page-meta{
+  .print-report:not(.print-comprehensive) .print-explicit-page-meta{
     margin-top:3mm !important;
     flex:none !important;
   }
