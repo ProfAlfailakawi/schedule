@@ -59,15 +59,17 @@ export function formatCompactDurationArabic(minutes: number | null | undefined):
   return `⁧${parts.join(" ")}⁩`;
 }
 
-/** Standalone metric label for minutes in the product's Arabic reading order.
- * Prose sentences should keep normal grammar; this helper is for metric/value UI. */
+/** Standalone metric label for minutes: the number FIRST, then its unit —
+ * «76 دقيقة». The logical order is what an RTL reader meets first, so putting
+ * the unit first made every metric read «دقيقة 76». The isolate keeps the
+ * Latin digits from tangling with whatever punctuation follows. */
 export function formatMinuteMetricArabic(minutes: number | null | undefined): string {
   const value = new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits: 1 }).format(Number(minutes) || 0);
-  return `دقيقة ⁧${value}⁩`;
+  return `⁧${value}⁩ دقيقة`;
 }
 
 
-/** Generic numeric metric in the product's Arabic visual reading order.
+/** Generic numeric metric: the number FIRST, then its unit — «3 ساعات».
  * Use for compact value/unit UI, not grammatical prose. */
 export function formatUnitMetricArabic(
   value: number | string | null | undefined,
@@ -77,5 +79,5 @@ export function formatUnitMetricArabic(
   const raw = typeof value === "number"
     ? new Intl.NumberFormat("ar-KW-u-nu-latn", { maximumFractionDigits }).format(Number.isFinite(value) ? value : 0)
     : String(value ?? "0").trim();
-  return `${unit} ⁧${raw || "0"}⁩`;
+  return `⁧${raw || "0"}⁩ ${unit}`;
 }

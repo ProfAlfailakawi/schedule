@@ -34,6 +34,7 @@ import {
   VisitingRoster,
   StudentNeed,
   HallBarterRequest,
+  ScheduleWeekException,
 } from "../types";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
@@ -189,6 +190,7 @@ interface DBState {
   campusMobilityProfiles?: CampusMobilityProfile[];
   scheduleShareLinks?: ScheduleShareLink[];
   hallBarterRequests?: HallBarterRequest[];
+  scheduleWeekExceptions?: ScheduleWeekException[];
 }
 
 interface LegacySnapshot extends DBState {
@@ -200,7 +202,7 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: []
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
 };
 
 type DemoSandboxRecord = { state: DBState; expiresAt: number };
@@ -1953,7 +1955,7 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
     const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
     replaceCurrentDb({
       users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
-      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: []
+      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
     });
     saveDatabase();
   }
@@ -3376,6 +3378,57 @@ export const Repository = {
     db.hallBarterRequests[index] = { ...db.hallBarterRequests[index], ...fields, updatedAt };
     saveDatabase();
     return db.hallBarterRequests[index];
+  },
+
+  // --- Week exceptions (dated facts over an appointment) ---------------------
+
+  createScheduleWeekException: async (entry: Omit<ScheduleWeekException, "id" | "createdAt">): Promise<ScheduleWeekException> => {
+    const row: ScheduleWeekException = { ...entry, id: randomUUID(), createdAt: new Date().toISOString() };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleWeekExceptions").doc(row.id).set(row);
+      return row;
+    }
+    if (!Array.isArray(db.scheduleWeekExceptions)) db.scheduleWeekExceptions = [];
+    db.scheduleWeekExceptions.unshift(row);
+    if (db.scheduleWeekExceptions.length > 8000) db.scheduleWeekExceptions.length = 8000;
+    saveDatabase();
+    return row;
+  },
+
+  getScheduleWeekExceptions: async (termId: number, scheduleId?: number): Promise<ScheduleWeekException[]> => {
+    const keep = (row: ScheduleWeekException) =>
+      (!termId || Number(row.AdTermId) === Number(termId)) &&
+      (scheduleId === undefined || Number(row.scheduleId) === Number(scheduleId));
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const query = scheduleId !== undefined
+        ? firestoreDb.collection("scheduleWeekExceptions").where("scheduleId", "==", Number(scheduleId))
+        : termId
+          ? firestoreDb.collection("scheduleWeekExceptions").where("AdTermId", "==", Number(termId))
+          : firestoreDb.collection("scheduleWeekExceptions");
+      const snap = await query.limit(2000).get();
+      return snap.docs.map(doc => doc.data() as ScheduleWeekException).filter(keep)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+    }
+    return (db.scheduleWeekExceptions || []).filter(keep)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.createdAt.localeCompare(b.createdAt));
+  },
+
+  getScheduleWeekExceptionById: async (id: string): Promise<ScheduleWeekException | undefined> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("scheduleWeekExceptions").doc(id).get();
+      return doc.exists ? doc.data() as ScheduleWeekException : undefined;
+    }
+    return (db.scheduleWeekExceptions || []).find(row => row.id === id);
+  },
+
+  deleteScheduleWeekException: async (id: string): Promise<void> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("scheduleWeekExceptions").doc(id).delete();
+      return;
+    }
+    if (!Array.isArray(db.scheduleWeekExceptions)) return;
+    db.scheduleWeekExceptions = db.scheduleWeekExceptions.filter(row => row.id !== id);
+    saveDatabase();
   },
 
   // --- Read-only share links -------------------------------------------------

@@ -10,6 +10,7 @@ import {
 import type { CourseNature } from "../utils/courseNature";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { findConflicts } from "../utils/scheduleIntelligence";
+import { AR, countOf } from "../utils/arabicCount";
 
 /**
  * The last read before a schedule is adopted.
@@ -244,11 +245,11 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
     if (finding.title.includes("قاعة")) {
       const rooms = [...new Set(affectedRows.map(row => `${row.AdRoomCode}/${row.AdRoomHall}`).filter(room => room !== "/"))];
       if (rooms.length === 1) return `القاعة ${rooms[0]}`;
-      if (rooms.length > 1) return `قاعات ${rooms.length.toLocaleString("ar-KW-u-nu-latn")}`;
+      if (rooms.length > 1) return countOf(rooms.length, AR.room);
     }
     if (finding.source === "history") return "السجل التاريخي";
     if (finding.source === "department") return "سياسة القسم";
-    return finding.rowIds.length ? `موعد ${finding.rowIds.length.toLocaleString("ar-KW-u-nu-latn")}` : "تنبيه تشغيلي";
+    return finding.rowIds.length ? countOf(finding.rowIds.length, AR.appointment) : "تنبيه تشغيلي";
   };
 
   const findingPreview = (finding: ReviewFindingGroup) => {

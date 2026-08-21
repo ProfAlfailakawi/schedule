@@ -320,6 +320,38 @@ export interface HallBarterRequest {
   responderName?: string;
 }
 
+/**
+ * ── استثناء أسبوع واحد ──────────────────────────────────────────────────────
+ *
+ * The schedule models the ideal repeating week; reality has a lecture that was
+ * cancelled THIS Tuesday, or covered by a colleague THIS Thursday. An exception
+ * is one dated fact laid OVER an appointment — it never touches the FSchedule
+ * row itself, so nothing about the recurring plan, its conflicts or its
+ * history can be disturbed by recording what happened in a single week.
+ *
+ * The calendar feeds read these: a cancelled date becomes an EXDATE in the
+ * subscription, and a covering colleague's personal feed gains that one day —
+ * which is what makes the phone's calendar follow reality automatically.
+ */
+export interface ScheduleWeekException {
+  id: string;
+  createdAt: string;
+  /** The appointment this dated fact sits over. */
+  scheduleId: number;
+  AdCollegeId: number;
+  AdSectionId: number;
+  AdTermId: number;
+  /** The one specific day, as YYYY-MM-DD. */
+  date: string;
+  /** cancel = لا تُعقد هذا اليوم · cover = تُعقد بأستاذ بديل هذا اليوم */
+  kind: "cancel" | "cover";
+  coverInstructorId?: number;
+  coverInstructorName?: string;
+  note?: string;
+  SystemUserId: number;
+  userName: string;
+}
+
 export interface ScheduleComment {
   id: string;
   createdAt: string;

@@ -39,6 +39,28 @@ export interface CalendarLecture {
   days: number[];
   /** Bumped on every write, so a subscriber's calendar knows this is newer. */
   revision?: number;
+  /**
+   * Specific dates (YYYY-MM-DD) on which this weekly series does NOT happen —
+   * a cancelled lecture, or one the owner of this feed hands to a colleague.
+   * Written as EXDATE so the phone's calendar drops exactly that occurrence
+   * and nothing else.
+   */
+  cancelledDates?: string[];
+}
+
+/**
+ * A one-day event that is not part of any weekly series: a coverage day in a
+ * colleague's feed, or a make-up lecture. One date, one time, one entry.
+ */
+export interface CalendarSingle {
+  id: number | string;
+  /** YYYY-MM-DD */
+  date: string;
+  start: string;
+  end: string;
+  title: string;
+  room?: string;
+  description?: string;
 }
 
 export interface CalendarDocument {
@@ -69,6 +91,8 @@ export interface CalendarDocument {
    */
   alarmMinutes?: number;
   lectures: CalendarLecture[];
+  /** One-day entries outside every weekly series (coverage, make-up). */
+  singles?: CalendarSingle[];
   /** The moment the file was produced, for DTSTAMP. */
   now?: Date;
 }
@@ -187,6 +211,14 @@ export function buildCalendar(document: CalendarDocument): string {
       lecture.instructor ? `الأستاذ: ${lecture.instructor}` : "",
     ].filter(Boolean).join("\n");
 
+    /* One EXDATE line per cancelled date. The stamp must repeat the series'
+       own start time, or the client cannot match it to an occurrence. A date
+       that never matches an occurrence is simply ignored — harmless. */
+    const exdates = [...new Set(lecture.cancelledDates || [])]
+      .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
+      .sort()
+      .map(date => `EXDATE;TZID=${TZID}:${localStamp(new Date(`${date}T00:00:00Z`), lecture.start)}`);
+
     lines.push(
       "BEGIN:VEVENT",
       // Stable per appointment, so an edit updates the entry instead of adding
@@ -198,6 +230,7 @@ export function buildCalendar(document: CalendarDocument): string {
       `SEQUENCE:${Math.max(0, Number(lecture.revision || 0))}`,
       `DTSTART;TZID=${TZID}:${localStamp(first, lecture.start)}`,
       `DTEND;TZID=${TZID}:${localStamp(first, lecture.end)}`,
+      ...exdates,
       /* UNTIL when the term's end is known — a real last day, the same one on
          every fetch. COUNT otherwise, which at least bounds the series even
          though its start still drifts with the anchor. */
@@ -217,6 +250,34 @@ export function buildCalendar(document: CalendarDocument): string {
         "ACTION:DISPLAY",
         `TRIGGER:-PT${alarm}M`,
         `DESCRIPTION:${escapeText(lecture.title)}`,
+        "END:VALARM",
+      ] : []),
+      "END:VEVENT",
+    );
+  }
+
+  /* One-day entries: no RRULE, one DTSTART, one DTEND. A coverage day in a
+     colleague's calendar is exactly this — a single dated fact. */
+  for (const single of document.singles || []) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(single.date || "")) || !single.start || !single.end) continue;
+    const day = new Date(`${single.date}T00:00:00Z`);
+    lines.push(
+      "BEGIN:VEVENT",
+      `UID:schedule-single-${single.id}@schedule.app`,
+      `DTSTAMP:${dtstamp}`,
+      `DTSTART;TZID=${TZID}:${localStamp(day, single.start)}`,
+      `DTEND;TZID=${TZID}:${localStamp(day, single.end)}`,
+      `SUMMARY:${escapeText(single.title)}`,
+      single.room ? `LOCATION:${escapeText(single.room)}` : "",
+      single.description ? `DESCRIPTION:${escapeText(single.description)}` : "",
+      "TRANSP:OPAQUE",
+      "STATUS:CONFIRMED",
+      "CATEGORIES:محاضرة",
+      ...(alarm > 0 ? [
+        "BEGIN:VALARM",
+        "ACTION:DISPLAY",
+        `TRIGGER:-PT${alarm}M`,
+        `DESCRIPTION:${escapeText(single.title)}`,
         "END:VALARM",
       ] : []),
       "END:VEVENT",

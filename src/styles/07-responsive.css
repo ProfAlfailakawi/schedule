@@ -164,6 +164,11 @@
      neither ever steals the other's press. */
   /* No rail on a phone: the board IS the window, so the dock centres on it. */
   .schedule-dock{bottom:calc(70px + env(safe-area-inset-bottom))}
+  /* On a phone the board is read-only and lives in one view, so the dock's
+     view-switcher answers a question nobody can ask there. Two doors remain —
+     add an appointment, and jump to search — which is the whole phone story. */
+  .schedule-dock .dock-views,
+  .schedule-dock .dock-split{display:none}
   .undo-bar{bottom:calc(70px + 52px + env(safe-area-inset-bottom))}
 
   /* The phone dock — the few places one moves between, plus "more" for the rest:

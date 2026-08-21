@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, Clock3, LayoutList,
-  Landmark, Printer, Scale, Search, SlidersHorizontal, Table2, UserRound, X
+  Landmark, Printer, RotateCcw, Scale, Search, SlidersHorizontal, Table2, UserRound, X
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
@@ -31,6 +31,13 @@ export type ReportMode =
 
 type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "fairness" | "balance";
 type PrintKind = Lens | "comprehensive" | null;
+
+/* Safari is the one printing engine here that ignores `@page size` (so wide
+   sheets meet portrait paper) — detected once, and only ever used to OFFER a
+   remedy, never to change behaviour silently. */
+const SAFARI_PRINT_ENGINE = typeof navigator !== "undefined"
+  && /AppleWebKit/i.test(navigator.userAgent || "")
+  && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(navigator.userAgent || "");
 
 interface Props {
   mode: ReportMode;
@@ -266,6 +273,19 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   }));
   const [moreOpen, setMoreOpen] = useState(false);
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
+  /* Safari-only: print wide sheets rotated inside Safari's portrait page so
+     they come out landscape without touching the orientation dropdown. Off by
+     default; remembered once chosen. */
+  const [safariLandscape, setSafariLandscape] = useState<boolean>(() => {
+    try { return localStorage.getItem("schedule-print-rotate") === "1"; } catch { return false; }
+  });
+  const toggleSafariLandscape = () => {
+    setSafariLandscape(current => {
+      const next = !current;
+      try { localStorage.setItem("schedule-print-rotate", next ? "1" : "0"); } catch { /* private mode */ }
+      return next;
+    });
+  };
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [visibleLimit, setVisibleLimit] = useState(150);
@@ -855,6 +875,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
     const root = document.documentElement;
     root.dataset.printKind = kind;
+    /* Safari ignores `@page size` entirely, so a wide sheet meets a portrait
+       page there no matter what the stylesheet asks. When the person opted in,
+       each explicit page is painted rotated inside the portrait page instead —
+       geometry only, scoped to this attribute, invisible to every other
+       engine. Portrait sheets (الأوقات، عدالة الحمل) are left exactly as-is. */
+    if (SAFARI_PRINT_ENGINE && safariLandscape && kind !== "time" && kind !== "fairness") {
+      root.dataset.printRotate = "1";
+    }
     let leftForPrint = false;
     let resumed = false;
     const resume = () => {
@@ -863,6 +891,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       window.removeEventListener("afterprint", resume);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       delete root.dataset.printKind;
+      delete root.dataset.printRotate;
       openReportEvents();
     };
     const onVisibilityChange = () => {
@@ -872,10 +901,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     window.addEventListener("afterprint", resume, { once: true });
     document.addEventListener("visibilitychange", onVisibilityChange);
 
-    const ua = navigator.userAgent || "";
-    const isWebKitSafari = /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(ua);
     let invoked = false;
-    if (isWebKitSafari && typeof document.execCommand === "function") {
+    if (SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
       try { invoked = document.execCommand("print"); } catch { invoked = false; }
     }
     if (!invoked) window.print();
@@ -1199,6 +1226,21 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
           <div className="query-canvas-actions">
+            {SAFARI_PRINT_ENGINE ? (
+              <button
+                type="button"
+                className={`safari-landscape-toggle ${safariLandscape ? "on" : ""}`}
+                data-guide-ignore="خيار عرض للطباعة في Safari فقط — لا يغيّر أي بيانات"
+                onClick={toggleSafariLandscape}
+                aria-pressed={safariLandscape}
+                title={safariLandscape
+                  ? "مفعّل: التقارير العريضة تُطبع أفقياً تلقائياً في Safari. ولإخفاء سطر الرابط والتاريخ ألغِ «طباعة الترويسات والتذييلات» مرة واحدة من نافذة الطباعة."
+                  : "Safari يتجاهل اتجاه الصفحة، فيطبع التقارير العريضة طولياً. فعّل هذا الخيار لتُطبع أفقياً تلقائياً."}
+              >
+                <RotateCcw aria-hidden="true" />
+                <span>أفقي تلقائياً</span>
+              </button>
+            ) : null}
             <button
               type="button"
               className="query-print-icon"
@@ -1568,7 +1610,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                     <div className="time-slot-panel" id={`query-time-slot-${slot.key}`}>
                       <div className="time-slot-panel-head">
                         <div><strong>{scheduleClockForDisplay(slot.key)}</strong><small>{num(slot.count)} موعد · {num(slot.courses)} مقرر · {num(slot.instructors)} أستاذ</small></div>
-                        <span>{slot.rooms.length ? `قاعة ${num(slot.rooms.length)}` : "بدون قاعات"}</span>
+                        <span>{slot.rooms.length ? countOf(slot.rooms.length, AR.room) : "بدون قاعات"}</span>
                       </div>
                       <div className="time-slot-grid">
                         {slot.rows.map(row => {

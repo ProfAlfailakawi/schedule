@@ -1360,7 +1360,7 @@ export default function App() {
     if (!user) return;
     setUsage(safeStorage.json(`schedule-usage-${user.SystemUserId}`, {}));
     setEntityFavorites(safeStorage.json(`schedule-entity-favorites-${user.SystemUserId}`, []));
-    if (!safeStorage.get(`schedule-onboarding-v3-${user.SystemUserId}`)) setOnboardingStep(0);
+    if (!safeStorage.get(`schedule-onboarding-v4-${user.SystemUserId}`)) setOnboardingStep(0);
   }, [user?.SystemUserId]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1944,7 +1944,7 @@ export default function App() {
           .includes(query.trim().toLowerCase())),
   );
   const finishOnboarding = () => {
-    if (user) safeStorage.set(`schedule-onboarding-v3-${user.SystemUserId}`, "done");
+    if (user) safeStorage.set(`schedule-onboarding-v4-${user.SystemUserId}`, "done");
     setOnboardingStep(-1);
   };
   const noKeyboard = typeof window !== "undefined"
@@ -2676,47 +2676,40 @@ export default function App() {
       ) : null}
       {onboardingStep >= 0 ? (
         <div className="onboarding-backdrop no-print">
-          {/* The first thing a new user meets should announce itself to a
-              screen reader and answer Escape like every other dialog here. */}
+          {/* One welcome, whole and scannable. The old tour asked four presses
+              to learn four sentences; nobody owes a dialog four presses. All
+              the facts stand together on one card, each arriving with a small
+              stagger so the eye is led down the list once — and one press
+              starts the actual work. */}
           <section
             className="onboarding-card"
             role="dialog"
             aria-modal="true"
             aria-label="جولة تعريفية"
           >
-            {onboardingSteps.map((step, index) =>
-              index === onboardingStep ? (
-                <React.Fragment key={index}>
-                  <div className="onboarding-icon">{step.icon}</div>
-                  <span className="page-eyebrow">{step.eyebrow}</span>
-                  <h2>{step.title}</h2>
-                  <p>{step.copy}</p>
-                  <div className="onboarding-progress">
-                    {onboardingSteps.map((_, i) => (
-                      <i
-                        key={i}
-                        className={i === onboardingStep ? "active" : ""}
-                      />
-                    ))}
+            <header className="onboarding-hero">
+              <span className="onboarding-hero-brand">SCHEDULE</span>
+              <h2>{isPowerAdmin ? "مساحة التحكم الأكاديمي، كاملةً بين يديك" : "مساحة قسمك جاهزة"}</h2>
+              <p>{onboardingSteps.length.toLocaleString("ar-KW-u-nu-latn")} حقائق تكفيك الآن — والمرشد الحي يشرح البقية وقت حاجتك.</p>
+            </header>
+            <ul className="onboarding-facts">
+              {onboardingSteps.map((step, index) => (
+                <li key={index} style={{ ["--fact-i" as any]: index }}>
+                  <span className="onboarding-fact-icon" aria-hidden="true">{step.icon}</span>
+                  <div>
+                    <small>{step.eyebrow}</small>
+                    <strong>{step.title}</strong>
+                    <p>{step.copy}</p>
                   </div>
-                  <div className="onboarding-actions">
-                    <button onClick={finishOnboarding}>تخطي</button>
-                    <PrimaryButton
-                      onClick={() =>
-                        onboardingStep === onboardingSteps.length - 1
-                          ? finishOnboarding()
-                          : setOnboardingStep(onboardingStep + 1)
-                      }
-                    >
-                      {onboardingStep === onboardingSteps.length - 1
-                        ? "ابدأ"
-                        : "التالي"}
-                      <ChevronLeft />
-                    </PrimaryButton>
-                  </div>
-                </React.Fragment>
-              ) : null,
-            )}
+                </li>
+              ))}
+            </ul>
+            <div className="onboarding-actions">
+              <PrimaryButton onClick={finishOnboarding} data-guide-ignore="يغلق بطاقة الترحيب الأولى فقط ولا ينفذ إجراءً في النظام">
+                ابدأ العمل
+                <ChevronLeft />
+              </PrimaryButton>
+            </div>
           </section>
         </div>
       ) : null}

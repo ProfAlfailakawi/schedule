@@ -79,6 +79,8 @@ import {
 } from "../types";
 import LivingScheduleLayer from "./LivingScheduleLayer";
 import HallBarterBoard, { type HallBarterReservationView } from "./HallBarterBoard";
+import DaySubstitute from "./DaySubstitute";
+import MeetingSlots from "./MeetingSlots";
 import SchedulePublish from "./SchedulePublish";
 import ScheduleExperienceLayer, {
   useScheduleExperience,
@@ -1443,6 +1445,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
 
   const [reviewOpen, setReviewOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
+  /* بديل اليوم: dated one-day facts over a lecture — cancel or cover. Opens
+     from the context panel; records exceptions, never touches the row. */
+  const [dayToolRow, setDayToolRow] = useState<FSchedule | null>(null);
+  /* متى نلتقي؟ — the committee-window finder over this term's own schedules. */
+  const [meetingOpen, setMeetingOpen] = useState(false);
   /** Appointments the review asked to see; they glow until something else happens. */
   const [reviewFocus, setReviewFocus] = useState<Set<number>>(new Set());
   useEffect(() => {
@@ -2334,7 +2341,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           const normalDurations = (learned.durations || [])
             .filter(item => isSupported(item.samples, item.share))
             .slice(0, 4)
-            .map(item => `دقيقة ${item.minutes.toLocaleString("ar-KW-u-nu-latn")}`);
+            .map(item => `${item.minutes.toLocaleString("ar-KW-u-nu-latn")} دقيقة`);
           if (normalDurations.length) {
             return `مدة ${duration.toLocaleString("ar-KW-u-nu-latn")} دقيقة غير مثبتة بما يكفي في سجل هذا المقرر على ${day.label}. المدد المتكررة تاريخياً: ${normalDurations.join("، ")}.`;
           }
@@ -8908,6 +8915,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             {workspaceToolsOpen ? <GhostButton data-guide-target="schedule.tool.review" type="button" onClick={() => setReviewOpen(true)} title="فحص الجدول كاملاً قبل الاعتماد">
               <ClipboardCheck /> مراجعة الاعتماد
             </GhostButton> : null}
+            {workspaceToolsOpen && filterTerm ? <GhostButton
+              type="button"
+              data-guide-ignore="أداة قراءة فقط: تعرض النوافذ الأسبوعية المشتركة ولا تغيّر الجدول"
+              onClick={() => setMeetingOpen(true)}
+              title="اختر أساتذة ليعرض الجدول النوافذ الأسبوعية التي يتفرغون فيها معاً"
+            >
+              <UsersRound /> متى نلتقي؟
+            </GhostButton> : null}
             {workspaceToolsOpen ? <GhostButton
               type="button"
               data-guide-target="schedule.tool.data"
@@ -10929,6 +10944,20 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           onClose={() => setTransferOpen(false)}
         />
       ) : null}
+      {dayToolRow ? (
+        <DaySubstitute
+          row={dayToolRow as any}
+          instructorName={instructorById.get(dayToolRow.AdInstructorId)?.AdInstructorName}
+          onClose={() => setDayToolRow(null)}
+        />
+      ) : null}
+      {meetingOpen ? (
+        <MeetingSlots
+          instructors={instructors.map(person => ({ AdInstructorId: person.AdInstructorId, AdInstructorName: person.AdInstructorName }))}
+          termId={filterTerm}
+          onClose={() => setMeetingOpen(false)}
+        />
+      ) : null}
       {reviewOpen ? (
         <ScheduleReview
           rows={rows}
@@ -11054,6 +11083,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 </button>
               </div>
               <div className="context-actions-main">
+                <button
+                  type="button"
+                  className="btn btn-secondary context-day-tool"
+                  data-guide-ignore="يفتح أداة استثناءات اليوم الواحد — لا يغيّر الموعد الأسبوعي"
+                  title="إلغاء أو تغطية هذه المحاضرة ليوم واحد محدد"
+                  onClick={() => setDayToolRow(context.selected)}
+                >
+                  <CalendarDays /> بديل اليوم
+                </button>
                 <button
                   type="button"
                   className="btn btn-secondary context-edit"

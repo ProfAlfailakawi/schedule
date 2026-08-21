@@ -1558,3 +1558,162 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 
   /* The lifetime total becomes a strong but shallow capsule: 15,427 always fits. */
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   بديل اليوم — one-day exceptions sheet (cancel / cover) over an appointment.
+   A centred dialog above everything, in the same material language as the
+   app's other sheets: surface, hairline, one accent mark, no gradients.
+   ══════════════════════════════════════════════════════════════════════════ */
+.day-substitute-backdrop,
+.meeting-slots-backdrop{
+  position:fixed;inset:0;z-index:2800;
+  background:color-mix(in srgb,var(--ink) 32%, transparent);
+  backdrop-filter:blur(2px);
+}
+.day-substitute,
+.meeting-slots{
+  position:fixed;z-index:2810;
+  top:50%;inset-inline-start:50%;
+  transform:translate(50%,-50%);
+  width:min(560px, calc(100vw - 28px));
+  max-height:min(86dvh, 760px);
+  overflow:auto;
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--r-xl);
+  box-shadow:var(--shadow-lg);
+  padding:18px 20px 16px;
+  display:grid;gap:14px;align-content:start;
+}
+.day-substitute-head,
+.meeting-slots-head{
+  display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:12px;align-items:start;
+}
+.day-substitute-mark,
+.meeting-slots-mark{
+  width:44px;height:44px;border-radius:14px;display:grid;place-items:center;
+  background:var(--accent-soft);color:var(--accent);
+}
+.day-substitute-mark svg,.meeting-slots-mark svg{width:22px;height:22px}
+.day-substitute-head small,.meeting-slots-head small{color:var(--muted);font-size:11px;font-weight:700}
+.day-substitute-head h2,.meeting-slots-head h2{margin:2px 0 3px;font-size:var(--t-h2);font-weight:700}
+.day-substitute-head p,.meeting-slots-head p{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.7}
+.day-substitute-date{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.day-substitute-date span{color:var(--muted);font-size:12px;font-weight:700}
+.day-substitute-date input{
+  border:1px solid var(--line);border-radius:12px;background:var(--surface-2);
+  color:var(--ink);padding:8px 12px;font-size:13px;font-family:inherit;
+}
+.day-substitute-error,.meeting-slots-error{
+  margin:0;padding:10px 12px;border-radius:12px;font-size:12.5px;
+  background:color-mix(in srgb,var(--danger, #b3423a) 10%, var(--surface));
+  color:var(--danger, #b3423a);border:1px solid color-mix(in srgb,var(--danger, #b3423a) 24%, transparent);
+}
+.day-substitute-done{
+  margin:0;display:flex;align-items:center;gap:8px;
+  padding:10px 12px;border-radius:12px;font-size:12.5px;font-weight:700;
+  background:var(--accent-soft);color:var(--accent);
+}
+.day-substitute-done svg{width:15px;height:15px}
+.day-substitute-existing{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;
+  border:1px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--surface-2);
+}
+.day-substitute-existing>svg{width:20px;height:20px;color:var(--accent)}
+.day-substitute-existing strong{display:block;font-size:13px}
+.day-substitute-existing small{color:var(--muted);font-size:11.5px;line-height:1.6}
+.day-substitute-cancel{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.day-substitute-cancel small{color:var(--muted);font-size:11.5px}
+.day-substitute-subtitle{margin:2px 0 0;font-size:13px;font-weight:800;color:var(--ink)}
+.day-substitute-quiet,.meeting-slots-quiet{margin:0;color:var(--muted);font-size:12.5px}
+.day-substitute-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.day-substitute-list li{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center;
+  border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--surface);
+}
+.day-substitute-person strong{display:block;font-size:13px}
+.day-substitute-person small{color:var(--muted);font-size:11px;line-height:1.6}
+.day-substitute-acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.day-substitute-wa{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid color-mix(in srgb,var(--accent) 30%, transparent);
+  background:var(--accent-soft);color:var(--accent);
+  border-radius:999px;padding:6px 12px;font-size:12px;font-weight:800;text-decoration:none;
+}
+.day-substitute-wa svg{width:14px;height:14px}
+.day-substitute-wa:hover{filter:brightness(.97)}
+.day-substitute-nowa{color:var(--muted);font-size:11px;border:1px dashed var(--line);border-radius:999px;padding:5px 11px}
+.day-substitute-log summary{cursor:pointer;color:var(--muted);font-size:12px;font-weight:700}
+.day-substitute-log ul{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.day-substitute-log li{
+  display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-2);
+  border:1px solid var(--line);border-radius:12px;padding:7px 10px;
+}
+.day-substitute-log li button{
+  margin-inline-start:auto;border:0;background:none;color:var(--muted);cursor:pointer;
+  display:grid;place-items:center;padding:4px;border-radius:8px;
+}
+.day-substitute-log li button:hover{color:var(--danger,#b3423a);background:var(--surface-2)}
+.day-substitute-log li button svg{width:14px;height:14px}
+.day-substitute-foot{
+  display:flex;align-items:flex-start;gap:8px;color:var(--muted);font-size:11.5px;line-height:1.7;
+  border-top:1px solid var(--line);padding-top:12px;
+}
+.day-substitute-foot svg{width:15px;height:15px;flex:none;color:var(--accent)}
+
+/* ── متى نلتقي؟ — committee window finder ─────────────────────────────────── */
+.meeting-slots{width:min(640px, calc(100vw - 28px))}
+.meeting-slots-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.meeting-slots-search{
+  flex:1;min-width:200px;display:flex;align-items:center;gap:8px;
+  border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:7px 12px;
+}
+.meeting-slots-search svg{width:15px;height:15px;color:var(--muted)}
+.meeting-slots-search input{border:0;background:none;color:var(--ink);font-size:13px;width:100%;font-family:inherit}
+.meeting-slots-search input:focus{outline:none}
+.meeting-slots-duration{display:flex;align-items:center;gap:8px}
+.meeting-slots-duration span{color:var(--muted);font-size:12px;font-weight:700}
+.meeting-slots-duration select{
+  border:1px solid var(--line);border-radius:12px;background:var(--surface-2);
+  color:var(--ink);padding:7px 12px;font-size:13px;font-family:inherit;
+}
+.meeting-slots-people{
+  list-style:none;margin:0;padding:4px;display:grid;gap:2px;
+  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+  max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:14px;
+}
+.meeting-slots-people label{
+  display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;cursor:pointer;
+  font-size:12.5px;color:var(--ink-2);
+}
+.meeting-slots-people label:hover{background:var(--surface-2)}
+.meeting-slots-people input{accent-color:var(--accent)}
+.meeting-slots-empty{grid-column:1/-1;color:var(--muted);font-size:12px;padding:10px;text-align:center}
+.meeting-slots-ask{display:flex;align-items:center;gap:12px;justify-content:space-between;flex-wrap:wrap}
+.meeting-slots-count{color:var(--muted);font-size:12px;font-weight:700}
+.meeting-slots-best{
+  display:flex;align-items:center;gap:10px;border-radius:14px;padding:12px 14px;
+  background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 26%, transparent);
+}
+.meeting-slots-best>svg{width:20px;height:20px;color:var(--accent)}
+.meeting-slots-best small{display:block;color:var(--muted);font-size:11px;font-weight:700}
+.meeting-slots-best strong{font-size:14px;color:var(--ink)}
+.meeting-slots-none{background:var(--surface-2);border-color:var(--line)}
+.meeting-slots-answer{display:grid;gap:12px}
+.meeting-slots-days{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.meeting-slots-days section{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--surface)}
+.meeting-slots-days h3{margin:0 0 8px;font-size:12.5px;font-weight:800;color:var(--ink)}
+.meeting-slots-days ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.meeting-slots-days li{display:grid;gap:1px;font-size:12.5px;color:var(--ink)}
+.meeting-slots-days li small{color:var(--muted);font-size:10.5px}
+.meeting-slots-miss{margin-top:6px;border-top:1px dashed var(--line);padding-top:6px}
+.meeting-slots-miss li{color:var(--ink-2)}
+@media(max-width:640px){
+  .day-substitute,.meeting-slots{
+    top:auto;bottom:0;inset-inline-start:0;transform:none;
+    width:100%;max-height:88dvh;border-radius:var(--r-xl) var(--r-xl) 0 0;
+    padding-bottom:calc(16px + env(safe-area-inset-bottom));
+  }
+  .day-substitute-list li{grid-template-columns:minmax(0,1fr)}
+  .day-substitute-acts{justify-content:flex-start}
+}

@@ -310,6 +310,34 @@ export function Segmented({ value, options, onChange, instant = false }: { value
  * sheet reads as an institutional document rather than an app export. `college`
  * is optional — without it the mark falls back to the workspace name.
  */
+/**
+ * The college's own mark — the pen-nib emblem of كلية التربية الأساسية —
+ * redrawn as vector so it stays razor-sharp at any size, in the college's own
+ * institutional blue and gold. The wordmark is deliberately NOT inside the
+ * SVG: everywhere the mark appears, the college's name is already printed
+ * beside it in live text.
+ *
+ * `paper` names the colour the slit and breather hole are carved in — white
+ * on paper and light surfaces, or the surface colour behind a dark canvas.
+ */
+export function CollegeEmblem({ size = 44, paper = "#fff" }: { size?: number; paper?: string }) {
+  return (
+    <svg viewBox="0 0 100 100" width={size} height={size} role="img" aria-hidden="true" focusable="false">
+      {/* Blue sweep: lower-right, over the top, down to the lower-left. */}
+      <path d="M69.9 92.6 A47 47 0 1 0 7.4 69.9 Q10 66 12.9 63.5 A39.5 39.5 0 1 1 69.8 84.2 Q69.5 88.5 69.9 92.6 Z" fill="#1c5aa0" />
+      {/* Gold sweep hugging the bottom, both ends tapered. */}
+      <path d="M7.5 61.4 A44 44 0 0 0 61.4 92.5 Q58.5 88.5 56.2 85.0 A35.5 35.5 0 0 1 16.6 62.1 Q11.8 61.6 7.5 61.4 Z" fill="#c29b40" />
+      {/* The two quill panels flanking the nib. */}
+      <path d="M64.5 18.5 C69.5 15.5 75 15.8 78.5 18.5 C78 28.5 75.5 38 69.5 46.5 C67 45.5 65.2 43.5 64.5 40.5 L64.5 18.5 Z" fill="#1c5aa0" />
+      <path d="M35.5 18.5 C30.5 15.5 25 15.8 21.5 18.5 C22 28.5 24.5 38 30.5 46.5 C33 45.5 34.8 43.5 35.5 40.5 L35.5 18.5 Z" fill="#1c5aa0" />
+      {/* The nib: breather hole and slit carved out in the paper colour. */}
+      <path d="M50 15 C44 15 39.5 19.5 39.5 26.5 L39.5 40 C39.5 53 44 64.5 50 78 C56 64.5 60.5 53 60.5 40 L60.5 26.5 C60.5 19.5 56 15 50 15 Z" fill="#c29b40" />
+      <circle cx="50" cy="54.5" r="4.1" fill={paper} />
+      <line x1="50" y1="58.4" x2="50" y2="73.5" stroke={paper} strokeWidth="2.2" />
+    </svg>
+  );
+}
+
 let printHost: HTMLDivElement | null = null;
 let printPortalUsers = 0;
 
@@ -356,14 +384,13 @@ export function PrintLetterhead({ title, scope, college, footer = true }: { titl
           {scope ? <p>{scope}</p> : null}
         </div>
         <div className="print-head-brand">
+          {/* The college's own mark — the pen-nib emblem of كلية التربية
+              الأساسية, redrawn as vector so it prints razor-sharp at any
+              size, in its own institutional blue and gold. The wordmark is
+              not repeated inside the SVG because the letterhead already
+              prints the college name beside it. */}
           <span className="print-emblem" aria-hidden="true">
-            <svg viewBox="0 0 40 40" width="40" height="40" role="img">
-              <circle cx="20" cy="20" r="18.4" fill="none" stroke="currentColor" strokeWidth="1.4" />
-              <circle cx="20" cy="20" r="15" fill="none" stroke="currentColor" strokeWidth="0.7" opacity="0.45" />
-              <path d="M20 13.4c-2.7-1.9-6-1.9-8.4 0v10.8c2.4-1.9 5.7-1.9 8.4 0 2.7-1.9 6-1.9 8.4 0V13.4c-2.4-1.9-5.7-1.9-8.4 0z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-              <line x1="20" y1="13.4" x2="20" y2="24.2" stroke="currentColor" strokeWidth="1.05" />
-              <path d="M20 5.4l1.05 2.13 2.35.34-1.7 1.66.4 2.34-2.1-1.1-2.1 1.1.4-2.34-1.7-1.66 2.35-.34z" fill="currentColor" />
-            </svg>
+            <CollegeEmblem size={44} />
           </span>
           <div className="print-head-org">
             <strong>{college || "الجدول الأكاديمي"}</strong>

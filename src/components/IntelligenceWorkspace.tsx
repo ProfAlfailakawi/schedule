@@ -198,16 +198,32 @@ interface DeckCard {
  * bug — pressing a card changed the content a thousand pixels below the fold
  * and never scrolled to it.
  */
-const liftToTop = (instant: boolean) =>
-  requestAnimationFrame(() => {
+const liftToTop = (instant: boolean) => {
+  /* One frame is NOT after the commit: React had often not swapped the rail
+     for the page head yet, so this measured the OLD strip — sometimes landing
+     mid-page, sometimes not moving at all, and the opened reading sat above
+     or below wherever the reader happened to be. Two frames guarantees the
+     new panel is painted; a bounded retry covers a slow first paint; and a
+     settle pass re-checks after the panels below have taken their height. */
+  let tries = 0;
+  const measure = () => {
     const target = [
       ...document.querySelectorAll<HTMLElement>(".insight-page-head, .insight-preview-rail"),
     ].find(el => el.getClientRects().length > 0);
-    if (!target) return;
+    if (!target) { if (tries++ < 8) requestAnimationFrame(measure); return; }
     const top = Math.max(0, target.getBoundingClientRect().top + window.scrollY - 8);
-    if (Math.abs(window.scrollY - top) < 8) return;
-    window.scrollTo({ top, behavior: instant ? "auto" : "smooth" });
-  });
+    if (Math.abs(window.scrollY - top) >= 8) window.scrollTo({ top, behavior: instant ? "auto" : "smooth" });
+    window.setTimeout(() => {
+      const settled = [
+        ...document.querySelectorAll<HTMLElement>(".insight-page-head, .insight-preview-rail"),
+      ].find(el => el.getClientRects().length > 0);
+      if (!settled) return;
+      const settledTop = Math.max(0, settled.getBoundingClientRect().top + window.scrollY - 8);
+      if (Math.abs(window.scrollY - settledTop) > 24) window.scrollTo({ top: settledTop, behavior: "auto" });
+    }, instant ? 60 : 420);
+  };
+  requestAnimationFrame(() => requestAnimationFrame(measure));
+};
 
 const CardDeck = ({ cards, value, onChange, backLabel, title, hint }: {
   cards: DeckCard[];

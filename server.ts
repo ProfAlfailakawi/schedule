@@ -24,7 +24,7 @@ import { readDemandRepairs } from "./src/utils/demandRepair";
 import { readCourseSuccession, cohortTurnover, predictDemand } from "./src/utils/courseSuccession";
 import { readSectionOpenings } from "./src/utils/sectionOpening";
 import { reasonForMove } from "./src/utils/appointmentStory";
-import { buildCalendar, type CalendarLecture } from "./src/utils/icalendar";
+import { buildCalendar, type CalendarLecture, type CalendarSingle } from "./src/utils/icalendar";
 import { learnAll } from "./src/utils/courseNature";
 import { firstLast } from "./src/utils/weekVisual";
 import { Campus, DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES, campusOf, interCampusMinutes } from "./src/utils/campusTravel";
@@ -3365,6 +3365,256 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
   res.json({ slots, considered: candidates.length });
 });
 
+/* ── استثناءات الأسبوع ────────────────────────────────────────────────────────
+   Dated facts OVER an appointment: cancelled THIS date, covered THIS date.
+   They never touch the FSchedule row, its rev, its conflicts or its history —
+   which is what makes them safe to record and safe to delete. The calendar
+   subscriptions read them, so a phone follows reality without anyone sending
+   anything. */
+
+const WEEK_EXCEPTION_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function weekExceptionDayKey(date: string): string | null {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const day = parsed.getUTCDay();
+  return day >= 0 && day <= 4 ? SCHEDULE_DAY_KEYS[day] : null;
+}
+
+async function readScheduleForException(req: AuthenticatedRequest, res: Response): Promise<FSchedule | null> {
+  const id = Number(req.params.id || 0);
+  const row = await Repository.getScheduleById(id);
+  if (!row) { res.status(404).json({ error: "الموعد غير موجود" }); return null; }
+  if (!isScopeAllowed(req, row.AdCollegeId, row.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return null; }
+  return row;
+}
+
+app.get("/api/schedules/:id/exceptions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const row = await readScheduleForException(req, res);
+  if (!row) return;
+  const list = await Repository.getScheduleWeekExceptions(Number(row.AdTermId), Number(row.id));
+  res.json({ exceptions: list });
+});
+
+app.post("/api/schedules/:id/exceptions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const row = await readScheduleForException(req, res);
+  if (!row) return;
+  const body = req.body || {};
+  const date = String(body.date || "").trim();
+  const kind = body.kind === "cover" ? "cover" : body.kind === "cancel" ? "cancel" : null;
+  if (!WEEK_EXCEPTION_DATE.test(date)) { res.status(400).json({ error: "حدد التاريخ بصيغة YYYY-MM-DD" }); return; }
+  if (!kind) { res.status(400).json({ error: "نوع الاستثناء إما إلغاء أو تغطية" }); return; }
+  const dayKey = weekExceptionDayKey(date);
+  if (!dayKey || !(row as any)[dayKey]) {
+    res.status(400).json({ error: "هذا الموعد لا يُعقد في اليوم المحدد أصلاً" });
+    return;
+  }
+  const existing = await Repository.getScheduleWeekExceptions(Number(row.AdTermId), Number(row.id));
+  if (existing.some(item => item.date === date)) {
+    res.status(409).json({ error: "يوجد استثناء مسجل لهذا اليوم بالفعل — احذفه أولاً إن أردت تغييره" });
+    return;
+  }
+  let coverInstructorId: number | undefined;
+  let coverInstructorName: string | undefined;
+  if (kind === "cover") {
+    coverInstructorId = Number(body.coverInstructorId || 0) || undefined;
+    if (!coverInstructorId) { res.status(400).json({ error: "حدد الأستاذ الذي يغطي المحاضرة" }); return; }
+    if (coverInstructorId === Number(row.AdInstructorId)) { res.status(400).json({ error: "التغطية تكون بأستاذ آخر غير أستاذ الشعبة" }); return; }
+    const person = (await Repository.getInstructors()).find(item => item.AdInstructorId === coverInstructorId);
+    if (!person) { res.status(404).json({ error: "الأستاذ البديل غير موجود" }); return; }
+    coverInstructorName = person.AdInstructorName;
+  }
+  const created = await Repository.createScheduleWeekException({
+    scheduleId: Number(row.id),
+    AdCollegeId: Number(row.AdCollegeId),
+    AdSectionId: Number(row.AdSectionId),
+    AdTermId: Number(row.AdTermId),
+    date, kind,
+    coverInstructorId, coverInstructorName,
+    note: String(body.note || "").slice(0, 240) || undefined,
+    SystemUserId: Number(req.user!.SystemUserId),
+    userName: String(req.user!.Name || ""),
+  });
+  res.status(201).json(created);
+});
+
+app.delete("/api/schedules/:id/exceptions/:exceptionId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const row = await readScheduleForException(req, res);
+  if (!row) return;
+  const entry = await Repository.getScheduleWeekExceptionById(String(req.params.exceptionId || ""));
+  if (!entry || Number(entry.scheduleId) !== Number(row.id)) { res.status(404).json({ error: "الاستثناء غير موجود" }); return; }
+  await Repository.deleteScheduleWeekException(entry.id);
+  res.json({ ok: true });
+});
+
+/* ── بديل اليوم ───────────────────────────────────────────────────────────────
+   An instructor apologises for TODAY. Term-level emergency plans exist for a
+   lost teacher; this answers the smaller, daily question: who can cover this
+   one lecture on this one date? Free at that hour, has taught this very course
+   before, already on campus that day. The answer is a ranked list and a
+   pre-written WhatsApp opener — the system itself sends nothing. */
+
+app.get("/api/schedules/:id/substitutes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const row = await readScheduleForException(req, res);
+  if (!row) return;
+  const date = String(req.query.date || "").trim();
+  if (!WEEK_EXCEPTION_DATE.test(date)) { res.status(400).json({ error: "حدد التاريخ بصيغة YYYY-MM-DD" }); return; }
+  const dayKey = weekExceptionDayKey(date);
+  if (!dayKey || !(row as any)[dayKey]) { res.status(400).json({ error: "هذا الموعد لا يُعقد في اليوم المحدد" }); return; }
+
+  const [instructors, termRows, collegeHistory] = await Promise.all([
+    Repository.getInstructors(),
+    Repository.getSchedulesByScope({ termId: Number(row.AdTermId) }),
+    Repository.getSchedulesByScope({ collegeId: Number(row.AdCollegeId) }),
+  ]);
+  const start = timeToMinutes(row.fstarttime), end = timeToMinutes(row.fendtime);
+  const overlapsSlot = (item: FSchedule) =>
+    Boolean((item as any)[dayKey]) && timeToMinutes(item.fstarttime) < end && timeToMinutes(item.fendtime) > start;
+
+  const rowsByInstructor = new Map<number, FSchedule[]>();
+  for (const item of termRows) {
+    const key = Number(item.AdInstructorId);
+    if (!rowsByInstructor.has(key)) rowsByInstructor.set(key, []);
+    rowsByInstructor.get(key)!.push(item);
+  }
+  const taughtTermsByInstructor = new Map<number, Set<number>>();
+  for (const item of collegeHistory) {
+    if (Number(item.AdCourseId) !== Number(row.AdCourseId)) continue;
+    const key = Number(item.AdInstructorId);
+    if (!taughtTermsByInstructor.has(key)) taughtTermsByInstructor.set(key, new Set());
+    taughtTermsByInstructor.get(key)!.add(Number(item.AdTermId));
+  }
+
+  const candidates = instructors
+    .filter(person => person.AdInstructorId !== Number(row.AdInstructorId))
+    .filter(person => !person.AdInstructorStatus)
+    .map(person => {
+      const mine = rowsByInstructor.get(person.AdInstructorId) || [];
+      if (mine.some(overlapsSlot)) return null;
+      const taughtTerms = taughtTermsByInstructor.get(person.AdInstructorId)?.size || 0;
+      const inSection = mine.some(item =>
+        Number(item.AdCollegeId) === Number(row.AdCollegeId) && Number(item.AdSectionId) === Number(row.AdSectionId));
+      // Only people teaching somewhere this term — or with real history on this
+      // course — are candidates: the full university register is not a rolodex.
+      if (!mine.length && !taughtTerms) return null;
+      const sameDayRows = mine.filter(item => Boolean((item as any)[dayKey]));
+      const sameBuilding = sameDayRows.some(item => (item.AdRoomCode || "") === (row.AdRoomCode || "") && row.AdRoomCode);
+      const loadMinutes = mine.reduce((sum, item) => {
+        const perMeeting = Math.max(0, timeToMinutes(item.fendtime) - timeToMinutes(item.fstarttime));
+        return sum + perMeeting * SCHEDULE_DAY_KEYS.filter(key => Boolean((item as any)[key])).length;
+      }, 0);
+      const reasons: string[] = [];
+      if (taughtTerms) reasons.push(`درّس هذا المقرر في ${countOf(taughtTerms, AR.term)}`);
+      if (inSection) reasons.push("من أساتذة القسم هذا الفصل");
+      if (sameBuilding) reasons.push("موجود في نفس المبنى ذلك اليوم");
+      else if (sameDayRows.length) reasons.push("لديه محاضرات في نفس اليوم");
+      if (!reasons.length) reasons.push("متفرغ في هذا الوقت");
+      const score =
+        (taughtTerms ? 50 + Math.min(12, taughtTerms * 2) : 0) +
+        (inSection ? 20 : 0) +
+        (sameBuilding ? 10 : sameDayRows.length ? 6 : 0) +
+        Math.max(0, 10 - Math.round(loadMinutes / 60));
+      return {
+        id: person.AdInstructorId,
+        name: person.AdInstructorName,
+        mobile: person.AdInstructorMobile || "",
+        score, taughtTerms, inSection, sameDay: sameDayRows.length > 0, sameBuilding,
+        reasons: reasons.slice(0, 3),
+      };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => b.score - a.score || String(a.name).localeCompare(String(b.name), "ar"))
+    .slice(0, 12);
+
+  const exceptions = await Repository.getScheduleWeekExceptions(Number(row.AdTermId), Number(row.id));
+  res.json({
+    date, dayKey,
+    lecture: {
+      id: row.id, course: row.AdCourseName, section: row.SCode,
+      start: row.fstarttime, end: row.fendtime,
+      room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),
+      instructorId: row.AdInstructorId,
+    },
+    candidates,
+    exceptions,
+  });
+});
+
+/* ── متى نلتقي؟ ──────────────────────────────────────────────────────────────
+   The committee question every department asks weekly. Choose the people; the
+   term's own schedule already knows when each of them teaches. Free windows
+   are computed on the same 30-minute grid as the board, merged into ranges,
+   and ranked. Nothing is revealed beyond busy/free for people the caller
+   chose by name. */
+
+app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const body = req.body || {};
+  const termId = Number(body.termId || 0);
+  const duration = Math.max(30, Math.min(180, Number(body.durationMinutes || 60)));
+  const ids = Array.from(new Set((Array.isArray(body.instructorIds) ? body.instructorIds : []).map((value: unknown) => Number(value)).filter((value: number) => value > 0))) as number[];
+  if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
+  if (ids.length < 2) { res.status(400).json({ error: "اختر أستاذين على الأقل" }); return; }
+  if (ids.length > 30) { res.status(400).json({ error: "الحد الأقصى ثلاثون مشاركاً" }); return; }
+
+  const [termRows, instructors] = await Promise.all([
+    Repository.getSchedulesByScope({ termId }),
+    Repository.getInstructors(),
+  ]);
+  const nameById = new Map(instructors.map(person => [person.AdInstructorId, person.AdInstructorName]));
+  const rowsByInstructor = new Map<number, FSchedule[]>(ids.map(id => [id, []]));
+  for (const item of termRows) {
+    const key = Number(item.AdInstructorId);
+    if (rowsByInstructor.has(key)) rowsByInstructor.get(key)!.push(item);
+  }
+
+  const STEP = SCHEDULE_SLOT_MINUTES;
+  const clock = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
+  const days = SCHEDULE_DAY_KEYS.map((dayKey, index) => {
+    const busyAt = (from: number, to: number) => ids.filter(id =>
+      (rowsByInstructor.get(id) || []).some(item =>
+        Boolean((item as any)[dayKey]) && timeToMinutes(item.fstarttime) < to && timeToMinutes(item.fendtime) > from));
+
+    const free: { start: string; end: string; minutes: number; startMinutes: number }[] = [];
+    const nearMiss: { start: string; end: string; busy: string[] }[] = [];
+    let runStart = -1;
+    for (let start = SCHEDULE_DAY_START; start + duration <= SCHEDULE_DAY_END; start += STEP) {
+      const busy = busyAt(start, start + duration);
+      if (!busy.length) {
+        if (runStart < 0) runStart = start;
+      } else {
+        if (runStart >= 0) {
+          free.push({ start: clock(runStart), end: clock(runStart === start - STEP ? runStart + duration : start - STEP + duration), minutes: (start - STEP - runStart) + duration, startMinutes: runStart });
+          runStart = -1;
+        }
+        if (busy.length === 1) {
+          const last = nearMiss[nearMiss.length - 1];
+          const name = nameById.get(busy[0]) || "زميل";
+          if (last && last.end === clock(start - STEP + duration) && last.busy[0] === name) last.end = clock(start + duration);
+          else nearMiss.push({ start: clock(start), end: clock(start + duration), busy: [name] });
+        }
+      }
+    }
+    if (runStart >= 0) {
+      const lastStart = SCHEDULE_DAY_END - duration;
+      free.push({ start: clock(runStart), end: clock(lastStart + duration), minutes: (lastStart - runStart) + duration, startMinutes: runStart });
+    }
+    return { dayKey, label: DAY_LABELS[index], free, nearMiss: nearMiss.slice(0, 3) };
+  });
+
+  /* Best pick: everyone free, longest run first, then closest to mid-morning —
+     a committee meets where the day has room, not at 19:00. */
+  const best = days
+    .flatMap(day => day.free.map(range => ({ day: day.dayKey, label: day.label, ...range })))
+    .sort((a, b) => b.minutes - a.minutes || Math.abs(a.startMinutes - 600) - Math.abs(b.startMinutes - 600))[0] || null;
+
+  res.json({
+    duration,
+    participants: ids.map(id => nameById.get(id) || `#${id}`),
+    days: days.map(({ dayKey, label, free, nearMiss }) => ({ dayKey, label, free: free.map(({ start, end, minutes }) => ({ start, end, minutes })), nearMiss })),
+    best: best ? { day: best.day, label: best.label, start: best.start, end: best.end } : null,
+  });
+});
+
 app.post("/api/schedules", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {
     AdCollegeId,
@@ -5811,7 +6061,7 @@ const TERM_WEEKS = 16;
  * body at all. That is the difference between a feed a department can hand to
  * four hundred people and one it cannot.
  */
-async function sendCalendar(req: Request, res: Response, name: string, termId: number, lectures: CalendarLecture[]) {
+async function sendCalendar(req: Request, res: Response, name: string, termId: number, lectures: CalendarLecture[], singles: CalendarSingle[] = []) {
   const term = (await Repository.getTerms()).find(row => row.AdTermId === termId);
   const startDate = term?.AdTermStart;
   const weeks = Number(term?.AdTermWeeks) || TERM_WEEKS;
@@ -5827,7 +6077,7 @@ async function sendCalendar(req: Request, res: Response, name: string, termId: n
     description: startDate
       ? `${term?.AdTermName || ""} · يبدأ ${startDate} ويستمر ${weeks} أسبوعاً · للقراءة فقط، ويُحدَّث من نفسه.`
       : `${term?.AdTermName || ""} · تواريخ الفصل غير مسجّلة، والمدة تقديرية (${weeks} أسبوعاً) · للقراءة فقط.`,
-    weeks, startDate, alarmMinutes, lectures,
+    weeks, startDate, alarmMinutes, lectures, singles,
   });
 
   /* Weak, because the only thing that must match is the meaning of the file:
@@ -5849,12 +6099,23 @@ app.get("/api/public/ics/:token", async (req: Request, res: Response) => {
   if (resolved.link.kind === "staff") { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
   const payload = await buildSharePayload(resolved.link);
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+  /* A lecture cancelled on one specific date disappears from that one date in
+     every subscribed phone — this is the feed "speaking by itself". A covered
+     date stays: the class still happens for its students. */
+  const exceptions = await Repository.getScheduleWeekExceptions(Number(resolved.link.AdTermId));
+  const cancelledBySchedule = new Map<number, string[]>();
+  for (const entry of exceptions) {
+    if (entry.kind !== "cancel") continue;
+    if (!cancelledBySchedule.has(entry.scheduleId)) cancelledBySchedule.set(entry.scheduleId, []);
+    cancelledBySchedule.get(entry.scheduleId)!.push(entry.date);
+  }
   await sendCalendar(req, res, payload.label || "الجدول الدراسي", resolved.link.AdTermId, payload.rows.map(row => ({
     id: row.id,
     title: [row.code, row.name].filter(Boolean).join(" · "),
     code: row.code, section: row.section, instructor: row.instructor,
     room: [row.room, row.hall].filter(Boolean).join(" / "),
     start: row.start, end: row.end, days: row.days, revision: row.rev,
+    cancelledDates: cancelledBySchedule.get(Number(row.id)),
   })));
 });
 
@@ -5886,11 +6147,39 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
   const person = instructors.find(row => calendarKey(token, row.AdInstructorId) === String(req.params.key || ""));
   if (!person) { res.status(404).type("text/plain; charset=utf-8").send("Not found"); return; }
 
-  const rows = (await Repository.getSchedulesByScope({
+  const collegeRows = await Repository.getSchedulesByScope({
     collegeId: resolved.link.AdCollegeId, termId: resolved.link.AdTermId,
-  })).filter(row => row.AdInstructorId === person.AdInstructorId);
+  });
+  const rows = collegeRows.filter(row => row.AdInstructorId === person.AdInstructorId);
   const courseById = new Map(courses.map(row => [row.AdCourseId, row]));
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
+
+  /* The personal feed follows the person, not the paper: a date they are absent
+     from (cancelled, or handed to a colleague) leaves THEIR calendar, and a
+     date they cover for someone else enters it as a single day. */
+  const exceptions = await Repository.getScheduleWeekExceptions(Number(resolved.link.AdTermId));
+  const goneDates = new Map<number, string[]>();
+  for (const entry of exceptions) {
+    if (!goneDates.has(entry.scheduleId)) goneDates.set(entry.scheduleId, []);
+    goneDates.get(entry.scheduleId)!.push(entry.date);
+  }
+  const rowById = new Map(collegeRows.map(row => [Number(row.id), row]));
+  const coverSingles = exceptions
+    .filter(entry => entry.kind === "cover" && Number(entry.coverInstructorId) === person.AdInstructorId)
+    .map(entry => {
+      const covered = rowById.get(Number(entry.scheduleId));
+      if (!covered) return null;
+      const course = courseById.get(covered.AdCourseId);
+      return {
+        id: entry.id,
+        date: entry.date,
+        start: covered.fstarttime, end: covered.fendtime,
+        title: `تغطية: ${covered.AdCourseName || course?.CourseName || "محاضرة"}${covered.SCode ? ` · شعبة ${covered.SCode}` : ""}`,
+        room: [covered.AdRoomCode, covered.AdRoomHall].filter(Boolean).join(" / "),
+        description: "تغطية ليوم واحد بطلب من القسم.",
+      };
+    })
+    .filter(Boolean) as CalendarSingle[];
 
   await sendCalendar(req, res, `جدول ${person.AdInstructorName || "الأستاذ"}`, resolved.link.AdTermId, rows.map(row => {
     const course = courseById.get(row.AdCourseId);
@@ -5901,8 +6190,9 @@ app.get("/api/public/ics/:token/:key", async (req: Request, res: Response) => {
       room: [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join(" / "),
       start: row.fstarttime, end: row.fendtime,
       days: shareDayIndexes(row), revision: Number(row.rev || 0),
+      cancelledDates: goneDates.get(Number(row.id)),
     };
-  }));
+  }), coverSingles);
 });
 
 /**

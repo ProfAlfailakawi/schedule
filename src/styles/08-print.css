@@ -1762,3 +1762,80 @@
     break-inside:avoid !important;page-break-inside:avoid !important;
   }
 }
+
+/* ==========================================================================
+   SAFARI OPT-IN — «أفقي تلقائياً»
+   Safari ignores `@page size`, so every wide sheet meets a portrait page
+   there. When (and only when) the person switches the toggle on, the print
+   press stamps html[data-print-rotate="1"] and each explicit landscape page
+   is PAINTED rotated inside Safari's portrait page: layout stays the true
+   297×210 sheet — columns, letterhead, pagination untouched — and only the
+   final paint turns 90° and shrinks slightly (--safari-rot-scale) to clear
+   the printer margins Safari always keeps. Chrome and every other engine
+   never see this attribute and keep their native landscape path.
+
+   Geometry: inside a 210mm RTL container a 297mm block overflows 87mm to the
+   LEFT, so the page's own origin sits at container-x −87mm. rotate(90°) about
+   that origin maps the sheet to x∈[−210s,0]; the translate walks it back to
+   x∈[0,210s] of the paper. Each page element is given a 297mm-tall slot
+   (210mm box + 87mm margin) so its rotated paint never crosses into the next
+   physical page.
+   ========================================================================== */
+@media print{
+  html[data-print-rotate="1"]{ --safari-rot-scale:.88; }
+
+  html[data-print-rotate="1"] body,
+  html[data-print-rotate="1"] #app-print-root{
+    width:210mm !important;
+    max-width:210mm !important;
+  }
+  html[data-print-rotate="1"] .print-only{
+    width:210mm !important;
+    max-width:210mm !important;
+    overflow:hidden !important;
+  }
+  html[data-print-rotate="1"] .print-report.print-wide{
+    width:210mm !important;
+    max-width:210mm !important;
+  }
+
+  html[data-print-rotate="1"] .print-report.print-wide .print-explicit-page,
+  html[data-print-rotate="1"] .print-comprehensive-page{
+    box-sizing:border-box !important;
+    width:297mm !important;
+    min-width:297mm !important;
+    max-width:297mm !important;
+    height:210mm !important;
+    min-height:210mm !important;
+    max-height:210mm !important;
+    overflow:hidden !important;
+    margin:0 0 87mm 0 !important;
+    /* The two closing terms centre the shrunken sheet on the paper:
+       half the freed width (105mm·(1−s)) and half the freed height. */
+    transform:
+      translate(
+        calc(87mm + 210mm * var(--safari-rot-scale) + 105mm * (1 - var(--safari-rot-scale))),
+        calc(148.5mm * (1 - var(--safari-rot-scale)))
+      )
+      rotate(90deg)
+      scale(var(--safari-rot-scale)) !important;
+    transform-origin:0 0 !important;
+    break-inside:avoid-page !important;
+    page-break-inside:avoid !important;
+  }
+
+  html[data-print-rotate="1"] .print-report.print-wide .print-explicit-page + .print-explicit-page,
+  html[data-print-rotate="1"] .print-comprehensive-page + .print-comprehensive-page{
+    break-before:page !important;
+    page-break-before:always !important;
+  }
+
+  /* The comprehensive book wrapper must not re-impose landscape width around
+     the rotated pages. */
+  html[data-print-rotate="1"] .print-comprehensive-book,
+  html[data-print-rotate="1"] .print-comprehensive-pages{
+    width:210mm !important;
+    min-width:0 !important;
+    max-width:210mm !important;
+  }
+}

@@ -120,20 +120,20 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             <span>دخول آمن</span>
             <div className="apex-access-title-row">
               <strong>أهلاً بعودتك</strong>
+              {/* A quiet, named door. The old version pulsed three rings next
+                  to the password field — an animation competing with the one
+                  thing this screen exists for. The journey deserves a name,
+                  not a heartbeat. */}
               <button
                 type="button"
-                className="apex-login-identity-trigger apex-login-identity-trigger--pulse"
+                className="apex-login-identity-trigger"
                 onClick={() => setIdentityOpen(true)}
                 aria-label="افتح رحلة SCHEDULE"
-                title="رحلة SCHEDULE"
+                title="ما صنعه النظام عبر السنوات"
                 data-guide-ignore="زر تعريفي قبل تسجيل الدخول يفتح رحلة SCHEDULE فقط ولا ينفذ إجراءً داخل النظام"
               >
-                <span className="apex-login-pulse-rings" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                </span>
                 <Sparkles aria-hidden="true" />
+                <span>الرحلة</span>
               </button>
             </div>
             <p>أكمل من حيث توقفت</p>
@@ -175,14 +175,20 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             </PrimaryButton>
           </form>
           <footer>
-            <span>الجدول الأكاديمي</span>
-            {demoEnabled ? (
-              <button type="button" className="demo-entry-icon" onClick={enterDemo} disabled={loading || demoLoading} aria-label="تجربة النظام" title="تجربة النظام" data-guide-ignore="دخول اختياري إلى بيئة Demo معزولة">
-                {demoLoading ? <span className="button-spinner" /> : <FlaskConical aria-hidden="true" />}
-              </button>
-            ) : null}
-            <InstallApp variant="login" />
-            <small>{new Date().getFullYear()}</small>
+            {/* Identity and year read as one quiet signature; the two real
+                doors — trying the system, installing it — carry their names. */}
+            <span className="apex-login-signature">
+              الجدول الأكاديمي <small>{new Date().getFullYear()}</small>
+            </span>
+            <span className="apex-login-doors">
+              {demoEnabled ? (
+                <button type="button" className="demo-entry-link" onClick={enterDemo} disabled={loading || demoLoading} data-guide-ignore="دخول اختياري إلى بيئة Demo معزولة">
+                  {demoLoading ? <span className="button-spinner" /> : <FlaskConical aria-hidden="true" />}
+                  تجربة النظام
+                </button>
+              ) : null}
+              <InstallApp variant="login" />
+            </span>
           </footer>
         </div>
       </section>

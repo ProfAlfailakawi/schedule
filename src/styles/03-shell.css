@@ -503,32 +503,74 @@ html[data-schedule-workspace="focus"] .schedule-control{
 }
 .shortcut-strip i{font-style:normal;font-size:var(--t-xs);color:var(--muted)}
 
-/* --- Onboarding ---------------------------------------------------------- */
+/* --- Onboarding ----------------------------------------------------------
+   One welcome, not a slideshow: a branded hero, every fact on the card at
+   once (each entering with a small stagger), and a single way out — into the
+   work. */
 
 .onboarding-backdrop{display:grid;place-items:center;padding:var(--s5)}
 .onboarding-card{
-  width:min(500px,100%);
-  padding:var(--s7);
+  width:min(560px,100%);
+  max-height:min(88dvh,720px);overflow:auto;
+  padding:0;
   border:1px solid var(--line);border-radius:var(--r-2xl);
   background:var(--surface);box-shadow:var(--shadow-lg);
   animation:sheet-up .3s var(--ease-out) both;
 }
-.onboarding-icon{
-  width:50px;height:50px;display:grid;place-items:center;
+.onboarding-hero{
+  padding:var(--s7) var(--s7) var(--s6);
+  background:
+    radial-gradient(120% 180% at 12% -40%, color-mix(in srgb, var(--gold, #c9a55f) 16%, transparent), transparent 55%),
+    linear-gradient(150deg, #14261f, #0e1a15);
+  color:#eee9db;
+}
+.onboarding-hero-brand{
+  display:inline-block;
+  font:600 11px/1 var(--font-mono);letter-spacing:.34em;
+  color:#c9a55f;
+}
+.onboarding-hero h2{
+  margin:var(--s4) 0 0;color:#f2efe6;
+  font-size:calc(var(--t-h2) + 2px);font-weight:700;line-height:1.5;text-wrap:balance;
+}
+.onboarding-hero p{margin:var(--s2) 0 0;color:#b5c2b3;font-size:var(--t-sm);line-height:1.75}
+.onboarding-facts{
+  list-style:none;margin:0;padding:var(--s5) var(--s7) 0;
+  display:grid;gap:var(--s3);
+}
+.onboarding-facts li{
+  display:grid;grid-template-columns:44px minmax(0,1fr);gap:var(--s4);align-items:start;
+  padding:var(--s3) 0;
+  animation:onboarding-fact-in .45s var(--ease-out) both;
+  animation-delay:calc(120ms + var(--fact-i, 0) * 90ms);
+}
+.onboarding-facts li + li{border-top:1px solid var(--line)}
+@keyframes onboarding-fact-in{
+  from{opacity:0;transform:translateY(8px)}
+  to{opacity:1;transform:none}
+}
+@media (prefers-reduced-motion: reduce){
+  .onboarding-facts li{animation:none}
+}
+.onboarding-fact-icon{
+  width:44px;height:44px;display:grid;place-items:center;margin-top:2px;
   border-radius:var(--r-md);background:var(--accent-soft);color:var(--accent);
 }
-.onboarding-icon svg{width:22px;height:22px}
-.onboarding-card h2{margin-top:var(--s4);font-size:var(--t-h2);font-weight:600}
-.onboarding-card p{margin-top:var(--s2);color:var(--muted);font-size:var(--t-sm);line-height:1.75}
-.onboarding-progress{display:flex;gap:var(--s1);margin-top:var(--s5)}
-.onboarding-progress i{width:22px;height:3px;border-radius:var(--r-full);background:var(--line);transition:background .2s var(--ease)}
-.onboarding-progress i.active{background:var(--accent)}
-.onboarding-actions{
-  display:flex;justify-content:space-between;align-items:center;
-  margin-top:var(--s6);padding-top:var(--s5);border-top:1px solid var(--line);
+.onboarding-fact-icon svg{width:20px;height:20px}
+.onboarding-facts small{
+  display:block;color:var(--accent);font-size:var(--t-xs);font-weight:700;letter-spacing:.04em;
 }
-.onboarding-actions>button:not(.btn){color:var(--muted);font-size:var(--t-sm);font-weight:500}
-.onboarding-actions>button:not(.btn):hover{color:var(--ink)}
+.onboarding-facts strong{display:block;margin-top:2px;color:var(--ink);font-size:var(--t-body);font-weight:700}
+.onboarding-facts p{margin:3px 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.7}
+.onboarding-actions{
+  display:flex;justify-content:flex-end;align-items:center;
+  margin:var(--s5) var(--s7) 0;padding:var(--s5) 0 var(--s6);border-top:1px solid var(--line);
+}
+@media (max-width:520px){
+  .onboarding-hero{padding:var(--s6) var(--s5) var(--s5)}
+  .onboarding-facts{padding-inline:var(--s5)}
+  .onboarding-actions{margin-inline:var(--s5)}
+}
 
 /* --------------------------------------------------------------------------
    NOT THE REAL DATABASE

@@ -121,10 +121,23 @@
 }
 .apex-login-form .btn-primary:hover:not(:disabled){background:var(--accent-strong);border-color:var(--accent-strong)}
 .apex-login-access footer{
-  display:flex;justify-content:space-between;gap:var(--s4);
+  display:flex;justify-content:space-between;align-items:center;gap:var(--s4);
   margin-top:var(--s6);padding-top:var(--s5);
   border-top:1px solid #26312d;color:#6d7a73;font-size:var(--t-xs);
 }
+.apex-login-signature{display:inline-flex;align-items:baseline;gap:8px;white-space:nowrap}
+.apex-login-signature small{color:#51605a;font-size:10.5px}
+.apex-login-doors{display:inline-flex;align-items:center;gap:10px}
+.demo-entry-link{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid color-mix(in srgb,#8fa49a 24%,transparent);border-radius:999px;
+  background:transparent;color:#95a69e;
+  padding:5px 12px;font-size:11px;font-weight:700;font-family:inherit;cursor:pointer;
+  transition:color .18s var(--ease),border-color .18s var(--ease),background .18s var(--ease);
+}
+.demo-entry-link svg{width:13px;height:13px}
+.demo-entry-link:hover:not(:disabled){color:#cfd9d1;border-color:color-mix(in srgb,#79a695 50%,transparent);background:color-mix(in srgb,#0d1714 70%,transparent)}
+.demo-entry-link:disabled{opacity:.55;cursor:default}
 
 /* ==========================================================================
    DASHBOARD — COMMAND DECK
@@ -1550,15 +1563,19 @@
 .apex-access-title-row strong{margin-top:0!important}
 .apex-login-identity-trigger{
   position:relative;inset:auto;z-index:2;flex:none;
-  display:grid;place-items:center;width:38px;height:38px;padding:0;
-  border:1px solid color-mix(in srgb,#8fa49a 28%,transparent);border-radius:13px;
+  display:inline-flex;align-items:center;gap:7px;
+  height:34px;padding:0 13px;
+  border:1px solid color-mix(in srgb,#8fa49a 26%,transparent);border-radius:999px;
   background:color-mix(in srgb,#0d1714 72%,transparent);color:#95a69e;
-  box-shadow:0 8px 22px color-mix(in srgb,#000 16%,transparent),0 0 0 1px color-mix(in srgb,#fff 2%,transparent) inset;
+  font-size:11.5px;font-weight:700;font-family:inherit;letter-spacing:.02em;
   cursor:pointer;transition:transform .18s var(--ease),border-color .18s var(--ease),background .18s var(--ease),color .18s var(--ease);
 }
-.apex-login-identity-trigger:hover{transform:translateY(-1px);border-color:color-mix(in srgb,#79a695 54%,transparent);background:#0d1714}
+.apex-login-identity-trigger:hover{
+  transform:translateY(-1px);color:#cfd9d1;
+  border-color:color-mix(in srgb,#79a695 54%,transparent);background:#0d1714;
+}
 .apex-login-identity-trigger:focus-visible{outline:3px solid color-mix(in srgb,#2b7d69 28%,transparent);outline-offset:3px}
-.apex-login-identity-trigger svg{width:18px;height:18px}
+.apex-login-identity-trigger svg{width:15px;height:15px;color:#c9a55f}
 .apex-login-identity-trigger--pulse{position:relative;isolation:isolate;overflow:visible;animation:loginJourneyBreath 4s cubic-bezier(0.25, 0.46, 0.45, 0.94) infinite}
 .apex-login-identity-trigger--pulse::before{
   content:"";position:absolute;pointer-events:none;border-radius:18px;
@@ -1601,7 +1618,7 @@
 @keyframes loginIdentityCard{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
 @media(max-width:680px){
   .apex-access-title-row{gap:10px}
-  .apex-login-identity-trigger{width:36px;height:36px;border-radius:12px}
+  .apex-login-identity-trigger{height:32px;padding:0 11px}
 }
 
 
@@ -2079,3 +2096,18 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .gate-facts svg{width:16px;height:16px;color:var(--muted)}
 .gate-facts b{font-size:11.5px;font-weight:700;color:var(--ink)}
 .gate-facts span{font-size:10.5px;color:var(--muted);line-height:1.4}
+
+/* Safari-only «أفقي تلقائياً» print toggle — sits with the print actions. */
+.safari-landscape-toggle{
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line);border-radius:999px;
+  background:var(--surface);color:var(--muted);
+  padding:7px 13px;font-size:12px;font-weight:700;font-family:inherit;cursor:pointer;
+  transition:color .15s var(--ease),border-color .15s var(--ease),background .15s var(--ease);
+}
+.safari-landscape-toggle svg{width:14px;height:14px}
+.safari-landscape-toggle:hover{color:var(--ink);border-color:var(--line-strong)}
+.safari-landscape-toggle.on{
+  color:var(--accent);background:var(--accent-soft);
+  border-color:color-mix(in srgb,var(--accent) 32%, transparent);
+}
