@@ -6836,12 +6836,12 @@ const degreeRuleForSection=async(sectionId:number,sectionName:string):Promise<De
 const isSummerTerm=(termName:string)=>/صيفي|صيفى|summer/i.test(String(termName||""));
 const graduateThreshold=(rule:DegreeRule,termName:string)=>
   isSummerTerm(termName)?Number(rule.graduateSummerPassed):Number(rule.graduateRegularPassed);
-const issueStudentProof=(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;nameMatched:boolean})=>{
+const issueStudentProof=async(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;nameMatched:boolean})=>{
   const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+20*60_000})).toString("base64url");
-  const signature=createHmac("sha256",studentIdentityKey).update(body).digest("base64url");return`${body}.${signature}`;
+  const signature=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");return`${body}.${signature}`;
 };
-const verifyStudentProof=(token:string)=>{
-  try{const[body,signature]=String(token||"").split("."),expected=createHmac("sha256",studentIdentityKey).update(body).digest("base64url");if(!body||signature!==expected)return null;const payload=JSON.parse(Buffer.from(body,"base64url").toString("utf8"));return Number(payload.exp)>Date.now()?payload:null;}catch{return null;}
+const verifyStudentProof=async(token:string)=>{
+  try{const[body,signature]=String(token||"").split("."),expected=createHmac("sha256",await studentIdentityKey()).update(body).digest("base64url");if(!body||signature!==expected)return null;const payload=JSON.parse(Buffer.from(body,"base64url").toString("utf8"));return Number(payload.exp)>Date.now()?payload:null;}catch{return null;}
 };
 
 const asciiDigits = (value: unknown) => String(value ?? "")
@@ -6969,7 +6969,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const terms=await Repository.getTerms();
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const required=graduateThreshold(rule,termName),summer=isSummerTerm(termName);
-  const eligible=passedUnits>=required,proofToken=issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,nameMatched});
+  const eligible=passedUnits>=required,proofToken=await issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,nameMatched});
   res.json({eligible,passedUnits,requiredUnits:required,termName,summer,
     message:eligible
       ?`تم التحقق: اجتزت ${passedUnits} وحدة، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}. يمكنك متابعة الطلب.`
@@ -7027,7 +7027,7 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   const details="";
   let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
   if(requestType==="graduate"){
-    const proof=verifyStudentProof(String(body.proofToken||""));
+    const proof=await verifyStudentProof(String(body.proofToken||""));
     if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId){res.status(400).json({error:"ارفع كشف الدرجات وتحقق منه قبل إرسال حالة الخريج"});return;}
     passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=(await degreeRuleForSection(sectionId,String(section.AdSectionName||""))).degreeUnits;eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
