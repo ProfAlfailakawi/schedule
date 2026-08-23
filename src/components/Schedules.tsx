@@ -1331,8 +1331,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const id = Number(row.AdInstructorId);
       if (id) load.set(id, (load.get(id) || 0) + 1);
     });
-    return [...load.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
-  }, [rows]);
+    const scheduled = [...load.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    // A delegate explicitly marked «يدرّس هذا الفصل» is part of the open
+    // department's teaching roster even before their first appointment exists.
+    // Keep scheduled staff first, then the selected delegates.
+    return [...new Set([...scheduled, ...visitingIds])];
+  }, [rows, visitingIds]);
 
   /**
    * A whole working day to change your mind.
@@ -7805,9 +7809,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   </select>
                   {!courseNames.length && form.AdSectionId ? <small className="field-inline-hint">لا تظهر مقررات لهذا القسم بعد. جرّبتُ الآن الجلب المباشر للقسم الحالي؛ إن استمرت القائمة فارغة فراجع بيانات المقررات في القسم نفسه.</small> : null}
                 </Field>
-                <Field
-                  label={<span className="field-label-line"><span className="field-label-required-inline">رمز المقرر الدراسي <span className="required" aria-hidden="true">*</span></span>{!editId && sectionHint ? <small className="field-inline-hint">{sectionHint}</small> : null}</span>}
-                >
+                <Field label="رمز المقرر الدراسي" required>
                   <select
                     value={form.AdCourseId || ""}
                     disabled={!courseName}
@@ -7834,7 +7836,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     ))}
                   </select>
                 </Field>
-                <Field label="الشعبة" required>
+                <Field
+                  label={<span className="field-label-line"><span className="field-label-required-inline">الشعبة <span className="required" aria-hidden="true">*</span></span>{!editId && sectionHint ? <small className="field-inline-hint">{sectionHint}</small> : null}</span>}
+                >
                   <input
                     value={form.SCode}
                     maxLength={20}
@@ -8118,6 +8122,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </div>
                     <button
                       type="button"
+                      data-guide-ignore="تثبيت قاعة جديدة من نموذج الموعد إجراء محلي تابع لحقل القاعة"
                       disabled={roomPinBusy}
                       onClick={() => void pinDepartmentRoom(form.AdRoomCode, form.AdRoomHall)}
                     >
@@ -9091,32 +9096,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               {peers.length > 5 ? <span className="presence-chip" title={`و${countOf(peers.length - 5, AR.colleague)} غيرهم`}>+{peers.length - 5}</span> : null}
             </span>
           ) : null}
-          {liveClash.pairs ? (
-            <button
-              type="button"
-              className="schedule-radar radar-clash"
-              data-guide-ignore="يبرز التداخلات القائمة على الأسبوع للقراءة فقط ولا يعدّل الجدول"
-              onClick={() => {
-                if (phoneReadOnly) {
-                  setReviewOpen(true);
-                  return;
-                }
-                setViewMode("week");
-                setReviewFocus(new Set([...liveClash.ids]));
-              }}
-              title={`هذه ليست حالة الاعتماد؛ هي تداخلات موجودة الآن في بيانات الجدول — أستاذ: ${liveClash.instructorPairs.toLocaleString("ar-KW-u-nu-latn")} · قاعة: ${liveClash.roomPairs.toLocaleString("ar-KW-u-nu-latn")} · تكرار: ${liveClash.duplicatePairs.toLocaleString("ar-KW-u-nu-latn")} — اضغط لمراجعتها بصرياً على الأسبوع`}
-            >
-              {/* "تعارض" implied something unsaveable, and the program never lets
-                  a real conflict be saved — so what the radar surfaces is an
-                  existing OVERLAP (usually inherited from legacy data), which is
-                  what the honest word describes. */}
-              <AlertTriangle aria-hidden="true" />
-              {countOf(liveClash.pairs, AR.clash)}
-              {/* The count alone said nothing about what pressing it would do,
-                  so the chip read as a warning with no exit. */}
-              <em>ليست اعتماداً · راجعها على الأسبوع</em>
-            </button>
-          ) : null}
+          {/* التداخلات تُراجع من «مراجعة الاعتماد» ومن تمييز البطاقات نفسها؛
+              أزيل العداد المنفصل لأنه كان يكرر المعلومة بصياغة غير واضحة. */}
           {/* What arrived from the department's own instructors. It is the only
               chip here that is about people rather than rows, so it says who,
               not how many. */}
@@ -9270,6 +9251,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   <button
                     key={basis.key}
                     type="button"
+                    data-guide-ignore="تغيير أساس ألوان القائمة عرض بصري فقط"
                     className={hueBy === basis.key ? "is-on" : ""}
                     aria-pressed={hueBy === basis.key}
                     onClick={() => setHueBy(basis.key)}
@@ -9308,6 +9290,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     >
                       <button
                         type="button"
+                        data-guide-ignore="إبراز عنصر من مفتاح الألوان في القائمة عرض بصري فقط"
                         className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
                         aria-pressed={hueFocus.has(item.key)}
                         disabled={folded}
@@ -9318,6 +9301,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       </button>
                       <button
                         type="button"
+                        data-guide-ignore="إخفاء عنصر من مفتاح الألوان مؤقتاً عرض بصري فقط"
                         className="week-legend-eye"
                         aria-pressed={folded}
                         aria-label={folded ? `إظهار ${item.label}` : `إخفاء ${item.label} من القائمة`}

@@ -572,7 +572,7 @@ const stripPatterns={
   code:/^\d{7}$/,
   refcode:/^\d{12}$/,
   reference:/^\d{5}$/,
-  scode:/^\d{3,4}$/,
+  scode:/^\d{1,4}$/,
   building:/^\d{3}[A-Z]\d{2}$/,
   hall:/^[A-Z]\d{1,3}$/,
   days:/^[1-5](?: ?[1-5])*$/,
@@ -741,8 +741,8 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   const unclaimed=columnBands.map((band,index)=>({band,index,width:band.right-band.left}))
     .filter(item=>!taken.has(item.index)).sort((a,b)=>b.width-a.width);
   const widest=unclaimed[0];
-  const leftmostUnclaimed=unclaimed.find(item=>item.index===0);
-  const instructorBand=leftmostUnclaimed || unclaimed.find(item=>item.index!==widest?.index);
+  const leftOpen=unclaimed.find(item=>item.index===0);
+  const instructorBand=leftOpen || unclaimed.find(item=>item.index!==widest?.index);
   const codePattern=refcodeIndex>=0?stripPatterns.refcode:stripPatterns.code;
   const codeSignalIndex=refcodeIndex>=0?refcodeIndex:codeIndex;
   const codeHits=codeSignalIndex>=0
@@ -800,35 +800,16 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
      recovered — and the letter, when the scan turned it into a digit, morphs
      back at a KNOWN position, anchored by the prefix. This is what the free-
      floating letter repair reverted earlier could never promise. */
-  const validBuildings:string[]=[];
-  for(let row=0;row<bands.length;row++){
-    const value=buildingAt(row).replace(/\s+/g,"").toUpperCase();
-    if(stripPatterns.building.test(value))validBuildings.push(value);
-  }
-  const prefixVotes=new Map<string,number>();
-  for(const value of validBuildings)prefixVotes.set(value.slice(0,3),(prefixVotes.get(value.slice(0,3))||0)+1);
-  const branchPrefix=[...prefixVotes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
-  const LETTER_FROM_DIGIT:Record<string,string>={"8":"B","6":"G","0":"O","5":"S","1":"I","4":"A","7":"T"};
-  const repairBuilding=(raw:string)=>{
-    let value=raw.replace(/\s+/g,"").toUpperCase().replace(/O(?=\d{2}$)/,"0");
-    if(stripPatterns.building.test(value))return value;
-    if(!branchPrefix)return value;
-    const tail=value.replace(/[^0-9A-Z]/g,"");
-    // [prefix?][letter][2 digits] — the tail is the recoverable half
-    const m=tail.match(/([A-Z])(\d{2})$/);
-    if(m)return `${branchPrefix}${m[1]}${m[2]}`;
-    const digits=tail.replace(/\D/g,"");
-    if(digits.length>=3){
-      const letter=LETTER_FROM_DIGIT[digits.slice(-3,-2)];
-      if(letter)return `${branchPrefix}${letter}${digits.slice(-2)}`;
-    }
-    return value;
+  // Rooms are identifiers, not prose. Never reconstruct a plausible room from
+  // ambiguous OCR. A wrong room is more dangerous than an empty one because it
+  // can be published unnoticed; only validator-clean values survive.
+  const safeBuilding=(raw:string)=>{
+    const value=raw.replace(/\s+/g,"").toUpperCase();
+    return stripPatterns.building.test(value)?value:"";
   };
-  const repairHall=(raw:string)=>{
-    let value=raw.replace(/\s+/g,"").toUpperCase();
-    // O inside the digits of a hall is always zero: F«O»7 is F07.
-    if(/^[A-Z]/.test(value))value=value[0]+value.slice(1).replace(/O/g,"0");
-    return stripPatterns.hall.test(value)?value:value.slice(0,6);
+  const safeHall=(raw:string)=>{
+    const value=raw.replace(/\s+/g,"").toUpperCase();
+    return stripPatterns.hall.test(value)?value:"";
   };
 
   const rowsOut:GridRow[]=[];
@@ -861,15 +842,15 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
       end=`${sorted[sorted.length-1].slice(0,2)}:${sorted[sorted.length-1].slice(2)}`;
     }
     let scode=scodeAt(row).replace(/\D/g,"");
-    if(scode.length>3)scode=scode.slice(-3);
+    if(scode.length>4)scode="";
     rowsOut.push({
       code,reference,scode,
       courseText:normalizeCell(nameCells.cells[row]||""),
       instructorText:normalizeCell(instructorCells.cells[row]||""),
       days:daysAt(row).replace(/[^1-5 ]/g,"").trim(),
       start,end,
-      building:repairBuilding(buildingAt(row)),
-      hall:repairHall(hallAt(row)),
+      building:safeBuilding(buildingAt(row)),
+      hall:safeHall(hallAt(row)),
     });
   }
   const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
@@ -1217,7 +1198,9 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     return{item,score};
   }).sort((a,b)=>b.score-a.score);
   const top=ranked[0],runner=ranked[1];
-  if(top&&top.score>=0.58&&(!runner||top.score-runner.score>=0.08))return top.item.person;
+  // OCR must fail blank rather than attach the wrong lecturer. Only accept a
+  // fuzzy fallback when it is overwhelmingly better than the runner-up.
+  if(top&&top.score>=0.82&&(!runner||top.score-runner.score>=0.18))return top.item.person;
   return undefined;
 }
 
@@ -1322,7 +1305,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       sourceOrder:order++,
       referenceNumber:grid.reference,
       AdCourseId:course.AdCourseId,AdCourseName:course.CourseName,SCode:grid.scode,
-      AdInstructorId:instructorHit?.AdInstructorId||0,
+      AdInstructorId:instructorHit?.person.AdInstructorId||0,
       ...flags,
       fstarttime:grid.start,fendtime:grid.end,
       AdRoomCode:grid.building,AdRoomHall:grid.hall,
@@ -1459,7 +1442,10 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     const courseCode=toAscii(String(courseHit.course.CourseCode||"")).replace(/\D/g,"");
     const runs=cells.flatMap(cell=>toAscii(cell.text).match(/\d+/g)||[]);
     const reference=runs.find(value=>value.length===5)||"";
-    const section=runs.find(value=>value.length===3&&value!==courseCode.slice(-3))||"";
+    const referenceIndex=runs.findIndex(value=>value.length===5);
+    const nearbySection=referenceIndex>=0 ? runs.slice(Math.max(0,referenceIndex-2),referenceIndex+3)
+      .find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference) : undefined;
+    const section=nearbySection || runs.find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference)||"";
 
     /* Preserve what the scan actually printed even when no catalogue record can
        be chosen safely. This makes every doctor name visible in the preview,
@@ -1474,7 +1460,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     rows.push({
       sourceOrder:order++,referenceNumber:reference,
       AdCourseId:courseHit.course.AdCourseId,AdCourseName:courseName,SCode:section,
-      AdInstructorId:instructorHit?.AdInstructorId||0,
+      AdInstructorId:instructorHit?.person.AdInstructorId||0,
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCell,

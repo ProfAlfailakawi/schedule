@@ -1314,7 +1314,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
               <Table2 aria-hidden="true" />التقرير الشامل
             </SecondaryButton>
-            <SecondaryButton type="button" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="تقرير نسخة PDF المعتمدة مقارنة بالجدول الحالي">
+            <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="تقرير نسخة PDF المعتمدة مقارنة بالجدول الحالي">
               <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير PDF المعتمد"}
             </SecondaryButton>
           </div>

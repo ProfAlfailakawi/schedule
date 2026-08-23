@@ -7736,3 +7736,16 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .schedule-new-room-note,.qc-new-room{grid-template-columns:auto minmax(0,1fr)}
   .schedule-new-room-note button,.qc-new-room button{grid-column:1/-1;width:100%}
 }
+
+
+/* V33 — current review: the wide week canvas must never widen its parent.
+   Only its own scrollers may be wider than the content column. */
+.schedule-page{min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:clip}
+.schedule-page>.schedule-control{box-sizing:border-box!important;min-width:0!important;width:100%!important;max-width:100%!important}
+
+/* The smart list identity/legend is useful on desktop but crowds the phone and
+   breaks the compact header. The phone keeps the actual list only. */
+@media(max-width:760px){
+  .schedule-phone .schedule-agenda-surface .agenda-head,
+  .schedule-phone .schedule-agenda-surface .agenda-legend{display:none!important}
+}

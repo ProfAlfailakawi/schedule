@@ -564,7 +564,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         {!scopeReady ? (
           <p className="transfer-note"><AlertTriangle />اختر الكلية والقسم والفصل أولاً.</p>
         ) : null}
-        {error ? <p className="transfer-error"><AlertTriangle />{error}</p> : null}
+        {error && tab !== "visiting" ? <p className="transfer-error"><AlertTriangle />{error}</p> : null}
 
         <div className="transfer-body">
           {tab === "export" ? (
@@ -668,7 +668,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy}>
                         {busy ? "يجهّز…" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                       </PrimaryButton>
-                      {importKind==="authority-pdf" ? <SecondaryButton type="button" onClick={() => void saveExcelDraft(false)} disabled={busy}>حفظ كمسودة فقط</SecondaryButton> : null}
+                      {importKind==="authority-pdf" ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy}>حفظ كمسودة فقط</SecondaryButton> : null}
                     </div>
                   ) : (
                     <p className="muted">صحّح الخانات الحمراء ثم اعتمدها — لا يُنشر صف ناقص أو غير مطابق.</p>
@@ -736,19 +736,20 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <option key={term.AdTermId} value={term.AdTermId}>{term.AdTermName}</option>
                   ))}
                 </select>
-                <SecondaryButton type="button" onClick={copyRoster} disabled={!copyFrom || !copySelected.length || busy}><Copy />انسخ المحدد</SecondaryButton>
+                <SecondaryButton type="button" data-guide-ignore="نسخ منتدبي فصل بعد تحديدهم إجراء بيانات محلي داخل أداة المنتدبين" onClick={copyRoster} disabled={!copyFrom || !copySelected.length || busy}><Copy />انسخ المحدد</SecondaryButton>
               </div>
               {copyFrom ? <div className="roster-copy-picks">
-                <header><strong>من سيتم نسخه؟</strong><button type="button" onClick={()=>setCopySelected(copySelected.length===copyIds.length?[]:[...copyIds])}>{copySelected.length===copyIds.length&&copyIds.length?"إلغاء تحديد الكل":"تحديد الكل"}</button></header>
+                <header><strong>من سيتم نسخه؟</strong><button type="button" data-guide-ignore="تحديد الكل في قائمة نسخ المنتدبين لا يغير البيانات حتى الضغط على النسخ" onClick={()=>setCopySelected(copySelected.length===copyIds.length?[]:[...copyIds])}>{copySelected.length===copyIds.length&&copyIds.length?"إلغاء تحديد الكل":"تحديد الكل"}</button></header>
                 {copyIds.length ? copyIds.map(id => { const person=copyPeople.find(item=>item.AdInstructorId===id)||directory.find(item=>item.AdInstructorId===id); const on=copySelected.includes(id); return <label key={id}><input type="checkbox" checked={on} onChange={()=>setCopySelected(current=>on?current.filter(x=>x!==id):[...current,id])}/><span>{person?.AdInstructorName||`منتدب ${id}`}</span></label>; }) : <small>لا يوجد منتدبون في هذا الفصل.</small>}
               </div> : null}
 
               <div className="roster-add">
                 <div className="roster-add-head"><UserPlus aria-hidden="true" /><strong>أضف منتدباً لقائمة القسم</strong></div>
+                {error && !editingDelegate ? <p className="transfer-error roster-local-error"><AlertTriangle />{error}</p> : null}
                 <div className="roster-add-fields">
                   <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="اسم المنتدب" aria-label="اسم المنتدب الجديد" />
                   <input value={newCivil} onChange={e => setNewCivil(e.target.value.replace(/[^\d]/g, ""))} onBlur={()=>{if(newCivil&& !validateCivilId(newCivil).isValid)setError(validateCivilId(newCivil).message||"الرقم المدني غير صحيح.");}} placeholder="الرقم المدني" inputMode="numeric" dir="ltr" maxLength={12} aria-label="الرقم المدني للمنتدب الجديد" />
-                  <PrimaryButton type="button" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}><Plus />أضف للقسم</PrimaryButton>
+                  <PrimaryButton type="button" data-guide-ignore="إضافة منتدب إلى دليل القسم إجراء إداري واضح داخل أداة المنتدبين" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}><Plus />أضف للقسم</PrimaryButton>
                 </div>
                 <small className="roster-rule-note">يمكن أن يكون المنتدب نفسه مسجلاً في أكثر من قسم، لكن لا يمكن إضافته مرتين داخل القسم نفسه.</small>
               </div>
@@ -759,19 +760,22 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                 {visibleDirectory.map(person => {
                   const on=roster.includes(person.AdInstructorId),editing=editingDelegate===person.AdInstructorId;
                   return <article key={person.AdInstructorId} className={on?"is-term-on":""}>
-                    {editing ? <div className="roster-edit-fields">
+                    {editing ? <div className="roster-edit-wrap">
+                      {error ? <p className="transfer-error roster-local-error"><AlertTriangle />{error}</p> : null}
+                      <div className="roster-edit-fields">
                       <input value={editName} onChange={e=>setEditName(e.target.value)} aria-label="تعديل اسم المنتدب"/>
                       <input value={editCivil} onChange={e=>setEditCivil(e.target.value.replace(/[^\d]/g,""))} onBlur={()=>{if(editCivil && !validateCivilId(editCivil).isValid)setError(validateCivilId(editCivil).message||"الرقم المدني غير صحيح.");}} inputMode="numeric" dir="ltr" maxLength={12} aria-label="تعديل الرقم المدني"/>
-                      <PrimaryButton type="button" onClick={()=>void saveDelegateEdit(person.AdInstructorId)} disabled={busy}>حفظ</PrimaryButton>
-                      <SecondaryButton type="button" onClick={()=>setEditingDelegate(0)} disabled={busy}>إلغاء</SecondaryButton>
+                      <PrimaryButton type="button" data-guide-ignore="حفظ تعديل بيانات منتدب داخل أداة المنتدبين" onClick={()=>void saveDelegateEdit(person.AdInstructorId)} disabled={busy}>حفظ</PrimaryButton>
+                      <SecondaryButton type="button" data-guide-ignore="إلغاء تحرير منتدب لا يغير البيانات" onClick={()=>{setEditingDelegate(0);setError(null);}} disabled={busy}>إلغاء</SecondaryButton>
+                      </div>
                     </div> : <>
-                      <button type="button" className={`roster-term-toggle ${on?"on":""}`} onClick={()=>void saveRoster(on?roster.filter(id=>id!==person.AdInstructorId):[...roster,person.AdInstructorId])} aria-pressed={on}>
+                      <button type="button" data-guide-ignore="تحديد عضوية المنتدب في الفصل الحالي إجراء واضح داخل أداة المنتدبين" className={`roster-term-toggle ${on?"on":""}`} onClick={()=>void saveRoster(on?roster.filter(id=>id!==person.AdInstructorId):[...roster,person.AdInstructorId])} aria-pressed={on}>
                         {on?<Check aria-hidden="true"/>:<Plus aria-hidden="true"/>}<span>{on?"يدرّس هذا الفصل":"أضفه لهذا الفصل"}</span>
                       </button>
                       <span className="instructor-identity"><b>{person.AdInstructorName}</b><small dir="ltr">{person.AdInstructorCivil||"—"}</small></span>
                       <div className="roster-row-actions">
-                        <button type="button" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
-                        <button type="button" className="danger" onClick={()=>void removeDelegate(person.AdInstructorId)} aria-label={`حذف ${person.AdInstructorName} من قائمة القسم`} title="حذف من قائمة القسم" data-guide-ignore="حذف منتدب من دليل القسم"><Trash2/></button>
+                        <button type="button" data-guide-ignore="فتح تحرير المنتدب داخل صفه" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
+                        <button type="button" data-guide-ignore="حذف المنتدب من دليل القسم له تأكيد مستقل قبل التنفيذ" className="danger" onClick={()=>void removeDelegate(person.AdInstructorId)} aria-label={`حذف ${person.AdInstructorName} من قائمة القسم`} title="حذف من قائمة القسم"><Trash2/></button>
                       </div>
                     </>}
                   </article>;

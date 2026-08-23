@@ -388,7 +388,7 @@ export default function QuickCreatePopover({
             <small>يمكنك إنشاء الموعد بدون تثبيت، أو إضافتها الآن إلى قائمة قاعات القسم.</small>
           </div>
           {onPinRoom ? (
-            <button type="button" disabled={roomPinBusy} onClick={() => void onPinRoom(draft.room, draft.hall)}>
+            <button type="button" data-guide-ignore="تثبيت قاعة جديدة من الإدخال السريع إجراء محلي تابع لحقل القاعة" disabled={roomPinBusy} onClick={() => void onPinRoom(draft.room, draft.hall)}>
               {roomPinBusy ? "أثبت…" : "ثبّت القاعة"}
             </button>
           ) : null}

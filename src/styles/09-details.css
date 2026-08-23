@@ -1761,3 +1761,6 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .roster-row-actions{display:flex;align-items:center;gap:4px}.roster-row-actions button{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);cursor:pointer}.roster-row-actions button:hover{color:var(--accent);border-color:var(--accent)}.roster-row-actions button.danger:hover{color:var(--danger);border-color:var(--danger)}.roster-row-actions svg{width:14px;height:14px}
 .roster-edit-fields{grid-column:1/-1;display:grid;grid-template-columns:minmax(180px,1fr) minmax(140px,.55fr) auto auto;gap:7px}.roster-edit-fields input{min-width:0;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);padding:8px 10px}
 @media(max-width:700px){.roster-directory>article{grid-template-columns:1fr auto}.roster-term-toggle{grid-column:1/-1;justify-self:start}.roster-edit-fields{grid-template-columns:1fr}.roster-edit-fields .btn{width:100%}}
+
+.roster-local-error{margin:0 0 10px!important}
+.roster-edit-wrap{display:grid;gap:8px;min-width:0}

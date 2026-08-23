@@ -1542,7 +1542,14 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
     const canReadSection = Boolean(req.user?.IsAdminUser || req.scopes?.some(scope => scope.AdSectionId === sectionId));
     if (!canReadSection) { res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" }); return; }
     const scopedInstructors = await Repository.getInstructorsByScope(sectionId, termId);
-    res.json(sortArabicNamed(scopedInstructors, row => row.AdInstructorName));
+    // «يدرّس هذا الفصل» must make a delegate selectable before their first row
+    // exists. Merge the term roster into the ordinary scoped staff list.
+    const rosterIds = collegeId && termId ? await Repository.getVisitingRoster(collegeId, sectionId, termId) : [];
+    const rosterPeople = rosterIds.length
+      ? (await Repository.getInstructors()).filter(person => rosterIds.includes(Number(person.AdInstructorId)))
+      : [];
+    const merged = [...new Map([...scopedInstructors, ...rosterPeople].map(person => [Number(person.AdInstructorId), person])).values()];
+    res.json(sortArabicNamed(merged, row => row.AdInstructorName));
     return;
   }
 
@@ -2594,7 +2601,7 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
     }
   }
 
-  const [rows, instructors, courses, visitingInstructorIds] = await Promise.all([
+  const [rows, scopedInstructors, courses, visitingInstructorIds] = await Promise.all([
     readSchedulesForRequest(req, collegeId, sectionId, termId),
     sectionId
       ? Repository.getInstructorsByScope(sectionId, termId)
@@ -2602,6 +2609,11 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
     sectionId ? Repository.getCoursesBySection(sectionId) : Promise.resolve([]),
     sectionId && collegeId ? Repository.getVisitingRoster(collegeId, sectionId, termId) : Promise.resolve([] as number[]),
   ]);
+  const visitingPeople = visitingInstructorIds.length
+    ? (await Repository.getInstructors()).filter(person => visitingInstructorIds.includes(Number(person.AdInstructorId)))
+    : [];
+  const instructors = [...new Map([...scopedInstructors, ...visitingPeople].map(person => [Number(person.AdInstructorId), person])).values()]
+    .sort((a,b)=>String(a.AdInstructorName||"").localeCompare(String(b.AdInstructorName||""),"ar"));
 
   res.json({
     context: { collegeId, sectionId, termId },

@@ -133,7 +133,7 @@ export default function ImportPreviewTable({ rows, courses, instructors, onRows 
                         {instructors.map(item => <option key={item.AdInstructorId} value={item.AdInstructorId}>{item.AdInstructorName}</option>)}
                       </select>
                     </span>
-                  ) : (person?.AdInstructorName || String(row.sourceInstructorText || "").trim() || "—")}
+                  ) : (person?.AdInstructorName || "—")}
                 </td>
                 <td className="import-row-tools">
                   <button
