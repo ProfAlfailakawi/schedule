@@ -606,8 +606,8 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   /* Column bands between consecutive rules, plus the open band left of the
      first rule where this layout keeps the instructor names. */
   const columnBands:{left:number;right:number}[]=[];
-  const leftOpen=Math.max(0,cols[0]-Math.round(image.width*0.11));
-  if(cols[0]>image.width*0.04)columnBands.push({left:leftOpen,right:cols[0]});
+  const leftOpenStart=Math.max(0,cols[0]-Math.round(image.width*0.11));
+  if(cols[0]>image.width*0.04)columnBands.push({left:leftOpenStart,right:cols[0]});
   for(let i=0;i<cols.length-1;i++){
     const width=cols[i+1]-cols[i];
     if(width>=Math.max(18,image.width*0.008))columnBands.push({left:cols[i],right:cols[i+1]});
@@ -1305,7 +1305,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       sourceOrder:order++,
       referenceNumber:grid.reference,
       AdCourseId:course.AdCourseId,AdCourseName:course.CourseName,SCode:grid.scode,
-      AdInstructorId:instructorHit?.person.AdInstructorId||0,
+      AdInstructorId:instructorHit?.AdInstructorId||0,
       ...flags,
       fstarttime:grid.start,fendtime:grid.end,
       AdRoomCode:grid.building,AdRoomHall:grid.hall,
@@ -1460,7 +1460,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     rows.push({
       sourceOrder:order++,referenceNumber:reference,
       AdCourseId:courseHit.course.AdCourseId,AdCourseName:courseName,SCode:section,
-      AdInstructorId:instructorHit?.person.AdInstructorId||0,
+      AdInstructorId:instructorHit?.AdInstructorId||0,
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCell,
