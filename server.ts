@@ -670,29 +670,53 @@ const AUTHORITY_PDF_COMPARE_FIELDS = [
 function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[]){
   const baseline=[...(baselineInput||[])].sort((a:any,b:any)=>Number(a.sourceOrder)-Number(b.sourceOrder));
   const current=[...(currentInput||[])];
-  const baselineOrders=new Set<number>(baseline.map((row:any)=>Number(row.sourceOrder)).filter(Number.isFinite));
-  const currentByOrder=new Map<number,any>();
-  current.forEach((row:any)=>{
-    const order=Number(row.sourceOrder);
-    if(Number.isFinite(order)&&baselineOrders.has(order))currentByOrder.set(order,row);
-  });
+  const consumed=new Set<number>();
+  const refKey=(value:any)=>String(value||"").replace(/[\s\u200e\u200f\u202a-\u202e]/g,"").trim();
+  const sectionKey=(row:any)=>`${Number(row?.AdCourseId||0)}|${String(row?.SCode||"").trim()}`;
+  const uniqueIndex=(predicate:(row:any)=>boolean)=>{
+    const matches:number[]=[];
+    current.forEach((row:any,index:number)=>{if(!consumed.has(index)&&predicate(row))matches.push(index);});
+    return matches.length===1?matches[0]:-1;
+  };
+  const matchIndex=(source:any)=>{
+    const order=Number(source?.sourceOrder);
+    if(Number.isFinite(order)){
+      const index=uniqueIndex((row:any)=>Number(row?.sourceOrder)===order);
+      if(index>=0)return index;
+    }
+    /* Older published rows may pre-date sourceOrder persistence. The reference
+       number printed by the authority PDF is the safest stable fallback and
+       keeps an ordinary edit classified as “changed”, not delete + add. */
+    const reference=refKey(source?.referenceNumber);
+    if(reference){
+      const index=uniqueIndex((row:any)=>refKey(row?.referenceNumber)===reference);
+      if(index>=0)return index;
+    }
+    /* Last conservative fallback for legacy rows: course + section must be
+       unique inside the live table. Ambiguous matches are deliberately refused. */
+    const signature=sectionKey(source);
+    if(!signature.startsWith("0|")){
+      const index=uniqueIndex((row:any)=>sectionKey(row)===signature);
+      if(index>=0)return index;
+    }
+    return -1;
+  };
   const reportRows:any[]=[];
   baseline.forEach((source:any)=>{
-    const order=Number(source.sourceOrder);
-    const next=currentByOrder.get(order);
-    if(!next){
+    const index=matchIndex(source);
+    if(index<0){
       reportRows.push({status:"deleted",changedFields:[],referenceNumber:String(source.referenceNumber||""),source,current:null});
       return;
     }
+    consumed.add(index);
+    const next=current[index];
     const changedFields=AUTHORITY_PDF_COMPARE_FIELDS.filter(field=>String(source[field]??"")!==String(next[field]??""));
-    reportRows.push({status:changedFields.length?"changed":"unchanged",changedFields,referenceNumber:String(source.referenceNumber||""),source,current:next});
+    reportRows.push({status:changedFields.length?"changed":"unchanged",changedFields,referenceNumber:String(source.referenceNumber||next.referenceNumber||""),source,current:next});
   });
-  current.filter((row:any)=>{
-    const order=Number(row.sourceOrder);
-    return !Number.isFinite(order)||!baselineOrders.has(order);
-  }).forEach((row:any)=>reportRows.push({
-    status:"added",changedFields:[...AUTHORITY_PDF_COMPARE_FIELDS],referenceNumber:"",source:null,current:{...row,referenceNumber:""}
-  }));
+  current.forEach((row:any,index:number)=>{
+    if(consumed.has(index))return;
+    reportRows.push({status:"added",changedFields:[...AUTHORITY_PDF_COMPARE_FIELDS],referenceNumber:String(row.referenceNumber||""),source:null,current:row});
+  });
   const counts=reportRows.reduce((acc:any,row:any)=>(acc[row.status]=(acc[row.status]||0)+1,acc),{added:0,deleted:0,changed:0,unchanged:0});
   return{rows:reportRows,counts};
 }

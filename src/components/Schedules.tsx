@@ -1314,8 +1314,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (!courseId) return undefined;
     const termId = Number(form.AdTermId) || filterTerm || 0;
     const taken = rows.filter(row => Number(row.AdCourseId) === courseId && Number(row.AdTermId) === termId).length;
-    return taken ? `شعب هذا المقرر المسجّلة: ${taken.toLocaleString("ar-KW-u-nu-latn")} — اقترحنا الرقم التالي` : "أول شعبة لهذا المقرر";
-  }, [form.AdCourseId, form.AdTermId, filterTerm, rows]);
+    const suggested = nextSectionCode(courseId, termId, editId);
+    return taken
+      ? `عدد الشعب المسجّلة: ${taken.toLocaleString("ar-KW-u-nu-latn")} — الشعبة المقترحة: ${Number(suggested).toLocaleString("ar-KW-u-nu-latn")}`
+      : `أول شعبة لهذا المقرر — الشعبة المقترحة: ${Number(suggested).toLocaleString("ar-KW-u-nu-latn")}`;
+  }, [form.AdCourseId, form.AdTermId, filterTerm, rows, editId]);
 
   /** What the chosen days mean for the length of this lecture. */
   const dayPatternNote = useMemo(() => {
