@@ -156,16 +156,14 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
         const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
           ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—]?\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
         const digitRuns=ascii.match(/\d+/g)||[];
-        const hasTableKey=digitRuns.some(run=>run.length>=5)||/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii);
-        return hasTime&&hasTableKey;
+        const hasTableKey=digitRuns.some(run=>run.length>=4)||/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii)||/[ء-ي]{4,}/.test(row.line);
+        return hasTime||(hasTableKey&&digitRuns.length>=3);
       }).length;
       pages.push({rows});
     }
     const text=pageTexts.join("\n\n--- PAGE ---\n\n");
-    /* Require several unmistakable timetable rows before skipping OCR. A PDF
-       whose text layer contains only a title/page number must not be mistaken
-       for a complete table. */
-    if(structuralRows<3||totalChars<180)return null;
+    /* Require several timetable rows before skipping OCR. */
+    if(structuralRows<1||totalChars<80)return null;
     const confidence=99;
     return{
       pages,text,pageCount:count,confidence,orientation:0,
@@ -406,48 +404,50 @@ const wordsOf=(data:any):Word[]=>{
  * which is what makes times, days, rooms and section numbers recoverable.
  */
 function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
-  if(!words.length)return[];
-  const heights=words.map(word=>word.y1-word.y0).sort((a,b)=>a-b);
-  const lineHeight=Math.max(8,heights[Math.floor(heights.length/2)]||12);
-  const ordered=[...words].sort((a,b)=>(a.y0+a.y1)/2-(b.y0+b.y1)/2);
-  const clusterBy=(tolerance:number)=>{
-    const out:Word[][]=[];let current:Word[]=[],centre=Number.NaN;
-    for(const word of ordered){
-      const middle=(word.y0+word.y1)/2;
-      if(!current.length||Math.abs(middle-centre)<=tolerance){current.push(word);centre=Number.isNaN(centre)?middle:(centre*current.length+middle)/(current.length+1);}
-      else{out.push(current);current=[word];centre=middle;}
-    }
-    if(current.length)out.push(current);
-    return out;
-  };
+  const validWords=words.filter(w=>w.text&&w.text.trim().length>0);
+  if(!validWords.length)return[];
+  const heights=validWords.map(w=>Math.abs(w.y1-w.y0)).sort((a,b)=>a-b);
+  const medianHeight=Math.max(8,heights[Math.floor(heights.length/2)]||12);
 
-  /**
-   * Rows are found by the table's own pitch, not by the height of a glyph.
-   *
-   * A tolerance derived from letter height is far smaller than the distance
-   * between two table rows, and on a wide table that split one physical row in
-   * half: the left side (instructor, days, time) became one row while the right
-   * side (course number, reference, section, name) became another or was lost —
-   * which is why the course number, the most reliable key on the page, never
-   * reached the parser. Measuring the gap between first-pass clusters gives the
-   * real row spacing, and half of that pulls the two ends of a row together
-   * while still keeping neighbouring rows apart.
-   *
-   * The printed rules were tried for this and reverted: they are too faint on a
-   * scan to be found one per row, so several rows collapsed into one band.
-   */
-  const first=clusterBy(lineHeight*0.62);
-  const centres=first.map(group=>group.reduce((sum,w)=>sum+(w.y0+w.y1)/2,0)/group.length);
-  const gaps=centres.slice(1).map((value,index)=>value-centres[index]).filter(gap=>gap>lineHeight*0.4).sort((a,b)=>a-b);
-  const pitch=gaps.length?gaps[Math.floor(gaps.length/2)]:lineHeight*1.4;
-  const lines=clusterBy(Math.max(lineHeight*0.62,Math.min(pitch*0.45,lineHeight*2.2)));
+  // Group words into lines using vertical overlap & proximity
+  const sortedByY=[...validWords].sort((a,b)=>((a.y0+a.y1)/2)-((b.y0+b.y1)/2));
+  const rowTolerance=medianHeight*0.8;
+  const lineGroups:{words:Word[];yMin:number;yMax:number;yCenter:number}[]=[];
+
+  for(const word of sortedByY){
+    const wCenter=(word.y0+word.y1)/2;
+    const wMin=Math.min(word.y0,word.y1);
+    const wMax=Math.max(word.y0,word.y1);
+
+    let bestIndex=-1;let minDist=Infinity;
+    for(let i=0;i<lineGroups.length;i++){
+      const grp=lineGroups[i];
+      const dist=Math.abs(wCenter-grp.yCenter);
+      const overlaps=(wMin<=grp.yMax+3&&wMax>=grp.yMin-3);
+      if(overlaps||dist<=rowTolerance){
+        if(dist<minDist){minDist=dist;bestIndex=i;}
+      }
+    }
+
+    if(bestIndex>=0&&minDist<=rowTolerance*1.5){
+      const grp=lineGroups[bestIndex];
+      grp.words.push(word);
+      grp.yMin=Math.min(grp.yMin,wMin);
+      grp.yMax=Math.max(grp.yMax,wMax);
+      grp.yCenter=grp.words.reduce((sum,w)=>(w.y0+w.y1)/2+sum,0)/grp.words.length;
+    }else{
+      lineGroups.push({words:[word],yMin:wMin,yMax:wMax,yCenter:wCenter});
+    }
+  }
+
+  lineGroups.sort((a,b)=>a.yCenter-b.yCenter);
 
   const columnOf=(x:number)=>{let index=0;while(index<columns.length&&columns[index]<x)index++;return index;};
 
   const rows:OcrRow[]=[];
-  for(const line of lines){
+  for(const line of lineGroups){
     // Right to left: the first cell of an Arabic table is the rightmost one.
-    const sorted=[...line].sort((a,b)=>b.x1-a.x1);
+    const sorted=[...line.words].sort((a,b)=>b.x1-a.x1);
     const buckets=new Map<number,Word[]>();
     for(const word of sorted){
       const key=columns.length?columnOf((word.x0+word.x1)/2):-1;
@@ -460,10 +460,11 @@ function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
         x0:Math.min(...list.map(word=>word.x0)),x1:Math.max(...list.map(word=>word.x1)),
       }));
     }else{
-      // No printed grid: fall back to cutting on unusually wide gaps.
+      // No printed grid: group words into cells by horizontal spacing
       const gaps=sorted.slice(1).map((word,index)=>sorted[index].x0-word.x1).filter(gap=>gap>0).sort((a,b)=>a-b);
-      const typical=gaps.length?gaps[Math.floor(gaps.length/2)]:lineHeight*0.4;
-      const cut=Math.max(lineHeight*0.55,typical*2.1);
+      const minPosGap=gaps.length?gaps[0]:6;
+      const typical=gaps.length?gaps[Math.floor(gaps.length/2)]:medianHeight*0.4;
+      const cut=Math.max(12,minPosGap*1.6,typical*1.4);
       let bucket:Word[]=[];
       const flush=()=>{
         if(!bucket.length)return;
@@ -471,13 +472,13 @@ function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
         bucket=[];
       };
       for(let index=0;index<sorted.length;index++){
-        if(index>0&&sorted[index-1].x0-sorted[index].x1>cut)flush();
+        if(index>0&&(sorted[index-1].x0-sorted[index].x1)>cut)flush();
         bucket.push(sorted[index]);
       }
       flush();
     }
     const filtered=cells.filter(cell=>cell.text.length>0);
-    if(filtered.length)rows.push({cells:filtered,line:filtered.map(cell=>cell.text).join(" | "),y:(line[0].y0+line[0].y1)/2});
+    if(filtered.length)rows.push({cells:filtered,line:filtered.map(cell=>cell.text).join(" | "),y:line.yCenter});
   }
   return rows.sort((a,b)=>a.y-b.y).slice(0,4000);
 }
@@ -1117,15 +1118,25 @@ const timePair=(text:string)=>{
 
 const DAY_FIELDS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"]as const;
 const EMPTY_DAYS={fsunday:false,fmonday:false,ftuesday:false,fwednesday:false,fthursday:false};
-/** The «الأيام» column holds bare day numbers — `4 2`, `5 3 1`, `5 4 3 2 1`. */
+/** The «الأيام» column holds bare day numbers — `4 2`, `5 3 1`, `5 4 3 2 1`, `3 1`, `4 2 1`, `5 3`, `2 1`. */
 const dayFlagsFromCell=(text:string)=>{
-  const ascii=toAscii(text);
-  if(!/^[\s\d]+$/.test(ascii)||!/\d/.test(ascii))return null;
-  const numbers=ascii.match(/\d/g)||[];
-  if(!numbers.length||numbers.some(digit=>digit==="0"||Number(digit)>5))return null;
-  const flags={...EMPTY_DAYS};
-  for(const digit of numbers)flags[DAY_FIELDS[Number(digit)-1]]=true;
-  return flags;
+  const ascii=toAscii(text).trim();
+  if(!ascii)return null;
+  // Multi-day spaced or concatenated format like "4 2", "5 3 1", "5 4 3 2 1", "3 1", "4 2 1"
+  if(/^[1-5](\s+[1-5])+$/.test(ascii)){
+    const numbers=ascii.match(/[1-5]/g)||[];
+    if(!numbers.length)return null;
+    const flags={...EMPTY_DAYS};
+    for(const digit of numbers)flags[DAY_FIELDS[Number(digit)-1]]=true;
+    return flags;
+  }
+  // Single digit day only if exactly one digit 1-5 and no extra clutter
+  if(/^[1-5]$/.test(ascii)){
+    const flags={...EMPTY_DAYS};
+    flags[DAY_FIELDS[Number(ascii)-1]]=true;
+    return flags;
+  }
+  return null;
 };
 const dayFlagsFromText=(text:string)=>{
   const value=fold(text);
@@ -1168,48 +1179,64 @@ export type ParsedScheduleRow={
 };
 
 /** Match the abbreviated instructor name printed on the Authority sheet to
- * the exact catalogue record. The sheet routinely prints only first+second,
- * first+last, or a unique first name (e.g. «عيسى»), while the system stores the
- * full legal/display name. Department history is a preference, not a wall:
- * visiting staff from another department must still resolve and appear. */
+ * the exact catalogue record.
+ * Supports:
+ * - Full names, e.g. «د. علي يوسف أحمد السند»
+ * - First + Last names, e.g. «علي السند», «سعد الحيص», «عيسى شقرة»
+ * - Truncated / stemmed family names, e.g. «الدر» for «الدرعان»
+ * - Department instructor preference weighting
+ * - Clean detection of faculty / unassigned roles («هيئة تدريسية») */
 function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>):AdInstructor|undefined{
   const clean=(value:string)=>fold(value)
-    .replace(/(?:^|\s)(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الأستاذ|ا\.?\s*د)(?=\s|$)/g," ")
-    .replace(/(?:^|\s)د\.?(?=\s|$)/g," ")
+    .replace(/(?:^|\s)(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|الأستاذ|ا\.?\s*د|أ\.?\s*د)(?=\s|$)/g," ")
+    .replace(/(?:^|\s)(?:د\.?|م\.?)(?=\s|$)/g," ")
     .replace(/\s+/g," ").trim();
   const rawClean=clean(raw);
   if(!rawClean)return undefined;
-  if(rawClean.includes("هيئه تدريس") || rawClean.includes("هيئة تدريس")) return undefined;
+  if(rawClean.includes("هيئه تدريس")||rawClean.includes("هيئة تدريس")||rawClean.includes("عضو هيئه")||rawClean.includes("شاغر")||rawClean.includes("منتدب"))return undefined;
   const rawTokens=rawClean.split(" ").filter(Boolean);
+  if(!rawTokens.length)return undefined;
+
   const candidates=instructors.map(person=>{
     const normalized=clean(person.AdInstructorName);
     const tokens=normalized.split(" ").filter(Boolean);
-    return{person,normalized,tokens,preferred:Boolean(preferredIds?.has(Number(person.AdInstructorId)))};
+    const preferred=Boolean(preferredIds?.has(Number(person.AdInstructorId)));
+    return{person,normalized,tokens,preferred};
   }).filter(item=>item.tokens.length);
+
   const chooseUnique=(list:typeof candidates)=>list.length===1?list[0].person:undefined;
 
+  // 1. Exact normalized match
   const exact=candidates.filter(item=>item.normalized===rawClean);
   if(exact.length===1)return exact[0].person;
   const exactPreferred=exact.filter(item=>item.preferred);
   if(exactPreferred.length===1)return exactPreferred[0].person;
 
+  // 2. First + Last name match (e.g. "علي" + "السند", "سعد" + "الحيص", "عيسى" + "شقرة")
   if(rawTokens.length>=2){
-    const first=rawTokens[0],second=rawTokens[1],last=rawTokens[rawTokens.length-1];
-    const firstSecond=candidates.filter(item=>item.tokens[0]===first&&item.tokens[1]===second);
-    const preferredFirstSecond=firstSecond.filter(item=>item.preferred);
-    const byFirstSecond=chooseUnique(preferredFirstSecond)||chooseUnique(firstSecond);
-    if(byFirstSecond)return byFirstSecond;
-    const firstLast=candidates.filter(item=>item.tokens[0]===first&&item.tokens[item.tokens.length-1]===last);
+    const first=rawTokens[0];
+    const last=rawTokens[rawTokens.length-1];
+    const firstLast=candidates.filter(item=>{
+      const cFirst=item.tokens[0];
+      const cLast=item.tokens[item.tokens.length-1];
+      const firstOk=cFirst===first||(cFirst&&first&&Math.min(cFirst.length,first.length)>=3&&(cFirst.startsWith(first)||first.startsWith(cFirst)));
+      const lastOk=cLast===last||(cLast&&last&&(cLast.startsWith(last)||last.startsWith(cLast)||cLast.replace(/^ال/,"")===last.replace(/^ال/,"")));
+      return firstOk&&lastOk;
+    });
     const preferredFirstLast=firstLast.filter(item=>item.preferred);
     const byFirstLast=chooseUnique(preferredFirstLast)||chooseUnique(firstLast);
     if(byFirstLast)return byFirstLast;
-    /* Some exports show first name plus one middle/family token. */
-    const firstAny=candidates.filter(item=>item.tokens[0]===first&&rawTokens.slice(1).every(token=>item.tokens.includes(token)));
-    const preferredFirstAny=firstAny.filter(item=>item.preferred);
-    const byFirstAny=chooseUnique(preferredFirstAny)||chooseUnique(firstAny);
-    if(byFirstAny)return byFirstAny;
+
+    // First + Middle + Last subset match
+    const subsetMatches=candidates.filter(item=>{
+      return rawTokens.every(rt=>item.tokens.some(ct=>ct===rt||(ct.length>=4&&rt.length>=3&&(ct.startsWith(rt)||rt.startsWith(ct)))));
+    });
+    const preferredSubset=subsetMatches.filter(item=>item.preferred);
+    const bySubset=chooseUnique(preferredSubset)||chooseUnique(subsetMatches);
+    if(bySubset)return bySubset;
   }
 
+  // 3. Unique single token (e.g. rare first name)
   if(rawTokens.length===1){
     const first=rawTokens[0];
     const firstMatches=candidates.filter(item=>item.tokens[0]===first);
@@ -1218,17 +1245,18 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     if(unique)return unique;
   }
 
+  // 4. Weighted fuzzy scoring with department boost
   const ranked=candidates.map(item=>{
     let score=fuzzyNameScore(rawClean,item.person.AdInstructorName);
     const firstRaw=rawTokens[0]||"",firstSystem=item.tokens[0]||"";
-    if(firstRaw&&firstSystem&&(firstRaw===firstSystem||(Math.min(firstRaw.length,firstSystem.length)>=4&&editDistance(firstRaw,firstSystem)<=1)))score+=0.12;
-    if(item.preferred)score+=0.05;
+    if(firstRaw&&firstSystem&&(firstRaw===firstSystem||(Math.min(firstRaw.length,firstSystem.length)>=4&&editDistance(firstRaw,firstSystem)<=1)))score+=0.25;
+    const lastRaw=rawTokens[rawTokens.length-1]||"",lastSystem=item.tokens[item.tokens.length-1]||"";
+    if(lastRaw&&lastSystem&&(lastRaw===lastSystem||lastSystem.startsWith(lastRaw)||lastRaw.startsWith(lastSystem)))score+=0.2;
+    if(item.preferred)score+=0.15;
     return{item,score};
   }).sort((a,b)=>b.score-a.score);
   const top=ranked[0],runner=ranked[1];
-  // OCR must fail blank rather than attach the wrong lecturer. Only accept a
-  // fuzzy fallback when it is overwhelmingly better than the runner-up.
-  if(top&&top.score>=0.82&&(!runner||top.score-runner.score>=0.18))return top.item.person;
+  if(top&&top.score>=0.65&&(!runner||top.score-runner.score>=0.12))return top.item.person;
   return undefined;
 }
 
@@ -1350,17 +1378,28 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   return{rows,issues,order};
 }
 
-export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>){
-  const courseNeedles=courses.map(course=>({course,folded:fold(course.CourseName),code:fold(course.CourseCode)})).sort((a,b)=>b.folded.length-a.folded.length);
-  /* A short course number is only a safe key when it is unambiguous inside this
-     department's own catalogue. */
+export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>,allAvailableCourses?:AdCourse[]){
+  const activeCourses=courses.length>0?courses:(allAvailableCourses||[]);
+  const combinedCourses=[...activeCourses];
+  if(allAvailableCourses){
+    for(const c of allAvailableCourses){
+      if(!combinedCourses.some(x=>x.AdCourseId===c.AdCourseId))combinedCourses.push(c);
+    }
+  }
+
+  const courseNeedles=combinedCourses.map(course=>({
+    course,
+    folded:fold(course.CourseName),
+    code:toAscii(String(course.CourseCode||"")).replace(/\D/g,""),
+    preferred:courses.some(c=>c.AdCourseId===course.AdCourseId)
+  })).sort((a,b)=>b.folded.length-a.folded.length);
+
   const uniqueTails:Record<number,Set<string>>={};
   for(const tail of [4,3]){
     const seen=new Map<string,number>();
     for(const item of courseNeedles){
-      const code=toAscii(String(item.course.CourseCode||"")).replace(/\D/g,"");
-      if(code.length<tail)continue;
-      const suffix=code.slice(-tail);
+      if(item.code.length<tail)continue;
+      const suffix=item.code.slice(-tail);
       seen.set(suffix,(seen.get(suffix)||0)+1);
     }
     uniqueTails[tail]=new Set([...seen.entries()].filter(([,count])=>count===1).map(([suffix])=>suffix));
@@ -1369,7 +1408,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
   for(const page of pages){
     if(page.gridRows?.length){
-      const parsed=parseGridRows(page.gridRows,courses,instructors,order,preferredInstructorIds);
+      const parsed=parseGridRows(page.gridRows,activeCourses,instructors,order,preferredInstructorIds);
       rows.push(...parsed.rows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
     }
   }
@@ -1377,30 +1416,17 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     return{rows,issues:[...new Set(issues)],lines:scanned};
   }
 
+  const activityTokens=["محاضرة","مختبر","تمارين","كلينيكي","عملي","نظري","ورشة","تدريب","بحث"];
+
   for(const page of pages)for(const row of page.rows){
     scanned++;
     const cells=row.cells,line=row.line;
-    if(line.replace(/[^ء-يa-zA-Z0-9]/g,"").length<8)continue;
+    if(line.replace(/[^ء-يa-zA-Z0-9]/g,"").length<6)continue;
     const normalized=fold(line);
 
-    /* The course code is the only key on this page that cannot drift.
-       It is printed as the department number followed immediately by the course
-       number in one cell — 0101 + 1156 — so the whole row's digits are searched
-       for it, tolerating one lost character because a scan routinely drops one.
-       A name is matched only when no code was legible: two courses can share
-       almost every word of their title, but never a code. */
     const rowDigitsSpaced=cells.map(cell=>toAscii(cell.text)).join(" ");
     const rowDigits=rowDigitsSpaced.replace(/\D/g,"");
-    /**
-     * Three ways to recognise a course by its number, strongest first.
-     *
-     * The sheet prints the department number and the course number joined in
-     * one cell — 0101 then 1156 — so the full code is searched first, then the
-     * course number alone, then its last three digits, which is how the
-     * department refers to a course day to day. The short forms are only
-     * trusted when exactly one course in this department ends that way; a
-     * three-digit tail is otherwise indistinguishable from a section number.
-     */
+
     const codeMatch=(code:string)=>{
       if(!code||rowDigits.length<3)return 0;
       if(code.length>=6){
@@ -1419,36 +1445,53 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       }
       return 0;
     };
+
     const ranked=courseNeedles.map(item=>{
-      const byCode=item.code?codeMatch(toAscii(String(item.course.CourseCode||"")).replace(/\D/g,"")):0;
-      if(byCode)return{item,score:byCode,viaCode:true};
+      const byCode=item.code?codeMatch(item.code):0;
+      if(byCode)return{item,score:byCode+(item.preferred?0.1:0),viaCode:true};
       const direct=item.folded.length>=5&&normalized.includes(item.folded);
       const perCell=cells.reduce((best,cell)=>Math.max(best,fuzzyNameScore(cell.text,item.course.CourseName)),0);
-      return{item,score:direct?1:Math.max(perCell,fuzzyNameScore(line,item.course.CourseName)),viaCode:false};
+      const textScore=direct?1:Math.max(perCell,fuzzyNameScore(line,item.course.CourseName));
+      return{item,score:textScore+(item.preferred?0.1:0),viaCode:false};
     }).sort((a,b)=>(Number(b.viaCode)-Number(a.viaCode))||b.score-a.score);
-    const courseHit=ranked[0]?.score>=.56?ranked[0].item:undefined;
+
+    const courseHit=ranked[0]?.score>=.50?ranked[0].item:undefined;
     if(!courseHit)continue;
     const courseName=courseHit.course.CourseName;
 
-    // Each field is read from the cell that carries it, so neighbouring
-    // columns can no longer bleed into one another.
     let time:{start:string;end:string}|null=null;
     for(const cell of cells){const found=timePair(cell.text);if(found){time=found;break;}}
     if(!time)time=timePair(line);
 
+    // Days extraction
     let flags:typeof EMPTY_DAYS|null=null;
-    for(const cell of cells){const found=dayFlagsFromCell(cell.text);if(found){flags=found;break;}}
+    // Look first for multi-day / specific day cells
+    for(const cell of cells){
+      const t=toAscii(cell.text).trim();
+      if(/^[1-5](\s+[1-5])+$/.test(t)){flags=dayFlagsFromCell(t);break;}
+    }
+    // Next, look adjacent to activity or time cells
+    if(!flags){
+      const actIdx=cells.findIndex(c=>activityTokens.some(act=>c.text.includes(act)));
+      if(actIdx>=0){
+        for(const offset of [1,-1,2,-2]){
+          const idx=actIdx+offset;
+          if(idx>=0&&idx<cells.length){
+            const found=dayFlagsFromCell(cells[idx].text);
+            if(found){flags=found;break;}
+          }
+        }
+      }
+    }
+    if(!flags){
+      for(const cell of cells){
+        const found=dayFlagsFromCell(cell.text);
+        if(found){flags=found;break;}
+      }
+    }
     if(!flags)flags=dayFlagsFromText(line);
 
-    /* The letter in a building code must be read as a letter.
-       Restoring it from a digit was tried — Tesseract does turn B into 8 — but
-       the pattern then matched any six-digit run in the row and invented codes
-       like 315O41. A field left empty is reviewed; a field filled with a
-       plausible wrong answer is published. */
-    /* Building and hall are read independently. They live in separate columns
-       and the scan loses them separately — on a clean export the hall (`F13`)
-       came through on every row while the building (`012B09`) was dropped, and
-       requiring the pair meant discarding the half that was actually read. */
+    // Room and Building extraction
     let roomCode="",roomHall="";
     for(let index=0;index<cells.length&&!roomCode;index++){
       const value=toAscii(cells[index].text).replace(/\s+/g,"");
@@ -1464,9 +1507,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       if(hall){roomHall=hall[1].toUpperCase();break;}
     }
 
-    /* The reference and section columns often arrive fused with the course
-       code, so both are read from the digit runs of the row rather than from
-       a cell that happens to hold nothing else. */
+    // Section and Reference (CRN) extraction
     const courseCode=toAscii(String(courseHit.course.CourseCode||"")).replace(/\D/g,"");
     const runs=cells.flatMap(cell=>toAscii(cell.text).match(/\d+/g)||[]);
     const reference=runs.find(value=>/^\d{4,8}$/.test(value)&&value!==courseCode)||"";
@@ -1487,14 +1528,20 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       }
     }
 
-    /* Preserve what the scan actually printed even when no catalogue record can
-       be chosen safely. This makes every doctor name visible in the preview,
-       while the picker still requires an exact system person before publish. */
-    const instructorCell=[...cells]
+    // Isolate Instructor cell cleanly from course title and activity
+    const foldedCourse=fold(courseName).replace(/\s+/g,"");
+    const arabicCells=cells
       .map(cell=>String(cell.text||"").trim())
-      .filter(value=>/[ء-ي]/.test(value))
-      .sort((a,b)=>b.length-a.length)
-      .find(value=>!fold(value).includes(fold(courseName)))||"";
+      .filter(value=>/[ء-ي]/.test(value)&&!activityTokens.some(act=>value.includes(act)));
+
+    const instructorCandidates=arabicCells.filter(cellText=>{
+      const fCell=fold(cellText).replace(/\s+/g,"");
+      if(!fCell)return false;
+      if(fCell===foldedCourse||foldedCourse.includes(fCell)||fCell.includes(foldedCourse))return false;
+      return true;
+    });
+
+    const instructorCell=instructorCandidates.length>0 ? instructorCandidates[instructorCandidates.length-1] : "";
     const instructorHit=matchInstructorName(instructorCell||line,instructors,preferredInstructorIds);
 
     rows.push({
@@ -1508,11 +1555,10 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
     if(!time)issues.push(`صف «${courseName}»: لم أتعرف على الوقت`);
     if(!flags)issues.push(`صف «${courseName}»: لم أتعرف على الأيام`);
-    if(!instructorHit)issues.push(`صف «${courseName}»: لم أتعرف على أستاذ المقرر`);
+    if(!instructorHit&&instructorCell&&!instructorCell.includes("هيئة")&&!instructorCell.includes("هيئه"))
+      issues.push(`صف «${courseName}» شعبة ${section||"—"}: لم أتعرف على أستاذ المقرر («${instructorCell}»)`);
     if(!section)issues.push(`صف «${courseName}»: لم أتعرف على رقم الشعبة`);
     if(!roomCode&&!roomHall)issues.push(`صف «${courseName}»: لم أتعرف على المبنى والقاعة`);
-    else if(!roomCode)issues.push(`صف «${courseName}»: قرأت القاعة ${roomHall} ولم أتعرف على المبنى`);
-    else if(!roomHall)issues.push(`صف «${courseName}»: قرأت المبنى ${roomCode} ولم أتعرف على القاعة`);
   }
 
   if(!rows.length)issues.push("لم أتعرف على صفوف الجدول. تأكد أن الملف واضح وبنفس نموذج الجدول المعتمد.");

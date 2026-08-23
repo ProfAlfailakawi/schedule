@@ -4805,12 +4805,18 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     Repository.getDepartmentRooms(collegeId,sectionId),
   ]);
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
-  /* Department history is a ranking hint only, never a filter. Authority PDFs
-     may legitimately contain a visiting professor from another department;
-     filtering the catalogue here made that printed name disappear altogether.
-     Match against the full instructor directory, preferring this department's
-     historical roster only when a short name is genuinely ambiguous. */
-  const rosterIds=new Set<number>(sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)).filter((id:number)=>Number.isFinite(id)&&id>0));
+  /* Department history and current department faculty roster are prioritized,
+     while allowing visiting faculty from any department to resolve accurately. */
+  const deptInstructorIds=new Set<number>(
+    allInstructors
+      .filter((inst:any)=>Number(inst.AdSectionId)===sectionId||(Number(inst.AdCollegeId)===collegeId&&Number(inst.AdSectionId)===sectionId))
+      .map((inst:any)=>Number(inst.AdInstructorId))
+      .filter((id:number)=>Number.isFinite(id)&&id>0)
+  );
+  const preferredInstructorIds=new Set<number>([
+    ...sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)).filter((id:number)=>Number.isFinite(id)&&id>0),
+    ...deptInstructorIds,
+  ]);
   const instructors=allInstructors;
 
   /* Reading a scan takes over a minute, so the client is kept informed rather
@@ -4847,7 +4853,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(422).json({error:message});return;
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
-  const parsed=parseScheduleTable(recognized.pages,courses,instructors,rosterIds);
+  const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,allCourses);
 
   /* Rooms are identifiers and therefore fail closed. OCR is allowed to keep an
      exact room from this department's complete history, or repair ONE
