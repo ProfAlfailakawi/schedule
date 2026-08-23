@@ -4629,8 +4629,18 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(occupied.length){res.status(409).json({error:"نسخ جدول PDF متاح للفصل الفارغ فقط. أنشئ فصلاً فارغاً أو اختر واحداً بلا مواعيد."});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
   if(!bytes.length){res.status(400).json({error:"لم يصل ملف PDF"});return;}
-  const [allCourses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);
+  const [allCourses,allInstructors,sectionHistory,terms]=await Promise.all([
+    Repository.getCourses(),Repository.getInstructors(),
+    Repository.getSchedulesByScope({collegeId,sectionId}),Repository.getTerms(),
+  ]);
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
+  /* The sheet's short names are matched against THIS department's own roster,
+     not the whole university: «سعد الحيص» in the system must find «سعد خالد
+     بريجان الحيص» on the sheet, and a same-named instructor in another college
+     must never steal the match. The roster is everyone who has ever taught in
+     this section; a department with no history yet falls back to the full list. */
+  const rosterIds=new Set(sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)).filter(Boolean));
+  const instructors=rosterIds.size?allInstructors.filter((person:any)=>rosterIds.has(Number(person.AdInstructorId))):allInstructors;
 
   /* Reading a scan takes over a minute, so the client is kept informed rather
      than left staring at a frozen button. Progress is streamed as NDJSON — one
@@ -4667,6 +4677,20 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
   const parsed=parseScheduleTable(recognized.pages,courses,instructors);
+  /* The sheet names its own term in the header. Uploading last year's export
+     into this year's term is the one mistake no row-level check can catch —
+     every row is valid, just a year old — so the two are compared here and a
+     mismatch becomes a loud issue that blocks the one-step publish. */
+  if(recognized.headerTerm){
+    const target=terms.find((row:any)=>Number(row.AdTermId)===termId);
+    const targetName=asciiDigits(String(target?.AdTermName||""));
+    const seasonWord=recognized.headerTerm.season==="first"?/الاول|الأول/:recognized.headerTerm.season==="second"?/الثاني|الثانى/:/صيفي|صيفى/;
+    const seasonOk=seasonWord.test(targetName);
+    const yearsOk=recognized.headerTerm.years.every(year=>targetName.includes(String(year)));
+    if(targetName&&(!seasonOk||!yearsOk)){
+      parsed.issues.unshift(`تحذير: الملف يذكر «${recognized.headerTerm.label}» بينما الفصل المختار هو «${String(target?.AdTermName||"")}». تأكد أنك ترفع الجدول إلى الفصل الصحيح.`);
+    }
+  }
   const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
   const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}):[];
   const issues=[...new Set([...parsed.issues,...structural])];

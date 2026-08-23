@@ -9,9 +9,10 @@ const fold=(value:string)=>toAscii(value).replace(/[ً-ْـ]/g,"").replace(/[أ�
 export type OcrCell={text:string;x0:number;x1:number};
 /** One physical table row, right-to-left, with the columns still apart. */
 export type OcrRow={cells:OcrCell[];line:string;y:number};
-export type OcrPage={rows:OcrRow[]};
+export type OcrPage={rows:OcrRow[];gridRows?:GridRow[]};
 export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
-export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility};
+export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
+export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read";page:number;pages:number;message:string})=>void;
 
 const MAX_PAGES=12;
@@ -343,6 +344,396 @@ function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
   return rows.sort((a,b)=>a.y-b.y).slice(0,4000);
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE GRIDDED READER — the path a ruled Authority table deserves.
+
+   Reading the page as free text was the ceiling on every measurement: columns
+   welded, digits misread, the course-code column often lost outright. A ruled
+   table offers something free text never does — its own geometry — and this
+   path uses all of it:
+
+   · Otsu binarization makes the faint CamScanner rules solid. Measured on the
+     real export, the full grid then falls out: every column rule and a row
+     rule every 49px, one per printed row.
+   · Each column STRIP is cropped from the untouched greyscale at 2× and read
+     alone with the alphabet that column is allowed to use. Digits columns
+     cannot hallucinate Arabic; the days column can only say 1–5. Measured:
+     the reference column jumped to 22/27 rows and instructors went from
+     garbage to «د. عبد الرؤوف الكمالى» verbatim.
+   · Nobody guesses which column is which. Every strip is read, then columns
+     CLAIM their meaning by what validates: the column where most cells look
+     like `0920 - 0800` is the time column, wherever it sits. A re-ordered
+     export changes nothing.
+   · Numeric strips are read from BOTH the greyscale and the binarized image;
+     per cell, whichever pass yields a value the column's validator accepts
+     wins. Measured: the two passes fail on DIFFERENT rows (8/27 vs 17/27 on
+     times), so the union is what neither pass could reach alone.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+export type GridRow={
+  code:string;reference:string;scode:string;courseText:string;instructorText:string;
+  days:string;start:string;end:string;building:string;hall:string;
+};
+type GridPage={gridRows:GridRow[]};
+
+/** Otsu's threshold: the split that maximizes between-class variance. */
+function otsuBinarize(lib:any,src:any){
+  const ctx=src.getContext("2d");
+  const {data}=ctx.getImageData(0,0,src.width,src.height);
+  const hist=new Array(256).fill(0);
+  const grey=new Uint8Array(src.width*src.height);
+  for(let i=0;i<grey.length;i++){
+    const g=Math.round((data[i*4]*299+data[i*4+1]*587+data[i*4+2]*114)/1000);
+    grey[i]=g;hist[g]++;
+  }
+  let sum=0;for(let t=0;t<256;t++)sum+=t*hist[t];
+  let sumB=0,wB=0,best=0,threshold=127;
+  for(let t=0;t<256;t++){
+    wB+=hist[t];if(!wB)continue;
+    const wF=grey.length-wB;if(!wF)break;
+    sumB+=t*hist[t];
+    const mB=sumB/wB,mF=(sum-sumB)/wF,between=wB*wF*(mB-mF)*(mB-mF);
+    if(between>best){best=between;threshold=t;}
+  }
+  const out=lib.createCanvas(src.width,src.height),octx=out.getContext("2d");
+  const img=octx.createImageData(src.width,src.height);
+  for(let i=0;i<grey.length;i++){
+    const v=grey[i]<threshold?0:255;
+    img.data[i*4]=v;img.data[i*4+1]=v;img.data[i*4+2]=v;img.data[i*4+3]=255;
+  }
+  octx.putImageData(img,0,0);
+  return out;
+}
+
+/** Long dark runs, per axis, on the binarized image. */
+function findRules(bin:any){
+  const ctx=bin.getContext("2d");
+  const {data}=ctx.getImageData(0,0,bin.width,bin.height);
+  const W=bin.width,H=bin.height;
+  const dark=(x:number,y:number)=>data[(y*W+x)*4]<128;
+  const colInk=new Int32Array(W),rowInk=new Int32Array(H);
+  for(let x=0;x<W;x++){let run=0;for(let y=0;y<=H;y++){
+    if(y<H&&dark(x,y))run++;else{if(run>=H/8)colInk[x]+=run;run=0;}}}
+  for(let y=0;y<H;y++){let run=0;for(let x=0;x<=W;x++){
+    if(x<W&&dark(x,y))run++;else{if(run>=W/8)rowInk[y]+=run;run=0;}}}
+  const peaks=(ink:Int32Array,threshold:number)=>{
+    const out:number[]=[];
+    for(let i=0;i<ink.length;i++){
+      if(ink[i]<threshold)continue;
+      if(out.length&&i-out[out.length-1]<=6)out[out.length-1]=i;
+      else out.push(i);
+    }
+    return out;
+  };
+  return{cols:peaks(colInk,H*0.35),rows:peaks(rowInk,W*0.35)};
+}
+
+const stripPatterns={
+  time:/^\d{3,4}\s*-\s*\d{3,4}$/,
+  code:/^\d{7}$/,
+  refcode:/^\d{12}$/,
+  reference:/^\d{5}$/,
+  scode:/^\d{3,4}$/,
+  building:/^\d{3}[A-Z]\d{2}$/,
+  hall:/^[A-Z]\d{1,3}$/,
+  days:/^[1-5](?: ?[1-5])*$/,
+};
+
+/**
+ * Read the ruled table cell by cell. Returns null when the page carries no
+ * usable grid, so the caller can fall back to the flat-text path.
+ */
+async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
+  const lib=await canvas();
+  const image=await lib.loadImage(upright);
+  const surface=lib.createCanvas(image.width,image.height);
+  surface.getContext("2d").drawImage(image,0,0);
+  const bin=otsuBinarize(lib,surface);
+  const {cols,rows}=findRules(bin);
+  if(cols.length<6||rows.length<5)return null;
+
+  /* Row bands are the regular runs of the pitch; header bands above the first
+     regular run and footer bands below the last are dropped. */
+  const gaps=rows.slice(1).map((v,i)=>v-rows[i]).filter(g=>g>8).sort((a,b)=>a-b);
+  const pitch=gaps[Math.floor(gaps.length/2)];
+  if(!pitch||pitch<10)return null;
+  const bands:{top:number;bottom:number}[]=[];
+  for(let i=0;i<rows.length-1;i++){
+    const span=rows[i+1]-rows[i];
+    if(span>pitch*0.6&&span<pitch*1.5)bands.push({top:rows[i],bottom:rows[i+1]});
+  }
+  if(bands.length<3)return null;
+
+  /* Column bands between consecutive rules, plus the open band left of the
+     first rule where this layout keeps the instructor names. */
+  const columnBands:{left:number;right:number}[]=[];
+  const leftOpen=Math.max(0,cols[0]-Math.round(image.width*0.11));
+  if(cols[0]>image.width*0.04)columnBands.push({left:leftOpen,right:cols[0]});
+  for(let i=0;i<cols.length-1;i++){
+    const width=cols[i+1]-cols[i];
+    if(width>=Math.max(18,image.width*0.008))columnBands.push({left:cols[i],right:cols[i+1]});
+  }
+  if(columnBands.length<5)return null;
+
+  const top=bands[0].top,bottom=bands[bands.length-1].bottom;
+  const cropScaled=(source:any,left:number,right:number)=>{
+    const width=right-left,height=bottom-top;
+    const c=lib.createCanvas(width*2,height*2);
+    const ctx=c.getContext("2d");
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(source,left,top,width,height,0,0,width*2,height*2);
+    return c.toBuffer("image/png");
+  };
+
+  type StripRead={cells:string[]};
+  const readStrip=async(source:any,band:{left:number;right:number},alphabet:string,psm:string):Promise<StripRead>=>{
+    await worker.setParameters({tessedit_char_whitelist:alphabet,tessedit_pageseg_mode:psm as any});
+    const result:any=await worker.recognize(cropScaled(source,band.left,band.right),{},{text:true,blocks:true});
+    const words:{t:string;x:number;y:number}[]=[];
+    for(const block of result?.data?.blocks||[])for(const paragraph of block?.paragraphs||[])for(const line of paragraph?.lines||[])for(const word of line?.words||[]){
+      const text=String(word?.text||"").trim();
+      if(text)words.push({t:text,x:word.bbox.x0,y:(word.bbox.y0+word.bbox.y1)/2/2+top});
+    }
+    const cells=bands.map(row=>words.filter(w=>w.y>=row.top&&w.y<row.bottom).sort((a,b)=>b.x-a.x).map(w=>w.t).join(" ").trim());
+    return{cells};
+  };
+
+  /* Pass 1 — numerics, from grey AND binarized. The two fail on different
+     rows; per cell, the value the validator accepts wins. */
+  const NUMERIC="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ -";
+  const numericGrey:StripRead[]=[],numericBin:StripRead[]=[];
+  for(const band of columnBands){
+    numericGrey.push(await readStrip(surface,band,NUMERIC,"6"));
+    numericBin.push(await readStrip(bin,band,NUMERIC,"6"));
+  }
+
+  const normalizeCell=(value:string)=>value.replace(/\s+/g," ").trim();
+  const validatorHits=(cells:string[],pattern:RegExp)=>cells.filter(cell=>pattern.test(normalizeCell(cell))).length;
+
+  /* Columns claim their meaning by what validates in them. */
+  const claim=(pattern:RegExp,minimum:number,exclude:Set<number>)=>{
+    let bestIndex=-1,bestHits=0;
+    for(let i=0;i<columnBands.length;i++){
+      if(exclude.has(i))continue;
+      const hits=Math.max(validatorHits(numericGrey[i].cells,pattern),validatorHits(numericBin[i].cells,pattern));
+      if(hits>bestHits){bestHits=hits;bestIndex=i;}
+    }
+    return bestHits>=minimum?bestIndex:-1;
+  };
+  const taken=new Set<number>();
+  const minimumRows=Math.max(2,Math.floor(bands.length*0.15));
+  const timeIndex=claim(stripPatterns.time,minimumRows,taken);if(timeIndex>=0)taken.add(timeIndex);
+  const buildingIndex=claim(stripPatterns.building,minimumRows,taken);if(buildingIndex>=0)taken.add(buildingIndex);
+  const hallIndex=claim(stripPatterns.hall,minimumRows,taken);if(hallIndex>=0)taken.add(hallIndex);
+  const daysIndex=claim(stripPatterns.days,minimumRows,taken);if(daysIndex>=0)taken.add(daysIndex);
+  const refcodeIndex=claim(stripPatterns.refcode,minimumRows,taken);if(refcodeIndex>=0)taken.add(refcodeIndex);
+  const codeIndex=refcodeIndex>=0?-1:claim(stripPatterns.code,minimumRows,taken);if(codeIndex>=0)taken.add(codeIndex);
+  const referenceIndex=refcodeIndex>=0?-1:claim(stripPatterns.reference,minimumRows,taken);if(referenceIndex>=0)taken.add(referenceIndex);
+  /* The section column sits beside the reference block in this layout, so its
+     neighbours are auditioned first; a free search only if neither validates. */
+  const anchorIndex=refcodeIndex>=0?refcodeIndex:codeIndex>=0?codeIndex:referenceIndex;
+  let scodeIndex=-1;
+  for(const near of [anchorIndex-1,anchorIndex+1]){
+    if(near<0||near>=columnBands.length||taken.has(near))continue;
+    const hits=Math.max(validatorHits(numericGrey[near].cells,stripPatterns.scode),validatorHits(numericBin[near].cells,stripPatterns.scode));
+    if(hits>=minimumRows){scodeIndex=near;break;}
+  }
+  if(scodeIndex<0)scodeIndex=claim(stripPatterns.scode,minimumRows,taken);
+  if(scodeIndex>=0)taken.add(scodeIndex);
+  if(timeIndex<0&&refcodeIndex<0&&codeIndex<0)return null;
+
+  const DIGITS="0123456789 -";
+  for(const index of [daysIndex,refcodeIndex,referenceIndex,codeIndex,scodeIndex]){
+    if(index<0)continue;
+    numericGrey[index]=await readStrip(surface,columnBands[index],DIGITS,"6");
+    numericBin[index]=await readStrip(bin,columnBands[index],DIGITS,"6");
+  }
+
+  /* Cell-by-cell for the columns a tall strip kept failing. A strip hands
+     Tesseract 27 cramped lines at once and it silently merges neighbours,
+     leaving rows empty that are pin-sharp to the eye; a single cell at 2× with
+     PSM 7 (one line) has nothing to merge. Slower — one recognition per cell —
+     and worth every millisecond on the two columns that decide the timetable. */
+  const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string):Promise<string>=>{
+    const width=band.right-band.left,height=rowBand.bottom-rowBand.top;
+    if(width<6||height<6)return"";
+    const cell=lib.createCanvas(width*2,height*2);
+    const ctx=cell.getContext("2d");
+    ctx.imageSmoothingEnabled=true;
+    ctx.drawImage(source,band.left,rowBand.top,width,height,0,0,width*2,height*2);
+    await worker.setParameters({tessedit_char_whitelist:alphabet,tessedit_pageseg_mode:"7" as any});
+    try{
+      const result:any=await worker.recognize(cell.toBuffer("image/png"));
+      return String(result?.data?.text||"").replace(/\s+/g," ").trim();
+    }catch{return"";}
+  };
+  const perCellColumn=async(index:number,alphabet:string)=>{
+    if(index<0)return;
+    const cells:string[]=[];
+    for(const rowBand of bands)cells.push(await readCell(surface,columnBands[index],rowBand,alphabet));
+    numericGrey[index]={cells};
+    const binCells:string[]=[];
+    for(const rowBand of bands)binCells.push(await readCell(bin,columnBands[index],rowBand,alphabet));
+    numericBin[index]={cells:binCells};
+  };
+  /* Measured, per column: the time cells only resolve one-by-one (26%→74%),
+     while the section column and the names do better as strips — so each
+     column keeps the reading that actually wins on the page. */
+  await perCellColumn(timeIndex,DIGITS);
+
+  /* Pass 2 — Arabic, greyscale only, on the two widest unclaimed bands:
+     the course name (widest) and the instructor (leftmost open band). */
+  await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"4" as any});
+  const unclaimed=columnBands.map((band,index)=>({band,index,width:band.right-band.left}))
+    .filter(item=>!taken.has(item.index)).sort((a,b)=>b.width-a.width);
+  const nameBand=unclaimed[0],instructorBand=columnBands[0]&&!taken.has(0)&&unclaimed.find(item=>item.index===0)?{band:columnBands[0],index:0}:unclaimed[1];
+  const arabicRead=async(item?:{band:{left:number;right:number}})=>{
+    if(!item)return{cells:bands.map(()=>"")};
+    return readStrip(surface,item.band,"","4");
+  };
+  const nameCells=await arabicRead(nameBand);
+  /* Two segmentations, merged per row: psm 4 reads clean lines beautifully but
+     leaves rows empty where lines merge; psm 6 fills those. Longer text wins
+     the cell — measured, that is the real name, not noise. */
+  let instructorCells={cells:bands.map(()=>"")};
+  if(nameBand&&instructorBand&&instructorBand.index!==nameBand.index){
+    const sparse=await arabicRead(instructorBand);
+    await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6" as any});
+    const dense=await readStrip(surface,instructorBand.band,"","6");
+    instructorCells={cells:bands.map((_,row)=>{
+      const a=(sparse.cells[row]||"").trim(),b=(dense.cells[row]||"").trim();
+      return a.length>=b.length?a:b;
+    })};
+  }
+
+  /* The claiming pass shares one alphanumeric alphabet so building and hall
+     can be recognised at all — but that same freedom lets stray strokes become
+     letters inside the time and days columns and break their patterns. Once a
+     column has claimed a purely-numeric meaning, it is read AGAIN with digits
+     only, from both sources. Two small strips; measured, the difference is the
+     majority of the time column. */
+
+
+  const pickValidated=(index:number,pattern:RegExp)=>(row:number)=>{
+    if(index<0)return"";
+    const grey=normalizeCell(numericGrey[index].cells[row]||"");
+    const binary=normalizeCell(numericBin[index].cells[row]||"");
+    if(pattern.test(grey))return grey;
+    if(pattern.test(binary))return binary;
+    return grey||binary;
+  };
+  const timeAt=pickValidated(timeIndex,stripPatterns.time);
+  const buildingAt=pickValidated(buildingIndex,stripPatterns.building);
+  const hallAt=pickValidated(hallIndex,stripPatterns.hall);
+  const daysAt=pickValidated(daysIndex,stripPatterns.days);
+  const refcodeAt=pickValidated(refcodeIndex,stripPatterns.refcode);
+  const codeAt=pickValidated(codeIndex,stripPatterns.code);
+  const referenceAt=pickValidated(referenceIndex,stripPatterns.reference);
+  const scodeAt=pickValidated(scodeIndex,stripPatterns.scode);
+
+  /* «الفرع: 012» in the header is the building prefix for every row, so the
+     rows themselves vote it in: the majority prefix among the cells that
+     validated. A cell that failed then only needs its letter and two digits
+     recovered — and the letter, when the scan turned it into a digit, morphs
+     back at a KNOWN position, anchored by the prefix. This is what the free-
+     floating letter repair reverted earlier could never promise. */
+  const validBuildings:string[]=[];
+  for(let row=0;row<bands.length;row++){
+    const value=buildingAt(row).replace(/\s+/g,"").toUpperCase();
+    if(stripPatterns.building.test(value))validBuildings.push(value);
+  }
+  const prefixVotes=new Map<string,number>();
+  for(const value of validBuildings)prefixVotes.set(value.slice(0,3),(prefixVotes.get(value.slice(0,3))||0)+1);
+  const branchPrefix=[...prefixVotes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
+  const LETTER_FROM_DIGIT:Record<string,string>={"8":"B","6":"G","0":"O","5":"S","1":"I","4":"A","7":"T"};
+  const repairBuilding=(raw:string)=>{
+    let value=raw.replace(/\s+/g,"").toUpperCase().replace(/O(?=\d{2}$)/,"0");
+    if(stripPatterns.building.test(value))return value;
+    if(!branchPrefix)return value;
+    const tail=value.replace(/[^0-9A-Z]/g,"");
+    // [prefix?][letter][2 digits] — the tail is the recoverable half
+    const m=tail.match(/([A-Z])(\d{2})$/);
+    if(m)return `${branchPrefix}${m[1]}${m[2]}`;
+    const digits=tail.replace(/\D/g,"");
+    if(digits.length>=3){
+      const letter=LETTER_FROM_DIGIT[digits.slice(-3,-2)];
+      if(letter)return `${branchPrefix}${letter}${digits.slice(-2)}`;
+    }
+    return value;
+  };
+  const repairHall=(raw:string)=>{
+    let value=raw.replace(/\s+/g,"").toUpperCase();
+    // O inside the digits of a hall is always zero: F«O»7 is F07.
+    if(/^[A-Z]/.test(value))value=value[0]+value.slice(1).replace(/O/g,"0");
+    return stripPatterns.hall.test(value)?value:value.slice(0,6);
+  };
+
+  const rowsOut:GridRow[]=[];
+  for(let row=0;row<bands.length;row++){
+    /* A table border read as «1» prefixes the digits; the tail is the value. */
+    let refcode=refcodeAt(row).replace(/\D/g,"");
+    if(refcode.length>12)refcode=refcode.slice(-12);
+    let reference=referenceAt(row).replace(/\D/g,""),code=codeAt(row).replace(/\D/g,"");
+    if(reference.length>5)reference=reference.slice(-5);
+    if(code.length>7)code=code.slice(-7);
+    if(refcode.length===12){reference=refcode.slice(0,5);code=refcode.slice(5);}
+    const timeText=timeAt(row).replace(/\D+/g," ").trim();
+    const pieces=timeText.split(" ").filter(piece=>piece.length>=3&&piece.length<=4);
+    let start="",end="";
+    /* A 3-digit piece lost one digit, and which end it lost decides the hour:
+       «080» is 0800 with its tail gone, «950» is 0950 with its head gone. Try
+       both pads and keep the one that lands inside teaching hours — for these
+       values exactly one of them ever does. */
+    const teaching=(value:string)=>{const h=Number(value.slice(0,2)),m=Number(value.slice(2));return h>=7&&h<21&&m<60;};
+    const mend=(piece:string):string|null=>{
+      if(piece.length===4)return teaching(piece)?piece:null;
+      const padded=[piece.padEnd(4,"0"),piece.padStart(4,"0")].filter(teaching);
+      return padded.length===1?padded[0]:null;
+    };
+    const mended=pieces.map(mend).filter((value):value is string=>Boolean(value));
+    if(mended.length>=2){
+      const toMinutes=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(2));
+      const sorted=[...mended].sort((a,b)=>toMinutes(a)-toMinutes(b));
+      start=`${sorted[0].slice(0,2)}:${sorted[0].slice(2)}`;
+      end=`${sorted[sorted.length-1].slice(0,2)}:${sorted[sorted.length-1].slice(2)}`;
+    }
+    let scode=scodeAt(row).replace(/\D/g,"");
+    if(scode.length>3)scode=scode.slice(-3);
+    rowsOut.push({
+      code,reference,scode,
+      courseText:normalizeCell(nameCells.cells[row]||""),
+      instructorText:normalizeCell(instructorCells.cells[row]||""),
+      days:daysAt(row).replace(/[^1-5 ]/g,"").trim(),
+      start,end,
+      building:repairBuilding(buildingAt(row)),
+      hall:repairHall(hallAt(row)),
+    });
+  }
+  await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
+  const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
+  return meaningful.length>=3?rowsOut:null;
+}
+
+/**
+ * The term the sheet says it belongs to: «الفصل الدراسي الاول 2027-2026».
+ *
+ * The header names the term on every export, and uploading last year's sheet
+ * into this year's term is the one mistake nothing downstream can catch — the
+ * rows are all valid, just a year old. Read it here so the caller can compare
+ * it with the term the person actually selected.
+ */
+function readHeaderTerm(text:string):HeaderTerm|undefined{
+  const ascii=toAscii(text);
+  const match=ascii.match(/الفصل\s*الدراسي\s*(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*-\s*(\d{4})/);
+  if(!match)return undefined;
+  const season=/الاول|الأول/.test(match[1])?"first":/الثاني|الثانى/.test(match[1])?"second":"summer";
+  const a=Number(match[2]),b=Number(match[3]);
+  const years:[number,number]=[Math.min(a,b),Math.max(a,b)];
+  const seasonLabel=season==="first"?"الأول":season==="second"?"الثاني":"الصيفي";
+  return{season,years,label:`الفصل الدراسي ${seasonLabel} ${years[0]}/${years[1]}`};
+}
+
 /**
  * Is this scan worth reading at all?
  *
@@ -402,12 +793,17 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       for(;;){
         const index=queue.shift();
         if(index===undefined)break;
-        const grid=await spreadColumns(await deskew(await rotateImage(images[index],orientation)));
+        const upright=await deskew(await rotateImage(images[index],orientation));
+        const grid=await spreadColumns(upright);
         const result:any=await worker.recognize(grid.image,{},{text:true,blocks:true});
         const surface=result?.data||{};
         texts[index]=String(surface.text||"");
         scores[index]=Number(surface.confidence||0);
-        pages[index]={rows:tableFromWords(wordsOf(surface),grid.columns)};
+        /* The gridded reader first; the flat-text rows stay as the fallback
+           the parser reaches for when a page carries no usable grid. */
+        let gridRows:GridRow[]|null=null;
+        try{gridRows=await readGrid(upright,worker);}catch{/* an unreadable grid falls back */}
+        pages[index]={rows:tableFromWords(wordsOf(surface),grid.columns),...(gridRows?{gridRows}:{})};
         done++;
         onProgress?.({phase:"read",page:done,pages:images.length,message:`قراءة الصفحة ${done} من ${images.length}`});
       }
@@ -423,6 +819,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     confidence,
     orientation,
     legibility:judgeLegibility(text,images.length,confidence),
+    headerTerm:readHeaderTerm(text),
   };
 }
 
@@ -513,6 +910,87 @@ export type ParsedScheduleRow={
  * matches names against the real catalogue instead of inventing identifiers.
  * Anything it cannot resolve is returned as an issue and never published.
  */
+/**
+ * Structured rows from the gridded reader, matched against the catalogue.
+ *
+ * The course code is the key that cannot drift: college(2) + department(2) +
+ * course(3). It is matched exactly first, then with one forgiven character,
+ * then by its 3-digit tail when that tail is unique in this department — the
+ * order the user specified. The Arabic name is the last resort, not the first.
+ */
+function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number){
+  const catalogue=courses.map(course=>({course,digits:toAscii(String(course.CourseCode||"")).replace(/\D/g,""),folded:fold(course.CourseName)}));
+  const tails=new Map<string,number>();
+  for(const item of catalogue){
+    if(item.digits.length>=3){const tail=item.digits.slice(-3);tails.set(tail,(tails.get(tail)||0)+1);}
+  }
+  const instructorNeedles=instructors.map(person=>({person,folded:fold(person.AdInstructorName)}));
+
+  /* «القسم: 0101» in the header is the prefix of every course code on the
+     sheet, and the catalogue this import is scoped to carries the same prefix
+     on every entry — so the prefix is KNOWN before any cell is read, and the
+     three digits the department actually uses day to day are all a row needs
+     to yield. */
+  const prefixVotes=new Map<string,number>();
+  for(const item of catalogue)if(item.digits.length>=6)
+    prefixVotes.set(item.digits.slice(0,-3),(prefixVotes.get(item.digits.slice(0,-3))||0)+1);
+  const departmentPrefix=[...prefixVotes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
+  const matchCourse=(code:string,nameText:string)=>{
+    if(code){
+      const exact=catalogue.find(item=>item.digits===code);
+      if(exact)return exact.course;
+      if(departmentPrefix&&code.length>=3){
+        const rebuilt=departmentPrefix+code.slice(-3);
+        const byPrefix=catalogue.find(item=>item.digits===rebuilt);
+        if(byPrefix)return byPrefix.course;
+      }
+      const close=catalogue.filter(item=>item.digits.length===code.length&&editDistance(item.digits,code)<=1);
+      if(close.length===1)return close[0].course;
+      const tail=code.slice(-3);
+      if(tails.get(tail)===1){
+        const byTail=catalogue.find(item=>item.digits.endsWith(tail));
+        if(byTail)return byTail.course;
+      }
+    }
+    if(nameText.length>=5){
+      const ranked=catalogue.map(item=>({item,score:fuzzyNameScore(nameText,item.course.CourseName)})).sort((a,b)=>b.score-a.score);
+      if(ranked[0]&&ranked[0].score>=0.56)return ranked[0].item.course;
+    }
+    return null;
+  };
+
+  const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
+  for(const grid of gridRows){
+    const course=matchCourse(grid.code,grid.courseText);
+    if(!course){
+      if(grid.code||grid.courseText.length>4)
+        issues.push(`صف غير مطابق: «${grid.courseText||grid.code}» — لا يقابله مقرر في كتالوج القسم`);
+      continue;
+    }
+    const flags={...EMPTY_DAYS};
+    for(const digit of grid.days.match(/[1-5]/g)||[])flags[DAY_FIELDS[Number(digit)-1]]=true;
+    const instructorRanked=instructorNeedles.map(item=>({item,score:fuzzyNameScore(grid.instructorText,item.person.AdInstructorName)})).sort((a,b)=>b.score-a.score);
+    const instructorHit=instructorRanked[0]&&instructorRanked[0].score>=0.5?instructorRanked[0].item:undefined;
+    rows.push({
+      sourceOrder:order++,
+      referenceNumber:grid.reference,
+      AdCourseId:course.AdCourseId,AdCourseName:course.CourseName,SCode:grid.scode,
+      AdInstructorId:instructorHit?.person.AdInstructorId||0,
+      ...flags,
+      fstarttime:grid.start,fendtime:grid.end,
+      AdRoomCode:grid.building,AdRoomHall:grid.hall,
+      ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,grid.building,grid.hall,grid.instructorText].filter(Boolean).join(" | "),
+    });
+    const label=course.CourseName;
+    if(!grid.start)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
+    if(!Object.values(flags).some(Boolean))issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الأيام`);
+    if(!instructorHit)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على أستاذ المقرر`);
+    if(!grid.scode)issues.push(`صف «${label}»: لم أتعرف على رقم الشعبة`);
+    if(!grid.building&&!grid.hall)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
+  }
+  return{rows,issues,order};
+}
+
 export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[]){
   const courseNeedles=courses.map(course=>({course,folded:fold(course.CourseName),code:fold(course.CourseCode)})).sort((a,b)=>b.folded.length-a.folded.length);
   const instructorNeedles=instructors.map(person=>({person,folded:fold(person.AdInstructorName)})).sort((a,b)=>b.folded.length-a.folded.length);
@@ -530,6 +1008,16 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     uniqueTails[tail]=new Set([...seen.entries()].filter(([,count])=>count===1).map(([suffix])=>suffix));
   }
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=0,scanned=0;
+
+  for(const page of pages){
+    if(page.gridRows?.length){
+      const parsed=parseGridRows(page.gridRows,courses,instructors,order);
+      rows.push(...parsed.rows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
+    }
+  }
+  if(rows.length){
+    return{rows,issues:[...new Set(issues)],lines:scanned};
+  }
 
   for(const page of pages)for(const row of page.rows){
     scanned++;
