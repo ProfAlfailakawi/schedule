@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, ChevronLeft, Clock, Copy, Download, History, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
 import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
+import SchedulePublish from "./SchedulePublish";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
@@ -37,7 +38,7 @@ interface Props {
   onClose: () => void;
 }
 
-type Tab = "export" | "import" | "retire" | "visiting";
+type Tab = "export" | "import" | "publish" | "retire" | "visiting";
 
 export default function ScheduleTransfer({ collegeId, sectionId, termId, instructors, departmentIds, terms, onChanged, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("export");
@@ -317,7 +318,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       ["الأيام", "اكتب أسماء الأيام كما تنطقها: الأحد - الثلاثاء - الخميس. أي فاصل يصلح."],
       ["الوقت", "من-إلى بصيغة 24 ساعة: 08:00-09:20."],
       ["الصفوف الناقصة", "صف برمز غير معروف أو أستاذ غير معروف يظهر لك كملاحظة قبل أي حفظ — لا يُكتب شيء خفية."],
-      ["ماذا يحدث بعد الرفع", "يُعرض الملف أولاً كحصيلة: كم صفاً فُهم وما المشاكل. الموافقة تنشئ مسودة في مركز الذكاء، ومن هناك تُنشر فتحل محل جدول القسم لهذا الفصل، مع نقطة أمان تلقائية قبل النشر تسمح بالرجوع."],
+      ["ماذا يحدث بعد الرفع", "يُعرض الملف أولاً كحصيلة: كم صفاً فُهم وما المشاكل. بعد المراجعة يمكنك النشر مباشرة من أدوات البيانات. تقرير تغييرات نسخة PDF يوجد في مركز الاستعلامات والتقارير."],
     ]);
     (guide as any)["!cols"] = [{ wch: 16 }, { wch: 90 }];
     const wb = XLSX.utils.book_new();
@@ -390,7 +391,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
          preview — zero rows, zero message. An error object IS the message. */
       if(data&&(data as any).error&&!(data as any).rows)throw new Error((data as any).error);
       if(!data)throw new Error("تعذرت قراءة PDF");
-      setXlsxPreview({...data,valid:Boolean(data.ready),count:Number(data.rows?.length||0),fileName:file.name,importLayout:"authority-pdf"});
+      const scannedRows=Array.isArray(data.rows)?data.rows:[];
+      setXlsxPreview({
+        ...data,
+        rows:scannedRows,
+        baselineRows:scannedRows.map((row:any)=>({...row})),
+        valid:Boolean(data.ready),count:Number(scannedRows.length),fileName:file.name,importLayout:"authority-pdf",
+        sourceBranchCode:String(data.headerBranch?.code||""),
+        sourceBranchName:String(data.headerBranch?.name||""),
+      });
       if(!deptCourses.length){
         try{
           const all=await (await fetch("/api/courses")).json();
@@ -419,8 +428,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           source: "import",
           name: `${importKind==="authority-pdf"?"نسخة PDF المعتمدة":"استيراد النموذج"} — ${xlsxPreview.fileName || ""}`.trim(),
           rows: xlsxPreview.rows,
+          baselineRows:importKind==="authority-pdf"?xlsxPreview.baselineRows:undefined,
           importLayout:importKind,
           sourceFileName:xlsxPreview.fileName,
+          sourceBranchCode:importKind==="authority-pdf"?xlsxPreview.sourceBranchCode:undefined,
+          sourceBranchName:importKind==="authority-pdf"?xlsxPreview.sourceBranchName:undefined,
         }),
       });
       const data = await response.json();
@@ -536,7 +548,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         <header>
           <div>
             <span className="surface-kicker">الجدول كوحدة واحدة</span>
-            <h2>تصدير · استيراد · استبدال · منتدبون</h2>
+            <h2>تصدير · استيراد · نشر · استبدال · منتدبون</h2>
           </div>
           <button type="button" className="drawer-close" onClick={onClose} aria-label="إغلاق"><X /></button>
         </header>
@@ -544,6 +556,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         <nav className="transfer-tabs">
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "export" ? "active" : ""} onClick={() => setTab("export")} title="تصدير"><Download />تصدير</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "import" ? "active" : ""} onClick={() => setTab("import")} title="استيراد"><Upload />استيراد</button>
+          <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "publish" ? "active" : ""} onClick={() => setTab("publish")} title="نشر"><Link2 />نشر</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "retire" ? "active" : ""} onClick={() => setTab("retire")} title="استبدال"><UserMinus />استبدال</button>
           <button type="button" data-guide-feature-id="schedule.tool.data" className={tab === "visiting" ? "active" : ""} onClick={() => setTab("visiting")} title="المنتدبون"><UserPlus />المنتدبون</button>
         </nav>
@@ -647,13 +660,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     </ul>
                   ) : null}
                   {xlsxDraft ? (
-                    <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")?"اكتمل تعبئة الجدول ونشره بنجاح.":<>حُفظت نسخة PDF بالترتيب الأصلي. عدّلها ثم افتح <b className="visual-flow-inline">مركز الذكاء <ChevronLeft aria-hidden="true" /> تقرير تغييرات PDF</b> قبل النشر.</>}</p>
-                  ) : (importKind === "authority-pdf" ? xlsxPreview.count > 0 : xlsxPreview.valid) ? (
-                    <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(importKind==="worksheet")} disabled={busy}>
-                      {busy ? "يجهّز…" : importKind==="authority-pdf"?`نسخ ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} إلى الفصل الفارغ`:`تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
-                    </PrimaryButton>
+                    <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")
+                      ? "اكتمل تعبئة الجدول ونشره بنجاح. تقرير تغييرات PDF أصبح متاحاً في مركز الاستعلامات والتقارير."
+                      : "حُفظت المسودة داخل أدوات البيانات. يمكنك نشرها من هنا متى شئت."}</p>
+                  ) : xlsxPreview.valid ? (
+                    <div className="transfer-import-commit">
+                      <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy}>
+                        {busy ? "يجهّز…" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
+                      </PrimaryButton>
+                      {importKind==="authority-pdf" ? <SecondaryButton type="button" onClick={() => void saveExcelDraft(false)} disabled={busy}>حفظ كمسودة فقط</SecondaryButton> : null}
+                    </div>
                   ) : (
-                    <p className="muted">صحّح الملاحظات في الملف ثم ارفعه مجدداً — لا يُحفظ استيراد فيه أخطاء.</p>
+                    <p className="muted">صحّح الخانات الحمراء ثم اعتمدها — لا يُنشر صف ناقص أو غير مطابق.</p>
                   )}
                 </div>
               ) : null}
@@ -679,6 +697,21 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   ) : null}
                 </div>
               ) : null}
+            </>
+          ) : null}
+
+          {tab === "publish" ? (
+            <>
+              <div className="tool-lede">
+                <span className="tool-lede-mark"><Link2 aria-hidden="true" /></span>
+                <div>
+                  <strong>نشر الجدول من أدوات البيانات</strong>
+                  <p className="muted">أنشئ رابط القراءة وأدر روابط النشر من هنا، بدون الانتقال إلى مركز الذكاء.</p>
+                </div>
+              </div>
+              <div className="transfer-publish-tool">
+                <SchedulePublish collegeId={collegeId} sectionId={sectionId} termId={termId} />
+              </div>
             </>
           ) : null}
 

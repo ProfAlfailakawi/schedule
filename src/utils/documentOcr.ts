@@ -12,13 +12,14 @@ export type OcrRow={cells:OcrCell[];line:string;y:number};
 export type OcrPage={rows:OcrRow[];gridRows?:GridRow[]};
 export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
-export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm};
+export type HeaderBranch={code:string;name:string;label:string};
+export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read";page:number;pages:number;message:string})=>void;
 
 const MAX_PAGES=12;
 /** A4 at ~300dpi. The old 157dpi render was the single largest cause of
  *  unreadable rows: Arabic table text at that size loses its dots. */
-const TARGET_LONG_EDGE:number=3500;
+const TARGET_LONG_EDGE:number=3000;
 /** The orientation probe runs on a deliberately small render. Deciding which
  *  way is up needs a tenth of the pixels that reading the text needs. */
 const PROBE_LONG_EDGE:number=1400;
@@ -106,6 +107,72 @@ async function renderPdf(input:Buffer,longEdge:number,onProgress?:OcrProgress):P
     pages.push(surface.toBuffer("image/png"));
   }
   return pages;
+}
+
+
+/**
+ * Fast path for real PDF exports that still contain a text layer.
+ *
+ * The Authority timetable is frequently a generated PDF, not a photograph. In
+ * that case rendering every page and running Tesseract on 15–25 strips per
+ * page is both slower and less accurate than using the characters already
+ * embedded in the PDF. We rebuild physical rows from the text coordinates and
+ * hand them to the exact same catalogue matcher used by OCR. A scanned/image
+ * PDF has no useful text layer, so it simply returns null and falls through to
+ * the OCR path below.
+ */
+async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrResult|null>{
+  try{
+    const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;
+    const count=Math.min(Number(pdf.numPages||0),MAX_PAGES);
+    if(!count)return null;
+    const pages:OcrPage[]=[];const pageTexts:string[]=[];let structuralRows=0,totalChars=0;
+    for(let index=1;index<=count;index++){
+      onProgress?.({phase:"render",page:index,pages:count,message:`فحص النص المضمّن في الصفحة ${index} من ${count}`});
+      const page=await pdf.getPage(index);
+      const viewport=page.getViewport({scale:1});
+      const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
+      const words:Word[]=[];
+      for(const item of content?.items||[]){
+        const text=String(item?.str||"").replace(/\s+/g," ").trim();
+        if(!text||!Array.isArray(item?.transform))continue;
+        const transformed=pdfjs.Util?.transform?pdfjs.Util.transform(viewport.transform,item.transform):item.transform;
+        const x=Number(transformed?.[4]??item.transform[4]??0);
+        const baseline=Number(transformed?.[5]??item.transform[5]??0);
+        const width=Math.max(1,Math.abs(Number(item?.width||0)*Number(viewport.scale||1)));
+        const height=Math.max(7,Math.abs(Number(item?.height||0)*Number(viewport.scale||1))||10);
+        /* viewport.transform uses top-left page coordinates; a text item's
+           transform points at its baseline, so this box is intentionally a
+           little generous vertically. Row clustering only needs the centre. */
+        words.push({text,x0:x,y0:baseline-height,x1:x+width,y1:baseline+height*.15});
+        totalChars+=text.replace(/\s+/g,"").length;
+      }
+      const rows=tableFromWords(words,[]);
+      const pageText=rows.map(row=>row.line).join("\n");
+      pageTexts.push(pageText);
+      structuralRows+=rows.filter(row=>{
+        const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
+        const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]\s*[0-2]?\d[0-5]\d\b/.test(ascii)
+          ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—]\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
+        const digitRuns=ascii.match(/\d+/g)||[];
+        const hasTableKey=digitRuns.some(run=>run.length>=5)||/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii);
+        return hasTime&&hasTableKey;
+      }).length;
+      pages.push({rows});
+    }
+    const text=pageTexts.join("\n\n--- PAGE ---\n\n");
+    /* Require several unmistakable timetable rows before skipping OCR. A PDF
+       whose text layer contains only a title/page number must not be mistaken
+       for a complete table. */
+    if(structuralRows<3||totalChars<180)return null;
+    const confidence=99;
+    return{
+      pages,text,pageCount:count,confidence,orientation:0,
+      legibility:{readable:true,confidence,charactersPerPage:Math.round(totalChars/Math.max(1,count)),reason:""},
+      headerTerm:readHeaderTerm(text),headerBranch:readHeaderBranch(text),
+    };
+  }catch{return null;}
 }
 
 async function imagePages(input:Buffer,mime:string,longEdge:number,onProgress?:OcrProgress):Promise<Buffer[]>{
@@ -632,11 +699,11 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   ]));
   refineIndices.forEach((index,at)=>{numericGrey[index]=refined[at*2];numericBin[index]=refined[at*2+1];});
 
-  /* Cell-by-cell for the columns a tall strip kept failing. A strip hands
-     Tesseract 27 cramped lines at once and it silently merges neighbours,
-     leaving rows empty that are pin-sharp to the eye; a single cell at 2× with
-     PSM 7 (one line) has nothing to merge. Slower — one recognition per cell —
-     and worth every millisecond on the two columns that decide the timetable. */
+  /* Cell-by-cell is the expensive rescue path, not the default path. The old
+     reader re-ran EVERY time cell even when the strip had already read it
+     correctly. On a 27-row page that meant 27 extra OCR calls per page. Now
+     only cells that fail the time validator are re-read, preserving the fast
+     strip result for the majority of rows. */
   const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string,worker:PooledWorker=pool.ara):Promise<string>=>{
     const width=band.right-band.left,height=rowBand.bottom-rowBand.top;
     if(width<6||height<6)return"";
@@ -650,34 +717,46 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
       return String(result?.data?.text||"").replace(/\s+/g," ").trim();
     }catch{return"";}
   };
-  const perCellColumn=async(index:number,alphabet:string)=>{
-    if(index<0)return;
-    const greyCells=await runOnPool(pool.eng,bands.map(rowBand=>(worker:PooledWorker)=>readCell(surface,columnBands[index],rowBand,alphabet,worker)));
-    numericGrey[index]={cells:greyCells};
-    numericBin[index]={cells:bands.map(()=>"")};
-  };
-  /* Measured, per column: the time cells only resolve one-by-one (26%→74%),
-     while the section column and the names do better as strips — so each
-     column keeps the reading that actually wins on the page. */
-  await perCellColumn(timeIndex,DIGITS);
+  if(timeIndex>=0){
+    const needsTimeCell=bands.map((_,row)=>{
+      const grey=normalizeCell(numericGrey[timeIndex].cells[row]||"");
+      const binary=normalizeCell(numericBin[timeIndex].cells[row]||"");
+      return !stripPatterns.time.test(grey)&&!stripPatterns.time.test(binary);
+    });
+    const missingRows=needsTimeCell.map((missing,row)=>missing?row:-1).filter(row=>row>=0);
+    if(missingRows.length){
+      const rescued=await runOnPool(pool.eng,missingRows.map(row=>(worker:PooledWorker)=>readCell(surface,columnBands[timeIndex],bands[row],DIGITS,worker)));
+      const next=[...numericGrey[timeIndex].cells];
+      missingRows.forEach((row,at)=>{if(rescued[at])next[row]=rescued[at];});
+      numericGrey[timeIndex]={cells:next};
+    }
+  }
 
-  /* Pass 2 — Arabic, greyscale only, on the two widest unclaimed bands:
-     the course name (widest) and the instructor (leftmost open band). */
+  /* Pass 2 — Arabic. Instructor names are mandatory because the system must
+     display every doctor after upload. Course names are only an OCR fallback:
+     once the numeric course key is readable on most rows, the authoritative
+     name comes from the system catalogue and paying a second Arabic strip adds
+     time without adding truth. */
   await pool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"4" as any});
   const unclaimed=columnBands.map((band,index)=>({band,index,width:band.right-band.left}))
     .filter(item=>!taken.has(item.index)).sort((a,b)=>b.width-a.width);
-  const nameBand=unclaimed[0],instructorBand=columnBands[0]&&!taken.has(0)&&unclaimed.find(item=>item.index===0)?{band:columnBands[0],index:0}:unclaimed[1];
+  const widest=unclaimed[0];
+  const leftOpen=unclaimed.find(item=>item.index===0);
+  const instructorBand=leftOpen || unclaimed.find(item=>item.index!==widest?.index);
+  const codePattern=refcodeIndex>=0?stripPatterns.refcode:stripPatterns.code;
+  const codeSignalIndex=refcodeIndex>=0?refcodeIndex:codeIndex;
+  const codeHits=codeSignalIndex>=0
+    ? Math.max(validatorHits(numericGrey[codeSignalIndex].cells,codePattern),validatorHits(numericBin[codeSignalIndex].cells,codePattern))
+    : 0;
+  const needCourseNames=codeHits<Math.max(3,Math.floor(bands.length*0.72));
+  const nameBand=needCourseNames?widest:undefined;
   const arabicRead=async(item?:{band:{left:number;right:number}})=>{
     if(!item)return{cells:bands.map(()=>"")};
     return readStrip(surface,item.band,"","4");
   };
-  /* The Arabic bill, split across both Arabic workers: the course-name strip
-     on one, the instructor's two segmentations queued on the other — psm 4
-     reads clean lines beautifully but drops rows where lines merge, psm 6
-     fills those, and the longer text per row is the real name. */
   const namePromise=arabicRead(nameBand);
   let instructorPromise:Promise<{cells:string[]}>=Promise.resolve({cells:bands.map(()=>"")});
-  if(nameBand&&instructorBand&&instructorBand.index!==nameBand.index){
+  if(instructorBand&&instructorBand.index!==nameBand?.index){
     instructorPromise=(async()=>{
       const sparse=await readStrip(surface,instructorBand.band,"","4",pool.ara2);
       const dense=await readStrip(surface,instructorBand.band,"","6",pool.ara2);
@@ -819,6 +898,24 @@ function readHeaderTerm(text:string):HeaderTerm|undefined{
   return{season,years,label:`الفصل الدراسي ${seasonLabel} ${years[0]}/${years[1]}`};
 }
 
+/** Branch line printed in the Authority header, e.g.
+ * «الفرع: 012 كلية التربية الأساسية بنات». The application does not maintain
+ * a separate branch catalogue, so the source header is the authoritative name. */
+function readHeaderBranch(text:string):HeaderBranch|undefined{
+  const ascii=toAscii(text).replace(/\r/g,"");
+  for(const rawLine of ascii.split("\n")){
+    const line=rawLine.replace(/\s+/g," ").trim();
+    const match=line.match(/الفرع\s*[:：-]?\s*(\d{3})\s*(.*)$/);
+    if(!match)continue;
+    const code=match[1];
+    const name=String(match[2]||"")
+      .replace(/\s+(?:القسم|الكلية|الفصل|التاريخ)\s*[:：].*$/," ")
+      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
+    return{code,name,label:[code,name].filter(Boolean).join(" ")};
+  }
+  return undefined;
+}
+
 /**
  * Is this scan worth reading at all?
  *
@@ -845,6 +942,11 @@ function judgeLegibility(text:string,pages:number,confidence:number):Legibility{
  * one implementation, and no uploaded document is kept after it is read.
  */
 export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgress):Promise<OcrResult>{
+  const looksLikePdf=/pdf/i.test(mime)||input.subarray(0,4).toString("latin1")==="%PDF";
+  if(looksLikePdf){
+    const embedded=await pdfTextLayer(input,onProgress);
+    if(embedded)return embedded;
+  }
   /* One render. The old flow paid pdfjs twice — a probe pass and a full pass —
      when a probe is only a downscale of the full page it already had. */
   const images=await imagePages(input,mime,TARGET_LONG_EDGE,onProgress);
@@ -911,7 +1013,13 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      needs: the term line for the mismatch warning, and a text sample for the
      legibility verdict. */
   let pagesDone=0;
-  await Promise.all(images.map(async(pageImage,index)=>{
+  /* Do not run whole pages against the same Tesseract workers concurrently.
+     The previous Promise.all made three pages race through the same worker
+     objects and their setParameters calls, which both slowed recognition and
+     made Arabic/numeric settings bleed between pages. Strips still fan out
+     across the worker pool inside each page; pages themselves are serialized. */
+  for(let index=0;index<images.length;index++){
+    const pageImage=images[index];
     const upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
     try{gridRows=await readGrid(upright,pool);}catch{/* an unreadable grid falls back */}
@@ -949,7 +1057,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }
     pagesDone++;
     onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
-  }));
+  }
 
   const text=texts.join("\n\n--- PAGE ---\n\n");
   const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));
@@ -967,6 +1075,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     orientation,
     legibility,
     headerTerm:readHeaderTerm(text),
+    headerBranch:readHeaderBranch(text),
   };
 }
 
@@ -1047,8 +1156,70 @@ const fuzzyNameScore=(line:string,name:string)=>{
 export type ParsedScheduleRow={
   sourceOrder:number;referenceNumber:string;AdCourseId:number;AdCourseName:string;SCode:string;AdInstructorId:number;
   fsunday:boolean;fmonday:boolean;ftuesday:boolean;fwednesday:boolean;fthursday:boolean;
-  fstarttime:string;fendtime:string;AdRoomCode:string;AdRoomHall:string;ocrLine:string;
+  fstarttime:string;fendtime:string;AdRoomCode:string;AdRoomHall:string;ocrLine:string;sourceInstructorText?:string;
 };
+
+/** Match the abbreviated instructor name printed on the Authority sheet to
+ * the exact catalogue record. The sheet routinely prints only first+second,
+ * first+last, or a unique first name (e.g. «عيسى»), while the system stores the
+ * full legal/display name. Department history is a preference, not a wall:
+ * visiting staff from another department must still resolve and appear. */
+function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>):AdInstructor|undefined{
+  const clean=(value:string)=>fold(value)
+    .replace(/(?:^|\s)(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الأستاذ|ا\.?\s*د)(?=\s|$)/g," ")
+    .replace(/(?:^|\s)د\.?(?=\s|$)/g," ")
+    .replace(/\s+/g," ").trim();
+  const rawClean=clean(raw);
+  if(!rawClean)return undefined;
+  const rawTokens=rawClean.split(" ").filter(Boolean);
+  const candidates=instructors.map(person=>{
+    const normalized=clean(person.AdInstructorName);
+    const tokens=normalized.split(" ").filter(Boolean);
+    return{person,normalized,tokens,preferred:Boolean(preferredIds?.has(Number(person.AdInstructorId)))};
+  }).filter(item=>item.tokens.length);
+  const chooseUnique=(list:typeof candidates)=>list.length===1?list[0].person:undefined;
+
+  const exact=candidates.filter(item=>item.normalized===rawClean);
+  if(exact.length===1)return exact[0].person;
+  const exactPreferred=exact.filter(item=>item.preferred);
+  if(exactPreferred.length===1)return exactPreferred[0].person;
+
+  if(rawTokens.length>=2){
+    const first=rawTokens[0],second=rawTokens[1],last=rawTokens[rawTokens.length-1];
+    const firstSecond=candidates.filter(item=>item.tokens[0]===first&&item.tokens[1]===second);
+    const preferredFirstSecond=firstSecond.filter(item=>item.preferred);
+    const byFirstSecond=chooseUnique(preferredFirstSecond)||chooseUnique(firstSecond);
+    if(byFirstSecond)return byFirstSecond;
+    const firstLast=candidates.filter(item=>item.tokens[0]===first&&item.tokens[item.tokens.length-1]===last);
+    const preferredFirstLast=firstLast.filter(item=>item.preferred);
+    const byFirstLast=chooseUnique(preferredFirstLast)||chooseUnique(firstLast);
+    if(byFirstLast)return byFirstLast;
+    /* Some exports show first name plus one middle/family token. */
+    const firstAny=candidates.filter(item=>item.tokens[0]===first&&rawTokens.slice(1).every(token=>item.tokens.includes(token)));
+    const preferredFirstAny=firstAny.filter(item=>item.preferred);
+    const byFirstAny=chooseUnique(preferredFirstAny)||chooseUnique(firstAny);
+    if(byFirstAny)return byFirstAny;
+  }
+
+  if(rawTokens.length===1){
+    const first=rawTokens[0];
+    const firstMatches=candidates.filter(item=>item.tokens[0]===first);
+    const preferredFirst=firstMatches.filter(item=>item.preferred);
+    const unique=chooseUnique(preferredFirst)||chooseUnique(firstMatches);
+    if(unique)return unique;
+  }
+
+  const ranked=candidates.map(item=>{
+    let score=fuzzyNameScore(rawClean,item.person.AdInstructorName);
+    const firstRaw=rawTokens[0]||"",firstSystem=item.tokens[0]||"";
+    if(firstRaw&&firstSystem&&(firstRaw===firstSystem||(Math.min(firstRaw.length,firstSystem.length)>=4&&editDistance(firstRaw,firstSystem)<=1)))score+=0.12;
+    if(item.preferred)score+=0.05;
+    return{item,score};
+  }).sort((a,b)=>b.score-a.score);
+  const top=ranked[0],runner=ranked[1];
+  if(top&&top.score>=0.58&&(!runner||top.score-runner.score>=0.08))return top.item.person;
+  return undefined;
+}
 
 /**
  * Best-effort table parser for the Authority's scanned timetable.
@@ -1065,14 +1236,12 @@ export type ParsedScheduleRow={
  * then by its 3-digit tail when that tail is unique in this department — the
  * order the user specified. The Arabic name is the last resort, not the first.
  */
-function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number){
+function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number,preferredInstructorIds?:Set<number>){
   const catalogue=courses.map(course=>({course,digits:toAscii(String(course.CourseCode||"")).replace(/\D/g,""),folded:fold(course.CourseName)}));
   const tails=new Map<string,number>();
   for(const item of catalogue){
     if(item.digits.length>=3){const tail=item.digits.slice(-3);tails.set(tail,(tails.get(tail)||0)+1);}
   }
-  const instructorNeedles=instructors.map(person=>({person,folded:fold(person.AdInstructorName)}));
-
   /* «القسم: 0101» in the header is the prefix of every course code on the
      sheet, and the catalogue this import is scoped to carries the same prefix
      on every entry — so the prefix is KNOWN before any cell is read, and the
@@ -1148,8 +1317,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     }
     const flags={...EMPTY_DAYS};
     for(const digit of grid.days.match(/[1-5]/g)||[])flags[DAY_FIELDS[Number(digit)-1]]=true;
-    const instructorRanked=instructorNeedles.map(item=>({item,score:fuzzyNameScore(grid.instructorText,item.person.AdInstructorName)})).sort((a,b)=>b.score-a.score);
-    const instructorHit=instructorRanked[0]&&instructorRanked[0].score>=0.5?instructorRanked[0].item:undefined;
+    const instructorHit=matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
     rows.push({
       sourceOrder:order++,
       referenceNumber:grid.reference,
@@ -1159,6 +1327,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       fstarttime:grid.start,fendtime:grid.end,
       AdRoomCode:grid.building,AdRoomHall:grid.hall,
       ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,grid.building,grid.hall,grid.instructorText].filter(Boolean).join(" | "),
+      sourceInstructorText:grid.instructorText,
     });
     const label=course.CourseName;
     if(!grid.start)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
@@ -1170,9 +1339,8 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   return{rows,issues,order};
 }
 
-export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[]){
+export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>){
   const courseNeedles=courses.map(course=>({course,folded:fold(course.CourseName),code:fold(course.CourseCode)})).sort((a,b)=>b.folded.length-a.folded.length);
-  const instructorNeedles=instructors.map(person=>({person,folded:fold(person.AdInstructorName)})).sort((a,b)=>b.folded.length-a.folded.length);
   /* A short course number is only a safe key when it is unambiguous inside this
      department's own catalogue. */
   const uniqueTails:Record<number,Set<string>>={};
@@ -1190,7 +1358,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
   for(const page of pages){
     if(page.gridRows?.length){
-      const parsed=parseGridRows(page.gridRows,courses,instructors,order);
+      const parsed=parseGridRows(page.gridRows,courses,instructors,order,preferredInstructorIds);
       rows.push(...parsed.rows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
     }
   }
@@ -1293,11 +1461,15 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     const reference=runs.find(value=>value.length===5)||"";
     const section=runs.find(value=>value.length===3&&value!==courseCode.slice(-3))||"";
 
-    const instructorRanked=instructorNeedles.map(item=>{
-      const perCell=cells.reduce((best,cell)=>Math.max(best,fuzzyNameScore(cell.text,item.person.AdInstructorName)),0);
-      return{item,score:item.folded.length>=5&&normalized.includes(item.folded)?1:perCell};
-    }).sort((a,b)=>b.score-a.score);
-    const instructorHit=instructorRanked[0]?.score>=.55?instructorRanked[0].item:undefined;
+    /* Preserve what the scan actually printed even when no catalogue record can
+       be chosen safely. This makes every doctor name visible in the preview,
+       while the picker still requires an exact system person before publish. */
+    const instructorCell=[...cells]
+      .map(cell=>String(cell.text||"").trim())
+      .filter(value=>/[ء-ي]/.test(value))
+      .sort((a,b)=>b.length-a.length)
+      .find(value=>!fold(value).includes(fold(courseName)))||"";
+    const instructorHit=matchInstructorName(instructorCell||line,instructors,preferredInstructorIds);
 
     rows.push({
       sourceOrder:order++,referenceNumber:reference,
@@ -1305,7 +1477,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       AdInstructorId:instructorHit?.person.AdInstructorId||0,
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
-      AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,
+      AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCell,
     });
 
     if(!time)issues.push(`صف «${courseName}»: لم أتعرف على الوقت`);

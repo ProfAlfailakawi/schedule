@@ -81,7 +81,6 @@ import LivingScheduleLayer from "./LivingScheduleLayer";
 import HallBarterBoard, { type HallBarterReservationView } from "./HallBarterBoard";
 import DaySubstitute from "./DaySubstitute";
 import MeetingSlots from "./MeetingSlots";
-import SchedulePublish from "./SchedulePublish";
 import ScheduleExperienceLayer, {
   useScheduleExperience,
 } from "./ScheduleExperienceLayer";
@@ -9230,16 +9229,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   termId={filterTerm}
                   liveSerial={liveFeedSerial}
                   onReservationsChange={setHallBarterReservations}
-                />
-              </div>
-            ) : null}
-            {workspaceToolsOpen && permissions.includes(7) ? (
-              <div className="schedule-publish-slot">
-                <SchedulePublish
-                  collegeId={filterCollege}
-                  sectionId={filterSection}
-                  termId={filterTerm}
-                  scopeLabel={sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName}
                 />
               </div>
             ) : null}

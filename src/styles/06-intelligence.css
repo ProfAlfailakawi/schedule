@@ -3985,3 +3985,9 @@ button.twin-delta{width:100%}
 .import-preview-table tr.is-editing td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .import-issues-fold{border:1px solid var(--line);border-radius:13px;padding:4px 12px}
 .import-issues-fold summary{cursor:pointer;padding:8px 0;font-size:12px;font-weight:700;color:var(--muted)}
+
+/* Keep the literal doctor name read from the PDF visible while the reviewer
+   chooses the exact system identity. A failed match is information, not a blank. */
+.import-instructor-editor{display:grid;gap:5px;min-width:170px}
+.import-instructor-editor small{font-size:10px;line-height:1.35;color:var(--muted);white-space:normal}
+.import-instructor-editor select{max-width:220px!important;width:100%}

@@ -756,7 +756,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
    the count and its colour and its word read as one thing rather than as three
    floating pieces. */
 .spread-keys{
-  display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));
   gap:var(--s2) var(--s4);margin-top:var(--s3);
 }
 .spread-keys span{
@@ -1415,7 +1415,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 
 /* Transfer sheet: four jobs are always visible and replacement is a safe decision. */
 .transfer-sheet{width:min(880px,calc(100vw - 28px))}
-.transfer-tabs{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding-inline:20px}
+.transfer-tabs{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding-inline:20px}
 .transfer-tabs button{justify-content:center;min-width:0;white-space:nowrap}
 .replacement-compatibility{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid var(--line);border-radius:18px;background:var(--surface-2)}
 .replacement-compatibility>span{display:grid;place-items:center;width:40px;height:40px;border-radius:13px;background:var(--surface)}

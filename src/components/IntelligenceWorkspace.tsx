@@ -481,7 +481,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
-  const [pdfImportReport, setPdfImportReport] = useState<any>(null);
   // Help never opens on its own; one deliberate question mark owns it.
   const [decisionCompose, setDecisionCompose] = useState(false);
   const [decisionTitle, setDecisionTitle] = useState("");
@@ -1284,12 +1283,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     } finally {
       setBusy(false);
     }
-  };
-  const openPdfImportReport = async (d:any) => {
-    setBusy(true); setError(null);
-    try { setPdfImportReport(await fetchJson(`/api/intelligence/drafts/${d.id}/import-report`)); }
-    catch(e:any){ setError(smartMessage(e)); }
-    finally{ setBusy(false); }
   };
   const restoreVersion = async (v: any) => {
     // Restore is itself versioned before it runs, so it is reversible without
@@ -4560,11 +4553,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <GhostButton onClick={() => openDraft(d)}>
                         فتح
                       </GhostButton>
-                      {d.importLayout === "authority-pdf" ? (
-                        <SecondaryButton data-guide-ignore="يفتح تقرير مقارنة للقراءة والطباعة فقط" onClick={() => void openPdfImportReport(d)} disabled={busy}>
-                          <FileText /> تقرير تغييرات PDF
-                        </SecondaryButton>
-                      ) : null}
                       {d.status === "draft" ? (
                         <PrimaryButton
                           data-guide-target="intelligence.publish-draft"
@@ -5016,23 +5004,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           ))}
         </div></PrintPortal>;
       })() : null}
-
-      {pdfImportReport ? (
-        <div className="pdf-report-backdrop" role="dialog" aria-modal="true" aria-label="تقرير تغييرات جدول PDF" onMouseDown={event=>{if(event.target===event.currentTarget)setPdfImportReport(null);}}>
-          <section className="pdf-report-sheet">
-            <header className="pdf-report-head">
-              <div><span className="surface-kicker">مركز الاستعلامات · أثر التعديل</span><h2>تقرير مقارنة الجدول المعتمد</h2><p>{pdfImportReport.sourceFileName}</p></div>
-              <div className="pdf-report-actions no-print"><SecondaryButton data-guide-ignore="طباعة تقرير فروقات PDF فقط" onClick={()=>{document.documentElement.dataset.printKind="pdf-diff";window.print();delete document.documentElement.dataset.printKind;}}><Printer />طباعة</SecondaryButton><button type="button" data-guide-ignore="إغلاق تقرير فروقات PDF فقط" className="drawer-close" onClick={()=>setPdfImportReport(null)} aria-label="إغلاق"><X /></button></div>
-            </header>
-            <PdfDifferenceBody report={pdfImportReport} courses={courses} instructors={instructors}/>
-          </section>
-        </div>
-      ) : null}
-
-      {pdfImportReport ? <PrintPortal className="print-report print-wide print-sheet-modal pdf-diff-print">
-        <PrintLetterhead title="تقرير مقارنة الجدول المعتمد" scope={pdfImportReport.sourceFileName}/>
-        <PdfDifferenceBody report={pdfImportReport} courses={courses} instructors={instructors}/>
-      </PrintPortal> : null}
 
       {detail ? (
         <div

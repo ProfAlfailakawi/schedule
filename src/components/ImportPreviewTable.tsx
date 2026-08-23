@@ -22,6 +22,7 @@ export type ImportRow = {
   fstarttime: string; fendtime: string;
   AdRoomCode: string; AdRoomHall: string;
   AdInstructorId: number;
+  sourceInstructorText?: string;
   [extra: string]: unknown;
 };
 
@@ -55,7 +56,7 @@ export default function ImportPreviewTable({ rows, courses, instructors, onRows 
     scode: (row: ImportRow) => !String(row.SCode || "").trim(),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime,
-    room: (row: ImportRow) => !String(row.AdRoomCode || "").trim() && !String(row.AdRoomHall || "").trim(),
+    room: (row: ImportRow) => !String(row.AdRoomCode || "").trim() || !String(row.AdRoomHall || "").trim(),
     instructor: (row: ImportRow) => !Number(row.AdInstructorId),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
@@ -125,11 +126,14 @@ export default function ImportPreviewTable({ rows, courses, instructors, onRows 
                 </td>
                 <td className={red(missing.instructor(row))}>
                   {open ? (
-                    <select value={row.AdInstructorId || ""} onChange={event => patch(index, { AdInstructorId: Number(event.target.value) || 0 })}>
-                      <option value="">اختر الأستاذ…</option>
-                      {instructors.map(item => <option key={item.AdInstructorId} value={item.AdInstructorId}>{item.AdInstructorName}</option>)}
-                    </select>
-                  ) : (person?.AdInstructorName || "—")}
+                    <span className="import-instructor-editor">
+                      {String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}
+                      <select value={row.AdInstructorId || ""} onChange={event => patch(index, { AdInstructorId: Number(event.target.value) || 0 })}>
+                        <option value="">اختر الأستاذ…</option>
+                        {instructors.map(item => <option key={item.AdInstructorId} value={item.AdInstructorId}>{item.AdInstructorName}</option>)}
+                      </select>
+                    </span>
+                  ) : (person?.AdInstructorName || String(row.sourceInstructorText || "").trim() || "—")}
                 </td>
                 <td className="import-row-tools">
                   <button

@@ -114,6 +114,9 @@ export interface FSchedule {
   /** Source-PDF trace. Empty for ordinary/new rows; never used as an internal id. */
   referenceNumber?: string;
   sourceOrder?: number;
+  /** Raw instructor text read from the imported PDF. Kept only as a review aid
+   * when a catalogue match is uncertain; reports always print the system name. */
+  sourceInstructorText?: string;
   /**
    * How many times this appointment has been written.
    *
@@ -211,6 +214,9 @@ export interface ScheduleDraft {
   baselineRows?: FSchedule[];
   sourceFileName?: string;
   importLayout?: "authority-pdf" | "worksheet";
+  /** Branch label read from the source PDF header (for the authority report). */
+  sourceBranchCode?: string;
+  sourceBranchName?: string;
   publishedAt?: string;
 }
 
