@@ -188,6 +188,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       <button
         type="button"
         className="instructor-trigger"
+        data-guide-ignore="فتح قائمة أستاذ المقرر فقط؛ اختيار الأستاذ نفسه موثق داخل خيارات القائمة"
         disabled={disabled}
         onClick={() => setOpen(v => !v)}
         aria-haspopup="listbox"
