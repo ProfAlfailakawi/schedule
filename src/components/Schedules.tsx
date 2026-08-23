@@ -631,8 +631,12 @@ export const isBlockingConflict = (item: any): boolean => {
   if (!item) return false;
   if (item.soft === true) return false;
   if (item.type === "memory" || item.type === "advice" || item.type === "regulation") return false;
-  return item.severity === "high" || item.type === "duplicate"
-    || item.type === "room" || item.type === "instructor" || item.type === "cohort";
+  /* The user's law, and the server's own save gate, in one line: a real
+     double-booking of a TIME, a ROOM or an INSTRUCTOR arrives as severity
+     "high"; a duplicate row is data integrity. Everything else the system
+     knows — cohort overlap, doorway walking time, hall history, day rhythm —
+     is a remark beside a move that succeeded, never a wall in front of it. */
+  return item.severity === "high" || item.type === "duplicate";
 };
 
 const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string; soft?: boolean; severity?: string }>): RefusalReason[] =>
@@ -6057,7 +6061,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const conflicts = Array.isArray(response?.conflicts) ? response.conflicts : [];
     const local = previewPhysicsTarget(row, target);
     const key = `${row.id}:${Number((row as any).rev || 0)}:${Number(row.AdInstructorId || 0)}:${target.day}:${target.start}:${physicsRoomKey(target.room) ?? "week"}`;
-    const blocking = conflicts.filter((item: any) => item?.severity === "high" || item?.blocking !== false);
+    /* `item?.blocking !== false` was the wall that refused every green cell:
+       no server conflict carries a `blocking` field at all, so the test was
+       true for EVERY item — a hall's history, a rhythm remark, a travel note —
+       and a drop with «لا يوجد تعارض» on its own card still bounced home. One
+       predicate decides what may stop a move, the same one the refusal card
+       and the classifier already use. */
+    const blocking = conflicts.filter(isBlockingConflict);
     if (!conflicts.length) return { ...local, key, loading: false };
     return buildDecision(
       key,
