@@ -741,8 +741,8 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   const unclaimed=columnBands.map((band,index)=>({band,index,width:band.right-band.left}))
     .filter(item=>!taken.has(item.index)).sort((a,b)=>b.width-a.width);
   const widest=unclaimed[0];
-  const leftOpen=unclaimed.find(item=>item.index===0);
-  const instructorBand=leftOpen || unclaimed.find(item=>item.index!==widest?.index);
+  const leftmostUnclaimed=unclaimed.find(item=>item.index===0);
+  const instructorBand=leftmostUnclaimed || unclaimed.find(item=>item.index!==widest?.index);
   const codePattern=refcodeIndex>=0?stripPatterns.refcode:stripPatterns.code;
   const codeSignalIndex=refcodeIndex>=0?refcodeIndex:codeIndex;
   const codeHits=codeSignalIndex>=0
@@ -1305,7 +1305,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       sourceOrder:order++,
       referenceNumber:grid.reference,
       AdCourseId:course.AdCourseId,AdCourseName:course.CourseName,SCode:grid.scode,
-      AdInstructorId:instructorHit?.person.AdInstructorId||0,
+      AdInstructorId:instructorHit?.AdInstructorId||0,
       ...flags,
       fstarttime:grid.start,fendtime:grid.end,
       AdRoomCode:grid.building,AdRoomHall:grid.hall,
@@ -1460,7 +1460,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     rows.push({
       sourceOrder:order++,referenceNumber:reference,
       AdCourseId:courseHit.course.AdCourseId,AdCourseName:courseName,SCode:section,
-      AdInstructorId:instructorHit?.person.AdInstructorId||0,
+      AdInstructorId:instructorHit?.AdInstructorId||0,
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCell,
