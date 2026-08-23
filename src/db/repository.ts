@@ -3578,9 +3578,12 @@ export const Repository = {
    */
   saveStudentNeed: async (entry: Omit<StudentNeed, "id" | "createdAt">): Promise<StudentNeed> => {
     const row: StudentNeed = { ...entry, id: randomUUID(), createdAt: new Date().toISOString() };
-    const sameHand = (item: StudentNeed) =>
-      item.fingerprint === row.fingerprint && Number(item.AdTermId) === Number(row.AdTermId)
-      && Number(item.AdSectionId) === Number(row.AdSectionId);
+    const sameHand = (item: StudentNeed) => {
+      const itemSurveySection = Number(item.surveySectionId || item.AdSectionId || 0);
+      const rowSurveySection = Number(row.surveySectionId || row.AdSectionId || 0);
+      return item.fingerprint === row.fingerprint && Number(item.AdTermId) === Number(row.AdTermId)
+        && itemSurveySection === rowSurveySection;
+    };
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("studentNeeds")
         .where("fingerprint", "==", row.fingerprint).limit(20).get();
@@ -3608,20 +3611,28 @@ export const Repository = {
    * query, so no composite index is involved.
    */
   getStudentNeedHistory: async (collegeId: number, sectionId: number): Promise<StudentNeed[]> => {
-    const mine = (item: StudentNeed) =>
-      Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId;
+    const mine = (item: StudentNeed) => {
+      if (Number(item.AdCollegeId) !== collegeId) return false;
+      if (!sectionId) return true;
+      return Number(item.surveySectionId || item.AdSectionId || 0) === sectionId;
+    };
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      // `surveySectionId` was added after the first deployed surveys. Read by
+      // college and filter in memory so old records are not made invisible by a
+      // field they could never have carried.
       const snap = await firestoreDb.collection("studentNeeds")
-        .where("AdSectionId", "==", sectionId).limit(20000).get();
+        .where("AdCollegeId", "==", collegeId).limit(20000).get();
       return snap.docs.map(doc => doc.data() as StudentNeed).filter(mine);
     }
     return (db.studentNeeds || []).filter(mine);
   },
 
   getStudentNeeds: async (collegeId: number, sectionId: number, termId: number): Promise<StudentNeed[]> => {
-    const mine = (item: StudentNeed) =>
-      Number(item.AdCollegeId) === collegeId && Number(item.AdSectionId) === sectionId
-      && Number(item.AdTermId) === termId;
+    const mine = (item: StudentNeed) => {
+      if (Number(item.AdCollegeId) !== collegeId || Number(item.AdTermId) !== termId) return false;
+      if (!sectionId) return true;
+      return Number(item.surveySectionId || item.AdSectionId || 0) === sectionId;
+    };
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const snap = await firestoreDb.collection("studentNeeds")
         .where("AdTermId", "==", termId).limit(5000).get();

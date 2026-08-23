@@ -1468,8 +1468,8 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
        a cell that happens to hold nothing else. */
     const courseCode=toAscii(String(courseHit.course.CourseCode||"")).replace(/\D/g,"");
     const runs=cells.flatMap(cell=>toAscii(cell.text).match(/\d+/g)||[]);
-    const reference=runs.find(value=>value.length===5)||"";
-    const referenceIndex=runs.findIndex(value=>value.length===5);
+    const reference=runs.find(value=>/^\d{4,6}$/.test(value)&&value!==courseCode)||"";
+    const referenceIndex=runs.findIndex(value=>value===reference);
     const nearbySection=referenceIndex>=0 ? runs.slice(Math.max(0,referenceIndex-2),referenceIndex+3)
       .find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference) : undefined;
     const section=nearbySection || runs.find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference)||"";

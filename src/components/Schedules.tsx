@@ -676,6 +676,95 @@ const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string
       entity: echo ? message || detail : entity, state: echo ? "" : state };
   });
 
+
+const scheduleLegendScrollMemory = new Map<string, number>();
+
+/**
+ * A legend ribbon is a persistent control, not disposable render furniture.
+ *
+ * Defining this component inside Schedules made React see a NEW component type
+ * on every state change. Pressing a chip or its eye therefore unmounted the
+ * horizontal scroller and mounted it again at scrollLeft=0 — exactly the
+ * "يردني للبداية" behaviour on long course/teacher/room lists. Keep the
+ * component identity stable and remember each view+basis position across view
+ * switches as well.
+ */
+function ScheduleLegendScroller({
+  children,
+  label,
+  memoryKey,
+  onWheel,
+}: {
+  children: React.ReactNode;
+  label: string;
+  memoryKey: string;
+  onWheel: (event: React.WheelEvent<HTMLDivElement>) => void;
+}) {
+  const rail = useRef<HTMLDivElement | null>(null);
+  const [reach, setReach] = useState({ start: false, end: false });
+  const measure = useCallback(() => {
+    const node = rail.current;
+    if (!node) return;
+    const offset = Math.abs(node.scrollLeft);
+    const max = Math.max(0, node.scrollWidth - node.clientWidth);
+    setReach({ start: offset > 4, end: max - offset > 4 });
+  }, []);
+
+  useEffect(() => {
+    const node = rail.current;
+    if (!node) return;
+    const restore = window.requestAnimationFrame(() => {
+      const saved = scheduleLegendScrollMemory.get(memoryKey);
+      if (typeof saved === "number") node.scrollLeft = saved;
+      measure();
+    });
+    if (typeof ResizeObserver === "undefined") return () => window.cancelAnimationFrame(restore);
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => {
+      window.cancelAnimationFrame(restore);
+      observer.disconnect();
+      scheduleLegendScrollMemory.set(memoryKey, node.scrollLeft);
+    };
+  }, [memoryKey, measure]);
+
+  useEffect(() => { measure(); }, [children, measure]);
+
+  const rememberAndMeasure = (node: HTMLDivElement) => {
+    scheduleLegendScrollMemory.set(memoryKey, node.scrollLeft);
+    measure();
+  };
+  const nudge = (direction: 1 | -1) => {
+    const node = rail.current;
+    if (!node) return;
+    node.scrollBy({ left: direction * Math.max(160, node.clientWidth * 0.8), behavior: "smooth" });
+  };
+
+  return (
+    <div className="week-legend-rail">
+      <button
+        type="button" className="week-legend-arrow" data-edge="start" hidden={!reach.start}
+        data-guide-ignore="تمرير مفتاح الألوان أفقياً فقط" onClick={() => nudge(1)}
+        aria-label="عرض ما قبله" title="عرض ما قبله"
+      ><ChevronRight aria-hidden="true" /></button>
+      <div
+        className="week-legend-chips"
+        ref={rail}
+        onWheel={onWheel}
+        onScroll={event => rememberAndMeasure(event.currentTarget)}
+        title={label}
+      >
+        {children}
+      </div>
+      <button
+        type="button" className="week-legend-arrow" data-edge="end" hidden={!reach.end}
+        data-guide-ignore="تمرير مفتاح الألوان أفقياً فقط" onClick={() => nudge(-1)}
+        aria-label="عرض ما بعده" title="عرض ما بعده"
+      ><ChevronLeft aria-hidden="true" /></button>
+    </div>
+  );
+}
+
 export default function Schedules({ mode, user, scopes = [], permissions = [], onNavigate }: Props) {
   const prefsKey = `schedule-workspace-prefs-${user?.SystemUserId || 0}`;
   const lastSavedRef = useRef<any>(null);
@@ -2232,6 +2321,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       [instructors],
     ),
     selectedInstructor = instructorById.get(form.AdInstructorId);
+
+  /** One identity function drives the visible row set in list/week/rooms. */
+  const hueKeyForRow = useCallback((row: FSchedule) => {
+    if (hueBy === "instructor") {
+      const name = instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ";
+      return `i:${name}`;
+    }
+    if (hueBy === "room") {
+      const place = roomIdentity(row.AdRoomCode, row.AdRoomHall).label || "بدون قاعة";
+      return `r:${place}`;
+    }
+    const course = courseById.get(row.AdCourseId);
+    const code = course?.CourseCode || row.AdCourseName || "—";
+    const title = row.AdCourseName || course?.CourseName || code;
+    return `c:${code}·${title}`;
+  }, [hueBy, courseById, instructorById]);
+
   const changeView = useCallback((value: string) => {
     const requested = value === "week" ? "week" : value === "rooms" ? "rooms" : "list";
     const next = phoneReadOnly ? "list" : requested;
@@ -3085,6 +3191,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       byArabic(a.SCode,b.SCode)||mins(a.fstarttime)-mins(b.fstarttime)||Number(a.id)-Number(b.id)
     );
   },[rows,deferredSearch,courseById,instructorById]);
+
+  /**
+   * The legend is a real shared filter, not three unrelated paint effects.
+   * Keep the legend itself built from `filteredRows` so another identity can
+   * still be added, but every projection renders from this exact same set.
+   */
+  const displayRows = useMemo(() => filteredRows.filter(row => {
+    const key = hueKeyForRow(row);
+    if (hueHidden.has(key)) return false;
+    if (hueFocus.size && !hueFocus.has(key)) return false;
+    return true;
+  }), [filteredRows, hueKeyForRow, hueHidden, hueFocus]);
+
   /**
    * The inspector's reading order.
    *
@@ -3098,7 +3217,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const index = days.findIndex(day => Boolean((row as any)[day.key]));
       return index < 0 ? days.length : index;
     };
-    return filteredRows.slice().sort((a, b) =>
+    return displayRows.slice().sort((a, b) =>
       firstDay(a) - firstDay(b) ||
       mins(a.fstarttime) - mins(b.fstarttime) ||
       byArabic(
@@ -3107,7 +3226,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       ) ||
       Number(a.id) - Number(b.id),
     );
-  }, [filteredRows, courseById]);
+  }, [displayRows, courseById]);
   /**
    * The shapes this course is allowed to take.
    *
@@ -4876,7 +4995,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       setSaving(false);
     }
   };
-  const weekRows = filteredRows;
+  const weekRows = displayRows;
   /**
    * Where the chosen room is actually free.
    *
@@ -5077,7 +5196,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       hallKey: string;
       label: string;
     }>();
-    filteredRows.forEach(row => {
+    displayRows.forEach(row => {
       const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
       if (!room.buildingKey && !room.hallKey) return;
       if (!roomsSeen.has(room.key)) {
@@ -5105,7 +5224,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const byDayRoom = new Map<string, FSchedule[]>();
     const noRoomByDay = new Map<DayKey, FSchedule[]>();
     const roomCounts = new Map<string, number>();
-    filteredRows.forEach(row => {
+    displayRows.forEach(row => {
       if (!row.fstarttime || !row.fendtime || mins(row.fendtime) <= mins(row.fstarttime)) return;
       const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
       days.forEach(day => {
@@ -5159,7 +5278,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       hourMarks,
       span: Math.max(60, gridWindow.end - gridWindow.start),
     };
-  }, [filteredRows, matrixDay, gridWindow]);
+  }, [displayRows, matrixDay, gridWindow]);
   useEffect(() => {
     const allowed = new Set(
       roomsMatrix.allRooms
@@ -5976,12 +6095,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
      self-contained — it neither reads nor writes the lens or the x-ray, so
      whatever those two mean is exactly what they meant before. */
   const hueFocusClass = (r: FSchedule) => {
-    const key = hueIdentity(r).key;
+    const key = hueKeyForRow(r);
     /* A folded layer wins over a focus: asking for a card to be out of the way
        and asking for it to be lit are contradictory, and the fold is the more
        recent, more deliberate instruction. */
     if (hueHidden.has(key)) return "hue-folded";
-    return !hueFocus.size ? "" : hueFocus.has(key) ? "hue-lit" : "hue-shade";
+    // A pressed legend identity is a real view filter. Keeping every other
+    // card merely dimmed made the rooms board look unchanged and forced the
+    // reader to visually re-filter it themselves. Multiple pressed identities
+    // remain additive; "عرض الكل" clears the set.
+    return !hueFocus.size ? "" : hueFocus.has(key) ? "hue-lit" : "hue-folded";
   };
 
   /**
@@ -5991,10 +6114,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * the filter look broken. Build the agenda from the same hue identity the
    * three views share, so course / instructor / room filtering is identical.
    */
-  const agendaRows = useMemo(() => {
-    if (!hueHidden.size) return filteredRows;
-    return filteredRows.filter(row => !hueHidden.has(hueIdentity(row).key));
-  }, [filteredRows, hueHidden, hueBy, courseById, instructorById]);
+  const agendaRows = displayRows;
   /* Folding a layer away, and unfolding it. Presentation only — the row is on
      the board, in every count and every conflict scan, merely not drawn. */
   const toggleHueHidden = (key: string) =>
@@ -6024,48 +6144,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * press moves it by most of a screenful so a long key can be crossed in a few
    * clicks.
    */
-  const LegendScroller = ({ children, label }: { children: React.ReactNode; label: string }) => {
-    const rail = useRef<HTMLDivElement | null>(null);
-    const [reach, setReach] = useState({ start: false, end: false });
-    const measure = useCallback(() => {
-      const node = rail.current;
-      if (!node) return;
-      // In RTL, scrollLeft runs negative; magnitude is what matters either way.
-      const offset = Math.abs(node.scrollLeft);
-      const max = node.scrollWidth - node.clientWidth;
-      setReach({ start: offset > 4, end: max - offset > 4 });
-    }, []);
-    useEffect(() => {
-      measure();
-      const node = rail.current;
-      if (!node || typeof ResizeObserver === "undefined") return;
-      const observer = new ResizeObserver(measure);
-      observer.observe(node);
-      return () => observer.disconnect();
-    }, [measure, children]);
-    const nudge = (direction: 1 | -1) => {
-      const node = rail.current;
-      if (!node) return;
-      node.scrollBy({ left: direction * Math.max(160, node.clientWidth * 0.8), behavior: "smooth" });
-    };
-    return (
-      <div className="week-legend-rail">
-        <button
-          type="button" className="week-legend-arrow" data-edge="start" hidden={!reach.start}
-          data-guide-ignore="تمرير مفتاح الألوان أفقياً فقط" onClick={() => nudge(1)}
-          aria-label="عرض ما قبله" title="عرض ما قبله"
-        ><ChevronRight aria-hidden="true" /></button>
-        <div className="week-legend-chips" ref={rail} onWheel={horizontalWheel} onScroll={measure} title={label}>
-          {children}
-        </div>
-        <button
-          type="button" className="week-legend-arrow" data-edge="end" hidden={!reach.end}
-          data-guide-ignore="تمرير مفتاح الألوان أفقياً فقط" onClick={() => nudge(-1)}
-          aria-label="عرض ما بعده" title="عرض ما بعده"
-        ><ChevronLeft aria-hidden="true" /></button>
-      </div>
-    );
-  };
+
 
   /** A normal mouse wheel moves long filter ribbons horizontally on desktop. */
   const horizontalWheel = (event: React.WheelEvent<HTMLDivElement>) => {
@@ -9316,7 +9395,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   />
                 </span>
               ) : null}
-              <LegendScroller label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
+              <ScheduleLegendScroller memoryKey={`${viewMode}:${hueBy}`} onWheel={horizontalWheel} label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
                 {legendShown.length === 0 ? <span className="week-legend-none">لا مطابقة</span> : null}
                 {legendShown.map(item => {
                   const folded = hueHidden.has(item.key);
@@ -9328,11 +9407,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     >
                       <button
                         type="button"
-                        data-guide-ignore="إبراز عنصر من مفتاح الألوان في القائمة عرض بصري فقط"
+                        data-guide-ignore="تصفية عنصر من مفتاح الألوان في القائمة عرض بصري فقط"
                         className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
                         aria-pressed={hueFocus.has(item.key)}
                         disabled={folded}
-                        title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لإبرازها في القائمة`}
+                        title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لتصفية القائمة عليه`}
                         onClick={() => toggleHueFocus(item.key)}
                       >
                         <i aria-hidden="true" /><span>{item.label}</span><em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
@@ -9351,7 +9430,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </span>
                   );
                 })}
-              </LegendScroller>
+              </ScheduleLegendScroller>
               {hueHidden.size ? (
                 <button type="button" className="week-legend-clear is-folded-clear" onClick={() => setHueHidden(new Set())}>
                   <EyeOff aria-hidden="true" />أعد المطوي <b className="num">{hueHidden.size.toLocaleString("ar-KW-u-nu-latn")}</b>
@@ -9835,7 +9914,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         />
                       </span>
                     ) : null}
-                    <LegendScroller label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
+                    <ScheduleLegendScroller memoryKey={`${viewMode}:${hueBy}`} onWheel={horizontalWheel} label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
                       {legendShown.length === 0 ? <span className="week-legend-none">لا مطابقة</span> : null}
                       {legendShown.map(item => {
                         const folded = hueHidden.has(item.key);
@@ -9846,7 +9925,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                               className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
                               aria-pressed={hueFocus.has(item.key)}
                               disabled={folded}
-                              title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لإبرازها في المباني والقاعات`}
+                              title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لتصفية المباني والقاعات عليه`}
                               onClick={() => toggleHueFocus(item.key)}
                             >
                               <i aria-hidden="true" /><span>{item.label}</span><em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
@@ -9864,7 +9943,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           </span>
                         );
                       })}
-                    </LegendScroller>
+                    </ScheduleLegendScroller>
                     {hueHidden.size ? (
                       <button type="button" className="week-legend-clear is-folded-clear" onClick={() => setHueHidden(new Set())}>
                         <EyeOff aria-hidden="true" />أعد المطوي <b className="num">{hueHidden.size.toLocaleString("ar-KW-u-nu-latn")}</b>
@@ -10216,7 +10295,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </span>
                 ) : null}
-                <LegendScroller label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
+                <ScheduleLegendScroller memoryKey={`${viewMode}:${hueBy}`} onWheel={horizontalWheel} label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
                   {legendShown.length === 0 ? (
                     <span className="week-legend-none">لا مطابقة</span>
                   ) : null}
@@ -10233,7 +10312,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
                           aria-pressed={hueFocus.has(item.key)}
                           disabled={folded}
-                          title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لإبراز حصصه، واضغط غيره لتقارن الاثنين`}
+                          title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لتصفية الأسبوع عليه، واضغط غيره لإضافته للمقارنة`}
                           onClick={() => toggleHueFocus(item.key)}
                         >
                           <i aria-hidden="true" />
@@ -10256,7 +10335,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       </span>
                     );
                   })}
-                </LegendScroller>
+                </ScheduleLegendScroller>
                 {hueHidden.size ? (
                   <button
                     type="button"

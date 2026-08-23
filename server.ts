@@ -4872,11 +4872,36 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     .filter((room:any)=>room.building&&room.hall);
   const roomKey=(building:string,hall:string)=>`${building}|${hall}`;
   const exactRooms=new Map(knownRooms.map((room:any)=>[roomKey(room.building,room.hall),room]));
+  const strongAuthorityBuilding=(value:string)=>/^\d{3}[A-Z]\d{2}$/i.test(value);
+  const strongAuthorityHall=(value:string)=>/^[A-Z]\d{2,3}$/i.test(value);
   for(const row of parsed.rows as any[]){
     const building=cleanRoomToken(row.AdRoomCode),hall=cleanRoomToken(row.AdRoomHall);
     if(!building&&!hall)continue;
+
+    /* A clean pair printed in the Authority PDF is stronger evidence than room
+       history. The previous fail-closed pass erased perfectly legible values
+       such as 012B09 / F13 simply because that exact room had not appeared in
+       this department's historical schedule yet. History now repairs OCR; it
+       never vetoes a syntactically strong source value. */
+    if(strongAuthorityBuilding(building)&&strongAuthorityHall(hall)){
+      row.AdRoomCode=building;row.AdRoomHall=hall;continue;
+    }
+
     const exact=exactRooms.get(roomKey(building,hall));
     if(exact){row.AdRoomCode=exact.building;row.AdRoomHall=exact.hall;continue;}
+
+    /* One clean half can recover the other only when department memory has one
+       unique answer. This keeps an obvious F13/012B09 while refusing to invent
+       a room where several historical combinations are possible. */
+    if(strongAuthorityBuilding(building)&&!strongAuthorityHall(hall)){
+      const sameBuilding=knownRooms.filter((room:any)=>room.building===building && (!hall||roomDistance(hall,room.hall)<=1));
+      if(sameBuilding.length===1){row.AdRoomCode=sameBuilding[0].building;row.AdRoomHall=sameBuilding[0].hall;continue;}
+    }
+    if(strongAuthorityHall(hall)&&!strongAuthorityBuilding(building)){
+      const sameHall=knownRooms.filter((room:any)=>room.hall===hall && (!building||roomDistance(building,room.building)<=1));
+      if(sameHall.length===1){row.AdRoomCode=sameHall[0].building;row.AdRoomHall=sameHall[0].hall;continue;}
+    }
+
     const candidates=knownRooms.filter((room:any)=>{
       const bd=building?roomDistance(building,room.building):0;
       const hd=hall?roomDistance(hall,room.hall):0;
@@ -4906,9 +4931,19 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   }
   const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
   const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}):[];
-  const issues=[...new Set([...parsed.issues,...structural])];
+  /* OCR observations are review notes, not a second validation system. If the
+     parsed row is structurally complete and its IDs validate against SCHEDULE,
+     fifty harmless confidence notes must not make the PDF impossible to publish.
+     A header/term mismatch remains blocking because it can make every otherwise
+     valid row belong to the wrong academic term. */
+  const parserNotes=[...new Set(parsed.issues)];
+  const blocking=[...new Set([
+    ...structural,
+    ...parserNotes.filter((issue:string)=>/^تحذير:/.test(String(issue))),
+  ])];
+  const issues=[...new Set([...blocking,...parserNotes])];
   const result={
-    rows,issues,ready:rows.length>0&&issues.length===0,
+    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,
     fileName:fileName.slice(0,180),
     pages:recognized.pageCount,confidence:recognized.confidence,
     legibility:recognized.legibility,
@@ -4976,6 +5011,10 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
   const draft=candidates.find((item:any)=>item.status==="published")||candidates[0];
   if(!draft){res.status(404).json({error:"لا توجد نسخة PDF معتمدة محفوظة لهذا الفصل والقسم بعد."});return;}
   const live=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
+  // The comparison belongs to a live timetable. If the term was cleared, the
+  // old imported baseline must not keep advertising a report in Queries as if
+  // there were still a current board to compare against.
+  if(!live.length){res.status(404).json({error:"لا يوجد جدول حالي لهذا الفصل والقسم؛ تقرير التغييرات لا يظهر بعد حذف بيانات الجدول."});return;}
   const comparison=buildAuthorityPdfDiff(draft.baselineRows||[],live);
   res.json({
     draftId:draft.id,name:draft.name,sourceFileName:draft.sourceFileName||"الجدول المعتمد.pdf",
@@ -6985,7 +7024,15 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   await Repository.saveStudentNeed({
     fingerprint: surveyFingerprint(civil),
     AdCollegeId: resolved.link.AdCollegeId,
+    // Keep the student's own section for degree-rule context, but separately
+    // pin the request to the department whose survey link they actually opened.
+    // Previously AdSectionId did both jobs, so answers from students in another
+    // section were saved successfully and then disappeared from the target
+    // department's dashboard.
     AdSectionId: sectionId,
+    studentSectionId: sectionId,
+    surveySectionId: linkSectionId,
+    surveyLinkId: resolved.link.id,
     AdTermId: resolved.link.AdTermId,
     courseIds,
     requestType,nameCipher:sealStudentIdentity(name),civilCipher:sealStudentIdentity(civil),details,
@@ -7017,17 +7064,32 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
    * search needs; the section's own history is what the room and teacher
    * preferences are read from. Nothing here ever needed another department's
    * back-catalogue. */
-  const [needs, courses, termWeek, sectionHistory, links, history, allTerms, sections] = await Promise.all([
-    Repository.getStudentNeeds(collegeId, sectionId, termId),
+  const [allTermNeeds, courses, termWeek, sectionHistory, links, allHistory, allTerms, sections] = await Promise.all([
+    // Read the term at college scope, then attribute each request to its survey
+    // owner. This also lets us recover older records written before
+    // surveySectionId existed, using their requested course ownership.
+    Repository.getStudentNeeds(collegeId, 0, termId),
     Repository.getCourses(),
     Repository.getSchedulesByScope({ termId }),
     Repository.getSchedulesByScope({ collegeId, sectionId }),
     Repository.getShareLinks(collegeId, sectionId, termId).catch(() => []),
-    Repository.getStudentNeedHistory(collegeId, sectionId).catch(() => []),
+    Repository.getStudentNeedHistory(collegeId, 0).catch(() => []),
     Repository.getTerms().catch(() => []),
     Repository.getSections().catch(() => []),
   ]);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId);
+  const targetCourseIds = new Set(mine.map(course => Number(course.AdCourseId)));
+  const belongsToSurvey = (need:any) => {
+    const explicit = Number(need?.surveySectionId || 0);
+    if (explicit) return explicit === sectionId;
+    if (Number(need?.AdSectionId || 0) === sectionId) return true;
+    // Legacy new-course/conflict records did not carry survey provenance. The
+    // requested course is still authoritative enough to return them to the
+    // department that owns that course.
+    return Array.isArray(need?.courseIds) && need.courseIds.some((id:any) => targetCourseIds.has(Number(id)));
+  };
+  const needs = (allTermNeeds as any[]).filter(belongsToSurvey);
+  const history = (allHistory as any[]).filter(belongsToSurvey);
   const analyticalNeeds=needs.filter((need:any)=>Array.isArray(need.courseIds)&&need.courseIds.length>0);
   const reading = readStudentDemand(analyticalNeeds, mine);
 

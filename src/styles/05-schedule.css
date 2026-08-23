@@ -7793,3 +7793,23 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .degree-rule-actions-top{width:100%;margin-inline-start:0}
   .degree-rule-actions-top .btn{flex:1}
 }
+
+/* V35 — schedule rail + legend persistence -----------------------------------
+   Use the actual sibling relationship in App.tsx. The earlier :has() rule
+   depended on the whole shell matching while the rail was transitioning and
+   could lose the race to shell chrome; the sidebar and main are direct
+   siblings, so this selector cannot miss. The full rail now takes real layout
+   room while it is expanded over a week board instead of covering its right
+   edge. */
+@media screen and (min-width:1120px){
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.week-surface),
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.week-surface){
+    margin-inline-start:var(--sidebar-w)!important;
+    min-width:0!important;
+  }
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.week-surface) .content-frame,
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.week-surface) .content-frame{
+    min-width:0!important;
+    max-width:100%!important;
+  }
+}

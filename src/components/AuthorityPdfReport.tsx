@@ -65,7 +65,7 @@ export default function AuthorityPdfReport({
           <section className="print-comprehensive-page authority-pdf-page" key={`authority-${pageIndex + 1}`}>
             <header className="print-comprehensive-classic-head authority-pdf-head">
               <div className="print-comprehensive-title-block authority-pdf-title">
-                <h1>تقرير الجدول المعتمد</h1>
+                <h1>تقرير تغييرات الجدول</h1>
                 <p>{report.sourceFileName}</p>
               </div>
               <div className="authority-pdf-scope-grid">
@@ -76,7 +76,7 @@ export default function AuthorityPdfReport({
               </div>
             </header>
 
-            <div className="print-comprehensive-grid authority-pdf-grid" role="table" aria-label="تقرير الجدول المعتمد">
+            <div className="print-comprehensive-grid authority-pdf-grid" role="table" aria-label="تقرير تغييرات الجدول">
               <div className="print-comprehensive-grid-row print-comprehensive-grid-head" role="row">
                 {["رقم المقرر", "الرقم المرجعي", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", "الوقت", "الأيام", "المدرس"].map(head => (
                   <div role="columnheader" key={head}>{head}</div>

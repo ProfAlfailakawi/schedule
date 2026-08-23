@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Check, Pencil, Trash2 } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
+import InstructorPicker from "./InstructorPicker";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 /**
@@ -34,15 +35,23 @@ const DAY_CHIPS: Array<{ key: keyof ImportRow & string; label: string }> = [
   { key: "fthursday", label: "خ" },
 ];
 
-export default function ImportPreviewTable({ rows, courses, instructors, onRows }: {
+export default function ImportPreviewTable({ rows, courses, instructors, departmentIds = [], visitingIds = [], collegeId = 0, termId = 0, onRows }: {
   rows: ImportRow[];
   courses: AdCourse[];
   instructors: AdInstructor[];
+  departmentIds?: number[];
+  visitingIds?: Iterable<number>;
+  collegeId?: number;
+  termId?: number;
   onRows: (next: ImportRow[]) => void;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
+  const [extraInstructors, setExtraInstructors] = useState<AdInstructor[]>([]);
   const courseById = useMemo(() => new Map(courses.map(course => [Number(course.AdCourseId), course])), [courses]);
-  const instructorById = useMemo(() => new Map(instructors.map(person => [Number(person.AdInstructorId), person])), [instructors]);
+  const pickerInstructors = useMemo(() => [...new Map(
+    [...instructors, ...extraInstructors].map(person => [Number(person.AdInstructorId), person] as const),
+  ).values()], [instructors, extraInstructors]);
+  const instructorById = useMemo(() => new Map(pickerInstructors.map(person => [Number(person.AdInstructorId), person])), [pickerInstructors]);
 
   const patch = (index: number, values: Partial<ImportRow>) =>
     onRows(rows.map((row, at) => at === index ? { ...row, ...values } : row));
@@ -108,9 +117,12 @@ export default function ImportPreviewTable({ rows, courses, instructors, onRows 
                 <td className={red(missing.time(row))} dir="ltr">
                   {open ? (
                     <span className="import-time-pair">
-                      <input type="time" value={row.fstarttime || ""} onChange={event => patch(index, { fstarttime: event.target.value })} />
+                      {/* The Authority sheet prints END - START. Internal storage
+                          stays chronological start/end, but the editor must read
+                          in the exact same visual order as the source document. */}
+                      <input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} aria-label="وقت النهاية كما يظهر أولاً في ملف PDF" />
                       <i>—</i>
-                      <input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} />
+                      <input type="time" value={row.fstarttime || ""} onChange={event => patch(index, { fstarttime: event.target.value })} aria-label="وقت البداية كما يظهر ثانياً في ملف PDF" />
                     </span>
                   ) : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                 </td>
@@ -128,10 +140,17 @@ export default function ImportPreviewTable({ rows, courses, instructors, onRows 
                   {open ? (
                     <span className="import-instructor-editor">
                       {String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}
-                      <select value={row.AdInstructorId || ""} onChange={event => patch(index, { AdInstructorId: Number(event.target.value) || 0 })}>
-                        <option value="">اختر الأستاذ…</option>
-                        {instructors.map(item => <option key={item.AdInstructorId} value={item.AdInstructorId}>{item.AdInstructorName}</option>)}
-                      </select>
+                      <InstructorPicker
+                        value={Number(row.AdInstructorId) || 0}
+                        onChange={id => patch(index, { AdInstructorId: id })}
+                        instructors={pickerInstructors as any}
+                        departmentIds={departmentIds.length ? departmentIds : pickerInstructors.map(person => Number(person.AdInstructorId))}
+                        visitingIds={visitingIds}
+                        collegeId={collegeId}
+                        termId={termId}
+                        onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])}
+                        onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])}
+                      />
                     </span>
                   ) : (person?.AdInstructorName || "—")}
                 </td>

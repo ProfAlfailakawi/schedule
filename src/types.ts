@@ -273,8 +273,17 @@ export interface StudentNeed {
   /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
   fingerprint: string;
   AdCollegeId: number;
-  /** The scientific section selected by the student, validated in the link's college. */
+  /** The student's own scientific section, validated in the link's college. */
   AdSectionId: number;
+  /** The department whose survey link received this request. New records always
+   * carry it; older records are recovered from their requested courses. */
+  surveySectionId?: number;
+  /** Exact share-link provenance, so one request is never attributed to the
+   * student's home department merely because they study there. */
+  surveyLinkId?: string;
+  /** Explicit alias retained for reporting/migrations; AdSectionId remains the
+   * student's selected/home section for degree-rule checks. */
+  studentSectionId?: number;
   AdTermId: number;
   /** Every course this student says they need. */
   courseIds: number[];

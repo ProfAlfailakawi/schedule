@@ -360,6 +360,25 @@ const smartMessage = (value: any) => {
   return issues.length ? `${text}: ${issues.join(" · ")}` : text;
 };
 
+const importClockMinutes = (value: unknown) => {
+  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : -1;
+};
+const validateImportRowsLocally = (rows: ImportRow[]) => {
+  const issues:string[] = [];
+  rows.forEach((row, index) => {
+    const label = `الصف ${(index + 1).toLocaleString("ar-KW-u-nu-latn")}`;
+    if (!Number(row.AdCourseId)) issues.push(`${label}: المقرر غير محدد`);
+    if (!String(row.SCode || "").trim()) issues.push(`${label}: الشعبة غير محددة`);
+    if (![row.fsunday,row.fmonday,row.ftuesday,row.fwednesday,row.fthursday].some(Boolean)) issues.push(`${label}: الأيام غير محددة`);
+    const start=importClockMinutes(row.fstarttime),end=importClockMinutes(row.fendtime);
+    if (start < 0 || end < 0 || end <= start) issues.push(`${label}: الوقت غير مكتمل أو غير منطقي`);
+    if (!String(row.AdRoomCode || "").trim() || !String(row.AdRoomHall || "").trim()) issues.push(`${label}: المبنى أو القاعة غير محدد`);
+    if (!Number(row.AdInstructorId)) issues.push(`${label}: أستاذ المقرر غير محدد`);
+  });
+  return issues;
+};
+
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const isPowerAdmin = Boolean(user?.IsAdminUser || user?.SystemUserId === 1);
   const [colleges, setColleges] = useState<AdCollege[]>([]),
@@ -480,6 +499,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [importProgress, setImportProgress] = useState<{ phase: string; page: number; pages: number; message: string } | null>(null);
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
+    [importInstructorIds, setImportInstructorIds] = useState<number[]>([]),
+    [importVisitingIds, setImportVisitingIds] = useState<Set<number>>(new Set()),
     [online, setOnline] = useState(navigator.onLine);
   // Help never opens on its own; one deliberate question mark owns it.
   const [decisionCompose, setDecisionCompose] = useState(false);
@@ -641,6 +662,56 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setTelemetryScope({collegeId,sectionId,termId});
     if(collegeId&&sectionId&&termId)telemetryBreadcrumb(`مركز الذكاء ${collegeId}/${sectionId}/${termId}`);
   },[collegeId,sectionId,termId]);
+
+  /**
+   * Import uses the exact same instructor vocabulary as Add/Edit Schedule.
+   *
+   * The old preview inherited `lookups.instructors`, which is power-admin only.
+   * Coordinators therefore opened the PDF preview with an empty catalogue and
+   * the only names that later leaked in were visiting/delegate records. Load
+   * this department's historical staff plus this term's delegates explicitly;
+   * InstructorPicker can still widen to the whole university when someone types.
+   */
+  useEffect(() => {
+    if (!collegeId || !sectionId || !termId) {
+      setImportInstructorIds([]);
+      setImportVisitingIds(new Set());
+      return;
+    }
+    let alive = true;
+    const paramsBase = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId) });
+    const paramsTerm = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
+    Promise.all([
+      fetchJson(`/api/instructors?${paramsBase.toString()}`).catch(() => []),
+      fetchJson(`/api/instructors?${paramsTerm.toString()}`).catch(() => []),
+      fetchJson(`/api/visiting-roster?${paramsTerm.toString()}`).catch(() => ({ instructorIds: [], instructors: [] })),
+      fetchJson(`/api/courses?sectionId=${sectionId}`).catch(() => []),
+    ]).then(([historyPeople, termPeople, roster, sectionCourses]) => {
+      if (!alive) return;
+      const localPeople = [...new Map(
+        [...(Array.isArray(historyPeople) ? historyPeople : []),
+         ...(Array.isArray(termPeople) ? termPeople : []),
+         ...(Array.isArray(roster?.instructors) ? roster.instructors : [])]
+          .map((person:any) => [Number(person.AdInstructorId), person] as const),
+      ).values()].filter((person:any) => Number(person.AdInstructorId));
+      const ids = localPeople.map((person:any) => Number(person.AdInstructorId));
+      setImportInstructorIds(ids);
+      setImportVisitingIds(new Set((Array.isArray(roster?.instructorIds) ? roster.instructorIds : []).map(Number).filter(Boolean)));
+      if (localPeople.length) {
+        setInstructors(current => sortByName(
+          [...new Map([...current, ...localPeople].map((person:any) => [Number(person.AdInstructorId), person] as const)).values()],
+          (row:any) => row.AdInstructorName,
+        ));
+      }
+      if (Array.isArray(sectionCourses) && sectionCourses.length) {
+        setCourses(current => sortByName(
+          [...new Map([...current, ...sectionCourses].map((course:any) => [Number(course.AdCourseId), course] as const)).values()],
+          (row:any) => row.CourseName,
+        ));
+      }
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [collegeId, sectionId, termId]);
   /** Only the newest read may paint. Switching scope quickly used to let an
    *  older answer land last and describe another department's numbers under
    *  the new department's name. */
@@ -723,7 +794,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         if (alive && fresh) setDemand(fresh);
       } catch { /* A missed poll is corrected by the next one. */ }
     };
-    const timer = window.setInterval(readDemand, 25_000);
+    void readDemand();
+    const timer = window.setInterval(readDemand, 10_000);
     document.addEventListener("visibilitychange", readDemand);
     return () => { alive = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", readDemand); };
   }, [collegeId, sectionId, termId, contextQuery]);
@@ -1484,8 +1556,19 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }
   };
 
-  const importAnyFile = (file: File) => {
-    if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") return void importPdf(file);
+  const importAnyFile = async (file: File) => {
+    const name = String(file.name || "").trim();
+    const mime = String(file.type || "").toLowerCase();
+    let isPdf = /\.pdf$/i.test(name) || mime.includes("pdf");
+    /* Safari/iOS and some scanned-file share sheets hand us an empty or generic
+       MIME type. The PDF signature is authoritative and costs only five bytes. */
+    if (!isPdf) {
+      try {
+        const head = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+        isPdf = String.fromCharCode(...head) === "%PDF-";
+      } catch { /* Fall through to spreadsheet parsing. */ }
+    }
+    if (isPdf) return void importPdf(file);
     return void importExcel(file);
   };
 
@@ -4859,7 +4942,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   rows={importPreview.rows as ImportRow[]}
                   courses={courses as any}
                   instructors={instructors as any}
-                  onRows={next => setImportPreview((prev: any) => prev ? { ...prev, rows: next, preview: next, count: next.length, valid: next.length > 0 } : prev)}
+                  departmentIds={importInstructorIds}
+                  visitingIds={importVisitingIds}
+                  collegeId={collegeId}
+                  termId={termId}
+                  onRows={next => setImportPreview((prev: any) => {
+                    if (!prev) return prev;
+                    const globalIssues = (Array.isArray(prev.issues) ? prev.issues : [])
+                      .filter((issue:string) => /^تحذير:/.test(String(issue)));
+                    const issues = [...globalIssues, ...validateImportRowsLocally(next)];
+                    return { ...prev, rows: next, preview: next, count: next.length, issues, valid: next.length > 0 && issues.length === 0 };
+                  })}
                 />
               ) : (
               <RecordDeck className="import-records">

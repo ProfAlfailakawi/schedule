@@ -485,13 +485,19 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const openReportEvents = useCallback(() => {
     if (typeof EventSource === "undefined" || reportEventsRef.current) return;
     const source = new EventSource("/api/schedules/events");
-    const onChange = () => setLiveNudge(true);
+    const onChange = () => {
+      setLiveNudge(true);
+      /* A deleted timetable must also delete its stale comparison button from
+         this screen. Re-read the scoped rows quietly on the live event instead
+         of waiting for the reader to press Refresh. */
+      void readScope(undefined, true);
+    };
     source.addEventListener("schedules", onChange);
     source.addEventListener("error", () => {
       if (source.readyState === EventSource.CLOSED && reportEventsRef.current === source) reportEventsRef.current = null;
     });
     reportEventsRef.current = source;
-  }, []);
+  }, [readScope]);
   useEffect(() => {
     openReportEvents();
     return closeReportEvents;
@@ -959,7 +965,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
   const printAuthorityReport = async () => {
     if (!filters.collegeId || !filters.sectionId || !filters.termId) {
-      setError("اختر الفصل والكلية والقسم أولاً لفتح تقرير PDF المعتمد.");
+      setError("اختر الفصل والكلية والقسم أولاً لفتح تقرير تغييرات الجدول.");
       return;
     }
     setAuthorityReportBusy(true);
@@ -972,7 +978,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       });
       const response = await fetch(`/api/reports/authority-pdf-diff?${query}`);
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || "تعذر إعداد تقرير PDF المعتمد");
+      if (!response.ok) throw new Error(data.error || "تعذر إعداد تقرير تغييرات الجدول");
 
       closeReportEvents();
       flushSync(() => setAuthorityReport(data as AuthorityReport));
@@ -1008,7 +1014,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       if (!invoked) window.print();
       window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
     } catch (e: any) {
-      setError(e?.message || "تعذر إعداد تقرير PDF المعتمد");
+      setError(e?.message || "تعذر إعداد تقرير تغييرات الجدول");
     } finally {
       setAuthorityReportBusy(false);
     }
@@ -1339,9 +1345,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
               <Table2 aria-hidden="true" />التقرير الشامل
             </SecondaryButton>
-            <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="تقرير نسخة PDF المعتمدة مقارنة بالجدول الحالي">
-              <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير PDF المعتمد"}
-            </SecondaryButton>
+            {!pending && all.length ? (
+              <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل">
+                <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
+              </SecondaryButton>
+            ) : null}
           </div>
         </header>
 
