@@ -4029,3 +4029,31 @@ button.twin-delta{width:100%}
 .import-review-card.checking{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));background:var(--accent-softer)}
 .import-review-card.checking>svg{color:var(--accent)}
 @media(max-width:760px){.import-review-card{grid-template-columns:28px minmax(0,1fr)}.import-review-card button{grid-column:1/-1;justify-self:stretch;justify-content:center}}
+
+/* V38 — student cases: the other department is context, not noise. */
+.student-conflict-courses{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}
+.student-conflict-courses>span{display:grid;gap:1px;min-width:0}
+.student-conflict-courses>span+span{padding-inline-start:9px;border-inline-start:1px solid var(--line)}
+.student-conflict-courses b{font-size:12px;font-weight:650;color:var(--ink)}
+.student-conflict-courses small{font-size:9.5px;font-weight:500;color:var(--muted);line-height:1.35}
+.student-conflict-courses .other small{color:var(--brass)}
+
+/* Import editing deliberately mirrors Add/Edit Schedule: start/end labels,
+   department room history, a quick hall popover, and warnings beside the row. */
+.import-time-editor{display:grid;grid-template-columns:minmax(92px,1fr) auto minmax(92px,1fr);align-items:end;gap:7px;min-width:220px;direction:rtl}
+.import-time-editor label{display:grid;gap:4px;min-width:0}
+.import-time-editor small{font-size:9px;color:var(--muted);text-align:start}
+.import-time-editor input{min-height:38px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding-inline:7px;color:var(--ink);direction:ltr}
+.import-time-editor>span{padding-bottom:10px;color:var(--muted)}
+.import-section-editor input[readonly]{background:var(--surface-2);color:var(--accent-ink);font-weight:800;cursor:default}
+.import-hall-input-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px}
+.import-hall-picker{position:relative}
+.import-hall-picker summary{list-style:none;min-width:44px;height:38px;display:flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--line);border-radius:10px;background:var(--surface);cursor:pointer;color:var(--muted)}
+.import-hall-picker summary::-webkit-details-marker{display:none}.import-hall-picker summary svg{width:14px;height:14px}.import-hall-picker summary span{font-size:10px;font-weight:750}
+.import-hall-picker>div{position:absolute;z-index:50;inset-inline-end:0;top:calc(100% + 6px);width:min(270px,70vw);max-height:220px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:5px;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--surface);box-shadow:var(--shadow-lg)}
+.import-hall-picker button{min-height:34px;display:flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--line);border-radius:9px;background:var(--surface-2);font-size:10px;color:var(--ink)}
+.import-hall-picker button.active{border-color:var(--accent);background:var(--accent-softer);color:var(--accent-ink)}
+.import-hall-picker button svg{width:12px;height:12px}
+.import-review-card.room-owner{border-color:color-mix(in srgb,var(--warning) 35%,var(--line));background:color-mix(in srgb,var(--warning-soft) 55%,var(--surface))}
+.import-review-card.room-owner>svg{color:var(--warning)}
+@media(max-width:760px){.import-time-editor{grid-template-columns:1fr}.import-time-editor>span{display:none}}

@@ -7837,3 +7837,25 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .schedule-page>.rooms-surface,
 .app-main:has(.schedule-agenda-surface),
 .app-main:has(.rooms-surface){min-width:0;max-width:100%}
+
+/* V38 — the expanded desktop rail reserves space for the whole schedule page.
+   The week-specific rule proved the geometry; list/rooms use different surface
+   wrappers, so keying the reservation to the shared .schedule-page makes all
+   three projections obey the same shell contract. */
+@media screen and (min-width:1120px){
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.schedule-page),
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.schedule-page){
+    margin-inline-start:var(--sidebar-w)!important;
+    min-width:0!important;
+    overflow-x:clip!important;
+  }
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.schedule-page) .content-frame,
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.schedule-page) .content-frame,
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.schedule-page) .schedule-page,
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.schedule-page) .schedule-page{
+    min-width:0!important;
+    width:100%!important;
+    max-width:100%!important;
+  }
+}
+.schedule-agenda-surface,.rooms-surface{min-width:0!important;max-width:100%!important}

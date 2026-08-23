@@ -364,19 +364,46 @@ const importClockMinutes = (value: unknown) => {
   const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
   return match ? Number(match[1]) * 60 + Number(match[2]) : -1;
 };
+const importRowsShareDay = (a: ImportRow, b: ImportRow) =>
+  ["fsunday","fmonday","ftuesday","fwednesday","fthursday"].some(key => Boolean((a as any)[key]) && Boolean((b as any)[key]));
+const importRowsOverlap = (a: ImportRow, b: ImportRow) => {
+  const a0=importClockMinutes(a.fstarttime),a1=importClockMinutes(a.fendtime),b0=importClockMinutes(b.fstarttime),b1=importClockMinutes(b.fendtime);
+  return a0>=0&&a1>a0&&b0>=0&&b1>b0&&a0<b1&&b0<a1;
+};
+/** Every occurrence of one course is numbered 501, 502, 503… in document order. */
+const normalizeImportSectionSeries = (rows: ImportRow[]) => {
+  const counters=new Map<number,number>();
+  return rows.map(row=>{
+    const courseId=Number(row.AdCourseId||0);
+    if(!courseId)return{...row,SCode:""};
+    const next=(counters.get(courseId)||500)+1;
+    counters.set(courseId,next);
+    return{...row,SCode:String(next)};
+  });
+};
 const validateImportRowsLocally = (rows: ImportRow[]) => {
   const issues:string[] = [];
   rows.forEach((row, index) => {
     const label = `الصف ${(index + 1).toLocaleString("ar-KW-u-nu-latn")}`;
     if (!Number(row.AdCourseId)) issues.push(`${label}: المقرر غير محدد`);
-    if (!String(row.SCode || "").trim()) issues.push(`${label}: الشعبة غير محددة`);
+    if (!/^5\d{2,}$/.test(String(row.SCode || ""))) issues.push(`${label}: الشعبة يجب أن تكون من تسلسل 501 فما بعد`);
     if (![row.fsunday,row.fmonday,row.ftuesday,row.fwednesday,row.fthursday].some(Boolean)) issues.push(`${label}: الأيام غير محددة`);
     const start=importClockMinutes(row.fstarttime),end=importClockMinutes(row.fendtime);
     if (start < 0 || end < 0 || end <= start) issues.push(`${label}: الوقت غير مكتمل أو غير منطقي`);
     if (!String(row.AdRoomCode || "").trim() || !String(row.AdRoomHall || "").trim()) issues.push(`${label}: المبنى أو القاعة غير محدد`);
     if (!Number(row.AdInstructorId)) issues.push(`${label}: أستاذ المقرر غير محدد`);
   });
-  return issues;
+  rows.forEach((row,index)=>rows.slice(index+1).forEach((other,offset)=>{
+    if(!importRowsShareDay(row,other)||!importRowsOverlap(row,other))return;
+    const otherIndex=index+offset+1;
+    if(Number(row.AdInstructorId)&&Number(row.AdInstructorId)===Number(other.AdInstructorId))
+      issues.push(`الصفان ${index+1} و${otherIndex+1}: أستاذ المقرر متعارض في الوقت نفسه`);
+    if(String(row.AdRoomCode||"").trim()&&String(row.AdRoomHall||"").trim()&&
+       String(row.AdRoomCode).trim().toUpperCase()===String(other.AdRoomCode||"").trim().toUpperCase()&&
+       String(row.AdRoomHall).trim().toUpperCase()===String(other.AdRoomHall||"").trim().toUpperCase())
+      issues.push(`الصفان ${index+1} و${otherIndex+1}: القاعة متعارضة في الوقت نفسه`);
+  }));
+  return [...new Set(issues)];
 };
 
 export default function IntelligenceWorkspace({ user, scopes }: Props) {
@@ -517,6 +544,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const visibleStudentCases = useMemo(() => studentCaseFilter === "all"
     ? studentCases
     : studentCases.filter((item: any) => item.requestType === studentCaseFilter), [demand?.cases, studentCaseFilter]);
+  const showStudentCaseVerification = useMemo(() => visibleStudentCases.some((item:any)=>item.requestType === "graduate"), [visibleStudentCases]);
   const studentCaseCounts = useMemo(() => ({
     all: studentCases.length,
     "new-course": studentCases.filter((item: any) => item.requestType === "new-course").length,
@@ -1575,7 +1603,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       if (!data) { const rest = buffer.trim(); if (rest) { try { const tail = JSON.parse(rest); data = tail.result || tail; } catch { /* no trailing json */ } } }
       if (data && (data as any).error && !(data as any).rows) throw new Error((data as any).error);
       if (!data) throw new Error("تعذّرت قراءة PDF");
-      setImportPreview({ ...data, count: Number(data.rows?.length || 0), preview: data.rows || [], valid: Boolean(data.ready), issues: data.issues || [], importLayout: "authority-pdf" });
+      {
+        const normalizedRows=normalizeImportSectionSeries((Array.isArray(data.rows)?data.rows:[]) as ImportRow[]);
+        const localIssues=validateImportRowsLocally(normalizedRows);
+        const globalIssues=(Array.isArray(data.issues)?data.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
+        const issues=[...globalIssues,...localIssues];
+        setImportPreview({ ...data, rows:normalizedRows, count: normalizedRows.length, preview: normalizedRows, valid: normalizedRows.length>0&&issues.length===0, issues, importLayout: "authority-pdf" });
+      }
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -1617,7 +1651,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId, rows: data }),
       });
-      setImportPreview(d);
+      if (Array.isArray(d?.rows)) {
+        const normalizedRows=normalizeImportSectionSeries(d.rows as ImportRow[]);
+        const issues=validateImportRowsLocally(normalizedRows);
+        setImportPreview({ ...d, rows:normalizedRows, preview:normalizedRows, count:normalizedRows.length, issues, valid:normalizedRows.length>0&&issues.length===0 });
+      } else setImportPreview(d);
     } catch (e: any) {
       setError(smartMessage(e));
     } finally {
@@ -1630,8 +1668,28 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
    * the immutable baseline the colour report reads) and publishes it straight
    * away, so the professor is not left hunting for a second screen.
    */
+  const validateImportAgainstLiveSchedule = async (previewRows: ImportRow[]) => {
+    const blocking:string[]=[];
+    for (let index=0; index<previewRows.length; index+=1) {
+      const row=previewRows[index];
+      const response=await fetch("/api/schedules/check-conflicts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...row,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,id:0,excludeId:0})});
+      const data=await response.json().catch(()=>({}));
+      if(!response.ok){blocking.push(`الصف ${index+1}: تعذر فحص التعارضات`);continue;}
+      (Array.isArray(data?.conflicts)?data.conflicts:[])
+        .filter((item:any)=>!item?.soft&&(item?.severity==="high"||item?.type==="duplicate"))
+        .forEach((item:any)=>blocking.push(`الصف ${index+1}: ${item.message||item.detail||"يوجد تعارض يمنع النشر"}`));
+    }
+    return [...new Set(blocking)];
+  };
+
   const approveAndPublishPdf = async () => {
     if (!importPreview?.valid) return;
+    const preflight=[...validateImportRowsLocally(importPreview.rows as ImportRow[]),...await validateImportAgainstLiveSchedule(importPreview.rows as ImportRow[])];
+    if(preflight.length){
+      setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
+      setError(`لا يمكن النشر قبل معالجة ${preflight.length.toLocaleString("ar-KW-u-nu-latn")} خطأ أو تعارض.`);
+      return;
+    }
     const ok = await visualConfirm({
       title: "اعتماد الجدول المعتمد",
       message: `سيُنشر ${Number(importPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")} موعداً في هذا الفصل الفارغ دفعة واحدة. تبقى الأرقام المرجعية محفوظة للتقرير دون أن تظهر في الجدول. هل تعتمد؟`,
@@ -3077,10 +3135,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <SecondaryButton data-guide-ignore="طباعة حالات الخريج والمتوقع فقط" onClick={() => printStudentCases("graduate")} disabled={!studentCaseCounts.graduate}><Printer />الخريج</SecondaryButton>
                     </div>
                   </div>
-                  {visibleStudentCases.length ? <div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>رقم الحالة</th><th>الطالب</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th><th>التحقق</th><th>التاريخ</th></tr></thead><tbody>{visibleStudentCases.map((item:any)=>{
+                  {visibleStudentCases.length ? <div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>رقم الحالة</th><th>الطالب</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th>{showStudentCaseVerification ? <th>تحقق التخرج</th> : null}<th>التاريخ</th></tr></thead><tbody>{visibleStudentCases.map((item:any)=>{
                     const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";
                     const reason=item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":"—";
-                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{String(item.id||"").slice(0,8).toUpperCase()||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{item.requestType==="graduate"?reason:(item.courses||[]).map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||"—"}</td><td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:"—"}</td><td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
+                    const courses=item.courses||[];
+                    const detail=item.requestType==="graduate"?reason:item.requestType==="course-conflict"?
+                      <div className="student-conflict-courses">{courses.map((course:any,index:number)=><span key={`${course.id||course.code}-${index}`} className={Number(course.sectionId)===Number(sectionId)?"own":"other"}><b>{course.name}{course.code?` (${course.code})`:""}</b>{Number(course.sectionId)!==Number(sectionId)&&course.sectionName?<small>{course.sectionName}</small>:null}</span>)}</div>:
+                      courses.map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||"—";
+                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{String(item.id||"").slice(0,8).toUpperCase()||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{detail}</td>{showStudentCaseVerification ? <td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:null}</td> : null}<td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
                   })}</tbody></table></div>:<div className="empty-state-compact">لا توجد حالات من هذا النوع في الفصل الحالي.</div>}
                 </> : <div className="empty-state-compact">ستظهر هنا هوية الطالب، قسمه، نوع الطلب، المقررات، التحقق ورقم الحالة.</div>}
               </section>
@@ -5008,10 +5070,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   }}
                   onRows={next => setImportPreview((prev: any) => {
                     if (!prev) return prev;
+                    const normalized=normalizeImportSectionSeries(next);
                     const globalIssues = (Array.isArray(prev.issues) ? prev.issues : [])
                       .filter((issue:string) => /^تحذير:/.test(String(issue)));
-                    const issues = [...globalIssues, ...validateImportRowsLocally(next)];
-                    return { ...prev, rows: next, preview: next, count: next.length, issues, valid: next.length > 0 && issues.length === 0 };
+                    const issues = [...globalIssues, ...validateImportRowsLocally(normalized)];
+                    return { ...prev, rows: normalized, preview: normalized, count: normalized.length, issues, valid: normalized.length > 0 && issues.length === 0 };
                   })}
                 />
               ) : (
@@ -5129,13 +5192,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </colgroup>
                 <thead><tr>
                   <th>م</th><th>رقم الحالة</th><th>الاسم</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th>
-                  {anyGraduate ? <th>الوحدات</th> : null}<th>التاريخ</th>
+                  {anyGraduate ? <th>تحقق التخرج</th> : null}<th>التاريخ</th>
                 </tr></thead>
                 <tbody>{pageCases.map((item: any, index: number) => {
                   const type = item.requestType === "graduate" ? "خريج / متوقع تخرجه" : item.requestType === "course-conflict" ? "تعارض مقررين" : "فتح مقرر جديد";
                   const detail = item.requestType === "graduate"
                     ? (item.graduateReason === "field-conflict" ? "مقرر يتعارض مع وقت الميداني" : item.graduateReason === "field-prerequisite-conflict" ? "مسبقات الميداني متعارضة" : item.details || "—")
-                    : (item.courses || []).map((course: any) => course.name).filter(Boolean).join(" · ") || item.details || "—";
+                    : item.requestType === "course-conflict"
+                      ? (item.courses || []).map((course:any) => Number(course.sectionId) === Number(sectionId) ? course.name : `${course.name}${course.sectionName ? ` — ${course.sectionName}` : ""}`).filter(Boolean).join(" · ") || "—"
+                      : (item.courses || []).map((course: any) => course.name).filter(Boolean).join(" · ") || item.details || "—";
                   const units = item.requestType === "graduate" ? `${item.passedUnits ?? "—"} / ${item.requiredUnits ?? "—"}` : "—";
                   return <tr key={item.id}>
                     <td className="num">{(pageIndex * CASES_PER_PAGE + index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>

@@ -7163,7 +7163,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
 
   const sectionName = String((sections as any[]).find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || "");
   const cohort = surveyCohort(sectionName);
-  const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode}]));
+  const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode,sectionId:Number(course.AdSectionId||0)}]));
   const sectionNameById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
   const cases=(await Promise.all(needs.map(async(need:any)=>({
     id:need.id,createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
@@ -7171,7 +7171,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
     passedUnits:need.passedUnits,requiredUnits:need.requiredUnits,degreeUnits:need.degreeUnits,eligibility:need.eligibility||"not-checked",
-    courses:(need.courseIds||[]).map((id:number)=>({id,...(courseNameById.get(Number(id))||{name:`مقرر ${id}`,code:""})})),
+    courses:(need.courseIds||[]).map((id:number)=>{const course:any=courseNameById.get(Number(id))||{name:`مقرر ${id}`,code:"",sectionId:0};return{id,...course,sectionName:sectionNameById.get(Number(course.sectionId||0))||""};}),
   })))).sort((a:any,b:any)=>String(b.createdAt).localeCompare(String(a.createdAt)));
   res.setHeader("Cache-Control", "no-store");
   res.json({
