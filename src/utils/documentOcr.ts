@@ -574,8 +574,8 @@ const stripPatterns={
   refcode:/^\d{11,13}$/,
   reference:/^\d{4,8}$/,
   scode:/^\d{1,4}$/,
-  building:/^\d{3}[A-Za-z]\d{2}$/,
-  hall:/^[A-Za-z]\d{1,3}$/,
+  building:/^(?:012|011|010)?B\d{1,3}$/i,
+  hall:/^(?:[FG]|[A-Z])\d{1,4}$/i,
   days:/^[1-5](?: ?[1-5])*$/,
 };
 
@@ -805,12 +805,10 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   // ambiguous OCR. A wrong room is more dangerous than an empty one because it
   // can be published unnoticed; only validator-clean values survive.
   const safeBuilding=(raw:string)=>{
-    const value=raw.replace(/\s+/g,"").toUpperCase();
-    return stripPatterns.building.test(value)?value:"";
+    return cleanBuildingCode(raw);
   };
   const safeHall=(raw:string)=>{
-    const value=raw.replace(/\s+/g,"").toUpperCase();
-    return stripPatterns.hall.test(value)?value:"";
+    return cleanHallCode(raw);
   };
 
   const rowsOut:GridRow[]=[];
@@ -850,14 +848,22 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     }
     let scode=scodeAt(row).replace(/\D/g,"");
     if(scode.length>4)scode="";
+
+    const bRaw=buildingAt(row);
+    const hRaw=hallAt(row);
+    let building=safeBuilding(bRaw);
+    let hall=safeHall(hRaw);
+    if(!building&&safeBuilding(hRaw))building=safeBuilding(hRaw);
+    if(!hall&&safeHall(bRaw))hall=safeHall(bRaw);
+
     rowsOut.push({
       code,reference,scode,
       courseText:normalizeCell(nameCells.cells[row]||""),
       instructorText:normalizeCell(instructorCells.cells[row]||""),
       days:daysAt(row).replace(/[^1-5 ]/g,"").trim(),
       start,end,
-      building:safeBuilding(buildingAt(row)),
-      hall:safeHall(hallAt(row)),
+      building,
+      hall,
     });
   }
   const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
@@ -1094,11 +1100,18 @@ const minutesOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(val
 export const cleanBuildingCode = (raw: string): string => {
   const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
   if (!clean) return "";
-  const m = clean.match(/(?:012|011|010)?([A-Z]\d{2,3})$/);
-  if (m) return m[1];
-  const mAny = clean.match(/([A-Z]\d{2,3})/);
-  if (mAny) return mAny[1];
-  if (clean.length > 3 && /^[A-Z0-9]+$/.test(clean)) return clean.slice(-3);
+  const mB = clean.match(/(?:012|011|010)?(B\d{1,3})/);
+  if (mB) return mB[1];
+  if (/^B\d{1,3}$/.test(clean)) return clean;
+  return "";
+};
+
+export const cleanHallCode = (raw: string): string => {
+  const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
+  if (!clean) return "";
+  if (/^(?:012|011|010)?B\d{1,3}$/.test(clean)) return "";
+  const mH = clean.match(/\b([FG]\d{1,4}|[A-Z]\d{1,3})\b/);
+  if (mH && !/^B\d{1,3}$/.test(mH[1])) return mH[1];
   return clean;
 };
 
@@ -1224,65 +1237,70 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     .replace(/\s+/g," ").trim();
   const rawClean=clean(raw);
   if(!rawClean)return undefined;
-  if(rawClean.includes("هيئه تدريس")||rawClean.includes("هيئة تدريس")||rawClean.includes("عضو هيئه")||rawClean.includes("شاغر")||rawClean.includes("منتدب"))return undefined;
-  const rawTokens=rawClean.split(" ").filter(Boolean);
+  if(/هيئه\s*تدريس|هيئة\s*تدريس|عضو\s*هيئه|عضو\s*هيئة|شاغر|منتدب/.test(rawClean))return undefined;
+
+  const rawTokens=rawClean.split(/\s+/).filter(w=>/[ء-ي]/.test(w)&&w.length>=2);
   if(!rawTokens.length)return undefined;
 
   const candidates=instructors.map(person=>{
     const normalized=clean(person.AdInstructorName);
-    const tokens=normalized.split(" ").filter(Boolean);
+    const tokens=normalized.split(/\s+/).filter(w=>/[ء-ي]/.test(w)&&w.length>=2);
     const preferred=Boolean(preferredIds?.has(Number(person.AdInstructorId)));
     return{person,normalized,tokens,preferred};
   }).filter(item=>item.tokens.length);
 
-  const chooseUnique=(list:typeof candidates)=>list.length===1?list[0].person:undefined;
+  // 1. Direct normalized full name contains
+  const fullMatches=candidates.filter(item=>rawClean.includes(item.normalized));
+  if(fullMatches.length===1)return fullMatches[0].person;
+  const prefFull=fullMatches.filter(item=>item.preferred);
+  if(prefFull.length===1)return prefFull[0].person;
 
-  // 1. Exact normalized match
-  const exact=candidates.filter(item=>item.normalized===rawClean);
-  if(exact.length===1)return exact[0].person;
-  const exactPreferred=exact.filter(item=>item.preferred);
-  if(exactPreferred.length===1)return exactPreferred[0].person;
+  // 2. First + Last name token presence
+  const firstLastMatches=candidates.filter(item=>{
+    if(item.tokens.length<2)return false;
+    const first=item.tokens[0];
+    const last=item.tokens[item.tokens.length-1];
+    const hasFirst=rawTokens.some(t=>t===first||(t.length>=3&&(first.startsWith(t)||t.startsWith(first))));
+    const hasLast=rawTokens.some(t=>t===last||(t.length>=3&&(last.startsWith(t)||t.startsWith(last))));
+    return hasFirst&&hasLast;
+  });
+  if(firstLastMatches.length===1)return firstLastMatches[0].person;
+  const prefFirstLast=firstLastMatches.filter(item=>item.preferred);
+  if(prefFirstLast.length===1)return prefFirstLast[0].person;
 
-  // 2. First + Last name match (e.g. "علي" + "السند", "سعد" + "الحيص", "عيسى" + "شقرة")
-  if(rawTokens.length>=2){
-    const first=rawTokens[0];
-    const last=rawTokens[rawTokens.length-1];
-    const firstLast=candidates.filter(item=>{
-      const cFirst=item.tokens[0];
-      const cLast=item.tokens[item.tokens.length-1];
-      const firstOk=cFirst===first||(cFirst&&first&&Math.min(cFirst.length,first.length)>=3&&(cFirst.startsWith(first)||first.startsWith(cFirst)));
-      const lastOk=cLast===last||(cLast&&last&&(cLast.startsWith(last)||last.startsWith(cLast)||cLast.replace(/^ال/,"")===last.replace(/^ال/,"")));
-      return firstOk&&lastOk;
-    });
-    const preferredFirstLast=firstLast.filter(item=>item.preferred);
-    const byFirstLast=chooseUnique(preferredFirstLast)||chooseUnique(firstLast);
-    if(byFirstLast)return byFirstLast;
+  // 3. Any 2 common tokens (>= 3 chars)
+  const multiTokenMatches=candidates.filter(item=>{
+    let count=0;
+    for(const it of item.tokens){
+      if(rawTokens.some(t=>t===it||(t.length>=4&&(it.startsWith(t)||t.startsWith(it)))))count++;
+    }
+    return count>=2;
+  });
+  if(multiTokenMatches.length===1)return multiTokenMatches[0].person;
+  const prefMulti=multiTokenMatches.filter(item=>item.preferred);
+  if(prefMulti.length===1)return prefMulti[0].person;
 
-    // First + Middle + Last subset match
-    const subsetMatches=candidates.filter(item=>{
-      return rawTokens.every(rt=>item.tokens.some(ct=>ct===rt||(ct.length>=4&&rt.length>=3&&(ct.startsWith(rt)||rt.startsWith(ct)))));
-    });
-    const preferredSubset=subsetMatches.filter(item=>item.preferred);
-    const bySubset=chooseUnique(preferredSubset)||chooseUnique(subsetMatches);
-    if(bySubset)return bySubset;
-  }
+  // 4. Distinctive family/last name match in this department
+  const lastMatches=candidates.filter(item=>{
+    const last=item.tokens[item.tokens.length-1];
+    return last.length>=4&&rawTokens.some(t=>t===last||t===last.replace(/^ال/,"")||t==="ال"+last);
+  });
+  if(lastMatches.length===1)return lastMatches[0].person;
+  const prefLast=lastMatches.filter(item=>item.preferred);
+  if(prefLast.length===1)return prefLast[0].person;
 
-  // 3. Unique single token (e.g. rare first name)
-  if(rawTokens.length===1){
+  // 5. Unique first token match
+  if(rawTokens.length<=2){
     const first=rawTokens[0];
     const firstMatches=candidates.filter(item=>item.tokens[0]===first);
-    const preferredFirst=firstMatches.filter(item=>item.preferred);
-    const unique=chooseUnique(preferredFirst)||chooseUnique(firstMatches);
-    if(unique)return unique;
+    const prefFirst=firstMatches.filter(item=>item.preferred);
+    if(prefFirst.length===1)return prefFirst[0].person;
+    if(firstMatches.length===1)return firstMatches[0].person;
   }
 
-  // 4. Weighted fuzzy scoring with department boost
+  // 6. Weighted fuzzy scoring fallback
   const ranked=candidates.map(item=>{
     let score=fuzzyNameScore(rawClean,item.person.AdInstructorName);
-    const firstRaw=rawTokens[0]||"",firstSystem=item.tokens[0]||"";
-    if(firstRaw&&firstSystem&&(firstRaw===firstSystem||(Math.min(firstRaw.length,firstSystem.length)>=4&&editDistance(firstRaw,firstSystem)<=1)))score+=0.25;
-    const lastRaw=rawTokens[rawTokens.length-1]||"",lastSystem=item.tokens[item.tokens.length-1]||"";
-    if(lastRaw&&lastSystem&&(lastRaw===lastSystem||lastSystem.startsWith(lastRaw)||lastRaw.startsWith(lastSystem)))score+=0.2;
     if(item.preferred)score+=0.15;
     return{item,score};
   }).sort((a,b)=>b.score-a.score);
@@ -1387,8 +1405,10 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     }
     const flags={...EMPTY_DAYS};
     for(const digit of grid.days.match(/[1-5]/g)||[])flags[DAY_FIELDS[Number(digit)-1]]=true;
-    const instructorHit=matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
+    const instructorHit=matchInstructorName(grid.instructorText||`${grid.courseText} ${grid.code}`,instructors,preferredInstructorIds)
+      ||matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
     const cleanBuilding = cleanBuildingCode(grid.building);
+    const cleanHall = cleanHallCode(grid.hall);
     rows.push({
       sourceOrder:order++,
       referenceNumber:grid.reference,
@@ -1399,9 +1419,9 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       fcontacthours:course.CourseHours||3,fcredithours:course.CourseCredit||3,
       ...flags,
       fstarttime:grid.start,fendtime:grid.end,
-      AdRoomCode:cleanBuilding,AdRoomHall:grid.hall,
-      ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,cleanBuilding,grid.hall,grid.instructorText].filter(Boolean).join(" | "),
-      sourceInstructorText:grid.instructorText,
+      AdRoomCode:cleanBuilding,AdRoomHall:cleanHall,
+      ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,cleanBuilding,cleanHall,grid.instructorText].filter(Boolean).join(" | "),
+      sourceInstructorText:instructorHit?.AdInstructorName||grid.instructorText,
     });
     const label=course.CourseName;
     if(!grid.start)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
@@ -1509,24 +1529,24 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
     // Rule 4 & 5: Room and Building extraction (take last 3 e.g. B07)
     let roomCode="",roomHall="";
-    for(let index=0;index<cells.length&&!roomCode;index++){
-      const value=toAscii(cells[index].text).replace(/\s+/g,"").toUpperCase();
-      const mLong=value.match(/(?:012|011|010)?([A-Z]\d{2,3})/);
-      if(mLong){
-        roomCode=mLong[1];
-        const rest=value.slice((mLong.index||0)+mLong[0].length);
-        const inline=rest.match(/^([A-Z]\d{1,3})$/);
-        if(inline)roomHall=inline[1];
+    for(const cell of cells){
+      const text=toAscii(cell.text).replace(/\s+/g,"").toUpperCase();
+      const bMatch=text.match(/(?:012|011|010)?(B\d{2,3})/);
+      if(bMatch&&!roomCode){
+        roomCode=bMatch[1];
+      }
+      const hMatch=text.match(/\b([FG]\d{1,4}|[A-Z]\d{1,3})\b/);
+      if(hMatch&&!/^B\d{2,3}$/.test(hMatch[1])&&!roomHall){
+        roomHall=hMatch[1];
       }
     }
-    if(!roomHall)for(const cell of cells){
-      const text=toAscii(cell.text).replace(/\s+/g,"").toUpperCase();
-      const hall=text.match(/\b([A-Z]\d{1,3})\b/);
-      if(hall&&hall[1]!==roomCode){roomHall=hall[1];break;}
+    if(!roomCode){
+      const bMatch=toAscii(line).replace(/\s+/g,"").toUpperCase().match(/(?:012|011|010)?(B\d{2,3})/);
+      if(bMatch)roomCode=bMatch[1];
     }
-    if(!roomCode)for(const cell of cells){
-      const b=cleanBuildingCode(cell.text);
-      if(b&&/^[A-Z]\d{2,3}$/.test(b)){roomCode=b;break;}
+    if(!roomHall){
+      const hMatch=toAscii(line).replace(/\s+/g,"").toUpperCase().match(/\b([FG]\d{1,4})\b/);
+      if(hMatch)roomHall=hMatch[1];
     }
 
     // Section and Reference (CRN) extraction
@@ -1560,8 +1580,9 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       return true;
     });
 
-    const instructorCell=instructorCandidates.length>0 ? instructorCandidates[instructorCandidates.length-1] : "";
-    const instructorHit=matchInstructorName(instructorCell||line,instructors,preferredInstructorIds);
+    const instructorCandidateText=instructorCandidates.join(" ");
+    const instructorHit=matchInstructorName(instructorCandidateText||line,instructors,preferredInstructorIds)
+      ||matchInstructorName(line,instructors,preferredInstructorIds);
 
     rows.push({
       sourceOrder:order++,referenceNumber:reference,
@@ -1572,13 +1593,13 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       fcontacthours:matchedCourse.CourseHours||3,fcredithours:matchedCourse.CourseCredit||3,
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
-      AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCell,
+      AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorHit?.AdInstructorName||instructorCandidateText,
     });
 
     if(!time)issues.push(`صف «${courseName}»: لم أتعرف على الوقت`);
     if(!flags)issues.push(`صف «${courseName}»: لم أتعرف على الأيام`);
-    if(!instructorHit&&instructorCell&&!instructorCell.includes("هيئة")&&!instructorCell.includes("هيئه"))
-      issues.push(`صف «${courseName}» شعبة ${section||"—"}: لم أتعرف على أستاذ المقرر («${instructorCell}»)`);
+    if(!instructorHit&&instructorCandidateText&&!instructorCandidateText.includes("هيئة")&&!instructorCandidateText.includes("هيئه"))
+      issues.push(`صف «${courseName}» شعبة ${section||"—"}: لم أتعرف على أستاذ المقرر («${instructorCandidateText}»)`);
     if(!section)issues.push(`صف «${courseName}»: لم أتعرف على رقم الشعبة`);
     if(!roomCode&&!roomHall)issues.push(`صف «${courseName}»: لم أتعرف على المبنى والقاعة`);
   }

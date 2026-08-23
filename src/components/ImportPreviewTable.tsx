@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, Check, Clock3, MapPin, Pencil, Pin, Search, Trash2, UsersRound } from "lucide-react";
+import { AlertTriangle, Building2, Check, Clock3, MapPin, Pencil, Pin, Trash2, UsersRound } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
 import InstructorPicker from "./InstructorPicker";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { expectedMinutesForDay, type DayKey as RegulationDayKey } from "../utils/scheduleRegulations";
+import { cleanBuildingCode, cleanHallCode } from "../utils/cleanRoom";
 
 /**
  * Editable authority-PDF preview.
@@ -46,17 +47,8 @@ const timeOverlap = (a: ImportRow, b: ImportRow) => {
   const a0 = minutes(a.fstarttime), a1 = minutes(a.fendtime), b0 = minutes(b.fstarttime), b1 = minutes(b.fendtime);
   return a0 >= 0 && a1 > a0 && b0 >= 0 && b1 > b0 && a0 < b1 && b0 < a1;
 };
+
 const cleanRoom = (value: unknown) => String(value || "").trim().toLocaleUpperCase();
-const cleanBuildingCode = (raw: string): string => {
-  const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
-  if (!clean) return "";
-  const m = clean.match(/(?:012|011|010)?([A-Z]\d{2,3})$/);
-  if (m) return m[1];
-  const mAny = clean.match(/([A-Z]\d{2,3})/);
-  if (mAny) return mAny[1];
-  if (clean.length > 3 && /^[A-Z0-9]+$/.test(clean)) return clean.slice(-3);
-  return clean;
-};
 
 export default function ImportPreviewTable({
   rows, courses, instructors, departmentIds = [], visitingIds = [], departmentRooms = [],
@@ -76,7 +68,6 @@ export default function ImportPreviewTable({
 }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [extraInstructors, setExtraInstructors] = useState<AdInstructor[]>([]);
-  const [courseQuery, setCourseQuery] = useState("");
   const [serverConflicts, setServerConflicts] = useState<ConflictNote[]>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
@@ -123,7 +114,6 @@ export default function ImportPreviewTable({
     const row = rows[index];
     const expected=sectionNumberFor(index,Number(row?.AdCourseId)||0);
     if(expected&&String(row?.SCode||"")!==expected) patchAndRenumber(index, {});
-    setCourseQuery("");
     setServerConflicts([]);
     setRoomOwner(null);
     setEditing(index);
@@ -138,12 +128,6 @@ export default function ImportPreviewTable({
     instructor: (row: ImportRow) => !Number(row.AdInstructorId),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
-
-  const filteredCourses = useMemo(() => {
-    const q = courseQuery.trim().toLocaleLowerCase();
-    if (!q) return courses;
-    return courses.filter(course => `${course.CourseCode || ""} ${course.CourseName || ""}`.toLocaleLowerCase().includes(q));
-  }, [courses, courseQuery]);
 
   const autoEndForRow = (row:ImportRow, start:string) => {
     if(!start)return "";
@@ -242,29 +226,13 @@ export default function ImportPreviewTable({
                 <tr className={open ? "is-editing" : ""}>
                   <td className="num">{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
                   <td className="import-cell-course">
-                    {open ? (
-                      <div className="import-course-picker">
-                        <label><Search aria-hidden="true" /><input value={courseQuery} onChange={event => setCourseQuery(event.target.value)} placeholder="ابحث برمز أو اسم المقرر" aria-label="بحث سريع عن مقرر" /></label>
-                        <select value={row.AdCourseId || ""} onChange={event => {
-                          const id = Number(event.target.value) || 0;
-                          const sel = courseById.get(id);
-                          patchAndRenumber(index, {
-                            AdCourseId: id,
-                            AdCourseName: sel?.CourseName || "",
-                            TotalHours: sel?.TotalHours,
-                            TotalUnits: sel?.TotalUnits,
-                            fcontacthours: sel?.TotalHours || 3,
-                            fcredithours: sel?.TotalUnits || 3,
-                          });
-                        }}>
-                          <option value="">اختر المقرر…</option>
-                          {filteredCourses.map(item => <option key={item.AdCourseId} value={item.AdCourseId}>{item.CourseCode} · {item.CourseName}</option>)}
-                        </select>
-                        <small>{filteredCourses.length.toLocaleString("ar-KW-u-nu-latn")} نتيجة · اسم المقرر والوحدات والساعات تؤخذ تلقائياً من النظام وممنوع التعديل اليدوي</small>
-                      </div>
-                    ) : (
-                      <><strong>{course?.CourseName || row.AdCourseName || "—"}</strong><small dir="ltr">{course?.CourseCode || ""}</small></>
-                    )}
+                    <div className="import-locked-course">
+                      <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
+                      <small dir="ltr">
+                        {course?.CourseCode ? `${course.CourseCode} · ` : ""}
+                        {course?.CourseCredit || course?.TotalUnits || 3} وحدات / {course?.CourseHours || course?.TotalHours || 3} ساعات
+                      </small>
+                    </div>
                   </td>
                   <td className={red(missing.scode(row))}>
                     {open ? <div className="import-section-editor"><input inputMode="numeric" value={String(row.SCode || "")} readOnly aria-readonly="true" /><small>تلقائي حسب ظهور هذا المقرر: 501 ثم 502 ثم 503…</small></div> : (String(row.SCode || "").trim() || "—")}
