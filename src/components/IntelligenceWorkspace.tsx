@@ -1430,7 +1430,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       ["F12", "B9", "11:00-12:20", "الاثنين - الأربعاء", "", "اسم دكتور ٢", "502", "اسم المقرر الثاني", "١٠٢"],
     ];
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
-    (sheet as any)["!views"] = [{ RTL: true }];
     (sheet as any)["!cols"] = [{ wch: 9 }, { wch: 9 }, { wch: 13 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 8 }, { wch: 30 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, "الجدول");
@@ -4920,8 +4919,91 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         </div>
       ) : null}
 
-      {tab === "copilot" && chat.length ? <PrintPortal><div className="print-report print-upright query-print"><PrintLetterhead title="نتائج استعلامات الجدول" scope={[demand?.sectionName, terms.find(term=>Number(term.AdTermId)===Number(termId))?.AdTermName].filter(Boolean).join(" · ")} />{chat.map((item:any,index:number)=>{const answer=item.answer||{};const figures=Array.isArray(answer.figures)?answer.figures:[];return <section key={index} className="query-print-item"><h2>{(index+1).toLocaleString("ar-KW-u-nu-latn")}. {item.prompt}</h2>{answer.title?<strong>{answer.title}</strong>:null}{answer.summary?<p>{answer.summary}</p>:null}{figures.length?<table><tbody>{figures.map((f:any,j:number)=><tr key={j}><th>{f.label}</th><td dir="ltr">{String(f.value)}{f.hint?` ${f.hint}`:""}</td></tr>)}</tbody></table>:null}{Array.isArray(answer.bullets)&&answer.bullets.length?<ul>{answer.bullets.map((b:string,j:number)=><li key={j}>{b}</li>)}</ul>:null}</section>;})}</div></PrintPortal>:null}
-      {demand?.cases?.length ? <PrintPortal><div className="print-report print-wide student-cases-print"><PrintLetterhead title="حالات استبيان الطلبة" scope={[demand.sectionName,terms.find(term=>Number(term.AdTermId)===Number(termId))?.AdTermName].filter(Boolean).join(" · ")} /><table><colgroup><col style={{width:"7mm"}}/><col style={{width:"46mm"}}/><col style={{width:"30mm"}}/><col style={{width:"34mm"}}/><col style={{width:"auto"}}/><col style={{width:"26mm"}}/><col style={{width:"30mm"}}/></colgroup><thead><tr><th>م</th><th>الاسم</th><th>الرقم المدني</th><th>نوع الطلب</th><th>المقررات / السبب</th><th>الوحدات</th><th>التاريخ</th></tr></thead><tbody>{demand.cases.map((item:any,index:number)=>{const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";const detail=item.requestType==="graduate"?(item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":item.details||"—"):(item.courses||[]).map((course:any)=>course.name).filter(Boolean).join(" · ")||item.details||"—";const units=item.requestType==="graduate"?`${item.passedUnits??"—"} / ${item.requiredUnits??"—"}`:"—";return <tr key={item.id}><td className="num">{(index+1).toLocaleString("ar-KW-u-nu-latn")}</td><td>{item.name||"—"}</td><td dir="ltr">{item.civil||"—"}</td><td>{type}</td><td className="print-break-any">{detail}</td><td className="num">{units}</td><td>{printableCaseDate(item.createdAt)}</td></tr>;})}</tbody></table></div></PrintPortal>:null}
+      {tab === "copilot" && chat.length ? (() => {
+        /* Same explicit-page structure as every other landscape report. */
+        const PER_PAGE = 4;
+        const pages: any[][] = [];
+        for (let at = 0; at < chat.length; at += PER_PAGE) pages.push(chat.slice(at, at + PER_PAGE));
+        const scopeLine = [demand?.sectionName, terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName].filter(Boolean).join(" · ");
+        const stamp = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
+        return <PrintPortal><div className="print-report print-wide query-print">
+          {pages.map((slice, pageIndex) => (
+            <section className="print-explicit-page" key={`q-${pageIndex}`}>
+              <PrintLetterhead title="نتائج استعلامات الجدول" scope={scopeLine} footer={false} />
+              {slice.map((item: any, index: number) => {
+                const answer = item.answer || {};
+                const figures = Array.isArray(answer.figures) ? answer.figures : [];
+                return <section key={index} className="query-print-item">
+                  <h2>{(pageIndex * PER_PAGE + index + 1).toLocaleString("ar-KW-u-nu-latn")}. {item.prompt}</h2>
+                  {answer.title ? <strong>{answer.title}</strong> : null}
+                  {answer.summary ? <p>{answer.summary}</p> : null}
+                  {figures.length ? <table><tbody>{figures.map((f: any, j: number) => (
+                    <tr key={j}><th>{f.label}</th><td dir="ltr">{String(f.value)}{f.hint ? ` ${f.hint}` : ""}</td></tr>
+                  ))}</tbody></table> : null}
+                  {Array.isArray(answer.bullets) && answer.bullets.length
+                    ? <ul>{answer.bullets.map((b: string, j: number) => <li key={j}>{b}</li>)}</ul> : null}
+                </section>;
+              })}
+              <footer className="print-explicit-page-meta">
+                <span>{scopeLine || "الجدول الأكاديمي"}</span>
+                <bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi>
+                <time dir="ltr">{stamp}</time>
+              </footer>
+            </section>
+          ))}
+        </div></PrintPortal>;
+      })() : null}
+      {demand?.cases?.length ? (() => {
+        /* Paginated into explicit landscape pages, the way every other report in
+           the program is built. That structure is what the wide-print path and
+           the Safari rotate path both key on — a single unpaginated table met a
+           portrait page and lost every column past the fold. */
+        const anyGraduate = demand.cases.some((c: any) => c.requestType === "graduate");
+        const CASES_PER_PAGE = 14;
+        const pages: any[][] = [];
+        for (let at = 0; at < demand.cases.length; at += CASES_PER_PAGE) pages.push(demand.cases.slice(at, at + CASES_PER_PAGE));
+        const scopeLine = [demand.sectionName, terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName].filter(Boolean).join(" · ");
+        const stamp = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
+        return <PrintPortal><div className="print-report print-wide student-cases-print">
+          {pages.map((pageCases, pageIndex) => (
+            <section className="print-explicit-page" key={`cases-${pageIndex}`}>
+              <PrintLetterhead title="حالات استبيان الطلبة" scope={scopeLine} footer={false} />
+              <table>
+                <colgroup>
+                  <col style={{ width: "4%" }} /><col style={{ width: "20%" }} /><col style={{ width: "13%" }} />
+                  <col style={{ width: "14%" }} /><col style={{ width: anyGraduate ? "27%" : "37%" }} />
+                  {anyGraduate ? <col style={{ width: "10%" }} /> : null}<col style={{ width: "12%" }} />
+                </colgroup>
+                <thead><tr>
+                  <th>م</th><th>الاسم</th><th>الرقم المدني</th><th>نوع الطلب</th><th>المقررات / السبب</th>
+                  {anyGraduate ? <th>الوحدات</th> : null}<th>التاريخ</th>
+                </tr></thead>
+                <tbody>{pageCases.map((item: any, index: number) => {
+                  const type = item.requestType === "graduate" ? "خريج / متوقع تخرجه" : item.requestType === "course-conflict" ? "تعارض مقررين" : "فتح مقرر جديد";
+                  const detail = item.requestType === "graduate"
+                    ? (item.graduateReason === "field-conflict" ? "مقرر يتعارض مع وقت الميداني" : item.graduateReason === "field-prerequisite-conflict" ? "مسبقات الميداني متعارضة" : item.details || "—")
+                    : (item.courses || []).map((course: any) => course.name).filter(Boolean).join(" · ") || item.details || "—";
+                  const units = item.requestType === "graduate" ? `${item.passedUnits ?? "—"} / ${item.requiredUnits ?? "—"}` : "—";
+                  return <tr key={item.id}>
+                    <td className="num">{(pageIndex * CASES_PER_PAGE + index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
+                    <td>{item.name || "—"}</td>
+                    <td dir="ltr">{item.civil || "—"}</td>
+                    <td>{type}</td>
+                    <td className="print-break-any">{detail}</td>
+                    {anyGraduate ? <td className="num">{units}</td> : null}
+                    <td>{printableCaseDate(item.createdAt)}</td>
+                  </tr>;
+                })}</tbody>
+              </table>
+              <footer className="print-explicit-page-meta">
+                <span>{scopeLine || "الجدول الأكاديمي"}</span>
+                <bdi dir="ltr">{pageIndex + 1} / {pages.length}</bdi>
+                <time dir="ltr">{stamp}</time>
+              </footer>
+            </section>
+          ))}
+        </div></PrintPortal>;
+      })() : null}
 
       {pdfImportReport ? (
         <div className="pdf-report-backdrop" role="dialog" aria-modal="true" aria-label="تقرير تغييرات جدول PDF" onMouseDown={event=>{if(event.target===event.currentTarget)setPdfImportReport(null);}}>

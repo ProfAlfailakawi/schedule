@@ -6437,7 +6437,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const carried = physics.state.row;
     if (!carried || physics.state.phase === "idle") return { blocked, tier, suggestions };
 
-    const span = Math.max(30, mins(carried.fendtime) - mins(carried.fstarttime));
     const instructorRows = rows.filter(item =>
       item.id !== carried.id && Boolean(carried.AdInstructorId) && item.AdInstructorId === carried.AdInstructorId);
     const roomTargets = new Map<string, { key: string; code: string; hall: string }>();
@@ -6471,8 +6470,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       } else {
         score -= 12;
       }
-      const expected = day === "fmonday" || day === "fwednesday" ? 90 : 60;
-      if (span !== expected) score -= 18;
+      // The regulation gives 50 minutes on Sun/Tue/Thu and 80 on Mon/Wed.
+      if (to - from !== expectedMinutesForDay(day as RegDayKey)) score -= 18;
       if (from < 8 * 60 || from >= 14 * 60) score -= 8;
       return score;
     };
@@ -6480,17 +6479,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const readTarget = (day: DayKey, slot: string, room?: { key: string; code: string; hall: string }) => {
       const key = placementFieldKey(day, slot, room?.key);
       const from = mins(slot);
-      const to = from + span;
-      if (to > gridWindow.end) {
-        blocked.set(key, "المحاضرة أطول من الوقت المتبقي في هذا اليوم");
-        tier.set(key, "blocked");
-        return;
-      }
       const target: SchedulePhysicsTarget = {
         day, start: slot, label: days.find(item => item.key === day)?.label || "",
         ...(room ? { room: { code: room.code, hall: room.hall } } : {}),
       };
       const candidate = buildPhysicsTargetCandidate(carried, target);
+      /* Measure the lecture the way the MOVE will actually shape it.
+         A move between day families rewrites the length — fifty minutes on
+         Sun/Tue/Thu, eighty on Mon/Wed — so testing the carried length against
+         the end of the day painted the last columns red while the move itself
+         succeeded and the card correctly read «متاح». The paint and the verdict
+         now measure the same appointment. */
+      const to = Math.max(mins(candidate.fendtime), from + 1);
+      if (to > gridWindow.end) {
+        blocked.set(key, "المحاضرة أطول من الوقت المتبقي في هذا اليوم");
+        tier.set(key, "blocked");
+        return;
+      }
       const blockers = localPhysicsBlockers(carried, candidate);
       const instructorClash = blockers.find(item => item.type === "instructor");
       const roomClash = blockers.find(item => item.type === "room");

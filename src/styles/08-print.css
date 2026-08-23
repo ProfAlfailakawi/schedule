@@ -11,14 +11,20 @@
 
 .print-portal-root{display:none}
 
-@page{size:297mm 210mm;margin:10mm 8mm 14mm}
+/* Every sheet in this program prints landscape. Explicit millimetres describe
+   the paper but leave the ORIENTATION for a print dialog to argue with, and a
+   dialog set to portrait dragged a landscape-designed table off the edge of the
+   page. The `A4 landscape` form states the orientation itself, which is what
+   browsers honour; the millimetres stay as the fallback for engines that want
+   an explicit size. */
+@page{size:A4 landscape;margin:10mm 8mm 14mm}
 /* Named page for the genuinely wide sheets — the week grid and the matrices. */
-@page wide{size:297mm 210mm;margin:10mm 8mm 14mm}
+@page wide{size:A4 landscape;margin:10mm 8mm 14mm}
 /* ── ورقة واحدة: عرضية ───────────────────────────────────────────────────
    Every sheet this program prints is designed wide. `upright` is kept only so
    that any rule still naming it lands on the same landscape paper as the rest
    instead of quietly opening a second, narrower world. */
-@page upright{size:297mm 210mm;margin:10mm 8mm 14mm}
+@page upright{size:A4 landscape;margin:10mm 8mm 14mm}
 
 @media print{
   html[data-print-kind="pdf-diff"] #app-print-root>.print-only:not(.pdf-diff-print){display:none !important}
@@ -245,6 +251,11 @@
 
   /* --- tables ------------------------------------------------------------ */
 
+  /* Nothing in a sheet may be wider than the page. A single overflowing table
+     drags the whole page box out and the browser either clips the right edge or
+     shrinks the sheet to fit — which is what «حجمها عملاق خارج حدود الطباعة»
+     looks like on paper. */
+  .print-report,.print-report *{max-width:100% !important}
   .print-report table{
     width:100% !important;max-width:100% !important;
     border-collapse:collapse !important;table-layout:fixed !important;
@@ -1398,7 +1409,7 @@
    inset, so the design keeps the same visual margins without browser chrome.
    ========================================================================== */
 @page comprehensive{
-  size:297mm 210mm;
+  size:A4 landscape;
   margin:0;
 }
 
@@ -1579,16 +1590,22 @@
    The comprehensive report owns its separate `comprehensive` page rule above
    and is deliberately untouched here.
    ========================================================================== */
+/* Landscape is stated, not implied. `297mm 210mm` describes a sheet but says
+   nothing a print dialog recognises as an ORIENTATION, so a dialog defaulting to
+   portrait printed these wide sheets onto a tall page and clipped every column
+   past the fold. `A4 landscape` is the form browsers actually honour. These
+   blocks sit LATER in the file than the ones near the top and therefore win the
+   cascade — which is why fixing only the first three changed nothing. */
 @page wide{
-  size:297mm 210mm;
+  size:A4 landscape;
   margin:0;
 }
 @page upright{
-  size:297mm 210mm;
+  size:A4 landscape;
   margin:0;
 }
 @page{
-  size:297mm 210mm;
+  size:A4 landscape;
   margin:0;
 }
 

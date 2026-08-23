@@ -220,7 +220,6 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       ["F12", "B9", "11:00-12:20", "الاثنين - الأربعاء", "", "اسم دكتور ٢", "502", "اسم المقرر الثاني", "١٠٢"],
     ];
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
-    (sheet as any)["!views"] = [{ RTL: true }];
     (sheet as any)["!cols"] = [{ wch: 9 }, { wch: 9 }, { wch: 13 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 8 }, { wch: 30 }, { wch: 12 }];
     const guide = XLSX.utils.aoa_to_sheet([
       ["كيف يفهم الاستيراد ملفك"],
@@ -232,7 +231,6 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       ["ماذا يحدث بعد الرفع", "يُعرض الملف أولاً كحصيلة: كم صفاً فُهم وما المشاكل. الموافقة تنشئ مسودة في مركز الذكاء، ومن هناك تُنشر فتحل محل جدول القسم لهذا الفصل، مع نقطة أمان تلقائية قبل النشر تسمح بالرجوع."],
     ]);
     (guide as any)["!cols"] = [{ wch: 16 }, { wch: 90 }];
-    (guide as any)["!views"] = [{ RTL: true }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, "الجدول");
     XLSX.utils.book_append_sheet(wb, guide, "طريقة الاستخدام");
