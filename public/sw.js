@@ -1,5 +1,10 @@
-const SHELL_CACHE="schedule-shell-v9";
-const API_CACHE="schedule-api-v9";
+/* __BUILD__ is replaced at build time. Identical sw bytes between releases
+   meant the browser never saw an update, so tabs that stayed open never
+   learned a new version existed; a changed stamp makes every deploy a real
+   service-worker update — install, activate, claim, and the page reloads. */
+const BUILD="__BUILD__";
+const SHELL_CACHE="schedule-shell-"+BUILD;
+const API_CACHE="schedule-api-"+BUILD;
 /** One document answers every route in a single-page app. */
 const APP_SHELL_KEY="/index.html";
 const SHELL=["/manifest.webmanifest","/schedule-icon.svg","/schedule-icon-192.png","/schedule-icon-512.png","/fonts/plex-arabic-arabic-400.woff2","/fonts/plex-arabic-arabic-600.woff2","/fonts/plex-arabic-latin-400.woff2","/fonts/plex-arabic-latin-600.woff2","/fonts/plex-mono-latin-500.woff2"];

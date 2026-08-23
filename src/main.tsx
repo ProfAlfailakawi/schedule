@@ -3,6 +3,7 @@ import {createRoot} from "react-dom/client";
 import App from "./App.tsx";
 import ErrorBoundary from "./components/ErrorBoundary.tsx";
 import {safeStorage} from "./utils/safeStorage";
+import {BUILD_STAMP} from "./generated/buildStamp";
 import {toEnglishDigits} from "./utils/digits";
 import "./index.css";
 /* The journey and print styles, fetched in parallel the instant the app boots
@@ -280,6 +281,38 @@ requestAnimationFrame(announceBoot);
  * install would otherwise cause, and never mid-drag or mid-edit, where a reload
  * would throw away work in progress.
  */
+/*
+ * The version beacon: the page asks the server which build it is running.
+ *
+ * The service-worker update path only reaches pages a worker event can reach.
+ * A tab restored from the browser's back-forward cache resumes OLD JavaScript
+ * from memory with no network and no worker event at all — which is exactly
+ * the «أشوف القديم إلا في التخفي» report. pageshow(persisted) fires at that
+ * exact moment; the visibility change covers a tab left open across a deploy;
+ * and the slow interval is the net under both. A mismatch reloads once, never
+ * mid-drag and never over an open dialog.
+ */
+if (import.meta.env.PROD) {
+  let versionReloading = false;
+  const versionBusy = () =>
+    document.documentElement.classList.contains("schedule-physics-active")
+    || Boolean(document.querySelector("dialog[open],[role='dialog'],[aria-busy='true']"));
+  const checkVersion = async () => {
+    if (versionReloading) return;
+    try {
+      const response = await fetch("/api/version", { cache: "no-store" });
+      const data = await response.json();
+      if (!data?.build || data.build === BUILD_STAMP) return;
+      versionReloading = true;
+      const reload = () => { if (versionBusy()) { window.setTimeout(reload, 4000); return; } window.location.reload(); };
+      reload();
+    } catch { /* offline — the next check will see */ }
+  };
+  window.addEventListener("pageshow", event => { if ((event as PageTransitionEvent).persisted) void checkVersion(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) void checkVersion(); });
+  window.setInterval(() => { void checkVersion(); }, 120_000);
+}
+
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
     void navigator.serviceWorker.register("/sw.js").then(registration => {

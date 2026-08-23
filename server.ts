@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
+import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "crypto";
 import { gunzipSync } from "zlib";
 import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } from "./src/db/repository";
@@ -350,6 +351,14 @@ app.get("/api/demo/config", (_req, res) => {
     isolated: true,
     adminReadOnly: true,
   });
+});
+
+/** Which build is running. The client compares this against its own compiled
+ *  stamp and reloads itself when the server has moved on — the net that
+ *  catches restored tabs and bfcache pages no service-worker event reaches. */
+app.get("/api/version", (_req: Request, res: Response) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ build: BUILD_STAMP });
 });
 
 app.get("/api/health", (_req, res) => {

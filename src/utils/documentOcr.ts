@@ -31,6 +31,43 @@ async function canvas(){
   return canvasModule;
 }
 
+/*
+ * ═══ THE PERSISTENT WORKER POOL ═══
+ *
+ * Creating a Tesseract worker costs ~1.5s and the first recognition on a cold
+ * worker pays JIT warm-up on top. Every import used to pay that four times
+ * over; the pool below is created once per process and lives across requests,
+ * so the second upload starts hot. Three Latin-digits workers carry the
+ * numeric strips in parallel; one Arabic worker carries the names. A worker
+ * serialises its own jobs internally, so the semaphore hands each exactly one
+ * job at a time.
+ */
+type PooledWorker={recognize:Function;setParameters:Function;terminate:Function};
+let poolPromise:Promise<{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker}>|null=null;
+async function getWorkerPool(){
+  if(!poolPromise)poolPromise=(async()=>{
+    const {createWorker}=await import("tesseract.js");
+    const [e1,e2,e3,a1,a2]=await Promise.all([
+      createWorker("eng"),createWorker("eng"),createWorker("eng"),createWorker("ara+eng"),createWorker("ara+eng"),
+    ]);
+    return{eng:[e1,e2,e3] as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
+  })();
+  return poolPromise;
+}
+/** Run jobs over the eng workers, one in flight per worker. */
+async function runOnPool<T>(workers:PooledWorker[],jobs:Array<(worker:PooledWorker)=>Promise<T>>):Promise<T[]>{
+  const results:T[]=new Array(jobs.length);
+  let next=0;
+  await Promise.all(workers.map(async worker=>{
+    for(;;){
+      const index=next++;
+      if(index>=jobs.length)break;
+      results[index]=await jobs[index](worker);
+    }
+  }));
+  return results;
+}
+
 const isHeic=(input:Buffer,mime:string)=>/heic|heif/i.test(mime)
   ||(input.length>12&&input.subarray(4,8).toString("latin1")==="ftyp"&&/^(heic|heix|hevc|heim|heis|hevm|hevs|mif1|msf1)/.test(input.subarray(8,12).toString("latin1")));
 
@@ -59,7 +96,13 @@ async function renderPdf(input:Buffer,longEdge:number,onProgress?:OcrProgress):P
     const scale=longEdge/Math.max(base.width,base.height);
     const viewport=page.getViewport({scale});
     const surface=lib.createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height));
-    await page.render({canvasContext:surface.getContext("2d"),viewport}).promise;
+    /* pdfjs paints on TRANSPARENT pixels, and Tesseract composites transparency
+       as BLACK — a crop that reaches past the scanned photo grows a black band
+       that kills page segmentation outright. Measured: a pixel-perfect header
+       crop read as empty at every psm until this fill. */
+    const ground=surface.getContext("2d");
+    ground.fillStyle="#ffffff";ground.fillRect(0,0,surface.width,surface.height);
+    await page.render({canvasContext:ground,viewport}).promise;
     pages.push(surface.toBuffer("image/png"));
   }
   return pages;
@@ -83,28 +126,12 @@ async function rotateImage(input:Buffer,quarterTurns:-1|0|1):Promise<Buffer>{
   const lib=await canvas();
   const image=await lib.loadImage(input);
   const surface=lib.createCanvas(image.height,image.width),context=surface.getContext("2d");
+  context.fillStyle="#ffffff";context.fillRect(0,0,surface.width,surface.height);
   context.translate(surface.width/2,surface.height/2);
   context.rotate(quarterTurns*Math.PI/2);
   context.drawImage(image,-image.width/2,-image.height/2);
   return surface.toBuffer("image/png");
 }
-
-/**
- * How upright a page is, judged by what a timetable actually contains.
- *
- * Tesseract's own confidence cannot decide this: measured on a real CamScanner
- * scan it scored 48 vs 42 vs 34 across the three turns, and the winner even
- * flipped when the render resolution changed. Counting the marks only a real
- * timetable carries — `1650 - 1530` times and `012B09` building codes — is
- * decisive instead, because a sideways page yields almost none of them.
- */
-const orientationScore=(text:string)=>{
-  const ascii=toAscii(text).replace(/[Oo]/g,"0");
-  const times=(ascii.match(/\b[0-2]\d[0-5]\d\s*[-–—]\s*[0-2]\d[0-5]\d\b/g)||[]).length;
-  const rooms=(ascii.match(/\b\d{3}[A-Za-z]\d{2}\b/g)||[]).length;
-  const arabic=(text.match(/[ء-ي]/g)||[]).length;
-  return times*40+rooms*25+arabic;
-};
 
 const darkAt=(pixels:Uint8ClampedArray,index:number)=>(pixels[index]*299+pixels[index+1]*587+pixels[index+2]*114)/1000<165;
 
@@ -138,13 +165,11 @@ async function deskew(input:Buffer):Promise<Buffer>{
       for(let x=0;x<probe.width;x++){
         if(darkAt(data,(y*probe.width+x)*4)){run++;if(run>best)best=run;}else run=0;
       }
-      // Only genuinely long runs count: a straightened rule is one of them.
       if(best>probe.width*0.35)total+=best;
     }
     return total;
   };
-  // Coarse sweep, then a fine one around the winner: ten measurements instead
-  // of twenty-one for the same quarter-degree answer.
+  // Coarse sweep, then a fine one around the winner.
   let best=-1,bestDegrees=0;
   for(let degrees=-2.5;degrees<=2.5+1e-9;degrees+=1){
     const value=score(degrees*Math.PI/180);
@@ -163,6 +188,52 @@ async function deskew(input:Buffer):Promise<Buffer>{
   painter.drawImage(image,-image.width/2,-image.height/2);
   return surface.toBuffer("image/png");
 }
+
+/**
+ * Which way is up, decided by pixels alone.
+ *
+ * The old probe ran three full OCR passes and asked Tesseract's confidence —
+ * fifteen seconds to answer a question the ruled grid answers for free: only
+ * the upright turn shows many long VERTICAL rules with a regular row pitch.
+ * Scored on a small binarized render, all three turns cost well under a
+ * second. The OCR fallback below survives only for pages with no grid at all.
+ */
+async function pixelOrientationScore(image:Buffer):Promise<number>{
+  const lib=await canvas();
+  const img=await lib.loadImage(image);
+  const scale=Math.min(1,700/Math.max(img.width,img.height));
+  const c=lib.createCanvas(Math.max(1,Math.round(img.width*scale)),Math.max(1,Math.round(img.height*scale)));
+  const ctx=c.getContext("2d");
+  ctx.drawImage(img,0,0,c.width,c.height);
+  const {data}=ctx.getImageData(0,0,c.width,c.height);
+  const W=c.width,H=c.height;
+  const dark=(x:number,y:number)=>(data[(y*W+x)*4]*299+data[(y*W+x)*4+1]*587+data[(y*W+x)*4+2]*114)/1000<150;
+  let vertical=0;
+  for(let x=0;x<W;x+=2){let run=0,best=0;for(let y=0;y<=H;y++){
+    if(y<H&&dark(x,y))run++;else{if(run>best)best=run;run=0;}}
+    if(best>H*0.45)vertical++;}
+  const rowHits:number[]=[];
+  for(let y=0;y<H;y++){let run=0,best=0;for(let x=0;x<=W;x++){
+    if(x<W&&dark(x,y))run++;else{if(run>best)best=run;run=0;}}
+    if(best>W*0.45)rowHits.push(y);}
+  const merged:number[]=[];
+  for(const y of rowHits){if(merged.length&&y-merged[merged.length-1]<=2)merged[merged.length-1]=y;else merged.push(y);}
+  const gaps=merged.slice(1).map((v,i)=>v-merged[i]).filter(g=>g>4);
+  let regular=0;
+  if(gaps.length>=4){
+    const sorted=[...gaps].sort((a,b)=>a-b);
+    const median=sorted[Math.floor(sorted.length/2)];
+    regular=gaps.filter(g=>Math.abs(g-median)<=2).length;
+  }
+  return vertical*3+merged.length*2+regular*6;
+}
+const orientationScore=(text:string)=>{
+  const ascii=toAscii(text).replace(/[Oo]/g,"0");
+  const times=(ascii.match(/\b[0-2]\d[0-5]\d\s*[-–—]\s*[0-2]\d[0-5]\d\b/g)||[]).length;
+  const rooms=(ascii.match(/\b\d{3}[A-Za-z]\d{2}\b/g)||[]).length;
+  const arabic=(text.match(/[ء-ي]/g)||[]).length;
+  return times*40+rooms*25+arabic;
+};
 
 /**
  * Find the printed grid, then pull the columns apart.
@@ -444,7 +515,7 @@ const stripPatterns={
  * Read the ruled table cell by cell. Returns null when the page carries no
  * usable grid, so the caller can fall back to the flat-text path.
  */
-async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
+async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker}):Promise<GridRow[]|null>{
   const lib=await canvas();
   const image=await lib.loadImage(upright);
   const surface=lib.createCanvas(image.width,image.height);
@@ -487,7 +558,7 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
   };
 
   type StripRead={cells:string[]};
-  const readStrip=async(source:any,band:{left:number;right:number},alphabet:string,psm:string):Promise<StripRead>=>{
+  const readStrip=async(source:any,band:{left:number;right:number},alphabet:string,psm:string,worker:PooledWorker=pool.ara):Promise<StripRead>=>{
     await worker.setParameters({tessedit_char_whitelist:alphabet,tessedit_pageseg_mode:psm as any});
     const result:any=await worker.recognize(cropScaled(source,band.left,band.right),{},{text:true,blocks:true});
     const words:{t:string;x:number;y:number}[]=[];
@@ -502,11 +573,21 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
   /* Pass 1 — numerics, from grey AND binarized. The two fail on different
      rows; per cell, the value the validator accepts wins. */
   const NUMERIC="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ -";
-  const numericGrey:StripRead[]=[],numericBin:StripRead[]=[];
-  for(const band of columnBands){
-    numericGrey.push(await readStrip(surface,band,NUMERIC,"6"));
-    numericBin.push(await readStrip(bin,band,NUMERIC,"6"));
-  }
+  /* Grey strips fan out over the pool. The binarized pass — an equal second
+     bill — is paid only for the columns the grey pass left weak: on the real
+     scan most columns validate from grey alone, so most of that bill vanishes. */
+  const numericGrey:StripRead[]=await runOnPool(pool.eng,
+    columnBands.map(band=>(worker:PooledWorker)=>readStrip(surface,band,NUMERIC,"6",worker)));
+  const anyPattern=Object.values(stripPatterns);
+  const weak=(read:StripRead)=>{
+    const best=Math.max(...anyPattern.map(pattern=>read.cells.filter(cell=>pattern.test(cell.replace(/\s+/g," ").trim())).length));
+    return best<bands.length*0.5;
+  };
+  const binIndices=columnBands.map((_,index)=>index).filter(index=>weak(numericGrey[index]));
+  const binReads=await runOnPool(pool.eng,
+    binIndices.map(index=>(worker:PooledWorker)=>readStrip(bin,columnBands[index],NUMERIC,"6",worker)));
+  const numericBin:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
+  binIndices.forEach((columnIndex,at)=>{numericBin[columnIndex]=binReads[at];});
 
   const normalizeCell=(value:string)=>value.replace(/\s+/g," ").trim();
   const validatorHits=(cells:string[],pattern:RegExp)=>cells.filter(cell=>pattern.test(normalizeCell(cell))).length;
@@ -544,18 +625,19 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
   if(timeIndex<0&&refcodeIndex<0&&codeIndex<0)return null;
 
   const DIGITS="0123456789 -";
-  for(const index of [daysIndex,refcodeIndex,referenceIndex,codeIndex,scodeIndex]){
-    if(index<0)continue;
-    numericGrey[index]=await readStrip(surface,columnBands[index],DIGITS,"6");
-    numericBin[index]=await readStrip(bin,columnBands[index],DIGITS,"6");
-  }
+  const refineIndices=[daysIndex,refcodeIndex,referenceIndex,codeIndex,scodeIndex].filter(index=>index>=0);
+  const refined=await runOnPool(pool.eng,refineIndices.flatMap(index=>[
+    (worker:PooledWorker)=>readStrip(surface,columnBands[index],DIGITS,"6",worker),
+    (worker:PooledWorker)=>readStrip(bin,columnBands[index],DIGITS,"6",worker),
+  ]));
+  refineIndices.forEach((index,at)=>{numericGrey[index]=refined[at*2];numericBin[index]=refined[at*2+1];});
 
   /* Cell-by-cell for the columns a tall strip kept failing. A strip hands
      Tesseract 27 cramped lines at once and it silently merges neighbours,
      leaving rows empty that are pin-sharp to the eye; a single cell at 2× with
      PSM 7 (one line) has nothing to merge. Slower — one recognition per cell —
      and worth every millisecond on the two columns that decide the timetable. */
-  const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string):Promise<string>=>{
+  const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string,worker:PooledWorker=pool.ara):Promise<string>=>{
     const width=band.right-band.left,height=rowBand.bottom-rowBand.top;
     if(width<6||height<6)return"";
     const cell=lib.createCanvas(width*2,height*2);
@@ -570,12 +652,9 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
   };
   const perCellColumn=async(index:number,alphabet:string)=>{
     if(index<0)return;
-    const cells:string[]=[];
-    for(const rowBand of bands)cells.push(await readCell(surface,columnBands[index],rowBand,alphabet));
-    numericGrey[index]={cells};
-    const binCells:string[]=[];
-    for(const rowBand of bands)binCells.push(await readCell(bin,columnBands[index],rowBand,alphabet));
-    numericBin[index]={cells:binCells};
+    const greyCells=await runOnPool(pool.eng,bands.map(rowBand=>(worker:PooledWorker)=>readCell(surface,columnBands[index],rowBand,alphabet,worker)));
+    numericGrey[index]={cells:greyCells};
+    numericBin[index]={cells:bands.map(()=>"")};
   };
   /* Measured, per column: the time cells only resolve one-by-one (26%→74%),
      while the section column and the names do better as strips — so each
@@ -584,7 +663,7 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
 
   /* Pass 2 — Arabic, greyscale only, on the two widest unclaimed bands:
      the course name (widest) and the instructor (leftmost open band). */
-  await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"4" as any});
+  await pool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"4" as any});
   const unclaimed=columnBands.map((band,index)=>({band,index,width:band.right-band.left}))
     .filter(item=>!taken.has(item.index)).sort((a,b)=>b.width-a.width);
   const nameBand=unclaimed[0],instructorBand=columnBands[0]&&!taken.has(0)&&unclaimed.find(item=>item.index===0)?{band:columnBands[0],index:0}:unclaimed[1];
@@ -592,20 +671,24 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
     if(!item)return{cells:bands.map(()=>"")};
     return readStrip(surface,item.band,"","4");
   };
-  const nameCells=await arabicRead(nameBand);
-  /* Two segmentations, merged per row: psm 4 reads clean lines beautifully but
-     leaves rows empty where lines merge; psm 6 fills those. Longer text wins
-     the cell — measured, that is the real name, not noise. */
-  let instructorCells={cells:bands.map(()=>"")};
+  /* The Arabic bill, split across both Arabic workers: the course-name strip
+     on one, the instructor's two segmentations queued on the other — psm 4
+     reads clean lines beautifully but drops rows where lines merge, psm 6
+     fills those, and the longer text per row is the real name. */
+  const namePromise=arabicRead(nameBand);
+  let instructorPromise:Promise<{cells:string[]}>=Promise.resolve({cells:bands.map(()=>"")});
   if(nameBand&&instructorBand&&instructorBand.index!==nameBand.index){
-    const sparse=await arabicRead(instructorBand);
-    await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6" as any});
-    const dense=await readStrip(surface,instructorBand.band,"","6");
-    instructorCells={cells:bands.map((_,row)=>{
-      const a=(sparse.cells[row]||"").trim(),b=(dense.cells[row]||"").trim();
-      return a.length>=b.length?a:b;
-    })};
+    instructorPromise=(async()=>{
+      const sparse=await readStrip(surface,instructorBand.band,"","4",pool.ara2);
+      const dense=await readStrip(surface,instructorBand.band,"","6",pool.ara2);
+      return{cells:bands.map((_,row)=>{
+        const a=(sparse.cells[row]||"").trim(),b=(dense.cells[row]||"").trim();
+        return a.length>=b.length?a:b;
+      })};
+    })();
   }
+  const nameCells=await namePromise;
+  const instructorCells=await instructorPromise;
 
   /* The claiming pass shares one alphanumeric alphabet so building and hall
      can be recognised at all — but that same freedom lets stray strokes become
@@ -710,7 +793,6 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
       hall:repairHall(hallAt(row)),
     });
   }
-  await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
   const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
   return meaningful.length>=3?rowsOut:null;
 }
@@ -725,7 +807,10 @@ async function readGrid(upright:Buffer,worker:any):Promise<GridRow[]|null>{
  */
 function readHeaderTerm(text:string):HeaderTerm|undefined{
   const ascii=toAscii(text);
-  const match=ascii.match(/الفصل\s*الدراسي\s*(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*-\s*(\d{4})/);
+  const match=ascii.match(/الفصل\s*الدراسي\s*(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*-\s*(\d{4})/)
+    /* The header strip often garbles «الدراسي» while the season word and the
+       year pair survive; they are unambiguous inside a header line. */
+    ||ascii.match(/(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*-\s*(\d{4})/);
   if(!match)return undefined;
   const season=/الاول|الأول/.test(match[1])?"first":/الثاني|الثانى/.test(match[1])?"second":"summer";
   const a=Number(match[2]),b=Number(match[3]);
@@ -760,65 +845,127 @@ function judgeLegibility(text:string,pages:number,confidence:number):Legibility{
  * one implementation, and no uploaded document is kept after it is read.
  */
 export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgress):Promise<OcrResult>{
-  const {createWorker}=await import("tesseract.js");
-  const probeImages=await imagePages(input,mime,PROBE_LONG_EDGE,onProgress);
-  if(!probeImages.length)throw new Error("تعذر تحويل صفحات الملف إلى صور قابلة للقراءة");
+  /* One render. The old flow paid pdfjs twice — a probe pass and a full pass —
+     when a probe is only a downscale of the full page it already had. */
+  const images=await imagePages(input,mime,TARGET_LONG_EDGE,onProgress);
+  if(!images.length)throw new Error("تعذر تحويل صفحات الملف إلى صور قابلة للقراءة");
+  const pool=await getWorkerPool();
+  const lib0=await canvas();
+  const probeOf=async(buffer:Buffer)=>{
+    const image=await lib0.loadImage(buffer);
+    const scale=Math.min(1,PROBE_LONG_EDGE/Math.max(image.width,image.height));
+    const c=lib0.createCanvas(Math.max(1,Math.round(image.width*scale)),Math.max(1,Math.round(image.height*scale)));
+    c.getContext("2d").drawImage(image,0,0,c.width,c.height);
+    return c.toBuffer("image/png") as Buffer;
+  };
+  const probeFirst=await probeOf(images[0]);
 
-  onProgress?.({phase:"orient",page:1,pages:probeImages.length,message:"تحديد اتجاه الصفحة"});
-  const probe=await createWorker("ara+eng");
+  /* Orientation costs pixels now, not recognitions: the three turns are scored
+     on a small render in well under a second. A page with no grid signal at
+     all (a photographed transcript) falls back to one small OCR probe. */
+  onProgress?.({phase:"orient",page:1,pages:images.length,message:"تحديد اتجاه الصفحة"});
   let orientation:-1|0|1=0;
-  try{
-    let best=-Infinity;
-    for(const turn of[-1,0,1]as const){
-      const result:any=await probe.recognize(await rotateImage(probeImages[0],turn));
-      const score=orientationScore(String(result?.data?.text||""));
-      if(score>best){best=score;orientation=turn;}
+  {
+    /* Pixels answer the cheap half only: WHICH AXIS. A table turned +90° and
+       one turned −90° show identical rule geometry — the first cut of this
+       heuristic picked the upside-down twin and read zero rows — so the two
+       finalists are separated by one small TEXT probe each: legible Arabic and
+       time patterns only appear on the right-side-up twin. Two small
+       recognitions, not three big ones. */
+    const turns:[-1,0,1]=[-1,0,1];
+    const pixelScores=await Promise.all(turns.map(async turn=>({turn,score:await pixelOrientationScore(await rotateImage(probeFirst,turn))})));
+    pixelScores.sort((a,b)=>b.score-a.score);
+    const [first,second]=pixelScores;
+    if(first.score>second.score*1.35){
+      orientation=first.turn as -1|0|1;
+    }else{
+      const finalists=[first.turn,second.turn] as Array<-1|0|1>;
+      const textScore=async(turn:-1|0|1)=>{
+        const result:any=await pool.ara.recognize(await rotateImage(probeFirst,turn)).catch(()=>null);
+        const text=String(result?.data?.text||"");
+        const ascii=toAscii(text).replace(/[Oo]/g,"0");
+        /* Structural marks only. An upside-down page still yields hundreds of
+           GARBAGE Arabic characters — counting them once waved the flipped twin
+           through — but it yields zero legible time ranges and building codes. */
+        const structural=(ascii.match(/\b[0-2]\d[0-5]\d\s*[-–—]\s*[0-2]\d[0-5]\d\b/g)||[]).length*40
+          +(ascii.match(/\b\d{3}[A-Za-z]\d{2}\b/g)||[]).length*25;
+        return{structural,total:structural+(text.match(/[ء-ي]/g)||[]).length};
+      };
+      const firstScore=await textScore(finalists[0]);
+      if(firstScore.structural>=120)orientation=finalists[0];
+      else{
+        const secondScore=await textScore(finalists[1]);
+        orientation=secondScore.total>firstScore.total?finalists[1]:finalists[0];
+      }
     }
-  }finally{await probe.terminate();}
+  }
 
-  const images=PROBE_LONG_EDGE===TARGET_LONG_EDGE?probeImages:await imagePages(input,mime,TARGET_LONG_EDGE,onProgress);
   const pages:OcrPage[]=new Array(images.length);
   const texts:string[]=new Array(images.length).fill("");
   const scores:number[]=new Array(images.length).fill(0);
-  let done=0;
 
-  /* Pages are independent, so they are read by a small pool rather than one
-     after another. Four workers is where added parallelism stops paying for
-     the memory each Tesseract instance holds. */
-  const lanes=Math.min(4,images.length);
-  const queue=images.map((_,index)=>index);
-  await Promise.all(Array.from({length:lanes},async()=>{
-    const worker=await createWorker("ara+eng");
-    try{
-      for(;;){
-        const index=queue.shift();
-        if(index===undefined)break;
-        const upright=await deskew(await rotateImage(images[index],orientation));
-        const grid=await spreadColumns(upright);
-        const result:any=await worker.recognize(grid.image,{},{text:true,blocks:true});
-        const surface=result?.data||{};
-        texts[index]=String(surface.text||"");
-        scores[index]=Number(surface.confidence||0);
-        /* The gridded reader first; the flat-text rows stay as the fallback
-           the parser reaches for when a page carries no usable grid. */
-        let gridRows:GridRow[]|null=null;
-        try{gridRows=await readGrid(upright,worker);}catch{/* an unreadable grid falls back */}
-        pages[index]={rows:tableFromWords(wordsOf(surface),grid.columns),...(gridRows?{gridRows}:{})};
-        done++;
-        onProgress?.({phase:"read",page:done,pages:images.length,message:`قراءة الصفحة ${done} من ${images.length}`});
-      }
-    }finally{await worker.terminate();}
+  /* Pages run one after another, but INSIDE each page the strips fan out over
+     the pool — and the full-page recognition, the single most expensive call
+     in the old pipeline, is skipped entirely whenever the grid succeeds. The
+     header strip (the top of the page) is all the prose the caller still
+     needs: the term line for the mismatch warning, and a text sample for the
+     legibility verdict. */
+  let pagesDone=0;
+  await Promise.all(images.map(async(pageImage,index)=>{
+    const upright=await deskew(await rotateImage(pageImage,orientation));
+    let gridRows:GridRow[]|null=null;
+    try{gridRows=await readGrid(upright,pool);}catch{/* an unreadable grid falls back */}
+    if(gridRows){
+      const lib=await canvas();
+      const image=await lib.loadImage(upright);
+      /* Two proven killers are skirted here: pdfjs's transparent ground reads
+         as BLACK to Tesseract, and CamScanner's dark border band along the top
+         edge kills page segmentation for the whole crop. White fill plus a
+         start just below the band turned this exact crop from empty at every
+         psm into a verbatim «الفصل الدراسي الاول 2027-2026». */
+      const headerTop=Math.round(image.height*0.03);
+      const headerHeight=Math.max(140,Math.round(image.height*0.22)-headerTop);
+      /* Half scale: the term line is large print, and halving the pixels
+         roughly halves the one Arabic recognition this path still pays. */
+      const headScale=0.55;
+      const head=lib.createCanvas(Math.round(image.width*headScale),Math.round(headerHeight*headScale));
+      const headCtx=head.getContext("2d");
+      headCtx.fillStyle="#ffffff";headCtx.fillRect(0,0,head.width,head.height);
+      headCtx.drawImage(image,0,headerTop,image.width,headerHeight,0,0,head.width,head.height);
+      await pool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6" as any});
+      const header:any=await pool.ara.recognize(head.toBuffer("image/png")).catch(()=>null);
+      texts[index]=String(header?.data?.text||"");
+      const filled=gridRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
+      scores[index]=Math.min(85,55+filled*2);
+      pages[index]={rows:[],gridRows};
+    }else{
+      const grid=await spreadColumns(upright);
+      await pool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
+      const result:any=await pool.ara.recognize(grid.image,{},{text:true,blocks:true});
+      const surface=result?.data||{};
+      texts[index]=String(surface.text||"");
+      scores[index]=Number(surface.confidence||0);
+      pages[index]={rows:tableFromWords(wordsOf(surface),grid.columns)};
+    }
+    pagesDone++;
+    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
   }));
 
   const text=texts.join("\n\n--- PAGE ---\n\n");
   const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));
+  const anyGrid=pages.some(page=>page?.gridRows?.length);
+  /* A page whose grid yielded rows has PROVEN itself readable; the prose-based
+     judge only rules on pages that had to be read as prose. */
+  const legibility=anyGrid
+    ?{readable:true,confidence,charactersPerPage:Math.round(text.replace(/\s+/g,"").length/Math.max(1,images.length)),reason:""}
+    :judgeLegibility(text,images.length,confidence);
   return{
     pages:pages.map(page=>page||{rows:[]}),
     text,
     pageCount:images.length,
     confidence,
     orientation,
-    legibility:judgeLegibility(text,images.length,confidence),
+    legibility,
     headerTerm:readHeaderTerm(text),
   };
 }

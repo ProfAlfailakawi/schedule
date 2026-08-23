@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "npm run audit:guide && npm run test:guide && npm run test:guide:perf && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build": "npm run audit:guide && npm run test:guide && npm run test:guide:perf && node scripts/stamp-build.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node scripts/stamp-sw.mjs",
     "start": "NODE_ENV=production node dist/server.cjs",
     "test": "npm run test:conflicts && npm run test:behavior && npm run test:data && npm run test:credentials && npm run test:parity",
     "test:behavior": "tsx tests/run-tests.ts",
