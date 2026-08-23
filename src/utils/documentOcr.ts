@@ -570,8 +570,8 @@ function findRules(bin:any){
 const stripPatterns={
   time:/^\d{3,4}\s*-\s*\d{3,4}$/,
   code:/^\d{7}$/,
-  refcode:/^\d{12}$/,
-  reference:/^\d{5}$/,
+  refcode:/^\d{11,13}$/,
+  reference:/^\d{4,6}$/,
   scode:/^\d{1,4}$/,
   building:/^\d{3}[A-Z]\d{2}$/,
   hall:/^[A-Z]\d{1,3}$/,
@@ -816,11 +816,17 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   for(let row=0;row<bands.length;row++){
     /* A table border read as «1» prefixes the digits; the tail is the value. */
     let refcode=refcodeAt(row).replace(/\D/g,"");
-    if(refcode.length>12)refcode=refcode.slice(-12);
+    if(refcode.length>13)refcode=refcode.slice(-13);
     let reference=referenceAt(row).replace(/\D/g,""),code=codeAt(row).replace(/\D/g,"");
-    if(reference.length>5)reference=reference.slice(-5);
+    if(reference.length>6)reference=reference.slice(-6);
     if(code.length>7)code=code.slice(-7);
-    if(refcode.length===12){reference=refcode.slice(0,5);code=refcode.slice(5);}
+    /* Authority exports across years use 4–6 digit reference numbers but the
+       academic course key is consistently the 7-digit tail. Split from the
+       tail instead of hard-coding a 5+7 layout. */
+    if(refcode.length>=11&&refcode.length<=13){
+      code=refcode.slice(-7);
+      reference=refcode.slice(0,-7);
+    }
     const timeText=timeAt(row).replace(/\D+/g," ").trim();
     const pieces=timeText.split(" ").filter(piece=>piece.length>=3&&piece.length<=4);
     let start="",end="";
@@ -1001,9 +1007,30 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      across the worker pool inside each page; pages themselves are serialized. */
   for(let index=0;index<images.length;index++){
     const pageImage=images[index];
-    const upright=await deskew(await rotateImage(pageImage,orientation));
+    let upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
     try{gridRows=await readGrid(upright,pool);}catch{/* an unreadable grid falls back */}
+    /* Scanned PDFs are often saved with a wrong orientation flag or a camera
+       rotation that the first-page probe cannot infer reliably. Do not give up
+       after one guess: only when the chosen turn fails, try the two remaining
+       quarter-turns and keep the one that produces the strongest physical
+       table. This rescue is paid only for failed pages, so clean exports remain
+       fast while photographed/CamScanner sheets stop collapsing into prose. */
+    if(!gridRows){
+      let best:{upright:Buffer;rows:GridRow[]}|null=null;
+      const tried=new Set<number>([orientation]);
+      for(const turn of [-1,0,1] as const){
+        if(tried.has(turn))continue;
+        try{
+          const candidate=await deskew(await rotateImage(pageImage,turn));
+          const candidateRows=await readGrid(candidate,pool);
+          const strength=(candidateRows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
+          const bestStrength=(best?.rows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
+          if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows};
+        }catch{/* try the remaining orientation */}
+      }
+      if(best){upright=best.upright;gridRows=best.rows;}
+    }
     if(gridRows){
       const lib=await canvas();
       const image=await lib.loadImage(upright);

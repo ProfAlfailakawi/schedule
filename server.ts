@@ -4799,9 +4799,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(occupied.length){res.status(409).json({error:"نسخ جدول PDF متاح للفصل الفارغ فقط. أنشئ فصلاً فارغاً أو اختر واحداً بلا مواعيد."});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
   if(!bytes.length){res.status(400).json({error:"لم يصل ملف PDF"});return;}
-  const [allCourses,allInstructors,sectionHistory,terms]=await Promise.all([
+  const [allCourses,allInstructors,sectionHistory,terms,departmentRooms]=await Promise.all([
     Repository.getCourses(),Repository.getInstructors(),
     Repository.getSchedulesByScope({collegeId,sectionId}),Repository.getTerms(),
+    Repository.getDepartmentRooms(collegeId,sectionId),
   ]);
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
   /* Department history is a ranking hint only, never a filter. Authority PDFs
@@ -4847,6 +4848,48 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
   const parsed=parseScheduleTable(recognized.pages,courses,instructors,rosterIds);
+
+  /* Rooms are identifiers and therefore fail closed. OCR is allowed to keep an
+     exact room from this department's complete history, or repair ONE
+     character only when that repair points to exactly one known room. Anything
+     else is blank in the preview instead of becoming a plausible wrong room. */
+  const cleanRoomToken=(value:unknown)=>String(value||"").toUpperCase().replace(/\s+/g,"").trim();
+  const roomDistance=(a:string,b:string)=>{
+    if(a===b)return 0;
+    if(Math.abs(a.length-b.length)>1)return 99;
+    const prev=Array.from({length:b.length+1},(_,i)=>i);
+    for(let i=1;i<=a.length;i++){
+      let diagonal=prev[0];prev[0]=i;
+      for(let j=1;j<=b.length;j++){
+        const old=prev[j],cost=a[i-1]===b[j-1]?0:1;
+        prev[j]=Math.min(prev[j]+1,prev[j-1]+1,diagonal+cost);diagonal=old;
+      }
+    }
+    return prev[b.length];
+  };
+  const knownRooms=(departmentRooms||[])
+    .map((room:any)=>({building:cleanRoomToken(room.building),hall:cleanRoomToken(room.hall)}))
+    .filter((room:any)=>room.building&&room.hall);
+  const roomKey=(building:string,hall:string)=>`${building}|${hall}`;
+  const exactRooms=new Map(knownRooms.map((room:any)=>[roomKey(room.building,room.hall),room]));
+  for(const row of parsed.rows as any[]){
+    const building=cleanRoomToken(row.AdRoomCode),hall=cleanRoomToken(row.AdRoomHall);
+    if(!building&&!hall)continue;
+    const exact=exactRooms.get(roomKey(building,hall));
+    if(exact){row.AdRoomCode=exact.building;row.AdRoomHall=exact.hall;continue;}
+    const candidates=knownRooms.filter((room:any)=>{
+      const bd=building?roomDistance(building,room.building):0;
+      const hd=hall?roomDistance(hall,room.hall):0;
+      return (!building||bd<=1)&&(!hall||hd<=1)&&(bd+hd)<=1;
+    });
+    if(candidates.length===1){
+      row.AdRoomCode=candidates[0].building;row.AdRoomHall=candidates[0].hall;
+    }else{
+      row.AdRoomCode="";row.AdRoomHall="";
+      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة غير مؤكدة فتركتها فارغة للمراجعة`);
+    }
+  }
+
   /* The sheet names its own term in the header. Uploading last year's export
      into this year's term is the one mistake no row-level check can catch —
      every row is valid, just a year old — so the two are compared here and a

@@ -182,7 +182,7 @@ export function Notice({ type = "error", children, inline = false, onDismiss, ac
    * and it will say the same thing again the moment it is asked again. A
    * warning is given time to be read, not time to accumulate.
    */
-  const life = type === "success" || type === "info" ? 4200 : type === "warning" ? 8000 : 12000;
+  const life = type === "success" || type === "info" ? 3500 : type === "warning" ? 5000 : 6500;
 
   React.useEffect(() => { setVisible(true); }, [children, type]);
   React.useEffect(() => {
