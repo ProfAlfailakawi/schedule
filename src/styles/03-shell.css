@@ -328,6 +328,25 @@
     box-shadow:var(--shadow-nav);
   }
 
+  /* ...and the work it floats over is dimmed while it does.
+     The rail grows from 72px to its full width on hover, but .app-main still
+     reserves only 72px, so the newly-covered strip — in RTL the page title and
+     the first KPI card — sits half under an opaque drawer with the other half
+     sticking out. With nothing behind it dimmed, that half-card read as a
+     broken, overlapping layout rather than "a menu is open on top of the page".
+     A soft scrim, shown only while the rail is floated out, restores that
+     reading. It sits below the rail (61) and above the content, never takes the
+     pointer, and simply is not drawn by engines without :has() — the same
+     float-over behaviour as before, minus the illusion of breakage. */
+  html[data-rail="closed"] .app-shell:has(.sidebar:hover)::after,
+  html[data-rail="closed"] .app-shell:has(.sidebar:focus-within)::after{
+    content:"";
+    position:fixed;inset:0;z-index:60;
+    background:color-mix(in srgb,#060b0a 30%,transparent);
+    pointer-events:none;
+    animation:railScrimIn .18s var(--ease-out);
+  }
+
   /* The lone floating launcher is retired: the spine itself is the way back. */
   html[data-rail="closed"] .sidebar-launcher{display:none}
 }
@@ -373,6 +392,20 @@ html[data-schedule-workspace="presentation"] .academic-xray{display:none !import
 html[data-schedule-workspace="focus"] .schedule-control{
   position:sticky;top:var(--s2);z-index:40;box-shadow:var(--shadow-md);
 }
+
+/* The editor is not a panel on the board — it REPLACES the board, so in focus
+   mode it has to own the viewport the board was owning. Without this it landed
+   in an unpadded, heading-less shell behind a fullscreen surface, which read on
+   screen as "adding an appointment does nothing". */
+html[data-schedule-workspace="focus"] .schedule-editor{
+  position:fixed;
+  inset:0;
+  z-index:2600;
+  overflow:auto;
+  background:var(--surface);
+  padding:var(--s5) var(--s6) var(--s8);
+}
+html[data-schedule-workspace="focus"] .schedule-editor .page-heading{display:flex !important}
 
 /* --- Spotlight / command palette ------------------------------------------ */
 
@@ -1733,3 +1766,5 @@ html[data-journey-open="true"] .schedule-guide-backdrop{
   color:var(--muted);
   font-size:10px;line-height:1.6;
 }
+
+@keyframes railScrimIn{from{opacity:0}to{opacity:1}}

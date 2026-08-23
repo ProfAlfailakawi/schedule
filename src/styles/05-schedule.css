@@ -1933,6 +1933,17 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   text-align:center;color:var(--muted-2);font-size:9px;
 }
 .dna-bars i:last-child{background:color-mix(in srgb,var(--accent) 30%,transparent)}
+/* The busiest day is the reading; it is filled solid and labelled with its
+   share so the picture carries a number, not just a silhouette. */
+.dna-bars i.is-peak{background:var(--accent)}
+.dna-bars i[data-share]:not([data-share=""])::before{
+  content:attr(data-share);
+  position:absolute;inset-inline:0;bottom:calc(100% + 2px);
+  text-align:center;color:var(--muted);font-size:8.5px;font-weight:700;
+  opacity:0;transition:opacity .15s;
+}
+.dna-bars i.is-peak::before{opacity:1;color:var(--accent-strong,var(--accent))}
+.dna-bars:hover i[data-share]:not([data-share=""])::before{opacity:1}
 
 .signature-deviations{
   display:grid;grid-template-columns:repeat(2,minmax(0,1fr));
@@ -2673,6 +2684,18 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
   overflow-x:auto;overscroll-behavior-x:contain;
   padding-block:2px;
   scrollbar-width:thin;
+  /* Scrolling shadows: a soft fade appears on an edge only while content is
+     hidden past it, so a ribbon wider than its rail visibly says "there is
+     more this way" — the answer to «شلون أنقل يمين ويسار هنا». The four layers
+     are two solid caps pinned to the box (background-attachment:local) that
+     mask the fades at the true ends, and two fades pinned to the content
+     (scroll) that show only mid-scroll. Pure CSS, and mouse-wheel already pans
+     it horizontally. */
+  background:
+    linear-gradient(to right, var(--surface) 30%, transparent) left center/24px 100% no-repeat local,
+    linear-gradient(to left, var(--surface) 30%, transparent) right center/24px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, color-mix(in srgb,var(--ink) 14%,transparent), transparent) left center/14px 70% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, color-mix(in srgb,var(--ink) 14%,transparent), transparent) right center/14px 70% no-repeat scroll;
 }
 .week-legend-chip{
   flex:none;display:inline-flex;align-items:center;gap:6px;

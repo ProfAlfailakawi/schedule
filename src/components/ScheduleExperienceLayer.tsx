@@ -765,21 +765,33 @@ export default function ScheduleExperienceLayer({
                     ? `${currentDominant.value}% من حضور الفصل الحالي يتركز هنا. البصمة التاريخية يميل إلى ${dnaDominant?.value ? dayLabels[dnaDominant.day] : "نمط غير مكتمل"}.`
                     : "لا توجد بيانات أيام كافية."}
                 </p>
-                {/* A row of bare bars is a picture of data; the axis makes it data. */}
-                <div className="dna-bars" role="img" aria-label="نصيب كل يوم من مواعيد الفصل">
-                  {dayKeys.map((day) => (
-                    <i
-                      key={day}
-                      data-day={dayLabels[day]}
-                      title={`${dayLabels[day]} · ${Number(genome?.current?.dayShares?.[day] || 0)}%`}
-                      style={
-                        {
-                          "--dna": `${Math.max(4, Number(genome?.current?.dayShares?.[day] || 0))}%`,
-                        } as React.CSSProperties
-                      }
-                    />
-                  ))}
-                </div>
+                {/* A row of bare bars is a picture of data; the axis makes it data.
+                    Heights are scaled to the BUSIEST day, not to 100%: when the
+                    top day is 21% of the week, drawing 21% of the bar box left it
+                    four-fifths empty and every day looked the same short stub.
+                    The busiest day now fills the box and the rest read against it. */}
+                {(() => {
+                  const shares = dayKeys.map(day => Number(genome?.current?.dayShares?.[day] || 0));
+                  const peak = Math.max(1, ...shares);
+                  return (
+                    <div className="dna-bars" role="img" aria-label="نصيب كل يوم من مواعيد الفصل">
+                      {dayKeys.map((day) => {
+                        const share = Number(genome?.current?.dayShares?.[day] || 0);
+                        const isPeak = share > 0 && share === peak;
+                        return (
+                          <i
+                            key={day}
+                            data-day={dayLabels[day]}
+                            data-share={share ? `${share}%` : ""}
+                            className={isPeak ? "is-peak" : ""}
+                            title={`${dayLabels[day]} · ${share}%`}
+                            style={{ "--dna": `${share ? Math.max(8, Math.round((share / peak) * 100)) : 3}%` } as React.CSSProperties}
+                          />
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
               </article>
               <article>
                 <span>

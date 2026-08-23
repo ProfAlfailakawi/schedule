@@ -608,9 +608,16 @@ type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: s
  * already says "hall", so the words are noise and the code is the whole point.
  * Both refusal paths - the one the drag decides locally and the one the save
  * returns - run through here, so a wall reads the same however it was found.
+ *
+ * Soft notes are dropped on the way in. The server already refuses to block on
+ * them, but they travelled in the same array, so an advisory could be the only
+ * line under «تعذّر النقل» — a move to another hour answered with "this hall
+ * has not been used for four terms", which is a remark about the past and not
+ * a wall at all. An advisory belongs beside a move that succeeded, never in
+ * place of one.
  */
-const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string }>): RefusalReason[] =>
-  (items || []).slice(0, 3).map((item): RefusalReason => {
+const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string; soft?: boolean; severity?: string }>): RefusalReason[] =>
+  (items || []).filter(item => !item?.soft && item?.type !== "memory").slice(0, 3).map((item): RefusalReason => {
     const message = String(item?.message || "").replace(/[،,]/g, " ").replace(/\s+/g, " ").trim();
     const detail = String(item?.detail || "").replace(/\s+/g, " ").trim();
     const kind: RefusalReason["kind"] =

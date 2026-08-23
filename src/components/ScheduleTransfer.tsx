@@ -206,11 +206,20 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const downloadTemplate = async () => {
     const XLSX = await import("xlsx");
     const headers = ["رمز المقرر", "المقرر الدراسي", "الشعبة", "أستاذ المقرر", "الرقم المدني", "الأيام", "الوقت", "المبنى", "القاعة"];
+    /* Placeholders, not people. The old sample carried real instructor names, a
+       real course title and a well-formed civil id, which is an invitation to
+       leave a row in by accident and a privacy problem on a file that gets
+       mailed around. These names belong to nobody and the id starts with 3, a
+       century Kuwait has not issued. */
     const sample = [
-      ["112", "ورشة إنتاج مواد تعليمية", "501", "د. منى حسن", "285010112345", "الأحد - الثلاثاء", "08:00-09:20", "B9", "F10"],
-      ["491", "الوسائط المتعددة", "503", "د. خالد المطيري", "", "الاثنين - الأربعاء", "11:00-12:20", "B9", "F12"],
+      ["١٠١", "اسم المقرر الأول", "501", "د. فلان الفلاني", "300123100006", "الأحد - الثلاثاء", "08:00-09:20", "B9", "F10"],
+      ["١٠٢", "اسم المقرر الثاني", "502", "د. علان العلاني", "", "الاثنين - الأربعاء", "11:00-12:20", "B9", "F12"],
     ];
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+    /* Arabic headers in a left-to-right sheet put the course code at the far
+       left and the hall at the far right, so the row reads backwards from the
+       order a person fills it in. */
+    (sheet as any)["!views"] = [{ RTL: true }];
     (sheet as any)["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 8 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 13 }, { wch: 9 }, { wch: 9 }];
     const guide = XLSX.utils.aoa_to_sheet([
       ["كيف يفهم الاستيراد ملفك"],
@@ -222,6 +231,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       ["ماذا يحدث بعد الرفع", "يُعرض الملف أولاً كحصيلة: كم صفاً فُهم وما المشاكل. الموافقة تنشئ مسودة في مركز الذكاء، ومن هناك تُنشر فتحل محل جدول القسم لهذا الفصل، مع نقطة أمان تلقائية قبل النشر تسمح بالرجوع."],
     ]);
     (guide as any)["!cols"] = [{ wch: 16 }, { wch: 90 }];
+    (guide as any)["!views"] = [{ RTL: true }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, "الجدول");
     XLSX.utils.book_append_sheet(wb, guide, "طريقة الاستخدام");

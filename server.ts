@@ -51,7 +51,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { ocrDocument, parseScheduleOcrText, transcriptFacts } from "./src/utils/documentOcr";
+import { ocrDocument, parseScheduleTable, transcriptFacts } from "./src/utils/documentOcr";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -141,7 +141,10 @@ app.use(compression({
   threshold: 1024,
   filter: (req: Request, res: Response) => {
     const type = String(res.getHeader("Content-Type") || "");
-    if (type.includes("text/event-stream")) return false;
+    // Streams must not be buffered: SSE, and the NDJSON progress the PDF reader
+    // emits line by line. Compressing either holds every line until the end,
+    // which is exactly the frozen wait the progress bar exists to remove.
+    if (type.includes("text/event-stream") || type.includes("x-ndjson")) return false;
     return compression.filter(req, res);
   },
 }));
@@ -4390,7 +4393,19 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const hourMatch=normalized.match(/(?:إلى|الى|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?/);
   const requestedHour=hourMatch?Math.min(23,Number(hourMatch[1]))*60+Number(hourMatch[2]||0):null;
   const profHint=normalized.match(/(?:د\.?|دكتور|الدكتور)\s*([^\s]+)/)?.[1];
-  const mentionedInstructor=instructors.find(i=>normalized.includes(String(i.AdInstructorName||"").toLowerCase())||(profHint&&String(i.AdInstructorName||"").toLowerCase().includes(profHint)));
+  /* «منو / مين / كم / الجميع» is a question ABOUT the department, not about one
+     named person, so it must never be read as naming an instructor. */
+  const isAggregateAsk=/\b(منو|مين|من عنده|كم|الجميع|كل الأساتذة|كل الاساتذة|أي أستاذ|اي استاذ)\b/.test(normalized)||/^من\s/.test(normalized);
+  /* A name is "mentioned" only if a real, non-trivial name appears in the text.
+     Matching by includes() alone let an instructor whose stored name is empty
+     satisfy normalized.includes("") for EVERY query — which is how "who has a
+     long gap?" was answered with "no data for this instructor". */
+  const namedInstructor=isAggregateAsk?undefined:instructors.find(i=>{
+    const name=String(i.AdInstructorName||"").trim().toLowerCase();
+    if(name.length<4)return false;
+    return normalized.includes(name)||Boolean(profHint&&profHint.length>=3&&name.includes(profHint));
+  });
+  const mentionedInstructor=namedInstructor;
   const scopedInstructorIds=new Set(target.map(row=>Number(row.AdInstructorId||0)).filter(Boolean));
   const requestedInstructor=mentionedInstructor&&scopedInstructorIds.has(Number(mentionedInstructor.AdInstructorId))?mentionedInstructor:undefined;
   const sectionName=sections.find(s=>Number(s.AdSectionId)===sectionId)?.AdSectionName||"القسم المحدد";
@@ -4616,19 +4631,45 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(!bytes.length){res.status(400).json({error:"لم يصل ملف PDF"});return;}
   const [allCourses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
-  const recognized=await ocrDocument(bytes,"application/pdf");
-  const parsed=parseScheduleOcrText(recognized.text,courses,instructors);
+
+  /* Reading a scan takes over a minute, so the client is kept informed rather
+     than left staring at a frozen button. Progress is streamed as NDJSON — one
+     JSON object per line — and the final line carries the result. The uploaded
+     bytes live only in memory for the duration of this handler; nothing about
+     the document is written to disk or the database. */
+  const streaming=/ndjson|text\/event-stream/i.test(String(req.get("accept")||""));
+  if(streaming){
+    res.status(200);
+    res.setHeader("Content-Type","application/x-ndjson; charset=utf-8");
+    res.setHeader("Cache-Control","no-store");
+    res.setHeader("X-Accel-Buffering","no");
+  }
+  const emit=(event:any)=>{ if(streaming){res.write(JSON.stringify(event)+"\n");} };
+
+  const encodedFileName=String(req.get("x-file-name")||"الجدول المعتمد.pdf").slice(0,600);
+  let fileName=encodedFileName;try{fileName=decodeURIComponent(encodedFileName);}catch{/* A literal header is already the right name. */}
+
+  let recognized;
+  try{
+    recognized=await ocrDocument(bytes,"application/pdf",stage=>emit({type:"progress",...stage}));
+  }catch(error:any){
+    const message=String(error?.message||"تعذّرت قراءة ملف PDF");
+    if(streaming){emit({type:"error",error:message});res.end();return;}
+    res.status(422).json({error:message});return;
+  }
+  emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
+  const parsed=parseScheduleTable(recognized.pages,courses,instructors);
   const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
   const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}):[];
   const issues=[...new Set([...parsed.issues,...structural])];
-  const encodedFileName=String(req.get("x-file-name")||"الجدول المعتمد.pdf").slice(0,600);
-  let fileName=encodedFileName;try{fileName=decodeURIComponent(encodedFileName);}catch{/* A literal header is already the right name. */}
-  res.json({
+  const result={
     rows,issues,ready:rows.length>0&&issues.length===0,
     fileName:fileName.slice(0,180),
-    pages:recognized.pages,confidence:recognized.confidence,
-    message:rows.length?`تمت قراءة ${rows.length} شعبة من ${recognized.pages} صفحة`:`لم أتمكن من استخراج شعب من الملف`,
-  });
+    pages:recognized.pageCount,confidence:recognized.confidence,
+    message:rows.length?`تمت قراءة ${rows.length} شعبة من ${recognized.pageCount} صفحة`:`لم أتمكن من استخراج شعب من الملف`,
+  };
+  if(streaming){emit({type:"done",result});res.end();return;}
+  res.json(result);
 });
 
 app.post("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -6409,17 +6450,40 @@ const openStudentIdentity=(value?:string)=>{
   try{const payload=Buffer.from(String(value||""),"base64url"),iv=payload.subarray(0,12),tag=payload.subarray(12,28),encrypted=payload.subarray(28),cipher=createDecipheriv("aes-256-gcm",studentIdentityKey,iv);cipher.setAuthTag(tag);return Buffer.concat([cipher.update(encrypted),cipher.final()]).toString("utf8");}catch{return"";}
 };
 
-type DegreeRule={degreeUnits:130|132|134;fieldTrainingRequired:102|107;graduateRegularPassed:107|109|111;graduateSummerPassed:109|111|113};
+type DegreeRule={degreeUnits:number;fieldTrainingRequired:number;graduateRegularPassed:number;graduateSummerPassed:number};
 /** Internal regulation table. It is never sent with the public survey; only
  * the eligibility verdict and the applied threshold are returned after proof. */
-const degreeRuleForSection=(sectionName:string):DegreeRule=>{
+const degreeRuleFromName=(sectionName:string):DegreeRule=>{
   const name=String(sectionName||"");
-  const degreeUnits:130|132|134=/فرنسي/.test(name)?132:/انجليزي|إنجليزي|تربية خاصة|تفوق|إعاقة|صعوبات/.test(name)?134:130;
+  const degreeUnits=/فرنسي/.test(name)?132:/انجليزي|إنجليزي|تربية خاصة|تفوق|إعاقة|صعوبات/.test(name)?134:130;
   return degreeUnits===130
     ?{degreeUnits,fieldTrainingRequired:102,graduateRegularPassed:107,graduateSummerPassed:109}
     :degreeUnits===132
       ?{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:109,graduateSummerPassed:111}
       :{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:111,graduateSummerPassed:113};
+};
+
+/**
+ * The rule a department is actually judged by.
+ *
+ * This is what the graduate case in the student survey measures a transcript
+ * against, so it decides whether a real student is told they are eligible. It
+ * was inferred from the department NAME by regular expression: a department
+ * earned 134 units by containing the word «انجليزي», and every department that
+ * matched nothing fell to 130 — a number nobody chose, that no screen showed,
+ * and that a rename could change without anyone noticing. A stored rule now
+ * wins; the name heuristic remains only as the seed for departments nobody has
+ * reviewed yet.
+ */
+const degreeRuleForSection=async(sectionId:number,sectionName:string):Promise<DegreeRule>=>{
+  const stored=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===Number(sectionId));
+  if(!stored)return degreeRuleFromName(sectionName);
+  return{
+    degreeUnits:Number(stored.degreeUnits) as DegreeRule["degreeUnits"],
+    fieldTrainingRequired:Number(stored.fieldTrainingRequired) as DegreeRule["fieldTrainingRequired"],
+    graduateRegularPassed:Number(stored.graduateRegularPassed) as DegreeRule["graduateRegularPassed"],
+    graduateSummerPassed:Number(stored.graduateSummerPassed) as DegreeRule["graduateSummerPassed"],
+  };
 };
 const issueStudentProof=(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;nameMatched:boolean})=>{
   const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+20*60_000})).toString("base64url");
@@ -6450,6 +6514,36 @@ function surveyCourseIdsForSection(courses: any[], history: any[], sectionId: nu
   for (const course of courses) if (taught.has(Number(course.AdCourseId))) allowed.add(Number(course.AdCourseId));
   return { taught, allowed };
 }
+
+app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  const [sections,stored]=await Promise.all([Repository.getSections(),Repository.getDegreeRules()]);
+  const byId=new Map(stored.map(row=>[Number(row.AdSectionId),row]));
+  res.json(sections.map((section:any)=>{
+    const saved=byId.get(Number(section.AdSectionId));
+    const rule=saved||{...degreeRuleFromName(String(section.AdSectionName||"")),AdSectionId:section.AdSectionId,updatedAt:"",updatedBy:""};
+    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:Boolean(saved)};
+  }));
+});
+
+app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: AuthenticatedRequest, res: Response) => {
+  const sectionId=Number(req.params.sectionId||0);
+  const sections=await Repository.getSections();
+  if(!sections.some((row:any)=>Number(row.AdSectionId)===sectionId)){res.status(404).json({error:"القسم غير موجود"});return;}
+  const read=(key:string)=>Math.round(Number(asciiDigits((req.body||{})[key])));
+  const degreeUnits=read("degreeUnits"),fieldTrainingRequired=read("fieldTrainingRequired");
+  const graduateRegularPassed=read("graduateRegularPassed"),graduateSummerPassed=read("graduateSummerPassed");
+  const values=[degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed];
+  if(values.some(value=>!Number.isFinite(value)||value<30||value>300)){res.status(400).json({error:"كل قيمة يجب أن تكون عدد وحدات بين 30 و 300"});return;}
+  // A student cannot be asked to pass more than the degree holds.
+  if(fieldTrainingRequired>degreeUnits||graduateRegularPassed>degreeUnits||graduateSummerPassed>degreeUnits){
+    res.status(400).json({error:"لا يمكن أن يتجاوز أي شرط مجموع وحدات الدرجة"});return;
+  }
+  const saved=await Repository.saveDegreeRule({
+    AdSectionId:sectionId,degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed,
+    updatedAt:new Date().toISOString(),updatedBy:String(req.user?.Name||""),
+  });
+  res.json(saved);
+});
 
 app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
@@ -6502,7 +6596,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const foldName=(value:string)=>String(value||"").replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
   const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.filter(word=>documentName.includes(word)).length>=Math.min(2,nameWords.length);
   if(!nameMatched){res.status(422).json({error:"الاسم في الإثبات لا يطابق الاسم المدخل أو لم يظهر بوضوح."});return;}
-  const rule=degreeRuleForSection(String(section.AdSectionName||"")),passedUnits=Number(facts.passedUnits||0);
+  const rule=await degreeRuleForSection(sectionId,String(section.AdSectionName||"")),passedUnits=Number(facts.passedUnits||0);
   if(!passedUnits){res.status(422).json({error:"لم أتعرف على مجموع الوحدات المجتازة. ارفع كشفاً واضحاً يظهر فيه المجموع."});return;}
   const eligible=passedUnits>=rule.fieldTrainingRequired,proofToken=issueStudentProof({fingerprint:surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:rule.fieldTrainingRequired,nameMatched});
   res.json({eligible,passedUnits,requiredUnits:rule.fieldTrainingRequired,message:eligible?`تم التحقق: اجتزت ${passedUnits} وحدة، ويمكنك متابعة طلب الخريج/المتوقع تخرجه.`:`أنت مجتاز ${passedUnits} وحدة، والمطلوب ${rule.fieldTrainingRequired} وحدة لفتح خيارات الميداني.`,proofToken,confidence:ocr.confidence});
@@ -6536,8 +6630,17 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   /* GET and POST use the exact same eligibility rule. Previously the page
      showed courses from teaching history while POST checked catalogue ownership;
      a real selection could therefore be rejected as if nothing had been picked. */
-  const { allowed } = surveyCourseIdsForSection(courses, history, sectionId);
-  courses.filter((course:any)=>Number(course.AdSectionId)===sectionId).forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
+  /* The link decides the catalogue, not the section the student is enrolled
+     in: someone who opened the Islamic Education form is asking about Islamic
+     Education courses. A conflict is the one case that reaches wider, because
+     the course being clashed with can belong to any department in the college. */
+  const linkSectionId=Number(resolved.link.AdSectionId);
+  const { allowed } = surveyCourseIdsForSection(courses, history, linkSectionId);
+  courses.filter((course:any)=>Number(course.AdSectionId)===linkSectionId).forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
+  if(requestType==="course-conflict"){
+    const collegeSections=new Set(sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId)).map((row:any)=>Number(row.AdSectionId)));
+    courses.filter((course:any)=>collegeSections.has(Number(course.AdSectionId))).forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
+  }
   const courseIds = [...new Set((Array.isArray(body.courseIds) ? body.courseIds : [])
     .map(value => Number(asciiDigits(value))).filter(id => allowed.has(id)))].slice(0, 12);
   if(requestType==="new-course"&&!courseIds.length){res.status(400).json({error:"اختر المقرر الذي تحتاج فتحه"});return;}
@@ -6548,7 +6651,7 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   if(requestType==="graduate"){
     const proof=verifyStudentProof(String(body.proofToken||""));
     if(!proof||proof.fingerprint!==surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId){res.status(400).json({error:"ارفع كشف الدرجات وتحقق منه قبل إرسال حالة الخريج"});return;}
-    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=degreeRuleForSection(String(section.AdSectionName||"")).degreeUnits;eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
+    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=(await degreeRuleForSection(sectionId,String(section.AdSectionName||""))).degreeUnits;eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
     if(graduateReason==="other"&&details.length<5){res.status(400).json({error:"اكتب سبب الطلب بوضوح"});return;}
@@ -7595,17 +7698,43 @@ function arCourses(n){
 
 function studentCaseSurveyPage(token:string,label:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><style>
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}}
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}}
 </style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسـمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script>
-(function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],proofToken="",proofEligible=false;var host=document.getElementById("host");
+(function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false;var host=document.getElementById("host");
+/* The same checksum the rest of the system enforces. The page used to accept
+   any twelve digits, so a wrong number travelled through both remaining steps
+   and was only refused by the server at the very end — the student learning at
+   submit time that the first field was wrong. */
+function civilValid(v){v=String(v||"");if(!/^\d{12}$/.test(v))return false;var w=[2,1,6,3,7,9,10,5,8,4,2],sum=0;for(var i=0;i<11;i++)sum+=Number(v[i])*w[i];return 11-(sum%11)===Number(v[11])}
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
-function identity(){step=1;paintProgress();host.innerHTML='<div class="step-head"><b>1</b><div><strong>بيانات الطالب</strong><span>الاسم · الرقم المدني · القسم العلمي</span></div></div><div class="fields"><div class="field"><label>الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"></div><div class="field"><label>الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" maxlength="12" value="'+esc(student.civil)+'"></div><div class="field full"><label>القسم العلمي</label><select id="section"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div></div><button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err"></div>';document.getElementById("next").onclick=function(){student.name=document.getElementById("name").value.trim();student.civil=digits(document.getElementById("civil").value);student.sectionId=Number(document.getElementById("section").value)||0;if(student.name.length<3)return fail("اكتب اسمك كاملاً");if(student.civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!student.sectionId)return fail("اختر قسمك العلمي");kind="";picked=[];proofToken="";proofEligible=false;chooseType()};document.getElementById("civil").oninput=function(){this.value=digits(this.value)}}
+function identity(){step=1;paintProgress();host.innerHTML='<div class="step-head"><b>1</b><div><strong>بيانات الطالب</strong><span>الاسم · الرقم المدني · القسم العلمي</span></div></div><div class="fields"><div class="field"><label>الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"></div><div class="field"><label>الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" maxlength="12" value="'+esc(student.civil)+'"><small id="civilHint" class="hint"></small></div><div class="field full"><label>القسم العلمي</label><select id="section"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div></div><button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err"></div>';var civilBox=document.getElementById("civil"),hint=document.getElementById("civilHint");function paintCivil(){var value=digits(civilBox.value);if(!value.length){hint.textContent="";hint.className="hint";return}if(value.length<12){hint.textContent="باقي "+(12-value.length)+" رقم";hint.className="hint";return}if(civilValid(value)){hint.textContent="رقم مدني صحيح";hint.className="hint ok"}else{hint.textContent="هذا الرقم المدني غير صحيح — راجع أرقام بطاقتك";hint.className="hint bad"}}civilBox.oninput=function(){this.value=digits(this.value);paintCivil()};paintCivil();document.getElementById("next").onclick=function(){student.name=document.getElementById("name").value.trim();student.civil=digits(civilBox.value);student.sectionId=Number(document.getElementById("section").value)||0;if(student.name.length<3)return fail("اكتب اسمك كاملاً");if(student.civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!civilValid(student.civil))return fail("هذا الرقم المدني غير صحيح. راجع الأرقام كما هي في بطاقتك المدنية.");if(!student.sectionId)return fail("اختر قسمك العلمي");kind="";picked=[];otherCourse=0;proofToken="";proofEligible=false;chooseType()}}
+
 function chooseType(){step=2;paintProgress();host.innerHTML='<button class="back" id="back">← تعديل البيانات</button><div class="step-head"><b>2</b><div><strong>ما نوع طلبك؟</strong><span>اختر حالة واحدة</span></div></div><div class="types"><button class="type" data-kind="new-course"><i>＋</i><span><strong>فتح مقرر جديد</strong><small>مقرر تحتاج طرحه في الفصل</small></span><em>‹</em></button><button class="type" data-kind="course-conflict"><i>⇄</i><span><strong>مقرر يتعارض مع مقرر آخر</strong><small>اختر المقررين المتقاطعين</small></span><em>‹</em></button><button class="type" data-kind="graduate"><i>✓</i><span><strong>خريج أو متوقع تخرجه</strong><small>يتطلب كشف درجات للتحقق من الوحدات</small></span><em>‹</em></button></div>';document.getElementById("back").onclick=identity;host.querySelectorAll(".type").forEach(function(button){button.onclick=function(){kind=button.dataset.kind;picked=[];proofToken="";proofEligible=false;details()}})}
-function courseCards(limit){var courses=section().courses||[];return'<div class="course-tools"><input id="courseSearch" type="search" placeholder="ابحث باسم المقرر أو رمزه"></div><div class="courses" id="courses">'+courses.map(function(c){return'<button type="button" class="course" data-id="'+c.id+'" data-find="'+esc((c.name+' '+c.code).toLowerCase())+'"><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>'}).join("")+'</div><p class="privacy">'+(limit===2?'اختر مقررين بالضبط.':'يمكنك اختيار كل المقررات التي تحتاج فتحها.')+'</p>'}
-function wireCourses(limit){var box=document.getElementById("courses"),search=document.getElementById("courseSearch");box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id),at=picked.indexOf(id);if(at>=0)picked.splice(at,1);else{if(limit&&picked.length>=limit)return fail("اختر مقررين فقط");picked.push(id)}button.classList.toggle("on",picked.indexOf(id)>=0)};search.oninput=function(){var q=this.value.trim().toLowerCase();box.querySelectorAll(".course").forEach(function(button){button.hidden=q&&button.dataset.find.indexOf(q)<0})}}
-function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح مقرر جديد":kind==="course-conflict"?"تعارض مقررين":"حالة خريج أو متوقع تخرجه";var content=kind==="graduate"?'<div class="proof"><strong>ارفع الإثبات · كشف الدرجات</strong><small class="lead">PDF أو صورة واضحة يظهر فيها الاسم والرقم المدني ومجموع الوحدات المجتازة.</small><input id="proof" type="file" accept="application/pdf,image/*"><button class="action" id="verify" type="button">قراءة الإثبات والتحقق</button><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label><label class="reason"><input type="radio" name="reason" value="other"><span>سبب آخر</span></label></div><div class="field" style="margin-top:9px"><label>اكتب السبب أو التفاصيل</label><textarea id="details" rows="3" maxlength="1200" placeholder="اكتب باختصار ما يحتاج القسم معرفته"></textarea></div></div>':courseCards(kind==="course-conflict"?2:0)+'<div class="field" style="margin-top:10px"><label>تفاصيل إضافية (اختياري)</label><textarea id="details" rows="3" maxlength="1200"></textarea></div>';host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(section().name||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind!=="graduate")wireCourses(kind==="course-conflict"?2:0);else wireProof();document.getElementById("send").onclick=submit}
+function linkCourses(){return data.courses||[]}
+function sectionById(id){return(data.sections||[]).find(function(s){return Number(s.id)===Number(id)})||{courses:[]}}
+function courseButton(c){return'<button type="button" class="course" data-id="'+c.id+'" data-find="'+esc((c.name+' '+c.code).toLowerCase())+'"><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>'}
+/* The link decides which catalogue is on offer. A student who opened the
+   Islamic Education form wants an Islamic Education course; showing them the
+   department they happen to be enrolled in was answering a question nobody
+   asked. */
+function ownCourseCards(){return'<details class="acc" open><summary><span>مقررات '+esc(data.section||"القسم")+'</span><em>'+linkCourses().length+'</em></summary><div class="acc-body"><input id="courseSearch" type="search" placeholder="ابحث باسم المقرر أو رمزه"><div class="courses" id="courses">'+linkCourses().map(courseButton).join("")+'</div></div></details>'}
+/* The second course can come from anywhere in the college, and listing every
+   catalogue at once is a wall of names. Nothing is revealed until the student
+   types, so the list is always an answer to something they asked for. */
+function otherCourseCards(){return'<div class="field" style="margin-top:12px"><label>القسم الآخر</label><select id="otherSection"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'">'+esc(s.name)+'</option>'}).join("")+'</select></div><div class="course-tools"><input id="otherSearch" type="search" placeholder="اكتب جزءاً من اسم المقرر — مثلاً: تاريخ" disabled></div><div class="courses" id="otherCourses"></div><p class="privacy" id="otherHint">اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج.</p>'}
+
+function wireOwnCourses(){var box=document.getElementById("courses"),search=document.getElementById("courseSearch");box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);if(kind==="course-conflict"){picked=picked[0]===id?[]:[id];box.querySelectorAll(".course").forEach(function(other){other.classList.toggle("on",Number(other.dataset.id)===picked[0])});return}var at=picked.indexOf(id);if(at>=0)picked.splice(at,1);else picked.push(id);button.classList.toggle("on",picked.indexOf(id)>=0)};search.oninput=function(){var q=this.value.trim().toLowerCase();box.querySelectorAll(".course").forEach(function(button){button.hidden=q&&button.dataset.find.indexOf(q)<0})}}
+function wireOtherCourse(){var pickSection=document.getElementById("otherSection"),search=document.getElementById("otherSearch"),box=document.getElementById("otherCourses"),hint=document.getElementById("otherHint");pickSection.onchange=function(){otherCourse=0;search.disabled=!this.value;search.value="";box.innerHTML="";hint.textContent=this.value?"اكتب جزءاً من اسم المقرر لتظهر النتائج.":"اختر القسم أولاً، ثم اكتب اسم المقرر لتظهر النتائج."};search.oninput=function(){var q=this.value.trim().toLowerCase();if(q.length<2){box.innerHTML="";hint.textContent="اكتب حرفين على الأقل.";return}var list=(sectionById(pickSection.value).courses||[]).filter(function(c){return(c.name+" "+c.code).toLowerCase().indexOf(q)>=0}).slice(0,40);box.innerHTML=list.map(courseButton).join("");hint.textContent=list.length?"":"لا مقرر بهذا الاسم في القسم المختار."};box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id);otherCourse=otherCourse===id?0:id;box.querySelectorAll(".course").forEach(function(other){other.classList.toggle("on",Number(other.dataset.id)===otherCourse)})}}
+
+function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح مقرر جديد":kind==="course-conflict"?"تعارض مقررين":"حالة خريج أو متوقع تخرجه";
+/* The free-text box is kept only where somebody reads it. On the two course
+   requests the selected courses already say everything the department acts on,
+   and an optional box invited an explanation nobody was going to open. */
+var content=kind==="graduate"?'<div class="proof"><strong>ارفع الإثبات · كشف الدرجات</strong><small class="lead">PDF أو صورة واضحة يظهر فيها الاسم والرقم المدني ومجموع الوحدات المجتازة. صور الآيفون بصيغة HEIC مقبولة.</small><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة الإثبات والتحقق</button><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label><label class="reason"><input type="radio" name="reason" value="other"><span>سبب آخر</span></label></div><div class="field" style="margin-top:9px"><label>اكتب السبب أو التفاصيل</label><textarea id="details" rows="3" maxlength="1200" placeholder="اكتب باختصار ما يحتاج القسم معرفته"></textarea></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
+host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate")wireProof();else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
+
 function wireProof(){document.getElementById("verify").onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus");if(!file)return fail("اختر كشف الدرجات أولاً");button.disabled=true;button.textContent="أقرأ الكشف…";status.className="proof-status";status.textContent="تجري قراءة الاسم والرقم المدني والوحدات من الإثبات؛ قد تستغرق لحظات.";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof',{method:'POST',headers:{'Content-Type':'application/octet-stream','x-file-type':file.type||'application/pdf','x-student-name':encodeURIComponent(student.name),'x-student-civil':student.civil,'x-student-section':String(student.sectionId)},body:file}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){button.disabled=false;button.textContent="إعادة التحقق";if(!x.ok){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=x.d.error||"تعذر التحقق";return}proofEligible=!!x.d.eligible;proofToken=x.d.proofToken||"";status.className='proof-status '+(proofEligible?'ok':'bad');status.textContent=x.d.message;if(proofEligible)document.getElementById("graduateOptions").hidden=false}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال."})}}
-function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),detailsEl=document.getElementById("details"),reason=reasonEl?reasonEl.value:"",note=detailsEl?detailsEl.value.trim():"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&picked.length!==2)return fail("اختر مقررين متعارضين بالضبط");if(kind==="graduate"&&!proofEligible)return fail("تحقق من كشف الدرجات أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");if(kind==="graduate"&&reason==="other"&&note.length<5)return fail("اكتب سبب الطلب");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:picked,proofToken:proofToken,graduateReason:reason,details:note})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة بتفاصيلها للمراجعة.<br>هذا الطلب لا يُعد تسجيلاً، وسيظهر للمسؤول المخوّل في مركز الذكاء.</p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
+function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),detailsEl=document.getElementById("details"),reason=reasonEl?reasonEl.value:"",note=detailsEl?detailsEl.value.trim():"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من كشف الدرجات أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");if(kind==="graduate"&&reason==="other"&&note.length<5)return fail("اكتب سبب الطلب");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:note})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة بتفاصيلها للمراجعة.<br>هذا الطلب لا يُعد تسجيلاً، وسيظهر للمسؤول المخوّل في مركز الذكاء.</p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
 fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student.sectionId=Number(data.sectionId)||0;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
 }

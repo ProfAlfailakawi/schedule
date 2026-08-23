@@ -28,6 +28,7 @@ import {
   ScheduleComment,
   SchedulePublication,
   ScheduleConstraint,
+  AdDegreeRule,
   ScheduleDecisionMemory,
   CampusMobilityProfile,
   ScheduleShareLink,
@@ -185,6 +186,7 @@ interface DBState {
   studentNeeds?: StudentNeed[];
   schedulePublications?: SchedulePublication[];
   scheduleConstraints?: ScheduleConstraint[];
+  degreeRules?: AdDegreeRule[];
   visitingRosters?: VisitingRoster[];
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
@@ -201,7 +203,7 @@ interface LegacySnapshot extends DBState {
 let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
-  clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [],
+  clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [],
   scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
 };
 
@@ -644,6 +646,7 @@ export async function initDatabase() {
       if (!Array.isArray(db.scheduleComments)) db.scheduleComments = [];
       if (!Array.isArray(db.schedulePublications)) db.schedulePublications = [];
       if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
+      if (!Array.isArray(db.degreeRules)) db.degreeRules = [];
       if (!Array.isArray(db.visitingRosters)) db.visitingRosters = [];
       if (!Array.isArray(db.scheduleDecisionMemories)) db.scheduleDecisionMemories = [];
       if (!Array.isArray(db.campusMobilityProfiles)) db.campusMobilityProfiles = [];
@@ -1955,7 +1958,7 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
     const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
     replaceCurrentDb({
       users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
-      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
+      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
     });
     saveDatabase();
   }
@@ -3710,6 +3713,26 @@ export const Repository = {
       (db.visitingRosters || []).forEach(row => (row.instructorIds || []).forEach(id => set.add(Number(id))));
     }
     return [...set];
+  },
+
+  getDegreeRules: async (): Promise<AdDegreeRule[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("degreeRules").limit(500).get();
+      return snap.docs.map(doc => doc.data() as AdDegreeRule);
+    }
+    return db.degreeRules || [];
+  },
+
+  saveDegreeRule: async (rule: AdDegreeRule): Promise<AdDegreeRule> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("degreeRules").doc(String(rule.AdSectionId)).set(rule);
+      return rule;
+    }
+    if (!Array.isArray(db.degreeRules)) db.degreeRules = [];
+    const at = db.degreeRules.findIndex(row => Number(row.AdSectionId) === Number(rule.AdSectionId));
+    if (at >= 0) db.degreeRules[at] = rule; else db.degreeRules.push(rule);
+    saveDatabase();
+    return rule;
   },
 
   getScheduleConstraints: async (collegeId: number, sectionId: number, termId: number): Promise<ScheduleConstraint[]> => {

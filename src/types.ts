@@ -385,6 +385,27 @@ export interface ScheduleComment {
 
 export type ScheduleConstraintType = "instructor_latest_end" | "instructor_day_off" | "department_day_off" | "course_room" | "max_instructor_gap" | "room_doorway";
 
+/**
+ * What a degree costs, per scientific department.
+ *
+ * These numbers gate the graduate case in the student survey: the transcript is
+ * read, and the units it reports are measured against the department's own
+ * requirement. They used to be inferred from the department NAME by regular
+ * expression, so a department earned 134 units by containing the word «انجليزي»
+ * and every unmatched department silently fell to 130 — a rule nobody chose,
+ * that no screen showed, and that a rename could change without warning.
+ */
+export interface AdDegreeRule {
+  AdSectionId: number;
+  degreeUnits: number;
+  /** Units that must be passed before field training opens. */
+  fieldTrainingRequired: number;
+  graduateRegularPassed: number;
+  graduateSummerPassed: number;
+  updatedAt: string;
+  updatedBy: string;
+}
+
 export interface ScheduleConstraint {
   id: string;
   scopeKey: string;

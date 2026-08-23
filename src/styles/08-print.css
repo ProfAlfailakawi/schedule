@@ -2002,3 +2002,16 @@
   .print-room-directory-table thead th:first-child{width:34% !important}
   .print-room-directory-table thead th:not(:first-child){width:22% !important}
 }
+
+@media print{
+  /* Query results print as a numbered brief: the question, the reading, and the
+     figures the assistant measured — one section per exchange. */
+  .query-print .query-print-item{break-inside:avoid;page-break-inside:avoid;margin:0 0 6mm;padding:0 0 4mm;border-bottom:.5pt solid #ccc}
+  .query-print .query-print-item h2{font-size:11pt !important;margin:0 0 1.5mm !important;color:#111 !important}
+  .query-print .query-print-item strong{display:block;font-size:10pt;color:#0f4239;margin:0 0 1mm}
+  .query-print .query-print-item p{font-size:9pt;color:#333;line-height:1.7;margin:0 0 2mm}
+  .query-print table{width:auto;min-width:60mm;border-collapse:collapse;font-size:8.5pt;margin:1mm 0}
+  .query-print th,.query-print td{border:1px solid #bbb;padding:1.6mm 2.4mm;text-align:right}
+  .query-print th{background:#eef2f0;font-weight:700;color:#333}
+  .query-print ul{margin:1mm 4mm 0 0;padding:0;font-size:8.5pt;color:#333;line-height:1.6}
+}

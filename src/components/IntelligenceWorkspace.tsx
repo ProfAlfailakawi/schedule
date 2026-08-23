@@ -16,6 +16,7 @@ import {
   FileClock,
   FileText,
   FileSpreadsheet,
+  Download,
   Gauge,
   History,
   Lightbulb,
@@ -81,6 +82,14 @@ import {
   intelligenceMinutes as twinMinutes,
 } from "./IntelligenceVersionCanvas";
 import { formatCompactDurationArabic, formatMinuteMetricArabic, formatUnitMetricArabic, formatScheduleTimeRange, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES, scheduleClockForDisplay } from "../utils/scheduleTime";
+
+/** A calendar day for print: «٢٣ أغسطس ٢٠٢٦», no seconds, no comma, no clock —
+ *  the register already carries the moment; the report needs the date. */
+const printableCaseDate = (value: string) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(date);
+};
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 
 /**
@@ -466,6 +475,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [versionTo, setVersionTo] = useState(""),
     [versionCompare, setVersionCompare] = useState<any>(null),
     [timeTravel, setTimeTravel] = useState(50);
+  const [importProgress, setImportProgress] = useState<{ phase: string; page: number; pages: number; message: string } | null>(null);
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
@@ -692,6 +702,31 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       if (!painted && serial === reloadSerial.current) setLoading(false);
     }
   };
+  /**
+   * Student requests arrive from outside the app.
+   *
+   * Everything else on this screen changes because somebody in the room changed
+   * it, so reloading on the reader's own actions was enough. A survey answer is
+   * the exception: it is written by a student on their phone, and nothing here
+   * would ever hear about it — several requests were filed and the register
+   * stayed empty until the page was reloaded by hand. So the demand card, and
+   * only it, is re-read on a timer while this tab is actually being looked at.
+   */
+  useEffect(() => {
+    if (!collegeId || !sectionId || !termId) return;
+    let alive = true;
+    const readDemand = async () => {
+      if (document.hidden) return;
+      try {
+        const fresh = await fetchJson(`/api/schedules/demand?${contextQuery}`);
+        if (alive && fresh) setDemand(fresh);
+      } catch { /* A missed poll is corrected by the next one. */ }
+    };
+    const timer = window.setInterval(readDemand, 25_000);
+    document.addEventListener("visibilitychange", readDemand);
+    return () => { alive = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", readDemand); };
+  }, [collegeId, sectionId, termId, contextQuery]);
+
   useEffect(() => {
     setScenario(null);
     setScenarioEval(null);
@@ -707,6 +742,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       // An incomplete scope is a true idle state, never the previous scope
       // dimmed behind empty selectors. This also removes the visual flash that
       // used to occur while switching college/term.
+      // A permission error from the previous scope must not survive into it
+      // either: the empty-scope screen was showing a red «خارج صلاحيات الأقسام»
+      // above «اختر الكلية والفصل», turning an ordinary starting state into an
+      // apparent failure.
+      setError(null);
       setOverview(null);
       setRows([]);
       setDrafts([]);
@@ -987,6 +1027,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
      handle belongs on the page that reads the answers, so collecting more of
      them and reading them are one place, not two. */
   const [surveyQr, setSurveyQr] = useState<{ id: string; svg: string } | null>(null);
+  /* The same durations the instructor and department links offer. A student
+     door was fixed at thirty days with no way to say otherwise, so a survey
+     that had to close with the add-drop week could not. */
+  const SURVEY_DAY_CHOICES = [7, 30, 90, 180];
+  const [surveyDays, setSurveyDays] = useState(30);
   const [surveyCopied, setSurveyCopied] = useState<string | null>(null);
   const surveyUrl = (id: string) => `${window.location.origin}/q/${id}`;
 
@@ -1000,9 +1045,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       await fetchJson("/api/share", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, kind: "survey", days: 30 }),
+        body: JSON.stringify({ collegeId, sectionId, termId, kind: "survey", days: surveyDays }),
       });
-      setMessage("صدر رابط الاستبيان لهذا القسم — صالح ثلاثين يوماً. انسخه أو اعرض رمز QR وعلّقه للطلاب.");
+      setMessage(`صدر رابط الاستبيان لهذا القسم — صالح ${surveyDays.toLocaleString("ar-KW-u-nu-latn")} يوماً. انسخه أو اعرض رمز QR وعلّقه للطلاب.`);
       await reload();
     } catch (e: any) {
       setError(smartMessage(e));
@@ -1128,6 +1173,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const saveDraft = async (
     source = "what-if",
     draftRows = scenario,
+    importLayout?: "authority-pdf" | "worksheet",
     customName = "",
   ) => {
     if (!draftRows) return;
@@ -1155,8 +1201,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 source,
                 name:
                   customName ||
-                  `${source === "auto" ? "اقتراح تلقائي" : source === "import" ? "استيراد Excel" : "سيناريو"} — ${new Date().toLocaleString("ar-KW-u-nu-latn")}`,
+                  `${source === "auto" ? "اقتراح تلقائي" : source === "import" ? (importLayout === "authority-pdf" ? "نسخة PDF المعتمدة" : "استيراد النموذج") : "سيناريو"} — ${new Date().toLocaleString("ar-KW-u-nu-latn")}`,
                 rows: draftRows,
+                ...(importLayout ? { importLayout } : {}),
               }),
             });
       setActiveDraftId(String(d.id));
@@ -1336,6 +1383,81 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setBusy(false);
     }
   };
+  /** The same blank workbook Data Tools offers, so the two importers hand a
+   *  professor one identical template rather than two subtly different ones. */
+  const downloadImportTemplate = async () => {
+    const XLSX = await import("xlsx");
+    const headers = ["رمز المقرر", "المقرر الدراسي", "الشعبة", "أستاذ المقرر", "الرقم المدني", "الأيام", "الوقت", "المبنى", "القاعة"];
+    const sample = [
+      ["١٠١", "اسم المقرر الأول", "501", "د. فلان الفلاني", "300123100006", "الأحد - الثلاثاء", "08:00-09:20", "B9", "F10"],
+      ["١٠٢", "اسم المقرر الثاني", "502", "د. علان العلاني", "", "الاثنين - الأربعاء", "11:00-12:20", "B9", "F12"],
+    ];
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
+    (sheet as any)["!views"] = [{ RTL: true }];
+    (sheet as any)["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 8 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 13 }, { wch: 9 }, { wch: 9 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "الجدول");
+    XLSX.writeFile(wb, "نموذج-استيراد-الجدول.xlsx");
+  };
+
+  /** A PDF is the Authority's scanned timetable and takes the same reviewed
+   *  route as the one in Data Tools: read to a preview, published only after a
+   *  person approves, and only into an empty term. */
+  const importPdf = async (file: File) => {
+    setImportFile(file.name);
+    setImportPreview(null);
+    setBusy(true);
+    setError(null);
+    setImportProgress({ phase: "render", page: 0, pages: 0, message: "يجهّز الملف للقراءة" });
+    try {
+      const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
+      const response = await fetch(`/api/intelligence/pdf-import?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream", "Accept": "application/x-ndjson", "x-file-name": encodeURIComponent(file.name) },
+        body: await file.arrayBuffer(),
+      });
+      /* The server streams NDJSON: one progress object per line while it reads,
+         a final line carrying the result. Reading the body as it arrives is what
+         lets the bar advance page by page instead of freezing on one spinner. */
+      if (!response.ok && !response.body) throw new Error("تعذّرت قراءة PDF");
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "", data: any = null, failure = "";
+      if (reader) {
+        for (;;) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let cut = buffer.indexOf("\n");
+          while (cut >= 0) {
+            const line = buffer.slice(0, cut).trim();
+            buffer = buffer.slice(cut + 1);
+            cut = buffer.indexOf("\n");
+            if (!line) continue;
+            let event: any; try { event = JSON.parse(line); } catch { continue; }
+            if (event.type === "progress") setImportProgress({ phase: event.phase, page: event.page, pages: event.pages, message: event.message });
+            else if (event.type === "done") data = event.result;
+            else if (event.type === "error") failure = event.error;
+          }
+        }
+      }
+      if (failure) throw new Error(failure);
+      if (!data) { const rest = buffer.trim(); if (rest) { try { const tail = JSON.parse(rest); data = tail.result || tail; } catch { /* no trailing json */ } } }
+      if (!data) throw new Error("تعذّرت قراءة PDF");
+      setImportPreview({ ...data, count: Number(data.rows?.length || 0), preview: data.rows || [], valid: Boolean(data.ready), issues: data.issues || [], importLayout: "authority-pdf" });
+    } catch (e: any) {
+      setError(smartMessage(e));
+    } finally {
+      setBusy(false);
+      setImportProgress(null);
+    }
+  };
+
+  const importAnyFile = (file: File) => {
+    if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") return void importPdf(file);
+    return void importExcel(file);
+  };
+
   const importExcel = async (file: File) => {
     setImportFile(file.name);
     setImportPreview(null);
@@ -1360,9 +1482,46 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setBusy(false);
     }
   };
+  /**
+   * The authority PDF is copied into an EMPTY term in one confirmed step:
+   * approve, and the whole schedule drops in. It saves the draft (which keeps
+   * the immutable baseline the colour report reads) and publishes it straight
+   * away, so the professor is not left hunting for a second screen.
+   */
+  const approveAndPublishPdf = async () => {
+    if (!importPreview?.valid) return;
+    const ok = await visualConfirm({
+      title: "اعتماد الجدول المعتمد",
+      message: `سيُنشر ${Number(importPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")} موعداً في هذا الفصل الفارغ دفعة واحدة. تبقى الأرقام المرجعية محفوظة للتقرير دون أن تظهر في الجدول. هل تعتمد؟`,
+      confirmLabel: "اعتمد وانشر",
+      tone: "warning",
+    });
+    if (!ok) return;
+    setBusy(true); setError(null);
+    try {
+      const draft = await fetchJson("/api/intelligence/drafts", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, termId, source: "import", importLayout: "authority-pdf",
+          name: `نسخة PDF المعتمدة — ${importPreview.fileName || ""}`.trim(),
+          sourceFileName: importPreview.fileName, rows: importPreview.rows }),
+      });
+      await fetchJson(`/api/intelligence/drafts/${draft.id}/publish`, {
+        method: "POST", headers: { "x-schedule-confirm": "publish" },
+      });
+      setImportPreview(null); setImportFile("");
+      setMessage("اكتمل تعبئة الجدول ونشره. الأرقام المرجعية محفوظة وتظهر في تقرير المقارنة فقط.");
+      await reload();
+      setTab("command");
+    } catch (e: any) {
+      setError(smartMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const createImportDraft = async () => {
     if (!importPreview?.valid) return;
-    const d = await saveDraft("import", importPreview.rows);
+    const d = await saveDraft("import", importPreview.rows, importPreview.importLayout);
     if (d) {
       setImportPreview(null);
       setTab("history");
@@ -1490,6 +1649,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const d = await saveDraft(
       "auto",
       option.rows,
+      undefined,
       `${label} — ${new Date().toLocaleString("ar-KW-u-nu-latn")}`,
     );
     if (d)
@@ -1948,7 +2108,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               const duration=Math.max(30,toMinutes(before.fendtime)-toMinutes(before.fstarttime)); const nextStart=fromMinutes(Math.min(22*60,toMinutes(before.fstarttime)+30)); after.fstarttime=nextStart; after.fendtime=fromMinutes(toMinutes(nextStart)+duration); copy[index]=after; setScenario(copy); setGuideSimulationMeta(current=>current?{...current,after}:current); await evaluateScenario(copy);
             }}>جرّب بديلًا</button>
             <button type="button" onClick={() => { try { sessionStorage.setItem("schedule-guide-ghost-preview", JSON.stringify({ id:guideSimulationMeta.before.id, before:guideSimulationMeta.before, after:guideSimulationMeta.after, createdAt:Date.now() })); } catch {} openScheduleWorkspace("هذه معاينة من مساحة «جرّب». راجعها على الجدول ثم اعتمدها يدويًا إذا رغبت."); }}>معاينة على الجدول</button>
-            <button type="button" data-guide-ignore="يحفظ المحاكاة كمسودة تجريبية فقط ولا ينشر أي تغيير حقيقي" className="primary" onClick={async () => { if(!scenario)return; const draft=await saveDraft("guide-simulation",scenario,"محاكاة المرشد"); if(draft)setMessage("حُفظ الحل كمسودة فقط. راجعه في «اعتمد» قبل أي نشر."); }}>اعتماد كمسودة</button>
+            <button type="button" data-guide-ignore="يحفظ المحاكاة كمسودة تجريبية فقط ولا ينشر أي تغيير حقيقي" className="primary" onClick={async () => { if(!scenario)return; const draft=await saveDraft("guide-simulation",scenario,undefined,"محاكاة المرشد"); if(draft)setMessage("حُفظ الحل كمسودة فقط. راجعه في «اعتمد» قبل أي نشر."); }}>اعتماد كمسودة</button>
           </footer>
         </section>
       ) : null}
@@ -2038,7 +2198,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           </button>
         </nav>
       ) : null}
-      {error ? <Notice>{error}</Notice> : null}
+      {error && collegeId && sectionId && termId ? <Notice>{error}</Notice> : null}
       {message ? <Notice type="success">{message}</Notice> : null}
       {loading && !overview ? (
         <div className="intel-loading" role="status" aria-live="polite">
@@ -2653,9 +2813,24 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                         يبدأ الطالب باسمه ورقمه المدني وقسمه، ثم يختار نوع الحالة. تُحفظ الهوية
                         مشفّرة ولا تظهر إلا للمسؤول المخوّل داخل هذا المركز.
                       </small>
+                      <div className="share-days" role="group" aria-label="مدة صلاحية رابط الاستبيان">
+                        {SURVEY_DAY_CHOICES.map(choice => (
+                          <button
+                            key={choice}
+                            type="button"
+                            data-guide-ignore="اختيار مدة محلي لا يصدر الرابط بنفسه"
+                            className={surveyDays === choice ? "active" : ""}
+                            onClick={() => setSurveyDays(choice)}
+                            aria-pressed={surveyDays === choice}
+                          >
+                            {choice}
+                            <small>يوم</small>
+                          </button>
+                        ))}
+                      </div>
                       <div className="demand-actions">
-                        <PrimaryButton onClick={issueSurvey} disabled={busy}>
-                          <QrCode /> أصدر رابط الاستبيان
+                        <PrimaryButton data-guide-ignore="إصدار رابط استبيان عام له صلاحية محددة ولا يعدّل الجدول" onClick={issueSurvey} disabled={busy}>
+                          <QrCode /> أصدر رابط الاستبيان · {surveyDays.toLocaleString("ar-KW-u-nu-latn")} يوماً
                         </PrimaryButton>
                       </div>
                     </div>
@@ -3082,6 +3257,17 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <p>تحليل فقط · بلا تعديل</p>
               </div>
               <Badge tone="success">تحليل فقط</Badge>
+              {chat.length ? (
+                <SecondaryButton
+                  type="button"
+                  data-guide-ignore="طباعة نتائج الاستعلام فقط ولا تغيّر الجدول"
+                  className="copilot-print no-print"
+                  onClick={() => window.print()}
+                  title="طباعة نتائج الاستعلامات"
+                >
+                  <Printer aria-hidden="true" /> طباعة النتائج
+                </SecondaryButton>
+              ) : null}
             </div>
             <div className="prompt-chips">
               {[
@@ -3150,7 +3336,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           {item.answer?.figures?.length ? (
                             <div className="nl-figures">
                               {item.answer.figures.map((f: any, j: number) => (
-                                <article key={j} className={`nl-figure tone-${f.tone || "plain"}`}>
+                                <article key={j} className={`nl-figure tone-${f.tone || "plain"} ${/[^\d.,\/\s٠-٩]/.test(String(f.value)) ? "is-text" : ""}`.trim()}>
                                   <b><Num value={f.value} /></b>
                                   {f.hint ? <i>{f.hint}</i> : null}
                                   <span>{f.label}</span>
@@ -4562,24 +4748,41 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             <div className="import-icon">
               <Upload />
             </div>
-            <span className="surface-kicker">استيراد Excel</span>
+            <span className="surface-kicker">استيراد الجدول</span>
             <h2>ارفع الجدول وراجعه قبل الحفظ</h2>
-            <p>يدعم تنسيق تقارير SCHEDULE.</p>
-            <label className="file-button">
-              <input
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void importExcel(f);
-                }}
-              />
-              <FileSpreadsheet />
-              {importFile || "اختر ملف Excel"}
-            </label>
+            <p>نزّل النموذج، يملؤه الدكتور ثم ارفعه؛ أو انسخ جدول الجهة المعتمد من PDF إلى فصل فارغ. المعاينة أولاً، ولا يُكتب شيء قبل موافقتك.</p>
+            <div className="import-entry-actions">
+              <SecondaryButton type="button" data-guide-ignore="تنزيل نموذج محلي لا يغيّر الجدول" onClick={() => void downloadImportTemplate()} disabled={busy}>
+                <Download /> تحميل النموذج
+              </SecondaryButton>
+              <label className="file-button">
+                <input
+                  type="file"
+                  accept=".xlsx,.xls,application/pdf,.pdf"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) importAnyFile(f);
+                    e.currentTarget.value = "";
+                  }}
+                />
+                <FileSpreadsheet />
+                {importFile || "رفع Excel أو PDF"}
+              </label>
+            </div>
             <small>
-              <ShieldCheck /> معاينة أولاً، دون تعديل الجدول.
+              <ShieldCheck /> معاينة أولاً، دون تعديل الجدول. الملف يُقرأ ولا يُحفظ.
             </small>
+            {importProgress ? (() => {
+              const total = Math.max(importProgress.pages || 0, 1);
+              const doneCount = importProgress.phase === "match" ? total : Math.max(0, importProgress.page);
+              const pct = importProgress.phase === "render" && !importProgress.page ? 6 : Math.min(97, Math.round((doneCount / total) * 100));
+              return (
+                <div className="import-progress" role="status" aria-live="polite">
+                  <div className="import-progress-track"><i style={{ width: `${pct}%` }} /></div>
+                  <span>{importProgress.message}{importProgress.pages ? ` · ${(importProgress.page || 0).toLocaleString("ar-KW-u-nu-latn")}/${importProgress.pages.toLocaleString("ar-KW-u-nu-latn")}` : ""}</span>
+                </div>
+              );
+            })() : null}
           </Surface>
           {importPreview ? (
             <Surface className="import-preview">
@@ -4642,19 +4845,31 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 >
                   إلغاء
                 </SecondaryButton>
-                <PrimaryButton
-                  onClick={createImportDraft}
-                  disabled={!importPreview.valid || busy}
-                >
-                  <Save /> تحويل إلى مسودة
-                </PrimaryButton>
+                {importPreview.importLayout === "authority-pdf" ? (
+                  <>
+                    <SecondaryButton data-guide-ignore="حفظ نسخة PDF كمسودة قابلة للتعديل قبل الاعتماد" onClick={createImportDraft} disabled={!importPreview.valid || busy}>
+                      <Save /> حفظ كمسودة للتعديل
+                    </SecondaryButton>
+                    <PrimaryButton data-guide-ignore="اعتماد ونشر جدول PDF كاملاً إلى الفصل الفارغ بعد تأكيد صريح" onClick={approveAndPublishPdf} disabled={!importPreview.valid || busy}>
+                      <CheckCircle2 /> اعتمد وانزّل الجدول كاملاً
+                    </PrimaryButton>
+                  </>
+                ) : (
+                  <PrimaryButton
+                    onClick={createImportDraft}
+                    disabled={!importPreview.valid || busy}
+                  >
+                    <Save /> تحويل إلى مسودة
+                  </PrimaryButton>
+                )}
               </div>
             </Surface>
           ) : null}
         </div>
       ) : null}
 
-      {demand?.cases?.length ? <PrintPortal><div className="print-report print-wide student-cases-print"><PrintLetterhead title="حالات استبيان الطلبة" scope={[demand.sectionName,terms.find(term=>Number(term.AdTermId)===Number(termId))?.AdTermName].filter(Boolean).join(" · ")} /><table><thead><tr><th>م</th><th>الاسم</th><th>الرقم المدني</th><th>نوع الطلب</th><th>التفاصيل</th><th>الوحدات</th><th>التاريخ</th></tr></thead><tbody>{demand.cases.map((item:any,index:number)=><tr key={item.id}><td>{index+1}</td><td>{item.name||"—"}</td><td dir="ltr">{item.civil||"—"}</td><td>{item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد"}</td><td>{item.requestType==="graduate"?(item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":item.details):(item.courses||[]).map((course:any)=>course.name).join(" · ")||item.details||"—"}</td><td>{item.requestType==="graduate"?`${item.passedUnits??"—"} / ${item.requiredUnits??"—"}`:"—"}</td><td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>)}</tbody></table></div></PrintPortal>:null}
+      {tab === "copilot" && chat.length ? <PrintPortal><div className="print-report print-upright query-print"><PrintLetterhead title="نتائج استعلامات الجدول" scope={[demand?.sectionName, terms.find(term=>Number(term.AdTermId)===Number(termId))?.AdTermName].filter(Boolean).join(" · ")} />{chat.map((item:any,index:number)=>{const answer=item.answer||{};const figures=Array.isArray(answer.figures)?answer.figures:[];return <section key={index} className="query-print-item"><h2>{(index+1).toLocaleString("ar-KW-u-nu-latn")}. {item.prompt}</h2>{answer.title?<strong>{answer.title}</strong>:null}{answer.summary?<p>{answer.summary}</p>:null}{figures.length?<table><tbody>{figures.map((f:any,j:number)=><tr key={j}><th>{f.label}</th><td dir="ltr">{String(f.value)}{f.hint?` ${f.hint}`:""}</td></tr>)}</tbody></table>:null}{Array.isArray(answer.bullets)&&answer.bullets.length?<ul>{answer.bullets.map((b:string,j:number)=><li key={j}>{b}</li>)}</ul>:null}</section>;})}</div></PrintPortal>:null}
+      {demand?.cases?.length ? <PrintPortal><div className="print-report print-wide student-cases-print"><PrintLetterhead title="حالات استبيان الطلبة" scope={[demand.sectionName,terms.find(term=>Number(term.AdTermId)===Number(termId))?.AdTermName].filter(Boolean).join(" · ")} /><table><colgroup><col style={{width:"7mm"}}/><col style={{width:"46mm"}}/><col style={{width:"30mm"}}/><col style={{width:"34mm"}}/><col style={{width:"auto"}}/><col style={{width:"26mm"}}/><col style={{width:"30mm"}}/></colgroup><thead><tr><th>م</th><th>الاسم</th><th>الرقم المدني</th><th>نوع الطلب</th><th>المقررات / السبب</th><th>الوحدات</th><th>التاريخ</th></tr></thead><tbody>{demand.cases.map((item:any,index:number)=>{const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";const detail=item.requestType==="graduate"?(item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":item.details||"—"):(item.courses||[]).map((course:any)=>course.name).filter(Boolean).join(" · ")||item.details||"—";const units=item.requestType==="graduate"?`${item.passedUnits??"—"} / ${item.requiredUnits??"—"}`:"—";return <tr key={item.id}><td className="num">{(index+1).toLocaleString("ar-KW-u-nu-latn")}</td><td>{item.name||"—"}</td><td dir="ltr">{item.civil||"—"}</td><td>{type}</td><td className="print-break-any">{detail}</td><td className="num">{units}</td><td>{printableCaseDate(item.createdAt)}</td></tr>;})}</tbody></table></div></PrintPortal>:null}
 
       {pdfImportReport ? (
         <div className="pdf-report-backdrop" role="dialog" aria-modal="true" aria-label="تقرير تغييرات جدول PDF" onMouseDown={event=>{if(event.target===event.currentTarget)setPdfImportReport(null);}}>

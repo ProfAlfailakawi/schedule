@@ -36,6 +36,7 @@
     "firebase": "^12.17.1",
     "firebase-admin": "^14.2.0",
     "google-auth-library": "^11.0.0",
+    "heic-decode": "^2.1.0",
     "lucide-react": "^0.546.0",
     "pdfjs-dist": "^6.2.108",
     "react": "^19.0.1",

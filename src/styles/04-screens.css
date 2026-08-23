@@ -1833,7 +1833,13 @@
 
 
 /* --- Visual confirm dialog ---------------------------------------------- */
-.schedule-confirm-backdrop{position:fixed;inset:0;z-index:1400;display:grid;place-items:center;padding:20px;background:color-mix(in srgb,#09120f 54%,transparent);backdrop-filter:blur(8px)}
+/* A confirm is the last thing opened, so it is the last thing drawn. 1400 was
+   chosen when the tallest layer was a card; the focus board (1500), the PDF
+   change report (4200) and the meeting sheet (4300) all arrived above it, and
+   a question asked from any of them was painted behind the thing that asked
+   it — the app appearing to freeze while it waited for an answer nobody could
+   see. */
+.schedule-confirm-backdrop{position:fixed;inset:0;z-index:4400;display:grid;place-items:center;padding:20px;background:color-mix(in srgb,#09120f 54%,transparent);backdrop-filter:blur(8px)}
 .schedule-confirm-card{width:min(92vw,420px);display:grid;gap:14px;padding:22px;border:1px solid var(--line);border-radius:24px;background:var(--surface);box-shadow:var(--shadow-lg)}
 .schedule-confirm-mark{width:52px;height:52px;display:grid;place-items:center;border-radius:18px;background:var(--warning-soft);color:var(--warning)}
 .schedule-confirm-card.tone-danger .schedule-confirm-mark{background:var(--danger-soft);color:var(--danger)}
@@ -2097,3 +2103,21 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .gate-facts b{font-size:11.5px;font-weight:700;color:var(--ink)}
 .gate-facts span{font-size:10.5px;color:var(--muted);line-height:1.4}
 
+
+/* ── قواعد التخرج داخل بطاقة القسم ─────────────────────────────────────────
+   These four numbers decide whether a real student is told they may apply as a
+   graduate, so they are shown as a reviewed record — with the state of never
+   having been reviewed said out loud, not left to look like a decision. */
+.degree-rule-card{display:grid;gap:10px;margin-top:var(--s4);padding:14px;border:1px solid var(--line);border-radius:18px;background:var(--surface-muted,var(--surface))}
+.degree-rule-card>header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.degree-rule-card>header .surface-kicker{display:inline-flex;align-items:center;gap:6px}
+.degree-rule-card>header .surface-kicker svg{inline-size:14px;block-size:14px}
+.degree-rule-card>header small{font-size:11px;color:var(--muted)}
+.degree-rule-card>header small.warn{color:var(--warning,var(--brass));font-weight:700}
+.degree-rule-card>p{margin:0;font-size:12px;line-height:1.75;color:var(--muted)}
+.degree-rule-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:9px;margin:0}
+.degree-rule-grid>div{display:grid;gap:4px;padding:9px 11px;border:1px solid var(--line);border-radius:13px;background:var(--surface)}
+.degree-rule-grid dt{font-size:10.5px;color:var(--muted)}
+.degree-rule-grid dd{margin:0;font-size:17px;font-weight:800;color:var(--ink)}
+.degree-rule-grid dd input{width:100%;padding:6px 8px;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
+.degree-rule-actions{display:flex;flex-wrap:wrap;gap:8px}

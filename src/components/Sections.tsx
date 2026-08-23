@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, Landmark, Trash2 } from "lucide-react";
+import { Building2, GraduationCap, Landmark, Trash2 } from "lucide-react";
 import { sortByName } from "../utils/sorting";
 import {
   AddButton,
@@ -23,6 +23,14 @@ import {
 type Mode = "index" | "create" | "edit";
 /** `embedded` means the academic console already supplies the page identity. */
 export default function Sections({ embedded = false, actionSlot = null }: { embedded?: boolean; actionSlot?: HTMLElement | null }) {
+  /* What a degree costs here. The student survey measures an uploaded
+     transcript against these numbers to decide whether a graduate case is
+     eligible, so they belong on a screen a registrar can read and correct —
+     not inferred from the department's name in code. */
+  const [rules, setRules] = useState<any[]>([]);
+  const [ruleDraft, setRuleDraft] = useState<any>(null);
+  const [ruleBusy, setRuleBusy] = useState(false);
+  const [ruleNote, setRuleNote] = useState<string | null>(null);
   const [items, setItems] = useState<any[]>([]),
     [colleges, setColleges] = useState<any[]>([]),
     [mode, setMode] = useState<Mode>("index"),
@@ -37,13 +45,15 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
   const load = async () => {
     setLoading(true);
     try {
-      const [a, b] = await Promise.all([
+      const [a, b, r] = await Promise.all([
         fetch("/api/sections"),
         fetch("/api/colleges"),
+        fetch("/api/degree-rules").catch(() => null),
       ]);
       if (!a.ok || !b.ok) throw 0;
       const data = await a.json();
       setItems(data);
+      setRules(r?.ok ? await r.json() : []);
       setColleges(sortByName(await b.json(), (row:any)=>row.AdCollegeName));
       setSelectedId((v) =>
         v && data.some((x: any) => x.AdSectionId === v)
@@ -59,6 +69,28 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
   useEffect(() => {
     void load();
   }, []);
+  const ruleFor = (sectionId: number) => rules.find((row: any) => Number(row.AdSectionId) === Number(sectionId));
+  const saveRule = async () => {
+    if (!ruleDraft) return;
+    setRuleBusy(true); setRuleNote(null);
+    try {
+      const response = await fetch(`/api/degree-rules/${ruleDraft.AdSectionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(ruleDraft),
+      });
+      const saved = await response.json();
+      if (!response.ok) throw new Error(saved.error || "تعذّر حفظ قواعد التخرج");
+      setRules(current => current.map((row: any) =>
+        Number(row.AdSectionId) === Number(saved.AdSectionId) ? { ...row, ...saved, reviewed: true } : row));
+      setRuleDraft(null);
+      setRuleNote("حُفظت قواعد التخرج. الاستبيان يقيس كشوف الدرجات عليها من الآن.");
+    } catch (e: any) {
+      setRuleNote(e.message || "تعذّر حفظ قواعد التخرج");
+    } finally {
+      setRuleBusy(false);
+    }
+  };
   const back = () => {
       setMode("index");
       setError(null);
@@ -280,6 +312,64 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                   <b>{selected.AdSectionId}</b>
                 </article>
               </div>
+              {(() => {
+                const rule = ruleFor(selected.AdSectionId);
+                if (!rule) return null;
+                const draft = ruleDraft?.AdSectionId === selected.AdSectionId ? ruleDraft : null;
+                const fields: Array<[string, string]> = [
+                  ["degreeUnits", "وحدات الدرجة"],
+                  ["fieldTrainingRequired", "المطلوب لفتح الميداني"],
+                  ["graduateRegularPassed", "متوقع التخرج · فصل عادي"],
+                  ["graduateSummerPassed", "متوقع التخرج · فصل صيفي"],
+                ];
+                return (
+                  <section className="degree-rule-card">
+                    <header>
+                      <span className="surface-kicker"><GraduationCap aria-hidden="true" /> قواعد التخرج</span>
+                      {rule.reviewed
+                        ? <small>روجعت {rule.updatedBy ? `بواسطة ${rule.updatedBy}` : ""}</small>
+                        : <small className="warn">لم تُراجع بعد — قيم مقترحة</small>}
+                    </header>
+                    <p>عليها يقيس استبيان الطلبة كشف الدرجات المرفوع قبل أن يفتح حالة الخريج أو المتوقع تخرجه.</p>
+                    <dl className="degree-rule-grid">
+                      {fields.map(([key, label]) => (
+                        <div key={key}>
+                          <dt>{label}</dt>
+                          <dd>
+                            {draft ? (
+                              <input
+                                type="number" min={30} max={300} inputMode="numeric" dir="ltr"
+                                value={draft[key]}
+                                onChange={event => setRuleDraft({ ...draft, [key]: event.target.value })}
+                              />
+                            ) : Number(rule[key]).toLocaleString("ar-KW-u-nu-latn")}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                    {ruleNote ? <Notice type={ruleNote.startsWith("حُفظت") ? "success" : undefined}>{ruleNote}</Notice> : null}
+                    <div className="degree-rule-actions">
+                      {draft ? (
+                        <>
+                          <PrimaryButton data-guide-ignore="حفظ قواعد التخرج لهذا القسم داخل شاشة الإدارة" onClick={() => void saveRule()} disabled={ruleBusy}>
+                            {ruleBusy ? "يحفظ…" : "حفظ القواعد"}
+                          </PrimaryButton>
+                          <SecondaryButton data-guide-ignore="إلغاء تحرير قواعد التخرج دون حفظ" onClick={() => { setRuleDraft(null); setRuleNote(null); }} disabled={ruleBusy}>
+                            إلغاء
+                          </SecondaryButton>
+                        </>
+                      ) : (
+                        <SecondaryButton
+                          data-guide-ignore="تحرير قواعد التخرج له حفظ صريح داخل نفس البطاقة"
+                          onClick={() => { setRuleNote(null); setRuleDraft({ ...rule }); }}
+                        >
+                          تعديل القواعد
+                        </SecondaryButton>
+                      )}
+                    </div>
+                  </section>
+                );
+              })()}
               <div className="inspector-actions">
                 <PrimaryButton onClick={() => edit(selected)}>
                   تعديل
