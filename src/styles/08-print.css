@@ -2046,71 +2046,33 @@
   .student-cases-print td.num{text-align:center!important;font-variant-numeric:tabular-nums!important}
 }
 
-/* ========================================================================== 
-   Authority PDF change report — lives in the inquiry centre but deliberately
-   borrows the comprehensive report's physical A4-landscape sheet, header,
-   signatures and pagination. Only the data grid changes to the 11 columns in
-   the official source order.
-   ========================================================================== */
+/* Authority PDF report is intentionally isolated from every existing report.
+   Shared report rules above are unchanged; this host is visible only when this
+   new report is being printed. */
 @media print{
-  .print-authority-report,
-  .print-authority-page{page:comprehensive !important}
-  .print-authority-head{display:grid !important;gap:2mm !important;margin-bottom:2.2mm !important}
-  .print-authority-title{width:100% !important;max-width:none !important;padding:0 !important}
-  .print-authority-title h1{font-size:13.5pt !important;margin:0 !important}
-  .print-authority-title p{margin:.6mm 0 0 !important;font-size:6.8pt !important;color:#5d6966 !important}
-  .print-authority-scope-grid{
-    display:grid !important;
-    grid-template-columns:1fr 1fr !important;
-    border:1pt solid #1f6b5c !important;
-    background:#fff !important;
-    direction:rtl !important;
-  }
-  .print-authority-scope-grid>div{
-    display:grid !important;
-    grid-template-columns:20mm minmax(0,1fr) !important;
-    align-items:center !important;
-    min-height:8mm !important;
-    padding:1mm 1.4mm !important;
-    border-inline-start:.4pt solid #cbd4d0 !important;
-    border-block-end:.4pt solid #cbd4d0 !important;
-  }
-  .print-authority-scope-grid>div:nth-child(2n){border-inline-start:0 !important}
-  .print-authority-scope-grid>div:nth-last-child(-n+2){border-block-end:0 !important}
-  .print-authority-scope-grid span{font-size:6.2pt !important;color:#5d6966 !important;font-weight:700 !important}
-  .print-authority-scope-grid strong{font-size:7.4pt !important;color:#111 !important;white-space:normal !important}
-
-  .print-authority-grid .print-comprehensive-grid-row{
-    grid-template-columns:
-      18mm 20mm minmax(46mm,1fr) 11mm 11mm 13mm 16mm 18mm 27mm 17mm minmax(37mm,1fr) !important;
-  }
-  .print-authority-grid .print-comprehensive-grid-row>[role="cell"],
-  .print-authority-grid .print-comprehensive-grid-row>[role="columnheader"]{
-    font-size:5.95pt !important;
-    padding-inline:.55mm !important;
-  }
-  .print-authority-grid .print-comprehensive-grid-head>[role="columnheader"]{
-    font-size:5.65pt !important;
-  }
-  .print-authority-grid .authority-row-added>[role="cell"]{
-    background:#e9f6ee !important;
-    -webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;
-  }
-  .print-authority-grid .authority-row-deleted>[role="cell"]{
-    background:#fbecec !important;
-    color:#7b2626 !important;
-    text-decoration-line:line-through !important;
-    text-decoration-thickness:.35pt !important;
-    -webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;
-  }
-  .print-authority-grid .authority-row-changed>[role="cell"].authority-cell-changed{
-    background:#fff2bf !important;
-    box-shadow:inset 0 0 0 .5pt #d4a20c !important;
-    -webkit-print-color-adjust:exact !important;print-color-adjust:exact !important;
-  }
-  .print-authority-legend .authority-key{font-weight:800 !important;-webkit-print-color-adjust:exact !important;print-color-adjust:exact !important}
-  .print-authority-legend .authority-key-added{background:#e9f6ee !important;border-color:#78b68d !important}
-  .print-authority-legend .authority-key-deleted{background:#fbecec !important;border-color:#ce8383 !important}
-  .print-authority-legend .authority-key-changed{background:#fff2bf !important;border-color:#d4a20c !important}
-  .print-authority-footer{margin-top:2.2mm !important}
+  .authority-pdf-print-host{display:none!important}
+  html[data-print-kind="authority-pdf"] #app-print-root>.print-only{display:none!important}
+  html[data-print-kind="authority-pdf"] #app-print-root>.authority-pdf-print-host{display:block!important;visibility:visible!important}
+  .authority-pdf-report,.authority-pdf-page{page:comprehensive!important}
+  .authority-pdf-head{display:grid!important;gap:2mm!important;margin-bottom:2.2mm!important}
+  .authority-pdf-title{width:100%!important;max-width:none!important;padding:0!important}
+  .authority-pdf-title h1{font-size:13.5pt!important;margin:0!important}
+  .authority-pdf-title p{margin:.6mm 0 0!important;font-size:6.8pt!important;color:#5d6966!important}
+  .authority-pdf-scope-grid{display:grid!important;grid-template-columns:1fr 1fr!important;border:1pt solid #1f6b5c!important;background:#fff!important;direction:rtl!important}
+  .authority-pdf-scope-grid>div{display:grid!important;grid-template-columns:20mm minmax(0,1fr)!important;align-items:center!important;min-height:8mm!important;padding:1mm 1.4mm!important;border-inline-start:.4pt solid #cbd4d0!important;border-block-end:.4pt solid #cbd4d0!important}
+  .authority-pdf-scope-grid>div:nth-child(2n){border-inline-start:0!important}
+  .authority-pdf-scope-grid>div:nth-last-child(-n+2){border-block-end:0!important}
+  .authority-pdf-scope-grid span{font-size:6.2pt!important;color:#5d6966!important;font-weight:700!important}
+  .authority-pdf-scope-grid strong{font-size:7.4pt!important;color:#111!important;white-space:normal!important}
+  .authority-pdf-grid .print-comprehensive-grid-row{grid-template-columns:18mm 20mm minmax(46mm,1fr) 11mm 11mm 13mm 16mm 18mm 27mm 17mm minmax(37mm,1fr)!important}
+  .authority-pdf-grid .print-comprehensive-grid-row>[role="cell"],.authority-pdf-grid .print-comprehensive-grid-row>[role="columnheader"]{font-size:5.95pt!important;padding-inline:.55mm!important}
+  .authority-pdf-grid .print-comprehensive-grid-head>[role="columnheader"]{font-size:5.65pt!important}
+  .authority-pdf-grid .authority-pdf-row-added>[role="cell"]{background:#e9f6ee!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .authority-pdf-grid .authority-pdf-row-deleted>[role="cell"]{background:#fbecec!important;color:#7b2626!important;text-decoration-line:line-through!important;text-decoration-thickness:.35pt!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .authority-pdf-grid .authority-pdf-row-changed>[role="cell"].authority-pdf-cell-changed{background:#fff2bf!important;box-shadow:inset 0 0 0 .5pt #d4a20c!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .authority-pdf-legend .authority-pdf-key{font-weight:800!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .authority-pdf-legend .authority-pdf-key-added{background:#e9f6ee!important;border-color:#78b68d!important}
+  .authority-pdf-legend .authority-pdf-key-deleted{background:#fbecec!important;border-color:#ce8383!important}
+  .authority-pdf-legend .authority-pdf-key-changed{background:#fff2bf!important;border-color:#d4a20c!important}
+  .authority-pdf-footer{margin-top:2.2mm!important}
 }

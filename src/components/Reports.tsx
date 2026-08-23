@@ -15,6 +15,7 @@ import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCH
 import { AR, countOf } from "../utils/arabicCount";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
+import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
 
 /**
  * One question, seven lenses.
@@ -31,21 +32,7 @@ export type ReportMode =
   | "reportDepartment" | "reportInstructor" | "reportRoom" | "reportTime" | "reportRoomTime";
 
 type Lens = "list" | "week" | "instructor" | "room" | "matrix" | "time" | "fairness" | "balance";
-type PrintKind = Lens | "comprehensive" | "authorityPdf" | null;
-
-type AuthorityReportEntry = {
-  status: "added" | "deleted" | "changed" | "unchanged";
-  changedFields: string[];
-  referenceNumber: string;
-  source: FSchedule | null;
-  current: FSchedule | null;
-};
-type AuthorityReport = {
-  draftId: string; name: string; sourceFileName: string;
-  sourceBranchCode?: string; sourceBranchName?: string;
-  counts: { added: number; deleted: number; changed: number; unchanged: number };
-  rows: AuthorityReportEntry[];
-};
+type PrintKind = Lens | "comprehensive" | null;
 
 /* Safari is the one printing engine here that ignores `@page size` (so wide
    sheets meet portrait paper) — detected once, and only ever used to OFFER a
@@ -975,18 +962,56 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       setError("اختر الفصل والكلية والقسم أولاً لفتح تقرير PDF المعتمد.");
       return;
     }
-    setAuthorityReportBusy(true); setError(null);
+    setAuthorityReportBusy(true);
+    setError(null);
     try {
       const query = new URLSearchParams({
-        collegeId: String(filters.collegeId), sectionId: String(filters.sectionId), termId: String(filters.termId),
+        collegeId: String(filters.collegeId),
+        sectionId: String(filters.sectionId),
+        termId: String(filters.termId),
       });
       const response = await fetch(`/api/reports/authority-pdf-diff?${query}`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || "تعذر إعداد تقرير PDF المعتمد");
-      flushSync(() => { setAuthorityReport(data as AuthorityReport); setPrintKind("authorityPdf"); });
-      printReport("authorityPdf");
-    } catch (e: any) { setError(e?.message || "تعذر إعداد تقرير PDF المعتمد"); }
-    finally { setAuthorityReportBusy(false); }
+
+      closeReportEvents();
+      flushSync(() => setAuthorityReport(data as AuthorityReport));
+
+      const root = document.documentElement;
+      root.dataset.printKind = "authority-pdf";
+      if (SAFARI_PRINT_ENGINE) root.dataset.printRotate = "1";
+      let leftForPrint = false;
+      let resumed = false;
+      const clearPrintFlags = () => {
+        delete root.dataset.printKind;
+        delete root.dataset.printRotate;
+      };
+      const resume = () => {
+        if (resumed) return;
+        resumed = true;
+        window.removeEventListener("afterprint", resume);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        clearPrintFlags();
+        openReportEvents();
+      };
+      const onVisibilityChange = () => {
+        if (document.visibilityState === "hidden") leftForPrint = true;
+        else if (leftForPrint) resume();
+      };
+      window.addEventListener("afterprint", resume, { once: true });
+      document.addEventListener("visibilitychange", onVisibilityChange);
+
+      let invoked = false;
+      if (SAFARI_PRINT_ENGINE && typeof document.execCommand === "function") {
+        try { invoked = document.execCommand("print"); } catch { invoked = false; }
+      }
+      if (!invoked) window.print();
+      window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
+    } catch (e: any) {
+      setError(e?.message || "تعذر إعداد تقرير PDF المعتمد");
+    } finally {
+      setAuthorityReportBusy(false);
+    }
   };
 
   const groups = lens === "instructor" ? byInstructor : [];
@@ -1755,11 +1780,23 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           termName={termName}
           sectionName={sectionName}
           sectionCode={sectionCode}
-          collegeCode={collegeCode}
-          authorityReport={authorityReport}
           courseById={courseById}
           instructorById={instructorById}
         />
+      </PrintPortal>
+      <PrintPortal className="authority-pdf-print-host">
+        {authorityReport ? (
+          <AuthorityPdfReport
+            report={authorityReport}
+            termName={termName}
+            collegeName={collegeName}
+            collegeCode={collegeCode}
+            sectionName={sectionName}
+            sectionCode={sectionCode}
+            courseById={courseById}
+            instructorById={instructorById}
+          />
+        ) : null}
       </PrintPortal>
     </div>
   );
@@ -1925,7 +1962,7 @@ function PrintPageMeta({ page, total, college, date }: { page: number; total: nu
   );
 }
 
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, collegeCode, termName, sectionName, sectionCode, authorityReport, courseById, instructorById }: {
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -1935,11 +1972,9 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   balance: any;
   scopeLine: string;
   collegeName: string;
-  collegeCode: string;
   termName: string;
   sectionName: string;
   sectionCode: string;
-  authorityReport: AuthorityReport | null;
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
 }) {
@@ -1957,80 +1992,12 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
     fairness: "عدالة توزيع العبء",
     balance: "ميزان الأقسام",
     comprehensive: "تقرير الجدول الشامل",
-    authorityPdf: "تقرير PDF المعتمد",
   };
   const courseOf = (row: FSchedule) => courseById.get(row.AdCourseId);
   const instructorOf = (row: FSchedule) => instructorById.get(row.AdInstructorId);
   const issued = new Date();
   const issueDate = `${String(issued.getDate()).padStart(2, "0")}/${String(issued.getMonth() + 1).padStart(2, "0")}/${issued.getFullYear()}`;
   const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).join(",") || "—";
-
-  if (kind === "authorityPdf") {
-    if (!authorityReport) return <div className="print-report print-wide"><p className="print-empty">لا توجد بيانات لتقرير PDF المعتمد.</p></div>;
-    const entries=[...authorityReport.rows].sort((a,b)=>{
-      const ar=Number((a.current||a.source)?.sourceOrder ?? Number.MAX_SAFE_INTEGER);
-      const br=Number((b.current||b.source)?.sourceOrder ?? Number.MAX_SAFE_INTEGER);
-      return ar-br;
-    });
-    const pages=paginateItems(entries,23);
-    const branch=[authorityReport.sourceBranchCode,authorityReport.sourceBranchName].filter(Boolean).join(" ")||"—";
-    const fieldChanged=(entry:AuthorityReportEntry,...fields:string[])=>entry.status==="changed"&&fields.some(field=>entry.changedFields.includes(field));
-    const dayNumbers=(row:FSchedule)=>[row.fsunday&&"1",row.fmonday&&"2",row.ftuesday&&"3",row.fwednesday&&"4",row.fthursday&&"5"].filter(Boolean).join(" ")||"—";
-    return (
-      <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-book print-authority-report">
-        <div className="print-comprehensive-pages">
-          {pages.map((pageEntries,pageIndex)=>(
-            <section className="print-comprehensive-page print-authority-page" key={`authority-${pageIndex+1}`}>
-              <header className="print-comprehensive-classic-head print-authority-head">
-                <div className="print-comprehensive-title-block print-authority-title"><h1>تقرير الجدول المعتمد</h1><p>{authorityReport.sourceFileName}</p></div>
-                <div className="print-authority-scope-grid">
-                  <div><span>الفصل</span><strong>{termName||"—"}</strong></div>
-                  <div><span>الكلية</span><strong>{[collegeCode,collegeName].filter(Boolean).join(" ")||"—"}</strong></div>
-                  <div><span>القسم</span><strong>{[sectionCode,sectionName].filter(Boolean).join(" ")||"—"}</strong></div>
-                  <div><span>الفرع</span><strong>{branch}</strong></div>
-                </div>
-              </header>
-              <div className="print-comprehensive-grid print-authority-grid" role="table" aria-label="تقرير الجدول المعتمد">
-                <div className="print-comprehensive-grid-row print-comprehensive-grid-head" role="row">
-                  {["رقم المقرر","الرقم المرجعي","مسمى المقرر","عدد الوحدات","عدد الساعات","الحد الأقصى","القاعة","المبنى","الوقت","الأيام","المدرس"].map(head=><div role="columnheader" key={head}>{head}</div>)}
-                </div>
-                <div className="print-comprehensive-grid-body" role="rowgroup">
-                  {pageEntries.map((entry,index)=>{
-                    const row=(entry.current||entry.source) as FSchedule;
-                    const course=courseById.get(Number(row.AdCourseId));
-                    const instructor=instructorById.get(Number(row.AdInstructorId));
-                    const cell=(changed:boolean)=>changed?"authority-cell-changed":"";
-                    return <div className={`print-comprehensive-grid-row authority-row authority-row-${entry.status}`} role="row" key={`${pageIndex}-${index}-${row.id}-${entry.status}`}>
-                      <div role="cell" className={`print-ltr ${cell(fieldChanged(entry,"AdCourseId"))}`}>{course?.CourseCode||"—"}</div>
-                      <div role="cell" className="print-ltr">{entry.referenceNumber||"—"}</div>
-                      <div role="cell" className={`print-wrap print-course-name ${cell(fieldChanged(entry,"AdCourseId"))}`}>{course?.CourseName||row.AdCourseName||"—"}</div>
-                      <div role="cell" className={`num ${cell(fieldChanged(entry,"AdCourseId"))}`}>{course?.CourseCredit??"—"}</div>
-                      <div role="cell" className={`num ${cell(fieldChanged(entry,"AdCourseId"))}`}>{course?.CourseHours??"—"}</div>
-                      <div role="cell" className={`num ${cell(fieldChanged(entry,"AdCourseId"))}`}>{course?.MaxStudent??"—"}</div>
-                      <div role="cell" className={`print-ltr ${cell(fieldChanged(entry,"AdRoomHall"))}`}>{String(row.AdRoomHall||"").trim()||"—"}</div>
-                      <div role="cell" className={`print-ltr ${cell(fieldChanged(entry,"AdRoomCode"))}`}>{String(row.AdRoomCode||"").trim()||"—"}</div>
-                      <div role="cell" className={`print-ltr print-nowrap ${cell(fieldChanged(entry,"fstarttime","fendtime"))}`}>{row.fstarttime&&row.fendtime?`${row.fstarttime} - ${row.fendtime}`:"—"}</div>
-                      <div role="cell" className={`print-ltr ${cell(fieldChanged(entry,"fsunday","fmonday","ftuesday","fwednesday","fthursday"))}`}>{dayNumbers(row)}</div>
-                      <div role="cell" className={`print-wrap print-instructor-name ${cell(fieldChanged(entry,"AdInstructorId"))}`}>{instructor?.AdInstructorName||row.sourceInstructorText||"—"}</div>
-                    </div>;
-                  })}
-                </div>
-              </div>
-              <footer className="print-comprehensive-page-footer print-authority-footer">
-                <div className="print-comprehensive-signatures">
-                  <div><span>توقيع رئيس لجنة الجدول</span><i /></div><div><span>توقيع رئيس القسم العلمي</span><i /></div><div><span>توقيع العميد</span><i /></div>
-                </div>
-                <div className="print-comprehensive-legend-stack">
-                  <div className="print-comprehensive-legend print-authority-legend"><span className="authority-key authority-key-added">مضاف</span><span className="authority-key authority-key-deleted">محذوف</span><span className="authority-key authority-key-changed">معدّل</span></div>
-                  <div className="print-comprehensive-page-number"><bdi dir="ltr">{pageIndex+1} / {pages.length}</bdi></div>
-                </div>
-              </footer>
-            </section>
-          ))}
-        </div>
-      </div>
-    );
-  }
 
   if (kind === "comprehensive") {
     const comprehensiveRows = [...rows].sort((a, b) =>
