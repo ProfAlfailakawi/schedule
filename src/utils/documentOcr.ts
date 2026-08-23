@@ -153,8 +153,8 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       pageTexts.push(pageText);
       structuralRows+=rows.filter(row=>{
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
-        const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]\s*[0-2]?\d[0-5]\d\b/.test(ascii)
-          ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—]\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
+        const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
+          ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—]?\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
         const digitRuns=ascii.match(/\d+/g)||[];
         const hasTableKey=digitRuns.some(run=>run.length>=5)||/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii);
         return hasTime&&hasTableKey;
@@ -568,13 +568,13 @@ function findRules(bin:any){
 }
 
 const stripPatterns={
-  time:/^\d{3,4}\s*-\s*\d{3,4}$/,
+  time:/^\d{3,4}\s*[-–—]?\s*\d{3,4}$/,
   code:/^\d{7}$/,
   refcode:/^\d{11,13}$/,
-  reference:/^\d{4,6}$/,
+  reference:/^\d{4,8}$/,
   scode:/^\d{1,4}$/,
-  building:/^\d{3}[A-Z]\d{2}$/,
-  hall:/^[A-Z]\d{1,3}$/,
+  building:/^\d{3}[A-Za-z]\d{2}$/,
+  hall:/^[A-Za-z]\d{1,3}$/,
   days:/^[1-5](?: ?[1-5])*$/,
 };
 
@@ -1104,7 +1104,7 @@ const minutesOf=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(3
 const repairClockDigits=(value:string)=>value.replace(/[Oo°QDﻩ]/g,"0").replace(/[¢()\[\]{}|!lI]/g,"0");
 const timePair=(text:string)=>{
   const ascii=repairClockDigits(toAscii(text));
-  const compact=[...ascii.matchAll(/([0-2]\d[0-5]\d)\s*[-–—]\s*([0-2]\d[0-5]\d)/g)][0];
+  const compact=[...ascii.matchAll(/([0-2]\d[0-5]\d)\s*[-–—]?\s*([0-2]\d[0-5]\d)/g)][0];
   const pieces=compact
     ?[compact[1],compact[2]].map(value=>`${value.slice(0,2)}:${value.slice(2)}`)
     :[...ascii.matchAll(/\b([01]?\d|2[0-3])[:٫.]([0-5]\d)\b/g)].map(match=>`${String(match[1]).padStart(2,"0")}:${match[2]}`);
@@ -1179,6 +1179,7 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     .replace(/\s+/g," ").trim();
   const rawClean=clean(raw);
   if(!rawClean)return undefined;
+  if(rawClean.includes("هيئه تدريس") || rawClean.includes("هيئة تدريس")) return undefined;
   const rawTokens=rawClean.split(" ").filter(Boolean);
   const candidates=instructors.map(person=>{
     const normalized=clean(person.AdInstructorName);
@@ -1468,11 +1469,23 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
        a cell that happens to hold nothing else. */
     const courseCode=toAscii(String(courseHit.course.CourseCode||"")).replace(/\D/g,"");
     const runs=cells.flatMap(cell=>toAscii(cell.text).match(/\d+/g)||[]);
-    const reference=runs.find(value=>/^\d{4,6}$/.test(value)&&value!==courseCode)||"";
-    const referenceIndex=runs.findIndex(value=>value===reference);
-    const nearbySection=referenceIndex>=0 ? runs.slice(Math.max(0,referenceIndex-2),referenceIndex+3)
-      .find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference) : undefined;
-    const section=nearbySection || runs.find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference)||"";
+    const reference=runs.find(value=>/^\d{4,8}$/.test(value)&&value!==courseCode)||"";
+    const referenceCellIndex=reference ? cells.findIndex(c=>toAscii(c.text).includes(reference)) : -1;
+    let section="";
+    if(referenceCellIndex>=0){
+      const adjacentCells=cells.slice(Math.max(0,referenceCellIndex-2),referenceCellIndex+3);
+      const exactCell=adjacentCells.find(c=>{
+        const t=toAscii(c.text).trim();
+        return /^\d{1,4}$/.test(t) && t!==courseCode.slice(-3) && t!==reference;
+      });
+      if(exactCell) section=toAscii(exactCell.text).trim();
+      else {
+        const referenceIndex=runs.findIndex(value=>value===reference);
+        const nearbySection=referenceIndex>=0 ? runs.slice(Math.max(0,referenceIndex-2),referenceIndex+3)
+          .find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference) : undefined;
+        section=nearbySection||"";
+      }
+    }
 
     /* Preserve what the scan actually printed even when no catalogue record can
        be chosen safely. This makes every doctor name visible in the preview,
