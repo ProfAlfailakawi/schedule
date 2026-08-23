@@ -771,7 +771,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       <span className="instructor-identity"><b>{person.AdInstructorName}</b><small dir="ltr">{person.AdInstructorCivil||"—"}</small></span>
                       <div className="roster-row-actions">
                         <button type="button" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
-                        <button type="button" className="danger" onClick={()=>void removeDelegate(person.AdInstructorId)} aria-label={`حذف ${person.AdInstructorName} من قائمة القسم`} title="حذف من قائمة القسم"><Trash2/></button>
+                        <button type="button" className="danger" onClick={()=>void removeDelegate(person.AdInstructorId)} aria-label={`حذف ${person.AdInstructorName} من قائمة القسم`} title="حذف من قائمة القسم" data-guide-ignore="حذف منتدب من دليل القسم"><Trash2/></button>
                       </div>
                     </>}
                   </article>;
