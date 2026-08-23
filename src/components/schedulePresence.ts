@@ -78,7 +78,7 @@ export interface PresenceClient {
   dispose(): void;
 }
 
-export function createPresenceClient(): PresenceClient {
+export function createPresenceClient(currentUserId = 0): PresenceClient {
   const connId =
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
@@ -165,11 +165,23 @@ export function createPresenceClient(): PresenceClient {
 
     ingest(frame) {
       if (!frame || frame.scope !== `${scope.collegeId}:${scope.sectionId}:${scope.termId}`) return;
-      // Everyone but me. My own position is already on my own screen.
-      const next = (frame.peers || []).filter(peer => peer.connId !== connId);
-      const before = new Set(roster.map(peer => peer.connId));
+      // Everyone but me. A single account may have several open tabs, but it is
+      // still one person: hide every connection carrying my user id and collapse
+      // colleagues by user id so one colleague never becomes three chips.
+      const distinct = new Map<string, PresencePeer>();
+      for (const peer of frame.peers || []) {
+        if (peer.connId === connId) continue;
+        if (currentUserId && Number(peer.userId) === Number(currentUserId)) continue;
+        const key = peer.userId ? `u:${peer.userId}` : `c:${peer.connId}`;
+        const previous = distinct.get(key);
+        // Prefer the connection that is actively holding/editing a row; otherwise
+        // the first live connection is enough to represent this person.
+        if (!previous || ((!previous.holding && !previous.editing) && (peer.holding || peer.editing))) distinct.set(key, peer);
+      }
+      const next = [...distinct.values()];
+      const before = new Set(roster.map(peer => peer.userId ? `u:${peer.userId}` : `c:${peer.connId}`));
       const membershipChanged =
-        next.length !== before.size || next.some(peer => !before.has(peer.connId));
+        next.length !== before.size || next.some(peer => !before.has(peer.userId ? `u:${peer.userId}` : `c:${peer.connId}`));
       roster = next;
       // Two audiences, deliberately. The painter wants every frame, because a
       // colleague moving one cell is exactly what it exists to draw. React

@@ -33,6 +33,8 @@ import {
   CampusMobilityProfile,
   ScheduleShareLink,
   VisitingRoster,
+  DepartmentDelegateDirectory,
+  DepartmentRoomDirectory,
   StudentNeed,
   HallBarterRequest,
   ScheduleWeekException,
@@ -188,6 +190,8 @@ interface DBState {
   scheduleConstraints?: ScheduleConstraint[];
   degreeRules?: AdDegreeRule[];
   visitingRosters?: VisitingRoster[];
+  departmentDelegates?: DepartmentDelegateDirectory[];
+  departmentRooms?: DepartmentRoomDirectory[];
   scheduleDecisionMemories?: ScheduleDecisionMemory[];
   campusMobilityProfiles?: CampusMobilityProfile[];
   scheduleShareLinks?: ScheduleShareLink[];
@@ -203,7 +207,7 @@ interface LegacySnapshot extends DBState {
 let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
-  clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [],
+  clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
   scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
 };
 
@@ -648,6 +652,8 @@ export async function initDatabase() {
       if (!Array.isArray(db.scheduleConstraints)) db.scheduleConstraints = [];
       if (!Array.isArray(db.degreeRules)) db.degreeRules = [];
       if (!Array.isArray(db.visitingRosters)) db.visitingRosters = [];
+      if (!Array.isArray(db.departmentDelegates)) db.departmentDelegates = [];
+      if (!Array.isArray(db.departmentRooms)) db.departmentRooms = [];
       if (!Array.isArray(db.scheduleDecisionMemories)) db.scheduleDecisionMemories = [];
       if (!Array.isArray(db.campusMobilityProfiles)) db.campusMobilityProfiles = [];
       if (!Array.isArray(db.scheduleShareLinks)) db.scheduleShareLinks = [];
@@ -1958,7 +1964,7 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
     const formSecurity = db.formSecurity.filter(item => item.SystemUserId === rootAdminId);
     replaceCurrentDb({
       users: [root], formNames, formSecurity, collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [], courses: [], schedules: [], rooms: [],
-      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
+      auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
     });
     saveDatabase();
   }
@@ -3702,15 +3708,99 @@ export const Repository = {
     return unique;
   },
 
+  /** Department-owned visiting-instructor directory; independent of terms. */
+  getDepartmentDelegates: async (collegeId: number, sectionId: number): Promise<number[]> => {
+    const scopeKey = `${collegeId}:${sectionId}`;
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("departmentDelegates").doc(scopeKey.replace(/:/g, "_")).get();
+      if (doc.exists) return (((doc.data() as DepartmentDelegateDirectory).instructorIds || []).map(Number).filter(Boolean));
+      // Backwards compatibility: before the permanent directory existed, the
+      // only record of a department's delegates was its term rosters. Seed the
+      // first view from every historical roster; the first edit/save then
+      // creates the explicit directory (including an intentionally empty one).
+      const rosterSnap = await firestoreDb.collection("visitingRosters")
+        .where("collegeId", "==", collegeId).where("sectionId", "==", sectionId).get();
+      const legacy = new Set<number>();
+      rosterSnap.docs.forEach(item => ((item.data() as VisitingRoster).instructorIds || []).forEach(id => { const n=Number(id); if(n) legacy.add(n); }));
+      return [...legacy];
+    }
+    const explicit = (db.departmentDelegates || []).find(row => row.scopeKey === scopeKey);
+    if (explicit) return (explicit.instructorIds || []).map(Number).filter(Boolean);
+    const legacy = new Set<number>();
+    (db.visitingRosters || []).filter(row => Number(row.collegeId)===collegeId && Number(row.sectionId)===sectionId)
+      .forEach(row => (row.instructorIds || []).forEach(id => { const n=Number(id); if(n) legacy.add(n); }));
+    return [...legacy];
+  },
+
+  saveDepartmentDelegates: async (collegeId: number, sectionId: number, instructorIds: number[]): Promise<number[]> => {
+    const scopeKey = `${collegeId}:${sectionId}`;
+    const unique = [...new Set(instructorIds.map(Number).filter(Boolean))];
+    const row: DepartmentDelegateDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, instructorIds: unique, updatedAt: new Date().toISOString() };
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      await firestoreDb.collection("departmentDelegates").doc(scopeKey.replace(/:/g, "_")).set(row, { merge: false });
+      return unique;
+    }
+    db.departmentDelegates = [...(db.departmentDelegates || []).filter(item => item.scopeKey !== scopeKey), row];
+    saveDatabase();
+    return unique;
+  },
+
+  /** Complete room history for a department, plus rooms explicitly pinned by it. */
+  getDepartmentRooms: async (collegeId: number, sectionId: number): Promise<Array<{ building: string; hall: string }>> => {
+    const scopeKey = `${collegeId}:${sectionId}`;
+    let pinned: Array<{ building: string; hall: string }> = [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const doc = await firestoreDb.collection("departmentRooms").doc(scopeKey.replace(/:/g, "_")).get();
+      if (doc.exists) pinned = ((doc.data() as DepartmentRoomDirectory).rooms || []);
+    } else {
+      pinned = (db.departmentRooms || []).find(row => row.scopeKey === scopeKey)?.rooms || [];
+    }
+    const historical = await Repository.getSchedulesByScope({ collegeId, sectionId });
+    const byKey = new Map<string, { building: string; hall: string }>();
+    for (const item of [...historical.map(row => ({ building: String(row.AdRoomCode || "").trim(), hall: String(row.AdRoomHall || "").trim() })), ...pinned]) {
+      if (!item.building || !item.hall) continue;
+      const key = `${item.building.toLocaleLowerCase()}:${item.hall.toLocaleLowerCase()}`;
+      if (!byKey.has(key)) byKey.set(key, item);
+    }
+    return [...byKey.values()];
+  },
+
+  pinDepartmentRoom: async (collegeId: number, sectionId: number, building: string, hall: string): Promise<Array<{ building: string; hall: string }>> => {
+    const scopeKey = `${collegeId}:${sectionId}`;
+    const clean = { building: String(building || "").trim().slice(0, 50), hall: String(hall || "").trim().slice(0, 50) };
+    if (!clean.building || !clean.hall) return Repository.getDepartmentRooms(collegeId, sectionId);
+    let pinned: Array<{ building: string; hall: string }> = [];
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const ref = firestoreDb.collection("departmentRooms").doc(scopeKey.replace(/:/g, "_"));
+      const doc = await ref.get();
+      if (doc.exists) pinned = ((doc.data() as DepartmentRoomDirectory).rooms || []);
+      const key = `${clean.building.toLocaleLowerCase()}:${clean.hall.toLocaleLowerCase()}`;
+      if (!pinned.some(item => `${String(item.building).toLocaleLowerCase()}:${String(item.hall).toLocaleLowerCase()}` === key)) pinned.push(clean);
+      const row: DepartmentRoomDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, rooms: pinned, updatedAt: new Date().toISOString() };
+      await ref.set(row, { merge: false });
+    } else {
+      const current = (db.departmentRooms || []).find(row => row.scopeKey === scopeKey)?.rooms || [];
+      pinned = [...current];
+      const key = `${clean.building.toLocaleLowerCase()}:${clean.hall.toLocaleLowerCase()}`;
+      if (!pinned.some(item => `${String(item.building).toLocaleLowerCase()}:${String(item.hall).toLocaleLowerCase()}` === key)) pinned.push(clean);
+      const row: DepartmentRoomDirectory = { id: scopeKey, scopeKey, collegeId, sectionId, rooms: pinned, updatedAt: new Date().toISOString() };
+      db.departmentRooms = [...(db.departmentRooms || []).filter(item => item.scopeKey !== scopeKey), row];
+      saveDatabase();
+    }
+    return Repository.getDepartmentRooms(collegeId, sectionId);
+  },
+
   // Every instructor who is a delegate in any roster, so the staff screen can
   // mark them with a «منتدب» badge (Note 1).
   getAllDelegateInstructorIds: async (): Promise<number[]> => {
     const set = new Set<number>();
     if (firestoreDb && !demoSandboxContext.getStore()) {
-      const snap = await firestoreDb.collection("visitingRosters").get();
-      snap.docs.forEach(doc => ((doc.data() as VisitingRoster).instructorIds || []).forEach(id => set.add(Number(id))));
+      const [rosters,directories] = await Promise.all([firestoreDb.collection("visitingRosters").get(),firestoreDb.collection("departmentDelegates").get()]);
+      rosters.docs.forEach(doc => ((doc.data() as VisitingRoster).instructorIds || []).forEach(id => set.add(Number(id))));
+      directories.docs.forEach(doc => ((doc.data() as DepartmentDelegateDirectory).instructorIds || []).forEach(id => set.add(Number(id))));
     } else {
       (db.visitingRosters || []).forEach(row => (row.instructorIds || []).forEach(id => set.add(Number(id))));
+      (db.departmentDelegates || []).forEach(row => (row.instructorIds || []).forEach(id => set.add(Number(id))));
     }
     return [...set];
   },

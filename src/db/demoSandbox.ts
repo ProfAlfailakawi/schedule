@@ -38,7 +38,7 @@ export interface DemoSandboxState {
   terms: AdTerm[]; colleges: AdCollege[]; sections: AdSection[]; instructors: AdInstructor[]; courses: AdCourse[];
   schedules: FSchedule[]; rooms: AdRoom[];
   auditLogs: any[]; scheduleVersions: any[]; scheduleDrafts: any[]; scheduleOpenDecisions: any[]; clientTelemetry: any[];
-  scheduleComments: any[]; studentNeeds: any[]; schedulePublications: any[]; scheduleConstraints: any[]; visitingRosters: any[];
+  scheduleComments: any[]; studentNeeds: any[]; schedulePublications: any[]; scheduleConstraints: any[]; visitingRosters: any[]; departmentDelegates: any[]; departmentRooms: any[];
   scheduleDecisionMemories: any[]; campusMobilityProfiles: any[]; scheduleShareLinks: any[]; hallBarterRequests: any[];
 }
 
@@ -103,7 +103,7 @@ export function createDemoSandboxState(): DemoSandboxState {
     colleges: structuredClone(colleges), sections: structuredClone(sections), instructors, courses,
     schedules: syntheticSchedules(courses), rooms,
     auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [], clientTelemetry: [], scheduleComments: [],
-    studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], scheduleDecisionMemories: [],
+    studentNeeds: [], schedulePublications: [], scheduleConstraints: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [], scheduleDecisionMemories: [],
     campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [],
   };
 }

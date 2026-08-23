@@ -119,6 +119,10 @@ export default function QuickCreatePopover({
   instructors,
   buildings,
   hallsFor,
+  isKnownRoom,
+  onPinRoom,
+  roomPinBusy,
+  durationForDay,
   conflictOf,
   nextSectionCode,
   saving,
@@ -132,6 +136,14 @@ export default function QuickCreatePopover({
   instructors: AdInstructor[];
   buildings: string[];
   hallsFor: (building: string) => string[];
+  /** Complete department room history. Typing remains free; this only decides
+      whether the typed pair is new and may be pinned. */
+  isKnownRoom?: (building: string, hall: string) => boolean;
+  onPinRoom?: (building: string, hall: string) => Promise<boolean | void>;
+  roomPinBusy?: boolean;
+  /** The department's learned duration for the chosen day, with the
+      institutional 50/80-minute rhythm supplied by the parent as fallback. */
+  durationForDay?: (day: DayKey) => number;
   conflictOf: (draft: QuickDraft, day: DayKey) => string | null;
   /** The next free section number for a course, so the field fills itself the
       same way the full editor's does. */
@@ -185,10 +197,22 @@ export default function QuickCreatePopover({
 
   const setStart = (minutes: number) => {
     const clamped = Math.min(Math.max(minutes, SCHEDULE_DAY_START), SCHEDULE_DAY_END - 30);
-    patch({ start: timeOf(clamped), end: timeOf(Math.min(SCHEDULE_DAY_END, clamped + span)) });
+    const learned = Number(durationForDay?.(seed.day) || 0);
+    const duration = learned > 0 ? learned : span;
+    patch({ start: timeOf(clamped), end: timeOf(Math.min(SCHEDULE_DAY_END, clamped + duration)) });
   };
   const setSpan = (length: number) =>
     patch({ end: timeOf(Math.min(SCHEDULE_DAY_END, start + length)) });
+
+  useEffect(() => {
+    const learned = Number(durationForDay?.(seed.day) || 0);
+    if (!learned) return;
+    setDraft(current => {
+      const from = minutesOf(current.start);
+      const end = timeOf(Math.min(SCHEDULE_DAY_END, from + learned));
+      return current.end === end ? current : { ...current, end };
+    });
+  }, [durationForDay, seed.day]);
 
   // Measured against the window, never against the column: a card that explains
   // an hour must not be clipped by the day that hour belongs to.
@@ -231,6 +255,7 @@ export default function QuickCreatePopover({
   }, [onCancel]);
 
   const halls = hallsFor(draft.room);
+  const newRoom = Boolean(draft.room.trim() && draft.hall.trim() && isKnownRoom && !isKnownRoom(draft.room, draft.hall));
   const ready = Boolean(draft.courseId && draft.scode.trim() && draft.instructorId && draft.room.trim() && draft.hall.trim());
   const digitsOk = /^\d*$/.test(toEnglishDigits(draft.scode));
   const clash = ready && digitsOk ? conflictOf(draft, seed.day) : null;
@@ -354,6 +379,21 @@ export default function QuickCreatePopover({
           </datalist>
         </label>
       </div>
+
+      {newRoom ? (
+        <div className="qc-new-room" role="status">
+          <AlertTriangle aria-hidden="true" />
+          <div>
+            <strong>هذه قاعة جديدة لم تكن موجودة لديكم.</strong>
+            <small>يمكنك إنشاء الموعد بدون تثبيت، أو إضافتها الآن إلى قائمة قاعات القسم.</small>
+          </div>
+          {onPinRoom ? (
+            <button type="button" disabled={roomPinBusy} onClick={() => void onPinRoom(draft.room, draft.hall)}>
+              {roomPinBusy ? "أثبت…" : "ثبّت القاعة"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {error ? (
         <p className="qc-warn qc-warn-hard"><AlertTriangle aria-hidden="true" />{error}</p>

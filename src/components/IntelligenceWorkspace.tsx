@@ -1968,7 +1968,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 value: "students" as const,
                 label: "طلبات الطلاب",
                 detail: "كم شعبة نفتح، وأين نضعها",
-                metric: String(demand.respondents
+                metric: String(demand.totalRespondents || demand.totalCases || demand.cases?.length || demand.respondents
                   || demand.openings?.proposals?.reduce((sum: number, item: any) => sum + item.needed, 0)
                   || demand.repairs?.length || demand.pairs?.length || demand.prediction?.pairs?.length || 0),
                 icon: <UsersRound />,
@@ -2930,9 +2930,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               <div className="demand-figures">
                 <article>
                   <span>أجاب</span>
-                  <strong><Num value={demand.respondents} /></strong>
+                  <strong><Num value={demand.totalRespondents || demand.totalCases || demand.cases?.length || demand.respondents || 0} /></strong>
                   <small>
-                    {demand.respondents ? `${nounFor(demand.respondents, AR.student)} · ${demand.cohortLabel || "طلبة القسم"}` : `لم يجب أحد بعد · ${demand.cohortLabel || "طلبة القسم"}`}
+                    {(demand.totalRespondents || demand.totalCases || demand.cases?.length || demand.respondents) ? `${nounFor(demand.totalRespondents || demand.totalCases || demand.cases?.length || demand.respondents, AR.student)} · ${demand.cohortLabel || "طلبة القسم"}` : `لم يجب أحد بعد · ${demand.cohortLabel || "طلبة القسم"}`}
                   </small>
                 </article>
                 <article>
@@ -2953,7 +2953,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
 
               <section className="student-cases-register">
-                <header><div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{demand.cases?.length?`${demand.cases.length.toLocaleString("ar-KW-u-nu-latn")} حالة مرتبة من الأحدث` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div><SecondaryButton data-guide-ignore="طباعة سجل الحالات فقط ولا تغير بياناته" onClick={()=>window.print()} disabled={!demand.cases?.length}><Printer />طباعة الحالات</SecondaryButton></header>
+                <header><div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{demand.cases?.length?`${demand.cases.length.toLocaleString("ar-KW-u-nu-latn")} حالة مرتبة من الأحدث` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div><SecondaryButton data-guide-ignore="طباعة سجل الحالات فقط ولا تغير بياناته" onClick={()=>{document.documentElement.dataset.printKind="student-cases";const clear=()=>{delete document.documentElement.dataset.printKind;window.removeEventListener("afterprint",clear);};window.addEventListener("afterprint",clear);window.print();}} disabled={!demand.cases?.length}><Printer />طباعة الحالات</SecondaryButton></header>
                 {demand.cases?.length?<div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>الطالب</th><th>الرقم المدني</th><th>نوع الطلب</th><th>المقررات / السبب</th><th>التحقق</th><th>التاريخ</th></tr></thead><tbody>{demand.cases.map((item:any)=>{
                   const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";
                   const reason=item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":item.graduateReason==="other"?item.details:"";
@@ -4974,11 +4974,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         const pages: any[][] = [];
         for (let at = 0; at < demand.cases.length; at += CASES_PER_PAGE) pages.push(demand.cases.slice(at, at + CASES_PER_PAGE));
         const scopeLine = [demand.sectionName, terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName].filter(Boolean).join(" · ");
+        const collegeName = colleges.find((college: any) => Number(college.AdCollegeId) === Number(collegeId))?.AdCollegeName || "";
         const stamp = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
-        return <PrintPortal><div className="print-report print-wide student-cases-print">
+        return <PrintPortal className="student-cases-print-host"><div className="print-report print-wide student-cases-print">
           {pages.map((pageCases, pageIndex) => (
             <section className="print-explicit-page" key={`cases-${pageIndex}`}>
-              <PrintLetterhead title="حالات استبيان الطلبة" scope={scopeLine} footer={false} />
+              <PrintLetterhead title="حالات استبيان الطلبة" scope={scopeLine} college={collegeName} footer={false} />
               <table>
                 <colgroup>
                   <col style={{ width: "4%" }} /><col style={{ width: "20%" }} /><col style={{ width: "13%" }} />

@@ -1746,3 +1746,18 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .meeting-slots-bulk-btn:hover:not(:disabled){color:var(--accent);border-color:color-mix(in srgb,var(--accent) 34%,transparent);background:var(--accent-soft)}
 .meeting-slots-bulk-btn:disabled{opacity:.5;cursor:default}
 .meeting-slots-bulk-btn.is-quiet{border-style:dashed;color:var(--muted)}
+
+/* Department delegate directory: permanent list + per-term membership. */
+.roster-rule-note{color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.roster-search-box{width:100%;display:flex;align-items:center;gap:8px;padding-inline:12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.roster-search-box>svg{width:16px;height:16px;color:var(--muted);flex:none}.roster-search-box .roster-search{border:0;background:transparent;padding-inline:0;flex:1}
+.roster-copy-picks{display:grid;gap:8px;width:100%;padding:12px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface-2)}
+.roster-copy-picks>header{display:flex;align-items:center;justify-content:space-between;gap:8px}.roster-copy-picks>header button{border:0;background:none;color:var(--accent);font-size:var(--t-xs);font-weight:700;cursor:pointer}
+.roster-copy-picks label{display:flex;align-items:center;gap:8px;font-size:var(--t-sm)}.roster-copy-picks input{width:auto}
+.roster-directory-head{display:flex;justify-content:space-between;align-items:end;gap:10px;width:100%}.roster-directory-head>div{display:grid;gap:2px}.roster-directory-head small{color:var(--muted);font-size:var(--t-xs)}
+.roster-directory{display:grid;gap:7px;width:100%;max-height:360px;overflow:auto}.roster-directory>article{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px;border:1px solid var(--line);border-radius:var(--r-md);background:var(--surface)}.roster-directory>article.is-term-on{border-color:color-mix(in srgb,var(--accent) 35%,var(--line));background:var(--accent-softer)}
+.roster-term-toggle{display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--surface-2);color:var(--muted);font-size:var(--t-xs);cursor:pointer}.roster-term-toggle.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}.roster-term-toggle svg{width:14px;height:14px}
+.roster-directory .instructor-identity{display:grid;gap:2px;min-width:0}.roster-directory .instructor-identity b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--t-sm)}.roster-directory .instructor-identity small{color:var(--muted);font:500 var(--t-xs)/1 var(--font-mono)}
+.roster-row-actions{display:flex;align-items:center;gap:4px}.roster-row-actions button{width:32px;height:32px;display:grid;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--muted);cursor:pointer}.roster-row-actions button:hover{color:var(--accent);border-color:var(--accent)}.roster-row-actions button.danger:hover{color:var(--danger);border-color:var(--danger)}.roster-row-actions svg{width:14px;height:14px}
+.roster-edit-fields{grid-column:1/-1;display:grid;grid-template-columns:minmax(180px,1fr) minmax(140px,.55fr) auto auto;gap:7px}.roster-edit-fields input{min-width:0;border:1px solid var(--line);border-radius:11px;background:var(--surface-2);padding:8px 10px}
+@media(max-width:700px){.roster-directory>article{grid-template-columns:1fr auto}.roster-term-toggle{grid-column:1/-1;justify-self:start}.roster-edit-fields{grid-template-columns:1fr}.roster-edit-fields .btn{width:100%}}

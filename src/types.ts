@@ -507,3 +507,26 @@ export interface VisitingRoster {
   instructorIds: number[];
   updatedAt: string;
 }
+
+/** Persistent department-owned directory of visiting instructors.
+ * Unlike VisitingRoster this survives term changes; the roster is only the
+ * subset teaching in one term. The same person may appear in several
+ * departments without being duplicated in the instructor register. */
+export interface DepartmentDelegateDirectory {
+  id: string;
+  scopeKey: string;
+  collegeId: number;
+  sectionId: number;
+  instructorIds: number[];
+  updatedAt: string;
+}
+
+/** Rooms the department has used or deliberately pinned for future use. */
+export interface DepartmentRoomDirectory {
+  id: string;
+  scopeKey: string;
+  collegeId: number;
+  sectionId: number;
+  rooms: Array<{ building: string; hall: string }>;
+  updatedAt: string;
+}

@@ -3139,14 +3139,14 @@ app.get("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const sectionId = Number(req.query.sectionId || 0);
   const termId = Number(req.query.termId || 0);
   if (!collegeId || !sectionId || !termId) { res.json({ instructorIds: [] }); return; }
-  // The roster is a department's own record of who it invited; every other write
-  // path in this file asks this question, and this one used to take the caller's
-  // word for which department it was reading.
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  res.json({ instructorIds: await Repository.getVisitingRoster(collegeId, sectionId, termId) });
+  const instructorIds=await Repository.getVisitingRoster(collegeId, sectionId, termId);
+  const wanted=new Set(instructorIds.map(Number));
+  const instructors=(await Repository.getInstructors()).filter(person=>wanted.has(Number(person.AdInstructorId)));
+  res.json({ instructorIds, instructors });
 });
 
-// All delegate instructor ids across every roster, for the «منتدب» badge (Note 1).
+// A delegate badge is global to the person, but department directories are not.
 app.get("/api/delegates", requireAnyPermission([3, 7]), async (_req: AuthenticatedRequest, res: Response) => {
   res.json({ instructorIds: await Repository.getAllDelegateInstructorIds() });
 });
@@ -3155,40 +3155,111 @@ app.put("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   const collegeId = Number(req.body?.collegeId || 0);
   const sectionId = Number(req.body?.sectionId || 0);
   const termId = Number(req.body?.termId || 0);
-  const ids: number[] = Array.isArray(req.body?.instructorIds) ? req.body.instructorIds : [];
+  const ids: number[] = Array.isArray(req.body?.instructorIds) ? req.body.instructorIds.map(Number).filter(Boolean) : [];
   if (!collegeId || !sectionId || !termId) { res.status(400).json({ error: "حدد الكلية والقسم والفصل." }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
+  // Term membership is deliberately independent of the permanent department
+  // directory. Removing somebody from this term never deletes them from the
+  // department's own delegate list.
   res.json({ instructorIds: await Repository.saveVisitingRoster(collegeId, sectionId, termId, ids) });
 });
 
-/** A department scheduler may register a visiting instructor from the roster
- * itself. This intentionally bypasses the college-wide instructor-management
- * screen (form 3) while remaining scoped to a department/term and permission 7. */
+/** Persistent delegate directory owned by one department. */
+app.get("/api/department-delegates", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
+  if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [ids,people]=await Promise.all([Repository.getDepartmentDelegates(collegeId,sectionId),Repository.getInstructors()]);
+  const wanted=new Set(ids.map(Number));
+  res.json({instructorIds:ids,instructors:people.filter(person=>wanted.has(Number(person.AdInstructorId)))});
+});
+
+/** Add a person to this department's permanent visiting directory. The civil
+ * number is the shared identity, so the same person may be added to another
+ * department without creating a second instructor record. */
+app.post("/api/department-delegates/instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
+  const civil=asciiDigits(req.body?.AdInstructorCivil).replace(/\D/g,"");
+  const name=String(req.body?.AdInstructorName||"").trim().slice(0,100);
+  if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const check=validateCivilId(civil);
+  if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
+  let person=await Repository.getInstructorByCivil(civil);
+  if(!person) person=await Repository.createInstructor(civil,name,"");
+  const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
+  if(directory.includes(Number(person.AdInstructorId))){res.status(409).json({error:"هذا المنتدب موجود بالفعل في قائمة هذا القسم.",person});return;}
+  const instructorIds=await Repository.saveDepartmentDelegates(collegeId,sectionId,[...directory,Number(person.AdInstructorId)]);
+  let roster:number[]|undefined;
+  if(termId){const current=await Repository.getVisitingRoster(collegeId,sectionId,termId);roster=await Repository.saveVisitingRoster(collegeId,sectionId,termId,[...current,Number(person.AdInstructorId)]);}
+  res.status(201).json({person,instructorIds,roster});
+});
+
+app.put("/api/department-delegates/:instructorId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),instructorId=Number(req.params.instructorId||0);
+  if(!collegeId||!sectionId||!instructorId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
+  if(!directory.includes(instructorId)){res.status(404).json({error:"المنتدب غير موجود في قائمة هذا القسم"});return;}
+  const civil=asciiDigits(req.body?.AdInstructorCivil).replace(/\D/g,"");
+  const name=String(req.body?.AdInstructorName||"").trim().slice(0,100);
+  const check=validateCivilId(civil);
+  if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
+  const collision=await Repository.getInstructorByCivil(civil);
+  if(collision&&Number(collision.AdInstructorId)!==instructorId){res.status(409).json({error:"هذا الرقم المدني مرتبط بمنتدب آخر."});return;}
+  const existing=await Repository.getInstructorById(instructorId);
+  if(!existing){res.status(404).json({error:"المنتدب غير موجود"});return;}
+  const person=await Repository.updateInstructor(instructorId,civil,name,String(existing.AdInstructorMobile||""),(existing as any).AdInstructorStatus||null);
+  res.json(person);
+});
+
+app.delete("/api/department-delegates/:instructorId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),instructorId=Number(req.params.instructorId||0);
+  if(!collegeId||!sectionId||!instructorId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const current=await Repository.getDepartmentDelegates(collegeId,sectionId);
+  res.json({instructorIds:await Repository.saveDepartmentDelegates(collegeId,sectionId,current.filter(id=>Number(id)!==instructorId))});
+});
+
+/** Backwards-compatible creation path now writes the department directory too. */
 app.post("/api/visiting-roster/instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
   const civil=asciiDigits(req.body?.AdInstructorCivil).replace(/\D/g,"");
   const name=String(req.body?.AdInstructorName||"").trim().slice(0,100);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const check=validateCivilId(civil);if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
-  let person=await Repository.getInstructorByCivil(civil);
-  if(!person) person=await Repository.createInstructor(civil,name,"");
+  let person=await Repository.getInstructorByCivil(civil);if(!person)person=await Repository.createInstructor(civil,name,"");
+  const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
+  if(!directory.includes(Number(person.AdInstructorId)))await Repository.saveDepartmentDelegates(collegeId,sectionId,[...directory,Number(person.AdInstructorId)]);
   const current=await Repository.getVisitingRoster(collegeId,sectionId,termId);
-  await Repository.saveVisitingRoster(collegeId,sectionId,termId,[...new Set([...current,Number(person.AdInstructorId)])]);
+  await Repository.saveVisitingRoster(collegeId,sectionId,termId,[...current,Number(person.AdInstructorId)]);
   res.status(201).json(person);
 });
 
-/** Start this term's roster from another term's, instead of retyping it. */
+/** Start this term's roster from selected people in another term. */
 app.post("/api/visiting-roster/copy", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const collegeId = Number(req.body?.collegeId || 0);
-  const sectionId = Number(req.body?.sectionId || 0);
-  const fromTermId = Number(req.body?.fromTermId || 0);
-  const toTermId = Number(req.body?.toTermId || 0);
-  if (!collegeId || !sectionId || !fromTermId || !toTermId) { res.status(400).json({ error: "حدد الفصلين." }); return; }
-  if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
-  const source = await Repository.getVisitingRoster(collegeId, sectionId, fromTermId);
-  const target = await Repository.getVisitingRoster(collegeId, sectionId, toTermId);
-  const merged = [...new Set([...target, ...source])];
-  res.json({ instructorIds: await Repository.saveVisitingRoster(collegeId, sectionId, toTermId, merged), copied: source.length });
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),fromTermId=Number(req.body?.fromTermId||0),toTermId=Number(req.body?.toTermId||0);
+  if(!collegeId||!sectionId||!fromTermId||!toTermId){res.status(400).json({error:"حدد الفصلين."});return;}
+  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const source=await Repository.getVisitingRoster(collegeId,sectionId,fromTermId);
+  const requested=Array.isArray(req.body?.instructorIds)?req.body.instructorIds.map(Number).filter(Boolean):source;
+  const sourceSet=new Set(source.map(Number));
+  const selected=[...new Set(requested.filter((id:number)=>sourceSet.has(id)))];
+  const target=await Repository.getVisitingRoster(collegeId,sectionId,toTermId);
+  const merged=[...new Set([...target,...selected])];
+  const directory=await Repository.getDepartmentDelegates(collegeId,sectionId);
+  await Repository.saveDepartmentDelegates(collegeId,sectionId,[...new Set([...directory,...selected])]);
+  res.json({instructorIds:await Repository.saveVisitingRoster(collegeId,sectionId,toTermId,merged),copied:selected.length});
+});
+
+/** Department room memory: historical rooms are read automatically, while a
+ * typed new room can be pinned without blocking the appointment. */
+app.get("/api/department-rooms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0);
+  if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  res.json({rooms:await Repository.getDepartmentRooms(collegeId,sectionId)});
+});
+app.post("/api/department-rooms", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),building=String(req.body?.building||"").trim(),hall=String(req.body?.hall||"").trim();
+  if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  if(!building||!hall){res.status(400).json({error:"اكتب المبنى والقاعة أولاً"});return;}
+  res.status(201).json({rooms:await Repository.pinDepartmentRoom(collegeId,sectionId,building,hall)});
 });
 
 /**
@@ -6519,7 +6590,7 @@ const degreeRuleFromName=(sectionName:string):DegreeRule=>{
  */
 const degreeRuleForSection=async(sectionId:number,sectionName:string):Promise<DegreeRule&{reviewed:boolean}>=>{
   const stored=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===Number(sectionId));
-  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:false};
+  if(!stored)return{...degreeRuleFromName(sectionName),reviewed:true};
   return{
     degreeUnits:Number(stored.degreeUnits),
     fieldTrainingRequired:Number(stored.fieldTrainingRequired),
@@ -6574,12 +6645,11 @@ app.get("/api/degree-rules", requireAuth, async (_req: AuthenticatedRequest, res
   const byId=new Map(stored.map(row=>[Number(row.AdSectionId),row]));
   res.json(sections.map((section:any)=>{
     const saved=byId.get(Number(section.AdSectionId));
-    /* Suggestions, clearly labelled as such. The old figures came from a regex
-       over the department NAME — «102» was never chosen by anyone — so they are
-       sent as a starting point the department must confirm, never as a value. */
-    const suggestion=degreeRuleFromName(String(section.AdSectionName||""));
-    const rule=saved||{...suggestion,AdSectionId:section.AdSectionId,updatedAt:"",updatedBy:""};
-    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:Boolean(saved),suggested:!saved};
+    // Defaults are stable system values. A department may edit them explicitly,
+    // but no confirmation banner or approval gate is required merely to use them.
+    const fixed=degreeRuleFromName(String(section.AdSectionName||""));
+    const rule=saved||{...fixed,AdSectionId:section.AdSectionId,updatedAt:"",updatedBy:""};
+    return{...rule,AdSectionId:section.AdSectionId,AdCollegeId:section.AdCollegeId,AdSectionName:section.AdSectionName,reviewed:true,suggested:false};
   }));
 });
 
@@ -6588,7 +6658,13 @@ app.put("/api/degree-rules/:sectionId", requirePermission(4), async (req: Authen
   const sections=await Repository.getSections();
   if(!sections.some((row:any)=>Number(row.AdSectionId)===sectionId)){res.status(404).json({error:"القسم غير موجود"});return;}
   const read=(key:string)=>Math.round(Number(asciiDigits((req.body||{})[key])));
-  const degreeUnits=read("degreeUnits"),fieldTrainingRequired=read("fieldTrainingRequired");
+  const degreeUnits=read("degreeUnits");
+  const existingRule=(await Repository.getDegreeRules()).find(row=>Number(row.AdSectionId)===sectionId);
+  const sectionName=String(sections.find((row:any)=>Number(row.AdSectionId)===sectionId)?.AdSectionName||"");
+  const fieldTrainingRaw=(req.body||{}).fieldTrainingRequired;
+  const fieldTrainingRequired=fieldTrainingRaw==null||String(fieldTrainingRaw).trim()===""
+    ? Number(existingRule?.fieldTrainingRequired||degreeRuleFromName(sectionName).fieldTrainingRequired)
+    : read("fieldTrainingRequired");
   const graduateRegularPassed=read("graduateRegularPassed"),graduateSummerPassed=read("graduateSummerPassed");
   const values=[degreeUnits,fieldTrainingRequired,graduateRegularPassed,graduateSummerPassed];
   if(values.some(value=>!Number.isFinite(value)||value<30||value>300)){res.status(400).json({error:"كل قيمة يجب أن تكون عدد وحدات بين 30 و 300"});return;}
@@ -6663,10 +6739,6 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.filter(word=>documentName.includes(word)).length>=Math.min(2,nameWords.length);
   if(!nameMatched){res.status(422).json({error:"الاسم في الإثبات لا يطابق الاسم المدخل أو لم يظهر بوضوح."});return;}
   const rule=await degreeRuleForSection(sectionId,String(section.AdSectionName||"")),passedUnits=Number(facts.passedUnits||0);
-  /* A number nobody chose must not decide a student's eligibility. Until the
-     department reviews its own units, the case is routed to a human instead of
-     being judged against a figure inherited from a guess about the name. */
-  if(!rule.reviewed){res.status(409).json({error:"لم يعتمد القسم بعد عدد الوحدات المطلوبة. راجع مسؤول القسم لاعتمادها قبل تقديم حالة الخريج."});return;}
   if(!passedUnits){res.status(422).json({error:"لم أتعرف على مجموع الوحدات المجتازة. ارفع كشفاً واضحاً يظهر فيه المجموع."});return;}
   const terms=await Repository.getTerms();
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
@@ -6862,6 +6934,8 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     turnover,
     prediction,
     cases,
+    totalRespondents: needs.length,
+    totalCases: cases.length,
     // The limit travels with the answer: this speaks for whoever answered, and
     // is never the registrar's roll.
     limit: "مبنيّ على من أجاب الاستبيان فقط — ليس بيانات التسجيل.",
@@ -7775,7 +7849,7 @@ function arCourses(n){
 
 function studentCaseSurveyPage(token:string,label:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><style>
-*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}}
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}}
 </style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسـمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script>
 (function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
@@ -7807,10 +7881,12 @@ function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح 
 /* The free-text box is kept only where somebody reads it. On the two course
    requests the selected courses already say everything the department acts on,
    and an optional box invited an explanation nobody was going to open. */
-var content=kind==="graduate"?'<div class="proof"><strong>ارفع الإثبات · كشف الدرجات</strong><small class="lead">PDF أو صورة واضحة يظهر فيها الاسم والرقم المدني ومجموع الوحدات المجتازة. صوّر الورقة كاملة في إضاءة جيدة ومن زاوية مستقيمة. صور الآيفون بصيغة HEIC مقبولة.</small><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة الإثبات والتحقق</button><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label><label class="reason"><input type="radio" name="reason" value="other"><span>سبب آخر</span></label></div><div class="field" style="margin-top:9px"><label>اكتب السبب أو التفاصيل</label><textarea id="details" rows="3" maxlength="1200" placeholder="اكتب باختصار ما يحتاج القسم معرفته"></textarea></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
+var content=kind==="graduate"?'<div class="proof"><strong>ارفع الإثبات · كشف الدرجات</strong><small class="lead">PDF أو صورة واضحة يظهر فيها الاسم والرقم المدني ومجموع الوحدات المجتازة. صوّر الورقة كاملة في إضاءة جيدة ومن زاوية مستقيمة. صور الآيفون بصيغة HEIC مقبولة.</small><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة الإثبات والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label><label class="reason"><input type="radio" name="reason" value="other"><span>سبب آخر</span></label></div><div class="field" style="margin-top:9px"><label>اكتب السبب أو التفاصيل</label><textarea id="details" rows="3" maxlength="1200" placeholder="اكتب باختصار ما يحتاج القسم معرفته"></textarea></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
 host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate")wireProof();else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
 
-function wireProof(){document.getElementById("verify").onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus");if(!file)return fail("اختر كشف الدرجات أولاً");button.disabled=true;button.textContent="أقرأ الكشف…";status.className="proof-status";status.textContent="تجري قراءة الاسم والرقم المدني والوحدات من الإثبات؛ قد تستغرق لحظات.";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof',{method:'POST',headers:{'Content-Type':'application/octet-stream','x-file-type':file.type||'application/pdf','x-student-name':encodeURIComponent(student.name),'x-student-civil':student.civil,'x-student-section':String(student.sectionId)},body:file}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){button.disabled=false;button.textContent="إعادة التحقق";if(!x.ok){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=x.d.error||"تعذر التحقق";return}proofEligible=!!x.d.eligible;proofToken=x.d.proofToken||"";status.className='proof-status '+(proofEligible?'ok':'bad');status.textContent=x.d.message;if(proofEligible)document.getElementById("graduateOptions").hidden=false}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال."})}}
+function compactProof(file){return new Promise(function(resolve){var type=String(file.type||"").toLowerCase(),name=String(file.name||"").toLowerCase();if(type.indexOf("image/")!==0||/heic|heif/.test(type)||/\.(heic|heif)$/.test(name)){resolve(file);return}var url=URL.createObjectURL(file),img=new Image();img.onload=function(){try{var max=2200,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1));if(scale>=.98&&file.size<1800000){URL.revokeObjectURL(url);resolve(file);return}var canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));var ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw 0;ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);canvas.toBlob(function(blob){URL.revokeObjectURL(url);resolve(blob&&blob.size<file.size?blob:file)},"image/jpeg",.86)}catch(e){URL.revokeObjectURL(url);resolve(file)}};img.onerror=function(){URL.revokeObjectURL(url);resolve(file)};img.src=url})}
+function formatBytes(n){if(!n)return"0 KB";if(n<1048576)return Math.max(1,Math.round(n/1024))+" KB";return(n/1048576).toFixed(1)+" MB"}
+function wireProof(){document.getElementById("verify").onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر كشف الدرجات أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الكشف.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة الكشف والتحقق…";button.textContent="يقرأ الكشف…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}") }catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";return}proofEligible=!!d.eligible;proofToken=d.proofToken||"";status.className='proof-status '+(proofEligible?'ok':'bad');status.textContent=d.message;if(proofEligible)document.getElementById("graduateOptions").hidden=false};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال."};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع."})}}
 function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),detailsEl=document.getElementById("details"),reason=reasonEl?reasonEl.value:"",note=detailsEl?detailsEl.value.trim():"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من كشف الدرجات أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");if(kind==="graduate"&&reason==="other"&&note.length<5)return fail("اكتب سبب الطلب");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:note})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة بتفاصيلها للمراجعة.<br>هذا الطلب لا يُعد تسجيلاً، وسيظهر للمسؤول المخوّل في مركز الذكاء.</p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
 fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student.sectionId=Number(data.sectionId)||0;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;

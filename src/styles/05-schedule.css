@@ -7685,3 +7685,54 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   border-inline-start:1px solid color-mix(in srgb,currentColor 28%,transparent);
 }
 @media (max-width:760px){.schedule-radar.radar-clash>em{display:none}}
+
+/* ── Department room memory -------------------------------------------------
+   A typed room is still accepted. This note only offers to remember a room that
+   does not exist in the department's full historical catalogue. */
+.schedule-new-room-note{
+  grid-column:1/-1;
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;
+  padding:11px 12px;border:1px dashed color-mix(in srgb,var(--accent) 42%,var(--line));
+  border-radius:14px;background:color-mix(in srgb,var(--accent-softer) 68%,var(--surface));
+  color:var(--ink);
+}
+.schedule-new-room-note>svg{width:17px;height:17px;color:var(--accent-ink)}
+.schedule-new-room-note>div{display:grid;gap:2px;min-width:0}
+.schedule-new-room-note strong{font-size:12px}
+.schedule-new-room-note span{font-size:10.5px;color:var(--muted);line-height:1.55}
+.schedule-new-room-note button,
+.qc-new-room button{
+  min-height:32px;padding:0 11px;border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));
+  border-radius:10px;background:var(--surface);color:var(--accent-ink);font:750 11px/1 inherit;cursor:pointer;
+}
+.schedule-new-room-note button:disabled,.qc-new-room button:disabled{opacity:.55;cursor:wait}
+.qc-new-room{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:8px;
+  padding:9px 10px;border:1px dashed color-mix(in srgb,var(--accent) 40%,var(--line));
+  border-radius:12px;background:var(--accent-softer);
+}
+.qc-new-room>svg{width:14px;height:14px;color:var(--accent-ink)}
+.qc-new-room>div{display:grid;gap:2px;min-width:0}.qc-new-room strong{font-size:11px}.qc-new-room small{font-size:9.5px;color:var(--muted);line-height:1.45}
+
+/* The list now reads colours with the exact same legend grammar as the week and
+   the buildings view. Keep it attached to the cards it explains. */
+.agenda-legend{margin:0 0 var(--s3)}
+
+/* ── Week width containment -------------------------------------------------
+   The week deliberately owns a very wide internal canvas. The shell used to
+   let that intrinsic width leak back into the page, so the scope strip could
+   continue underneath the fixed right rail. Only the scroll areas may be wide;
+   the page and the week surface themselves must stay inside the main column. */
+.schedule-page{min-width:0;max-width:100%}
+.schedule-page>.week-surface,
+.schedule-page>.schedule-control{min-width:0;max-width:100%;width:100%}
+.app-main:has(.week-surface){min-width:0;overflow-x:clip}
+.content-frame:has(.week-surface){min-width:0;max-width:100%}
+.week-surface{min-width:0;max-width:100%;overflow:hidden}
+.week-surface>.week-scroll-top,
+.week-surface>.week-scroll-main{max-width:100%}
+
+@media (max-width:640px){
+  .schedule-new-room-note,.qc-new-room{grid-template-columns:auto minmax(0,1fr)}
+  .schedule-new-room-note button,.qc-new-room button{grid-column:1/-1;width:100%}
+}

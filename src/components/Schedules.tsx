@@ -946,6 +946,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     [visibleLimit, setVisibleLimit] = useState(AGENDA_PAGE_SIZE);
   const [departmentStartRhythm, setDepartmentStartRhythm] = useState<DepartmentStartRhythm | null>(null);
   const [formStartRhythm, setFormStartRhythm] = useState<DepartmentStartRhythm | null>(null);
+  // Every room the department has ever used, plus rooms the coordinator chose
+  // to pin. This is deliberately department-wide and term-independent: a room
+  // disappearing merely because the term changed made the picker forget the
+  // department's own history.
+  const [departmentRooms, setDepartmentRooms] = useState<Array<{ building: string; hall: string }>>([]);
+  const [roomPinBusy, setRoomPinBusy] = useState(false);
   const [copyCollege, setCopyCollege] = useState(0),
     [copySection, setCopySection] = useState(0),
     [copyFromTerm, setCopyFromTerm] = useState(0),
@@ -1217,6 +1223,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   };
   const lensClass = (row: FSchedule) => (lensActive ? (lensMatches(row) ? "lens-hit" : "lens-miss") : "");
 
+  // Room history follows the form's department while editing, otherwise the
+  // department currently open on the board. Declared before the room helpers so
+  // their dependency arrays never touch a later (TDZ) binding during render.
+  const roomScopeCollegeId = Number((editor !== "index" ? form.AdCollegeId : 0) || filterCollege || 0);
+  const roomScopeSectionId = Number((editor !== "index" ? form.AdSectionId : 0) || filterSection || 0);
+
   /**
    * What the campus actually contains, learned from the schedule.
    *
@@ -1227,14 +1239,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    */
   const estate = useMemo(() => {
     const map = new Map<string, { label: string; halls: Map<string, string> }>();
-    rows.forEach(row => {
-      const room = roomIdentity(row.AdRoomCode, row.AdRoomHall);
+    // The endpoint already merges historical schedule rooms with explicitly
+    // pinned rooms. Do not seed this from the current term: doing so was the
+    // root cause of valid old rooms vanishing from the picker.
+    departmentRooms.forEach(item => {
+      const room = roomIdentity(item.building, item.hall);
       if (!room.buildingKey || !room.hallKey) return;
       if (!map.has(room.buildingKey)) map.set(room.buildingKey, { label: room.building, halls: new Map() });
       map.get(room.buildingKey)!.halls.set(room.hallKey, room.hall);
     });
     return map;
-  }, [rows]);
+  }, [departmentRooms]);
   const buildingOptions = useMemo(() => [...estate.values()].map(item => item.label).sort(byRoomPart), [estate]);
   const hallOptions = useMemo(() => {
     const code = normalizeRoomToken(form.AdRoomCode);
@@ -1247,6 +1262,36 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     (building: string) => [...(estate.get(normalizeRoomToken(building))?.halls.values() || [])].sort(byRoomPart),
     [estate],
   );
+  const roomKnown = useCallback((building: string, hall: string) => {
+    const buildingKey = normalizeRoomToken(building);
+    const hallKey = normalizeRoomToken(hall);
+    if (!buildingKey || !hallKey) return false;
+    return estate.get(buildingKey)?.halls.has(hallKey) === true;
+  }, [estate]);
+  const pinDepartmentRoom = useCallback(async (building: string, hall: string) => {
+    const cleanBuilding = String(building || "").trim();
+    const cleanHall = String(hall || "").trim();
+    if (!roomScopeCollegeId || !roomScopeSectionId || !cleanBuilding || !cleanHall) return false;
+    setRoomPinBusy(true);
+    try {
+      const data = await fetchJson("/api/department-rooms", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          collegeId: roomScopeCollegeId, sectionId: roomScopeSectionId,
+          building: cleanBuilding, hall: cleanHall,
+        }),
+      });
+      setDepartmentRooms(Array.isArray(data?.rooms) ? data.rooms : []);
+      setMessage(`تم تثبيت القاعة ${cleanBuilding}/${cleanHall} في قائمة قاعات القسم.`);
+      return true;
+    } catch (e: any) {
+      setError(e?.message || "تعذر تثبيت القاعة الآن.");
+      return false;
+    } finally {
+      setRoomPinBusy(false);
+    }
+  }, [roomScopeCollegeId, roomScopeSectionId]);
 
   /**
    * The next section number, offered rather than imposed.
@@ -1583,7 +1628,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * would orphan a live stream and leave its marks painted with nothing left
    * to erase them.
    */
-  const presence = useMemo(createPresenceClient, []);
+  const presence = useMemo(() => createPresenceClient(Number(user?.SystemUserId || 0)), [user?.SystemUserId]);
   const presencePaint = useMemo(() => createPresencePainter(), []);
   const [peers, setPeers] = useState<PresencePeer[]>([]);
   /** Bumped whenever the live channel reports a write, so readings that depend
@@ -2286,6 +2331,24 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     return () => { alive = false; };
   }, [mode, editor, form.AdCollegeId, form.AdSectionId, form.AdTermId, filterCollege, filterSection, filterTerm, departmentStartRhythm, liveFeedSerial]);
 
+  // Room suggestions come from the complete history of the department, not
+  // only the rows painted in the currently selected term. Administrators may
+  // edit another department while viewing this board, so the form's scope wins
+  // while the editor is open.
+  useEffect(() => {
+    if (mode !== "schedule" || !roomScopeCollegeId || !roomScopeSectionId) {
+      setDepartmentRooms([]);
+      return;
+    }
+    let alive = true;
+    const query = new URLSearchParams({ collegeId: String(roomScopeCollegeId), sectionId: String(roomScopeSectionId) });
+    void fetch(`/api/department-rooms?${query}`, { credentials: "include" })
+      .then(response => response.ok ? response.json() : Promise.reject(new Error("room-history")))
+      .then(data => { if (alive) setDepartmentRooms(Array.isArray(data?.rooms) ? data.rooms : []); })
+      .catch(() => { if (alive) setDepartmentRooms([]); });
+    return () => { alive = false; };
+  }, [mode, roomScopeCollegeId, roomScopeSectionId, liveFeedSerial]);
+
   const historicalChoiceResolver = useRef<((decision: "picked" | "preferred" | "cancel") => void) | null>(null);
   const askHistoricalTimeChoice = useCallback((data: { dayLabel: string; picked: string; preferred: string; source: string }) =>
     new Promise<"picked" | "preferred" | "cancel">(resolve => {
@@ -2326,6 +2389,37 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (LONG_LECTURE_DAYS.has(day)) return 30;
     return null;
   }, [historicalReadingFor]);
+
+  /**
+   * The end time follows the department's own repeated duration first. If that
+   * history is too thin, use the institution's 50-minute Sun/Tue/Thu and
+   * 80-minute Mon/Wed rhythm. This is what makes typing 09:00 with
+   * Sun/Tue/Thu immediately become 09:50 without asking for a second value.
+   */
+  const expectedDurationForDay = useCallback((row: Partial<FSchedule>, day: DayKey) => {
+    const learned = historicalReadingFor(row, day).data;
+    if (learned && learned.durationMinutes > 0 && learned.durationSamples >= 3 && learned.durationShare >= 0.5) {
+      return Number(learned.durationMinutes);
+    }
+    return expectedMinutesForDay(day as RegDayKey);
+  }, [historicalReadingFor]);
+  const expectedDurationForSelection = useCallback((row: Partial<FSchedule>) => {
+    const active = days.filter(day => Boolean((row as any)[day.key])).map(day => day.key as DayKey);
+    if (!active.length) return 0;
+    const durations = active.map(day => expectedDurationForDay(row, day)).filter(value => value > 0);
+    if (!durations.length) return 0;
+    // A mixed 1-3-5 / 2-4 pattern cannot share one end time. Do not invent an
+    // average: retain the current value and let the existing mixed-day note say
+    // why. For a normal family, use the duration most often supported.
+    const unique = [...new Set(durations)];
+    if (unique.length > 1) return 0;
+    return unique[0];
+  }, [expectedDurationForDay]);
+  const autoEndFor = useCallback((row: Partial<FSchedule>, start: string) => {
+    if (!start) return "";
+    const duration = expectedDurationForSelection({ ...row, fstarttime: start });
+    return duration > 0 ? timeFromMins(Math.min(SCHEDULE_DAY_END, mins(start) + duration)) : String(row.fendtime || "");
+  }, [expectedDurationForSelection]);
 
   const preferredStartForDrop = useCallback((row: Partial<FSchedule>, day: DayKey, picked: string) => {
     const expectedMinute = expectedStartMinuteForDay(row, day);
@@ -7770,10 +7864,16 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       setInstructors((current: any[]) =>
                         sortByName([...current, person], (row: any) => row.AdInstructorName))
                     }
-                    onSelected={(person) =>
+                    onSelected={(person) => {
                       setInstructors((current: any[]) =>
-                        mergeById(current, [person], row => Number(row.AdInstructorId), row => row.AdInstructorName))
-                    }
+                        mergeById(current, [person], row => Number(row.AdInstructorId), row => row.AdInstructorName));
+                      if (!departmentInstructorIds.includes(Number(person.AdInstructorId))) {
+                        // Deliberately a warning only. Cross-department teaching
+                        // is legitimate; the picker should make it visible, not
+                        // make it impossible.
+                        setMessage(`تنبيه فقط: الأستاذ ${person.AdInstructorName} من خارج قائمة أعضاء هيئة تدريس هذا القسم. يمكنك المتابعة والحفظ.`);
+                      }
+                    }}
                     collegeId={Number(form.AdCollegeId) || filterCollege}
                     termId={Number(form.AdTermId) || filterTerm}
                   />
@@ -7849,14 +7949,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             setScheduleTouched(true);
                             setForm((p) => {
                               const next: any = { ...p, [d.key]: e.target.checked };
-                              // Three weekly hours are two 90-minute meetings on
-                              // Monday/Wednesday, or three 60-minute meetings on
-                              // Sunday/Tuesday/Thursday. Changing the days changes
-                              // the lecture, so the end time follows (م.8/أ،ب).
-                              const chosen = days.filter(day => next[day.key]).map(day => day.key as RegDayKey);
-                              const advice = adviseDayPattern(chosen, next.fstarttime, next.fendtime);
-                              if (advice && advice.family !== "mixed" && advice.changed && next.fstarttime) {
-                                next.fendtime = advice.suggestedEnd;
+                              // Changing the selected teaching days changes the
+                              // duration. Prefer this department/course history;
+                              // the 50/80-minute institutional rhythm is only the
+                              // fallback when history has no reliable answer.
+                              if (next.fstarttime) {
+                                const duration = expectedDurationForSelection(next);
+                                if (duration > 0) next.fendtime = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(next.fstarttime) + duration));
                               }
                               return next;
                             });
@@ -7883,7 +7982,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       value={form.fstarttime}
                       onChange={(e) => {
                         setScheduleTouched(true);
-                        setForm((p) => ({ ...p, fstarttime: e.target.value }));
+                        const start = e.target.value;
+                        setForm((p) => ({ ...p, fstarttime: start, fendtime: autoEndFor(p, start) }));
                       }}
                       required
                     />
@@ -8010,6 +8110,22 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </Field>
                   </div>
                 </div>
+                {String(form.AdRoomCode || "").trim() && String(form.AdRoomHall || "").trim() && !roomKnown(form.AdRoomCode, form.AdRoomHall) ? (
+                  <div className="schedule-new-room-note" role="status">
+                    <MapPin aria-hidden="true" />
+                    <div>
+                      <strong>هذه قاعة جديدة لم تكن موجودة لديكم.</strong>
+                      <span>يمكنك حفظ الموعد كما هو، أو تثبيتها لتظهر من الآن في قائمة قاعات القسم.</span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={roomPinBusy}
+                      onClick={() => void pinDepartmentRoom(form.AdRoomCode, form.AdRoomHall)}
+                    >
+                      {roomPinBusy ? "أثبت…" : "نعم، ثبّت القاعة"}
+                    </button>
+                  </div>
+                ) : null}
                 {roomOwner ? (
                   <div className="room-owner-note" role="status">
                     <span className="room-owner-mark" aria-hidden="true"><Building2 /></span>
@@ -8408,7 +8524,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const scheduleGuideSummary = useMemo(() => {
     if (rowsLoading) return "يقرأ الجدول الآن ويجهز العناصر الظاهرة على الشاشة.";
     if (error) return error;
-    if (liveClash.pairs) return `يوجد ${countOf(liveClash.pairs, AR.clash)} تحتاج إلى مراجعة قبل الاعتماد.`;
+    if (liveClash.pairs) return `يوجد ${countOf(liveClash.pairs, AR.clash)} في بيانات الجدول الحالية. هذا رادار مراجعة وليس حالة الاعتماد.`;
     if (mobileViewGate) return "أنت على الهاتف داخل عرض للقراءة فقط؛ التعديل المباشر متاح من القائمة أو من الكمبيوتر.";
     if (viewMode === "rooms") return "أنت الآن داخل المباني والقاعات — أفضل عرض لنقل المقررات ومقارنة الإشغال.";
     if (viewMode === "week") return "أنت الآن داخل عرض الأسبوع — الخريطة الزمنية الكاملة للنطاق المفتوح.";
@@ -8989,7 +9105,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 setViewMode("week");
                 setReviewFocus(new Set([...liveClash.ids]));
               }}
-              title={`تداخل قائم في هذا النطاق — أستاذ: ${liveClash.instructorPairs.toLocaleString("ar-KW-u-nu-latn")} · قاعة: ${liveClash.roomPairs.toLocaleString("ar-KW-u-nu-latn")} · تكرار: ${liveClash.duplicatePairs.toLocaleString("ar-KW-u-nu-latn")} — اضغط لإظهارها على الأسبوع`}
+              title={`هذه ليست حالة الاعتماد؛ هي تداخلات موجودة الآن في بيانات الجدول — أستاذ: ${liveClash.instructorPairs.toLocaleString("ar-KW-u-nu-latn")} · قاعة: ${liveClash.roomPairs.toLocaleString("ar-KW-u-nu-latn")} · تكرار: ${liveClash.duplicatePairs.toLocaleString("ar-KW-u-nu-latn")} — اضغط لمراجعتها بصرياً على الأسبوع`}
             >
               {/* "تعارض" implied something unsaveable, and the program never lets
                   a real conflict be saved — so what the radar surfaces is an
@@ -8999,7 +9115,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               {countOf(liveClash.pairs, AR.clash)}
               {/* The count alone said nothing about what pressing it would do,
                   so the chip read as a warning with no exit. */}
-              <em>اعرضها على الأسبوع</em>
+              <em>ليست اعتماداً · راجعها على الأسبوع</em>
             </button>
           ) : null}
           {/* What arrived from the department's own instructors. It is the only
@@ -9154,6 +9270,89 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             </div>
             <span>{filteredRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
           </div>
+          {hueLegend.length > 1 ? (
+            <div className="week-legend agenda-legend" role="group" aria-label="مفتاح الألوان">
+              <div className="week-legend-basis" role="group" aria-label="معنى اللون">
+                {([
+                  { key: "course", label: "المقررات" },
+                  { key: "instructor", label: "الأساتذة" },
+                  { key: "room", label: "المباني والقاعات" },
+                ] as const).map(basis => (
+                  <button
+                    key={basis.key}
+                    type="button"
+                    className={hueBy === basis.key ? "is-on" : ""}
+                    aria-pressed={hueBy === basis.key}
+                    onClick={() => setHueBy(basis.key)}
+                    title={`لوّن القائمة حسب ${basis.label}`}
+                  >
+                    {basis.label}
+                  </button>
+                ))}
+                <b className="num">
+                  {legendQuery
+                    ? `${legendShown.length.toLocaleString("ar-KW-u-nu-latn")}/${hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}`
+                    : hueLegend.length.toLocaleString("ar-KW-u-nu-latn")}
+                </b>
+              </div>
+              {legendSearchable ? (
+                <span className="week-legend-search">
+                  <Search aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={legendQuery}
+                    onChange={e => setLegendQuery(e.target.value)}
+                    placeholder={hueBy === "course" ? "ابحث عن مقرر…" : hueBy === "room" ? "ابحث عن قاعة…" : "ابحث عن أستاذ…"}
+                    aria-label="تصفية مفتاح الألوان"
+                  />
+                </span>
+              ) : null}
+              <LegendScroller label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
+                {legendShown.length === 0 ? <span className="week-legend-none">لا مطابقة</span> : null}
+                {legendShown.map(item => {
+                  const folded = hueHidden.has(item.key);
+                  return (
+                    <span
+                      className={`week-legend-item ${folded ? "is-folded" : ""}`}
+                      key={item.key}
+                      style={{ ["--hue" as any]: item.hue, ...textureFor(item.hue) }}
+                    >
+                      <button
+                        type="button"
+                        className={`week-legend-chip ${hueFocus.has(item.key) ? "is-on" : ""}`}
+                        aria-pressed={hueFocus.has(item.key)}
+                        disabled={folded}
+                        title={`${item.label} — ${countOf(item.count, AR.appointment)} · اضغط لإبرازها في القائمة`}
+                        onClick={() => toggleHueFocus(item.key)}
+                      >
+                        <i aria-hidden="true" /><span>{item.label}</span><em className="num">{item.count.toLocaleString("ar-KW-u-nu-latn")}</em>
+                      </button>
+                      <button
+                        type="button"
+                        className="week-legend-eye"
+                        aria-pressed={folded}
+                        aria-label={folded ? `إظهار ${item.label}` : `إخفاء ${item.label} من القائمة`}
+                        title={folded ? `إظهار ${item.label} في القائمة` : `أخفِ ${item.label} من القائمة مؤقتاً — لا يُحذف شيء`}
+                        onClick={() => toggleHueHidden(item.key)}
+                      >
+                        {folded ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
+                      </button>
+                    </span>
+                  );
+                })}
+              </LegendScroller>
+              {hueHidden.size ? (
+                <button type="button" className="week-legend-clear is-folded-clear" onClick={() => setHueHidden(new Set())}>
+                  <EyeOff aria-hidden="true" />أعد المطوي <b className="num">{hueHidden.size.toLocaleString("ar-KW-u-nu-latn")}</b>
+                </button>
+              ) : null}
+              {hueFocus.size ? (
+                <button type="button" className="week-legend-clear" onClick={() => setHueFocus(new Set())}>
+                  <X aria-hidden="true" />عرض الكل {hueFocus.size > 1 ? <b className="num">{hueFocus.size.toLocaleString("ar-KW-u-nu-latn")}</b> : null}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           {filteredRows.length ? (
             <div className="schedule-agenda">
               {filteredRows.slice(0, visibleLimit).map((s, idx) => {
@@ -9162,7 +9361,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 return (
                   <article
                     data-row-id={s.id}
-                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""}`}
+                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""} ${hueFocusClass(s)}`}
                     key={s.id}
                     /* The course's own colour, carried into the list so a lecture
                        looks the same here as it does in the grid, the fan and the
@@ -10764,6 +10963,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           instructors={instructors}
           buildings={buildingOptions}
           hallsFor={hallsOf}
+          isKnownRoom={roomKnown}
+          onPinRoom={pinDepartmentRoom}
+          roomPinBusy={roomPinBusy}
+          durationForDay={(day) => expectedDurationForDay({
+            AdCollegeId: filterCollege, AdSectionId: filterSection, AdTermId: filterTerm,
+          }, day)}
           conflictOf={quickConflict}
           nextSectionCode={(courseId) => nextSectionCode(courseId, Number(filterTerm) || 0)}
           saving={saving}

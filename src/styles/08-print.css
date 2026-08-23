@@ -2032,3 +2032,16 @@
   .query-print th{background:#eef2f0;font-weight:700;color:#333}
   .query-print ul{margin:1mm 4mm 0 0;padding:0;font-size:8.5pt;color:#333;line-height:1.6}
 }
+
+/* Student-survey cases are a wide official report, never a screen print. */
+@media print{
+  html[data-print-kind="student-cases"] #app-print-root>.print-only:not(.student-cases-print-host){display:none!important}
+  html[data-print-kind="student-cases"] .student-cases-print-host{display:block!important;visibility:visible!important;page:wide!important}
+  .student-cases-print .print-explicit-page{page:wide!important}
+  .student-cases-print table{width:100%!important;table-layout:fixed!important;border-collapse:separate!important;border-spacing:0!important;border:1px solid #b8c7c1!important;border-radius:3mm!important;overflow:hidden!important;font-size:8.7pt!important}
+  .student-cases-print thead th{background:#e8f1ed!important;color:#173b31!important;border-bottom:1px solid #9fb5ad!important;padding:2.5mm 2mm!important;font-weight:750!important}
+  .student-cases-print tbody td{padding:2.35mm 2mm!important;border-bottom:1px solid #d5dfdb!important;border-inline-start:1px solid #e0e7e4!important;vertical-align:top!important;line-height:1.55!important}
+  .student-cases-print tbody tr:nth-child(even) td{background:#f8faf9!important}
+  .student-cases-print tbody tr:last-child td{border-bottom:0!important}
+  .student-cases-print td.num{text-align:center!important;font-variant-numeric:tabular-nums!important}
+}

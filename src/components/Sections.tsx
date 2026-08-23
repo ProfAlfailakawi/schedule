@@ -72,11 +72,10 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
   /**
    * The rule a department is judged by, always shown.
    *
-   * The server sends a row per department, seeded from the old name heuristic
-   * where nobody has reviewed one yet. If that request never lands the card
-   * used to vanish entirely, so the answer to "where do I set the units?" was
-   * "nowhere". The same seed is computed here so the fields are always on
-   * screen, marked as unreviewed until somebody saves them.
+   * The server sends the department's current stable values. If no row has ever
+   * been saved, the legacy defaults are used silently as the current values —
+   * no approval step and no "suggested" state. The coordinator changes them
+   * only by explicitly pressing تعديل القواعد and saving.
    */
   const seededRule = (name: string) => {
     const degreeUnits = /فرنسي/.test(name) ? 132
@@ -90,7 +89,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
   const ruleFor = (section: any) => {
     const stored = rules.find((row: any) => Number(row.AdSectionId) === Number(section?.AdSectionId));
     if (stored) return stored;
-    return { AdSectionId: section?.AdSectionId, ...seededRule(String(section?.AdSectionName || "")), reviewed: false, updatedBy: "" };
+    return { AdSectionId: section?.AdSectionId, ...seededRule(String(section?.AdSectionName || "")), reviewed: true, updatedBy: "" };
   };
   const saveRule = async () => {
     if (!ruleDraft) return;
@@ -103,8 +102,9 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
       });
       const saved = await response.json();
       if (!response.ok) throw new Error(saved.error || "تعذّر حفظ قواعد التخرج");
-      setRules(current => current.map((row: any) =>
-        Number(row.AdSectionId) === Number(saved.AdSectionId) ? { ...row, ...saved, reviewed: true } : row));
+      setRules(current => current.some((row: any) => Number(row.AdSectionId) === Number(saved.AdSectionId))
+        ? current.map((row: any) => Number(row.AdSectionId) === Number(saved.AdSectionId) ? { ...row, ...saved, reviewed: true } : row)
+        : [...current, { ...saved, reviewed: true }]);
       setRuleDraft(null);
       setRuleNote("حُفظت قواعد التخرج. الاستبيان يقيس كشوف الدرجات عليها من الآن.");
     } catch (e: any) {
@@ -339,7 +339,6 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 const draft = ruleDraft?.AdSectionId === selected.AdSectionId ? ruleDraft : null;
                 const fields: Array<[string, string]> = [
                   ["degreeUnits", "مجموع وحدات الدرجة"],
-                  ["fieldTrainingRequired", "المطلوب لفتح الميداني"],
                   ["graduateRegularPassed", "خريج / متوقع · فصل عادي"],
                   ["graduateSummerPassed", "خريج / متوقع · فصل صيفي"],
                 ];
@@ -347,20 +346,12 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                   <section className="degree-rule-card">
                     <header>
                       <span className="surface-kicker"><GraduationCap aria-hidden="true" /> وحدات القسم وشروط التخرج</span>
-                      {rule.reviewed
-                        ? <small>معتمدة {rule.updatedBy ? `بواسطة ${rule.updatedBy}` : ""}</small>
-                        : <small className="warn">لم تُعتمد بعد</small>}
+                      <small>{rule.updatedBy ? `آخر تعديل بواسطة ${rule.updatedBy}` : "قيم القسم الحالية"}</small>
                     </header>
                     <p>
                       عليها يقيس استبيان الطلبة كشف الدرجات المرفوع قبل أن يفتح حالة الخريج أو المتوقع تخرجه،
                       ويُختار الرقم حسب نوع الفصل الذي صدر فيه الرابط — عادي أو صيفي.
                     </p>
-                    {!rule.reviewed ? (
-                      <Notice>
-                        هذه أرقام <b>مقترحة</b> استُنتجت من اسم القسم ولم يعتمدها أحد. حتى تعتمدها،
-                        يرفض النظام الحكم على أي حالة خريج ويحيلها إليك.
-                      </Notice>
-                    ) : null}
                     <dl className="degree-rule-grid">
                       {fields.map(([key, label]) => (
                         <div key={key}>
@@ -373,10 +364,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                                 onChange={event => setRuleDraft({ ...draft, [key]: event.target.value })}
                               />
                             ) : (
-                              <>
-                                {Number(rule[key]).toLocaleString("ar-KW-u-nu-latn")}
-                                {!rule.reviewed ? <em className="degree-rule-guess">مقترح</em> : null}
-                              </>
+                              <>{Number(rule[key]).toLocaleString("ar-KW-u-nu-latn")}</>
                             )}
                           </dd>
                         </div>
@@ -398,7 +386,7 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                           data-guide-ignore="تحرير قواعد التخرج له حفظ صريح داخل نفس البطاقة"
                           onClick={() => { setRuleNote(null); setRuleDraft({ ...rule }); }}
                         >
-                          {rule.reviewed ? "تعديل القواعد" : "اعتمد هذه الأرقام"}
+                          تعديل القواعد
                         </SecondaryButton>
                       )}
                     </div>

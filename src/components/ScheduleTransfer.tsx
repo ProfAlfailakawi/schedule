@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, ChevronLeft, Clock, Copy, Download, History, Plus, RotateCcw, ShieldAlert, Sparkles, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, ChevronLeft, Clock, Copy, Download, History, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
@@ -66,78 +66,163 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   // the college-wide instructor registry.
   const [newName, setNewName] = useState("");
   const [newCivil, setNewCivil] = useState("");
+  const [directoryPeople, setDirectoryPeople] = useState<Instructor[]>([]);
+  const [directoryIds, setDirectoryIds] = useState<number[]>([]);
+  const [editingDelegate, setEditingDelegate] = useState<number>(0);
+  const [editName, setEditName] = useState("");
+  const [editCivil, setEditCivil] = useState("");
+  const [copyPeople, setCopyPeople] = useState<Instructor[]>([]);
+  const [copyIds, setCopyIds] = useState<number[]>([]);
+  const [copySelected, setCopySelected] = useState<number[]>([]);
 
   React.useEffect(() => {
-    if (tab !== "visiting" || !scopeReadyRef.current) return;
+    if (tab !== "visiting" || !collegeId || !sectionId || !termId) return;
+    setRosterLoaded(false);
+    const controller = new AbortController();
     const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
-    fetch(`/api/visiting-roster?${query}`)
-      .then(response => (response.ok ? response.json() : { instructorIds: [] }))
-      .then(data => { setRoster(data.instructorIds || []); setRosterLoaded(true); })
-      .catch(() => setRosterLoaded(true));
+    const directoryQuery = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId) });
+    Promise.all([
+      fetch(`/api/visiting-roster?${query}`, { signal: controller.signal }).then(response => response.ok ? response.json() : { instructorIds: [] }),
+      fetch(`/api/department-delegates?${directoryQuery}`, { signal: controller.signal }).then(response => response.ok ? response.json() : { instructorIds: [], instructors: [] }),
+    ]).then(([termData, directoryData]) => {
+      setRoster(termData.instructorIds || []);
+      setDirectoryIds(directoryData.instructorIds || []);
+      setDirectoryPeople(sortByName(directoryData.instructors || [], (person: Instructor) => person.AdInstructorName));
+      setRosterLoaded(true);
+    }).catch(error => { if (error?.name !== "AbortError") setRosterLoaded(true); });
+    return () => controller.abort();
   }, [tab, collegeId, sectionId, termId]);
 
   const saveRoster = async (ids: number[]) => {
-    setRoster(ids);
+    const previous = roster;
+    const next = currentUnique(ids);
+    setRoster(next);
     setBusy(true);
+    setError(null);
     try {
-      await fetch("/api/visiting-roster", {
+      const response = await fetch("/api/visiting-roster", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, termId, instructorIds: ids })
+        body: JSON.stringify({ collegeId, sectionId, termId, instructorIds: next })
       });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "تعذر تحديث منتدبي هذا الفصل.");
+      setRoster(Array.isArray(data.instructorIds) ? data.instructorIds : next);
       onChanged();
+    } catch (e: any) {
+      setRoster(previous);
+      setError(e?.message || "تعذر تحديث منتدبي هذا الفصل.");
     } finally { setBusy(false); }
   };
 
-  // Create a brand-new delegate and drop them straight into this term's roster,
-  // so "where do I add my delegates?" has one answer: right here (Note 1).
+  const currentUnique = (ids: number[]) => [...new Set(ids.map(Number).filter(Boolean))];
+  const mergePeople = (base: Instructor[], extra: Instructor[]) => [...new Map([...base, ...extra].map(person => [Number(person.AdInstructorId), person])).values()];
+  // Add to the department directory and, for convenience, to the open term.
+  // Reusing a civil number from another department is valid; the server links
+  // the same person instead of creating a duplicate identity.
   const addNewDelegate = async () => {
     const name = newName.trim(), civil = newCivil.trim();
     if (!name || !civil) { setError("اكتب اسم المنتدب ورقمه المدني."); return; }
     const check = validateCivilId(civil);
     if (!check.isValid) { setError(check.message || "رقم مدني غير صالح."); return; }
-    if (instructors.some(person => String(person.AdInstructorCivil || "") === civil)) {
-      setError("هذا الرقم المدني مسجّل بالفعل — ابحث عن الاسم أعلاه وأضِفه.");
-      return;
-    }
     setBusy(true); setError(null);
     try {
-      const response = await fetch("/api/visiting-roster/instructor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const response = await fetch("/api/department-delegates/instructor", {
+        method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId, AdInstructorCivil: civil, AdInstructorName: name }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذّر إضافة المنتدب.");
+      const person: Instructor = data.person;
       setNewName(""); setNewCivil("");
+      setDirectoryIds(data.instructorIds || currentUnique([...directoryIds, person.AdInstructorId]));
+      setDirectoryPeople(current => sortByName(mergePeople(current, [person]), row => row.AdInstructorName));
+      setRoster(data.roster || currentUnique([...roster, Number(person.AdInstructorId)]));
       onChanged();
-      await saveRoster([...roster, Number(data.AdInstructorId)]);
     } catch (e: any) { setError(e.message || "تعذّر إضافة المنتدب."); }
     finally { setBusy(false); }
   };
 
+  const saveDelegateEdit = async (id: number) => {
+    const check = validateCivilId(editCivil);
+    if (!check.isValid) { setError(check.message || "الرقم المدني غير صحيح."); return; }
+    if (editName.trim().length < 3) { setError("اكتب اسم المنتدب كاملاً."); return; }
+    setBusy(true); setError(null);
+    try {
+      const response = await fetch(`/api/department-delegates/${id}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, AdInstructorName: editName.trim(), AdInstructorCivil: editCivil }),
+      });
+      const person = await response.json();
+      if (!response.ok) throw new Error(person.error || "تعذر تعديل المنتدب.");
+      setDirectoryPeople(current => sortByName(mergePeople(current.filter(row => row.AdInstructorId !== id), [person]), row => row.AdInstructorName));
+      setEditingDelegate(0); onChanged();
+    } catch (e: any) { setError(e.message || "تعذر تعديل المنتدب."); }
+    finally { setBusy(false); }
+  };
+
+  const removeDelegate = async (id: number) => {
+    if (!window.confirm("حذف المنتدب من قائمة منتدبي هذا القسم؟ لن يُحذف من النظام، ولن تتغير سجلات الفصول السابقة.")) return;
+    setBusy(true); setError(null);
+    try {
+      const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId) });
+      const response = await fetch(`/api/department-delegates/${id}?${query}`, { method: "DELETE" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "تعذر الحذف.");
+      setDirectoryIds(data.instructorIds || []);
+      setDirectoryPeople(current => current.filter(person => person.AdInstructorId !== id));
+      if (editingDelegate === id) setEditingDelegate(0);
+      onChanged();
+    } catch (e: any) { setError(e.message || "تعذر الحذف."); }
+    finally { setBusy(false); }
+  };
+
+  const loadCopyRoster = async (fromTermId: number) => {
+    setCopyFrom(fromTermId); setCopyIds([]); setCopySelected([]); setCopyPeople([]);
+    if (!fromTermId) return;
+    try {
+      const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(fromTermId) });
+      const response = await fetch(`/api/visiting-roster?${query}`);
+      const data = response.ok ? await response.json() : { instructorIds: [], instructors: [] };
+      const ids = data.instructorIds || [];
+      setCopyIds(ids); setCopySelected(ids); setCopyPeople(data.instructors || []);
+    } catch { setError("تعذر قراءة منتدبي الفصل المختار."); }
+  };
+
   const copyRoster = async () => {
-    if (!copyFrom) return;
+    if (!copyFrom || !copySelected.length) return;
     setBusy(true); setError(null);
     try {
       const response = await fetch("/api/visiting-roster/copy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ collegeId, sectionId, fromTermId: copyFrom, toTermId: termId })
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ collegeId, sectionId, fromTermId: copyFrom, toTermId: termId, instructorIds: copySelected })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر النسخ");
       setRoster(data.instructorIds || []);
+      // Copied people also become part of this department's permanent directory.
+      const selectedPeople = copyPeople.filter(person => copySelected.includes(person.AdInstructorId));
+      setDirectoryPeople(current => sortByName(mergePeople(current, selectedPeople), row => row.AdInstructorName));
+      setDirectoryIds(current => currentUnique([...current, ...copySelected]));
       onChanged();
     } catch (e: any) { setError(e.message); }
     finally { setBusy(false); }
   };
 
   const scopeReady = Boolean(collegeId && sectionId && termId);
-  const scopeReadyRef = useRef(scopeReady);
-  scopeReadyRef.current = scopeReady;
   const named = (id: number) => instructors.find(x => x.AdInstructorId === id)?.AdInstructorName || "";
   const sortedInstructors = useMemo(() => sortByName(instructors, person => person.AdInstructorName), [instructors]);
+  const directory = useMemo(() => {
+    const pool = new Map([...instructors, ...directoryPeople].map(person => [Number(person.AdInstructorId), person]));
+    return sortByName(directoryIds.map(id => pool.get(Number(id))).filter(Boolean) as Instructor[], person => person.AdInstructorName);
+  }, [instructors, directoryPeople, directoryIds]);
+  const visibleDirectory = useMemo(() => {
+    const fold = (value: string) => String(value || "").replace(/[\u064B-\u0652\u0640]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه").replace(/\s+/g, " ").trim().toLowerCase();
+    const needle = fold(rosterQuery);
+    if (!needle) return directory;
+    const raw = rosterQuery.trim();
+    return directory.filter(person => fold(person.AdInstructorName).includes(needle) || String(person.AdInstructorCivil || "").includes(raw));
+  }, [directory, rosterQuery]);
   const departmentStaff = useMemo(() => sortByName(
     departmentIds.map(id => instructors.find(x => x.AdInstructorId === id)).filter(Boolean) as Instructor[],
     person => person.AdInstructorName,
@@ -602,96 +687,63 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
               <div className="tool-lede">
                 <span className="tool-lede-mark"><UserPlus aria-hidden="true" /></span>
                 <div>
-                  <strong>المنتدبون في هذا الفصل</strong>
+                  <strong>منتدبو القسم</strong>
                   <ul className="tool-lede-chips">
-                    <li><Check aria-hidden="true" />يظهر بعلامة «منتدب»</li>
-                    <li><Copy aria-hidden="true" />انسخ قائمة فصل سابق</li>
+                    <li><UsersRound aria-hidden="true" />قائمة خاصة بهذا القسم</li>
+                    <li><Check aria-hidden="true" />اختيار مستقل لكل فصل</li>
+                    <li><Copy aria-hidden="true" />نسخ بعضهم أو كلهم</li>
                   </ul>
                 </div>
               </div>
-              <div className="roster-copy">
-                <select value={copyFrom || ""} onChange={e => setCopyFrom(Number(e.target.value) || 0)}>
+
+              <div className="roster-copy roster-copy-rich">
+                <select value={copyFrom || ""} onChange={e => void loadCopyRoster(Number(e.target.value) || 0)}>
                   <option value="">انسخ من فصل…</option>
                   {sortedTerms.filter(term => Number(term.AdTermId) !== termId).map(term => (
                     <option key={term.AdTermId} value={term.AdTermId}>{term.AdTermName}</option>
                   ))}
                 </select>
-                <SecondaryButton type="button" onClick={copyRoster} disabled={!copyFrom || busy}><Copy />انسخ</SecondaryButton>
+                <SecondaryButton type="button" onClick={copyRoster} disabled={!copyFrom || !copySelected.length || busy}><Copy />انسخ المحدد</SecondaryButton>
               </div>
+              {copyFrom ? <div className="roster-copy-picks">
+                <header><strong>من سيتم نسخه؟</strong><button type="button" onClick={()=>setCopySelected(copySelected.length===copyIds.length?[]:[...copyIds])}>{copySelected.length===copyIds.length&&copyIds.length?"إلغاء تحديد الكل":"تحديد الكل"}</button></header>
+                {copyIds.length ? copyIds.map(id => { const person=copyPeople.find(item=>item.AdInstructorId===id)||directory.find(item=>item.AdInstructorId===id); const on=copySelected.includes(id); return <label key={id}><input type="checkbox" checked={on} onChange={()=>setCopySelected(current=>on?current.filter(x=>x!==id):[...current,id])}/><span>{person?.AdInstructorName||`منتدب ${id}`}</span></label>; }) : <small>لا يوجد منتدبون في هذا الفصل.</small>}
+              </div> : null}
+
               <div className="roster-add">
-                <div className="roster-add-head"><UserPlus aria-hidden="true" /><strong>أضف منتدباً جديداً لقسمك</strong></div>
+                <div className="roster-add-head"><UserPlus aria-hidden="true" /><strong>أضف منتدباً لقائمة القسم</strong></div>
                 <div className="roster-add-fields">
-                  <input
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
-                    placeholder="اسم المنتدب"
-                    aria-label="اسم المنتدب الجديد"
-                  />
-                  <input
-                    value={newCivil}
-                    onChange={e => setNewCivil(e.target.value.replace(/[^\d]/g, ""))}
-                    placeholder="الرقم المدني"
-                    inputMode="numeric"
-                    dir="ltr"
-                    maxLength={12}
-                    aria-label="الرقم المدني للمنتدب الجديد"
-                  />
-                  <PrimaryButton type="button" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}>
-                    <Plus />أضف وأدرِج
-                  </PrimaryButton>
+                  <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="اسم المنتدب" aria-label="اسم المنتدب الجديد" />
+                  <input value={newCivil} onChange={e => setNewCivil(e.target.value.replace(/[^\d]/g, ""))} onBlur={()=>{if(newCivil&& !validateCivilId(newCivil).isValid)setError(validateCivilId(newCivil).message||"الرقم المدني غير صحيح.");}} placeholder="الرقم المدني" inputMode="numeric" dir="ltr" maxLength={12} aria-label="الرقم المدني للمنتدب الجديد" />
+                  <PrimaryButton type="button" onClick={addNewDelegate} disabled={busy || !newName.trim() || !newCivil.trim()}><Plus />أضف للقسم</PrimaryButton>
                 </div>
+                <small className="roster-rule-note">يمكن أن يكون المنتدب نفسه مسجلاً في أكثر من قسم، لكن لا يمكن إضافته مرتين داخل القسم نفسه.</small>
               </div>
-              <input
-                className="roster-search"
-                value={rosterQuery}
-                onChange={e => setRosterQuery(e.target.value)}
-                placeholder="ابحث عن اسم لإضافته"
-                aria-label="ابحث عن أستاذ"
-              />
-              <div className="roster-list">
-                {/* Arabic names differ in ways that must never hide a match: the
-                    definite article, hamza seats, taa marbuta, and the titles
-                    that may or may not be written. */}
-                {(rosterQuery.trim()
-                  ? sortedInstructors
-                      .filter(person => {
-                        const fold = (value: string) => String(value || "")
-                          .replace(/[\u064B-\u0652\u0640]/g, "")
-                          .replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
-                          .replace(/\s+/g, " ").trim().toLowerCase();
-                        const needle = fold(rosterQuery);
-                        return fold(person.AdInstructorName).includes(needle) ||
-                          String(person.AdInstructorCivil || "").includes(rosterQuery.trim());
-                      })
-                      .slice(0, 25)
-                  : sortedInstructors.filter(person => roster.includes(person.AdInstructorId))
-                ).map(person => {
-                  const on = roster.includes(person.AdInstructorId);
-                  return (
-                    <button
-                      type="button"
-                      key={person.AdInstructorId}
-                      className={on ? "on" : ""}
-                      onClick={() => saveRoster(on
-                        ? roster.filter(id => id !== person.AdInstructorId)
-                        : [...roster, person.AdInstructorId])}
-                    >
-                      {on ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
-                      <span className="instructor-identity">
-                        <b>{person.AdInstructorName}</b>
-                        <small dir="ltr">{person.AdInstructorCivil || "—"}</small>
-                      </span>
-                    </button>
-                  );
+
+              <label className="roster-search-box"><Search aria-hidden="true"/><input className="roster-search" value={rosterQuery} onChange={e => setRosterQuery(e.target.value)} placeholder="بحث سريع بالاسم أو الرقم المدني…" aria-label="بحث في منتدبي القسم" /></label>
+              <div className="roster-directory-head"><div><strong>كل منتدبي القسم</strong><small>{directory.length.toLocaleString("ar-KW-u-nu-latn")} محفوظون للقسم · علامة الفصل لا تحذف الاسم من هذه القائمة</small></div></div>
+              <div className="roster-directory">
+                {visibleDirectory.map(person => {
+                  const on=roster.includes(person.AdInstructorId),editing=editingDelegate===person.AdInstructorId;
+                  return <article key={person.AdInstructorId} className={on?"is-term-on":""}>
+                    {editing ? <div className="roster-edit-fields">
+                      <input value={editName} onChange={e=>setEditName(e.target.value)} aria-label="تعديل اسم المنتدب"/>
+                      <input value={editCivil} onChange={e=>setEditCivil(e.target.value.replace(/[^\d]/g,""))} onBlur={()=>{if(editCivil && !validateCivilId(editCivil).isValid)setError(validateCivilId(editCivil).message||"الرقم المدني غير صحيح.");}} inputMode="numeric" dir="ltr" maxLength={12} aria-label="تعديل الرقم المدني"/>
+                      <PrimaryButton type="button" onClick={()=>void saveDelegateEdit(person.AdInstructorId)} disabled={busy}>حفظ</PrimaryButton>
+                      <SecondaryButton type="button" onClick={()=>setEditingDelegate(0)} disabled={busy}>إلغاء</SecondaryButton>
+                    </div> : <>
+                      <button type="button" className={`roster-term-toggle ${on?"on":""}`} onClick={()=>void saveRoster(on?roster.filter(id=>id!==person.AdInstructorId):[...roster,person.AdInstructorId])} aria-pressed={on}>
+                        {on?<Check aria-hidden="true"/>:<Plus aria-hidden="true"/>}<span>{on?"يدرّس هذا الفصل":"أضفه لهذا الفصل"}</span>
+                      </button>
+                      <span className="instructor-identity"><b>{person.AdInstructorName}</b><small dir="ltr">{person.AdInstructorCivil||"—"}</small></span>
+                      <div className="roster-row-actions">
+                        <button type="button" onClick={()=>{setEditingDelegate(person.AdInstructorId);setEditName(person.AdInstructorName);setEditCivil(String(person.AdInstructorCivil||""));setError(null);}} aria-label={`تعديل ${person.AdInstructorName}`} title="تعديل"><Pencil/></button>
+                        <button type="button" className="danger" onClick={()=>void removeDelegate(person.AdInstructorId)} aria-label={`حذف ${person.AdInstructorName} من قائمة القسم`} title="حذف من قائمة القسم"><Trash2/></button>
+                      </div>
+                    </>}
+                  </article>;
                 })}
-                {rosterLoaded && !rosterQuery.trim() && !roster.length ? (
-                  <p className="roster-empty">لا منتدبين في هذا الفصل بعد — ابحث عن اسم أو انسخ قائمة فصل سابق.</p>
-                ) : null}
-                {rosterQuery.trim() && !instructors.some(person =>
-                  person.AdInstructorName.includes(rosterQuery.trim()) ||
-                  String(person.AdInstructorCivil || "").includes(rosterQuery.trim())) ? (
-                  <p className="roster-empty">لا اسم يطابق «{rosterQuery.trim()}» — أضِفه بنموذج «أضف منتدباً جديداً» أعلاه.</p>
-                ) : null}
+                {rosterLoaded && !visibleDirectory.length ? <p className="roster-empty">{rosterQuery.trim()?`لا منتدب يطابق «${rosterQuery.trim()}» في هذا القسم.`:"لا توجد قائمة منتدبين لهذا القسم بعد."}</p> : null}
               </div>
             </>
           ) : null}
