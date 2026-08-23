@@ -1324,8 +1324,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     return advice?.note;
   }, [form.fsunday, form.fmonday, form.ftuesday, form.fwednesday, form.fthursday, form.fstarttime, form.fendtime]);
 
-  const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
-
   /** The department's own staff, ordered by how much of it they carry. */
   const departmentInstructorIds = useMemo(() => {
     const load = new Map<number, number>();
@@ -1528,6 +1526,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * from a permanent one, and a coordinator should not have to remember which
    * is which.
    */
+  const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
+
   const [reviewOpen, setReviewOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
   /**
