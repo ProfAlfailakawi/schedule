@@ -501,6 +501,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [importFile, setImportFile] = useState(""),
     [importInstructorIds, setImportInstructorIds] = useState<number[]>([]),
     [importVisitingIds, setImportVisitingIds] = useState<Set<number>>(new Set()),
+    [importDepartmentRooms, setImportDepartmentRooms] = useState<Array<{ building:string; hall:string }>>([]),
     [online, setOnline] = useState(navigator.onLine);
   // Help never opens on its own; one deliberate question mark owns it.
   const [decisionCompose, setDecisionCompose] = useState(false);
@@ -510,6 +511,30 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
      Loaded with everything else, and empty is the ordinary state: a department
      that has never opened the survey sees the door and nothing more. */
   const [demand, setDemand] = useState<any>(null);
+  const [studentCaseFilter, setStudentCaseFilter] = useState<"all" | "new-course" | "course-conflict" | "graduate">("all");
+  const [studentCasePrintMode, setStudentCasePrintMode] = useState<"all" | "new-course" | "course-conflict" | "graduate">("all");
+  const studentCases = Array.isArray(demand?.cases) ? demand.cases : [];
+  const visibleStudentCases = useMemo(() => studentCaseFilter === "all"
+    ? studentCases
+    : studentCases.filter((item: any) => item.requestType === studentCaseFilter), [demand?.cases, studentCaseFilter]);
+  const studentCaseCounts = useMemo(() => ({
+    all: studentCases.length,
+    "new-course": studentCases.filter((item: any) => item.requestType === "new-course").length,
+    "course-conflict": studentCases.filter((item: any) => item.requestType === "course-conflict").length,
+    graduate: studentCases.filter((item: any) => item.requestType === "graduate").length,
+  }), [demand?.cases]);
+  const studentCasesForPrint = useMemo(() => studentCasePrintMode === "all"
+    ? studentCases
+    : studentCases.filter((item: any) => item.requestType === studentCasePrintMode), [demand?.cases, studentCasePrintMode]);
+  const printStudentCases = (mode: "all" | "new-course" | "course-conflict" | "graduate") => {
+    setStudentCasePrintMode(mode);
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+      document.documentElement.dataset.printKind = "student-cases";
+      const clear = () => { delete document.documentElement.dataset.printKind; window.removeEventListener("afterprint", clear); };
+      window.addEventListener("afterprint", clear);
+      window.print();
+    }));
+  };
   const [genome, setGenome] = useState<any>(null),
     [constraints, setConstraints] = useState<any[]>([]),
     [innovationMode, setInnovationMode] = useState<
@@ -676,6 +701,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     if (!collegeId || !sectionId || !termId) {
       setImportInstructorIds([]);
       setImportVisitingIds(new Set());
+      setImportDepartmentRooms([]);
       return;
     }
     let alive = true;
@@ -686,7 +712,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       fetchJson(`/api/instructors?${paramsTerm.toString()}`).catch(() => []),
       fetchJson(`/api/visiting-roster?${paramsTerm.toString()}`).catch(() => ({ instructorIds: [], instructors: [] })),
       fetchJson(`/api/courses?sectionId=${sectionId}`).catch(() => []),
-    ]).then(([historyPeople, termPeople, roster, sectionCourses]) => {
+      fetchJson(`/api/department-rooms?${paramsBase.toString()}`).catch(() => ({ rooms: [] })),
+    ]).then(([historyPeople, termPeople, roster, sectionCourses, roomData]) => {
       if (!alive) return;
       const localPeople = [...new Map(
         [...(Array.isArray(historyPeople) ? historyPeople : []),
@@ -697,6 +724,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       const ids = localPeople.map((person:any) => Number(person.AdInstructorId));
       setImportInstructorIds(ids);
       setImportVisitingIds(new Set((Array.isArray(roster?.instructorIds) ? roster.instructorIds : []).map(Number).filter(Boolean)));
+      setImportDepartmentRooms(Array.isArray(roomData?.rooms) ? roomData.rooms : []);
       if (localPeople.length) {
         setInstructors(current => sortByName(
           [...new Map([...current, ...localPeople].map((person:any) => [Number(person.AdInstructorId), person] as const)).values()],
@@ -3029,12 +3057,32 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </div>
 
               <section className="student-cases-register">
-                <header><div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{demand.cases?.length?`${demand.cases.length.toLocaleString("ar-KW-u-nu-latn")} حالة مرتبة من الأحدث` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div><SecondaryButton data-guide-ignore="طباعة سجل الحالات فقط ولا تغير بياناته" onClick={()=>{document.documentElement.dataset.printKind="student-cases";const clear=()=>{delete document.documentElement.dataset.printKind;window.removeEventListener("afterprint",clear);};window.addEventListener("afterprint",clear);window.print();}} disabled={!demand.cases?.length}><Printer />طباعة الحالات</SecondaryButton></header>
-                {demand.cases?.length?<div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>الطالب</th><th>الرقم المدني</th><th>نوع الطلب</th><th>المقررات / السبب</th><th>التحقق</th><th>التاريخ</th></tr></thead><tbody>{demand.cases.map((item:any)=>{
-                  const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";
-                  const reason=item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":item.graduateReason==="other"?item.details:"";
-                  return <tr key={item.id} className={`case-${item.requestType}`}><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{item.requestType==="graduate"?reason:(item.courses||[]).map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||item.details||"—"}</td><td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:"—"}</td><td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
-                })}</tbody></table></div>:<div className="empty-state-compact">ستظهر هنا الأسماء والأرقام المدنية ونوع الحالة وكل تفاصيلها.</div>}
+                <header>
+                  <div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{studentCases.length ? `${visibleStudentCases.length.toLocaleString("ar-KW-u-nu-latn")} من ${studentCases.length.toLocaleString("ar-KW-u-nu-latn")} حالة · الأحدث أولاً` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div>
+                </header>
+                {studentCases.length ? <>
+                  <div className="student-case-toolbar">
+                    <div className="student-case-filters" role="group" aria-label="فلترة حالات الطلبة">
+                      {([
+                        ["all", "الكل"],
+                        ["new-course", "فتح مقرر"],
+                        ["course-conflict", "تعارض مقررين"],
+                        ["graduate", "خريج / متوقع"],
+                      ] as const).map(([value, label]) => <button key={value} type="button" className={studentCaseFilter === value ? "active" : ""} aria-pressed={studentCaseFilter === value} data-guide-ignore="فلتر محلي لسجل حالات الطلبة لا يغير البيانات" onClick={() => setStudentCaseFilter(value)}><span>{label}</span><b>{studentCaseCounts[value].toLocaleString("ar-KW-u-nu-latn")}</b></button>)}
+                    </div>
+                    <div className="student-case-print-actions" aria-label="خيارات طباعة حالات الطلبة">
+                      <SecondaryButton data-guide-ignore="طباعة شاملة لسجل حالات الطلبة فقط" onClick={() => printStudentCases("all")}><Printer />الشاملة</SecondaryButton>
+                      <SecondaryButton data-guide-ignore="طباعة حالات فتح المقرر فقط" onClick={() => printStudentCases("new-course")} disabled={!studentCaseCounts["new-course"]}><Printer />فتح مقرر</SecondaryButton>
+                      <SecondaryButton data-guide-ignore="طباعة حالات التعارض فقط" onClick={() => printStudentCases("course-conflict")} disabled={!studentCaseCounts["course-conflict"]}><Printer />التعارض</SecondaryButton>
+                      <SecondaryButton data-guide-ignore="طباعة حالات الخريج والمتوقع فقط" onClick={() => printStudentCases("graduate")} disabled={!studentCaseCounts.graduate}><Printer />الخريج</SecondaryButton>
+                    </div>
+                  </div>
+                  {visibleStudentCases.length ? <div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>رقم الحالة</th><th>الطالب</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th><th>التحقق</th><th>التاريخ</th></tr></thead><tbody>{visibleStudentCases.map((item:any)=>{
+                    const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";
+                    const reason=item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":"—";
+                    return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{String(item.id||"").slice(0,8).toUpperCase()||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{item.requestType==="graduate"?reason:(item.courses||[]).map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||"—"}</td><td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:"—"}</td><td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
+                  })}</tbody></table></div>:<div className="empty-state-compact">لا توجد حالات من هذا النوع في الفصل الحالي.</div>}
+                </> : <div className="empty-state-compact">ستظهر هنا هوية الطالب، قسمه، نوع الطلب، المقررات، التحقق ورقم الحالة.</div>}
               </section>
 
               {/* ── الشعب ────────────────────────────────────────────────────
@@ -4944,8 +4992,20 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   instructors={instructors as any}
                   departmentIds={importInstructorIds}
                   visitingIds={importVisitingIds}
+                  departmentRooms={importDepartmentRooms}
                   collegeId={collegeId}
+                  sectionId={sectionId}
                   termId={termId}
+                  onPinRoom={async (building, hall) => {
+                    try {
+                      const data = await fetchJson("/api/department-rooms", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ collegeId, sectionId, building, hall }),
+                      });
+                      setImportDepartmentRooms(Array.isArray(data?.rooms) ? data.rooms : []);
+                      return true;
+                    } catch { return false; }
+                  }}
                   onRows={next => setImportPreview((prev: any) => {
                     if (!prev) return prev;
                     const globalIssues = (Array.isArray(prev.issues) ? prev.issues : [])
@@ -5045,30 +5105,30 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           ))}
         </div></PrintPortal>;
       })() : null}
-      {demand?.cases?.length ? (() => {
+      {studentCasesForPrint.length ? (() => {
         /* Paginated into explicit landscape pages, the way every other report in
            the program is built. That structure is what the wide-print path and
            the Safari rotate path both key on — a single unpaginated table met a
            portrait page and lost every column past the fold. */
-        const anyGraduate = demand.cases.some((c: any) => c.requestType === "graduate");
+        const anyGraduate = studentCasesForPrint.some((c: any) => c.requestType === "graduate");
         const CASES_PER_PAGE = 14;
         const pages: any[][] = [];
-        for (let at = 0; at < demand.cases.length; at += CASES_PER_PAGE) pages.push(demand.cases.slice(at, at + CASES_PER_PAGE));
+        for (let at = 0; at < studentCasesForPrint.length; at += CASES_PER_PAGE) pages.push(studentCasesForPrint.slice(at, at + CASES_PER_PAGE));
         const scopeLine = [demand.sectionName, terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName].filter(Boolean).join(" · ");
         const collegeName = colleges.find((college: any) => Number(college.AdCollegeId) === Number(collegeId))?.AdCollegeName || "";
         const stamp = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date());
         return <PrintPortal className="student-cases-print-host"><div className="print-report print-wide student-cases-print">
           {pages.map((pageCases, pageIndex) => (
             <section className="print-explicit-page" key={`cases-${pageIndex}`}>
-              <PrintLetterhead title="حالات استبيان الطلبة" scope={scopeLine} college={collegeName} footer={false} />
+              <PrintLetterhead title={studentCasePrintMode === "all" ? "حالات استبيان الطلبة — التقرير الشامل" : studentCasePrintMode === "new-course" ? "حالات فتح مقرر جديد" : studentCasePrintMode === "course-conflict" ? "حالات تعارض المقررات" : "حالات الخريج والمتوقع تخرجه"} scope={scopeLine} college={collegeName} footer={false} />
               <table>
                 <colgroup>
-                  <col style={{ width: "4%" }} /><col style={{ width: "20%" }} /><col style={{ width: "13%" }} />
-                  <col style={{ width: "14%" }} /><col style={{ width: anyGraduate ? "27%" : "37%" }} />
-                  {anyGraduate ? <col style={{ width: "10%" }} /> : null}<col style={{ width: "12%" }} />
+                  <col style={{ width: "4%" }} /><col style={{ width: "8%" }} /><col style={{ width: "16%" }} /><col style={{ width: "11%" }} />
+                  <col style={{ width: "13%" }} /><col style={{ width: "13%" }} /><col style={{ width: anyGraduate ? "20%" : "27%" }} />
+                  {anyGraduate ? <col style={{ width: "8%" }} /> : null}<col style={{ width: "7%" }} />
                 </colgroup>
                 <thead><tr>
-                  <th>م</th><th>الاسم</th><th>الرقم المدني</th><th>نوع الطلب</th><th>المقررات / السبب</th>
+                  <th>م</th><th>رقم الحالة</th><th>الاسم</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th>
                   {anyGraduate ? <th>الوحدات</th> : null}<th>التاريخ</th>
                 </tr></thead>
                 <tbody>{pageCases.map((item: any, index: number) => {
@@ -5079,8 +5139,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   const units = item.requestType === "graduate" ? `${item.passedUnits ?? "—"} / ${item.requiredUnits ?? "—"}` : "—";
                   return <tr key={item.id}>
                     <td className="num">{(pageIndex * CASES_PER_PAGE + index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
+                    <td dir="ltr">{String(item.id || "").slice(0, 8).toUpperCase() || "—"}</td>
                     <td>{item.name || "—"}</td>
                     <td dir="ltr">{item.civil || "—"}</td>
+                    <td>{item.studentSectionName || "—"}</td>
                     <td>{type}</td>
                     <td className="print-break-any">{detail}</td>
                     {anyGraduate ? <td className="num">{units}</td> : null}

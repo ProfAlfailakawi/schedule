@@ -6761,21 +6761,32 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
  * girls' survey are two links, issued the same way as any other.
  *
  * The civil ID is checked against the Kuwaiti checksum — an invented number
- * never reaches the store — then hashed and discarded. The name is asked for,
- * shown back so the student knows their answer landed, and never written. What
- * remains cannot identify anybody, and still tells two people apart.
+ * never reaches the store — then hashed and discarded. The name and civil ID are stored with field-level encryption because the
+ * authorised department explicitly needs them to act on a case. The key is
+ * shared across server instances; the fingerprint remains the duplicate key.
  */
-const surveyFingerprint = (civil: string) =>
-  createHmac("sha256", CALENDAR_SECRET).update(`need|${civil}`).digest("hex").slice(0, 32);
+let studentCaseSecretPromise: Promise<string> | null = null;
+const studentCaseSecret = () => studentCaseSecretPromise ||= Repository.getStudentCaseSecret();
+const surveyFingerprint = async (civil: string) =>
+  createHmac("sha256", await studentCaseSecret()).update(`need|${civil}`).digest("hex").slice(0, 32);
 
-const studentIdentityKey=createHmac("sha256",CALENDAR_SECRET).update("student-case-identity-v1").digest();
-const sealStudentIdentity=(value:string)=>{
-  const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",studentIdentityKey,iv);
+const studentIdentityKey = async () => createHmac("sha256", await studentCaseSecret()).update("student-case-identity-v1").digest();
+const sealStudentIdentity=async(value:string)=>{
+  const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",await studentIdentityKey(),iv);
   const encrypted=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]),tag=cipher.getAuthTag();
   return Buffer.concat([iv,tag,encrypted]).toString("base64url");
 };
-const openStudentIdentity=(value?:string)=>{
-  try{const payload=Buffer.from(String(value||""),"base64url"),iv=payload.subarray(0,12),tag=payload.subarray(12,28),encrypted=payload.subarray(28),cipher=createDecipheriv("aes-256-gcm",studentIdentityKey,iv);cipher.setAuthTag(tag);return Buffer.concat([cipher.update(encrypted),cipher.final()]).toString("utf8");}catch{return"";}
+const openStudentIdentity=async(value?:string)=>{
+  const raw=String(value||""); if(!raw) return "";
+  const decryptWith=async(key:Buffer)=>{const payload=Buffer.from(raw,"base64url"),iv=payload.subarray(0,12),tag=payload.subarray(12,28),encrypted=payload.subarray(28),cipher=createDecipheriv("aes-256-gcm",key,iv);cipher.setAuthTag(tag);return Buffer.concat([cipher.update(encrypted),cipher.final()]).toString("utf8")};
+  try{return await decryptWith(await studentIdentityKey());}
+  catch{
+    // One-release bridge for records written before the shared key existed. If
+    // CALENDAR_SECRET was configured stably, old cases remain readable and can
+    // coexist with new shared-key cases. Per-instance random legacy records are
+    // cryptographically unrecoverable once the writing instance disappears.
+    try{return await decryptWith(createHmac("sha256",CALENDAR_SECRET).update("student-case-identity-v1").digest());}catch{return"";}
+  }
 };
 
 type DegreeRule={degreeUnits:number;fieldTrainingRequired:number;graduateRegularPassed:number;graduateSummerPassed:number};
@@ -6958,7 +6969,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const terms=await Repository.getTerms();
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
   const required=graduateThreshold(rule,termName),summer=isSummerTerm(termName);
-  const eligible=passedUnits>=required,proofToken=issueStudentProof({fingerprint:surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,nameMatched});
+  const eligible=passedUnits>=required,proofToken=issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,nameMatched});
   res.json({eligible,passedUnits,requiredUnits:required,termName,summer,
     message:eligible
       ?`تم التحقق: اجتزت ${passedUnits} وحدة، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}. يمكنك متابعة الطلب.`
@@ -7009,20 +7020,22 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     .map(value => Number(asciiDigits(value))).filter(id => allowed.has(id)))].slice(0, 12);
   if(requestType==="new-course"&&!courseIds.length){res.status(400).json({error:"اختر المقرر الذي تحتاج فتحه"});return;}
   if(requestType==="course-conflict"&&courseIds.length!==2){res.status(400).json({error:"اختر مقررين متعارضين بالضبط"});return;}
-  const graduateReasons=["field-conflict","field-prerequisite-conflict","other"],graduateReason=graduateReasons.includes(String(body.graduateReason))?String(body.graduateReason) as any:undefined;
-  const details=String(body.details||"").trim().slice(0,1200);
+  const graduateReasons=["field-conflict","field-prerequisite-conflict"],graduateReason=graduateReasons.includes(String(body.graduateReason))?String(body.graduateReason) as any:undefined;
+  // Student requests are deliberately structured. No unapproved free-text is
+  // accepted: the department acts on the selected courses and the approved
+  // graduate reasons, not on an open comment field.
+  const details="";
   let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
   if(requestType==="graduate"){
     const proof=verifyStudentProof(String(body.proofToken||""));
-    if(!proof||proof.fingerprint!==surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId){res.status(400).json({error:"ارفع كشف الدرجات وتحقق منه قبل إرسال حالة الخريج"});return;}
+    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId){res.status(400).json({error:"ارفع كشف الدرجات وتحقق منه قبل إرسال حالة الخريج"});return;}
     passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=(await degreeRuleForSection(sectionId,String(section.AdSectionName||""))).degreeUnits;eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
-    if(graduateReason==="other"&&details.length<5){res.status(400).json({error:"اكتب سبب الطلب بوضوح"});return;}
   }
 
-  await Repository.saveStudentNeed({
-    fingerprint: surveyFingerprint(civil),
+  const savedNeed = await Repository.saveStudentNeed({
+    fingerprint: await surveyFingerprint(civil),
     AdCollegeId: resolved.link.AdCollegeId,
     // Keep the student's own section for degree-rule context, but separately
     // pin the request to the department whose survey link they actually opened.
@@ -7035,14 +7048,12 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     surveyLinkId: resolved.link.id,
     AdTermId: resolved.link.AdTermId,
     courseIds,
-    requestType,nameCipher:sealStudentIdentity(name),civilCipher:sealStudentIdentity(civil),details,
+    requestType,nameCipher:await sealStudentIdentity(name),civilCipher:await sealStudentIdentity(civil),details,
     graduateReason,passedUnits,requiredUnits,degreeUnits,eligibility,proofNameMatched:requestType==="graduate"?true:undefined,
   });
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
-  /* The name is echoed once, here, and stored nowhere — so the student sees
-     their own answer landed without the department ever holding it. */
-  res.status(201).json({ name, count: courseIds.length, requestType });
+  res.status(201).json({ name, count: courseIds.length, requestType, caseRef: String(savedNeed.id).slice(0, 8).toUpperCase() });
 });
 
 /** What the students said, for the department. Never names, only numbers. */
@@ -7153,12 +7164,15 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
   const sectionName = String((sections as any[]).find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || "");
   const cohort = surveyCohort(sectionName);
   const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode}]));
-  const cases=needs.map((need:any)=>({
-    id:need.id,createdAt:need.createdAt,name:openStudentIdentity(need.nameCipher),civil:openStudentIdentity(need.civilCipher),
+  const sectionNameById=new Map((sections as any[]).map((row:any)=>[Number(row.AdSectionId),String(row.AdSectionName||"")]));
+  const cases=(await Promise.all(needs.map(async(need:any)=>({
+    id:need.id,createdAt:need.createdAt,name:await openStudentIdentity(need.nameCipher),civil:await openStudentIdentity(need.civilCipher),
+    studentSectionId:Number(need.studentSectionId||need.AdSectionId||0),studentSectionName:sectionNameById.get(Number(need.studentSectionId||need.AdSectionId||0))||"",
+    surveySectionId:Number(need.surveySectionId||sectionId),surveyLinkId:String(need.surveyLinkId||""),
     requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
     passedUnits:need.passedUnits,requiredUnits:need.requiredUnits,degreeUnits:need.degreeUnits,eligibility:need.eligibility||"not-checked",
     courses:(need.courseIds||[]).map((id:number)=>({id,...(courseNameById.get(Number(id))||{name:`مقرر ${id}`,code:""})})),
-  })).sort((a:any,b:any)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+  })))).sort((a:any,b:any)=>String(b.createdAt).localeCompare(String(a.createdAt)));
   res.setHeader("Cache-Control", "no-store");
   res.json({
     ...reading,
@@ -8119,13 +8133,13 @@ function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح 
 /* The free-text box is kept only where somebody reads it. On the two course
    requests the selected courses already say everything the department acts on,
    and an optional box invited an explanation nobody was going to open. */
-var content=kind==="graduate"?'<div class="proof"><strong>ارفع الإثبات · كشف الدرجات</strong><small class="lead">PDF أو صورة واضحة يظهر فيها الاسم والرقم المدني ومجموع الوحدات المجتازة. صوّر الورقة كاملة في إضاءة جيدة ومن زاوية مستقيمة. صور الآيفون بصيغة HEIC مقبولة.</small><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة الإثبات والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label><label class="reason"><input type="radio" name="reason" value="other"><span>سبب آخر</span></label></div><div class="field" style="margin-top:9px"><label>اكتب السبب أو التفاصيل</label><textarea id="details" rows="3" maxlength="1200" placeholder="اكتب باختصار ما يحتاج القسم معرفته"></textarea></div></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
+var content=kind==="graduate"?'<div class="proof"><strong>ارفع الإثبات · كشف الدرجات</strong><small class="lead">PDF أو صورة واضحة يظهر فيها الاسم والرقم المدني ومجموع الوحدات المجتازة. صوّر الورقة كاملة في إضاءة جيدة ومن زاوية مستقيمة. صور الآيفون بصيغة HEIC مقبولة.</small><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة الإثبات والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label></div><p class="hint" style="margin:9px 2px 0">اختر الحالة المعتمدة فقط. لا توجد خانة نص حر حتى تصل الطلبات للقسم بصيغة موحدة قابلة للفرز.</p></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
 host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate")wireProof();else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
 
 function compactProof(file){return new Promise(function(resolve){var type=String(file.type||"").toLowerCase(),name=String(file.name||"").toLowerCase();if(type.indexOf("image/")!==0||/heic|heif/.test(type)||/\.(heic|heif)$/.test(name)){resolve(file);return}var url=URL.createObjectURL(file),img=new Image();img.onload=function(){try{var max=2200,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1));if(scale>=.98&&file.size<1800000){URL.revokeObjectURL(url);resolve(file);return}var canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));var ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw 0;ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);canvas.toBlob(function(blob){URL.revokeObjectURL(url);resolve(blob&&blob.size<file.size?blob:file)},"image/jpeg",.86)}catch(e){URL.revokeObjectURL(url);resolve(file)}};img.onerror=function(){URL.revokeObjectURL(url);resolve(file)};img.src=url})}
 function formatBytes(n){if(!n)return"0 KB";if(n<1048576)return Math.max(1,Math.round(n/1024))+" KB";return(n/1048576).toFixed(1)+" MB"}
 function wireProof(){document.getElementById("verify").onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus"),meter=document.getElementById("uploadMeter"),bar=document.getElementById("uploadBar"),pct=document.getElementById("uploadPct"),bytes=document.getElementById("uploadBytes");if(!file)return fail("اختر كشف الدرجات أولاً");button.disabled=true;button.textContent="يجهّز الملف…";meter.hidden=false;bar.style.width="0%";pct.textContent="0%";bytes.textContent="يجهّز الملف للرفع السريع…";status.className="proof-status";status.textContent="سيظهر تقدم الرفع هنا، ثم تبدأ قراءة الكشف.";compactProof(file).then(function(payload){var original=file.size,sent=payload.size||file.size;if(sent<original)bytes.textContent="تم ضغط الصورة من "+formatBytes(original)+" إلى "+formatBytes(sent);else bytes.textContent="حجم الملف "+formatBytes(sent);button.textContent="يرفع الإثبات…";var xhr=new XMLHttpRequest();xhr.open("POST",'/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof');xhr.setRequestHeader('Content-Type','application/octet-stream');xhr.setRequestHeader('x-file-type',payload===file?(file.type||'application/pdf'):(payload.type||'image/jpeg'));xhr.setRequestHeader('x-student-name',encodeURIComponent(student.name));xhr.setRequestHeader('x-student-civil',student.civil);xhr.setRequestHeader('x-student-section',String(student.sectionId));xhr.upload.onprogress=function(e){if(!e.lengthComputable)return;var n=Math.min(99,Math.round(e.loaded/e.total*100));bar.style.width=n+"%";pct.textContent=n+"%";bytes.textContent="رُفع "+formatBytes(e.loaded)+" من "+formatBytes(e.total)};xhr.upload.onload=function(){bar.style.width="100%";pct.textContent="100%";bytes.textContent="اكتمل الرفع · جاري قراءة الكشف والتحقق…";button.textContent="يقرأ الكشف…"};xhr.onload=function(){bar.style.width="100%";pct.textContent="100%";var d={};try{d=JSON.parse(xhr.responseText||"{}") }catch(e){};button.disabled=false;button.textContent="إعادة التحقق";if(xhr.status<200||xhr.status>=300){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=d.error||"تعذر التحقق";return}proofEligible=!!d.eligible;proofToken=d.proofToken||"";status.className='proof-status '+(proofEligible?'ok':'bad');status.textContent=d.message;if(proofEligible)document.getElementById("graduateOptions").hidden=false};xhr.onerror=function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال."};xhr.send(payload)}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر تجهيز الإثبات للرفع."})}}
-function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),detailsEl=document.getElementById("details"),reason=reasonEl?reasonEl.value:"",note=detailsEl?detailsEl.value.trim():"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من كشف الدرجات أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");if(kind==="graduate"&&reason==="other"&&note.length<5)return fail("اكتب سبب الطلب");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason,details:note})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة بتفاصيلها للمراجعة.<br>هذا الطلب لا يُعد تسجيلاً، وسيظهر للمسؤول المخوّل في مركز الذكاء.</p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
+function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),reason=reasonEl?reasonEl.value:"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&(!picked.length||!otherCourse))return fail("اختر مقرراً من قسمك ومقرراً آخر يتعارض معه");if(kind==="course-conflict"&&picked[0]===otherCourse)return fail("اختر مقررين مختلفين");if(kind==="graduate"&&!proofEligible)return fail("تحقق من كشف الدرجات أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:kind==="course-conflict"?[picked[0],otherCourse]:picked,proofToken:proofToken,graduateReason:reason})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة للمراجعة.<br><strong style="color:var(--ink)">رقم الحالة: '+esc(x.d.caseRef||"—")+'</strong><br>احفظ رقم الحالة أو التقط صورة للشاشة. وإذا غيّرت اختيارك، افتح الرابط نفسه وأرسل الطلب من جديد فيُحدّث طلبك الحالي.</p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
 fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student.sectionId=Number(data.sectionId)||0;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
 </script></body></html>`;
 }

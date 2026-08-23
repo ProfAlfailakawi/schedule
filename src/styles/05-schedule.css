@@ -7813,3 +7813,27 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
     max-width:100%!important;
   }
 }
+
+/* V36 — every desktop schedule projection yields to the expanded rail --------
+   Week already reserved the full navigation width on hover/focus. Agenda and
+   rooms were still measured against the collapsed 72px spine, so the same rail
+   covered their right edge. All three projections now share the same contract. */
+@media screen and (min-width:1120px){
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.schedule-agenda-surface),
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.schedule-agenda-surface),
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.rooms-surface),
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.rooms-surface){
+    margin-inline-start:var(--sidebar-w)!important;
+  }
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.schedule-agenda-surface) .content-frame,
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.schedule-agenda-surface) .content-frame,
+  html[data-rail="closed"] .sidebar:hover ~ .app-main:has(.rooms-surface) .content-frame,
+  html[data-rail="closed"] .sidebar:focus-within ~ .app-main:has(.rooms-surface) .content-frame{
+    min-width:0!important;
+    max-width:100%!important;
+  }
+}
+.schedule-page>.schedule-agenda-surface,
+.schedule-page>.rooms-surface,
+.app-main:has(.schedule-agenda-surface),
+.app-main:has(.rooms-surface){min-width:0;max-width:100%}

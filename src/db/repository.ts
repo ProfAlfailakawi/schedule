@@ -826,7 +826,7 @@ const SYSTEM_IMPORT_JOB_COLLECTION = "_systemImportJobs";
 // Operational diagnostics are deliberately not part of a business backup: they
 // expire automatically, contain no scheduling source-of-truth, and restoring an
 // old copy of them would make the experience-health reading lie about "recent" use.
-const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, SYSTEM_EXPORT_JOB_COLLECTION, SYSTEM_IMPORT_JOB_COLLECTION, "sessions", "clientTelemetry"]);
+const SYSTEM_EXPORT_EXCLUDED_COLLECTIONS = new Set([SYSTEM_RESTORE_COLLECTION, SYSTEM_EXPORT_JOB_COLLECTION, SYSTEM_IMPORT_JOB_COLLECTION, "sessions", "clientTelemetry", "systemSecrets"]);
 const LOCAL_RESTORE_DIR = () => path.join(DB_DIR, "system-restore-points");
 const LOCAL_EXPORT_DIR = () => path.join(DB_DIR, "system-export-jobs");
 const LOCAL_IMPORT_DIR = () => path.join(DB_DIR, "system-import-jobs");
@@ -1970,7 +1970,53 @@ async function resetSystemKeepingRoot(rootAdminId: number): Promise<void> {
   }
   refreshSystemCachesAfterMutation();
 }
+
+const STUDENT_CASE_SECRET_DOC = "systemSecrets/student-case-identity-v1";
+let studentCaseSecretCache = "";
+/**
+ * Stable key material for student-case fingerprints and field-level identity
+ * encryption. Cloud Run can serve two consecutive requests from two different
+ * instances, so a per-process random secret makes a case written by instance A
+ * unreadable to instance B. Prefer an operator-owned environment secret; when
+ * that is not configured, create one shared secret once in Firestore. Local
+ * mode keeps the same 0600 key beside the private database, outside the release.
+ */
+async function getOrCreateStudentCaseSecret(): Promise<string> {
+  const configured = String(process.env.STUDENT_CASE_SECRET || process.env.CALENDAR_SECRET || "").trim();
+  if (configured) return configured;
+  if (studentCaseSecretCache) return studentCaseSecretCache;
+
+  if (firestoreDb && !demoSandboxContext.getStore()) {
+    const ref = firestoreDb.doc(STUDENT_CASE_SECRET_DOC);
+    const secret = await firestoreDb.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      const existing = String(snap.data()?.secret || "").trim();
+      if (existing) return existing;
+      const created = randomBytes(32).toString("hex");
+      tx.set(ref, { secret: created, createdAt: new Date().toISOString(), purpose: "student-case-identity-v1" });
+      return created;
+    });
+    studentCaseSecretCache = secret;
+    return secret;
+  }
+
+  const file = path.join(DB_DIR, "student-case-identity.key");
+  if (fs.existsSync(file)) {
+    studentCaseSecretCache = fs.readFileSync(file, "utf8").trim();
+    if (studentCaseSecretCache) return studentCaseSecretCache;
+  }
+  fs.mkdirSync(DB_DIR, { recursive: true, mode: 0o700 });
+  const created = randomBytes(32).toString("hex");
+  try { fs.writeFileSync(file, `${created}\n`, { mode: 0o600, flag: "wx" }); }
+  catch (error: any) {
+    if (error?.code !== "EEXIST") throw error;
+  }
+  studentCaseSecretCache = fs.existsSync(file) ? fs.readFileSync(file, "utf8").trim() : created;
+  return studentCaseSecretCache || created;
+}
+
 export const Repository = {
+  getStudentCaseSecret: async (): Promise<string> => getOrCreateStudentCaseSecret(),
   /** Lets the server drop any cached identity the moment accounts change. */
   onIdentityChanged: (listener: () => void) => { identityListeners.add(listener); },
 

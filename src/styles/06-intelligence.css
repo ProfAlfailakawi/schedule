@@ -3991,3 +3991,41 @@ button.twin-delta{width:100%}
 .import-instructor-editor{display:grid;gap:5px;min-width:170px}
 .import-instructor-editor small{font-size:10px;line-height:1.35;color:var(--muted);white-space:normal}
 .import-instructor-editor select{max-width:220px!important;width:100%}
+
+/* V36 — student-case register: one scan, four useful views ------------------
+   The register is operational data, not a static print preview. Filters keep
+   the three request families legible without hiding their counts, while print
+   controls expose exactly the four reports the department uses. */
+.student-case-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.student-case-filters,.student-case-print-actions{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.student-case-filters button{min-height:36px;display:inline-flex;align-items:center;gap:8px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--muted);font-size:11px;font-weight:700}
+.student-case-filters button b{min-width:22px;height:22px;display:grid;place-items:center;border-radius:999px;background:var(--surface-2);color:var(--ink);font-size:10px}
+.student-case-filters button.active{border-color:color-mix(in srgb,var(--accent) 48%,var(--line));background:var(--accent-softer);color:var(--accent-ink)}
+.student-case-filters button.active b{background:var(--surface);color:var(--accent-ink)}
+.student-case-print-actions .btn{min-height:36px;padding-inline:11px}
+.student-cases-table{min-width:1180px}
+.student-cases-table td code{font:700 10px/1.4 var(--font-mono);letter-spacing:.03em;color:var(--muted);white-space:nowrap}
+@media(max-width:760px){.student-case-toolbar{align-items:stretch}.student-case-filters,.student-case-print-actions{width:100%}.student-case-filters button{flex:1;justify-content:center}.student-case-print-actions .btn{flex:1}}
+
+/* V37 — import editor mirrors Add/Edit Schedule vocabularies ---------------- */
+.import-course-picker,.import-room-editor,.import-section-editor{display:grid;gap:6px;min-width:150px}
+.import-course-picker label{display:flex;align-items:center;gap:6px;min-height:36px;padding:0 9px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.import-course-picker label svg{width:14px;height:14px;color:var(--muted);flex:none}
+.import-course-picker label input{min-width:0;width:100%;border:0!important;box-shadow:none!important;background:transparent!important;padding:0!important;min-height:32px!important}
+.import-course-picker select,.import-room-editor input,.import-section-editor input{width:100%;min-height:38px;border:1px solid var(--line);border-radius:10px;background:var(--surface);padding:0 9px;color:var(--ink)}
+.import-course-picker small,.import-room-editor small,.import-section-editor small{font-size:9.5px;line-height:1.45;color:var(--muted);white-space:normal}
+.import-row-review td{padding:0!important;background:color-mix(in srgb,var(--surface-2) 72%,transparent)!important;border-top:0!important}
+.import-row-review-grid{display:grid;gap:8px;padding:10px 12px 12px}
+.import-review-card{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:start;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:13px;background:var(--surface);text-align:start}
+.import-review-card>svg{width:17px;height:17px;margin-top:2px;color:var(--muted)}
+.import-review-card strong{display:block;font-size:11px;color:var(--ink)}
+.import-review-card span,.import-review-card p{display:block;margin-top:2px;font-size:10px;line-height:1.55;color:var(--muted)}
+.import-review-card button{align-self:center;min-height:34px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface-2);font-size:10px;font-weight:700;color:var(--ink)}
+.import-review-card button svg{width:13px;height:13px}
+.import-review-card.room-new{border-color:color-mix(in srgb,var(--brass) 40%,var(--line));background:color-mix(in srgb,var(--brass) 6%,var(--surface))}
+.import-review-card.room-new>svg{color:var(--brass)}
+.import-review-card.conflict{border-color:color-mix(in srgb,var(--danger) 42%,var(--line));background:color-mix(in srgb,var(--danger-soft) 55%,var(--surface))}
+.import-review-card.conflict>svg{color:var(--danger)}
+.import-review-card.checking{border-color:color-mix(in srgb,var(--accent) 32%,var(--line));background:var(--accent-softer)}
+.import-review-card.checking>svg{color:var(--accent)}
+@media(max-width:760px){.import-review-card{grid-template-columns:28px minmax(0,1fr)}.import-review-card button{grid-column:1/-1;justify-self:stretch;justify-content:center}}
