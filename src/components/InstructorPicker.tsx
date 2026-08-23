@@ -34,6 +34,8 @@ interface Props {
   instructors: Instructor[];
   /** Ids already teaching in the open department this term, most-loaded first. */
   departmentIds: number[];
+  /** Delegates explicitly selected to teach in the open term. */
+  visitingIds?: Iterable<number>;
   onCreated?: (instructor: Instructor) => void;
   onSelected?: (instructor: Instructor) => void;
   collegeId?: number;
@@ -57,7 +59,7 @@ const fold = (value: string) =>
 const withoutTitles = (value: string) =>
   fold(value).replace(/^(?:ا?د|ا|م|أ|prof|dr|mr|ms)\s+/g, "").trim();
 
-export default function InstructorPicker({ value, onChange, instructors, departmentIds, onCreated, onSelected, collegeId = 0, termId = 0, disabled }: Props) {
+export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, onCreated, onSelected, collegeId = 0, termId = 0, disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -98,6 +100,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
   }, [query, collegeId, termId]);
 
   const departmentRank = useMemo(() => new Map(departmentIds.map((id, index) => [id, index])), [departmentIds]);
+  const visitingSet = useMemo(() => new Set(Array.from(visitingIds || [], Number).filter(Boolean)), [visitingIds]);
 
   // A retired or sabbatical teacher keeps their existing appointments but is not
   // offered for new ones, so their name stops appearing where it should not (Note 2).
@@ -192,7 +195,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
       >
         <UserRound aria-hidden="true" />
         <span className="instructor-identity">
-          <b>{selected ? selected.AdInstructorName : "اختر أستاذ المقرر"}</b>
+          <b>{selected ? <>{selected.AdInstructorName}{visitingSet.has(selected.AdInstructorId) ? <em className="instructor-visiting-label">منتدب</em> : null}</> : "اختر أستاذ المقرر"}</b>
           {selected?.AdInstructorCivil ? <small dir="ltr">{selected.AdInstructorCivil}</small> : null}
         </span>
       </button>
@@ -230,10 +233,10 @@ export default function InstructorPicker({ value, onChange, instructors, departm
                     by side, twelve monospace digits left a department's names
                     truncated to a single letter. */}
                 <span className="instructor-identity">
-                  <b>{person.AdInstructorName}</b>
+                  <b>{person.AdInstructorName}{visitingSet.has(person.AdInstructorId) ? <em className="instructor-visiting-label">منتدب</em> : null}</b>
                   <small dir="ltr">{person.AdInstructorCivil || "—"}</small>
                 </span>
-                {departmentRank.has(person.AdInstructorId) ? <i className="instructor-department-mark" title="يدرّس في هذا القسم" aria-label="يدرّس في هذا القسم"><CircleDot aria-hidden="true" /></i> : null}
+                {departmentRank.has(person.AdInstructorId) ? <i className="instructor-department-mark" title={visitingSet.has(person.AdInstructorId) ? "منتدب يدرّس هذا الفصل" : "يدرّس في هذا القسم"} aria-label={visitingSet.has(person.AdInstructorId) ? "منتدب يدرّس هذا الفصل" : "يدرّس في هذا القسم"}><CircleDot aria-hidden="true" /></i> : null}
                 {person.AdInstructorId === value ? <Check aria-hidden="true" /> : null}
               </button>
             )) : (

@@ -7749,3 +7749,6 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .schedule-phone .schedule-agenda-surface .agenda-head,
   .schedule-phone .schedule-agenda-surface .agenda-legend{display:none!important}
 }
+
+/* A term delegate is a normal instructor choice with one clear provenance tag. */
+.instructor-visiting-label{display:inline-flex;align-items:center;margin-inline-start:7px;padding:2px 7px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:999px;background:var(--accent-softer);color:var(--accent);font-size:11px;font-style:normal;font-weight:800;line-height:1.35;vertical-align:middle;white-space:nowrap}

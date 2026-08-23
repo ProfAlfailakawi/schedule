@@ -1300,9 +1300,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * worse than not guessing — so the number is filled in only while the field
    * is still untouched for this course, and anything typed by hand wins.
    */
-  const nextSectionCode = (courseId: number, termId: number) => {
+  const nextSectionCode = (courseId: number, termId: number, excludeId?: number | null) => {
     const used = rows
-      .filter(row => Number(row.AdCourseId) === Number(courseId) && Number(row.AdTermId) === Number(termId))
+      .filter(row => (!excludeId || Number(row.id) !== Number(excludeId)) && Number(row.AdCourseId) === Number(courseId) && Number(row.AdTermId) === Number(termId))
       .map(row => Number(String(row.SCode || "").trim()))
       .filter(value => Number.isFinite(value) && value > 0);
     if (!used.length) return "101";
@@ -1986,10 +1986,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             ? fetchJson(`/api/visiting-roster?collegeId=${collegeId}&sectionId=${sectionId}&termId=${termId}`, { signal: controller.signal }).catch(() => null)
             : Promise.resolve(null),
         ]);
+        const fallbackInstructorMap = new Map<number, any>();
+        [...(Array.isArray(instructorsData) ? instructorsData : []), ...(Array.isArray(roster?.instructors) ? roster.instructors : [])]
+          .forEach((person: any) => {
+            const id = Number(person?.AdInstructorId || 0);
+            if (id) fallbackInstructorMap.set(id, person);
+          });
+        const fallbackInstructors = Array.from(fallbackInstructorMap.values());
         return apply({
           context: { collegeId, sectionId, termId: termId || Number((lookup?.terms || terms)[0]?.AdTermId || 0) },
           rows: rowsData,
-          instructors: instructorsData,
+          instructors: fallbackInstructors,
           courses: coursesData,
           visitingInstructorIds: roster?.instructorIds || [],
         });
@@ -2591,7 +2598,17 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       setConflicts([]);
       setSolutions([]);
       setEditId(row.id);
-      const { id: _id, AdCourseName: name, ...values } = row;
+      const { id: _id, AdCourseName: name, ...rowValues } = row;
+      const values = { ...rowValues };
+      // Imported/legacy rows can occasionally carry a course without a section
+      // number. Editing must never open with an inexplicably empty section: use
+      // the next free number only when the stored row truly has none.
+      if (!String(values.SCode || "").trim() && Number(values.AdCourseId)) {
+        values.SCode = nextSectionCode(Number(values.AdCourseId), Number(values.AdTermId) || filterTerm || 0, row.id);
+        sectionAutofilled.current = true;
+      } else {
+        sectionAutofilled.current = false;
+      }
       setForm(values);
       setCourseName(name || courseById.get(row.AdCourseId)?.CourseName || "");
       // A row open in someone's form is the quietest way to lose a change: it
@@ -7817,11 +7834,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     onChange={(e) => {
                       const courseId = Number(e.target.value) || 0;
                       setForm((p) => {
+                        const previousCourseId = Number(p.AdCourseId) || 0;
                         const next = { ...p, AdCourseId: courseId };
-                        // Offer the next free section number for this course,
-                        // unless a number was typed by hand.
-                        if (!editId && courseId && (!p.SCode || sectionAutofilled.current)) {
-                          next.SCode = nextSectionCode(courseId, Number(p.AdTermId) || filterTerm || 0);
+                        // The same assistance applies while editing. Opening an
+                        // existing appointment keeps its saved section number;
+                        // changing the course (or fixing an empty section) fills
+                        // the next free section automatically.
+                        const courseChanged = Boolean(courseId && courseId !== previousCourseId);
+                        if (courseId && (courseChanged || !p.SCode || sectionAutofilled.current)) {
+                          next.SCode = nextSectionCode(courseId, Number(p.AdTermId) || filterTerm || 0, editId);
                           sectionAutofilled.current = true;
                         }
                         return next;
@@ -7864,6 +7885,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     onChange={(id) => setForm((p) => ({ ...p, AdInstructorId: id }))}
                     instructors={instructors as any}
                     departmentIds={departmentInstructorIds}
+                    visitingIds={visitingIds}
                     onCreated={(person) =>
                       setInstructors((current: any[]) =>
                         sortByName([...current, person], (row: any) => row.AdInstructorName))
@@ -11291,7 +11313,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           instructors={instructors as any}
           departmentIds={departmentInstructorIds}
           terms={terms as any}
-          onChanged={() => { void loadRows(); }}
+          onChanged={() => {
+            // A delegate selected for this term must become an instructor choice
+            // immediately in both add and edit, not only after a page reload.
+            setLiveFeedSerial(serial => serial + 1);
+            void loadWorkspace(filterCollege, filterSection, filterTerm);
+          }}
           onClose={() => setTransferOpen(false)}
         />
       ) : null}
