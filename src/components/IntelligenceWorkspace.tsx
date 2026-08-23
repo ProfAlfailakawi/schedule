@@ -7,6 +7,7 @@ import {
   BrainCircuit,
   Building2,
   CalendarClock,
+  Ban,
   CheckCircle2,
   ChevronLeft,
   CircleHelp,
@@ -1035,6 +1036,34 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [surveyCopied, setSurveyCopied] = useState<string | null>(null);
   const surveyUrl = (id: string) => `${window.location.origin}/q/${id}`;
 
+  /**
+   * Close the students' door.
+   *
+   * The link could be issued and could expire on its own, but there was no way
+   * to end it early — and a survey that has to close with the add-drop week
+   * cannot wait for its own expiry. Revoking is immediate and irreversible for
+   * that link; a new one can always be issued.
+   */
+  const stopSurvey = async (id: string) => {
+    const ok = await visualConfirm({
+      title: "إيقاف رابط الاستبيان",
+      message: "سيتوقف الرابط فوراً ولن يفتح لأي طالب بعد الآن. الحالات المرسلة تبقى محفوظة. يمكنك إصدار رابط جديد متى شئت.",
+      confirmLabel: "أوقف الرابط",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setBusy(true); setError(null);
+    try {
+      await fetchJson(`/api/share/${encodeURIComponent(id)}`, { method: "DELETE" });
+      setMessage("أُوقف رابط الاستبيان. لم يعد يفتح لأي طالب.");
+      await reload();
+    } catch (e: any) {
+      setError(smartMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const issueSurvey = async () => {
     setBusy(true);
     setError(null);
@@ -1387,14 +1416,22 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
    *  professor one identical template rather than two subtly different ones. */
   const downloadImportTemplate = async () => {
     const XLSX = await import("xlsx");
-    const headers = ["رمز المقرر", "المقرر الدراسي", "الشعبة", "أستاذ المقرر", "الرقم المدني", "الأيام", "الوقت", "المبنى", "القاعة"];
+    /* Reversed on purpose: with Arabic headers the sheet is read right to left,
+       so the hall must be the FIRST column for the row to arrive in the order a
+       person fills it in — course last is how the printed timetable reads too.
+       The importer matches by header name, so order is presentation only. */
+    const headers = ["القاعة", "المبنى", "الوقت", "الأيام", "الرقم المدني", "أستاذ المقرر", "الشعبة", "المقرر الدراسي", "رمز المقرر"];
+    /* Placeholders, not people. Numbered names cannot be mistaken for a real
+       instructor, and the civil id starts with 3 — a century Kuwait has not
+       issued — so a sample row left in by accident fails validation instead of
+       importing as somebody. */
     const sample = [
-      ["١٠١", "اسم المقرر الأول", "501", "د. فلان الفلاني", "300123100006", "الأحد - الثلاثاء", "08:00-09:20", "B9", "F10"],
-      ["١٠٢", "اسم المقرر الثاني", "502", "د. علان العلاني", "", "الاثنين - الأربعاء", "11:00-12:20", "B9", "F12"],
+      ["F10", "B9", "08:00-09:20", "الأحد - الثلاثاء", "300123100006", "اسم دكتور ١", "501", "اسم المقرر الأول", "١٠١"],
+      ["F12", "B9", "11:00-12:20", "الاثنين - الأربعاء", "", "اسم دكتور ٢", "502", "اسم المقرر الثاني", "١٠٢"],
     ];
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
     (sheet as any)["!views"] = [{ RTL: true }];
-    (sheet as any)["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 8 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 13 }, { wch: 9 }, { wch: 9 }];
+    (sheet as any)["!cols"] = [{ wch: 9 }, { wch: 9 }, { wch: 13 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 8 }, { wch: 30 }, { wch: 12 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, sheet, "الجدول");
     XLSX.writeFile(wb, "نموذج-استيراد-الجدول.xlsx");
@@ -2793,6 +2830,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                               <Printer /> اطبع الرمز
                             </GhostButton>
                           ) : null}
+                          <GhostButton
+                            className="danger-action"
+                            data-guide-ignore="إيقاف رابط عام له تأكيد صريح ولا يمسّ الجدول"
+                            onClick={() => void stopSurvey(link.id)}
+                            disabled={busy}
+                            title="إيقاف الرابط فوراً"
+                          >
+                            <Ban /> أوقف الرابط
+                          </GhostButton>
                         </div>
                       </div>
                       {surveyQr?.id === link.id ? (
@@ -4750,7 +4796,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </div>
             <span className="surface-kicker">استيراد الجدول</span>
             <h2>ارفع الجدول وراجعه قبل الحفظ</h2>
-            <p>نزّل النموذج، يملؤه الدكتور ثم ارفعه؛ أو انسخ جدول الجهة المعتمد من PDF إلى فصل فارغ. المعاينة أولاً، ولا يُكتب شيء قبل موافقتك.</p>
+            <p>نزّل النموذج ثم ارفعه، أو انسخ جدول PDF المعتمد إلى فصل فارغ.</p>
             <div className="import-entry-actions">
               <SecondaryButton type="button" data-guide-ignore="تنزيل نموذج محلي لا يغيّر الجدول" onClick={() => void downloadImportTemplate()} disabled={busy}>
                 <Download /> تحميل النموذج
@@ -4770,7 +4816,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </label>
             </div>
             <small>
-              <ShieldCheck /> معاينة أولاً، دون تعديل الجدول. الملف يُقرأ ولا يُحفظ.
+              <ShieldCheck /> معاينة أولاً · الملف يُقرأ ولا يُحفظ
             </small>
             {importProgress ? (() => {
               const total = Math.max(importProgress.pages || 0, 1);
@@ -4797,6 +4843,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     : countOf(importPreview.issues.length, AR.note)}
                 </Badge>
               </div>
+              {importPreview.legibility && importPreview.legibility.confidence < 55 ? (
+                <Notice>
+                  جودة الصورة منخفضة ({Number(importPreview.legibility.confidence).toLocaleString("ar-KW-u-nu-latn")}٪).
+                  قرأتُ ما استطعت، لكن نسخة أوضح ستقلّل الملاحظات كثيراً.
+                </Notice>
+              ) : null}
               {importPreview.issues.length ? (
                 <div className="import-issues">
                   {importPreview.issues

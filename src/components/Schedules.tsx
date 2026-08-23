@@ -616,8 +616,27 @@ type RefusalReason = { kind: "room" | "instructor" | "cohort" | "other"; text: s
  * a wall at all. An advisory belongs beside a move that succeeded, never in
  * place of one.
  */
+/**
+ * The only three things that may STOP a move: a room, an instructor, or a
+ * cohort already booked at that time. Everything else the system knows — how
+ * often a hall has been used, how a department usually behaves, how the day
+ * looks afterwards — is a remark, and a remark never refuses anything.
+ *
+ * This is one predicate rather than a filter repeated per call site, because
+ * an advisory that leaks into any one of them becomes «تعذّر النقل: هذه القاعة
+ * لم تُستعمل منذ ٤ فصول» — a fact about the past standing in the way of the
+ * present.
+ */
+export const isBlockingConflict = (item: any): boolean => {
+  if (!item) return false;
+  if (item.soft === true) return false;
+  if (item.type === "memory" || item.type === "advice" || item.type === "regulation") return false;
+  return item.severity === "high" || item.type === "duplicate"
+    || item.type === "room" || item.type === "instructor" || item.type === "cohort";
+};
+
 const condenseRefusalReasons = (items: Array<{ message?: string; detail?: string; type?: string; soft?: boolean; severity?: string }>): RefusalReason[] =>
-  (items || []).filter(item => !item?.soft && item?.type !== "memory").slice(0, 3).map((item): RefusalReason => {
+  (items || []).filter(isBlockingConflict).slice(0, 3).map((item): RefusalReason => {
     const message = String(item?.message || "").replace(/[،,]/g, " ").replace(/\s+/g, " ").trim();
     const detail = String(item?.detail || "").replace(/\s+/g, " ").trim();
     const kind: RefusalReason["kind"] =
@@ -5861,6 +5880,59 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       return next;
     });
 
+  /**
+   * Arrows, because not every desk has a trackpad.
+   *
+   * The ribbon scrolls by wheel and by drag, but a plain two-button mouse has
+   * neither a horizontal wheel nor a swipe — and the fade at the edge says
+   * "there is more" without offering any way to reach it. These two buttons are
+   * that way. They appear only while the ribbon actually overflows, and each
+   * press moves it by most of a screenful so a long key can be crossed in a few
+   * clicks.
+   */
+  const LegendScroller = ({ children, label }: { children: React.ReactNode; label: string }) => {
+    const rail = useRef<HTMLDivElement | null>(null);
+    const [reach, setReach] = useState({ start: false, end: false });
+    const measure = useCallback(() => {
+      const node = rail.current;
+      if (!node) return;
+      // In RTL, scrollLeft runs negative; magnitude is what matters either way.
+      const offset = Math.abs(node.scrollLeft);
+      const max = node.scrollWidth - node.clientWidth;
+      setReach({ start: offset > 4, end: max - offset > 4 });
+    }, []);
+    useEffect(() => {
+      measure();
+      const node = rail.current;
+      if (!node || typeof ResizeObserver === "undefined") return;
+      const observer = new ResizeObserver(measure);
+      observer.observe(node);
+      return () => observer.disconnect();
+    }, [measure, children]);
+    const nudge = (direction: 1 | -1) => {
+      const node = rail.current;
+      if (!node) return;
+      node.scrollBy({ left: direction * Math.max(160, node.clientWidth * 0.8), behavior: "smooth" });
+    };
+    return (
+      <div className="week-legend-rail">
+        <button
+          type="button" className="week-legend-arrow" data-edge="start" hidden={!reach.start}
+          data-guide-ignore="تمرير مفتاح الألوان أفقياً فقط" onClick={() => nudge(1)}
+          aria-label="عرض ما قبله" title="عرض ما قبله"
+        ><ChevronRight aria-hidden="true" /></button>
+        <div className="week-legend-chips" ref={rail} onWheel={horizontalWheel} onScroll={measure} title={label}>
+          {children}
+        </div>
+        <button
+          type="button" className="week-legend-arrow" data-edge="end" hidden={!reach.end}
+          data-guide-ignore="تمرير مفتاح الألوان أفقياً فقط" onClick={() => nudge(-1)}
+          aria-label="عرض ما بعده" title="عرض ما بعده"
+        ><ChevronLeft aria-hidden="true" /></button>
+      </div>
+    );
+  };
+
   /** A normal mouse wheel moves long filter ribbons horizontally on desktop. */
   const horizontalWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     const node = event.currentTarget;
@@ -6115,7 +6187,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         : (decision?.reasons || []).map((text: string) => ({ message: String(text) }));
       const list = condenseRefusalReasons(raw as any);
       const summary = decision?.summary || "هذا الموضع غير متاح وفق قواعد الجدول.";
-      setRefusal(list.length ? { reasons: list, summary } : { reasons: [{ kind: "other", text: summary, entity: summary, state: "" }], summary });
+      /* No blocking wall left after filtering means nothing actually refused
+         this move — only advice did. Falling back to the decision summary here
+         used to reprint that advice under «تعذّر النقل», which is how a remark
+         about a hall's history ended up reading as a refusal. */
+      if (list.length) setRefusal({ reasons: list, summary });
+      else { setRefusal(null); setPhysicsNotice(summary); }
       /* The screen-reader line stays a sentence — one utterance, not four. */
       setPhysicsNotice(`رفض النقل: ${list.map(item => item.text).join(". ") || summary}`);
     },
@@ -8888,6 +8965,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             <button
               type="button"
               className="schedule-radar radar-clash"
+              data-guide-ignore="يبرز التداخلات القائمة على الأسبوع للقراءة فقط ولا يعدّل الجدول"
               onClick={() => {
                 if (phoneReadOnly) {
                   setReviewOpen(true);
@@ -8904,6 +8982,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   what the honest word describes. */}
               <AlertTriangle aria-hidden="true" />
               {countOf(liveClash.pairs, AR.clash)}
+              {/* The count alone said nothing about what pressing it would do,
+                  so the chip read as a warning with no exit. */}
+              <em>اعرضها على الأسبوع</em>
             </button>
           ) : null}
           {/* What arrived from the department's own instructors. It is the only
@@ -9529,7 +9610,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         />
                       </span>
                     ) : null}
-                    <div className="week-legend-chips" onWheel={horizontalWheel} title="مرّر عجلة الماوس للتنقل يميناً ويساراً">
+                    <LegendScroller label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
                       {legendShown.length === 0 ? <span className="week-legend-none">لا مطابقة</span> : null}
                       {legendShown.map(item => {
                         const folded = hueHidden.has(item.key);
@@ -9558,7 +9639,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                           </span>
                         );
                       })}
-                    </div>
+                    </LegendScroller>
                     {hueHidden.size ? (
                       <button type="button" className="week-legend-clear is-folded-clear" onClick={() => setHueHidden(new Set())}>
                         <EyeOff aria-hidden="true" />أعد المطوي <b className="num">{hueHidden.size.toLocaleString("ar-KW-u-nu-latn")}</b>
@@ -9910,7 +9991,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </span>
                 ) : null}
-                <div className="week-legend-chips" onWheel={horizontalWheel} title="مرّر عجلة الماوس للتنقل يميناً ويساراً">
+                <LegendScroller label="استخدم السهمين أو عجلة الماوس للتنقل يميناً ويساراً">
                   {legendShown.length === 0 ? (
                     <span className="week-legend-none">لا مطابقة</span>
                   ) : null}
@@ -9950,7 +10031,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       </span>
                     );
                   })}
-                </div>
+                </LegendScroller>
                 {hueHidden.size ? (
                   <button
                     type="button"
@@ -10669,6 +10750,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           buildings={buildingOptions}
           hallsFor={hallsOf}
           conflictOf={quickConflict}
+          nextSectionCode={(courseId) => nextSectionCode(courseId, Number(filterTerm) || 0)}
           saving={saving}
           error={quickError}
           onCancel={() => { setQuick(null); setQuickError(null); }}

@@ -47,6 +47,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [xlsxPreview, setXlsxPreview] = useState<any>(null);
   const [xlsxDraft, setXlsxDraft] = useState("");
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
+  const [readProgress, setReadProgress] = useState<{ pct: number; message: string } | null>(null);
   const [fromId, setFromId] = useState(0);
   const [toId, setToId] = useState(0);
   const [retirePreview, setRetirePreview] = useState<number | null>(null);
@@ -205,22 +206,22 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
    */
   const downloadTemplate = async () => {
     const XLSX = await import("xlsx");
-    const headers = ["رمز المقرر", "المقرر الدراسي", "الشعبة", "أستاذ المقرر", "الرقم المدني", "الأيام", "الوقت", "المبنى", "القاعة"];
-    /* Placeholders, not people. The old sample carried real instructor names, a
-       real course title and a well-formed civil id, which is an invitation to
-       leave a row in by accident and a privacy problem on a file that gets
-       mailed around. These names belong to nobody and the id starts with 3, a
-       century Kuwait has not issued. */
+    /* Reversed on purpose: with Arabic headers the sheet is read right to left,
+       so the hall must be the FIRST column for the row to arrive in the order a
+       person fills it in — course last is how the printed timetable reads too.
+       The importer matches by header name, so order is presentation only. */
+    const headers = ["القاعة", "المبنى", "الوقت", "الأيام", "الرقم المدني", "أستاذ المقرر", "الشعبة", "المقرر الدراسي", "رمز المقرر"];
+    /* Placeholders, not people. Numbered names cannot be mistaken for a real
+       instructor, and the civil id starts with 3 — a century Kuwait has not
+       issued — so a sample row left in by accident fails validation instead of
+       importing as somebody. */
     const sample = [
-      ["١٠١", "اسم المقرر الأول", "501", "د. فلان الفلاني", "300123100006", "الأحد - الثلاثاء", "08:00-09:20", "B9", "F10"],
-      ["١٠٢", "اسم المقرر الثاني", "502", "د. علان العلاني", "", "الاثنين - الأربعاء", "11:00-12:20", "B9", "F12"],
+      ["F10", "B9", "08:00-09:20", "الأحد - الثلاثاء", "300123100006", "اسم دكتور ١", "501", "اسم المقرر الأول", "١٠١"],
+      ["F12", "B9", "11:00-12:20", "الاثنين - الأربعاء", "", "اسم دكتور ٢", "502", "اسم المقرر الثاني", "١٠٢"],
     ];
     const sheet = XLSX.utils.aoa_to_sheet([headers, ...sample]);
-    /* Arabic headers in a left-to-right sheet put the course code at the far
-       left and the hall at the far right, so the row reads backwards from the
-       order a person fills it in. */
     (sheet as any)["!views"] = [{ RTL: true }];
-    (sheet as any)["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 8 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 13 }, { wch: 9 }, { wch: 9 }];
+    (sheet as any)["!cols"] = [{ wch: 9 }, { wch: 9 }, { wch: 13 }, { wch: 22 }, { wch: 15 }, { wch: 22 }, { wch: 8 }, { wch: 30 }, { wch: 12 }];
     const guide = XLSX.utils.aoa_to_sheet([
       ["كيف يفهم الاستيراد ملفك"],
       [""],
@@ -263,15 +264,43 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
   const readPdf = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
+    setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId)});
       const response=await fetch(`/api/intelligence/pdf-import?${query}`,{
-        method:"POST",headers:{"Content-Type":"application/octet-stream","x-file-name":encodeURIComponent(file.name)},body:await file.arrayBuffer(),
+        method:"POST",
+        headers:{"Content-Type":"application/octet-stream","Accept":"application/x-ndjson","x-file-name":encodeURIComponent(file.name)},
+        body:await file.arrayBuffer(),
       });
-      const data=await response.json();
-      if(!response.ok)throw new Error(data.error||"تعذرت قراءة PDF");
+      /* Reading a scan takes over a minute. The server streams one JSON object
+         per line while it works, and the result on the last line, so the bar
+         advances page by page instead of the button simply freezing. */
+      const reader=response.body?.getReader();
+      const decoder=new TextDecoder();
+      let buffer="",data:any=null,failure="";
+      if(reader)for(;;){
+        const {value,done}=await reader.read();
+        if(done)break;
+        buffer+=decoder.decode(value,{stream:true});
+        let cut=buffer.indexOf("\n");
+        while(cut>=0){
+          const line=buffer.slice(0,cut).trim(); buffer=buffer.slice(cut+1); cut=buffer.indexOf("\n");
+          if(!line)continue;
+          let event:any; try{event=JSON.parse(line);}catch{continue;}
+          if(event.type==="progress"){
+            const total=Math.max(Number(event.pages)||0,1);
+            const seen=event.phase==="match"?total:Math.max(0,Number(event.page)||0);
+            setReadProgress({pct:Math.min(97,Math.max(4,Math.round(seen/total*100))),message:String(event.message||"")});
+          }
+          else if(event.type==="done")data=event.result;
+          else if(event.type==="error")failure=event.error;
+        }
+      }
+      if(failure)throw new Error(failure);
+      if(!data){const rest=buffer.trim();if(rest){try{const tail=JSON.parse(rest);data=tail.result||tail;}catch{/* no trailing json */}}}
+      if(!data)throw new Error("تعذرت قراءة PDF");
       setXlsxPreview({...data,valid:Boolean(data.ready),count:Number(data.rows?.length||0),fileName:file.name,importLayout:"authority-pdf"});
-    }catch(e:any){setError(e.message||"تعذرت قراءة PDF");}finally{setBusy(false);}
+    }catch(e:any){setError(e.message||"تعذرت قراءة PDF");}finally{setBusy(false);setReadProgress(null);}
   };
 
   const publishImportedDraft=async(id:string)=>{
@@ -477,6 +506,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   <Upload />رفع Excel أو PDF
                 </SecondaryButton>
               </div>
+              {readProgress ? (
+                <div className="import-progress" role="status" aria-live="polite">
+                  <div className="import-progress-track"><i style={{ width: `${readProgress.pct}%` }} /></div>
+                  <span>{readProgress.message}</span>
+                </div>
+              ) : null}
 
               {xlsxPreview ? (
                 <div className="transfer-preview">

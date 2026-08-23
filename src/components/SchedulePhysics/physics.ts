@@ -66,7 +66,12 @@ export function classifyDecision(ripple: any, why: any, conflicts: any[] = [], h
   const pressureDelta = toNumber(delta.dayPressure || 0);
   const ruleDelta = toNumber(why?.delta?.rules ?? delta.rules ?? 0);
   const spatialDelta = toNumber(delta.spatialBurnout ?? 0);
-  const hasHighConflict = conflicts.some(item => item?.severity === "high" || item?.type === "duplicate");
+  /* Soft notes ride in the same array as real collisions. Counting them here
+     made an advisory refuse a move outright — the drag returned home and the
+     board reported «تعذّر النقل» for a hall that was merely unfashionable. */
+  const hasHighConflict = conflicts.some(item =>
+    item?.soft !== true && item?.type !== "memory"
+    && (item?.severity === "high" || item?.type === "duplicate"));
   const hasWhyWarning = Array.isArray(why?.warnings) && why.warnings.length > 0;
   if (hasHighConflict) return "impossible";
   if (conflictDelta > 0 || hasWhyWarning || ruleDelta > 0 || qualityDelta <= -2 || gapDelta >= 90 || pressureDelta >= 20 || spatialDelta <= -6) return "suboptimal";

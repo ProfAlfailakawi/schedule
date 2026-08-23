@@ -10,7 +10,8 @@ export type OcrCell={text:string;x0:number;x1:number};
 /** One physical table row, right-to-left, with the columns still apart. */
 export type OcrRow={cells:OcrCell[];line:string;y:number};
 export type OcrPage={rows:OcrRow[]};
-export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1};
+export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
+export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read";page:number;pages:number;message:string})=>void;
 
 const MAX_PAGES=12;
@@ -179,7 +180,7 @@ async function deskew(input:Buffer):Promise<Buffer>{
  * intact, and scanning eight million pixels twice at full size cost about a
  * minute per document for a measurement that needs none of that detail.
  */
-async function spreadColumns(input:Buffer):Promise<{image:Buffer;columns:number[]}>{
+async function spreadColumns(input:Buffer):Promise<{image:Buffer;columns:number[];bands:number[]}>{
   const lib=await canvas();
   const image=await lib.loadImage(input);
   const probeScale=Math.min(1,1200/Math.max(image.width,image.height));
@@ -202,8 +203,33 @@ async function spreadColumns(input:Buffer):Promise<{image:Buffer;columns:number[
     if(found.length&&x-found[found.length-1]<=3)found[found.length-1]=x;
     else found.push(x);
   }
+
+  /* The horizontal rules are the row boundaries, and they matter as much as the
+     columns. Grouping words by the height of their glyphs split one physical
+     row in half across a wide table: the left side (instructor, days, time)
+     became one row and the right side (course number, reference, section,
+     course name) either became another or was dropped entirely — which is why
+     the course number, the most reliable key on the page, never reached the
+     parser. A ruled band holds the whole width of a row together. */
+  const rowInk=new Int32Array(height);
+  const minRowRun=Math.max(40,Math.round(width/6));
+  for(let y=0;y<height;y++){
+    let run=0;
+    for(let x=0;x<=width;x++){
+      const lit=x<width&&darkAt(pixels,(y*width+x)*4);
+      if(lit)run++;else{if(run>=minRowRun)rowInk[y]+=run;run=0;}
+    }
+  }
+  const rowThreshold=width*0.4,rowsFound:number[]=[];
+  for(let y=0;y<height;y++){
+    if(rowInk[y]<rowThreshold)continue;
+    if(rowsFound.length&&y-rowsFound[rowsFound.length-1]<=3)rowsFound[rowsFound.length-1]=y;
+    else rowsFound.push(y);
+  }
+  const bands=rowsFound.map(y=>Math.round(y/probeScale)).filter(y=>y>2&&y<image.height-2);
+
   const edges=found.map(x=>Math.round(x/probeScale)).filter(x=>x>4&&x<image.width-4);
-  if(edges.length<4)return{image:input,columns:[]};
+  if(edges.length<4)return{image:input,columns:[],bands};
 
   const gutter=Math.max(12,Math.round(image.width/260));
   const bounds=[0,...edges,image.width];
@@ -218,7 +244,7 @@ async function spreadColumns(input:Buffer):Promise<{image:Buffer;columns:number[
     cursor+=span;
     if(index<bounds.length-2){columns.push(cursor+gutter/2);cursor+=gutter;}
   }
-  return{image:surface.toBuffer("image/png"),columns};
+  return{image:surface.toBuffer("image/png"),columns,bands};
 }
 
 type Word={text:string;x0:number;y0:number;x1:number;y1:number};
@@ -245,15 +271,40 @@ function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
   const heights=words.map(word=>word.y1-word.y0).sort((a,b)=>a-b);
   const lineHeight=Math.max(8,heights[Math.floor(heights.length/2)]||12);
   const ordered=[...words].sort((a,b)=>(a.y0+a.y1)/2-(b.y0+b.y1)/2);
-  const lines:Word[][]=[];let current:Word[]=[],centre=Number.NaN;
-  for(const word of ordered){
-    const middle=(word.y0+word.y1)/2;
-    if(!current.length||Math.abs(middle-centre)<=lineHeight*0.62){current.push(word);centre=Number.isNaN(centre)?middle:(centre*current.length+middle)/(current.length+1);}
-    else{lines.push(current);current=[word];centre=middle;}
-  }
-  if(current.length)lines.push(current);
+  const clusterBy=(tolerance:number)=>{
+    const out:Word[][]=[];let current:Word[]=[],centre=Number.NaN;
+    for(const word of ordered){
+      const middle=(word.y0+word.y1)/2;
+      if(!current.length||Math.abs(middle-centre)<=tolerance){current.push(word);centre=Number.isNaN(centre)?middle:(centre*current.length+middle)/(current.length+1);}
+      else{out.push(current);current=[word];centre=middle;}
+    }
+    if(current.length)out.push(current);
+    return out;
+  };
+
+  /**
+   * Rows are found by the table's own pitch, not by the height of a glyph.
+   *
+   * A tolerance derived from letter height is far smaller than the distance
+   * between two table rows, and on a wide table that split one physical row in
+   * half: the left side (instructor, days, time) became one row while the right
+   * side (course number, reference, section, name) became another or was lost —
+   * which is why the course number, the most reliable key on the page, never
+   * reached the parser. Measuring the gap between first-pass clusters gives the
+   * real row spacing, and half of that pulls the two ends of a row together
+   * while still keeping neighbouring rows apart.
+   *
+   * The printed rules were tried for this and reverted: they are too faint on a
+   * scan to be found one per row, so several rows collapsed into one band.
+   */
+  const first=clusterBy(lineHeight*0.62);
+  const centres=first.map(group=>group.reduce((sum,w)=>sum+(w.y0+w.y1)/2,0)/group.length);
+  const gaps=centres.slice(1).map((value,index)=>value-centres[index]).filter(gap=>gap>lineHeight*0.4).sort((a,b)=>a-b);
+  const pitch=gaps.length?gaps[Math.floor(gaps.length/2)]:lineHeight*1.4;
+  const lines=clusterBy(Math.max(lineHeight*0.62,Math.min(pitch*0.45,lineHeight*2.2)));
 
   const columnOf=(x:number)=>{let index=0;while(index<columns.length&&columns[index]<x)index++;return index;};
+
   const rows:OcrRow[]=[];
   for(const line of lines){
     // Right to left: the first cell of an Arabic table is the rightmost one.
@@ -290,6 +341,27 @@ function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
     if(filtered.length)rows.push({cells:filtered,line:filtered.map(cell=>cell.text).join(" | "),y:(line[0].y0+line[0].y1)/2});
   }
   return rows.sort((a,b)=>a.y-b.y).slice(0,4000);
+}
+
+/**
+ * Is this scan worth reading at all?
+ *
+ * Handing back a half-empty table from an unreadable photo is worse than
+ * refusing it: the reader cannot tell which blanks are the document and which
+ * are the camera. Two signals decide it — how much text came off the page, and
+ * how sure the engine was — and the thresholds sit well under the Authority's
+ * own exports, measured at 54 and 63, so a real document is never turned away.
+ */
+const LEGIBLE_MIN_CONFIDENCE=42;
+const LEGIBLE_MIN_CHARS_PER_PAGE=140;
+function judgeLegibility(text:string,pages:number,confidence:number):Legibility{
+  const meaningful=(text.match(/[ء-يa-zA-Z0-9]/g)||[]).length;
+  const charactersPerPage=Math.round(meaningful/Math.max(1,pages));
+  if(charactersPerPage<LEGIBLE_MIN_CHARS_PER_PAGE)
+    return{readable:false,confidence,charactersPerPage,reason:"لم أتبيّن نصاً كافياً في الصورة. الرجاء رفع صورة أوضح أو ملف PDF أعلى دقة."};
+  if(confidence<LEGIBLE_MIN_CONFIDENCE)
+    return{readable:false,confidence,charactersPerPage,reason:"الصورة غير واضحة بما يكفي للقراءة. صوّر الورقة في إضاءة جيدة ومن زاوية مستقيمة، أو ارفع نسخة PDF أوضح."};
+  return{readable:true,confidence,charactersPerPage,reason:""};
 }
 
 /**
@@ -342,12 +414,15 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }finally{await worker.terminate();}
   }));
 
+  const text=texts.join("\n\n--- PAGE ---\n\n");
+  const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));
   return{
     pages:pages.map(page=>page||{rows:[]}),
-    text:texts.join("\n\n--- PAGE ---\n\n"),
+    text,
     pageCount:images.length,
-    confidence:Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length)),
+    confidence,
     orientation,
+    legibility:judgeLegibility(text,images.length,confidence),
   };
 }
 
@@ -360,8 +435,14 @@ const minutesOf=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(3
  * here as `1350-1230012B09`. Validating the hours and minutes is the check that
  * makes dropping the boundary safe.
  */
+/* A zero at the end of a time is the character this scan loses most: measured
+   on the Authority's own export, `1000` came back as `100¢`, `1100` as `110(`
+   and `1200` as `120¢`. The substitution is only attempted inside a time cell
+   and the result still has to be a real hour and minute, so a wrong guess
+   cannot survive into the schedule. */
+const repairClockDigits=(value:string)=>value.replace(/[Oo°QDﻩ]/g,"0").replace(/[¢()\[\]{}|!lI]/g,"0");
 const timePair=(text:string)=>{
-  const ascii=toAscii(text).replace(/[Oo]/g,"0");
+  const ascii=repairClockDigits(toAscii(text));
   const compact=[...ascii.matchAll(/([0-2]\d[0-5]\d)\s*[-–—]\s*([0-2]\d[0-5]\d)/g)][0];
   const pieces=compact
     ?[compact[1],compact[2]].map(value=>`${value.slice(0,2)}:${value.slice(2)}`)
@@ -435,6 +516,19 @@ export type ParsedScheduleRow={
 export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[]){
   const courseNeedles=courses.map(course=>({course,folded:fold(course.CourseName),code:fold(course.CourseCode)})).sort((a,b)=>b.folded.length-a.folded.length);
   const instructorNeedles=instructors.map(person=>({person,folded:fold(person.AdInstructorName)})).sort((a,b)=>b.folded.length-a.folded.length);
+  /* A short course number is only a safe key when it is unambiguous inside this
+     department's own catalogue. */
+  const uniqueTails:Record<number,Set<string>>={};
+  for(const tail of [4,3]){
+    const seen=new Map<string,number>();
+    for(const item of courseNeedles){
+      const code=toAscii(String(item.course.CourseCode||"")).replace(/\D/g,"");
+      if(code.length<tail)continue;
+      const suffix=code.slice(-tail);
+      seen.set(suffix,(seen.get(suffix)||0)+1);
+    }
+    uniqueTails[tail]=new Set([...seen.entries()].filter(([,count])=>count===1).map(([suffix])=>suffix));
+  }
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=0,scanned=0;
 
   for(const page of pages)for(const row of page.rows){
@@ -443,12 +537,49 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     if(line.replace(/[^ء-يa-zA-Z0-9]/g,"").length<8)continue;
     const normalized=fold(line);
 
+    /* The course code is the only key on this page that cannot drift.
+       It is printed as the department number followed immediately by the course
+       number in one cell — 0101 + 1156 — so the whole row's digits are searched
+       for it, tolerating one lost character because a scan routinely drops one.
+       A name is matched only when no code was legible: two courses can share
+       almost every word of their title, but never a code. */
+    const rowDigitsSpaced=cells.map(cell=>toAscii(cell.text)).join(" ");
+    const rowDigits=rowDigitsSpaced.replace(/\D/g,"");
+    /**
+     * Three ways to recognise a course by its number, strongest first.
+     *
+     * The sheet prints the department number and the course number joined in
+     * one cell — 0101 then 1156 — so the full code is searched first, then the
+     * course number alone, then its last three digits, which is how the
+     * department refers to a course day to day. The short forms are only
+     * trusted when exactly one course in this department ends that way; a
+     * three-digit tail is otherwise indistinguishable from a section number.
+     */
+    const codeMatch=(code:string)=>{
+      if(!code||rowDigits.length<3)return 0;
+      if(code.length>=6){
+        if(rowDigits.includes(code))return 1;
+        for(let at=0;at+code.length-1<=rowDigits.length;at++)
+          for(const width of [code.length,code.length-1]){
+            const window=rowDigits.slice(at,at+width);
+            if(window.length===width&&editDistance(window,code)<=1)return .97;
+          }
+      }
+      for(const tail of [4,3]){
+        if(code.length<tail)continue;
+        const suffix=code.slice(-tail);
+        if(!uniqueTails[tail]?.has(suffix))continue;
+        if(new RegExp(`(^|\\D)${suffix}(\\D|$)`).test(rowDigitsSpaced))return tail===4?.94:.9;
+      }
+      return 0;
+    };
     const ranked=courseNeedles.map(item=>{
+      const byCode=item.code?codeMatch(toAscii(String(item.course.CourseCode||"")).replace(/\D/g,"")):0;
+      if(byCode)return{item,score:byCode,viaCode:true};
       const direct=item.folded.length>=5&&normalized.includes(item.folded);
-      const byCode=item.code&&new RegExp(`(^| )${item.code.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")}( |$)`).test(normalized);
       const perCell=cells.reduce((best,cell)=>Math.max(best,fuzzyNameScore(cell.text,item.course.CourseName)),0);
-      return{item,score:direct||byCode?1:Math.max(perCell,fuzzyNameScore(line,item.course.CourseName))};
-    }).sort((a,b)=>b.score-a.score);
+      return{item,score:direct?1:Math.max(perCell,fuzzyNameScore(line,item.course.CourseName)),viaCode:false};
+    }).sort((a,b)=>(Number(b.viaCode)-Number(a.viaCode))||b.score-a.score);
     const courseHit=ranked[0]?.score>=.56?ranked[0].item:undefined;
     if(!courseHit)continue;
     const courseName=courseHit.course.CourseName;
@@ -468,6 +599,10 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
        the pattern then matched any six-digit run in the row and invented codes
        like 315O41. A field left empty is reviewed; a field filled with a
        plausible wrong answer is published. */
+    /* Building and hall are read independently. They live in separate columns
+       and the scan loses them separately — on a clean export the hall (`F13`)
+       came through on every row while the building (`012B09`) was dropped, and
+       requiring the pair meant discarding the half that was actually read. */
     let roomCode="",roomHall="";
     for(let index=0;index<cells.length&&!roomCode;index++){
       const value=toAscii(cells[index].text).replace(/\s+/g,"");
@@ -475,11 +610,12 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       if(!building)continue;
       roomCode=`${building[1]}${building[2].toUpperCase()}${building[3]}`;
       const rest=value.slice((building.index||0)+building[0].length);
-      const neighbours=[rest,cells[index+1]?.text||"",cells[index-1]?.text||""];
-      for(const candidate of neighbours){
-        const hall=toAscii(candidate).replace(/\s+/g,"").match(/([A-Za-z]\d{1,3})/);
-        if(hall){roomHall=hall[1].toUpperCase();break;}
-      }
+      const inline=toAscii(rest).replace(/\s+/g,"").match(/^([A-Za-z]\d{1,3})$/);
+      if(inline)roomHall=inline[1].toUpperCase();
+    }
+    if(!roomHall)for(const cell of cells){
+      const hall=toAscii(cell.text).replace(/\s+/g,"").match(/^([A-Za-z]\d{1,3})$/);
+      if(hall){roomHall=hall[1].toUpperCase();break;}
     }
 
     /* The reference and section columns often arrive fused with the course
@@ -509,7 +645,9 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     if(!flags)issues.push(`صف «${courseName}»: لم أتعرف على الأيام`);
     if(!instructorHit)issues.push(`صف «${courseName}»: لم أتعرف على أستاذ المقرر`);
     if(!section)issues.push(`صف «${courseName}»: لم أتعرف على رقم الشعبة`);
-    if(!roomCode)issues.push(`صف «${courseName}»: لم أتعرف على المبنى والقاعة`);
+    if(!roomCode&&!roomHall)issues.push(`صف «${courseName}»: لم أتعرف على المبنى والقاعة`);
+    else if(!roomCode)issues.push(`صف «${courseName}»: قرأت القاعة ${roomHall} ولم أتعرف على المبنى`);
+    else if(!roomHall)issues.push(`صف «${courseName}»: قرأت المبنى ${roomCode} ولم أتعرف على القاعة`);
   }
 
   if(!rows.length)issues.push("لم أتعرف على صفوف الجدول. تأكد أن الملف واضح وبنفس نموذج الجدول المعتمد.");

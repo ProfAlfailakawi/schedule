@@ -3945,3 +3945,9 @@ button.twin-delta{width:100%}
 .import-progress-track{height:6px;border-radius:999px;background:var(--surface-3,var(--line));overflow:hidden}
 .import-progress-track i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .35s var(--ease,ease)}
 .import-progress span{font-size:var(--t-xs);color:var(--muted);text-align:center}
+/* The card is a centred column: the lede and the footnote were reading ragged
+   against the buttons because only the buttons were centred. */
+.import-drop{text-align:center}
+.import-drop>p{margin-inline:auto;max-width:46ch;text-wrap:balance}
+.import-drop>small{display:inline-flex;align-items:center;gap:6px;justify-content:center}
+.import-drop .import-entry-actions{justify-content:center}

@@ -2678,6 +2678,19 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .week-legend-none{
   flex:none;font-size:var(--t-xs);color:var(--muted);padding-inline:4px;
 }
+/* The ribbon and the two ways to move it. Arrows exist for a plain mouse: a
+   fade at the edge announces hidden content but offers no way to reach it, and
+   not every desk has a trackpad to swipe with. */
+.week-legend-rail{flex:1;min-width:0;display:flex;align-items:center;gap:2px}
+.week-legend-arrow{
+  flex:none;display:grid;place-items:center;width:24px;height:26px;
+  border:1px solid var(--line);border-radius:8px;background:var(--surface);
+  color:var(--muted);cursor:pointer;transition:color .15s,border-color .15s,background .15s;
+}
+.week-legend-arrow:hover{color:var(--ink);border-color:var(--line-strong);background:var(--surface-2)}
+.week-legend-arrow svg{width:14px;height:14px}
+.week-legend-arrow[hidden]{display:none}
+
 .week-legend-chips{
   flex:1;min-width:0;
   display:flex;align-items:center;gap:6px;
@@ -7664,3 +7677,11 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .move-refusal-mark{width:28px;height:28px}
   .move-refusal-mark svg{width:15px;height:15px}
 }
+/* The overlap radar names its own action: a bare number read as a warning with
+   no way out, and the answer to "what is this for?" was hidden in a tooltip. */
+.schedule-radar.radar-clash>em{
+  font-style:normal;font-size:10px;font-weight:600;opacity:.75;
+  padding-inline-start:6px;margin-inline-start:6px;
+  border-inline-start:1px solid color-mix(in srgb,currentColor 28%,transparent);
+}
+@media (max-width:760px){.schedule-radar.radar-clash>em{display:none}}

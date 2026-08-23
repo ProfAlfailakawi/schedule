@@ -2121,3 +2121,8 @@ html[data-demo-admin-readonly="true"] .app-main::before{content:"DEMO · الإ�
 .degree-rule-grid dd{margin:0;font-size:17px;font-weight:800;color:var(--ink)}
 .degree-rule-grid dd input{width:100%;padding:6px 8px;font:inherit;font-size:15px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
 .degree-rule-actions{display:flex;flex-wrap:wrap;gap:8px}
+.degree-rule-grid dd .degree-rule-guess{
+  display:inline-block;margin-inline-start:6px;padding:1px 7px;border-radius:999px;
+  border:1px dashed color-mix(in srgb,var(--brass,#a9803f) 45%,var(--line));
+  color:var(--brass,#a9803f);font-size:9.5px;font-weight:700;font-style:normal;vertical-align:middle;
+}

@@ -120,6 +120,7 @@ export default function QuickCreatePopover({
   buildings,
   hallsFor,
   conflictOf,
+  nextSectionCode,
   saving,
   error,
   onCancel,
@@ -132,6 +133,9 @@ export default function QuickCreatePopover({
   buildings: string[];
   hallsFor: (building: string) => string[];
   conflictOf: (draft: QuickDraft, day: DayKey) => string | null;
+  /** The next free section number for a course, so the field fills itself the
+      same way the full editor's does. */
+  nextSectionCode?: (courseId: number) => string;
   saving: boolean;
   /** A refusal from the server, said on the card rather than at the top of a
       page the reader is not currently looking at. */
@@ -155,6 +159,17 @@ export default function QuickCreatePopover({
     end: timeOf(openedEnd),
   });
   const patch = (values: Partial<QuickDraft>) => setDraft((prev) => ({ ...prev, ...values }));
+  /* Typing 101, 102, 103 by hand is work nobody should be doing, and the full
+     editor already stopped asking for it. Anything typed by hand wins; the
+     suggestion only refills while the field is still untouched. */
+  const sectionTyped = useRef(false);
+  const chooseCourse = (courseId: number) => {
+    const next: Partial<QuickDraft> = { courseId };
+    if (courseId && nextSectionCode && (!draft.scode.trim() || !sectionTyped.current)) {
+      next.scode = nextSectionCode(courseId);
+    }
+    patch(next);
+  };
 
   const start = minutesOf(draft.start);
   const span = Math.max(30, minutesOf(draft.end) - start);
@@ -163,9 +178,10 @@ export default function QuickCreatePopover({
     [],
   );
   const minuteSteps = useMemo(() => Array.from({ length: 12 }, (_, i) => i * 5), []);
-  /* The lengths a timetable actually uses. A free-typed duration was never the
-     missing feature — choosing between the six real ones was. */
-  const spans = [50, 60, 75, 90, 120, 150, 180];
+  /* The lengths the regulation actually gives: 50 minutes on Sun/Tue/Thu and 80
+     on Mon/Wed, plus the longer blocks a lab or a seminar uses. 60 and 75 were
+     never timetable lengths and only invited a wrong one to be picked. */
+  const spans = [50, 80, 100, 120, 150, 180];
 
   const setStart = (minutes: number) => {
     const clamped = Math.min(Math.max(minutes, SCHEDULE_DAY_START), SCHEDULE_DAY_END - 30);
@@ -279,7 +295,7 @@ export default function QuickCreatePopover({
           <select
             ref={firstField}
             value={draft.courseId || ""}
-            onChange={(e) => patch({ courseId: Number(e.target.value) || 0 })}
+            onChange={(e) => chooseCourse(Number(e.target.value) || 0)}
           >
             <option value="">اختر المقرر…</option>
             {orderedCourses.map((c) => (
@@ -296,7 +312,7 @@ export default function QuickCreatePopover({
             inputMode="numeric"
             dir="ltr"
             placeholder="01"
-            onChange={(e) => patch({ scode: toEnglishDigits(e.target.value) })}
+            onChange={(e) => { sectionTyped.current = true; patch({ scode: toEnglishDigits(e.target.value) }); }}
           />
         </label>
         <label className="qc-field qc-wide">
