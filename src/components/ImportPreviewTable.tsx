@@ -228,14 +228,11 @@ export default function ImportPreviewTable({
                   <td className="import-cell-course">
                     <div className="import-locked-course">
                       <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
-                      <small dir="ltr">
-                        {course?.CourseCode ? `${course.CourseCode} · ` : ""}
-                        {course?.CourseCredit || course?.TotalUnits || 3} وحدات / {course?.CourseHours || course?.TotalHours || 3} ساعات
-                      </small>
+                      {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                     </div>
                   </td>
                   <td className={red(missing.scode(row))}>
-                    {open ? <div className="import-section-editor"><input inputMode="numeric" value={String(row.SCode || "")} readOnly aria-readonly="true" /><small>تلقائي حسب ظهور هذا المقرر: 501 ثم 502 ثم 503…</small></div> : (String(row.SCode || "").trim() || "—")}
+                    {open ? <div className="import-section-editor"><input inputMode="numeric" value={String(row.SCode || "")} readOnly aria-readonly="true" /><small>تلقائي حسب ظهورها</small></div> : (String(row.SCode || "").trim() || "—")}
                   </td>
                   <td className={red(missing.days(row))}>
                     <span className="import-day-chips">{DAY_CHIPS.map(day => <button key={day.key} type="button" disabled={!open} data-guide-ignore="تبديل يوم داخل معاينة الاستيراد قبل أي حفظ" className={row[day.key] ? "on" : ""} onClick={() => patch(index, { [day.key]: !row[day.key] } as Partial<ImportRow>)}>{day.label}</button>)}</span>

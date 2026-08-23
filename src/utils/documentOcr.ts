@@ -575,8 +575,8 @@ const stripPatterns={
   reference:/^\d{4,8}$/,
   scode:/^\d{1,4}$/,
   building:/^(?:012|011|010)?B\d{1,3}$/i,
-  hall:/^(?:[FG]|[A-Z])\d{1,4}$/i,
-  days:/^[1-5](?: ?[1-5])*$/,
+  hall:/^(?!(?:012|011|010)?B\d)[FGACDEMNPLK\d]{1,5}$/i,
+  days:/^[1-5](?:[\s,\-–—./]*[1-5])*$/,
 };
 
 /**
@@ -851,16 +851,38 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
 
     const bRaw=buildingAt(row);
     const hRaw=hallAt(row);
-    let building=safeBuilding(bRaw);
-    let hall=safeHall(hRaw);
-    if(!building&&safeBuilding(hRaw))building=safeBuilding(hRaw);
-    if(!hall&&safeHall(bRaw))hall=safeHall(bRaw);
+    let building=safeBuilding(bRaw)||safeBuilding(hRaw);
+    let hall=safeHall(hRaw)||safeHall(bRaw);
+
+    if(!building){
+      for(let c=0;c<columnBands.length;c++){
+        const val=normalizeCell(numericGrey[c]?.cells[row]||numericBin[c]?.cells[row]||"");
+        const b=safeBuilding(val);
+        if(b){building=b;break;}
+      }
+    }
+    if(!hall){
+      for(let c=0;c<columnBands.length;c++){
+        const val=normalizeCell(numericGrey[c]?.cells[row]||numericBin[c]?.cells[row]||"");
+        const h=safeHall(val);
+        if(h){hall=h;break;}
+      }
+    }
+
+    let rowDays=daysAt(row).trim();
+    if(!stripPatterns.days.test(rowDays)){
+      for(let c=0;c<columnBands.length;c++){
+        if(c===codeIndex||c===refcodeIndex||c===referenceIndex||c===scodeIndex||c===timeIndex)continue;
+        const val=normalizeCell(numericGrey[c]?.cells[row]||numericBin[c]?.cells[row]||"");
+        if(stripPatterns.days.test(val)){rowDays=val;break;}
+      }
+    }
 
     rowsOut.push({
       code,reference,scode,
       courseText:normalizeCell(nameCells.cells[row]||""),
       instructorText:normalizeCell(instructorCells.cells[row]||""),
-      days:daysAt(row).replace(/[^1-5 ]/g,"").trim(),
+      days:rowDays,
       start,end,
       building,
       hall,
@@ -1100,8 +1122,8 @@ const minutesOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(val
 export const cleanBuildingCode = (raw: string): string => {
   const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
   if (!clean) return "";
-  const mB = clean.match(/(?:012|011|010)?(B\d{1,3})/);
-  if (mB) return mB[1];
+  const mFull = clean.match(/(?:012|011|010)?B\d{1,3}/);
+  if (mFull) return mFull[0];
   if (/^B\d{1,3}$/.test(clean)) return clean;
   return "";
 };
@@ -1110,9 +1132,9 @@ export const cleanHallCode = (raw: string): string => {
   const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
   if (!clean) return "";
   if (/^(?:012|011|010)?B\d{1,3}$/.test(clean)) return "";
-  const mH = clean.match(/\b([FG]\d{1,4}|[A-Z]\d{1,3})\b/);
-  if (mH && !/^B\d{1,3}$/.test(mH[1])) return mH[1];
-  return clean;
+  const m = clean.match(/([FGACDEMNPLK]|[A-Z])\d{1,4}/);
+  if (m && !/^B\d+$/.test(m[0])) return m[0];
+  return "";
 };
 
 const timePair=(text:string)=>{
@@ -1161,34 +1183,47 @@ const timePair=(text:string)=>{
 
 const DAY_FIELDS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"]as const;
 const EMPTY_DAYS={fsunday:false,fmonday:false,ftuesday:false,fwednesday:false,fthursday:false};
-/** The «الأيام» column holds bare day numbers — `4 2`, `5 3 1`, `5 4 3 2 1`, `3 1`, `4 2 1`, `5 3`, `2 1`. */
-const dayFlagsFromCell=(text:string)=>{
-  const ascii=toAscii(text).trim();
-  if(!ascii)return null;
-  // Multi-day spaced or concatenated format like "4 2", "5 3 1", "5 4 3 2 1", "3 1", "4 2 1"
-  if(/^[1-5](\s+[1-5])+$/.test(ascii)){
-    const numbers=ascii.match(/[1-5]/g)||[];
-    if(!numbers.length)return null;
-    const flags={...EMPTY_DAYS};
-    for(const digit of numbers)flags[DAY_FIELDS[Number(digit)-1]]=true;
-    return flags;
+
+export const parseDays = (raw: string): { fsunday: boolean; fmonday: boolean; ftuesday: boolean; fwednesday: boolean; fthursday: boolean } | null => {
+  if (!raw) return null;
+  const ascii = toAscii(raw).trim();
+
+  // 1. Digits 1-5 in any format (e.g. 4 2, 24, 42, 1 3 5, 135, 1-3-5, 2,4, 1, 2, 3, 4, 5, etc.)
+  const cleanDigits = ascii.replace(/[^1-5]/g, "");
+  if (cleanDigits.length >= 1 && cleanDigits.length <= 5) {
+    const nonAllowedDigits = ascii.replace(/[^0-9]/g, "").replace(/[1-5]/g, "");
+    if (nonAllowedDigits.length === 0) {
+      const flags = { ...EMPTY_DAYS };
+      for (const d of cleanDigits) {
+        flags[DAY_FIELDS[Number(d) - 1]] = true;
+      }
+      return flags;
+    }
   }
-  // Single digit day only if exactly one digit 1-5 and no extra clutter
-  if(/^[1-5]$/.test(ascii)){
-    const flags={...EMPTY_DAYS};
-    flags[DAY_FIELDS[Number(ascii)-1]]=true;
-    return flags;
+
+  // 2. Arabic day initials or names (e.g. ح ث خ, ن ر, الأحد, الاثنين, الثلاثاء, الأربعاء, الخميس)
+  const cleanAr = raw.replace(/[ً-ْـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه");
+  const hasSun = /الاحد|احد|(?:^|[\s،,\-\/])ح(?=$|[\s،,\-\/])/.test(cleanAr);
+  const hasMon = /الاثنين|اثنين|(?:^|[\s،,\-\/])ن(?=$|[\s،,\-\/])/.test(cleanAr);
+  const hasTue = /الثلاثاء|ثلاثاء|(?:^|[\s،,\-\/])ث(?=$|[\s،,\-\/])/.test(cleanAr);
+  const hasWed = /الاربعاء|اربعاء|(?:^|[\s،,\-\/])ر(?=$|[\s،,\-\/])/.test(cleanAr);
+  const hasThu = /الخميس|خميس|(?:^|[\s،,\-\/])خ(?=$|[\s،,\-\/])/.test(cleanAr);
+
+  if (hasSun || hasMon || hasTue || hasWed || hasThu) {
+    return {
+      fsunday: hasSun,
+      fmonday: hasMon,
+      ftuesday: hasTue,
+      fwednesday: hasWed,
+      fthursday: hasThu,
+    };
   }
+
   return null;
 };
-const dayFlagsFromText=(text:string)=>{
-  const value=fold(text);
-  const flags={
-    fsunday:/الاحد|احد/.test(value),fmonday:/الاثنين|اثنين/.test(value),ftuesday:/الثلاثاء|ثلاثاء/.test(value),
-    fwednesday:/الاربعاء|اربعاء/.test(value),fthursday:/الخميس|خميس/.test(value),
-  };
-  return Object.values(flags).some(Boolean)?flags:null;
-};
+
+const dayFlagsFromCell = parseDays;
+const dayFlagsFromText = parseDays;
 
 const editDistance=(a:string,b:string)=>{
   const previous=Array.from({length:b.length+1},(_,index)=>index);
@@ -1403,12 +1438,11 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
         issues.push(`صف غير مطابق: «${grid.courseText||grid.code}» — لا يقابله مقرر في كتالوج القسم`);
       continue;
     }
-    const flags={...EMPTY_DAYS};
-    for(const digit of grid.days.match(/[1-5]/g)||[])flags[DAY_FIELDS[Number(digit)-1]]=true;
+    const flags = parseDays(grid.days) || parseDays(grid.courseText) || EMPTY_DAYS;
     const instructorHit=matchInstructorName(grid.instructorText||`${grid.courseText} ${grid.code}`,instructors,preferredInstructorIds)
       ||matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
-    const cleanBuilding = cleanBuildingCode(grid.building);
-    const cleanHall = cleanHallCode(grid.hall);
+    const cleanBuilding = cleanBuildingCode(grid.building) || cleanBuildingCode(grid.hall);
+    const cleanHall = cleanHallCode(grid.hall) || cleanHallCode(grid.building);
     rows.push({
       sourceOrder:order++,
       referenceNumber:grid.reference,
@@ -1429,7 +1463,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     if(!instructorHit&&grid.instructorText&&!grid.instructorText.includes("هيئة")&&!grid.instructorText.includes("هيئه"))
       issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على أستاذ المقرر («${grid.instructorText}»)`);
     if(!grid.scode)issues.push(`صف «${label}»: لم أتعرف على رقم الشعبة`);
-    if(!cleanBuilding&&!grid.hall)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
+    if(!cleanBuilding&&!cleanHall)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
   }
   return{rows,issues,order};
 }
@@ -1456,6 +1490,18 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     }
   }
   if(rows.length){
+    // Renumber sections sequentially per course (501, 502, 503...)
+    const counters = new Map<number, number>();
+    for (const row of rows) {
+      const courseId = Number(row.AdCourseId || 0);
+      if (courseId) {
+        const next = (counters.get(courseId) || 500) + 1;
+        counters.set(courseId, next);
+        row.SCode = String(next);
+      } else {
+        row.SCode = "501";
+      }
+    }
     return{rows,issues:[...new Set(issues)],lines:scanned};
   }
 
@@ -1510,7 +1556,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     // Rule 7: Exact days extraction
     let flags:typeof EMPTY_DAYS|null=null;
     for(const cell of cells){
-      const found=dayFlagsFromCell(cell.text);
+      const found=parseDays(cell.text);
       if(found){flags=found;break;}
     }
     if(!flags){
@@ -1519,34 +1565,28 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
         for(const offset of [1,-1,2,-2]){
           const idx=actIdx+offset;
           if(idx>=0&&idx<cells.length){
-            const found=dayFlagsFromCell(cells[idx].text);
+            const found=parseDays(cells[idx].text);
             if(found){flags=found;break;}
           }
         }
       }
     }
-    if(!flags)flags=dayFlagsFromText(line);
+    if(!flags)flags=parseDays(line);
 
     // Rule 4 & 5: Room and Building extraction (take last 3 e.g. B07)
     let roomCode="",roomHall="";
     for(const cell of cells){
-      const text=toAscii(cell.text).replace(/\s+/g,"").toUpperCase();
-      const bMatch=text.match(/(?:012|011|010)?(B\d{2,3})/);
-      if(bMatch&&!roomCode){
-        roomCode=bMatch[1];
-      }
-      const hMatch=text.match(/\b([FG]\d{1,4}|[A-Z]\d{1,3})\b/);
-      if(hMatch&&!/^B\d{2,3}$/.test(hMatch[1])&&!roomHall){
-        roomHall=hMatch[1];
-      }
+      const text=toAscii(cell.text).trim();
+      const b=cleanBuildingCode(text);
+      if(b&&!roomCode) roomCode=b;
+      const h=cleanHallCode(text);
+      if(h&&!roomHall) roomHall=h;
     }
     if(!roomCode){
-      const bMatch=toAscii(line).replace(/\s+/g,"").toUpperCase().match(/(?:012|011|010)?(B\d{2,3})/);
-      if(bMatch)roomCode=bMatch[1];
+      roomCode=cleanBuildingCode(line);
     }
     if(!roomHall){
-      const hMatch=toAscii(line).replace(/\s+/g,"").toUpperCase().match(/\b([FG]\d{1,4})\b/);
-      if(hMatch)roomHall=hMatch[1];
+      roomHall=cleanHallCode(line);
     }
 
     // Section and Reference (CRN) extraction
@@ -1602,6 +1642,19 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       issues.push(`صف «${courseName}» شعبة ${section||"—"}: لم أتعرف على أستاذ المقرر («${instructorCandidateText}»)`);
     if(!section)issues.push(`صف «${courseName}»: لم أتعرف على رقم الشعبة`);
     if(!roomCode&&!roomHall)issues.push(`صف «${courseName}»: لم أتعرف على المبنى والقاعة`);
+  }
+
+  // Renumber sections sequentially per course (501, 502, 503...)
+  const counters = new Map<number, number>();
+  for (const row of rows) {
+    const courseId = Number(row.AdCourseId || 0);
+    if (courseId) {
+      const next = (counters.get(courseId) || 500) + 1;
+      counters.set(courseId, next);
+      row.SCode = String(next);
+    } else {
+      row.SCode = "501";
+    }
   }
 
   if(!rows.length)issues.push("لم أتعرف على صفوف الجدول. تأكد أن الملف واضح وبنفس نموذج الجدول المعتمد.");
