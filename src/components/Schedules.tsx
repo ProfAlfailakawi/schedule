@@ -5983,6 +5983,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (hueHidden.has(key)) return "hue-folded";
     return !hueFocus.size ? "" : hueFocus.has(key) ? "hue-lit" : "hue-shade";
   };
+
+  /**
+   * The list is a list, not a canvas. A folded legend identity must therefore
+   * leave the list completely — the week and rooms can hide cards in-place,
+   * but keeping hidden rows in the agenda left blank numbering/counts and made
+   * the filter look broken. Build the agenda from the same hue identity the
+   * three views share, so course / instructor / room filtering is identical.
+   */
+  const agendaRows = useMemo(() => {
+    if (!hueHidden.size) return filteredRows;
+    return filteredRows.filter(row => !hueHidden.has(hueIdentity(row).key));
+  }, [filteredRows, hueHidden, hueBy, courseById, instructorById]);
   /* Folding a layer away, and unfolding it. Presentation only — the row is on
      the board, in every count and every conflict scan, merely not drawn. */
   const toggleHueHidden = (key: string) =>
@@ -9264,7 +9276,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               <span className="surface-kicker">عرض ذكي</span>
               <h2>مواعيد القسم</h2>
             </div>
-            <span>{filteredRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
+            <span>{agendaRows.length.toLocaleString("ar-KW-u-nu-latn")} موعد</span>
           </div>
           {hueLegend.length > 1 ? (
             <div className="week-legend agenda-legend" role="group" aria-label="مفتاح الألوان">
@@ -9352,9 +9364,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               ) : null}
             </div>
           ) : null}
-          {filteredRows.length ? (
+          {agendaRows.length ? (
             <div className="schedule-agenda">
-              {filteredRows.slice(0, visibleLimit).map((s, idx) => {
+              {agendaRows.slice(0, visibleLimit).map((s, idx) => {
                 const c = courseById.get(s.AdCourseId),
                   i = instructorById.get(s.AdInstructorId);
                 return (
@@ -9468,11 +9480,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
               }
             />
           )}{" "}
-          {filteredRows.length > visibleLimit ? (
+          {agendaRows.length > visibleLimit ? (
             <div className="agenda-more">
               <SecondaryButton onClick={() => setVisibleLimit((v) => v + AGENDA_PAGE_SIZE)}>
                 عرض المزيد ·{" "}
-                {Math.min(AGENDA_PAGE_SIZE, filteredRows.length - visibleLimit).toLocaleString(
+                {Math.min(AGENDA_PAGE_SIZE, agendaRows.length - visibleLimit).toLocaleString(
                   "ar-KW-u-nu-latn",
                 )}
               </SecondaryButton>

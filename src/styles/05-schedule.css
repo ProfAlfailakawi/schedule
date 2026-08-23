@@ -7752,3 +7752,44 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 
 /* A term delegate is a normal instructor choice with one clear provenance tag. */
 .instructor-visiting-label{display:inline-flex;align-items:center;margin-inline-start:7px;padding:2px 7px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:999px;background:var(--accent-softer);color:var(--accent);font-size:11px;font-style:normal;font-weight:800;line-height:1.35;vertical-align:middle;white-space:nowrap}
+
+/* V34 — current notes ---------------------------------------------------------
+   1) The desktop week must yield to the expanded navigation rail instead of
+      continuing underneath it. The shell intentionally floats a closed rail on
+      hover, but a timetable is a spatial canvas: losing its right edge makes
+      the hour ruler and day label look broken. Only the week opts into the
+      full-rail margin while that rail is actually expanded. */
+@media screen and (min-width:1120px){
+  html[data-rail="closed"] .app-shell:has(.sidebar:hover) .app-main:has(.week-surface),
+  html[data-rail="closed"] .app-shell:has(.sidebar:focus-within) .app-main:has(.week-surface){
+    margin-inline-start:var(--sidebar-w)!important;
+  }
+}
+
+/* 2) The colour/layer filter has one meaning in all three schedule views.
+      The list previously received the hue classes but had no visual rules for
+      them, so focus and fold appeared to do nothing. Hidden agenda rows are now
+      removed in React as well; these rules keep focus parity and are a defence
+      against a stale card during a transition. */
+.agenda-card.hue-folded{display:none!important}
+.agenda-card.hue-shade{opacity:.2!important;filter:saturate(.35)!important}
+.agenda-card.hue-lit{box-shadow:0 0 0 1px hsl(var(--hue,158) 62% 55% / .7),var(--shadow-sm)!important;z-index:3!important}
+
+/* 3) Department details grew taller than the visual-minimal inspector. That
+      skin replaced the base inspector's vertical scroll with overflow:hidden,
+      which made the lower controls unreachable on desktop. Restore the scroll
+      contract; the primary record actions and graduation-rule edit/save actions
+      are also placed at the top of their respective sections in Sections.tsx. */
+.visual-minimal .academic-inspector{
+  overflow-x:hidden!important;
+  overflow-y:auto!important;
+  overscroll-behavior:contain;
+}
+.inspector-actions-primary{margin-top:var(--s4)!important}
+.degree-rule-card>header>div:first-child{display:grid;gap:3px;min-width:0}
+.degree-rule-actions-top{margin-inline-start:auto;align-items:center}
+@media(max-width:680px){
+  .degree-rule-card>header{align-items:stretch}
+  .degree-rule-actions-top{width:100%;margin-inline-start:0}
+  .degree-rule-actions-top .btn{flex:1}
+}

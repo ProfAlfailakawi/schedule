@@ -334,6 +334,18 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                   <b>{selected.AdSectionId}</b>
                 </article>
               </div>
+              <div className="inspector-actions inspector-actions-primary">
+                <PrimaryButton onClick={() => edit(selected)}>
+                  تعديل
+                </PrimaryButton>
+                <SecondaryButton
+                  data-guide-ignore="إجراء حذف حساس داخل شاشة الإدارة ويستخدم تأكيد الشاشة نفسه"
+                  className="danger-action"
+                  onClick={() => remove(selected.AdSectionId)}
+                >
+                  <Trash2 /> حذف
+                </SecondaryButton>
+              </div>
               {(() => {
                 const rule = ruleFor(selected);
                 const draft = ruleDraft?.AdSectionId === selected.AdSectionId ? ruleDraft : null;
@@ -345,8 +357,29 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                 return (
                   <section className="degree-rule-card">
                     <header>
-                      <span className="surface-kicker"><GraduationCap aria-hidden="true" /> وحدات القسم وشروط التخرج</span>
-                      <small>{rule.updatedBy ? `آخر تعديل بواسطة ${rule.updatedBy}` : "قيم القسم الحالية"}</small>
+                      <div>
+                        <span className="surface-kicker"><GraduationCap aria-hidden="true" /> وحدات القسم وشروط التخرج</span>
+                        <small>{rule.updatedBy ? `آخر تعديل بواسطة ${rule.updatedBy}` : "قيم القسم الحالية"}</small>
+                      </div>
+                      <div className="degree-rule-actions degree-rule-actions-top">
+                        {draft ? (
+                          <>
+                            <PrimaryButton data-guide-ignore="حفظ قواعد التخرج لهذا القسم داخل شاشة الإدارة" onClick={() => void saveRule()} disabled={ruleBusy}>
+                              {ruleBusy ? "يحفظ…" : "حفظ القواعد"}
+                            </PrimaryButton>
+                            <SecondaryButton data-guide-ignore="إلغاء تحرير قواعد التخرج دون حفظ" onClick={() => { setRuleDraft(null); setRuleNote(null); }} disabled={ruleBusy}>
+                              إلغاء
+                            </SecondaryButton>
+                          </>
+                        ) : (
+                          <SecondaryButton
+                            data-guide-ignore="تحرير قواعد التخرج له حفظ صريح داخل نفس البطاقة"
+                            onClick={() => { setRuleNote(null); setRuleDraft({ ...rule }); }}
+                          >
+                            تعديل القواعد
+                          </SecondaryButton>
+                        )}
+                      </div>
                     </header>
                     <p>
                       عليها يقيس استبيان الطلبة كشف الدرجات المرفوع قبل أن يفتح حالة الخريج أو المتوقع تخرجه،
@@ -371,40 +404,9 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                       ))}
                     </dl>
                     {ruleNote ? <Notice type={ruleNote.startsWith("حُفظت") ? "success" : undefined}>{ruleNote}</Notice> : null}
-                    <div className="degree-rule-actions">
-                      {draft ? (
-                        <>
-                          <PrimaryButton data-guide-ignore="حفظ قواعد التخرج لهذا القسم داخل شاشة الإدارة" onClick={() => void saveRule()} disabled={ruleBusy}>
-                            {ruleBusy ? "يحفظ…" : "حفظ القواعد"}
-                          </PrimaryButton>
-                          <SecondaryButton data-guide-ignore="إلغاء تحرير قواعد التخرج دون حفظ" onClick={() => { setRuleDraft(null); setRuleNote(null); }} disabled={ruleBusy}>
-                            إلغاء
-                          </SecondaryButton>
-                        </>
-                      ) : (
-                        <SecondaryButton
-                          data-guide-ignore="تحرير قواعد التخرج له حفظ صريح داخل نفس البطاقة"
-                          onClick={() => { setRuleNote(null); setRuleDraft({ ...rule }); }}
-                        >
-                          تعديل القواعد
-                        </SecondaryButton>
-                      )}
-                    </div>
                   </section>
                 );
               })()}
-              <div className="inspector-actions">
-                <PrimaryButton onClick={() => edit(selected)}>
-                  تعديل
-                </PrimaryButton>
-                <SecondaryButton
-                  data-guide-ignore="إجراء حذف حساس داخل شاشة الإدارة ويستخدم تأكيد الشاشة نفسه"
-                  className="danger-action"
-                  onClick={() => remove(selected.AdSectionId)}
-                >
-                  <Trash2 /> حذف
-                </SecondaryButton>
-              </div>
             </>
           ) : (
             <div className="master-empty">
