@@ -21,6 +21,9 @@
 @page upright{size:297mm 210mm;margin:10mm 8mm 14mm}
 
 @media print{
+  html[data-print-kind="pdf-diff"] #app-print-root>.print-only:not(.pdf-diff-print){display:none !important}
+  html[data-print-kind="pdf-diff"] .pdf-diff-print{display:block !important;visibility:visible !important;page:wide !important;padding:8mm !important}
+  html[data-print-kind="pdf-diff"] .pdf-diff-print,.pdf-diff-print *{visibility:visible !important}
   /**
    * The printer sees frame zero.
    *

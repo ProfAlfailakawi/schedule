@@ -11,6 +11,7 @@ import type {
   SchedulePhysicsTarget,
 } from "./types";
 import { SCHEDULE_DAY_END } from "../../utils/scheduleTime";
+import { expectedMinutesForDay } from "../../utils/scheduleRegulations";
 
 export const PHYSICS_DAYS: Array<{ key: ScheduleDayKey; label: string }> = [
   { key: "fsunday", label: "الأحد" },
@@ -35,13 +36,16 @@ const minutes = (value: string) => {
 const timeFromMinutes = (value: number) => `${String(Math.floor(value / 60)).padStart(2, "0")}:${String(value % 60).padStart(2, "0")}`;
 
 export function buildMoveCandidate(row: FSchedule, target: Pick<SchedulePhysicsTarget, "day" | "start">) {
-  const duration = Math.max(30, minutes(row.fendtime) - minutes(row.fstarttime));
+  const originalDuration = Math.max(30, minutes(row.fendtime) - minutes(row.fstarttime));
+  const selected = PHYSICS_DAYS.filter(day => Boolean((row as any)[day.key]));
+  const duration = selected.length === 1 && originalDuration <= 100
+    ? expectedMinutesForDay(target.day)
+    : originalDuration;
   const candidate: any = {
     ...row,
     fstarttime: target.start,
     fendtime: timeFromMinutes(Math.min(SCHEDULE_DAY_END, minutes(target.start) + duration)),
   };
-  const selected = PHYSICS_DAYS.filter(day => Boolean((row as any)[day.key]));
   if (selected.length === 1) PHYSICS_DAYS.forEach(day => { candidate[day.key] = day.key === target.day; });
   return candidate as FSchedule;
 }

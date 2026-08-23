@@ -14,6 +14,7 @@ import {
   Command,
   Dna,
   FileClock,
+  FileText,
   FileSpreadsheet,
   Gauge,
   History,
@@ -50,6 +51,8 @@ import {
   Num,
   PageTitle,
   PrimaryButton,
+  PrintLetterhead,
+  PrintPortal,
   RecordCard,
   RecordDeck,
   SecondaryButton,
@@ -132,6 +135,45 @@ function professorWeekShape(rows: any[]) {
 }
 
 type Tab = "command" | "copilot" | "twin" | "history" | "import";
+
+function PdfDifferenceBody({report,courses,instructors}:{report:any;courses:AdCourse[];instructors:AdInstructor[]}){
+  return <>
+    <div className="pdf-report-summary">
+      <article className="added"><strong>{report.counts.added}</strong><span>مقرر مضاف</span></article>
+      <article className="deleted"><strong>{report.counts.deleted}</strong><span>مقرر محذوف</span></article>
+      <article className="changed"><strong>{report.counts.changed}</strong><span>مقرر عُدّل</span></article>
+      <article><strong>{report.counts.unchanged}</strong><span>دون تغيير</span></article>
+    </div>
+    <div className="pdf-report-legend" aria-label="دليل الألوان"><span className="added"><i />إضافة جديدة — الرقم المرجعي فارغ</span><span className="deleted"><i />حذف</span><span className="changed"><i />الخانة المعدّلة</span></div>
+    <div className="pdf-report-table-wrap">
+      <table className="pdf-report-table">
+        <thead><tr><th>الرقم المرجعي</th><th>رمز المقرر</th><th>اسم المقرر</th><th>الشعبة</th><th>أستاذ المقرر</th><th>الأيام</th><th>الوقت</th><th>المبنى</th><th>القاعة</th></tr></thead>
+        <tbody>{report.rows.map((entry:any,index:number)=>{
+          const row=entry.current||entry.source||{};
+          const changed=new Set<string>(entry.changedFields||[]);
+          const daysChanged=["fsunday","fmonday","ftuesday","fwednesday","fthursday"].some(day=>changed.has(day));
+          const days=Object.keys(dayLabels).filter(day=>row[day]).map(day=>(dayLabels as any)[day]).join(" - ")||"—";
+          const instructor=instructors.find(person=>Number(person.AdInstructorId)===Number(row.AdInstructorId))?.AdInstructorName||"—";
+          const course=courses.find(item=>Number(item.AdCourseId)===Number(row.AdCourseId));
+          const mark=(...fields:string[])=>entry.status==="changed"&&fields.some(field=>changed.has(field))?"cell-changed":"";
+          return <tr key={`${entry.status}-${row.sourceOrder}-${index}`} className={entry.status}>
+            <td>{entry.status==="added"?"":entry.referenceNumber||"—"}</td>
+            <td>{course?.CourseCode||"—"}</td>
+            <td>{row.AdCourseName||course?.CourseName||"—"}</td>
+            <td className={mark("SCode")}>{row.SCode||"—"}</td>
+            <td className={mark("AdInstructorId")}>{instructor}</td>
+            <td className={daysChanged&&entry.status==="changed"?"cell-changed":""}>{days}</td>
+            <td className={mark("fstarttime","fendtime")} dir="ltr">{formatScheduleTimeRange(row.fstarttime,row.fendtime)}</td>
+            <td className={mark("AdRoomCode")}>{row.AdRoomCode||"—"}</td>
+            <td className={mark("AdRoomHall")}>{row.AdRoomHall||"—"}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div>
+    <footer className="pdf-report-foot"><ShieldCheck /> اسم المقرر الوارد في الأصل محمي من التبديل. الحذف مسموح، وأي مقرر جديد يظهر برقمه المرجعي فارغاً.</footer>
+  </>;
+}
+
 type InsightScene =
   | "quality"
   | "attention"
@@ -427,6 +469,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const [importPreview, setImportPreview] = useState<any>(null),
     [importFile, setImportFile] = useState(""),
     [online, setOnline] = useState(navigator.onLine);
+  const [pdfImportReport, setPdfImportReport] = useState<any>(null);
   // Help never opens on its own; one deliberate question mark owns it.
   const [decisionCompose, setDecisionCompose] = useState(false);
   const [decisionTitle, setDecisionTitle] = useState("");
@@ -1164,6 +1207,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     } finally {
       setBusy(false);
     }
+  };
+  const openPdfImportReport = async (d:any) => {
+    setBusy(true); setError(null);
+    try { setPdfImportReport(await fetchJson(`/api/intelligence/drafts/${d.id}/import-report`)); }
+    catch(e:any){ setError(smartMessage(e)); }
+    finally{ setBusy(false); }
   };
   const restoreVersion = async (v: any) => {
     // Restore is itself versioned before it runs, so it is reversible without
@@ -2601,9 +2650,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <span className="surface-kicker">باب الطلاب</span>
                       <strong>لا يوجد رابط استبيان لهذا القسم بعد</strong>
                       <small>
-                        الرابط مربوط بهذا القسم وحده، ولهذا يعرف مَن يجيب دون أن يُسأل أحد عن
-                        جنسه: قسم البنين رابط، وقسم البنات رابط آخر. لا تُحفظ الأسماء ولا الأرقام
-                        المدنية — يُتحقق من الرقم ثم يُشفَّر ويُنسى.
+                        يبدأ الطالب باسمه ورقمه المدني وقسمه، ثم يختار نوع الحالة. تُحفظ الهوية
+                        مشفّرة ولا تظهر إلا للمسؤول المخوّل داخل هذا المركز.
                       </small>
                       <div className="demand-actions">
                         <PrimaryButton onClick={issueSurvey} disabled={busy}>
@@ -2681,6 +2729,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <small>بلا أثر جانبي</small>
                 </article>
               </div>
+
+              <section className="student-cases-register">
+                <header><div><span className="surface-kicker">سجل الحالات</span><h3>طلبات الطلبة بالتفاصيل</h3><p>{demand.cases?.length?`${demand.cases.length.toLocaleString("ar-KW-u-nu-latn")} حالة مرتبة من الأحدث` : "لا توجد حالات مرسلة لهذا الفصل بعد."}</p></div><SecondaryButton data-guide-ignore="طباعة سجل الحالات فقط ولا تغير بياناته" onClick={()=>window.print()} disabled={!demand.cases?.length}><Printer />طباعة الحالات</SecondaryButton></header>
+                {demand.cases?.length?<div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>الطالب</th><th>الرقم المدني</th><th>نوع الطلب</th><th>المقررات / السبب</th><th>التحقق</th><th>التاريخ</th></tr></thead><tbody>{demand.cases.map((item:any)=>{
+                  const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";
+                  const reason=item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":item.graduateReason==="other"?item.details:"";
+                  return <tr key={item.id} className={`case-${item.requestType}`}><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{item.requestType==="graduate"?reason:(item.courses||[]).map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||item.details||"—"}</td><td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:"—"}</td><td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
+                })}</tbody></table></div>:<div className="empty-state-compact">ستظهر هنا الأسماء والأرقام المدنية ونوع الحالة وكل تفاصيلها.</div>}
+              </section>
 
               {/* ── الشعب ────────────────────────────────────────────────────
                   السؤال الذي يُرسَل الاستبيان لأجله: الطلب مقابل سعة المقرر،
@@ -3086,6 +3143,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       ) : (
                         <div className="nl-answer">
                           <strong>{item.answer?.title}</strong>
+                          {item.answer?.scope ? <small className="nl-scope-proof"><ShieldCheck aria-hidden="true" /> النطاق: {item.answer.scope.sectionName} · {item.answer.scope.rowCount} موعد</small> : null}
 
                           {/* The assistant already measured these; a paragraph
                               is the slowest way to hand over a number. */}
@@ -4269,6 +4327,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <GhostButton onClick={() => openDraft(d)}>
                         فتح
                       </GhostButton>
+                      {d.importLayout === "authority-pdf" ? (
+                        <SecondaryButton data-guide-ignore="يفتح تقرير مقارنة للقراءة والطباعة فقط" onClick={() => void openPdfImportReport(d)} disabled={busy}>
+                          <FileText /> تقرير تغييرات PDF
+                        </SecondaryButton>
+                      ) : null}
                       {d.status === "draft" ? (
                         <PrimaryButton
                           data-guide-target="intelligence.publish-draft"
@@ -4590,6 +4653,25 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           ) : null}
         </div>
       ) : null}
+
+      {demand?.cases?.length ? <PrintPortal><div className="print-report print-wide student-cases-print"><PrintLetterhead title="حالات استبيان الطلبة" scope={[demand.sectionName,terms.find(term=>Number(term.AdTermId)===Number(termId))?.AdTermName].filter(Boolean).join(" · ")} /><table><thead><tr><th>م</th><th>الاسم</th><th>الرقم المدني</th><th>نوع الطلب</th><th>التفاصيل</th><th>الوحدات</th><th>التاريخ</th></tr></thead><tbody>{demand.cases.map((item:any,index:number)=><tr key={item.id}><td>{index+1}</td><td>{item.name||"—"}</td><td dir="ltr">{item.civil||"—"}</td><td>{item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد"}</td><td>{item.requestType==="graduate"?(item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مسبقات الميداني متعارضة":item.details):(item.courses||[]).map((course:any)=>course.name).join(" · ")||item.details||"—"}</td><td>{item.requestType==="graduate"?`${item.passedUnits??"—"} / ${item.requiredUnits??"—"}`:"—"}</td><td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>)}</tbody></table></div></PrintPortal>:null}
+
+      {pdfImportReport ? (
+        <div className="pdf-report-backdrop" role="dialog" aria-modal="true" aria-label="تقرير تغييرات جدول PDF" onMouseDown={event=>{if(event.target===event.currentTarget)setPdfImportReport(null);}}>
+          <section className="pdf-report-sheet">
+            <header className="pdf-report-head">
+              <div><span className="surface-kicker">مركز الاستعلامات · أثر التعديل</span><h2>تقرير مقارنة الجدول المعتمد</h2><p>{pdfImportReport.sourceFileName}</p></div>
+              <div className="pdf-report-actions no-print"><SecondaryButton data-guide-ignore="طباعة تقرير فروقات PDF فقط" onClick={()=>{document.documentElement.dataset.printKind="pdf-diff";window.print();delete document.documentElement.dataset.printKind;}}><Printer />طباعة</SecondaryButton><button type="button" data-guide-ignore="إغلاق تقرير فروقات PDF فقط" className="drawer-close" onClick={()=>setPdfImportReport(null)} aria-label="إغلاق"><X /></button></div>
+            </header>
+            <PdfDifferenceBody report={pdfImportReport} courses={courses} instructors={instructors}/>
+          </section>
+        </div>
+      ) : null}
+
+      {pdfImportReport ? <PrintPortal className="print-report print-wide print-sheet-modal pdf-diff-print">
+        <PrintLetterhead title="تقرير مقارنة الجدول المعتمد" scope={pdfImportReport.sourceFileName}/>
+        <PdfDifferenceBody report={pdfImportReport} courses={courses} instructors={instructors}/>
+      </PrintPortal> : null}
 
       {detail ? (
         <div

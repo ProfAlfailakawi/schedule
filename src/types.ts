@@ -111,6 +111,9 @@ export interface FSchedule {
   AdRoomCode: string;
   AdRoomHall: string;
   fdetail?: string;
+  /** Source-PDF trace. Empty for ordinary/new rows; never used as an internal id. */
+  referenceNumber?: string;
+  sourceOrder?: number;
   /**
    * How many times this appointment has been written.
    *
@@ -204,6 +207,10 @@ export interface ScheduleDraft {
   status: "draft" | "published" | "archived";
   source: "what-if" | "auto" | "import" | "manual";
   rows: FSchedule[];
+  /** Original scanned table, kept immutable for the colour-coded change report. */
+  baselineRows?: FSchedule[];
+  sourceFileName?: string;
+  importLayout?: "authority-pdf" | "worksheet";
   publishedAt?: string;
 }
 
@@ -251,36 +258,30 @@ export interface ClientTelemetryEntry {
 /**
  * ── ما يحتاجه الطالب ────────────────────────────────────────────────────────
  *
- * A student's answer to «أي المقررات تحتاج؟», and deliberately the thinnest
- * record this system holds.
- *
- * **There is no name and there is no civil ID here.** The civil ID is typed,
- * checked against the Kuwaiti checksum so an invented number is refused, then
- * hashed on the server and thrown away — what survives is a fingerprint that
- * can tell two submissions apart and can never be turned back into a person.
- * The name is asked for, shown back on the confirmation so the student knows
- * their own answer landed, and never written anywhere.
- *
- * That is not caution for its own sake. A department needs counts and needs to
- * know that forty answers came from forty people; it does not need to know who
- * they are, and a table that says who wanted what is a thing that can be
- * misused, subpoenaed, leaked, or simply read by someone it was not meant for.
- * The cheapest way to protect it is not to have it.
- *
- * The fingerprint is still a JOIN key: the registrar's own civil IDs, hashed
- * with the same secret, match these exactly — so the department keeps the
- * ability to cross-check without ever holding an identity.
+ * A student's structured case. Identity is encrypted at rest and is decrypted
+ * only in the permission-7 coordinator response; the fingerprint remains the
+ * duplicate-prevention key and never leaves the server.
  */
 export interface StudentNeed {
   id: string;
   /** HMAC of the civil ID. Distinguishes people; identifies nobody. */
   fingerprint: string;
   AdCollegeId: number;
-  /** The section the LINK belongs to — never something the student picks. */
+  /** The scientific section selected by the student, validated in the link's college. */
   AdSectionId: number;
   AdTermId: number;
   /** Every course this student says they need. */
   courseIds: number[];
+  requestType?: "new-course" | "course-conflict" | "graduate";
+  nameCipher?: string;
+  civilCipher?: string;
+  details?: string;
+  graduateReason?: "field-conflict" | "field-prerequisite-conflict" | "other";
+  passedUnits?: number;
+  requiredUnits?: number;
+  degreeUnits?: number;
+  eligibility?: "eligible" | "ineligible" | "not-checked";
+  proofNameMatched?: boolean;
   createdAt: string;
 }
 

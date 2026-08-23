@@ -488,6 +488,8 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .share-row-lead span{display:flex;align-items:center;gap:var(--s2);margin-top:2px;color:var(--muted);font-size:var(--t-xs)}
+.share-row-lead .share-link-kind{width:max-content;max-width:100%;margin:0 0 7px;padding:5px 9px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font-weight:750;white-space:normal}
+.share-row-lead .share-link-kind svg{width:14px;height:14px;flex:none}.share-row-lead .share-link-kind.kind-staff{border-color:color-mix(in srgb,var(--brass) 34%,var(--line));color:var(--brass)}.share-row-lead .share-link-kind.kind-department{border-color:color-mix(in srgb,var(--accent) 30%,var(--line));color:var(--accent)}
 .share-row-lead i{width:6px;height:6px;border-radius:50%;background:var(--success)}
 .share-list article.dead .share-row-lead i{background:var(--muted-2)}
 /* Expiry is the fact that decides whether a link is worth sharing — carried in
@@ -849,6 +851,7 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .review-finding-detail p{margin:0;color:var(--ink-2);font-size:var(--t-sm);line-height:1.8}
 .review-finding-meta{display:flex;flex-wrap:wrap;gap:8px}
 .review-finding-meta span{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 11px;border-radius:999px;background:var(--surface);border:1px solid var(--line);color:var(--muted);font-size:11px;font-weight:780}
+.history-review-infographic{display:grid;gap:12px}.history-review-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.history-review-kpis article{display:grid;grid-template-columns:28px 1fr;align-items:center;column-gap:8px;padding:10px;border-radius:13px;background:var(--surface);border:1px solid var(--line)}.history-review-kpis svg{grid-row:1/3;width:18px;color:var(--accent)}.history-review-kpis strong{font-size:18px;line-height:1}.history-review-kpis span{font-size:10px;color:var(--muted)}.history-review-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.history-review-cards>article{display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px;border:1px solid var(--line);border-radius:13px;background:var(--surface)}.history-review-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}.history-review-icon svg{width:16px}.history-review-cards div{min-width:0;display:grid;gap:2px}.history-review-cards div strong{font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.history-review-cards div small{font-size:9px;color:var(--muted)}.history-review-cards time{font-size:10px;font-weight:700}.history-review-cards p{grid-column:2/-1;display:flex;align-items:center;gap:5px;margin:0!important;color:var(--muted)!important;font-size:9px!important}.history-review-cards p svg{width:11px}.history-review-cards p svg:nth-of-type(2){margin-inline-start:6px}.history-review-more{color:var(--muted);text-align:center}@media(max-width:620px){.history-review-cards{grid-template-columns:1fr}.history-review-kpis{grid-template-columns:1fr 1fr 1fr}.history-review-kpis article{grid-template-columns:1fr;text-align:center;justify-items:center}.history-review-kpis svg{grid-row:auto}}
 /* Each conflicting section is its own card now — code, teacher, section·days and
    time read at a glance instead of as one run-on line (Note 25). */
 .review-row-card{
@@ -1028,8 +1031,20 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .transfer-tabs button.active{border-bottom-color:var(--accent);color:var(--accent);font-weight:600}
 .transfer-body{padding:var(--s5) var(--s6) var(--s6);display:grid;gap:var(--s4);justify-items:start}
 .transfer-body p{color:var(--muted);font-size:var(--t-sm);line-height:1.8}
+.transfer-import-hero{display:flex;align-items:flex-start;gap:12px;width:100%;padding:16px;border:1px solid color-mix(in srgb,var(--accent) 24%,var(--line));border-radius:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 9%,var(--surface)),var(--surface))}
+.transfer-import-hero>span{display:grid;place-items:center;inline-size:40px;block-size:40px;border-radius:13px;background:var(--accent);color:#fff;flex:none;box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 25%,transparent)}
+.transfer-import-hero svg{inline-size:19px;block-size:19px}.transfer-import-hero div{display:grid;gap:3px}.transfer-import-hero strong{font-size:var(--t-sm);color:var(--ink)}
+.transfer-import-hero p{margin:0!important;line-height:1.65!important}
 .transfer-body b{color:var(--ink)}
 .transfer-file{display:none}
+.meeting-backdrop{position:fixed;inset:0;z-index:4300;background:rgba(8,18,32,.54);backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px}
+.meeting-sheet{width:min(820px,100%);max-height:calc(100vh - 40px);overflow:auto;background:var(--surface);border:1px solid var(--line);border-radius:26px;box-shadow:var(--shadow-xl);padding:22px;display:grid;gap:16px;text-align:right}
+.meeting-sheet>header{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}.meeting-sheet h2{margin:4px 0;font-size:var(--t-h2)}.meeting-sheet header p{color:var(--muted);font-size:var(--t-sm)}
+.meeting-controls{display:grid;grid-template-columns:minmax(0,1fr) 180px;gap:10px}.meeting-controls>label{display:grid;gap:5px}.meeting-controls>label>span{font-size:11px;color:var(--muted)}.meeting-controls select,.meeting-search{height:44px;border:1px solid var(--line);border-radius:13px;background:var(--surface-2)}.meeting-controls select{padding-inline:10px;color:var(--ink)}.meeting-search{display:flex;align-items:center;gap:8px;padding-inline:12px}.meeting-search svg{width:16px;color:var(--muted)}.meeting-search input{border:0;background:transparent;outline:0;min-width:0;width:100%;color:var(--ink)}
+.meeting-selection-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.meeting-selection-head strong{display:flex;align-items:center;gap:7px;font-size:13px}.meeting-selection-head svg{width:17px;color:var(--accent)}.meeting-selection-head div{display:flex;gap:6px}.meeting-selection-head button{border:0;background:var(--surface-2);color:var(--muted);border-radius:9px;padding:6px 9px;font-size:11px}
+.meeting-people{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:250px;overflow:auto;padding:2px}.meeting-people button{display:flex;align-items:center;gap:9px;text-align:right;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:9px;color:var(--ink)}.meeting-people button i{display:grid;place-items:center;width:22px;height:22px;border-radius:7px;background:var(--surface-2);flex:none}.meeting-people button i svg{width:13px}.meeting-people button.on{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 7%,var(--surface))}.meeting-people button.on i{background:var(--accent);color:#fff}.meeting-people span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.meeting-error{padding:10px 12px;border-radius:11px;background:var(--danger-soft);color:var(--danger)!important}.meeting-results{display:grid;gap:18px;border-top:1px solid var(--line);padding-top:15px}.meeting-results section{display:grid;gap:9px}.meeting-results h3{font-size:13px}.meeting-slot{display:grid;grid-template-columns:38px 1fr auto;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--line);border-radius:13px;background:var(--surface)}.meeting-slot>span{display:grid;place-items:center;width:36px;height:36px;border-radius:11px;background:var(--surface-2);color:var(--muted)}.meeting-slot svg{width:17px}.meeting-slot div{display:flex;align-items:center;gap:10px}.meeting-slot time{font-weight:700}.meeting-slot small{color:var(--muted)}.meeting-slot.best{border-color:color-mix(in srgb,var(--success) 38%,var(--line));background:linear-gradient(135deg,color-mix(in srgb,var(--success) 9%,var(--surface)),var(--surface))}.meeting-slot.best>span{background:var(--success);color:#fff}.meeting-alternatives{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:230px;overflow:auto}.meeting-empty{display:grid;justify-items:center;gap:5px;padding:25px;color:var(--muted)}.meeting-empty svg{width:28px}.meeting-empty strong{color:var(--ink)}
+@media(max-width:620px){.meeting-backdrop{padding:0}.meeting-sheet{height:100vh;max-height:100vh;border-radius:0;padding:16px}.meeting-controls{grid-template-columns:1fr}.meeting-people,.meeting-alternatives{grid-template-columns:1fr}.meeting-selection-head{align-items:flex-start}.meeting-slot div{display:grid;gap:2px}}
 .transfer-note,.transfer-error{
   display:flex;align-items:center;gap:var(--s2);
   margin:0 var(--s6);padding:var(--s3) var(--s4);
@@ -1443,7 +1458,7 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 @media (min-width:900px) and (min-height:760px){
   .review-backdrop{padding:8px}
   .review-sheet,.review-sheet.visual-minimal{max-height:calc(100dvh - 16px)}
-  .review-body{overflow-y:visible}
+  .review-body{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;-webkit-overflow-scrolling:touch}
   .review-head{padding:clamp(14px,1.9vh,22px) 24px;gap:18px}
   .review-ring{width:76px;height:76px}
   .review-spread,.review-sheet.visual-minimal .review-spread{padding:clamp(9px,1.2vh,14px) 24px}
@@ -1700,6 +1715,9 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .meeting-slots-best strong{font-size:14px;color:var(--ink)}
 .meeting-slots-none{background:var(--surface-2);border-color:var(--line)}
 .meeting-slots-answer{display:grid;gap:12px}
+.meeting-slots-alternatives-title{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;padding:0 2px}
+.meeting-slots-alternatives-title small{color:var(--muted);font-size:10.5px;font-weight:700}
+.meeting-slots-alternatives-title strong{color:var(--ink);font-size:13px;font-weight:800}
 .meeting-slots-days{display:grid;gap:10px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
 .meeting-slots-days section{border:1px solid var(--line);border-radius:14px;padding:10px 12px;background:var(--surface)}
 .meeting-slots-days h3{margin:0 0 8px;font-size:12.5px;font-weight:800;color:var(--ink)}

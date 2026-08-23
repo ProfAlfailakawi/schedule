@@ -2,7 +2,7 @@ import express, { Request, Response, NextFunction } from "express";
 import compression from "compression";
 import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
-import { createHmac, randomBytes } from "crypto";
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from "crypto";
 import { gunzipSync } from "zlib";
 import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } from "./src/db/repository";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
@@ -51,6 +51,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
+import { ocrDocument, parseScheduleOcrText, transcriptFacts } from "./src/utils/documentOcr";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -634,7 +635,13 @@ function safeDraftRows(input: unknown, collegeId: number, sectionId: number, ter
     fsunday: Boolean(raw?.fsunday), fmonday: Boolean(raw?.fmonday), ftuesday: Boolean(raw?.ftuesday), fwednesday: Boolean(raw?.fwednesday), fthursday: Boolean(raw?.fthursday),
     fstarttime: String(raw?.fstarttime || ""), fendtime: String(raw?.fendtime || ""),
     AdRoomCode: String(raw?.AdRoomCode || ""), AdRoomHall: String(raw?.AdRoomHall || ""),
-    fdetail: legacyFDetail(raw || {})
+    fdetail: legacyFDetail(raw || {}),
+    referenceNumber: String(raw?.referenceNumber || "").slice(0,30),
+    // Imported PDF rows carry their original stable order. New rows deliberately
+    // live in a separate range so they can never impersonate a deleted source row.
+    sourceOrder: raw?.sourceOrder !== undefined && raw?.sourceOrder !== null && Number.isFinite(Number(raw.sourceOrder))
+      ? Number(raw.sourceOrder)
+      : 1_000_000 + index,
   }));
 }
 
@@ -691,7 +698,11 @@ function mapSmartIssuesToRows(rows: any[], issues: string[], conflicts: any[] = 
 }
 
 function smartContextFrom(req: AuthenticatedRequest) {
-  const source = req.method === "GET" ? req.query : req.body || {};
+  /* Binary imports carry a Buffer in `req.body`, so their scope necessarily
+     travels in the query string. Merge both channels instead of making every
+     non-GET request ignore its query parameters. JSON body values still win. */
+  const body = req.body && !Buffer.isBuffer(req.body) && typeof req.body === "object" ? req.body : {};
+  const source: any = { ...(req.query || {}), ...(body || {}) };
   return { collegeId: Number(source.collegeId || source.AdCollegeId || 0), sectionId: Number(source.sectionId || source.AdSectionId || 0), termId: Number(source.termId || source.AdTermId || 0) };
 }
 
@@ -3138,6 +3149,22 @@ app.put("/api/visiting-roster", requirePermission(7), async (req: AuthenticatedR
   res.json({ instructorIds: await Repository.saveVisitingRoster(collegeId, sectionId, termId, ids) });
 });
 
+/** A department scheduler may register a visiting instructor from the roster
+ * itself. This intentionally bypasses the college-wide instructor-management
+ * screen (form 3) while remaining scoped to a department/term and permission 7. */
+app.post("/api/visiting-roster/instructor", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.body?.collegeId||0),sectionId=Number(req.body?.sectionId||0),termId=Number(req.body?.termId||0);
+  const civil=asciiDigits(req.body?.AdInstructorCivil).replace(/\D/g,"");
+  const name=String(req.body?.AdInstructorName||"").trim().slice(0,100);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const check=validateCivilId(civil);if(!check.isValid||name.length<3){res.status(400).json({error:check.isValid?"اكتب اسم المنتدب كاملاً":check.message});return;}
+  let person=await Repository.getInstructorByCivil(civil);
+  if(!person) person=await Repository.createInstructor(civil,name,"");
+  const current=await Repository.getVisitingRoster(collegeId,sectionId,termId);
+  await Repository.saveVisitingRoster(collegeId,sectionId,termId,[...new Set([...current,Number(person.AdInstructorId)])]);
+  res.status(201).json(person);
+});
+
 /** Start this term's roster from another term's, instead of retyping it. */
 app.post("/api/visiting-roster/copy", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.body?.collegeId || 0);
@@ -3557,7 +3584,6 @@ app.post("/api/schedules/meeting-slots", requirePermission(7), async (req: Authe
   const ids = Array.from(new Set((Array.isArray(body.instructorIds) ? body.instructorIds : []).map((value: unknown) => Number(value)).filter((value: number) => value > 0))) as number[];
   if (!termId) { res.status(400).json({ error: "حدد الفصل الدراسي" }); return; }
   if (ids.length < 2) { res.status(400).json({ error: "اختر أستاذين على الأقل" }); return; }
-  if (ids.length > 30) { res.status(400).json({ error: "الحد الأقصى ثلاثون مشاركاً" }); return; }
 
   const [termRows, instructors] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
@@ -3726,6 +3752,13 @@ app.put("/api/schedules/:id", requirePermission(7), async (req: AuthenticatedReq
   const existing = await Repository.getScheduleById(id);
   if (!existing) { res.status(404).json({ error: "الجدول غير موجود" }); return; }
   const collegeId = parseInt(AdCollegeId), sectionId = parseInt(AdSectionId), termId = parseInt(AdTermId), courseId = parseInt(AdCourseId), instructorId = parseInt(AdInstructorId);
+  if (existing.sourceOrder !== undefined && Number(existing.sourceOrder) < 1_000_000 && Number(existing.AdCourseId) !== courseId) {
+    res.status(409).json({
+      error: "أنت تحاول تبديل اسم مقرر وارد في الجدول المعتمد، وهذا مخالف للائحة نظام الجدول. يمكنك حذف المقرر كاملاً ثم إضافة مقرر جديد، لكن لا يمكن تغيير اسمه.",
+      code: "COURSE_NAME_LOCKED",
+    });
+    return;
+  }
   if (!req.user.IsAdminUser && (!isScopeAllowed(req, existing.AdCollegeId, existing.AdSectionId) || !isScopeAllowed(req, collegeId, sectionId))) {
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
@@ -4311,7 +4344,8 @@ app.post("/api/intelligence/auto-schedule", requirePermission(7), async (req: Au
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const [scheduleData,courses,instructors]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors()]);
-  const {rows:target,universe}=scheduleData;
+  const target=scheduleData.rows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId&&Number(row.AdTermId)===termId);
+  const universe=scheduleData.universe;
   if(!target.length){res.status(400).json({error:"لا توجد مواعيد في هذا القسم والفصل لإنشاء مقترح"});return;}
   const proposal=autoScheduleProposal(target,universe);
   const external=universe.filter(row=>row.AdTermId===termId&&!(row.AdCollegeId===collegeId&&row.AdSectionId===sectionId));
@@ -4328,7 +4362,8 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   if(prompt.length<2){res.status(400).json({error:"اكتب سؤالك للمساعد"});return;}
   const [scheduleData,courses,instructors,sections]=await Promise.all([scopedScheduleUniverse(collegeId,sectionId,termId),Repository.getCourses(),Repository.getInstructors(),Repository.getSections()]);
-  const {rows:target,universe}=scheduleData;
+  const target=scheduleData.rows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId&&Number(row.AdTermId)===termId);
+  const universe=scheduleData.universe;
   const analysis=analyzeSchedule(target,universe,courses,instructors); const bullets:string[]=[]; let title="قراءة ذكية للجدول";
   /**
    * ── الإجابة المرسومة ──────────────────────────────────────────────────────
@@ -4355,8 +4390,16 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
   const hourMatch=normalized.match(/(?:إلى|الى|الساعة|وقت)\s*(\d{1,2})(?::(\d{2}))?/);
   const requestedHour=hourMatch?Math.min(23,Number(hourMatch[1]))*60+Number(hourMatch[2]||0):null;
   const profHint=normalized.match(/(?:د\.?|دكتور|الدكتور)\s*([^\s]+)/)?.[1];
-  const requestedInstructor=instructors.find(i=>normalized.includes(String(i.AdInstructorName||"").toLowerCase())||(profHint&&String(i.AdInstructorName||"").toLowerCase().includes(profHint)));
-  if(normalized.includes("المشكلة الأكبر")||normalized.includes("اكبر مشكلة")||normalized.includes("أكبر مشكلة")||normalized.includes("وين المشكلة")){
+  const mentionedInstructor=instructors.find(i=>normalized.includes(String(i.AdInstructorName||"").toLowerCase())||(profHint&&String(i.AdInstructorName||"").toLowerCase().includes(profHint)));
+  const scopedInstructorIds=new Set(target.map(row=>Number(row.AdInstructorId||0)).filter(Boolean));
+  const requestedInstructor=mentionedInstructor&&scopedInstructorIds.has(Number(mentionedInstructor.AdInstructorId))?mentionedInstructor:undefined;
+  const sectionName=sections.find(s=>Number(s.AdSectionId)===sectionId)?.AdSectionName||"القسم المحدد";
+  if(mentionedInstructor&&!requestedInstructor){
+    title=`لا بيانات لهذا الأستاذ في ${sectionName}`;
+    summary=`وجدت الاسم في دليل الجامعة، لكنه لا يملك موعداً داخل ${sectionName} والفصل المحدد. لم أخلط جدول قسم آخر بهذه الإجابة.`;
+    shape="gaps";
+    figures.push({label:"مواعيد داخل النطاق",value:"0",tone:"plain"},{label:"النطاق المقروء",value:sectionName,tone:"plain"});
+  } else if(normalized.includes("المشكلة الأكبر")||normalized.includes("اكبر مشكلة")||normalized.includes("أكبر مشكلة")||normalized.includes("وين المشكلة")){
     const topAlert=analysis.alerts?.[0],topFactor=[...(analysis.factors||[])].sort((a:any,b:any)=>b.penalty-a.penalty)[0];title="أكبر نقطة تحتاج تدخلك الآن";summary=topAlert?`${topAlert.title}: ${topAlert.detail}`:topFactor&&topFactor.penalty>0?`أكبر خصم من جودة الجدول حالياً هو ${topFactor.label} (-${topFactor.penalty}).`:`لا تظهر مشكلة حرجة حالياً؛ جودة الجدول ${analysis.score}/100.`;analysis.alerts.slice(1,5).forEach((a:any)=>bullets.push(`${a.title}: ${a.detail}`));
     shape="alert";
     figures.push({label:"جودة الجدول",value:`${analysis.score}`,tone:analysis.score>=75?"good":analysis.score>=55?"warn":"bad",hint:"من 100"},
@@ -4458,14 +4501,14 @@ app.post("/api/intelligence/copilot", requirePermission(7), async (req: Authenti
     low.forEach((r:any)=>bars.push({label:`${r.code}/${r.hall}`,value:r.utilization,max:100,caption:`${r.utilization}٪`}));
   } else {
     analysis.alerts.slice(0,5).forEach((a:any)=>bullets.push(`${a.title}: ${a.detail}`));
-    const sectionName=sections.find(s=>s.AdSectionId===sectionId)?.AdSectionName||"القسم"; summary=`قرأت جدول ${sectionName} فقط ضمن صلاحياتك. ${summary}`;
+    summary=`قرأت جدول ${sectionName} فقط ضمن صلاحياتك. ${summary}`;
     figures.push({label:"جودة الجدول",value:`${analysis.score}`,tone:analysis.score>=75?"good":analysis.score>=55?"warn":"bad",hint:"من 100"},
       {label:"موانع الحفظ",value:`${analysis.metrics.criticalConflicts}`,tone:analysis.metrics.criticalConflicts?"bad":"good"},
       {label:"متوسط الفراغ",value:`${analysis.metrics.avgInstructorGap}`,hint:"دقيقة"});
     const busiestDay=Math.max(1,...analysis.dayLoad.map((x:any)=>x.count||0));
     analysis.dayLoad.forEach((x:any)=>bars.push({label:x.label||x.key,value:x.count,max:busiestDay,caption:`${x.count}`}));
   }
-  res.json({title,summary,bullets,shape,figures,bars,shift,
+  res.json({title,summary,bullets,shape,figures,bars,shift,scope:{collegeId,sectionId,termId,sectionName,rowCount:target.length},
     guardrail:"المساعد يحلل ويقترح فقط. لا يكتب أي تغيير على الجدول الحقيقي."});
 });
 
@@ -4563,11 +4606,58 @@ app.put("/api/intelligence/comments/:scheduleId/:commentId", requirePermission(7
 app.get("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} res.json(await Repository.getScheduleDrafts(collegeId,sectionId,termId));
 });
+
+app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ type: "application/octet-stream", limit: "24mb" }), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
+  if(occupied.length){res.status(409).json({error:"نسخ جدول PDF متاح للفصل الفارغ فقط. أنشئ فصلاً فارغاً أو اختر واحداً بلا مواعيد."});return;}
+  const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
+  if(!bytes.length){res.status(400).json({error:"لم يصل ملف PDF"});return;}
+  const [allCourses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]);
+  const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
+  const recognized=await ocrDocument(bytes,"application/pdf");
+  const parsed=parseScheduleOcrText(recognized.text,courses,instructors);
+  const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
+  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}):[];
+  const issues=[...new Set([...parsed.issues,...structural])];
+  const encodedFileName=String(req.get("x-file-name")||"الجدول المعتمد.pdf").slice(0,600);
+  let fileName=encodedFileName;try{fileName=decodeURIComponent(encodedFileName);}catch{/* A literal header is already the right name. */}
+  res.json({
+    rows,issues,ready:rows.length>0&&issues.length===0,
+    fileName:fileName.slice(0,180),
+    pages:recognized.pages,confidence:recognized.confidence,
+    message:rows.length?`تمت قراءة ${rows.length} شعبة من ${recognized.pages} صفحة`:`لم أتمكن من استخراج شعب من الملف`,
+  });
+});
+
 app.post("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}); if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة قبل معالجة البيانات",issues});return;} const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,name:String(req.body?.name||"سيناريو جديد").slice(0,100),source:["what-if","auto","import","manual"].includes(req.body?.source)?req.body.source:"what-if",rows}); res.status(201).json(draft);
+  const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId); const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}); if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة قبل معالجة البيانات",issues});return;} const importLayout=req.body?.importLayout==="authority-pdf"?"authority-pdf":req.body?.importLayout==="worksheet"?"worksheet":undefined;if(importLayout==="authority-pdf"){const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});if(occupied.length){res.status(409).json({error:"نسخ PDF مسموح إلى فصل فارغ فقط. اختر فصلاً بلا بيانات."});return;}} const draft=await Repository.createScheduleDraft({SystemUserId:req.user.SystemUserId,userName:req.user.Name,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,name:String(req.body?.name||"سيناريو جديد").slice(0,100),source:["what-if","auto","import","manual"].includes(req.body?.source)?req.body.source:"what-if",rows,baselineRows:importLayout==="authority-pdf"?rows.map((row:any)=>({...row})):undefined,sourceFileName:String(req.body?.sourceFileName||"").slice(0,180)||undefined,importLayout}); res.status(201).json(draft);
+});
+
+app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const draft=await Repository.getScheduleDraftById(String(req.params.id));
+  if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
+  if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  if(draft.importLayout!=="authority-pdf"||!draft.baselineRows?.length){res.status(400).json({error:"هذه المسودة ليست نسخة من جدول PDF معتمد"});return;}
+  const baseline=[...draft.baselineRows].sort((a:any,b:any)=>Number(a.sourceOrder)-Number(b.sourceOrder));
+  const current=[...draft.rows];
+  const currentByOrder=new Map(current.map((row:any)=>[Number(row.sourceOrder),row]));
+  const baselineOrders=new Set(baseline.map((row:any)=>Number(row.sourceOrder)));
+  const fields=["SCode","AdInstructorId","fsunday","fmonday","ftuesday","fwednesday","fthursday","fstarttime","fendtime","AdRoomCode","AdRoomHall"];
+  const reportRows:any[]=[];
+  baseline.forEach((source:any)=>{
+    const next=currentByOrder.get(Number(source.sourceOrder));
+    if(!next){reportRows.push({status:"deleted",changedFields:[],referenceNumber:String(source.referenceNumber||""),source,current:source});return;}
+    const changedFields=fields.filter(field=>String(source[field]??"")!==String(next[field]??""));
+    reportRows.push({status:changedFields.length?"changed":"unchanged",changedFields,referenceNumber:String(source.referenceNumber||""),source,current:next});
+  });
+  current.filter((row:any)=>!baselineOrders.has(Number(row.sourceOrder))).forEach((row:any)=>reportRows.push({status:"added",changedFields:fields,referenceNumber:"",source:null,current:{...row,referenceNumber:""}}));
+  const counts=reportRows.reduce((acc:any,row:any)=>(acc[row.status]=(acc[row.status]||0)+1,acc),{added:0,deleted:0,changed:0,unchanged:0});
+  res.json({draftId:draft.id,name:draft.name,sourceFileName:draft.sourceFileName||"الجدول المعتمد.pdf",counts,rows:reportRows});
 });
 app.put("/api/intelligence/drafts/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
+  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);if(draft.importLayout==="authority-pdf"&&draft.baselineRows?.length){const baselineByOrder=new Map(draft.baselineRows.map((row:any)=>[Number(row.sourceOrder),row]));const renamed=rows.find((row:any)=>{const base=baselineByOrder.get(Number(row.sourceOrder));return base&&(Number(base.AdCourseId)!==Number(row.AdCourseId)||String(base.AdCourseName)!==String(row.AdCourseName));});if(renamed){res.status(409).json({error:"اسم المقرر من ملف PDF ثابت وفق لائحة الجدول. يمكنك حذف المقرر كاملاً، لكن لا يمكن تبديل اسمه.",code:"COURSE_NAME_LOCKED",rowId:renamed.id});return;}}const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
 });
 app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const draft = await Repository.getScheduleDraftById(String(req.params.id));
@@ -6309,6 +6399,36 @@ app.post("/api/public/staff/:token/note", async (req: Request, res: Response) =>
 const surveyFingerprint = (civil: string) =>
   createHmac("sha256", CALENDAR_SECRET).update(`need|${civil}`).digest("hex").slice(0, 32);
 
+const studentIdentityKey=createHmac("sha256",CALENDAR_SECRET).update("student-case-identity-v1").digest();
+const sealStudentIdentity=(value:string)=>{
+  const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",studentIdentityKey,iv);
+  const encrypted=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]),tag=cipher.getAuthTag();
+  return Buffer.concat([iv,tag,encrypted]).toString("base64url");
+};
+const openStudentIdentity=(value?:string)=>{
+  try{const payload=Buffer.from(String(value||""),"base64url"),iv=payload.subarray(0,12),tag=payload.subarray(12,28),encrypted=payload.subarray(28),cipher=createDecipheriv("aes-256-gcm",studentIdentityKey,iv);cipher.setAuthTag(tag);return Buffer.concat([cipher.update(encrypted),cipher.final()]).toString("utf8");}catch{return"";}
+};
+
+type DegreeRule={degreeUnits:130|132|134;fieldTrainingRequired:102|107;graduateRegularPassed:107|109|111;graduateSummerPassed:109|111|113};
+/** Internal regulation table. It is never sent with the public survey; only
+ * the eligibility verdict and the applied threshold are returned after proof. */
+const degreeRuleForSection=(sectionName:string):DegreeRule=>{
+  const name=String(sectionName||"");
+  const degreeUnits:130|132|134=/فرنسي/.test(name)?132:/انجليزي|إنجليزي|تربية خاصة|تفوق|إعاقة|صعوبات/.test(name)?134:130;
+  return degreeUnits===130
+    ?{degreeUnits,fieldTrainingRequired:102,graduateRegularPassed:107,graduateSummerPassed:109}
+    :degreeUnits===132
+      ?{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:109,graduateSummerPassed:111}
+      :{degreeUnits,fieldTrainingRequired:107,graduateRegularPassed:111,graduateSummerPassed:113};
+};
+const issueStudentProof=(payload:{fingerprint:string;sectionId:number;passedUnits:number;requiredUnits:number;nameMatched:boolean})=>{
+  const body=Buffer.from(JSON.stringify({...payload,exp:Date.now()+20*60_000})).toString("base64url");
+  const signature=createHmac("sha256",studentIdentityKey).update(body).digest("base64url");return`${body}.${signature}`;
+};
+const verifyStudentProof=(token:string)=>{
+  try{const[body,signature]=String(token||"").split("."),expected=createHmac("sha256",studentIdentityKey).update(body).digest("base64url");if(!body||signature!==expected)return null;const payload=JSON.parse(Buffer.from(body,"base64url").toString("utf8"));return Number(payload.exp)>Date.now()?payload:null;}catch{return null;}
+};
+
 const asciiDigits = (value: unknown) => String(value ?? "")
   .replace(/[٠-٩]/g, digit => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)))
   .replace(/[۰-۹]/g, digit => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)));
@@ -6342,12 +6462,15 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
   /* The courses offered are the ones this section has ACTUALLY taught — read
      from its own history, newest first. A catalogue entry nobody has taught in
      a decade is not something to ask a student about. */
-  const { taught } = surveyCourseIdsForSection(courses, history, Number(resolved.link.AdSectionId));
-  const offered = courses
-    .filter(course => taught.has(Number(course.AdCourseId)))
-    .map(course => ({ id: course.AdCourseId, code: course.CourseCode, name: course.CourseName,
-                      lastTaught: taught.get(Number(course.AdCourseId)) || 0 }))
-    .sort((a, b) => b.lastTaught - a.lastTaught || String(a.code).localeCompare(String(b.code), "ar"));
+  const scientificSections=sections.filter((row:any)=>Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  const sectionOptions=scientificSections.map((section:any)=>{
+    const {taught}=surveyCourseIdsForSection(courses,history,Number(section.AdSectionId));
+    const offered=courses.filter((course:any)=>Number(course.AdSectionId)===Number(section.AdSectionId))
+      .map((course:any)=>({id:course.AdCourseId,code:course.CourseCode,name:course.CourseName,lastTaught:taught.get(Number(course.AdCourseId))||0}))
+      .sort((a:any,b:any)=>b.lastTaught-a.lastTaught||String(a.code).localeCompare(String(b.code),"ar"));
+    return{id:section.AdSectionId,name:section.AdSectionName,courses:offered};
+  }).sort((a:any,b:any)=>String(a.name).localeCompare(String(b.name),"ar"));
+  const offered=sectionOptions.find((section:any)=>Number(section.id)===Number(resolved.link.AdSectionId))?.courses||[];
 
   const sectionName = sections.find(row => row.AdSectionId === resolved.link.AdSectionId)?.AdSectionName || "";
   const cohort = surveyCohort(sectionName);
@@ -6358,8 +6481,31 @@ app.get("/api/public/survey/:token", async (req: Request, res: Response) => {
     term: terms.find(row => row.AdTermId === resolved.link.AdTermId)?.AdTermName || "",
     label: resolved.link.label, expiresAt: resolved.link.expiresAt,
     ...cohort,
-    courses: offered,
+    sectionId:resolved.link.AdSectionId,sections:sectionOptions,courses:offered,
   });
+});
+
+app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet-stream",limit:"14mb"}), async (req:Request,res:Response)=>{
+  const token=String(req.params.token||""),resolved=await resolveShareToken(token);
+  if("error"in resolved){res.status(resolved.status).json({error:resolved.error});return;}
+  if(resolved.link.kind!=="survey"){res.status(404).json({error:"هذا الرابط ليس استبياناً"});return;}
+  if(!staffLookupAllowed(`${token}:proof`,req.ip||"unknown")){res.status(429).json({error:"محاولات كثيرة. انتظر عشر دقائق ثم أعد المحاولة."});return;}
+  const civil=asciiDigits(decodeURIComponent(String(req.get("x-student-civil")||""))).replace(/\D/g,""),name=decodeURIComponent(String(req.get("x-student-name")||"")).trim(),sectionId=Number(req.get("x-student-section")||0);
+  if(!validateCivilId(civil).isValid||name.length<3){res.status(400).json({error:"أكمل الاسم والرقم المدني الصحيح أولاً"});return;}
+  const sections=await Repository.getSections(),section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  if(!section){res.status(400).json({error:"القسم العلمي غير صالح"});return;}
+  const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!bytes.length){res.status(400).json({error:"ارفع كشف الدرجات PDF أو صورة واضحة"});return;}
+  const mime=String(req.get("x-file-type")||"application/pdf").slice(0,80),ocr=await ocrDocument(bytes,mime),facts=transcriptFacts(ocr.text);
+  const visibleDigits=asciiDigits(ocr.text).replace(/[^0-9]/g,"");
+  if(!facts.civil&&!visibleDigits.includes(civil)){res.status(422).json({error:"لم أتعرف على الرقم المدني في كشف الدرجات. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
+  if((facts.civil&&facts.civil!==civil)||(!facts.civil&&!visibleDigits.includes(civil))){res.status(422).json({error:"الرقم المدني في الإثبات لا يطابق الرقم المدخل."});return;}
+  const foldName=(value:string)=>String(value||"").replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
+  const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.filter(word=>documentName.includes(word)).length>=Math.min(2,nameWords.length);
+  if(!nameMatched){res.status(422).json({error:"الاسم في الإثبات لا يطابق الاسم المدخل أو لم يظهر بوضوح."});return;}
+  const rule=degreeRuleForSection(String(section.AdSectionName||"")),passedUnits=Number(facts.passedUnits||0);
+  if(!passedUnits){res.status(422).json({error:"لم أتعرف على مجموع الوحدات المجتازة. ارفع كشفاً واضحاً يظهر فيه المجموع."});return;}
+  const eligible=passedUnits>=rule.fieldTrainingRequired,proofToken=issueStudentProof({fingerprint:surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:rule.fieldTrainingRequired,nameMatched});
+  res.json({eligible,passedUnits,requiredUnits:rule.fieldTrainingRequired,message:eligible?`تم التحقق: اجتزت ${passedUnits} وحدة، ويمكنك متابعة طلب الخريج/المتوقع تخرجه.`:`أنت مجتاز ${passedUnits} وحدة، والمطلوب ${rule.fieldTrainingRequired} وحدة لفتح خيارات الميداني.`,proofToken,confidence:ocr.confidence});
 });
 
 app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
@@ -6379,30 +6525,49 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   const name = String(body.name || "").trim().slice(0, 60);
   if (name.length < 3) { res.status(400).json({ error: "اكتب اسمك كاملاً" }); return; }
 
+  const sectionId=Number(body.sectionId||resolved.link.AdSectionId),sections=await Repository.getSections();
+  const section=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===Number(resolved.link.AdCollegeId));
+  if(!section){res.status(400).json({error:"اختر قسماً علمياً صحيحاً"});return;}
+  const requestType=["new-course","course-conflict","graduate"].includes(String(body.requestType))?String(body.requestType) as "new-course"|"course-conflict"|"graduate":"new-course";
   const [courses, history] = await Promise.all([
     Repository.getCourses(),
-    Repository.getSchedulesByScope({ sectionId: Number(resolved.link.AdSectionId) }),
+    Repository.getSchedulesByScope({ sectionId }),
   ]);
   /* GET and POST use the exact same eligibility rule. Previously the page
      showed courses from teaching history while POST checked catalogue ownership;
      a real selection could therefore be rejected as if nothing had been picked. */
-  const { allowed } = surveyCourseIdsForSection(courses, history, Number(resolved.link.AdSectionId));
+  const { allowed } = surveyCourseIdsForSection(courses, history, sectionId);
+  courses.filter((course:any)=>Number(course.AdSectionId)===sectionId).forEach((course:any)=>allowed.add(Number(course.AdCourseId)));
   const courseIds = [...new Set((Array.isArray(body.courseIds) ? body.courseIds : [])
     .map(value => Number(asciiDigits(value))).filter(id => allowed.has(id)))].slice(0, 12);
-  if (!courseIds.length) { res.status(400).json({ error: "اختر مقرراً واحداً على الأقل" }); return; }
+  if(requestType==="new-course"&&!courseIds.length){res.status(400).json({error:"اختر المقرر الذي تحتاج فتحه"});return;}
+  if(requestType==="course-conflict"&&courseIds.length!==2){res.status(400).json({error:"اختر مقررين متعارضين بالضبط"});return;}
+  const graduateReasons=["field-conflict","field-prerequisite-conflict","other"],graduateReason=graduateReasons.includes(String(body.graduateReason))?String(body.graduateReason) as any:undefined;
+  const details=String(body.details||"").trim().slice(0,1200);
+  let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
+  if(requestType==="graduate"){
+    const proof=verifyStudentProof(String(body.proofToken||""));
+    if(!proof||proof.fingerprint!==surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId){res.status(400).json({error:"ارفع كشف الدرجات وتحقق منه قبل إرسال حالة الخريج"});return;}
+    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=degreeRuleForSection(String(section.AdSectionName||"")).degreeUnits;eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
+    if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
+    if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
+    if(graduateReason==="other"&&details.length<5){res.status(400).json({error:"اكتب سبب الطلب بوضوح"});return;}
+  }
 
   await Repository.saveStudentNeed({
     fingerprint: surveyFingerprint(civil),
     AdCollegeId: resolved.link.AdCollegeId,
-    AdSectionId: resolved.link.AdSectionId,
+    AdSectionId: sectionId,
     AdTermId: resolved.link.AdTermId,
     courseIds,
+    requestType,nameCipher:sealStudentIdentity(name),civilCipher:sealStudentIdentity(civil),details,
+    graduateReason,passedUnits,requiredUnits,degreeUnits,eligibility,proofNameMatched:requestType==="graduate"?true:undefined,
   });
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
   /* The name is echoed once, here, and stored nowhere — so the student sees
      their own answer landed without the department ever holding it. */
-  res.status(201).json({ name, count: courseIds.length });
+  res.status(201).json({ name, count: courseIds.length, requestType });
 });
 
 /** What the students said, for the department. Never names, only numbers. */
@@ -6435,7 +6600,8 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
     Repository.getSections().catch(() => []),
   ]);
   const mine = courses.filter(course => Number(course.AdSectionId) === sectionId);
-  const reading = readStudentDemand(needs, mine);
+  const analyticalNeeds=needs.filter((need:any)=>Array.isArray(need.courseIds)&&need.courseIds.length>0);
+  const reading = readStudentDemand(analyticalNeeds, mine);
 
   /* ── الطلبة يتغيّرون كل فصل ────────────────────────────────────────────────
      Two things follow from that, and both are computed here. How much of this
@@ -6496,6 +6662,13 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
 
   const sectionName = String((sections as any[]).find(row => Number(row.AdSectionId) === sectionId)?.AdSectionName || "");
   const cohort = surveyCohort(sectionName);
+  const courseNameById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),{name:course.CourseName,code:course.CourseCode}]));
+  const cases=needs.map((need:any)=>({
+    id:need.id,createdAt:need.createdAt,name:openStudentIdentity(need.nameCipher),civil:openStudentIdentity(need.civilCipher),
+    requestType:need.requestType||"new-course",details:need.details||"",graduateReason:need.graduateReason,
+    passedUnits:need.passedUnits,requiredUnits:need.requiredUnits,degreeUnits:need.degreeUnits,eligibility:need.eligibility||"not-checked",
+    courses:(need.courseIds||[]).map((id:number)=>({id,...(courseNameById.get(Number(id))||{name:`مقرر ${id}`,code:""})})),
+  })).sort((a:any,b:any)=>String(b.createdAt).localeCompare(String(a.createdAt)));
   res.setHeader("Cache-Control", "no-store");
   res.json({
     ...reading,
@@ -6508,6 +6681,7 @@ app.get("/api/schedules/demand", requirePermission(7), async (req: Authenticated
                   termsSpanned: succession.termsSpanned, headline: succession.headline },
     turnover,
     prediction,
+    cases,
     // The limit travels with the answer: this speaks for whoever answered, and
     // is never the registrar's roll.
     limit: "مبنيّ على من أجاب الاستبيان فقط — ليس بيانات التسجيل.",
@@ -7419,6 +7593,23 @@ function arCourses(n){
 </script></body></html>`;
 }
 
+function studentCaseSurveyPage(token:string,label:string):string{
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><style>
+*{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}}
+</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسـمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script>
+(function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],proofToken="",proofEligible=false;var host=document.getElementById("host");
+function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}function digits(v){return String(v||"").replace(/[٠-٩]/g,function(d){return String("٠١٢٣٤٥٦٧٨٩".indexOf(d))}).replace(/\\D/g,"")}function section(){return(data.sections||[]).find(function(s){return Number(s.id)===Number(student.sectionId)})||{courses:[]}}function paintProgress(){var bars=document.querySelectorAll(".progress i");bars.forEach(function(bar,index){bar.classList.toggle("on",index<step)})}function fail(msg){var box=document.getElementById("err");if(box)box.innerHTML='<div class="err">'+esc(msg)+'</div>'}
+function identity(){step=1;paintProgress();host.innerHTML='<div class="step-head"><b>1</b><div><strong>بيانات الطالب</strong><span>الاسم · الرقم المدني · القسم العلمي</span></div></div><div class="fields"><div class="field"><label>الاسم الكامل</label><input id="name" autocomplete="name" value="'+esc(student.name)+'"></div><div class="field"><label>الرقم المدني</label><input id="civil" dir="ltr" inputmode="numeric" maxlength="12" value="'+esc(student.civil)+'"></div><div class="field full"><label>القسم العلمي</label><select id="section"><option value="">اختر القسم</option>'+(data.sections||[]).map(function(s){return'<option value="'+s.id+'"'+(Number(s.id)===Number(student.sectionId)?' selected':'')+'>'+esc(s.name)+'</option>'}).join("")+'</select></div></div><button class="action" id="next">التالي · نوع الطلب</button><p class="privacy">تظهر هويتك للمسؤول المخوّل فقط، وتُحفظ مشفّرة داخل النظام لخدمة الطلب ومراجعته.</p><div id="err"></div>';document.getElementById("next").onclick=function(){student.name=document.getElementById("name").value.trim();student.civil=digits(document.getElementById("civil").value);student.sectionId=Number(document.getElementById("section").value)||0;if(student.name.length<3)return fail("اكتب اسمك كاملاً");if(student.civil.length!==12)return fail("أدخل الرقم المدني من 12 رقماً");if(!student.sectionId)return fail("اختر قسمك العلمي");kind="";picked=[];proofToken="";proofEligible=false;chooseType()};document.getElementById("civil").oninput=function(){this.value=digits(this.value)}}
+function chooseType(){step=2;paintProgress();host.innerHTML='<button class="back" id="back">← تعديل البيانات</button><div class="step-head"><b>2</b><div><strong>ما نوع طلبك؟</strong><span>اختر حالة واحدة</span></div></div><div class="types"><button class="type" data-kind="new-course"><i>＋</i><span><strong>فتح مقرر جديد</strong><small>مقرر تحتاج طرحه في الفصل</small></span><em>‹</em></button><button class="type" data-kind="course-conflict"><i>⇄</i><span><strong>مقرر يتعارض مع مقرر آخر</strong><small>اختر المقررين المتقاطعين</small></span><em>‹</em></button><button class="type" data-kind="graduate"><i>✓</i><span><strong>خريج أو متوقع تخرجه</strong><small>يتطلب كشف درجات للتحقق من الوحدات</small></span><em>‹</em></button></div>';document.getElementById("back").onclick=identity;host.querySelectorAll(".type").forEach(function(button){button.onclick=function(){kind=button.dataset.kind;picked=[];proofToken="";proofEligible=false;details()}})}
+function courseCards(limit){var courses=section().courses||[];return'<div class="course-tools"><input id="courseSearch" type="search" placeholder="ابحث باسم المقرر أو رمزه"></div><div class="courses" id="courses">'+courses.map(function(c){return'<button type="button" class="course" data-id="'+c.id+'" data-find="'+esc((c.name+' '+c.code).toLowerCase())+'"><strong>'+esc(c.name)+'</strong><small>'+esc(c.code)+'</small></button>'}).join("")+'</div><p class="privacy">'+(limit===2?'اختر مقررين بالضبط.':'يمكنك اختيار كل المقررات التي تحتاج فتحها.')+'</p>'}
+function wireCourses(limit){var box=document.getElementById("courses"),search=document.getElementById("courseSearch");box.onclick=function(e){var button=e.target.closest(".course");if(!button)return;var id=Number(button.dataset.id),at=picked.indexOf(id);if(at>=0)picked.splice(at,1);else{if(limit&&picked.length>=limit)return fail("اختر مقررين فقط");picked.push(id)}button.classList.toggle("on",picked.indexOf(id)>=0)};search.oninput=function(){var q=this.value.trim().toLowerCase();box.querySelectorAll(".course").forEach(function(button){button.hidden=q&&button.dataset.find.indexOf(q)<0})}}
+function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح مقرر جديد":kind==="course-conflict"?"تعارض مقررين":"حالة خريج أو متوقع تخرجه";var content=kind==="graduate"?'<div class="proof"><strong>ارفع الإثبات · كشف الدرجات</strong><small class="lead">PDF أو صورة واضحة يظهر فيها الاسم والرقم المدني ومجموع الوحدات المجتازة.</small><input id="proof" type="file" accept="application/pdf,image/*"><button class="action" id="verify" type="button">قراءة الإثبات والتحقق</button><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label><label class="reason"><input type="radio" name="reason" value="other"><span>سبب آخر</span></label></div><div class="field" style="margin-top:9px"><label>اكتب السبب أو التفاصيل</label><textarea id="details" rows="3" maxlength="1200" placeholder="اكتب باختصار ما يحتاج القسم معرفته"></textarea></div></div>':courseCards(kind==="course-conflict"?2:0)+'<div class="field" style="margin-top:10px"><label>تفاصيل إضافية (اختياري)</label><textarea id="details" rows="3" maxlength="1200"></textarea></div>';host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(section().name||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind!=="graduate")wireCourses(kind==="course-conflict"?2:0);else wireProof();document.getElementById("send").onclick=submit}
+function wireProof(){document.getElementById("verify").onclick=function(){var file=document.getElementById("proof").files[0],button=this,status=document.getElementById("proofStatus");if(!file)return fail("اختر كشف الدرجات أولاً");button.disabled=true;button.textContent="أقرأ الكشف…";status.className="proof-status";status.textContent="تجري قراءة الاسم والرقم المدني والوحدات من الإثبات؛ قد تستغرق لحظات.";fetch('/api/public/survey/'+encodeURIComponent(TOKEN)+'/proof',{method:'POST',headers:{'Content-Type':'application/octet-stream','x-file-type':file.type||'application/pdf','x-student-name':encodeURIComponent(student.name),'x-student-civil':student.civil,'x-student-section':String(student.sectionId)},body:file}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){button.disabled=false;button.textContent="إعادة التحقق";if(!x.ok){proofEligible=false;proofToken="";status.className="proof-status bad";status.textContent=x.d.error||"تعذر التحقق";return}proofEligible=!!x.d.eligible;proofToken=x.d.proofToken||"";status.className='proof-status '+(proofEligible?'ok':'bad');status.textContent=x.d.message;if(proofEligible)document.getElementById("graduateOptions").hidden=false}).catch(function(){button.disabled=false;button.textContent="إعادة التحقق";status.className="proof-status bad";status.textContent="تعذر رفع الإثبات — تحقق من الاتصال."})}}
+function submit(){var send=document.getElementById("send"),reasonEl=host.querySelector('input[name=reason]:checked'),detailsEl=document.getElementById("details"),reason=reasonEl?reasonEl.value:"",note=detailsEl?detailsEl.value.trim():"";if(kind==="new-course"&&!picked.length)return fail("اختر مقرراً واحداً على الأقل");if(kind==="course-conflict"&&picked.length!==2)return fail("اختر مقررين متعارضين بالضبط");if(kind==="graduate"&&!proofEligible)return fail("تحقق من كشف الدرجات أولاً");if(kind==="graduate"&&!reason)return fail("اختر نوع طلب الميداني");if(kind==="graduate"&&reason==="other"&&note.length<5)return fail("اكتب سبب الطلب");send.disabled=true;send.textContent="جارٍ الإرسال…";fetch('/api/public/survey/'+encodeURIComponent(TOKEN),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:student.name,civil:student.civil,sectionId:student.sectionId,requestType:kind,courseIds:picked,proofToken:proofToken,graduateReason:reason,details:note})}).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";return fail(x.d.error||"تعذر الإرسال")}host.innerHTML='<div class="done"><div class="tick">✓</div><h2>وصل طلبك إلى القسم</h2><p>شكراً '+esc(x.d.name)+' — تم حفظ الحالة بتفاصيلها للمراجعة.<br>هذا الطلب لا يُعد تسجيلاً، وسيظهر للمسؤول المخوّل في مركز الذكاء.</p></div>';step=3;paintProgress();window.scrollTo(0,0)}).catch(function(){send.disabled=false;send.textContent="إرسال الطلب إلى القسم";fail("تعذر الإرسال — تحقق من الاتصال.")})}
+fetch('/api/public/survey/'+encodeURIComponent(TOKEN)).then(function(r){return r.json().then(function(d){return{ok:r.ok,d:d}})}).then(function(x){if(!x.ok){host.innerHTML='<div class="err">'+esc(x.d.error||"تعذر فتح النموذج")+'</div>';return}data=x.d;student.sectionId=Number(data.sectionId)||0;identity()}).catch(function(){host.innerHTML='<div class="err">تعذر الاتصال. تحقق من الإنترنت.</div>'})})();
+</script></body></html>`;
+}
+
 app.get("/q/:token", async (req: Request, res: Response) => {
   const resolved = await resolveShareToken(String(req.params.token));
   res.setHeader("Cache-Control", "no-store");
@@ -7430,7 +7621,7 @@ app.get("/q/:token", async (req: Request, res: Response) => {
     return;
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><p dir=rtl>هذا الرابط ليس استبياناً.</p>"); return; }
-  res.send(surveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات")));
+  res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات")));
 });
 
 app.get("/s/:token", async (req: Request, res: Response) => {

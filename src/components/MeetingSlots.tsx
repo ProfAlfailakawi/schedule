@@ -67,7 +67,7 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
     const list = needle
       ? instructors.filter(person => person.AdInstructorName.includes(needle))
       : instructors;
-    return list.slice(0, 80);
+    return list;
   }, [instructors, query]);
 
   const toggle = useCallback((id: number) => {
@@ -203,7 +203,7 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
               <article className="meeting-slots-best">
                 <Check aria-hidden="true" />
                 <div>
-                  <small>أفضل نافذة يتفرغ فيها الجميع</small>
+                  <small>أفضل وقت مقترح</small>
                   <strong>{answer.best.label} · <bdi dir="ltr">{range(answer.best.start, answer.best.end)}</bdi></strong>
                 </div>
               </article>
@@ -215,6 +215,7 @@ export default function MeetingSlots({ instructors, termId, onClose }: {
                 </div>
               </article>
             )}
+            <div className="meeting-slots-alternatives-title"><small>بدائل مرتبة</small><strong>أوقات أخرى مقترحة</strong></div>
             <div className="meeting-slots-days">
               {answer.days.map(day => (
                 <section key={day.dayKey}>

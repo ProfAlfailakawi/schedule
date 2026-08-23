@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, ChevronLeft, Clock, Copy, Download, Fingerprint, History, Plus, RotateCcw, ShieldAlert, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, ChevronLeft, Clock, Copy, Download, History, Plus, RotateCcw, ShieldAlert, Sparkles, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
@@ -46,6 +46,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [payload, setPayload] = useState<any>(null);
   const [xlsxPreview, setXlsxPreview] = useState<any>(null);
   const [xlsxDraft, setXlsxDraft] = useState("");
+  const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
   const [fromId, setFromId] = useState(0);
   const [toId, setToId] = useState(0);
   const [retirePreview, setRetirePreview] = useState<number | null>(null);
@@ -96,10 +97,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     }
     setBusy(true); setError(null);
     try {
-      const response = await fetch("/api/instructors", {
+      const response = await fetch("/api/visiting-roster/instructor", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ AdInstructorCivil: civil, AdInstructorName: name, AdInstructorMobile: "" }),
+        body: JSON.stringify({ collegeId, sectionId, termId, AdInstructorCivil: civil, AdInstructorName: name }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذّر إضافة المنتدب.");
@@ -229,7 +230,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   const readExcel = async (file: File) => {
-    setError(null); setXlsxPreview(null); setXlsxDraft("");
+    setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
     setBusy(true);
     try {
       const XLSX = await import("xlsx");
@@ -250,7 +251,27 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       setBusy(false);
     }
   };
-  const saveExcelDraft = async () => {
+  const readPdf = async (file: File) => {
+    setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
+    try {
+      const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId)});
+      const response=await fetch(`/api/intelligence/pdf-import?${query}`,{
+        method:"POST",headers:{"Content-Type":"application/octet-stream","x-file-name":encodeURIComponent(file.name)},body:await file.arrayBuffer(),
+      });
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||"تعذرت قراءة PDF");
+      setXlsxPreview({...data,valid:Boolean(data.ready),count:Number(data.rows?.length||0),fileName:file.name,importLayout:"authority-pdf"});
+    }catch(e:any){setError(e.message||"تعذرت قراءة PDF");}finally{setBusy(false);}
+  };
+
+  const publishImportedDraft=async(id:string)=>{
+    const response=await fetch(`/api/intelligence/drafts/${encodeURIComponent(id)}/publish`,{method:"POST",headers:{"x-schedule-confirm":"publish"}});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||data.issues?.[0]||"تعذر نشر الجدول");
+    setXlsxDraft(`published:${id}`);onChanged();
+  };
+
+  const saveExcelDraft = async (publishNow=false) => {
     if (!xlsxPreview?.valid) return;
     setBusy(true); setError(null);
     try {
@@ -260,13 +281,16 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         body: JSON.stringify({
           collegeId, sectionId, termId,
           source: "import",
-          name: `استيراد Excel — ${xlsxPreview.fileName || ""}`.trim(),
+          name: `${importKind==="authority-pdf"?"نسخة PDF المعتمدة":"استيراد النموذج"} — ${xlsxPreview.fileName || ""}`.trim(),
           rows: xlsxPreview.rows,
+          importLayout:importKind,
+          sourceFileName:xlsxPreview.fileName,
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر حفظ المسودة");
-      setXlsxDraft(String(data.id || "تم"));
+      const id=String(data.id||"");setXlsxDraft(id||"تم");
+      if(publishNow&&id)await publishImportedDraft(id);
     } catch (e: any) {
       setError(e.message || "تعذر حفظ المسودة");
     } finally {
@@ -275,6 +299,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const readFile = async (file: File) => {
+    if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") { await readPdf(file); return; }
     if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
     setError(null); setPreview(null); setPayload(null);
     try {
@@ -423,32 +448,23 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
           {tab === "import" ? (
             <>
-              <div className="tool-lede">
-                <span className="tool-lede-mark"><Fingerprint aria-hidden="true" /></span>
-                <div>
-                  <strong>يُطابَق بالرمز، لا بالمعرّف الداخلي</strong>
-                  <ul className="tool-lede-chips">
-                    <li><BookOpen aria-hidden="true" />رمز المقرر</li>
-                    <li><UsersRound aria-hidden="true" />الرقم المدني</li>
-                  </ul>
-                  {/* The one thing no chip can carry: that nothing is written
-                      until a person has seen the outcome and agreed to it. */}
-                  <small>لا يُكتب شيء قبل أن ترى الحصيلة وتوافق.</small>
-                </div>
+              <div className="transfer-import-hero">
+                <span><Sparkles aria-hidden="true" /></span>
+                <div><strong>المسار الافتراضي والأسهل</strong><p>نزّل النموذج، يملؤه الدكتور، ثم ارفعه؛ يطابق النظام البيانات ويجهزها للنشر تلقائياً. ويمكنك أيضاً نسخ جدول الجهة المعتمد من PDF إلى فصل فارغ.</p></div>
               </div>
               <input
                 ref={fileRef}
                 type="file"
-                accept="application/json,.json,.xlsx,.xls"
+                accept="application/json,.json,.xlsx,.xls,application/pdf,.pdf"
                 className="transfer-file"
                 onChange={event => { const file = event.target.files?.[0]; if (file) void readFile(file); event.target.value = ""; }}
               />
               <div className="transfer-import-actions">
-                <SecondaryButton type="button" onClick={() => void downloadTemplate()} disabled={busy} title="ملف Excel فارغ بالأعمدة الصحيحة وورقة شرح">
-                  <Download />نموذج Excel فارغ
-                </SecondaryButton>
-                <SecondaryButton type="button" onClick={() => fileRef.current?.click()} disabled={!scopeReady || busy}>
-                  <Upload />اختر ملفاً (Excel أو JSON)
+                <PrimaryButton type="button" data-guide-ignore="تنزيل نموذج محلي لا يغير بيانات الجدول" onClick={() => void downloadTemplate()} disabled={busy} title="ملف Excel جاهز بالأعمدة الصحيحة وورقة شرح">
+                  <Download />تحميل النموذج الافتراضي
+                </PrimaryButton>
+                <SecondaryButton type="button" data-guide-ignore="يفتح منتقي ملف محلي ومعاينة الاستيراد لها بوابة نشر مستقلة" onClick={() => fileRef.current?.click()} disabled={!scopeReady || busy}>
+                  <Upload />رفع Excel أو PDF
                 </SecondaryButton>
               </div>
 
@@ -457,6 +473,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   <div className="transfer-counts">
                     <span><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b>صفاً فُهم</span>
                     <span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>
+                    {importKind==="authority-pdf"?<span><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b>صفحات PDF</span>:null}
                   </div>
                   {xlsxPreview.issues?.length ? (
                     <ul className="transfer-rejected">
@@ -467,10 +484,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     </ul>
                   ) : null}
                   {xlsxDraft ? (
-                    <p className="transfer-done"><Check /> حُفظت مسودة الاستيراد. راجعها وانشرها من <b className="visual-flow-inline">مركز الذكاء <ChevronLeft aria-hidden="true" /> الاستيراد</b> — النشر يحل محل جدول القسم لهذا الفصل بعد نقطة أمان تلقائية.</p>
+                    <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")?"اكتمل تعبئة الجدول ونشره بنجاح.":<>حُفظت نسخة PDF بالترتيب الأصلي. عدّلها ثم افتح <b className="visual-flow-inline">مركز الذكاء <ChevronLeft aria-hidden="true" /> تقرير تغييرات PDF</b> قبل النشر.</>}</p>
                   ) : xlsxPreview.valid ? (
-                    <PrimaryButton type="button" onClick={() => void saveExcelDraft()} disabled={busy}>
-                      {busy ? "يحفظ…" : `احفظ ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} كمسودة للنشر`}
+                    <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(importKind==="worksheet")} disabled={busy}>
+                      {busy ? "يجهّز…" : importKind==="authority-pdf"?`نسخ ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} إلى الفصل الفارغ`:`تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                     </PrimaryButton>
                   ) : (
                     <p className="muted">صحّح الملاحظات في الملف ثم ارفعه مجدداً — لا يُحفظ استيراد فيه أخطاء.</p>

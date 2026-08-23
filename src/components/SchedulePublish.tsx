@@ -412,6 +412,9 @@ export default function SchedulePublish({ collegeId, sectionId, termId, scopeLab
                         className={`${dead ? "dead" : "active"} ${createdId === link.id ? "just-created" : ""}`.trim()}
                       >
                         <div className="share-row-lead">
+                          <span className={`share-link-kind kind-${link.kind === "staff" ? "staff" : "department"}`}>
+                            {link.kind === "staff" ? <><IdCard aria-hidden="true" /> بطاقات الأساتذة · كل أستاذ يرى بطاقته</> : <><Users aria-hidden="true" /> جدول القسم · لأي شخص لديه الرابط</>}
+                          </span>
                           <b dir="ltr">
                             {link.kind === "staff" ? <IdCard aria-label="بطاقة أستاذ" /> : null}
                             /s/{link.id.slice(0, 10)}…

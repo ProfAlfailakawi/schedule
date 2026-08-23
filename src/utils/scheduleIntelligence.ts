@@ -480,11 +480,11 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   const duplicateKeys=new Map<string,number>(); targetRows.forEach(row=>{const key=`${row.AdCourseId}:${row.SCode}`;duplicateKeys.set(key,(duplicateKeys.get(key)||0)+1)});
   const duplicates=[...duplicateKeys.entries()].filter(([,count])=>count>1).length;
   const courseById=new Map(courses.map(c=>[c.AdCourseId,c]));
-  const scheduledCourseIds=new Set(targetRows.map(row=>row.AdCourseId));
-  const scopedCourseIds=new Set(targetRows.map(row=>courseById.get(row.AdCourseId)?.AdSectionId).filter(Boolean));
-  const targetSectionId=targetRows[0]?.AdSectionId;
-  const unscheduledCourses=targetSectionId?courses.filter(c=>c.AdSectionId===targetSectionId&&!scheduledCourseIds.has(c.AdCourseId)).length:0;
-  void scopedCourseIds;
+  /* The catalogue is not an offering plan. Counting every catalogue course
+     absent from this term produced a false "unassigned" alarm for dormant and
+     elective courses. This health reading now judges only actual term rows. */
+  const unscheduledCourses=0;
+  void courseById;
 
   const alerts:Array<{severity:"critical"|"warning"|"info";title:string;detail:string}>=[];
   const critical=conflicts.filter(c=>c.severity==="high").length;

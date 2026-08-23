@@ -124,7 +124,7 @@ import {
   type ScheduleViewDraft,
 } from "../utils/scheduleViews";
 import ScheduleTransfer from "./ScheduleTransfer";
-import { adviseDayPattern, DECISION_1912_LABEL, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
+import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
@@ -2433,9 +2433,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       next.AdCollegeId = scoped.collegeId;
       next.AdSectionId = scoped.sectionId || (scoped.collegeId ? resolveScopeSelection(scopes, scoped.collegeId, isPowerAdmin).defaultSectionId || 0 : 0);
       next.AdTermId = Number(filterTerm) || 0;
-      // Started from an empty square in the week: that square is the answer to
-      // the day and the hour, so the form opens with them already filled and a
-      // sensible one-hour length.
+      // Started from an empty square in the week: its day decides the timetable
+      // duration (50 minutes on Sun/Tue/Thu, 80 on Mon/Wed).
       if (seed?.day) {
         days.forEach(day => { (next as any)[day.key] = day.key === seed.day; });
       }
@@ -2443,14 +2442,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (seed?.roomHall !== undefined) next.AdRoomHall = seed.roomHall;
       if (seed?.start) {
         next.fstarttime = seed.start;
-        // A square gives an hour; a stroke down the column gives its own length.
+        const seededMinutes = seed.day ? expectedMinutesForDay(seed.day as RegDayKey) : 50;
         next.fendtime = seed.end && mins(seed.end) > mins(seed.start)
           ? seed.end
-          : timeFromMins(Math.min(SCHEDULE_DAY_END, mins(seed.start) + 60));
+          : timeFromMins(Math.min(SCHEDULE_DAY_END, mins(seed.start) + seededMinutes));
       }
-      // A tap paints one square, which should still mean the usual hour.
+      // A tap paints one cell, which follows the selected day family.
       if (seed?.end && seed.start && mins(seed.end) - mins(seed.start) <= 30) {
-        next.fendtime = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(seed.start) + 60));
+        next.fendtime = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(seed.start) + (seed.day ? expectedMinutesForDay(seed.day as RegDayKey) : 50)));
       }
       setForm(next);
       setCourseName("");
@@ -3291,6 +3290,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const rhythmSwitch = rhythmSwitchForTarget(row, target.day as DayKey);
     if (rhythmSwitch) {
       days.forEach(item => { (candidate as any)[item.key] = rhythmSwitch.includes(item.key as DayKey); });
+      const originalDuration = Math.max(0, mins(row.fendtime) - mins(row.fstarttime));
+      if (originalDuration <= 100) {
+        candidate.fendtime = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(candidate.fstarttime) + expectedMinutesForDay(target.day as RegDayKey)));
+      }
     }
     if (target.room) {
       candidate.AdRoomCode = target.room.code;
@@ -3663,6 +3666,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (!englishDigits(form.SCode)) { setError("الشعبة يجب أن تحتوي على أرقام فقط"); return; }
     if (validationIssues.length) { setScheduleTouched(true); setError(validationIssues[0]); return; }
     if (blockingConflicts.length) { setError(blockingConflicts[0]?.message || "لا يمكن الحفظ قبل معالجة التعارضات."); return; }
+    const protectedPdfRow = editor === "edit" ? rows.find(row => row.id === editId) : null;
+    if (protectedPdfRow && protectedPdfRow.sourceOrder !== undefined && Number(protectedPdfRow.sourceOrder) < 1_000_000 && Number(protectedPdfRow.AdCourseId) !== Number(form.AdCourseId)) {
+      const remove = await visualConfirm({
+        title: "اسم المقرر محمي وفق لائحة الجدول",
+        message: "أنت تقوم بتبديل اسم المقرر الوارد في ملف PDF المعتمد، وهذا مخالف للائحة نظام الجدول. لا يمكن تغيير اسم المادة، لكن يمكنك حذفها كاملة ثم إضافة مقرر جديد. هل تريد حذف المادة الآن؟",
+        confirmLabel: "حذف المادة",
+        cancelLabel: "العودة دون تغيير",
+        tone: "danger",
+      });
+      if (!remove) return;
+      setSaving(true);
+      try {
+        await fetchJson(`/api/schedules/${protectedPdfRow.id}`, { method: "DELETE" });
+        setRows(current => current.filter(row => row.id !== protectedPdfRow.id));
+        setMessage("تم حذف المادة. يمكنك الآن إضافة المقرر الجديد، وسيظهر في تقرير المقارنة برقمه المرجعي فارغاً.");
+        back();
+      } catch (issue: any) { setError(issue?.message || "تعذر حذف المادة"); }
+      finally { setSaving(false); }
+      return;
+    }
     if (practiceMode) {
       const before = editor === "edit" ? rows.find((row) => row.id === editId) : null;
       const practiceId = editor === "edit" ? Number(editId || 0) : -Math.max(1, Date.now() % 1_000_000_000);
@@ -4272,8 +4295,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
      * A Sunday-Tuesday-Thursday lecture dropped on Monday is not asking to
      * teach four days — it is asking to live on the other rhythm. When the
      * carried card has several days and the target day is outside them, the
-     * whole day-set switches to the target's pattern (1-3-5 ⇄ 2-4), same
-     * time, same length — after one plain-words confirmation.
+     * whole day-set switches to the target's pattern (1-3-5 ⇄ 2-4), and its
+     * duration follows the 50/80-minute family after one confirmation.
      */
     const carriedDays = days.filter(d => Boolean(row[d.key])).map(d => d.key as DayKey);
     const rhythmSwitch = rhythmSwitchForTarget(row, day);
@@ -4282,7 +4305,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const toLabels = rhythmSwitch.map(k => days.find(d => d.key === k)?.label).join(" - ");
       const title = row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "المحاضرة";
       if (!(await visualConfirm({ title: `تحويل نمط «${title}»`, message: `تُدرَّس ${fromLabels}.
-نقلها إلى ${days.find(d => d.key === day)?.label} يحوّل أيامها كلها إلى نمط ${toLabels} بنفس الوقت والمدة.`, confirmLabel: "تحويل", tone: "warning" }))) {
+نقلها إلى ${days.find(d => d.key === day)?.label} يحوّل أيامها كلها إلى نمط ${toLabels} ويضبط مدة اللقاء تلقائياً حسب اليوم.`, confirmLabel: "تحويل", tone: "warning" }))) {
         setPhysicsNotice("");
         return;
       }
@@ -4299,6 +4322,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // The carried multi-day card takes the whole target rhythm.
       if (item.id === row.id && rhythmSwitch) {
         days.forEach(d => { (candidate as any)[d.key] = rhythmSwitch.includes(d.key as DayKey); });
+        const originalDuration = Math.max(0, mins(item.fendtime) - mins(item.fstarttime));
+        if (originalDuration <= 100) {
+          candidate.fendtime = timeFromMins(Math.min(SCHEDULE_DAY_END, mins(candidate.fstarttime) + expectedMinutesForDay(day as RegDayKey)));
+        }
       }
       return { before: item, after: candidate };
     });
@@ -4534,7 +4561,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (!(await visualConfirm({
         title: `تحويل نمط «${title}»`,
         message: `تُدرَّس ${fromLabels}.
-نقلها إلى ${days.find(item => item.key === day)?.label} يحوّل أيامها كلها إلى نمط ${toLabels} بنفس الوقت والمدة.`,
+نقلها إلى ${days.find(item => item.key === day)?.label} يحوّل أيامها كلها إلى نمط ${toLabels} ويضبط مدة اللقاء تلقائياً حسب اليوم.`,
         confirmLabel: "تحويل",
         tone: "warning",
       }))) {
@@ -5827,6 +5854,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       return next;
     });
 
+  /** A normal mouse wheel moves long filter ribbons horizontally on desktop. */
+  const horizontalWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const node = event.currentTarget;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || node.scrollWidth <= node.clientWidth) return;
+    event.preventDefault();
+    node.scrollLeft += event.deltaY;
+  };
+
   /**
    * Colour as information.
    *
@@ -6090,6 +6125,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     presence.send({ holding: null, cell: null });
     focusGeometryRef.current = focusMode;
   }, [focusMode, physics.cancel, presence]);
+
+  /* Focus no longer accumulates feedback behind the fullscreen board. A stale
+     success is cleared on entry; feedback produced while focused is rendered
+     in the compact stack below and expires after it has been read. */
+  useEffect(() => {
+    if (focusMode) setMessage(null);
+  }, [focusMode]);
+  useEffect(() => {
+    if (!message) return;
+    const timer = window.setTimeout(() => setMessage(null), 5200);
+    return () => window.clearTimeout(timer);
+  }, [message]);
 
   const physicsOrigin = physics.state.row;
   /**
@@ -6811,11 +6858,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       },
       { id: "search.focus", group: "التنقل", label: "البحث في الجدول", keywords: ["search", "بحث"], shortcut: "/", icon: <Search />, execute: () => { searchRef.current?.scrollIntoView({ block: "center" }); searchRef.current?.focus(); } },
       { id: "schedule.create", group: "الجدول", label: "إضافة موعد", keywords: ["add", "new", "اضافة", "جديد"], icon: <Plus />, execute: () => openCreate() },
-      {
-        id: "schedule.pick", group: "الجدول", label: picking ? "إنهاء النقل الجماعي" : "نقل جماعي",
-        keywords: ["multi", "جماعي", "تحديد"], icon: <Layers />, enabled: inWeek,
-        execute: () => { setPicking(value => !value); setMultiSelect(new Set()); },
-      },
       {
         id: "schedule.undo", group: "الجدول", label: "التراجع عن آخر تغيير",
         keywords: ["undo", "تراجع"], shortcut: "Ctrl+Z", icon: <Undo2 />,
@@ -8692,9 +8734,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           </div>
         </div>
       ) : null}
-      {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
-      {error ? <Notice>{error}</Notice> : null}
-      {message ? <Notice type="success">{message}</Notice> : null}
+      {returnNote || error || message ? <div className="schedule-feedback-stack" aria-live="polite">
+        {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
+        {error ? <Notice>{error}</Notice> : null}
+        {message ? <Notice type="success">{message}</Notice> : null}
+      </div> : null}
       {!networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders ? (
         <div className="schedule-ops-strip no-print" aria-label="حالة العمل الذكي">
           {!networkOnline ? <span className="schedule-ops-pill warn"><Radio aria-hidden="true"/><b>دون اتصال · التغييرات الآمنة محلية</b></span> : null}
@@ -9478,7 +9522,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         />
                       </span>
                     ) : null}
-                    <div className="week-legend-chips">
+                    <div className="week-legend-chips" onWheel={horizontalWheel} title="مرّر عجلة الماوس للتنقل يميناً ويساراً">
                       {legendShown.length === 0 ? <span className="week-legend-none">لا مطابقة</span> : null}
                       {legendShown.map(item => {
                         const folded = hueHidden.has(item.key);
@@ -9773,7 +9817,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     ? "النقل الجماعي: اختر المواعيد المطلوبة، ثم اسحب أي واحد منها — تنتقل المجموعة معاً بعد فحص الموانع."
                     : "اسحب الموعد لتنقله كاملًا بأيامه المسجلة · اسحب على عمود فارغ لإنشاء موعد · أو انتقل بـTab إلى محاضرة واضغط مسافة لتحريكها بالأسهم · التراجع متاح بعد كل نقل."}
               </span>
-              {(workspaceToolsOpen || picking || multiSelect.size > 0) ? <button
+              {false ? <button
                 type="button"
                 data-guide-feature-id="schedule.action.move-room"
                 className={`week-pick-toggle ${picking ? "on" : ""}`}
@@ -9859,7 +9903,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </span>
                 ) : null}
-                <div className="week-legend-chips">
+                <div className="week-legend-chips" onWheel={horizontalWheel} title="مرّر عجلة الماوس للتنقل يميناً ويساراً">
                   {legendShown.length === 0 ? (
                     <span className="week-legend-none">لا مطابقة</span>
                   ) : null}

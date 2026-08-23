@@ -52,7 +52,7 @@ export const DAY_KEYS = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthurs
 export const DAY_NAMES = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
 export type DayKey = (typeof DAY_KEYS)[number];
 
-/** Days the regulation gives one-hour lectures, and days it gives 90 minutes. */
+/** Days the regulation gives 50-minute lectures, and days it gives 80 minutes. */
 const SHORT_LECTURE_DAYS: DayKey[] = ["fsunday", "ftuesday", "fthursday"];
 const LONG_LECTURE_DAYS: DayKey[] = ["fmonday", "fwednesday"];
 
@@ -79,8 +79,8 @@ const arabicNumber = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
  *
  * This is also the answer to "I moved a course from Monday and Wednesday to
  * Sunday and Tuesday and the times are now wrong": they are not the same
- * lecture length. Three weekly hours are two 90-minute meetings on Mon/Wed, or
- * three 60-minute meetings on Sun/Tue/Thu, and a move between those families
+ * lecture length. Three weekly hours are two 80-minute meetings on Mon/Wed, or
+ * three 50-minute meetings on Sun/Tue/Thu, and a move between those families
  * has to reshape the appointment rather than carry the old end time across.
  */
 export function expectedMinutesForDay(day: DayKey): number {

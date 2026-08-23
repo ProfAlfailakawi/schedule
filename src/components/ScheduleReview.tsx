@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
-import { AlertTriangle, CheckCircle2, ChevronDown, ClipboardCheck, Info, Printer, X } from "lucide-react";
+import { AlertTriangle, Building2, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, History, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton } from "./ui";
 import {
@@ -124,6 +124,18 @@ function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSc
       ) : null}
     </div>
   );
+}
+
+function HistoryInfographic({rows,courses}:{rows:FSchedule[];courses:Map<number,AdCourse>}){
+  const distinctCourses=new Set(rows.map(row=>row.AdCourseId)).size;
+  return <div className="history-review-infographic">
+    <div className="history-review-kpis"><article><History/><strong>10+</strong><span>سنوات في السجل</span></article><article><ClipboardCheck/><strong>{rows.length.toLocaleString("ar-KW-u-nu-latn")}</strong><span>موعد مختلف</span></article><article><CalendarDays/><strong>{distinctCourses.toLocaleString("ar-KW-u-nu-latn")}</strong><span>مقرر متأثر</span></article></div>
+    <div className="history-review-cards">{rows.slice(0,8).map(row=>{
+      const course=courses.get(row.AdCourseId),dayText=DAY_KEYS.filter(key=>(row as any)[key]).map(key=>DAY_NAMES[DAY_KEYS.indexOf(key)]).join(" · ");
+      return <article key={row.id}><span className="history-review-icon"><Clock3/></span><div><strong>{course?.CourseName||row.AdCourseName||"مقرر"}</strong><small><b dir="ltr">{course?.CourseCode||"—"}</b> · شعبة {row.SCode}</small></div><time dir="ltr">{formatScheduleTimeRange(row.fstarttime,row.fendtime)}</time><p><CalendarDays/>{dayText||"بلا أيام"}<Building2/>{row.AdRoomCode}/{row.AdRoomHall}</p></article>;
+    })}</div>
+    {rows.length>8?<small className="history-review-more">و{(rows.length-8).toLocaleString("ar-KW-u-nu-latn")} مواعيد أخرى في التقرير المطبوع</small>:null}
+  </div>;
 }
 
 export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
@@ -406,7 +418,9 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                   ) : null}
                   {finding.rowIds.length ? (
                     <>
-                      {finding.groupedCount > 1 ? (
+                      {finding.source === "history" ? (
+                        <HistoryInfographic rows={finding.rowIds.map(id=>byId.get(id)).filter(Boolean) as FSchedule[]} courses={courses} />
+                      ) : finding.groupedCount > 1 ? (
                         <div className="review-subject-list">
                           {(() => {
                             const subjects = new Map<string, { label: string; items: RegulationFinding[] }>();
