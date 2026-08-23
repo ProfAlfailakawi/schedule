@@ -47,6 +47,16 @@ const timeOverlap = (a: ImportRow, b: ImportRow) => {
   return a0 >= 0 && a1 > a0 && b0 >= 0 && b1 > b0 && a0 < b1 && b0 < a1;
 };
 const cleanRoom = (value: unknown) => String(value || "").trim().toLocaleUpperCase();
+const cleanBuildingCode = (raw: string): string => {
+  const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
+  if (!clean) return "";
+  const m = clean.match(/(?:012|011|010)?([A-Z]\d{2,3})$/);
+  if (m) return m[1];
+  const mAny = clean.match(/([A-Z]\d{2,3})/);
+  if (mAny) return mAny[1];
+  if (clean.length > 3 && /^[A-Z0-9]+$/.test(clean)) return clean.slice(-3);
+  return clean;
+};
 
 export default function ImportPreviewTable({
   rows, courses, instructors, departmentIds = [], visitingIds = [], departmentRooms = [],
@@ -237,12 +247,20 @@ export default function ImportPreviewTable({
                         <label><Search aria-hidden="true" /><input value={courseQuery} onChange={event => setCourseQuery(event.target.value)} placeholder="ابحث برمز أو اسم المقرر" aria-label="بحث سريع عن مقرر" /></label>
                         <select value={row.AdCourseId || ""} onChange={event => {
                           const id = Number(event.target.value) || 0;
-                          patchAndRenumber(index, { AdCourseId: id, AdCourseName: courseById.get(id)?.CourseName || "" });
+                          const sel = courseById.get(id);
+                          patchAndRenumber(index, {
+                            AdCourseId: id,
+                            AdCourseName: sel?.CourseName || "",
+                            TotalHours: sel?.TotalHours,
+                            TotalUnits: sel?.TotalUnits,
+                            fcontacthours: sel?.TotalHours || 3,
+                            fcredithours: sel?.TotalUnits || 3,
+                          });
                         }}>
                           <option value="">اختر المقرر…</option>
                           {filteredCourses.map(item => <option key={item.AdCourseId} value={item.AdCourseId}>{item.CourseCode} · {item.CourseName}</option>)}
                         </select>
-                        <small>{filteredCourses.length.toLocaleString("ar-KW-u-nu-latn")} نتيجة · اسم المقرر الرسمي ثابت من النظام ولا يُكتب يدوياً</small>
+                        <small>{filteredCourses.length.toLocaleString("ar-KW-u-nu-latn")} نتيجة · اسم المقرر والوحدات والساعات تؤخذ تلقائياً من النظام وممنوع التعديل اليدوي</small>
                       </div>
                     ) : (
                       <><strong>{course?.CourseName || row.AdCourseName || "—"}</strong><small dir="ltr">{course?.CourseCode || ""}</small></>
@@ -258,7 +276,7 @@ export default function ImportPreviewTable({
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patch(index, { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
                   <td className={red(missing.room(row))} dir="ltr">
-                    {open ? <div className="import-room-editor"><input list={`import-buildings-${index}`} value={String(row.AdRoomCode || "")} onChange={event => patch(index, { AdRoomCode: event.target.value.toUpperCase().slice(0, 12), AdRoomHall: "" })} placeholder="اختر أو اكتب المبنى" /><datalist id={`import-buildings-${index}`}>{buildings.map(item => <option key={item} value={item} />)}</datalist>{buildings.length?<small>{buildings.length.toLocaleString("ar-KW-u-nu-latn")} مبنى من تاريخ القسم</small>:null}</div> : (String(row.AdRoomCode || "").trim() || "—")}
+                    {open ? <div className="import-room-editor"><input list={`import-buildings-${index}`} value={String(row.AdRoomCode || "")} onChange={event => patch(index, { AdRoomCode: cleanBuildingCode(event.target.value).slice(0, 12), AdRoomHall: "" })} placeholder="اختر أو اكتب المبنى" /><datalist id={`import-buildings-${index}`}>{buildings.map(item => <option key={item} value={item} />)}</datalist>{buildings.length?<small>{buildings.length.toLocaleString("ar-KW-u-nu-latn")} مبنى من تاريخ القسم</small>:null}</div> : (String(row.AdRoomCode || "").trim() || "—")}
                   </td>
                   <td className={red(missing.room(row))} dir="ltr">
                     {open ? <div className="import-room-editor"><div className="import-hall-input-row"><input list={`import-halls-${index}`} value={String(row.AdRoomHall || "")} onChange={event => patch(index, { AdRoomHall: event.target.value.toUpperCase().slice(0, 12) })} placeholder="اختر أو اكتب القاعة" />{halls.length?<details className="import-hall-picker"><summary data-guide-ignore="اختيار سريع لقاعة داخل محرر الاستيراد"><MapPin/><span>{halls.length.toLocaleString("ar-KW-u-nu-latn")}</span></summary><div>{halls.map(hall=><button type="button" key={hall} data-guide-ignore="اختيار قاعة محفوظة داخل الاستيراد" className={cleanRoom(row.AdRoomHall)===hall?"active":""} onClick={event=>{patch(index,{AdRoomHall:hall});event.currentTarget.closest("details")?.removeAttribute("open");}}><MapPin/><bdi dir="ltr">{hall}</bdi></button>)}</div></details>:null}</div><datalist id={`import-halls-${index}`}>{halls.map(item => <option key={item} value={item} />)}</datalist>{halls.length ? <small>{halls.length.toLocaleString("ar-KW-u-nu-latn")} قاعة محفوظة في هذا المبنى</small> : null}</div> : (String(row.AdRoomHall || "").trim() || "—")}

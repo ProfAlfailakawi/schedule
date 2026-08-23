@@ -52,7 +52,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { ocrDocument, parseScheduleTable, transcriptFacts } from "./src/utils/documentOcr";
+import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode } from "./src/utils/documentOcr";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -4853,71 +4853,32 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(422).json({error:message});return;
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
-  const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,allCourses);
+  const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds);
 
-  /* Rooms are identifiers and therefore fail closed. OCR is allowed to keep an
-     exact room from this department's complete history, or repair ONE
-     character only when that repair points to exactly one known room. Anything
-     else is blank in the preview instead of becoming a plausible wrong room. */
+  /* Rooms: Extract exact building (last 3 e.g. B07) and hall.
+     If a room is not in historical rooms, preserve it and flag with a review note. */
   const cleanRoomToken=(value:unknown)=>String(value||"").toUpperCase().replace(/\s+/g,"").trim();
-  const roomDistance=(a:string,b:string)=>{
-    if(a===b)return 0;
-    if(Math.abs(a.length-b.length)>1)return 99;
-    const prev=Array.from({length:b.length+1},(_,i)=>i);
-    for(let i=1;i<=a.length;i++){
-      let diagonal=prev[0];prev[0]=i;
-      for(let j=1;j<=b.length;j++){
-        const old=prev[j],cost=a[i-1]===b[j-1]?0:1;
-        prev[j]=Math.min(prev[j]+1,prev[j-1]+1,diagonal+cost);diagonal=old;
-      }
-    }
-    return prev[b.length];
-  };
   const knownRooms=(departmentRooms||[])
-    .map((room:any)=>({building:cleanRoomToken(room.building),hall:cleanRoomToken(room.hall)}))
+    .map((room:any)=>({building:cleanBuildingCode(room.building),hall:cleanRoomToken(room.hall)}))
     .filter((room:any)=>room.building&&room.hall);
   const roomKey=(building:string,hall:string)=>`${building}|${hall}`;
   const exactRooms=new Map(knownRooms.map((room:any)=>[roomKey(room.building,room.hall),room]));
-  const strongAuthorityBuilding=(value:string)=>/^\d{3}[A-Z]\d{2}$/i.test(value);
-  const strongAuthorityHall=(value:string)=>/^[A-Z]\d{2,3}$/i.test(value);
+
   for(const row of parsed.rows as any[]){
-    const building=cleanRoomToken(row.AdRoomCode),hall=cleanRoomToken(row.AdRoomHall);
+    const rawBuilding=cleanRoomToken(row.AdRoomCode);
+    const rawHall=cleanRoomToken(row.AdRoomHall);
+    const building=cleanBuildingCode(rawBuilding);
+    const hall=rawHall;
+
     if(!building&&!hall)continue;
+    row.AdRoomCode=building;
+    row.AdRoomHall=hall;
 
-    /* A clean pair printed in the Authority PDF is stronger evidence than room
-       history. The previous fail-closed pass erased perfectly legible values
-       such as 012B09 / F13 simply because that exact room had not appeared in
-       this department's historical schedule yet. History now repairs OCR; it
-       never vetoes a syntactically strong source value. */
-    if(strongAuthorityBuilding(building)&&strongAuthorityHall(hall)){
-      row.AdRoomCode=building;row.AdRoomHall=hall;continue;
-    }
-
-    const exact=exactRooms.get(roomKey(building,hall));
-    if(exact){row.AdRoomCode=exact.building;row.AdRoomHall=exact.hall;continue;}
-
-    /* One clean half can recover the other only when department memory has one
-       unique answer. This keeps an obvious F13/012B09 while refusing to invent
-       a room where several historical combinations are possible. */
-    if(strongAuthorityBuilding(building)&&!strongAuthorityHall(hall)){
-      const sameBuilding=knownRooms.filter((room:any)=>room.building===building && (!hall||roomDistance(hall,room.hall)<=1));
-      if(sameBuilding.length===1){row.AdRoomCode=sameBuilding[0].building;row.AdRoomHall=sameBuilding[0].hall;continue;}
-    }
-    if(strongAuthorityHall(hall)&&!strongAuthorityBuilding(building)){
-      const sameHall=knownRooms.filter((room:any)=>room.hall===hall && (!building||roomDistance(building,room.building)<=1));
-      if(sameHall.length===1){row.AdRoomCode=sameHall[0].building;row.AdRoomHall=sameHall[0].hall;continue;}
-    }
-
-    const candidates=knownRooms.filter((room:any)=>{
-      const bd=building?roomDistance(building,room.building):0;
-      const hd=hall?roomDistance(hall,room.hall):0;
-      return (!building||bd<=1)&&(!hall||hd<=1)&&(bd+hd)<=1;
-    });
-    if(candidates.length===1){
-      row.AdRoomCode=candidates[0].building;row.AdRoomHall=candidates[0].hall;
-    }else{
-      row.AdRoomCode="";row.AdRoomHall="";
-      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة غير مؤكدة فتركتها فارغة للمراجعة`);
+    if(building&&hall){
+      const isKnown=exactRooms.has(roomKey(building,hall));
+      if(!isKnown&&knownRooms.length>0){
+        parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة ${building}/${hall} جديدة أو غير مسجلة في تاريخ القسم - يرجى التأكد منها`);
+      }
     }
   }
 
@@ -4936,12 +4897,8 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
   }
   const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
-  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false}):[];
-  /* OCR observations are review notes, not a second validation system. If the
-     parsed row is structurally complete and its IDs validate against SCHEDULE,
-     fifty harmless confidence notes must not make the PDF impossible to publish.
-     A header/term mismatch remains blocking because it can make every otherwise
-     valid row belong to the wrong academic term. */
+  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true}):[];
+  /* Conflict errors and structural errors block publishing until resolved */
   const parserNotes=[...new Set(parsed.issues)];
   const blocking=[...new Set([
     ...structural,

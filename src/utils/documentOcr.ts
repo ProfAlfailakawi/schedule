@@ -1088,32 +1088,62 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   };
 }
 
-const minutesOf=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(3));
-/**
- * `1650 - 1530`, `08:00-09:20`, or a pair with the next column stuck to it.
- *
- * The trailing word boundary was the reason no time ever parsed: the building
- * code sits hard against the closing digits, so a real `1350 - 1230` reaches
- * here as `1350-1230012B09`. Validating the hours and minutes is the check that
- * makes dropping the boundary safe.
- */
-/* A zero at the end of a time is the character this scan loses most: measured
-   on the Authority's own export, `1000` came back as `100¢`, `1100` as `110(`
-   and `1200` as `120¢`. The substitution is only attempted inside a time cell
-   and the result still has to be a real hour and minute, so a wrong guess
-   cannot survive into the schedule. */
 const repairClockDigits=(value:string)=>value.replace(/[Oo°QDﻩ]/g,"0").replace(/[¢()\[\]{}|!lI]/g,"0");
+const minutesOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
+
+export const cleanBuildingCode = (raw: string): string => {
+  const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
+  if (!clean) return "";
+  const m = clean.match(/(?:012|011|010)?([A-Z]\d{2,3})$/);
+  if (m) return m[1];
+  const mAny = clean.match(/([A-Z]\d{2,3})/);
+  if (mAny) return mAny[1];
+  if (clean.length > 3 && /^[A-Z0-9]+$/.test(clean)) return clean.slice(-3);
+  return clean;
+};
+
 const timePair=(text:string)=>{
   const ascii=repairClockDigits(toAscii(text));
-  const compact=[...ascii.matchAll(/([0-2]\d[0-5]\d)\s*[-–—]?\s*([0-2]\d[0-5]\d)/g)][0];
-  const pieces=compact
-    ?[compact[1],compact[2]].map(value=>`${value.slice(0,2)}:${value.slice(2)}`)
-    :[...ascii.matchAll(/\b([01]?\d|2[0-3])[:٫.]([0-5]\d)\b/g)].map(match=>`${String(match[1]).padStart(2,"0")}:${match[2]}`);
-  if(pieces.length<2)return null;
-  const[a,b]=pieces;
-  const valid=(value:string)=>Number(value.slice(0,2))<24&&Number(value.slice(3))<60;
-  if(!valid(a)||!valid(b))return null;
-  return minutesOf(a)<=minutesOf(b)?{start:a,end:b}:{start:b,end:a};
+  
+  // 1. Explicit colon/dot format: 15:30 - 16:50 or 08:00 - 09:20 or 11:00-11:50
+  const colonMatches = [...ascii.matchAll(/\b([01]?\d|2[0-3])[:٫.]([0-5]\d)\b/g)];
+  if (colonMatches.length >= 2) {
+    for (let i = 0; i < colonMatches.length - 1; i++) {
+      const h1 = Number(colonMatches[i][1]), m1 = Number(colonMatches[i][2]);
+      const h2 = Number(colonMatches[i+1][1]), m2 = Number(colonMatches[i+1][2]);
+      const t1 = `${String(h1).padStart(2, "0")}:${String(m1).padStart(2, "0")}`;
+      const t2 = `${String(h2).padStart(2, "0")}:${String(m2).padStart(2, "0")}`;
+      const min1 = h1 * 60 + m1, min2 = h2 * 60 + m2;
+      const start = min1 <= min2 ? t1 : t2;
+      const end = min1 <= min2 ? t2 : t1;
+      const diff = Math.abs(min1 - min2);
+      if (diff >= 30 && diff <= 240 && Math.min(min1, min2) >= 7 * 60 && Math.max(min1, min2) <= 22 * 60) {
+        return { start, end };
+      }
+    }
+  }
+
+  // 2. Military format with REQUIRED separator: 1650 - 1530, 0800 - 0920, 1150-1100
+  // REQUIRED SEPARATOR: [-–—~] or "to" or "إلى"
+  const militaryMatches = [...ascii.matchAll(/\b([0-2]\d[0-5]\d)\s*[-–—~]\s*([0-2]\d[0-5]\d)\b/g)];
+  for (const match of militaryMatches) {
+    const rawA = match[1], rawB = match[2];
+    const hA = Number(rawA.slice(0, 2)), mA = Number(rawA.slice(2));
+    const hB = Number(rawB.slice(0, 2)), mB = Number(rawB.slice(2));
+    if (hA < 24 && mA < 60 && hB < 24 && mB < 60) {
+      const minA = hA * 60 + mA, minB = hB * 60 + mB;
+      const tA = `${String(hA).padStart(2, "0")}:${String(mA).padStart(2, "0")}`;
+      const tB = `${String(hB).padStart(2, "0")}:${String(mB).padStart(2, "0")}`;
+      const start = minA <= minB ? tA : tB;
+      const end = minA <= minB ? tB : tA;
+      const diff = Math.abs(minA - minB);
+      if (diff >= 30 && diff <= 240 && Math.min(minA, minB) >= 7 * 60 && Math.max(minA, minB) <= 22 * 60) {
+        return { start, end };
+      }
+    }
+  }
+
+  return null;
 };
 
 const DAY_FIELDS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"]as const;
@@ -1174,6 +1204,7 @@ const fuzzyNameScore=(line:string,name:string)=>{
 
 export type ParsedScheduleRow={
   sourceOrder:number;referenceNumber:string;AdCourseId:number;AdCourseName:string;SCode:string;AdInstructorId:number;
+  TotalHours?:number;TotalUnits?:number;CourseCredit?:number;CourseHours?:number;fcredithours?:number;fcontacthours?:number;
   fsunday:boolean;fmonday:boolean;ftuesday:boolean;fwednesday:boolean;fthursday:boolean;
   fstarttime:string;fendtime:string;AdRoomCode:string;AdRoomHall:string;ocrLine:string;sourceInstructorText?:string;
 };
@@ -1357,53 +1388,45 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     const flags={...EMPTY_DAYS};
     for(const digit of grid.days.match(/[1-5]/g)||[])flags[DAY_FIELDS[Number(digit)-1]]=true;
     const instructorHit=matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
+    const cleanBuilding = cleanBuildingCode(grid.building);
     rows.push({
       sourceOrder:order++,
       referenceNumber:grid.reference,
       AdCourseId:course.AdCourseId,AdCourseName:course.CourseName,SCode:grid.scode,
       AdInstructorId:instructorHit?.AdInstructorId||0,
+      TotalHours:course.CourseHours,TotalUnits:course.CourseCredit,
+      CourseHours:course.CourseHours,CourseCredit:course.CourseCredit,
+      fcontacthours:course.CourseHours||3,fcredithours:course.CourseCredit||3,
       ...flags,
       fstarttime:grid.start,fendtime:grid.end,
-      AdRoomCode:grid.building,AdRoomHall:grid.hall,
-      ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,grid.building,grid.hall,grid.instructorText].filter(Boolean).join(" | "),
+      AdRoomCode:cleanBuilding,AdRoomHall:grid.hall,
+      ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,cleanBuilding,grid.hall,grid.instructorText].filter(Boolean).join(" | "),
       sourceInstructorText:grid.instructorText,
     });
     const label=course.CourseName;
     if(!grid.start)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
     if(!Object.values(flags).some(Boolean))issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الأيام`);
-    if(!instructorHit)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على أستاذ المقرر`);
+    if(!instructorHit&&grid.instructorText&&!grid.instructorText.includes("هيئة")&&!grid.instructorText.includes("هيئه"))
+      issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على أستاذ المقرر («${grid.instructorText}»)`);
     if(!grid.scode)issues.push(`صف «${label}»: لم أتعرف على رقم الشعبة`);
-    if(!grid.building&&!grid.hall)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
+    if(!cleanBuilding&&!grid.hall)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
   }
   return{rows,issues,order};
 }
 
-export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>,allAvailableCourses?:AdCourse[]){
-  const activeCourses=courses.length>0?courses:(allAvailableCourses||[]);
-  const combinedCourses=[...activeCourses];
-  if(allAvailableCourses){
-    for(const c of allAvailableCourses){
-      if(!combinedCourses.some(x=>x.AdCourseId===c.AdCourseId))combinedCourses.push(c);
-    }
-  }
-
-  const courseNeedles=combinedCourses.map(course=>({
+export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>){
+  const activeCourses=courses;
+  const catalogue=activeCourses.map(course=>({
     course,
+    digits:toAscii(String(course.CourseCode||"")).replace(/\D/g,""),
     folded:fold(course.CourseName),
-    code:toAscii(String(course.CourseCode||"")).replace(/\D/g,""),
-    preferred:courses.some(c=>c.AdCourseId===course.AdCourseId)
-  })).sort((a,b)=>b.folded.length-a.folded.length);
+  }));
 
-  const uniqueTails:Record<number,Set<string>>={};
-  for(const tail of [4,3]){
-    const seen=new Map<string,number>();
-    for(const item of courseNeedles){
-      if(item.code.length<tail)continue;
-      const suffix=item.code.slice(-tail);
-      seen.set(suffix,(seen.get(suffix)||0)+1);
-    }
-    uniqueTails[tail]=new Set([...seen.entries()].filter(([,count])=>count===1).map(([suffix])=>suffix));
+  const tails=new Map<string,number>();
+  for(const item of catalogue){
+    if(item.digits.length>=3){const tail=item.digits.slice(-3);tails.set(tail,(tails.get(tail)||0)+1);}
   }
+
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=0,scanned=0;
 
   for(const page of pages){
@@ -1425,52 +1448,51 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     const normalized=fold(line);
 
     const rowDigitsSpaced=cells.map(cell=>toAscii(cell.text)).join(" ");
-    const rowDigits=rowDigitsSpaced.replace(/\D/g,"");
+    const digitRuns=(rowDigitsSpaced.match(/\d+/g)||[]);
 
-    const codeMatch=(code:string)=>{
-      if(!code||rowDigits.length<3)return 0;
-      if(code.length>=6){
-        if(rowDigits.includes(code))return 1;
-        for(let at=0;at+code.length-1<=rowDigits.length;at++)
-          for(const width of [code.length,code.length-1]){
-            const window=rowDigits.slice(at,at+width);
-            if(window.length===width&&editDistance(window,code)<=1)return .97;
-          }
+    // Rule 1: Course code extraction - match strictly against department courses
+    let matchedCourse:AdCourse|null=null;
+    // 1. Check exact code match or 3-digit tail match (e.g. 0101102 ends in 102)
+    for(const item of catalogue){
+      if(!item.digits)continue;
+      const code=item.digits;
+      const tail3=code.slice(-3);
+      if(digitRuns.some(run=>run===code||(run.length>=5&&run.endsWith(code))||(tail3.length===3&&run.endsWith(tail3)&&run.length>=3&&run.length<=7))){
+        matchedCourse=item.course;
+        break;
       }
-      for(const tail of [4,3]){
-        if(code.length<tail)continue;
-        const suffix=code.slice(-tail);
-        if(!uniqueTails[tail]?.has(suffix))continue;
-        if(new RegExp(`(^|\\D)${suffix}(\\D|$)`).test(rowDigitsSpaced))return tail===4?.94:.9;
+    }
+    // 2. Check full/folded Arabic course name in line or cells
+    if(!matchedCourse){
+      for(const item of catalogue){
+        if(item.folded.length>=4&&normalized.includes(item.folded)){
+          matchedCourse=item.course;
+          break;
+        }
       }
-      return 0;
-    };
+    }
+    // 3. Fuzzy name match against department courses only
+    if(!matchedCourse){
+      const ranked=catalogue.map(item=>({item,score:fuzzyNameScore(line,item.course.CourseName)})).sort((a,b)=>b.score-a.score);
+      if(ranked[0]&&ranked[0].score>=0.65){
+        matchedCourse=ranked[0].item.course;
+      }
+    }
 
-    const ranked=courseNeedles.map(item=>{
-      const byCode=item.code?codeMatch(item.code):0;
-      if(byCode)return{item,score:byCode+(item.preferred?0.1:0),viaCode:true};
-      const direct=item.folded.length>=5&&normalized.includes(item.folded);
-      const perCell=cells.reduce((best,cell)=>Math.max(best,fuzzyNameScore(cell.text,item.course.CourseName)),0);
-      const textScore=direct?1:Math.max(perCell,fuzzyNameScore(line,item.course.CourseName));
-      return{item,score:textScore+(item.preferred?0.1:0),viaCode:false};
-    }).sort((a,b)=>(Number(b.viaCode)-Number(a.viaCode))||b.score-a.score);
+    if(!matchedCourse)continue;
+    const courseName=matchedCourse.CourseName;
 
-    const courseHit=ranked[0]?.score>=.50?ranked[0].item:undefined;
-    if(!courseHit)continue;
-    const courseName=courseHit.course.CourseName;
-
+    // Rule 6: Exact time extraction with valid university lecture range
     let time:{start:string;end:string}|null=null;
     for(const cell of cells){const found=timePair(cell.text);if(found){time=found;break;}}
     if(!time)time=timePair(line);
 
-    // Days extraction
+    // Rule 7: Exact days extraction
     let flags:typeof EMPTY_DAYS|null=null;
-    // Look first for multi-day / specific day cells
     for(const cell of cells){
-      const t=toAscii(cell.text).trim();
-      if(/^[1-5](\s+[1-5])+$/.test(t)){flags=dayFlagsFromCell(t);break;}
+      const found=dayFlagsFromCell(cell.text);
+      if(found){flags=found;break;}
     }
-    // Next, look adjacent to activity or time cells
     if(!flags){
       const actIdx=cells.findIndex(c=>activityTokens.some(act=>c.text.includes(act)));
       if(actIdx>=0){
@@ -1483,34 +1505,33 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
         }
       }
     }
-    if(!flags){
-      for(const cell of cells){
-        const found=dayFlagsFromCell(cell.text);
-        if(found){flags=found;break;}
-      }
-    }
     if(!flags)flags=dayFlagsFromText(line);
 
-    // Room and Building extraction
+    // Rule 4 & 5: Room and Building extraction (take last 3 e.g. B07)
     let roomCode="",roomHall="";
     for(let index=0;index<cells.length&&!roomCode;index++){
-      const value=toAscii(cells[index].text).replace(/\s+/g,"");
-      const building=value.match(/(\d{3})([A-Za-z])(\d{2})/);
-      if(!building)continue;
-      roomCode=`${building[1]}${building[2].toUpperCase()}${building[3]}`;
-      const rest=value.slice((building.index||0)+building[0].length);
-      const inline=toAscii(rest).replace(/\s+/g,"").match(/^([A-Za-z]\d{1,3})$/);
-      if(inline)roomHall=inline[1].toUpperCase();
+      const value=toAscii(cells[index].text).replace(/\s+/g,"").toUpperCase();
+      const mLong=value.match(/(?:012|011|010)?([A-Z]\d{2,3})/);
+      if(mLong){
+        roomCode=mLong[1];
+        const rest=value.slice((mLong.index||0)+mLong[0].length);
+        const inline=rest.match(/^([A-Z]\d{1,3})$/);
+        if(inline)roomHall=inline[1];
+      }
     }
     if(!roomHall)for(const cell of cells){
-      const hall=toAscii(cell.text).replace(/\s+/g,"").match(/^([A-Za-z]\d{1,3})$/);
-      if(hall){roomHall=hall[1].toUpperCase();break;}
+      const text=toAscii(cell.text).replace(/\s+/g,"").toUpperCase();
+      const hall=text.match(/\b([A-Z]\d{1,3})\b/);
+      if(hall&&hall[1]!==roomCode){roomHall=hall[1];break;}
+    }
+    if(!roomCode)for(const cell of cells){
+      const b=cleanBuildingCode(cell.text);
+      if(b&&/^[A-Z]\d{2,3}$/.test(b)){roomCode=b;break;}
     }
 
     // Section and Reference (CRN) extraction
-    const courseCode=toAscii(String(courseHit.course.CourseCode||"")).replace(/\D/g,"");
-    const runs=cells.flatMap(cell=>toAscii(cell.text).match(/\d+/g)||[]);
-    const reference=runs.find(value=>/^\d{4,8}$/.test(value)&&value!==courseCode)||"";
+    const courseCode=toAscii(String(matchedCourse.CourseCode||"")).replace(/\D/g,"");
+    const reference=digitRuns.find(value=>/^\d{4,8}$/.test(value)&&value!==courseCode&&value!==time?.start.replace(":","")&&value!==time?.end.replace(":",""))||"";
     const referenceCellIndex=reference ? cells.findIndex(c=>toAscii(c.text).includes(reference)) : -1;
     let section="";
     if(referenceCellIndex>=0){
@@ -1520,15 +1541,13 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
         return /^\d{1,4}$/.test(t) && t!==courseCode.slice(-3) && t!==reference;
       });
       if(exactCell) section=toAscii(exactCell.text).trim();
-      else {
-        const referenceIndex=runs.findIndex(value=>value===reference);
-        const nearbySection=referenceIndex>=0 ? runs.slice(Math.max(0,referenceIndex-2),referenceIndex+3)
-          .find(value=>/^\d{1,4}$/.test(value)&&value!==courseCode.slice(-3)&&value!==reference) : undefined;
-        section=nearbySection||"";
-      }
+    }
+    if(!section){
+      const secCandidate=digitRuns.find(v=>/^(50[1-9]|5[1-9]\d|\d{3})$/.test(v)&&v!==reference&&v!==courseCode.slice(-3));
+      if(secCandidate)section=secCandidate;
     }
 
-    // Isolate Instructor cell cleanly from course title and activity
+    // Rule 8: Instructor extraction with department priority
     const foldedCourse=fold(courseName).replace(/\s+/g,"");
     const arabicCells=cells
       .map(cell=>String(cell.text||"").trim())
@@ -1546,8 +1565,11 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
     rows.push({
       sourceOrder:order++,referenceNumber:reference,
-      AdCourseId:courseHit.course.AdCourseId,AdCourseName:courseName,SCode:section,
+      AdCourseId:matchedCourse.AdCourseId,AdCourseName:courseName,SCode:section,
       AdInstructorId:instructorHit?.AdInstructorId||0,
+      TotalHours:matchedCourse.CourseHours,TotalUnits:matchedCourse.CourseCredit,
+      CourseHours:matchedCourse.CourseHours,CourseCredit:matchedCourse.CourseCredit,
+      fcontacthours:matchedCourse.CourseHours||3,fcredithours:matchedCourse.CourseCredit||3,
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCell,
