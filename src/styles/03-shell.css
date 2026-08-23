@@ -407,6 +407,11 @@ html[data-schedule-workspace="focus"] .schedule-editor{
 }
 html[data-schedule-workspace="focus"] .schedule-editor .page-heading{display:flex !important}
 
+/* The quick-create popover answers a click ON the focus board, so it must sit
+   above it. At its everyday 420 it opened UNDER the fullscreen surface (1500):
+   the tap landed, the form appeared, and nobody ever saw it. */
+html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
+
 /* --- Spotlight / command palette ------------------------------------------ */
 
 /* These sheets sit ON the board, so they have to clear everything the board

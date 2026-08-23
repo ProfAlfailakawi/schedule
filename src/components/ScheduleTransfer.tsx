@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
+import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
@@ -48,6 +49,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [xlsxDraft, setXlsxDraft] = useState("");
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
   const [readProgress, setReadProgress] = useState<{ pct: number; message: string } | null>(null);
+  /* The quick-edit course picker needs the department's catalogue; fetched once
+     the first time a PDF preview opens, never on plain Excel imports. */
+  const [deptCourses, setDeptCourses] = useState<any[]>([]);
   const [fromId, setFromId] = useState(0);
   const [toId, setToId] = useState(0);
   const [retirePreview, setRetirePreview] = useState<number | null>(null);
@@ -296,8 +300,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       }
       if(failure)throw new Error(failure);
       if(!data){const rest=buffer.trim();if(rest){try{const tail=JSON.parse(rest);data=tail.result||tail;}catch{/* no trailing json */}}}
+      /* A refusal (an occupied term, a permission wall) arrives as one plain
+         JSON object with no newline. It used to be swallowed into an empty
+         preview — zero rows, zero message. An error object IS the message. */
+      if(data&&(data as any).error&&!(data as any).rows)throw new Error((data as any).error);
       if(!data)throw new Error("تعذرت قراءة PDF");
       setXlsxPreview({...data,valid:Boolean(data.ready),count:Number(data.rows?.length||0),fileName:file.name,importLayout:"authority-pdf"});
+      if(!deptCourses.length){
+        try{
+          const all=await (await fetch("/api/courses")).json();
+          if(Array.isArray(all))setDeptCourses(all.filter((c:any)=>Number(c.AdCollegeId)===collegeId&&Number(c.AdSectionId)===sectionId));
+        }catch{/* the picker simply lists nothing until a retry */}
+      }
     }catch(e:any){setError(e.message||"تعذرت قراءة PDF");}finally{setBusy(false);setReadProgress(null);}
   };
 
@@ -518,7 +532,28 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>
                     {importKind==="authority-pdf"?<span><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b>صفحات PDF</span>:null}
                   </div>
-                  {xlsxPreview.issues?.length ? (
+                  {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
+                    <>
+                      {/* The whole table, red on what the scan could not read,
+                          and a quick edit + delete beside EVERY row. */}
+                      <ImportPreviewTable
+                        rows={xlsxPreview.rows as ImportRow[]}
+                        courses={deptCourses as any}
+                        instructors={instructors as any}
+                        onRows={next => setXlsxPreview((prev: any) => prev ? { ...prev, rows: next, count: next.length, valid: next.length > 0 } : prev)}
+                      />
+                      {xlsxPreview.issues?.length ? (
+                        <details className="import-issues-fold">
+                          <summary>ملاحظات القراءة ({Number(xlsxPreview.issues.length).toLocaleString("ar-KW-u-nu-latn")}) — الخانات الحمراء أعلاه هي مواضعها</summary>
+                          <ul className="transfer-rejected">
+                            {xlsxPreview.issues.map((issue: string, index: number) => (
+                              <li key={index}><span>{issue}</span></li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
+                    </>
+                  ) : xlsxPreview.issues?.length ? (
                     <ul className="transfer-rejected">
                       {xlsxPreview.issues.slice(0, 8).map((issue: string, index: number) => (
                         <li key={index}><span>{issue}</span></li>
@@ -528,7 +563,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   ) : null}
                   {xlsxDraft ? (
                     <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")?"اكتمل تعبئة الجدول ونشره بنجاح.":<>حُفظت نسخة PDF بالترتيب الأصلي. عدّلها ثم افتح <b className="visual-flow-inline">مركز الذكاء <ChevronLeft aria-hidden="true" /> تقرير تغييرات PDF</b> قبل النشر.</>}</p>
-                  ) : xlsxPreview.valid ? (
+                  ) : (importKind === "authority-pdf" ? xlsxPreview.count > 0 : xlsxPreview.valid) ? (
                     <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(importKind==="worksheet")} disabled={busy}>
                       {busy ? "يجهّز…" : importKind==="authority-pdf"?`نسخ ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} إلى الفصل الفارغ`:`تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                     </PrimaryButton>

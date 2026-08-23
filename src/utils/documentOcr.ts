@@ -935,6 +935,27 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   for(const item of catalogue)if(item.digits.length>=6)
     prefixVotes.set(item.digits.slice(0,-3),(prefixVotes.get(item.digits.slice(0,-3))||0)+1);
   const departmentPrefix=[...prefixVotes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
+  /* OCR shatters Arabic words — «الاسلامي» arrives as «الا سلا مى» — and token
+     matching then finds nothing. Removing the spaces from BOTH sides before
+     comparing sees straight through the shattering: substring first, then an
+     edit-ratio for names that also lost a word to a Latin hallucination. */
+  const spaceless=(value:string)=>fold(value).replace(/[a-z0-9 ]/g,"");
+  const spacelessCatalogue=catalogue.map(item=>({item,flat:spaceless(item.course.CourseName)}));
+  const matchBySpacelessName=(nameText:string)=>{
+    const flat=spaceless(nameText);
+    if(flat.length<6)return null;
+    const contained=spacelessCatalogue.filter(entry=>entry.flat.length>=6&&(entry.flat.includes(flat)||flat.includes(entry.flat)));
+    if(contained.length===1)return contained[0].item.course;
+    let best:{course:AdCourse;ratio:number}|null=null,second=0;
+    for(const entry of spacelessCatalogue){
+      if(!entry.flat)continue;
+      const distance=editDistance(flat,entry.flat);
+      const ratio=1-distance/Math.max(flat.length,entry.flat.length);
+      if(!best||ratio>best.ratio){second=best?.ratio||0;best={course:entry.item.course,ratio};}
+      else if(ratio>second)second=ratio;
+    }
+    return best&&best.ratio>=0.66&&best.ratio-second>=0.08?best.course:null;
+  };
   const matchCourse=(code:string,nameText:string)=>{
     if(code){
       const exact=catalogue.find(item=>item.digits===code);
@@ -955,13 +976,24 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     if(nameText.length>=5){
       const ranked=catalogue.map(item=>({item,score:fuzzyNameScore(nameText,item.course.CourseName)})).sort((a,b)=>b.score-a.score);
       if(ranked[0]&&ranked[0].score>=0.56)return ranked[0].item.course;
+      const flat=matchBySpacelessName(nameText);
+      if(flat)return flat;
     }
     return null;
   };
 
+  /* First pass matches what it can; the second uses the sheet's own order.
+     Reference numbers run sequentially inside a course block, so a row that
+     failed to match but sits BETWEEN two rows of the same course belongs to
+     that course — the layout says so even where the ink did not. */
+  const firstPass=gridRows.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText)}));
+  for(let i=0;i<firstPass.length;i++){
+    if(firstPass[i].course)continue;
+    const previous=firstPass[i-1]?.course,next=firstPass[i+1]?.course;
+    if(previous&&next&&previous.AdCourseId===next.AdCourseId)firstPass[i].course=previous;
+  }
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
-  for(const grid of gridRows){
-    const course=matchCourse(grid.code,grid.courseText);
+  for(const {grid,course} of firstPass){
     if(!course){
       if(grid.code||grid.courseText.length>4)
         issues.push(`صف غير مطابق: «${grid.courseText||grid.code}» — لا يقابله مقرر في كتالوج القسم`);

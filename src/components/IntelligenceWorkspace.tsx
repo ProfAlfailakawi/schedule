@@ -75,6 +75,7 @@ import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
+import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
@@ -1479,6 +1480,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       }
       if (failure) throw new Error(failure);
       if (!data) { const rest = buffer.trim(); if (rest) { try { const tail = JSON.parse(rest); data = tail.result || tail; } catch { /* no trailing json */ } } }
+      if (data && (data as any).error && !(data as any).rows) throw new Error((data as any).error);
       if (!data) throw new Error("تعذّرت قراءة PDF");
       setImportPreview({ ...data, count: Number(data.rows?.length || 0), preview: data.rows || [], valid: Boolean(data.ready), issues: data.issues || [], importLayout: "authority-pdf" });
     } catch (e: any) {
@@ -4864,6 +4866,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   لا أخطاء ظاهرة.
                 </Notice>
               )}
+              {importPreview.importLayout === "authority-pdf" && importPreview.rows?.length ? (
+                <ImportPreviewTable
+                  rows={importPreview.rows as ImportRow[]}
+                  courses={courses as any}
+                  instructors={instructors as any}
+                  onRows={next => setImportPreview((prev: any) => prev ? { ...prev, rows: next, preview: next, count: next.length, valid: next.length > 0 } : prev)}
+                />
+              ) : (
               <RecordDeck className="import-records">
                 {importPreview.preview.slice(0, 12).map((r: any) => (
                   <RecordCard
@@ -4887,6 +4897,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   />
                 ))}
               </RecordDeck>
+              )}
               <div className="import-actions">
                 <SecondaryButton
                   onClick={() => {

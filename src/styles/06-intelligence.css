@@ -3955,3 +3955,33 @@ button.twin-delta{width:100%}
 .import-drop>p{margin-inline:auto;max-width:46ch;text-wrap:balance}
 .import-drop>small{display:inline-flex;align-items:center;gap:6px;justify-content:center}
 .import-drop .import-entry-actions{justify-content:center}
+
+/* ── معاينة الاستيراد كجدول كامل ─────────────────────────────────────────
+   Red is a highlighter, not a gate: it marks what the reader must check, while
+   every row — red or not — carries its own quick edit and delete. */
+.import-preview-table-wrap{width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.import-preview-table{width:100%;min-width:860px;border-collapse:collapse;font-size:12px}
+.import-preview-table th{position:sticky;top:0;background:var(--surface-2);color:var(--muted);font-size:11px;padding:9px 10px;text-align:right;white-space:nowrap;z-index:1}
+.import-preview-table td{padding:8px 10px;border-top:1px solid var(--line);vertical-align:middle}
+.import-preview-table td.num{color:var(--muted);text-align:center;width:34px}
+.import-cell-course strong{display:block;font-size:12px;line-height:1.5}
+.import-cell-course small{color:var(--muted);font-size:10px}
+.import-preview-table td.import-cell-missing{background:color-mix(in srgb,var(--danger,#a2402f) 10%,transparent);box-shadow:inset 3px 0 0 color-mix(in srgb,var(--danger,#a2402f) 55%,transparent)}
+.import-day-chips{display:inline-flex;gap:3px}
+.import-day-chips button{min-width:22px;height:22px;padding:0 4px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--muted);font-size:10.5px;font-weight:700;cursor:pointer}
+.import-day-chips button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.import-day-chips button:disabled{cursor:default;opacity:.9}
+.import-time-pair{display:inline-flex;align-items:center;gap:4px}
+.import-time-pair i{font-style:normal;color:var(--muted)}
+.import-preview-table input,.import-preview-table select{max-width:150px;padding:5px 7px;font:inherit;font-size:11.5px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
+.import-preview-table input[type="time"]{max-width:96px}
+.import-preview-table td.import-cell-course select{max-width:230px}
+.import-row-tools{white-space:nowrap;width:74px}
+.import-row-tools button{display:inline-grid;place-items:center;width:28px;height:28px;margin-inline-start:4px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);cursor:pointer}
+.import-row-tools button svg{width:14px;height:14px}
+.import-row-tools button:hover{color:var(--ink);border-color:var(--line-strong)}
+.import-row-tools button.confirm{background:var(--accent);border-color:var(--accent);color:#fff}
+.import-row-tools button.danger:hover{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 45%,var(--line))}
+.import-preview-table tr.is-editing td{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.import-issues-fold{border:1px solid var(--line);border-radius:13px;padding:4px 12px}
+.import-issues-fold summary{cursor:pointer;padding:8px 0;font-size:12px;font-weight:700;color:var(--muted)}
