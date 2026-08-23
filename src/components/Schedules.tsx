@@ -7859,7 +7859,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   </select>
                 </Field>
                 <Field
-                  label={<span className="field-label-line"><span className="field-label-required-inline">الشعبة <span className="required" aria-hidden="true">*</span></span>{!editId && sectionHint ? <small className="field-inline-hint">{sectionHint}</small> : null}</span>}
+                  label={<span className="field-label-line"><span className="field-label-required-inline">الشعبة <span className="required" aria-hidden="true">*</span></span>{sectionHint ? <small className="field-inline-hint">{sectionHint}</small> : null}</span>}
                 >
                   <input
                     value={form.SCode}
