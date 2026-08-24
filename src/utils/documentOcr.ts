@@ -1,6 +1,10 @@
 import type { AdCourse, AdInstructor } from "../types";
 
 const toAscii=(value:string)=>String(value||"")
+  /* Generated Authority PDFs often store Arabic as Presentation Forms
+     (e.g. «ﺟﺪﻭﻝ» instead of «جدول»). NFKC turns those glyph forms back into
+     ordinary Arabic letters before ANY header/course/instructor matching. */
+  .normalize("NFKC")
   .replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
   .replace(/[۰-۹]/g,d=>String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
 const fold=(value:string)=>toAscii(value).replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z0-9: ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
@@ -121,6 +125,25 @@ async function renderPdf(input:Buffer,longEdge:number,onProgress?:OcrProgress):P
  * PDF has no useful text layer, so it simply returns null and falls through to
  * the OCR path below.
  */
+/** A real Authority timetable body row carries its academic key plus
+ * another independent timetable signal. This is deliberately structural:
+ * page headers may be one, three or five physical lines and may change wording,
+ * while a genuine body row still has the 7-digit course code and a time or
+ * canonical-looking building code. */
+function isAuthorityBodyRow(line:string):boolean{
+  const ascii=toAscii(line).replace(/[Oo]/g,"0").replace(/\s+/g," ").trim();
+  const digitRuns=ascii.match(/\d+/g)||[];
+  const hasCourseKey=digitRuns.some(run=>/^\d{7}$/.test(run))||digitRuns.some(run=>/^\d{11,13}$/.test(run));
+  const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]\s*[0-2]?\d[0-5]\d\b/.test(ascii);
+  const hasBuilding=/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii);
+  return hasCourseKey&&(hasTime||hasBuilding);
+}
+
+function authorityBodyOnly(rows:OcrRow[]):OcrRow[]{
+  const firstBody=rows.findIndex(row=>isAuthorityBodyRow(row.line));
+  return firstBody>=0?rows.slice(firstBody):rows;
+}
+
 async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrResult|null>{
   try{
     const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -135,7 +158,7 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
       const words:Word[]=[];
       for(const item of content?.items||[]){
-        const text=String(item?.str||"").replace(/\s+/g," ").trim();
+        const text=String(item?.str||"").normalize("NFKC").replace(/\s+/g," ").trim();
         if(!text||!Array.isArray(item?.transform))continue;
         const transformed=pdfjs.Util?.transform?pdfjs.Util.transform(viewport.transform,item.transform):item.transform;
         const x=Number(transformed?.[4]??item.transform[4]??0);
@@ -148,9 +171,13 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
         words.push({text,x0:x,y0:baseline-height,x1:x+width,y1:baseline+height*.15});
         totalChars+=text.replace(/\s+/g,"").length;
       }
-      const rows=tableFromWords(words,[]);
-      const pageText=rows.map(row=>row.line).join("\n");
+      const physicalRows=tableFromWords(words,[],"pdf-text");
+      /* Keep the complete text for header term/branch extraction, but hand only
+         the table body to the schedule parser. This removes the repeated
+         SWRSCHA/term/department header independently on EVERY PDF page. */
+      const pageText=physicalRows.map(row=>row.line).join("\n");
       pageTexts.push(pageText);
+      const rows=authorityBodyOnly(physicalRows);
       structuralRows+=rows.filter(row=>{
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
         const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
@@ -403,15 +430,18 @@ const wordsOf=(data:any):Word[]=>{
  * then cutting on the horizontal gaps between them keeps each ruled cell apart,
  * which is what makes times, days, rooms and section numbers recoverable.
  */
-function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
+function tableFromWords(words:Word[],columns:number[],rowGrouping:"default"|"pdf-text"="default"):OcrRow[]{
   const validWords=words.filter(w=>w.text&&w.text.trim().length>0);
   if(!validWords.length)return[];
   const heights=validWords.map(w=>Math.abs(w.y1-w.y0)).sort((a,b)=>a-b);
   const medianHeight=Math.max(8,heights[Math.floor(heights.length/2)]||12);
 
-  // Group words into lines using vertical overlap & proximity
+  // Generated PDFs expose exact baselines. Their glyph boxes can overlap the
+  // next ruled row, so the loose OCR grouping would weld every two timetable
+  // rows together. PDF text therefore groups by baseline distance only.
+  const strictPdfRows=rowGrouping==="pdf-text";
   const sortedByY=[...validWords].sort((a,b)=>((a.y0+a.y1)/2)-((b.y0+b.y1)/2));
-  const rowTolerance=medianHeight*0.8;
+  const rowTolerance=strictPdfRows?Math.max(1.5,Math.min(3.5,medianHeight*0.35)):medianHeight*0.8;
   const lineGroups:{words:Word[];yMin:number;yMax:number;yCenter:number}[]=[];
 
   for(const word of sortedByY){
@@ -424,12 +454,11 @@ function tableFromWords(words:Word[],columns:number[]):OcrRow[]{
       const grp=lineGroups[i];
       const dist=Math.abs(wCenter-grp.yCenter);
       const overlaps=(wMin<=grp.yMax+3&&wMax>=grp.yMin-3);
-      if(overlaps||dist<=rowTolerance){
-        if(dist<minDist){minDist=dist;bestIndex=i;}
-      }
+      const samePhysicalRow=strictPdfRows?dist<=rowTolerance:(overlaps||dist<=rowTolerance);
+      if(samePhysicalRow&&dist<minDist){minDist=dist;bestIndex=i;}
     }
 
-    if(bestIndex>=0&&minDist<=rowTolerance*1.5){
+    if(bestIndex>=0&&minDist<=(strictPdfRows?rowTolerance:rowTolerance*1.5)){
       const grp=lineGroups[bestIndex];
       grp.words.push(word);
       grp.yMin=Math.min(grp.yMin,wMin);

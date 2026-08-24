@@ -120,5 +120,8 @@ transfer=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
 ok('61 transfer publish is hidden and hard-disabled for any unresolved preview note', 'const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0)' in transfer and '{importReady ? (' in transfer and 'disabled={busy || !importReady}' in transfer and 'previewIssues: importBlockingIssues' in transfer and 'if (!importReady)' in transfer)
 ok('62 draft backend rejects unresolved preview notes', 'لا يمكن حفظ المسودة أو نشرها قبل معالجة جميع ملاحظات المعاينة.' in server and 'previewIssues.length' in server)
 ok('63 pending room never waives the required building', 'building: (row: ImportRow) => !row.buildingId,' in imp)
+doc_ocr=(ROOT/'src/utils/documentOcr.ts').read_text()
+ok('64 authority PDF normalizes Arabic presentation forms before header and instructor matching', '.normalize("NFKC")' in doc_ocr and 'ordinary Arabic letters before ANY header/course/instructor matching' in doc_ocr)
+ok('65 authority PDF text layer keeps one physical timetable row and drops each repeated page header structurally', 'tableFromWords(words,[],"pdf-text")' in doc_ocr and 'authorityBodyOnly(physicalRows)' in doc_ocr and 'strictPdfRows?dist<=rowTolerance' in doc_ocr and 'hasCourseKey&&(hasTime||hasBuilding)' in doc_ocr)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
