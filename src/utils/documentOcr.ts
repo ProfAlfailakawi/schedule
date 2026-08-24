@@ -1651,6 +1651,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       if(!roomHall)roomHall=cleanHallCode(line);
 
       const reference=digitRuns.find(value=>/^\d{4,8}$/.test(value))||"";
+      const section=digitRuns.find(v=>Number(v)>=500&&Number(v)<=999)||"501";
       const instructorHit=matchInstructorName(line,instructors,preferredInstructorIds);
 
       rows.push({
