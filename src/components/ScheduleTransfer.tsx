@@ -230,6 +230,27 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   ), [departmentIds, instructors]);
   const sortedTerms = useMemo(() => sortTermsNewest(terms), [terms]);
 
+  const importBlockingIssues = useMemo(() => {
+    if (!xlsxPreview) return [] as string[];
+    const issues = new Set<string>((Array.isArray(xlsxPreview.issues) ? xlsxPreview.issues : []).map((item: unknown) => String(item || "").trim()).filter(Boolean));
+    const rows = Array.isArray(xlsxPreview.rows) ? xlsxPreview.rows as ImportRow[] : [];
+    const hasDays = (row: ImportRow) => Boolean(row.fsunday || row.fmonday || row.ftuesday || row.fwednesday || row.fthursday);
+    const minutes = (value: string) => { const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/); return match ? Number(match[1]) * 60 + Number(match[2]) : -1; };
+    rows.forEach((row, index) => {
+      const n = (index + 1).toLocaleString("ar-KW-u-nu-latn");
+      if (!Number(row.AdCourseId)) issues.add(`الصف ${n}: المقرر غير محدد.`);
+      if (!String(row.SCode || "").trim()) issues.add(`الصف ${n}: رقم الشعبة غير مكتمل.`);
+      if (!hasDays(row)) issues.add(`الصف ${n}: أيام المحاضرة غير محددة.`);
+      const start = minutes(row.fstarttime), end = minutes(row.fendtime);
+      if (start < 0 || end <= start) issues.add(`الصف ${n}: الوقت غير مكتمل أو غير صالح.`);
+      if (!row.buildingId) issues.add(`الصف ${n}: المبنى الرسمي غير محدد.`);
+      if (!row.roomId && row.locationStatus !== "PENDING_ROOM") issues.add(`الصف ${n}: القاعة غير محددة.`);
+      if (!Number(row.AdInstructorId)) issues.add(`الصف ${n}: أستاذ المقرر غير محدد.`);
+    });
+    return [...issues];
+  }, [xlsxPreview]);
+  const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
+
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();
     if (collegeId) query.set("collegeId", String(collegeId));
@@ -417,8 +438,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const saveExcelDraft = async (publishNow=false) => {
-    if (!xlsxPreview?.valid) {
-      setError("لا يمكن حفظ المسودة أو تعبئة الجدول قبل إكمال الحقول الناقصة (المميزة باللون الأحمر أعلاه مثل اسم المقرر، أستاذ المقرر، الوقت أو القاعة). يرجى الضغط على زر التعديل (✏️) بجانب الصفوف غير المكتملة لتعديلها.");
+    if (!importReady) {
+      setError("أكمل ملاحظات المعاينة أولًا.");
+      window.setTimeout(() => document.querySelector(".transfer-preview .import-preview-table-wrap, .transfer-preview .import-issues-fold, .transfer-preview")?.scrollIntoView({ behavior: "smooth", block: "center" }), 40);
       return;
     }
     setBusy(true); setError(null);
@@ -436,6 +458,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           sourceFileName:xlsxPreview.fileName,
           sourceBranchCode:importKind==="authority-pdf"?xlsxPreview.sourceBranchCode:undefined,
           sourceBranchName:importKind==="authority-pdf"?xlsxPreview.sourceBranchName:undefined,
+          previewIssues: importBlockingIssues,
         }),
       });
       const data = await response.json();
@@ -672,14 +695,14 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   ) : (
                     <div className="transfer-import-commit-wrap">
                       <div className="transfer-import-commit">
-                        {xlsxPreview.valid && !(xlsxPreview.issues?.length) ? (
-                          <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy}>
+                        {importReady ? (
+                          <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady}>
                             {busy ? "يجهّز…" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                           </PrimaryButton>
                         ) : null}
-                        {importKind==="authority-pdf" ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy}>حفظ كمسودة فقط</SecondaryButton> : null}
+                        {importKind==="authority-pdf" && importReady ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy || !importReady}>حفظ كمسودة فقط</SecondaryButton> : null}
                       </div>
-                      {!xlsxPreview.valid ? (
+                      {!importReady ? (
                         <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-xs mt-2">
                           ⚠️ تنبيه: توجد صفوف بحاجة لإكمال بياناتها (المقرر، الوقت، اليوم، المبنى/القاعة، أو أستاذ المقرر). اضغط على زر <b>تعديل (✏️)</b> في يمين أي صف ملون بالأحمر لتصحيحه، ثم اضغط حفظ لتعبئة ونشر الجدول.
                         </p>
