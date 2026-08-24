@@ -1422,25 +1422,30 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
  * then by its 3-digit tail when that tail is unique in this department — the
  * order the user specified. The Arabic name is the last resort, not the first.
  */
+function isHeaderLine(text:string):boolean{
+  const f=fold(text);
+  const headerKeywords=[
+    "التقرير","جدول الفصل","جميع الشعب","صفحة","صفحه","التاريخ",
+    "الفصل الدراسي","كلية التربيه","كليه التربيه","الكلية","الكلي ه",
+    "القسم","الفرع","رقم المقرر","مسمى المقرر","الرقم المرجعى",
+    "الرقم المرجعي","الشعبة","الشعبه","الحد الأقصى","الحد الاقصى",
+    "مقاعد مسجلة","مقاعد مسجله","الوحدات","الساعات","النشاط",
+    "الأيام","الايام","المدرس","القاعة","القاعه","المبنى","المبني",
+    "استجابة صوتية","استجابة صوتيه","الحالة في الرزم","عدد الرزم","swrscha"
+  ];
+  return headerKeywords.some(kw=>f.includes(fold(kw)));
+}
+
 function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number,preferredInstructorIds?:Set<number>){
   const catalogue=courses.map(course=>({course,digits:toAscii(String(course.CourseCode||"")).replace(/\D/g,""),folded:fold(course.CourseName)}));
   const tails=new Map<string,number>();
   for(const item of catalogue){
     if(item.digits.length>=3){const tail=item.digits.slice(-3);tails.set(tail,(tails.get(tail)||0)+1);}
   }
-  /* «القسم: 0101» in the header is the prefix of every course code on the
-     sheet, and the catalogue this import is scoped to carries the same prefix
-     on every entry — so the prefix is KNOWN before any cell is read, and the
-     three digits the department actually uses day to day are all a row needs
-     to yield. */
   const prefixVotes=new Map<string,number>();
   for(const item of catalogue)if(item.digits.length>=6)
     prefixVotes.set(item.digits.slice(0,-3),(prefixVotes.get(item.digits.slice(0,-3))||0)+1);
   const departmentPrefix=[...prefixVotes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
-  /* OCR shatters Arabic words — «الاسلامي» arrives as «الا سلا مى» — and token
-     matching then finds nothing. Removing the spaces from BOTH sides before
-     comparing sees straight through the shattering: substring first, then an
-     edit-ratio for names that also lost a word to a Latin hallucination. */
   const spaceless=(value:string)=>fold(value).replace(/[a-z0-9 ]/g,"");
   const spacelessCatalogue=catalogue.map(item=>({item,flat:spaceless(item.course.CourseName)}));
   const matchBySpacelessName=(nameText:string)=>{
@@ -1484,11 +1489,8 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     return null;
   };
 
-  /* First pass matches what it can; the second uses the sheet's own order.
-     Reference numbers run sequentially inside a course block, so a row that
-     failed to match but sits BETWEEN two rows of the same course belongs to
-     that course — the layout says so even where the ink did not. */
-  const firstPass=gridRows.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText)}));
+  const validGrids=gridRows.filter(grid=>!isHeaderLine(`${grid.code} ${grid.courseText} ${grid.instructorText}`));
+  const firstPass=validGrids.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText)}));
   for(let i=0;i<firstPass.length;i++){
     if(firstPass[i].course)continue;
     const previous=firstPass[i-1]?.course,next=firstPass[i+1]?.course;
@@ -1496,6 +1498,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   }
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
   for(const {grid,course} of firstPass){
+    if(isHeaderLine(`${grid.code} ${grid.courseText}`))continue;
     const flags = parseDays(grid.days) || parseDays(grid.courseText) || parseDays(grid.instructorText) || parseDays(`${grid.code} ${grid.courseText}`) || EMPTY_DAYS;
     const instructorHit=matchInstructorName(grid.instructorText||`${grid.courseText} ${grid.code}`,instructors,preferredInstructorIds)
       ||matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
@@ -1596,6 +1599,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     scanned++;
     const cells=row.cells,line=row.line;
     if(line.replace(/[^ء-يa-zA-Z0-9]/g,"").length<6)continue;
+    if(isHeaderLine(line))continue;
     const normalized=fold(line);
 
     const rowDigitsSpaced=cells.map(cell=>toAscii(cell.text)).join(" ");
