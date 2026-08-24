@@ -2243,9 +2243,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   }, [colorBlind]);
   const formSections = useMemo(
       () =>
-        sections.filter(
+        sortByName(sections.filter(
           (s) => !form.AdCollegeId || s.AdCollegeId === form.AdCollegeId,
-        ),
+        ), (s: AdSection) => s.AdSectionName),
       [sections, form.AdCollegeId],
     ),
     formCourses = useMemo(
@@ -2263,12 +2263,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     );
   const filterCollegeScope = resolveScopeSelection(scopes, 0, isPowerAdmin);
   const filterColleges = isPowerAdmin ? colleges : colleges.filter((c) => filterCollegeScope.collegeIds.includes(Number(c.AdCollegeId)));
-  const filterSections = sections.filter(
+  const filterSections = sortByName(sections.filter(
       (s) => (!filterCollege || s.AdCollegeId === filterCollege) && (isPowerAdmin || resolveScopeSelection(scopes, filterCollege, false).sectionIds.includes(Number(s.AdSectionId))),
-    ),
-    copySections = sections.filter(
+    ), (s: AdSection) => s.AdSectionName),
+    copySections = sortByName(sections.filter(
       (s) => !copyCollege || s.AdCollegeId === copyCollege,
-    );
+    ), (s: AdSection) => s.AdSectionName);
   const latestTermId = useMemo(() => Number(sortTermsNewest(terms)[0]?.AdTermId || 0), [terms]);
   useEffect(() => {
     if (!form.AdSectionId) return;

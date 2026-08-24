@@ -3,6 +3,7 @@ import { CloudUpload, Target } from "lucide-react";
 import { Field, Surface } from "./ui";
 import type { AdCollege, AdSection, AdTerm } from "../types";
 import { sortTermsNewest } from "../utils/termSequence";
+import { sortByName } from "../utils/sorting";
 
 interface Props {
   collegeId: number;
@@ -47,7 +48,7 @@ export default function IntelligenceContextBar({
       </div>
       <div className="intel-context-fields">
         <Field label="الكلية"><select value={collegeId || ""} onChange={(event)=>{const id=Number(event.target.value)||0;const first=sections.find(section=>Number(section.AdCollegeId)===id);onCollegeChange(id,first?.AdSectionId||0)}}><option value="">اختر الكلية</option>{colleges.map(college=><option key={college.AdCollegeId} value={college.AdCollegeId}>{college.AdCollegeName}</option>)}</select></Field>
-        {!hideSection && !lockSection ? <Field label="القسم"><select value={sectionId || ""} disabled={!collegeId} onChange={(event)=>onSectionChange(Number(event.target.value)||0)}><option value="">كل الأقسام</option>{availableSections.map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select></Field> : null}
+        {!hideSection && !lockSection ? <Field label="القسم"><select value={sectionId || ""} disabled={!collegeId} onChange={(event)=>onSectionChange(Number(event.target.value)||0)}><option value="">كل الأقسام</option>{sortByName(availableSections,(section:AdSection)=>section.AdSectionName).map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select></Field> : null}
         <Field label="الفصل">
           <select value={termId || ""} onChange={(event) => onTermChange(Number(event.target.value) || 0)}>
             <option value="">اختر الفصل</option>

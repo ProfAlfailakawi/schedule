@@ -101,4 +101,11 @@ ok('48 empty review and pending tabs removed', 'workspaceTab==="review"' not in 
 ok('49 historical migration uses smart safe recovery', 'RECOVERED_FROM_UNIQUE_ROOM_FINGERPRINT' in engine and 'HISTORICAL_STRONG_PROBABLE_ROOM' in engine and 'resolveStrongHistoricalProbableRoom' in engine)
 ok('50 invalid historical garbage is classified explicitly', 'CANCELLED' in loc and 'Pure punctuation/garbage' in loc and 'Placeholder تاريخي' in admin)
 
+
+admin=(ROOT/'src/components/LocationRegistryAdmin.tsx').read_text()
+picker=(ROOT/'src/components/LocationPicker.tsx').read_text()
+ok('51 redundant site filter removed from registry UI', 'aria-label="الموقع"' not in admin and 'كل المواقع' not in admin and 'siteFilter' not in admin)
+ok('52 department room picker merges then sorts all department rooms', 'departmentRooms=useMemo' in picker and 'compareLocationCodes(a.canonicalCode,b.canonicalCode)' in picker)
+ok('53 section selectors are Arabic-natural sorted', 'sortByName(data.sections.filter' in admin and 'sortByName(availableSections' in (ROOT/'src/components/IntelligenceContextBar.tsx').read_text())
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

@@ -72,9 +72,9 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
   }, []);
   const sectionOptions = useMemo(
       () =>
-        sections.filter(
+        sortByName(sections.filter(
           (s) => !collegeId || s.AdCollegeId === Number(collegeId),
-        ),
+        ), (s: AdSection) => s.AdSectionName),
       [sections, collegeId],
     ),
     suggestions = useMemo(
