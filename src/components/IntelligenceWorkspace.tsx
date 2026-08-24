@@ -1691,7 +1691,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const approveAndPublishPdf = async () => {
     if (!importPreview?.valid) {
-      setImportErrorModal("لا يمكن حفظ المسودة أو تعبئة الجدول قبل معالجة البيانات واستكمال حقول القاعات والأساتذة والأوقات بدقة. يرجى مراجعة الملاحظات ومعالجة الأخطاء الظاهرة في جدول المعاينة أولاً.");
+      setImportErrorModal("أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.");
       return;
     }
     const preflight=[...validateImportRowsLocally(importPreview.rows as ImportRow[]),...await validateImportAgainstLiveSchedule(importPreview.rows as ImportRow[])];
@@ -1731,7 +1731,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
 
   const createImportDraft = async () => {
     if (!importPreview?.valid) {
-      setImportErrorModal("لا يمكن حفظ المسودة أو تعبئة الجدول قبل معالجة البيانات واستكمال حقول القاعات والأساتذة والأوقات بدقة. يرجى مراجعة الملاحظات ومعالجة الأخطاء الظاهرة في جدول المعاينة أولاً.");
+      setImportErrorModal("أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.");
       return;
     }
     const d = await saveDraft("import", importPreview.rows, importPreview.importLayout);
@@ -5369,7 +5369,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
             </div>
             <p style={{ color: "var(--muted)", lineHeight: "1.7", fontSize: "14px", marginBottom: "24px" }}>{importErrorModal}</p>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <PrimaryButton type="button" data-guide-ignore="زر إغلاق نافذة الخطأ الإرشادية" onClick={() => setImportErrorModal(null)}>فهمت، مراجعة الملاحظات</PrimaryButton>
+              <PrimaryButton type="button" data-guide-ignore="الانتقال إلى ملاحظات الاستيراد" onClick={() => { setImportErrorModal(null); window.setTimeout(() => document.querySelector(".import-preview")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); }}>اذهب إلى الملاحظات</PrimaryButton>
             </div>
           </div>
         </div>

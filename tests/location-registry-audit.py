@@ -84,5 +84,7 @@ intel=(ROOT/'src/components/IntelligenceWorkspace.tsx').read_text()
 ok('36 hidden decision editor uses registry picker', '<LocationPicker' in living and '<span>المبنى</span>\n                          <input' not in living and 'roomIdentityKey(selected)' in living)
 ok('37 room report filters use canonical ids', 'String(row.roomId) === matrixHall' in reports and 'placeholder="F10 مثلاً"' not in reports)
 ok('38 smart room proposals carry canonical ids', '{ ...row, ...change, locationStatus: change.locationStatus || "VERIFIED" }' in intel)
+ok('39 operational buildings are department contextual', 'sectionBuildingIds' in server and 'b.sectionIds.includes(sectionId)||sectionBuildingIds.has(b.id)' in server)
+ok('40 import blocker guides user to preview', 'أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.' in intel and 'scrollIntoView({ behavior: "smooth", block: "start" })' in intel)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

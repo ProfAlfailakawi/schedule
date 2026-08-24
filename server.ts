@@ -3477,7 +3477,15 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
   if(collegeId&&sectionId&&!isScopeAllowed(req,collegeId,sectionId)&&!isPowerUser(req)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const registry=await readLocationRegistry();
-  const buildings=registry.buildings.filter(b=>b.active&&b.confidence==="CONFIRMED"&&(!collegeId||!b.collegeIds.length||b.collegeIds.includes(collegeId)));
+  const confirmedRooms=registry.rooms.filter(r=>r.active&&r.confidence==="CONFIRMED");
+  // Operational building choices are contextual, never the whole college inventory.
+  // Historical room/section relationships are authoritative evidence that a department uses a building.
+  const sectionBuildingIds=sectionId?new Set(confirmedRooms.filter(r=>r.sectionIds.includes(sectionId)).map(r=>r.buildingId)):new Set<string>();
+  const buildings=registry.buildings.filter(b=>
+    b.active&&b.confidence==="CONFIRMED"&&
+    (!collegeId||!b.collegeIds.length||b.collegeIds.includes(collegeId))&&
+    (!sectionId||b.sectionIds.includes(sectionId)||sectionBuildingIds.has(b.id))
+  );
   const ids=new Set(buildings.map(b=>b.id));
   let borrowedRoomIds:string[]=[];
   if(termId&&collegeId&&sectionId){
