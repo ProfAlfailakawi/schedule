@@ -127,7 +127,7 @@ export default function ImportPreviewTable({
     scode: (row: ImportRow) => !String(row.SCode || "").trim(),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
-    building: (row: ImportRow) => !row.buildingId && row.locationStatus !== "PENDING_ROOM",
+    building: (row: ImportRow) => !row.buildingId,
     room: (row: ImportRow) => !row.roomId && row.locationStatus !== "PENDING_ROOM",
     instructor: (row: ImportRow) => !Number(row.AdInstructorId),
   };

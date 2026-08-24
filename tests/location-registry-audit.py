@@ -116,5 +116,9 @@ ok('58 demand arithmetic values are centered under labels', 'justify-items:cente
 courses_src=(ROOT/'src/components/Courses.tsx').read_text()
 ok('59 courses type import restored for CI', 'import type { AdSection } from "../types";' in courses_src)
 ok('60 course inspector shows public code not internal id', '<b>{selected.CourseCode || "—"}</b>' in courses_src)
+transfer=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
+ok('61 transfer publish is hard-disabled for any unresolved preview note', 'const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0)' in transfer and 'disabled={busy || !importReady}' in transfer and 'previewIssues: importBlockingIssues' in transfer)
+ok('62 draft backend rejects unresolved preview notes', 'لا يمكن حفظ المسودة أو نشرها قبل معالجة جميع ملاحظات المعاينة.' in server and 'previewIssues.length' in server)
+ok('63 pending room never waives the required building', 'building: (row: ImportRow) => !row.buildingId,' in imp)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
