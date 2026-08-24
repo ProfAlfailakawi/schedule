@@ -695,6 +695,10 @@ function safeDraftRows(input: unknown, collegeId: number, sectionId: number, ter
     buildingId: String(raw?.buildingId || "") || undefined, roomId: String(raw?.roomId || "") || undefined,
     locationStatus: raw?.locationStatus, sourceBuildingText: String(raw?.sourceBuildingText || raw?.AdRoomCode || "").slice(0,80) || undefined,
     sourceRoomText: String(raw?.sourceRoomText || raw?.AdRoomHall || "").slice(0,80) || undefined,
+    sourceSitePrefix: String(raw?.sourceSitePrefix || "").slice(0,12) || undefined,
+    scopeMismatchType: raw?.scopeMismatchType === "CROSS_BRANCH" ? "CROSS_BRANCH" : undefined,
+    scopeMismatchLabel: String(raw?.scopeMismatchLabel || "").slice(0,140) || undefined,
+    scopeMismatchMessage: String(raw?.scopeMismatchMessage || "").slice(0,420) || undefined,
     locationMigrationId: raw?.locationMigrationId, locationMigrationVersion: raw?.locationMigrationVersion, locationResolvedAt: raw?.locationResolvedAt,
     fdetail: legacyFDetail(raw || {}),
     referenceNumber: String(raw?.referenceNumber || "").slice(0,30),
@@ -5103,12 +5107,18 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
   if(!bytes.length){res.status(400).json({error:"لم يصل ملف PDF"});return;}
 
-  /* PRE-FLIGHT MUST RUN BEFORE TABLE READING. Generated SWRSCHA PDFs carry the
-     academic term in page 1's embedded header. Rejecting a wrong term here
-     prevents a perfectly valid old table from ever reaching row parsing. */
-  const terms=await Repository.getTerms();
+  /* DOCUMENT PRE-FLIGHT MUST RUN BEFORE TABLE READING — for text PDFs AND
+     image-only CamScanner PDFs. readAuthorityPdfHeader reads page 1 only. */
+  const [terms,colleges,sections]=await Promise.all([
+    Repository.getTerms(),Repository.getColleges(),Repository.getSections(),
+  ]);
   const targetTerm=terms.find((row:any)=>Number(row.AdTermId)===termId);
+  const targetCollege=colleges.find((row:any)=>Number(row.AdCollegeId)===collegeId);
+  const targetSection=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===collegeId);
+  const targetCollegeName=String(targetCollege?.AdCollegeName||"");
+  const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
   const headerPreflight=await readAuthorityPdfHeader(bytes);
+
   if(headerPreflight.term&&targetTerm){
     const targetName=asciiDigits(String(targetTerm.AdTermName||"")).normalize("NFKC");
     const seasonWord=headerPreflight.term.season==="first"?/الاول|الأول/:headerPreflight.term.season==="second"?/الثاني|الثانى/:/صيفي|صيفى/;
@@ -5117,7 +5127,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const yearsOk=headerPreflight.term.years.every(year=>targetYears.includes(year));
     if(!seasonOk||!yearsOk){
       res.status(409).json({
-        error:`هذا الملف خاص بـ «${headerPreflight.term.label}»، بينما الفصل المحدد هو «${String(targetTerm.AdTermName||"")}». اختر الفصل المطابق ثم ارفع الملف من جديد.`,
+        error:`هذا الملف للفصل «${headerPreflight.term.label}»، بينما أنت تعمل على «${String(targetTerm.AdTermName||"")}». لم يتم استيراد أي صف.`,
         code:"PDF_TERM_MISMATCH",
         sourceTerm:headerPreflight.term.label,
         targetTerm:String(targetTerm.AdTermName||""),
@@ -5126,16 +5136,53 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
   }
 
-  const [allCourses,allInstructors,sectionHistory,departmentRooms,registry,colleges,departmentDelegates,visitingRoster]=await Promise.all([
+  /* Header branch is a DOCUMENT property. A different document branch is a
+     hard stop; a different building prefix in ONE body row is handled later as
+     CROSS_BRANCH and is not confused with this check. */
+  if(headerPreflight.branch&&targetSitePrefix){
+    const sourceSite=officialCollegeSitePrefix(headerPreflight.branch.name);
+    const branchCode=String(headerPreflight.branch.code||"").replace(/\D/g,"");
+    const targetBranchCode=targetSitePrefix.slice(0,3).replace(/\D/g,"");
+    const definiteMismatch=sourceSite
+      ? sourceSite!==targetSitePrefix
+      : Boolean(branchCode&&targetBranchCode&&branchCode!==targetBranchCode);
+    if(definiteMismatch){
+      const sourceLabel=sourceSite?officialSiteLabel(sourceSite,headerPreflight.branch.name):headerPreflight.branch.label;
+      res.status(409).json({
+        error:`هذا الملف تابع إلى «${sourceLabel}»، بينما أنت تعمل على «${officialSiteLabel(targetSitePrefix,targetCollegeName)}». لم يتم استيراد أي صف.`,
+        code:"PDF_BRANCH_MISMATCH",
+        sourceBranch:headerPreflight.branch.label,
+        targetBranch:officialSiteLabel(targetSitePrefix,targetCollegeName),
+      });
+      return;
+    }
+  }
+
+  if(headerPreflight.department&&targetSection){
+    const sourceDepartment=asciiDigits(String(headerPreflight.department.code||"")).replace(/\D/g,"");
+    const targetDepartment=asciiDigits(String(targetSection.AdSectionCode||"")).replace(/\D/g,"");
+    /* Header OCR may preserve/duplicate leading zeroes around the ruled cell.
+       Department codes are numeric identifiers, so leading-zero formatting is
+       not identity evidence. Compare their numeric value, not display width. */
+    const sameDepartment=sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment);
+    if(sourceDepartment&&targetDepartment&&!sameDepartment){
+      res.status(409).json({
+        error:`هذا الملف للقسم «${headerPreflight.department.label}»، بينما القسم المحدد هو «${String(targetSection.AdSectionName||targetSection.AdSectionCode||"")}». لم يتم استيراد أي صف.`,
+        code:"PDF_DEPARTMENT_MISMATCH",
+        sourceDepartment:headerPreflight.department.label,
+        targetDepartment:String(targetSection.AdSectionName||targetSection.AdSectionCode||""),
+      });
+      return;
+    }
+  }
+
+  const [allCourses,allInstructors,sectionHistory,departmentRooms,registry,departmentDelegates,visitingRoster]=await Promise.all([
     Repository.getCourses(),Repository.getInstructors(),
     Repository.getSchedulesByScope({collegeId,sectionId}),
-    Repository.getDepartmentRooms(collegeId,sectionId),readLocationRegistry(),Repository.getColleges(),
+    Repository.getDepartmentRooms(collegeId,sectionId),readLocationRegistry(),
     Repository.getDepartmentDelegates(collegeId,sectionId),Repository.getVisitingRoster(collegeId,sectionId,termId),
   ]);
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
-  const targetCollege=colleges.find((row:any)=>Number(row.AdCollegeId)===collegeId);
-  const targetCollegeName=String(targetCollege?.AdCollegeName||"");
-  const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
 
   /* Instructor matching is department-first, university-second. The permanent
      instructor register itself has no department field, so the trustworthy
@@ -5195,17 +5242,11 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     row.sourceBuildingText=rawBuilding;row.sourceRoomText=rawHall;
 
     const token=rawBuilding.normalize("NFKC").replace(/\s+/g,"").toUpperCase();
-    const bleed=token.match(/^(\d{3}[A-Z]\d{2})\d$/);
-    const canonicalCandidate=bleed?.[1]||token;
-    const explicitFull=/^\d{3}[A-Z]\d{2}$/.test(canonicalCandidate);
-    let building=explicitFull?resolveBuilding(registry,canonicalCandidate,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
-    /* PDF text cells occasionally absorb ONE digit from the adjacent column:
-       012B09 + 1 => 012B091. We only strip it when the resulting six-character
-       code exists as one confirmed building in the registry — no guessing. */
-    if((building.status!=="CONFIRMED"||!building.value)&&bleed){
-      const repaired=resolveBuilding(registry,bleed[1],{});
-      if(repaired.status==="CONFIRMED"&&repaired.value)building=repaired;
-    }
+    const explicitFull=/^(?:\d{3}[A-Z]\d{2}|\d{6})$/.test(token);
+    /* No “delete the last digit” repair exists here. A malformed 012B091 is
+       evidence of extraction failure and remains REVIEW_REQUIRED. Structural
+       cell boundaries upstream must produce the exact canonical token. */
+    const building=explicitFull?resolveBuilding(registry,token,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
     if(building.status!=="CONFIRMED"||!building.value){
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: المبنى المقروء «${rawBuilding||"فارغ"}» غير محسوم؛ اختر مبنى رسميًا.`);continue;
@@ -5214,9 +5255,14 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const sourceSitePrefix=String(building.value.sitePrefix||building.value.officialCode.slice(0,4)).toUpperCase();
     row.AdRoomCode=building.value.officialCode;
     if(targetSitePrefix&&sourceSitePrefix&&sourceSitePrefix!==targetSitePrefix){
+      const sourceLabel=officialSiteLabel(sourceSitePrefix);
+      const targetLabel=officialSiteLabel(targetSitePrefix,targetCollegeName);
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       row.sourceSitePrefix=sourceSitePrefix;
-      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: المبنى ${building.value.officialCode} تابع إلى «${officialSiteLabel(sourceSitePrefix)}» وليس «${officialSiteLabel(targetSitePrefix,targetCollegeName)}». لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته.`);
+      row.scopeMismatchType="CROSS_BRANCH";
+      row.scopeMismatchLabel=`فرع آخر · ${sourceLabel}`;
+      row.scopeMismatchMessage=`هذه الشعبة تابعة إلى «${sourceLabel}» بحسب المبنى ${building.value.officialCode}، بينما الاستيراد الحالي لـ «${targetLabel}». لن تُنشر داخل النطاق الحالي قبل مراجعتها.`;
+      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: ${row.scopeMismatchMessage}`);
       continue;
     }
 
@@ -5257,7 +5303,9 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     fileName:fileName.slice(0,180),
     pages:recognized.pageCount,confidence:recognized.confidence,
     legibility:recognized.legibility,
-    headerBranch:recognized.headerBranch||undefined,
+    headerBranch:headerPreflight.branch||recognized.headerBranch||undefined,
+    headerDepartment:headerPreflight.department||recognized.headerDepartment||undefined,
+    headerTerm:headerPreflight.term||recognized.headerTerm||undefined,
     message:rows.length?`تمت قراءة ${rows.length} شعبة من ${recognized.pageCount} صفحة`:`لم أتمكن من استخراج شعب من الملف`,
   };
   if(streaming){emit({type:"done",result});res.end();return;}

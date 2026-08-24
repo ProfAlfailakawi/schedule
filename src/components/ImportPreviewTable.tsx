@@ -127,9 +127,9 @@ export default function ImportPreviewTable({
     scode: (row: ImportRow) => !String(row.SCode || "").trim(),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
-    building: (row: ImportRow) => !row.buildingId,
-    room: (row: ImportRow) => !row.roomId && row.locationStatus !== "PENDING_ROOM",
-    instructor: (row: ImportRow) => !Number(row.AdInstructorId),
+    building: (row: ImportRow) => !row.buildingId || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL",
+    room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && (!row.roomId || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL"),
+    instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
 
@@ -255,10 +255,13 @@ export default function ImportPreviewTable({
                         {row.AdCourseName && !course ? (
                           <small className="muted">قرأ الملف: {row.AdCourseName}</small>
                         ) : null}
+                        {row.scopeMismatchType === "CROSS_BRANCH" ? (
+                          <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="import-locked-course">
-                        <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
+                        <span className="import-course-title-line"><strong>{course?.CourseName || row.AdCourseName || "—"}</strong>{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
                         {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                       </div>
                     )}
@@ -285,6 +288,10 @@ export default function ImportPreviewTable({
                           AdRoomCode: b?.officialCode || "",
                           AdRoomHall: "",
                           locationStatus: undefined,
+                          sourceSitePrefix: undefined,
+                          scopeMismatchType: undefined,
+                          scopeMismatchLabel: undefined,
+                          scopeMismatchMessage: undefined,
                         })}
                       />
                     ) : (
@@ -311,7 +318,7 @@ export default function ImportPreviewTable({
                     )}
                   </td>
                   <td className={red(missing.instructor(row))}>
-                    {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds.length ? departmentIds : pickerInstructors.map(person => Number(person.AdInstructorId)).filter(Boolean)} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || "—")}
+                    {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds.length ? departmentIds : pickerInstructors.map(person => Number(person.AdInstructorId)).filter(Boolean)} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || String(row.sourceInstructorText || "").trim() || "—")}
                   </td>
                   <td className="import-row-tools">
                     <button type="button" data-guide-ignore="تحرير صف داخل معاينة الاستيراد قبل أي حفظ" className={open ? "confirm" : ""} title={open ? "تم" : "تعديل سريع"} onClick={() => open ? setEditing(null) : beginEdit(index)}>{open ? <Check /> : <Pencil />}</button>
