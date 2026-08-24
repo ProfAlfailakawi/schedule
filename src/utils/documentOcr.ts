@@ -1423,16 +1423,30 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
  * order the user specified. The Arabic name is the last resort, not the first.
  */
 function isHeaderLine(text:string):boolean{
+  if(!text) return false;
   const f=fold(text);
   const headerPhrases=[
     "جدول الفصل", "جميع الشعب", "الفصل الدراسي", "كلية التربيه", "كليه التربيه",
-    "القسم :", "القسم:", "الفرع :", "الفرع:", "رقم المقرر", "مسمى مقرر",
-    "الرقم المرجعي", "الرقم المرجعى", "الحد الاقصى", "مقاعد مسجلة", "مقاعد مسجله",
-    "الحالة في الرزم", "عدد الرزم", "swrscha", "صفحة رقم", "من أصل", "من اصل",
-    "تاريخ الطباعة", "طبع في", "الكلية", "الكلي ه"
+    "القسم", "الفرع", "رقم المقرر", "مسمى مقرر", "الرقم المرجعي", "الرقم المرجعى",
+    "الحد الاقصى", "مقاعد مسجلة", "مقاعد مسجله", "الحالة في الرزم", "عدد الرزم",
+    "swrscha", "صفحة رقم", "من أصل", "من اصل", "تاريخ الطباعة", "طبع في",
+    "الكلية", "الكلي ه", "الفصل", "التقرير", "جدول", "صفحة", "التاريخ"
   ];
-  if(headerPhrases.some(phrase => f.includes(fold(phrase)))) return true;
-  if(f.startsWith("القسم") || f.startsWith("الفصل") || f.startsWith("التقرير") || f.startsWith("جدول") || (f.includes("صفحة") && f.includes("من"))) {
+  if(headerPhrases.some(phrase => f.includes(fold(phrase)))) {
+    if(
+      f.includes("جدول") ||
+      f.includes("جميع الشعب") ||
+      f.includes("الفصل") ||
+      f.includes("القسم") ||
+      f.includes("الفرع") ||
+      f.includes("الكلية") || f.includes("كليه") || f.includes("كلية") ||
+      f.includes("صفحة") || f.includes("تاريخ") || f.includes("طبع في") ||
+      f.includes("رقم المقرر") || f.includes("مسمى مقرر") || f.includes("الرقم المرجعي")
+    ) {
+      return true;
+    }
+  }
+  if(f.startsWith("القسم") || f.startsWith("الفصل") || f.startsWith("التقرير") || f.startsWith("جدول") || f.startsWith("كليه") || f.startsWith("كلية") || f.includes("صفحة :") || f.includes("صفحة رقم") || f.includes("تاريخ :")) {
     return true;
   }
   return false;
@@ -1466,6 +1480,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     return best&&best.ratio>=0.66&&best.ratio-second>=0.08?best.course:null;
   };
   const matchCourse=(code:string,nameText:string)=>{
+    if(isHeaderLine(code)||isHeaderLine(nameText))return null;
     if(code){
       const exact=catalogue.find(item=>item.digits===code);
       if(exact)return exact.course;
@@ -1493,8 +1508,8 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
 
   const validGrids=gridRows.filter(grid=>{
     const combined = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText} ${grid.building} ${grid.hall}`;
-    if(isHeaderLine(combined))return false;
-    const hasData = Boolean(grid.code || grid.reference || grid.start || grid.days || grid.scode || grid.courseText.length > 2);
+    if(isHeaderLine(combined)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))return false;
+    const hasData = Boolean(grid.code || grid.reference || grid.start || grid.days || (grid.scode && Number(grid.scode)>=500) || grid.courseText.length > 2);
     return hasData;
   });
   const firstPass=validGrids.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText)}));
@@ -1506,7 +1521,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
   for(const {grid,course} of firstPass){
     const combinedCheck = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText}`;
-    if(isHeaderLine(combinedCheck))continue;
+    if(isHeaderLine(combinedCheck)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
     const flags = parseDays(grid.days) || parseDays(grid.courseText) || parseDays(grid.instructorText) || parseDays(`${grid.code} ${grid.courseText}`) || EMPTY_DAYS;
     const instructorHit=matchInstructorName(grid.instructorText||`${grid.courseText} ${grid.code}`,instructors,preferredInstructorIds)
       ||matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
@@ -1515,8 +1530,9 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
 
     if(!course){
       const rawLabel = grid.courseText || grid.code || "";
-      const hasScheduleData = Boolean(grid.start || grid.days || grid.scode || grid.reference || (grid.code && grid.code.length >= 3));
-      if(!hasScheduleData || isHeaderLine(rawLabel) || !rawLabel || rawLabel.length < 3) {
+      if(isHeaderLine(rawLabel)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
+      const hasScheduleData = Boolean(grid.start || grid.days || (grid.scode && Number(grid.scode)>=500) || grid.reference || (grid.code && grid.code.length >= 3));
+      if(!hasScheduleData || !rawLabel || rawLabel.length < 3) {
         continue;
       }
       rows.push({
