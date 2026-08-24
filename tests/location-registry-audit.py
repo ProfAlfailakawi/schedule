@@ -123,5 +123,9 @@ ok('63 pending room never waives the required building', 'building: (row: Import
 doc_ocr=(ROOT/'src/utils/documentOcr.ts').read_text()
 ok('64 authority PDF normalizes Arabic presentation forms before header and instructor matching', '.normalize("NFKC")' in doc_ocr and 'ordinary Arabic letters before ANY header/course/instructor matching' in doc_ocr)
 ok('65 authority PDF text layer keeps one physical timetable row and drops each repeated page header structurally', 'tableFromWords(words,[],"pdf-text")' in doc_ocr and 'authorityBodyOnly(physicalRows)' in doc_ocr and 'strictPdfRows?dist<=rowTolerance' in doc_ocr and 'hasCourseKey&&(hasTime||hasBuilding)' in doc_ocr)
+ok('66 authority PDF building bleed is repaired only through a confirmed registry code', 'const bleed=token.match(/^(\\d{3}[A-Z]\\d{2})\\d$/)' in server and 'if(repaired.status==="CONFIRMED"&&repaired.value)building=repaired' in server)
+ok('67 wrong academic term is rejected before table OCR', 'readAuthorityPdfHeader(bytes)' in server and server.index('readAuthorityPdfHeader(bytes)') < server.index('ocrDocument(bytes,"application/pdf"') and 'PDF_TERM_MISMATCH' in server)
+ok('68 cross-branch PDF rows are surfaced and never silently assigned to current college', 'sourceSitePrefix!==targetSitePrefix' in server and 'لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته' in server and 'officialSiteLabel(sourceSitePrefix)' in server)
+ok('69 instructor matching prioritizes real department rosters and normalizes academic titles', 'Repository.getDepartmentDelegates(collegeId,sectionId)' in server and 'Repository.getVisitingRoster(collegeId,sectionId,termId)' in server and 'Academic titles are presentation, not identity' in doc_ocr)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

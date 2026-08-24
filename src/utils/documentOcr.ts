@@ -948,17 +948,45 @@ function readHeaderTerm(text:string):HeaderTerm|undefined{
  * a separate branch catalogue, so the source header is the authoritative name. */
 function readHeaderBranch(text:string):HeaderBranch|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
+  const build=(code:string,nameRaw:string):HeaderBranch=>{
+    const name=String(nameRaw||"")
+      .replace(/\s+(?:القسم|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
+      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
+    return{code,name,label:[code,name].filter(Boolean).join(" ")};
+  };
   for(const rawLine of ascii.split("\n")){
     const line=rawLine.replace(/\s+/g," ").trim();
     const match=line.match(/الفرع\s*[:：-]?\s*(\d{3})\s*(.*)$/);
-    if(!match)continue;
-    const code=match[1];
-    const name=String(match[2]||"")
-      .replace(/\s+(?:القسم|الكلية|الفصل|التاريخ)\s*[:：].*$/," ")
-      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
-    return{code,name,label:[code,name].filter(Boolean).join(" ")};
+    if(match)return build(match[1],match[2]);
   }
-  return undefined;
+  /* Fast PDF-header preflight joins text-layer items without rebuilding the
+     table. Accept that flattened form too, but stop before the next known
+     header label so we never swallow a timetable row into the branch name. */
+  const flat=ascii.replace(/\s+/g," ").trim();
+  const flatMatch=flat.match(/الفرع\s*[:：-]?\s*(\d{3})\s*([^]{0,180}?)(?=\s+(?:القسم|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
+  return flatMatch?build(flatMatch[1],flatMatch[2]):undefined;
+}
+
+/**
+ * Cheap first-page preflight for generated Authority PDFs.
+ *
+ * This intentionally reads ONLY the embedded text layer of page 1. It does
+ * not render the timetable and does not OCR body rows. The server uses it to
+ * reject a wrong academic term before spending time parsing the table. A scan
+ * without a text layer simply returns an empty header and falls back to the
+ * normal OCR path.
+ */
+export async function readAuthorityPdfHeader(input:Buffer):Promise<{term?:HeaderTerm;branch?:HeaderBranch}>{
+  try{
+    if(input.subarray(0,4).toString("latin1")!=="%PDF")return{};
+    const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;
+    if(!Number(pdf.numPages||0))return{};
+    const page=await pdf.getPage(1);
+    const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
+    const text=(content?.items||[]).map((item:any)=>String(item?.str||"").normalize("NFKC")).filter(Boolean).join(" ");
+    return{term:readHeaderTerm(text),branch:readHeaderBranch(text)};
+  }catch{return{};}
 }
 
 /**
@@ -1344,8 +1372,10 @@ export type ParsedScheduleRow={
  * - Clean detection of faculty / unassigned roles («هيئة تدريسية») */
 function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>):AdInstructor|undefined{
   const clean=(value:string)=>fold(value)
-    .replace(/(?:^|\s)(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|الأستاذ|ا\.?\s*د|أ\.?\s*د)(?=\s|$)/g," ")
-    .replace(/(?:^|\s)(?:د\.?|م\.?)(?=\s|$)/g," ")
+    /* Academic titles are presentation, not identity. NFKC/fold removes the
+       dots first, so «أ.د.» becomes «ا د» and «أ.» becomes a standalone «ا». */
+    .replace(/^(?:(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|ا\s*د|د|م|ا)\s+)+/g," ")
+    .replace(/(?:^|\s)(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|ا\s*د)(?=\s|$)/g," ")
     .replace(/\s+/g," ").trim();
   const rawClean=clean(raw);
   if(!rawClean)return undefined;

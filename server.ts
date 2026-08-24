@@ -52,9 +52,9 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode } from "./src/utils/documentOcr";
+import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
-import { officialBuildingCode, officialCollegeSitePrefix, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
+import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 
 // Resolve environment/private paths before database initialization.
@@ -5102,24 +5102,51 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(occupied.length){res.status(409).json({error:"نسخ جدول PDF متاح للفصل الفارغ فقط. أنشئ فصلاً فارغاً أو اختر واحداً بلا مواعيد."});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
   if(!bytes.length){res.status(400).json({error:"لم يصل ملف PDF"});return;}
-  const [allCourses,allInstructors,sectionHistory,terms,departmentRooms,registry]=await Promise.all([
+
+  /* PRE-FLIGHT MUST RUN BEFORE TABLE READING. Generated SWRSCHA PDFs carry the
+     academic term in page 1's embedded header. Rejecting a wrong term here
+     prevents a perfectly valid old table from ever reaching row parsing. */
+  const terms=await Repository.getTerms();
+  const targetTerm=terms.find((row:any)=>Number(row.AdTermId)===termId);
+  const headerPreflight=await readAuthorityPdfHeader(bytes);
+  if(headerPreflight.term&&targetTerm){
+    const targetName=asciiDigits(String(targetTerm.AdTermName||"")).normalize("NFKC");
+    const seasonWord=headerPreflight.term.season==="first"?/الاول|الأول/:headerPreflight.term.season==="second"?/الثاني|الثانى/:/صيفي|صيفى/;
+    const seasonOk=seasonWord.test(targetName);
+    const targetYears=(targetName.match(/(?:19|20)\d{2}/g)||[]).map(Number);
+    const yearsOk=headerPreflight.term.years.every(year=>targetYears.includes(year));
+    if(!seasonOk||!yearsOk){
+      res.status(409).json({
+        error:`هذا الملف خاص بـ «${headerPreflight.term.label}»، بينما الفصل المحدد هو «${String(targetTerm.AdTermName||"")}». اختر الفصل المطابق ثم ارفع الملف من جديد.`,
+        code:"PDF_TERM_MISMATCH",
+        sourceTerm:headerPreflight.term.label,
+        targetTerm:String(targetTerm.AdTermName||""),
+      });
+      return;
+    }
+  }
+
+  const [allCourses,allInstructors,sectionHistory,departmentRooms,registry,colleges,departmentDelegates,visitingRoster]=await Promise.all([
     Repository.getCourses(),Repository.getInstructors(),
-    Repository.getSchedulesByScope({collegeId,sectionId}),Repository.getTerms(),
-    Repository.getDepartmentRooms(collegeId,sectionId),readLocationRegistry(),
+    Repository.getSchedulesByScope({collegeId,sectionId}),
+    Repository.getDepartmentRooms(collegeId,sectionId),readLocationRegistry(),Repository.getColleges(),
+    Repository.getDepartmentDelegates(collegeId,sectionId),Repository.getVisitingRoster(collegeId,sectionId,termId),
   ]);
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
-  /* Department history and current department faculty roster are prioritized,
-     while allowing visiting faculty from any department to resolve accurately. */
-  const deptInstructorIds=new Set<number>(
-    allInstructors
-      .filter((inst:any)=>Number(inst.AdSectionId)===sectionId||(Number(inst.AdCollegeId)===collegeId&&Number(inst.AdSectionId)===sectionId))
-      .map((inst:any)=>Number(inst.AdInstructorId))
-      .filter((id:number)=>Number.isFinite(id)&&id>0)
-  );
+  const targetCollege=colleges.find((row:any)=>Number(row.AdCollegeId)===collegeId);
+  const targetCollegeName=String(targetCollege?.AdCollegeName||"");
+  const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
+
+  /* Instructor matching is department-first, university-second. The permanent
+     instructor register itself has no department field, so the trustworthy
+     department roster is: historical teaching + delegate directory + this
+     term's visiting roster. Titles/three-vs-four-part names are normalized by
+     documentOcr before a unique match is accepted. */
   const preferredInstructorIds=new Set<number>([
-    ...sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)).filter((id:number)=>Number.isFinite(id)&&id>0),
-    ...deptInstructorIds,
-  ]);
+    ...sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)),
+    ...departmentDelegates.map(Number),
+    ...visitingRoster.map(Number),
+  ].filter((id:number)=>Number.isFinite(id)&&id>0));
   const instructors=allInstructors;
 
   /* Reading a scan takes over a minute, so the client is kept informed rather
@@ -5158,17 +5185,42 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
   const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds);
 
-  /* OCR values are evidence, not registry writes. Resolve only against confirmed aliases
-     in the academic context; unknown values stay visibly unresolved and block publish. */
+  /* OCR values are evidence, not registry writes. Full building codes are first
+     resolved globally because the code itself is unambiguous; only short/legacy
+     values need department context. This also lets us identify a real Fahaheel
+     or Jahra exception instead of misclassifying it as an unknown main-campus
+     building. */
   for(const row of parsed.rows as any[]){
     const rawBuilding=String(row.AdRoomCode||"");const rawHall=String(row.AdRoomHall||"");
     row.sourceBuildingText=rawBuilding;row.sourceRoomText=rawHall;
-    const building=resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
+
+    const token=rawBuilding.normalize("NFKC").replace(/\s+/g,"").toUpperCase();
+    const bleed=token.match(/^(\d{3}[A-Z]\d{2})\d$/);
+    const canonicalCandidate=bleed?.[1]||token;
+    const explicitFull=/^\d{3}[A-Z]\d{2}$/.test(canonicalCandidate);
+    let building=explicitFull?resolveBuilding(registry,canonicalCandidate,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
+    /* PDF text cells occasionally absorb ONE digit from the adjacent column:
+       012B09 + 1 => 012B091. We only strip it when the resulting six-character
+       code exists as one confirmed building in the registry — no guessing. */
+    if((building.status!=="CONFIRMED"||!building.value)&&bleed){
+      const repaired=resolveBuilding(registry,bleed[1],{});
+      if(repaired.status==="CONFIRMED"&&repaired.value)building=repaired;
+    }
     if(building.status!=="CONFIRMED"||!building.value){
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: المبنى المقروء «${rawBuilding||"فارغ"}» غير محسوم؛ اختر مبنى رسميًا.`);continue;
     }
-    row.buildingId=building.value.id;row.AdRoomCode=building.value.officialCode;
+
+    const sourceSitePrefix=String(building.value.sitePrefix||building.value.officialCode.slice(0,4)).toUpperCase();
+    row.AdRoomCode=building.value.officialCode;
+    if(targetSitePrefix&&sourceSitePrefix&&sourceSitePrefix!==targetSitePrefix){
+      row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
+      row.sourceSitePrefix=sourceSitePrefix;
+      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: المبنى ${building.value.officialCode} تابع إلى «${officialSiteLabel(sourceSitePrefix)}» وليس «${officialSiteLabel(targetSitePrefix,targetCollegeName)}». لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته.`);
+      continue;
+    }
+
+    row.buildingId=building.value.id;
     const room=resolveRoom(registry,rawHall,building.value.id,{collegeId,sectionId});
     if(room.status!=="CONFIRMED"||!room.value){
       row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
@@ -5181,14 +5233,14 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      into this year's term is the one mistake no row-level check can catch —
      every row is valid, just a year old — so the two are compared here and a
      mismatch becomes a loud issue that blocks the one-step publish. */
-  if(recognized.headerTerm){
-    const target=terms.find((row:any)=>Number(row.AdTermId)===termId);
-    const targetName=asciiDigits(String(target?.AdTermName||""));
+  if(!headerPreflight.term&&recognized.headerTerm&&targetTerm){
+    const targetName=asciiDigits(String(targetTerm.AdTermName||"")).normalize("NFKC");
     const seasonWord=recognized.headerTerm.season==="first"?/الاول|الأول/:recognized.headerTerm.season==="second"?/الثاني|الثانى/:/صيفي|صيفى/;
     const seasonOk=seasonWord.test(targetName);
-    const yearsOk=recognized.headerTerm.years.every(year=>targetName.includes(String(year)));
-    if(targetName&&(!seasonOk||!yearsOk)){
-      parsed.issues.unshift(`تحذير: الملف يذكر «${recognized.headerTerm.label}» بينما الفصل المختار هو «${String(target?.AdTermName||"")}». تأكد أنك ترفع الجدول إلى الفصل الصحيح.`);
+    const targetYears=(targetName.match(/(?:19|20)\d{2}/g)||[]).map(Number);
+    const yearsOk=recognized.headerTerm.years.every(year=>targetYears.includes(year));
+    if(!seasonOk||!yearsOk){
+      parsed.issues.unshift(`تحذير: الملف يذكر «${recognized.headerTerm.label}» بينما الفصل المختار هو «${String(targetTerm.AdTermName||"")}». تأكد أنك ترفع الجدول إلى الفصل الصحيح.`);
     }
   }
   const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
