@@ -870,11 +870,11 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     }
 
     let rowDays=daysAt(row).trim();
-    if(!stripPatterns.days.test(rowDays)){
+    if(!parseDays(rowDays)){
       for(let c=0;c<columnBands.length;c++){
         if(c===codeIndex||c===refcodeIndex||c===referenceIndex||c===scodeIndex||c===timeIndex)continue;
         const val=normalizeCell(numericGrey[c]?.cells[row]||numericBin[c]?.cells[row]||"");
-        if(stripPatterns.days.test(val)){rowDays=val;break;}
+        if(parseDays(val)){rowDays=val;break;}
       }
     }
 
@@ -1188,11 +1188,37 @@ export const parseDays = (raw: string): { fsunday: boolean; fmonday: boolean; ft
   if (!raw) return null;
   const ascii = toAscii(raw).trim();
 
-  // 1. Digits 1-5 in any format (e.g. 4 2, 24, 42, 1 3 5, 135, 1-3-5, 2,4, 1, 2, 3, 4, 5, etc.)
+  if (/^\d{3,}$/.test(ascii.replace(/\s+/g, ""))) {
+    return null;
+  }
+
+  // 1. Digits 1-5 with separators or run
+  const separatedMatch = ascii.match(/(?:^|[\s|،,;:\-_/])([1-5](?:[\s,\-_/]+[1-5])+)(?=$|[\s|،,;:\-_/])/);
+  if (separatedMatch) {
+    const digits = separatedMatch[1].replace(/[^1-5]/g, "");
+    if (digits.length >= 1 && digits.length <= 5) {
+      const flags = { ...EMPTY_DAYS };
+      for (const d of digits) {
+        flags[DAY_FIELDS[Number(d) - 1]] = true;
+      }
+      return flags;
+    }
+  }
+
+  const directDigits = ascii.replace(/\s+/g, "");
+  const runMatch = directDigits.match(/^(?:54321|12345|531|135|42|24|31|13|[1-5])$/);
+  if (runMatch) {
+    const flags = { ...EMPTY_DAYS };
+    for (const d of runMatch[0]) {
+      flags[DAY_FIELDS[Number(d) - 1]] = true;
+    }
+    return flags;
+  }
+
   const cleanDigits = ascii.replace(/[^1-5]/g, "");
   if (cleanDigits.length >= 1 && cleanDigits.length <= 5) {
     const nonAllowedDigits = ascii.replace(/[^0-9]/g, "").replace(/[1-5]/g, "");
-    if (nonAllowedDigits.length === 0) {
+    if (nonAllowedDigits.length === 0 && !/\d{3,}/.test(ascii)) {
       const flags = { ...EMPTY_DAYS };
       for (const d of cleanDigits) {
         flags[DAY_FIELDS[Number(d) - 1]] = true;
@@ -1438,7 +1464,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
         issues.push(`صف غير مطابق: «${grid.courseText||grid.code}» — لا يقابله مقرر في كتالوج القسم`);
       continue;
     }
-    const flags = parseDays(grid.days) || parseDays(grid.courseText) || EMPTY_DAYS;
+    const flags = parseDays(grid.days) || parseDays(grid.courseText) || parseDays(grid.instructorText) || parseDays(`${grid.code} ${grid.courseText}`) || EMPTY_DAYS;
     const instructorHit=matchInstructorName(grid.instructorText||`${grid.courseText} ${grid.code}`,instructors,preferredInstructorIds)
       ||matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
     const cleanBuilding = cleanBuildingCode(grid.building) || cleanBuildingCode(grid.hall);
