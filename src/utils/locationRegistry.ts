@@ -91,7 +91,7 @@ export function roomGroups(registry: LocationRegistry, buildingId: string, secti
   const rooms=registry.rooms.filter(r=>r.active&&r.confidence==="CONFIRMED"&&r.buildingId===buildingId);
   return {
     own:rooms.filter(r=>sectionId&&r.sectionIds.includes(sectionId)&&!r.shared),
-    shared:rooms.filter(r=>r.shared),
+    shared:rooms.filter(r=>r.shared&&(!sectionId||r.sectionIds.includes(sectionId))),
     other:rooms.filter(r=>!r.shared&&r.sectionIds.length===0),
   };
 }

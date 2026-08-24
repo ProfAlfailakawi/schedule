@@ -39,6 +39,7 @@ interface Props {
   onCreated?: (instructor: Instructor) => void;
   onSelected?: (instructor: Instructor) => void;
   collegeId?: number;
+  sectionId?: number;
   termId?: number;
   disabled?: boolean;
 }
@@ -59,7 +60,7 @@ const fold = (value: string) =>
 const withoutTitles = (value: string) =>
   fold(value).replace(/^(?:ا?د|ا|م|أ|prof|dr|mr|ms)\s+/g, "").trim();
 
-export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, onCreated, onSelected, collegeId = 0, termId = 0, disabled }: Props) {
+export default function InstructorPicker({ value, onChange, instructors, departmentIds, visitingIds, onCreated, onSelected, collegeId = 0, sectionId = 0, termId = 0, disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [adding, setAdding] = useState(false);
@@ -71,7 +72,31 @@ export default function InstructorPicker({ value, onChange, instructors, departm
   const boxRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
 
-  const byId = useMemo(() => new Map(instructors.map(x => [x.AdInstructorId, x])), [instructors]);
+  const [departmentRoster, setDepartmentRoster] = useState<Instructor[]>([]);
+  const [departmentLoading, setDepartmentLoading] = useState(false);
+
+  // Every instructor picker owns one reliable department-roster read. Parent
+  // screens may have no rows yet (a new term) or may be showing a report-wide
+  // catalogue; neither is a valid reason for the department's names to vanish.
+  useEffect(() => {
+    if (!sectionId) { setDepartmentRoster([]); setDepartmentLoading(false); return; }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ sectionId: String(sectionId) });
+    if (collegeId) params.set("collegeId", String(collegeId));
+    if (termId) params.set("termId", String(termId));
+    setDepartmentLoading(true);
+    fetch(`/api/instructors?${params}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : Promise.reject())
+      .then(list => setDepartmentRoster(Array.isArray(list) ? list : []))
+      .catch(() => undefined)
+      .finally(() => { if (!controller.signal.aborted) setDepartmentLoading(false); });
+    return () => controller.abort();
+  }, [collegeId, sectionId, termId]);
+
+  const knownInstructors = useMemo(() =>
+    [...new Map([...instructors, ...departmentRoster].map(person => [Number(person.AdInstructorId), person])).values()],
+    [instructors, departmentRoster]);
+  const byId = useMemo(() => new Map(knownInstructors.map(x => [x.AdInstructorId, x])), [knownInstructors]);
   const selected = byId.get(value) || null;
 
   /**
@@ -99,7 +124,11 @@ export default function InstructorPicker({ value, onChange, instructors, departm
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [query, collegeId, termId]);
 
-  const departmentRank = useMemo(() => new Map(departmentIds.map((id, index) => [id, index])), [departmentIds]);
+  const effectiveDepartmentIds = useMemo(() => {
+    const rosterIds = departmentRoster.map(person => Number(person.AdInstructorId)).filter(Boolean);
+    return [...new Set([...departmentIds.map(Number).filter(Boolean), ...rosterIds])];
+  }, [departmentIds, departmentRoster]);
+  const departmentRank = useMemo(() => new Map(effectiveDepartmentIds.map((id, index) => [id, index])), [effectiveDepartmentIds]);
   const visitingSet = useMemo(() => new Set(Array.from(visitingIds || [], Number).filter(Boolean)), [visitingIds]);
 
   // A retired or sabbatical teacher keeps their existing appointments but is not
@@ -109,13 +138,15 @@ export default function InstructorPicker({ value, onChange, instructors, departm
   const results = useMemo(() => {
     const needle = withoutTitles(query);
     if (!needle) {
-      // Nothing typed: the department instructors first, then any other available staff in scope.
-      const deptList = departmentIds.map(id => byId.get(id)).filter(p => p && !isHidden(p)) as Instructor[];
-      const deptSet = new Set(deptList.map(p => p.AdInstructorId));
-      const remaining = instructors.filter(p => !deptSet.has(p.AdInstructorId) && !isHidden(p));
-      return [...deptList, ...remaining];
+      // Nothing typed: show the department and ONLY the department. Wider
+      // university search starts after the user types, exactly as the hint says.
+      const deptList = effectiveDepartmentIds.map(id => byId.get(id)).filter(p => p && !isHidden(p)) as Instructor[];
+      if (deptList.length) return deptList;
+      // Older screens that do not know a section still pass an already-scoped
+      // instructor list; keep that compatibility without widening a known section.
+      return sectionId ? [] : knownInstructors.filter(p => !isHidden(p));
     }
-    const pool = [...new Map([...instructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
+    const pool = [...new Map([...knownInstructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
     const scored = pool
       .map(person => {
         if (isHidden(person)) return null;
@@ -140,7 +171,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
         byArabic(a.person.AdInstructorName, b.person.AdInstructorName))
       .slice(0, 40)
       .map(x => x.person);
-  }, [query, instructors, wider, departmentIds, byId, departmentRank]);
+  }, [query, knownInstructors, wider, effectiveDepartmentIds, byId, departmentRank, sectionId]);
 
   useEffect(() => {
     if (!open) return;
@@ -220,7 +251,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
             ) : null}
           </label>
 
-          {!query ? <p className="instructor-scope">أساتذة هذا القسم — اكتب للبحث في الكلية كلها</p> : null}
+          {!query ? <p className="instructor-scope">أساتذة هذا القسم — اكتب للبحث خارج القسم</p> : null}
 
           <div className="instructor-results" hidden={adding}>
             {results.length ? results.map(person => (
@@ -244,7 +275,7 @@ export default function InstructorPicker({ value, onChange, instructors, departm
                 {person.AdInstructorId === value ? <Check aria-hidden="true" /> : null}
               </button>
             )) : (
-              <p className="instructor-empty">لا نتيجة لـ «{query}»</p>
+              <p className="instructor-empty">{!query && departmentLoading ? "جارٍ تحميل أساتذة القسم…" : (!query ? "لا يوجد أساتذة مرتبطون بهذا القسم بعد." : `لا نتيجة لـ «${query}»`)}</p>
             )}
           </div>
 

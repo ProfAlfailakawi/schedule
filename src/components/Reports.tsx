@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 import { flushSync } from "react-dom";
 import {
   Building2, CalendarDays, ChevronDown, ClipboardList, Clock3, LayoutList,
@@ -1228,13 +1229,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 instructors={instructorOptions}
                 departmentIds={departmentInstructorIds}
                 collegeId={filters.collegeId}
+                sectionId={filters.sectionId}
                 termId={filters.termId}
               />
             </Field>
             <Field label="المبنى">
               <select value={filters.building} onChange={event => { set("building", event.target.value); set("hall", ""); }}>
                 <option value="">الكل</option>
-                {buildings.map(value => <option key={value.id} value={value.id}>{value.officialCode}</option>)}
+                {buildings.map(value => <option key={value.id} value={value.id}>{buildingNumberLabel(value)}</option>)}
               </select>
             </Field>
             <Field label="القاعة">
@@ -1461,7 +1463,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <span>المبنى</span>
                 <select value={matrixBuilding} onChange={e => { setMatrixBuilding(e.target.value); setMatrixHall(""); }}>
                   <option value="">كل المباني</option>
-                  {(matrix?.buildings || []).map(building => <option key={building.id} value={building.id}>{building.officialCode}</option>)}
+                  {(matrix?.buildings || []).map(building => <option key={building.id} value={building.id}>{buildingNumberLabel(building)}</option>)}
                 </select>
               </label>
               <label>

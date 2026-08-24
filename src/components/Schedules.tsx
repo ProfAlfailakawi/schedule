@@ -1407,11 +1407,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (id) load.set(id, (load.get(id) || 0) + 1);
     });
     const scheduled = [...load.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id);
-    // A delegate explicitly marked «يدرّس هذا الفصل» is part of the open
-    // department's teaching roster even before their first appointment exists.
-    // Keep scheduled staff first, then the selected delegates.
-    return [...new Set([...scheduled, ...visitingIds])];
-  }, [rows, visitingIds]);
+    const scopedRoster = instructors.map(person => Number(person.AdInstructorId)).filter(Boolean);
+    // The section roster is a department fact, not a current-term fact. A new
+    // term may have zero rows and must still show every professor in the section.
+    return [...new Set([...scheduled, ...scopedRoster, ...visitingIds])];
+  }, [rows, instructors, visitingIds]);
 
   /**
    * A whole working day to change your mind.
@@ -7986,6 +7986,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       }
                     }}
                     collegeId={Number(form.AdCollegeId) || filterCollege}
+                    sectionId={Number(form.AdSectionId) || filterSection}
                     termId={Number(form.AdTermId) || filterTerm}
                   />
                   </div>

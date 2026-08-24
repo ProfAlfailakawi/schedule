@@ -2711,18 +2711,19 @@ app.get("/api/schedules/workspace", requirePermission(7), async (req: Authentica
     }
   }
 
-  const [rows, scopedInstructors, courses, visitingInstructorIds] = await Promise.all([
+  const [rows, scopedInstructors, historicalDepartmentInstructors, courses, visitingInstructorIds] = await Promise.all([
     readSchedulesForRequest(req, collegeId, sectionId, termId),
     sectionId
       ? Repository.getInstructorsByScope(sectionId, termId)
       : (collegeId ? Repository.getInstructorsByScheduleScope({ collegeId, termId }) : Promise.resolve([])),
+    sectionId ? Repository.getInstructorsByScope(sectionId, 0) : Promise.resolve([]),
     sectionId ? Repository.getCoursesBySection(sectionId) : Promise.resolve([]),
     sectionId && collegeId ? Repository.getVisitingRoster(collegeId, sectionId, termId) : Promise.resolve([] as number[]),
   ]);
   const visitingPeople = visitingInstructorIds.length
     ? (await Repository.getInstructors()).filter(person => visitingInstructorIds.includes(Number(person.AdInstructorId)))
     : [];
-  const instructors = [...new Map([...scopedInstructors, ...visitingPeople].map(person => [Number(person.AdInstructorId), person])).values()]
+  const instructors = [...new Map([...historicalDepartmentInstructors, ...scopedInstructors, ...visitingPeople].map(person => [Number(person.AdInstructorId), person])).values()]
     .sort((a,b)=>String(a.AdInstructorName||"").localeCompare(String(b.AdInstructorName||""),"ar"));
 
   res.json({
@@ -3464,7 +3465,7 @@ app.get("/api/department-rooms", requirePermission(7), async (req: Authenticated
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const registry=await readLocationRegistry();
   const buildingById=new Map(registry.buildings.filter(b=>b.active&&b.confidence==="CONFIRMED").map(b=>[b.id,b]));
-  const rooms=registry.rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&buildingById.has(room.buildingId)&&(!room.collegeIds.length||room.collegeIds.includes(collegeId))&&(room.shared||room.sectionIds.length===0||room.sectionIds.includes(sectionId))).map(room=>({building:buildingById.get(room.buildingId)!.officialCode,hall:room.canonicalCode,buildingId:room.buildingId,roomId:room.id,shared:room.shared}));
+  const rooms=registry.rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&buildingById.has(room.buildingId)&&(!room.collegeIds.length||room.collegeIds.includes(collegeId))&&room.sectionIds.includes(sectionId)).map(room=>({building:buildingById.get(room.buildingId)!.officialCode,hall:room.canonicalCode,buildingId:room.buildingId,roomId:room.id,shared:room.shared}));
   res.json({rooms});
 });
 app.post("/api/department-rooms", requirePermission(7), async (_req: AuthenticatedRequest, res: Response) => {
@@ -3478,12 +3479,18 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   const registry=await readLocationRegistry();
   const buildings=registry.buildings.filter(b=>b.active&&b.confidence==="CONFIRMED"&&(!collegeId||!b.collegeIds.length||b.collegeIds.includes(collegeId)));
   const ids=new Set(buildings.map(b=>b.id));
-  const rooms=registry.rooms.filter(r=>r.active&&r.confidence==="CONFIRMED"&&ids.has(r.buildingId));
   let borrowedRoomIds:string[]=[];
   if(termId&&collegeId&&sectionId){
     const requests=await Repository.getHallBarterRequests(termId);
     borrowedRoomIds=[...new Set(requests.filter(request=>request.status==="approved"&&Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId&&request.roomId).map(request=>String(request.roomId)))];
   }
+  const borrowedSet=new Set(borrowedRoomIds);
+  // Operational pickers receive only rooms the open section may actually use.
+  // This prevents a department from seeing the entire college room inventory.
+  const rooms=registry.rooms.filter(r=>
+    r.active&&r.confidence==="CONFIRMED"&&ids.has(r.buildingId)&&
+    (!sectionId||r.sectionIds.includes(sectionId)||borrowedSet.has(r.id))
+  );
   res.json({version:LOCATION_MIGRATION_VERSION,buildings,rooms,borrowedRoomIds,pendingRoomCode:PENDING_ROOM});
 });
 app.get("/api/location-registry/pending", requirePermission(7), async (req:AuthenticatedRequest,res:Response)=>{
