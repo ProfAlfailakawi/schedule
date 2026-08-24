@@ -1424,13 +1424,51 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
  */
 function isHeaderLine(text:string):boolean{
   if(!text) return false;
+  
+  // Strict alphanumeric exact checks bypassing any folding
+  const alphanumeric = text.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (alphanumeric.includes("swrscha")) return true;
+  if (alphanumeric.includes("swrscha:")) return true;
+  
   const f=fold(text);
+  
+  // Any line that strongly starts with these keywords
+  if(
+    f.startsWith("القسم") || 
+    f.startsWith("الفصل") || 
+    f.startsWith("التقرير") || 
+    f.startsWith("جدول") || 
+    f.startsWith("كليه") || 
+    f.startsWith("كلية") || 
+    f.startsWith("الفرع")
+  ) {
+    return true;
+  }
+  
+  // Highly specific header substrings
+  if(
+    f.includes("جدول الفصل") || 
+    f.includes("جميع الشعب") || 
+    f.includes("التربيه الاساسيه") || 
+    f.includes("التربية الاساسية") || 
+    f.includes("كليه التربيه") || 
+    f.includes("كلية التربية") || 
+    f.includes("صفحة :") || 
+    f.includes("صفحه :") || 
+    f.includes("صفحة رقم") || 
+    f.includes("تاريخ :") || 
+    f.includes("من أصل") || 
+    f.includes("من اصل") || 
+    f.includes("التسجيل التقرير")
+  ) {
+    return true;
+  }
+
   const headerPhrases=[
-    "جدول الفصل", "جميع الشعب", "الفصل الدراسي", "كلية التربيه", "كليه التربيه", "كلية التربية", "التربية الاساسية", "التربيه الاساسيه",
-    "القسم", "الفرع", "رقم المقرر", "مسمى مقرر", "الرقم المرجعي", "الرقم المرجعى",
+    "رقم المقرر", "مسمى مقرر", "الرقم المرجعي", "الرقم المرجعى",
     "الحد الاقصى", "مقاعد مسجلة", "مقاعد مسجله", "الحالة في الرزم", "عدد الرزم",
-    "swrscha", "صفحة رقم", "من أصل", "من اصل", "تاريخ الطباعة", "طبع في",
-    "التسجيل التقرير", "القسم :", "القسم:", "الفرع :", "الفرع:", "الكلية :", "الكلية:", "الفصل :", "الفصل:"
+    "تاريخ الطباعة", "طبع في",
+    "القسم :", "القسم:", "الفرع :", "الفرع:", "الكلية :", "الكلية:", "الفصل :", "الفصل:"
   ];
   if(headerPhrases.some(phrase => {
     const foldedPhrase = fold(phrase);
@@ -1438,9 +1476,7 @@ function isHeaderLine(text:string):boolean{
   })) {
     return true;
   }
-  if(f.startsWith("القسم") || f.startsWith("الفصل") || f.startsWith("التقرير") || f.startsWith("جدول") || f.startsWith("كليه") || f.startsWith("كلية") || f.includes("صفحة :") || f.includes("صفحة رقم") || f.includes("تاريخ :")) {
-    return true;
-  }
+  
   return false;
 }
 
