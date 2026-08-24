@@ -3478,27 +3478,32 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   if(collegeId&&sectionId&&!isScopeAllowed(req,collegeId,sectionId)&&!isPowerUser(req)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const registry=await readLocationRegistry();
   const confirmedRooms=registry.rooms.filter(r=>r.active&&r.confidence==="CONFIRMED");
-  // Operational building choices are contextual, never the whole college inventory.
-  // Historical room/section relationships are authoritative evidence that a department uses a building.
-  const sectionBuildingIds=sectionId?new Set(confirmedRooms.filter(r=>r.sectionIds.includes(sectionId)).map(r=>r.buildingId)):new Set<string>();
-  const buildings=registry.buildings.filter(b=>
-    b.active&&b.confidence==="CONFIRMED"&&
-    (!collegeId||!b.collegeIds.length||b.collegeIds.includes(collegeId))&&
-    (!sectionId||b.sectionIds.includes(sectionId)||sectionBuildingIds.has(b.id))
-  );
-  const ids=new Set(buildings.map(b=>b.id));
   let borrowedRoomIds:string[]=[];
   if(termId&&collegeId&&sectionId){
     const requests=await Repository.getHallBarterRequests(termId);
     borrowedRoomIds=[...new Set(requests.filter(request=>request.status==="approved"&&Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId&&request.roomId).map(request=>String(request.roomId)))];
   }
   const borrowedSet=new Set(borrowedRoomIds);
-  // Operational pickers receive only rooms the open section may actually use.
-  // This prevents a department from seeing the entire college room inventory.
-  const rooms=registry.rooms.filter(r=>
-    r.active&&r.confidence==="CONFIRMED"&&ids.has(r.buildingId)&&
-    (!sectionId||r.sectionIds.includes(sectionId)||borrowedSet.has(r.id))
+  // A building is operationally selectable only when at least one confirmed,
+  // active room under it is actually usable by the open department. A stale
+  // building.sectionIds relationship is historical evidence, not permission to
+  // show an empty building in the picker.
+  const eligibleRooms=confirmedRooms.filter(room=>
+    !sectionId||room.sectionIds.includes(sectionId)||borrowedSet.has(room.id)
   );
+  const eligibleBuildingIds=new Set(eligibleRooms.map(room=>room.buildingId));
+  const borrowedBuildingIds=new Set(eligibleRooms.filter(room=>borrowedSet.has(room.id)).map(room=>room.buildingId));
+  const buildings=registry.buildings.filter(building=>
+    building.active&&building.confidence==="CONFIRMED"&&
+    (!sectionId||eligibleBuildingIds.has(building.id))&&
+    (borrowedBuildingIds.has(building.id)||!collegeId||!building.collegeIds.length||building.collegeIds.includes(collegeId))
+  );
+  const ids=new Set(buildings.map(building=>building.id));
+  const rooms=eligibleRooms.filter(room=>ids.has(room.buildingId)).map(room=>({
+    ...room,
+    shared:room.sectionIds.length>1,
+    sharedConfidence:room.sectionIds.length>1?"CONFIRMED":room.sharedConfidence,
+  }));
   res.json({version:LOCATION_MIGRATION_VERSION,buildings,rooms,borrowedRoomIds,pendingRoomCode:PENDING_ROOM});
 });
 app.get("/api/location-registry/pending", requirePermission(7), async (req:AuthenticatedRequest,res:Response)=>{
@@ -3520,7 +3525,8 @@ app.get("/api/admin/location-registry", requirePermission(7), requirePowerAdmin,
   const sectionNames=new Map(sections.map(x=>[Number(x.AdSectionId),String(x.AdSectionName||"")]));
   const termNames=new Map(terms.map(x=>[Number(x.AdTermId),String((x as any).AdTermName||(x as any).TermName||"")]));
   const pending=rows.filter(row=>row.locationStatus==="PENDING_ROOM").map(row=>({id:row.id,AdCollegeId:row.AdCollegeId,collegeName:collegeNames.get(Number(row.AdCollegeId))||"",AdSectionId:row.AdSectionId,sectionName:sectionNames.get(Number(row.AdSectionId))||"",AdTermId:row.AdTermId,termName:termNames.get(Number(row.AdTermId))||"",AdInstructorId:row.AdInstructorId,instructorName:instructorNames.get(Number(row.AdInstructorId))||"",AdCourseId:row.AdCourseId,AdCourseName:row.AdCourseName,SCode:row.SCode,buildingId:row.buildingId,AdRoomCode:row.AdRoomCode,days:SCHEDULE_DAY_KEYS.filter(day=>Boolean((row as any)[day])),fstarttime:row.fstarttime,fendtime:row.fendtime}));
-  res.json({...registry,reviewCases,runs,health:registryHealth(registry,rows,reviewCases),pending,colleges,sections,terms});
+  const normalizedRegistry={...registry,rooms:registry.rooms.map(room=>({...room,shared:room.sectionIds.length>1,sharedConfidence:room.sectionIds.length>1?"CONFIRMED":room.sharedConfidence}))};
+  res.json({...normalizedRegistry,reviewCases,runs,health:registryHealth(normalizedRegistry,rows,reviewCases),pending,colleges,sections,terms});
 });
 app.post("/api/admin/location-registry/buildings", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const collegeIds=locationIdList(req.body?.collegeIds);
@@ -3560,7 +3566,8 @@ app.post("/api/admin/location-registry/rooms", requirePermission(7), requirePowe
   const code=String(req.body?.canonicalCode||"").trim().toUpperCase().replace(/\s+/g,"");if(!code||code===PENDING_ROOM||isInvalidLocationToken(code)||!/^[A-Z0-9]{1,12}$/.test(code)||!/\d/.test(code)){res.status(400).json({error:"رمز القاعة غير صالح ولا يمكن أن يكون Placeholder"});return;}
   const id=`room_${building.officialCode}_${code.replace(/[^A-Z0-9]/g,"_")}`;if(registry.rooms.some(x=>x.id===id||(x.buildingId===building.id&&x.canonicalCode===code))){res.status(409).json({error:"القاعة موجودة في هذا المبنى"});return;}
   const now=new Date().toISOString();const sectionIds=locationIdList(req.body?.sectionIds),primarySectionIds=locationIdList(req.body?.primarySectionIds).filter(id=>sectionIds.includes(id));
-  const row:MasterRoom={id,buildingId:building.id,buildingCode:building.officialCode,canonicalCode:code,active:true,aliases:[],collegeIds:req.body?.collegeIds===undefined?[...building.collegeIds]:locationIdList(req.body?.collegeIds),sectionIds,primarySectionIds,shared:Boolean(req.body?.shared),sharedConfidence:"CONFIRMED",historicalUsageCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:["اعتماد يدوي من مدير النظام."],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now};
+  const shared=sectionIds.length>1;
+  const row:MasterRoom={id,buildingId:building.id,buildingCode:building.officialCode,canonicalCode:code,active:true,aliases:[],collegeIds:req.body?.collegeIds===undefined?[...building.collegeIds]:locationIdList(req.body?.collegeIds),sectionIds,primarySectionIds,shared,sharedConfidence:"CONFIRMED",historicalUsageCount:0,confidence:"CONFIRMED",source:"ADMIN",adminVerified:true,evidence:[shared?"اعتماد إداري؛ مصنفة مشتركة تلقائيًا لارتباطها بأكثر من قسم.":"اعتماد يدوي من مدير النظام."],auditHistory:[{at:now,byUserId:req.user.SystemUserId,action:"CREATE"}],createdAt:now,updatedAt:now,lastVerifiedAt:now};
   await Repository.upsertLocationRooms([row]);invalidateLocationRegistry();res.status(201).json(row);
 });
 app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
@@ -3568,7 +3575,7 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
   const targetBuildingId=String(req.body?.newBuildingId||current.buildingId),targetBuilding=registry.buildings.find(x=>x.id===targetBuildingId&&x.active&&x.confidence==="CONFIRMED");if(!targetBuilding){res.status(400).json({error:"المبنى الهدف غير موجود أو غير فعال"});return;}
   if(targetBuildingId!==current.buildingId&&registry.rooms.some(x=>x.id!==current.id&&x.buildingId===targetBuildingId&&x.canonicalCode===current.canonicalCode)){res.status(409).json({error:"توجد قاعة بالرمز نفسه داخل المبنى الهدف"});return;}
   const sectionIds=req.body?.sectionIds===undefined?current.sectionIds:locationIdList(req.body.sectionIds);const primarySectionIds=(req.body?.primarySectionIds===undefined?(current.primarySectionIds||[]):locationIdList(req.body.primarySectionIds)).filter(id=>sectionIds.includes(id));
-  const now=new Date().toISOString();const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared:typeof req.body?.shared==="boolean"?req.body.shared:current.shared,collegeIds:req.body?.collegeIds===undefined?current.collegeIds:locationIdList(req.body.collegeIds),sectionIds,primarySectionIds,aliases:req.body?.aliases===undefined?current.aliases:locationAliases(req.body.aliases),buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode};
+  const now=new Date().toISOString();const shared=sectionIds.length>1;const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared,collegeIds:req.body?.collegeIds===undefined?current.collegeIds:locationIdList(req.body.collegeIds),sectionIds,primarySectionIds,aliases:req.body?.aliases===undefined?current.aliases:locationAliases(req.body.aliases),buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode};
   const row:MasterRoom={...current,...next,id:current.id,canonicalCode:current.canonicalCode,confidence:"CONFIRMED",sharedConfidence:"CONFIRMED",adminVerified:true,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:targetBuildingId===current.buildingId?"UPDATE":"MOVE_BUILDING",before:{buildingId:current.buildingId,buildingCode:current.buildingCode,active:current.active,shared:current.shared,collegeIds:current.collegeIds,sectionIds:current.sectionIds,primarySectionIds:current.primarySectionIds},after:next}]};
   let restorePointId:string|undefined;
   if(targetBuildingId!==current.buildingId){
@@ -3722,20 +3729,24 @@ app.post("/api/schedules/suggest-slots", requirePermission(7), async (req: Authe
   if (!dayKeys.length) { res.status(400).json({ error: "اختر يوماً واحداً على الأقل" }); return; }
   if (!isScopeAllowed(req, collegeId, sectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
 
-  const [universe, mobility, registry] = await Promise.all([
+  const [universe, mobility, registry, barterRequests] = await Promise.all([
     Repository.getSchedulesByScope({ termId }),
     Repository.getCampusMobilityProfile(collegeId),
-    readLocationRegistry()
+    readLocationRegistry(),
+    Repository.getHallBarterRequests(termId),
   ]);
   const live = universe.filter(row => Number(row.id) !== excludeId);
   const sectionRows = live.filter(row => row.AdCollegeId === collegeId && row.AdSectionId === sectionId);
 
-  // Suggestions come only from the authoritative registry. Historical spellings
-  // are evidence for the registry, never a runtime source of new room options.
-  const buildingById=new Map(registry.buildings.filter(b=>b.active&&b.confidence==="CONFIRMED"&&(!b.collegeIds.length||b.collegeIds.includes(collegeId))).map(b=>[b.id,b]));
-  const halls=registry.rooms
-    .filter(room=>room.active&&room.confidence==="CONFIRMED"&&buildingById.has(room.buildingId)&&(room.shared||room.sectionIds.length===0||room.sectionIds.includes(sectionId)))
-    .map(room=>({room:buildingById.get(room.buildingId)!.officialCode,hall:room.canonicalCode,buildingId:room.buildingId,roomId:room.id,shared:room.shared}));
+  // Suggestions use exactly the same permission surface as the picker: rooms
+  // assigned to this department plus rooms explicitly borrowed for this term.
+  const borrowedRoomIds=new Set(barterRequests.filter(request=>request.status==="approved"&&Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId&&request.roomId).map(request=>String(request.roomId)));
+  const eligibleRooms=registry.rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&(room.sectionIds.includes(sectionId)||borrowedRoomIds.has(room.id)));
+  const eligibleBuildingIds=new Set(eligibleRooms.map(room=>room.buildingId));
+  const buildingById=new Map(registry.buildings.filter(building=>building.active&&building.confidence==="CONFIRMED"&&eligibleBuildingIds.has(building.id)).map(building=>[building.id,building]));
+  const halls=eligibleRooms
+    .filter(room=>buildingById.has(room.buildingId))
+    .map(room=>({room:buildingById.get(room.buildingId)!.officialCode,hall:room.canonicalCode,buildingId:room.buildingId,roomId:room.id,shared:room.sectionIds.length>1}));
   if (!halls.length) { res.json({ slots: [], note: "لا توجد قاعات رسمية متاحة لهذا القسم في سجل المباني والقاعات" }); return; }
 
   const DAY_START = SCHEDULE_DAY_START, DAY_END = SCHEDULE_DAY_END, STEP = SCHEDULE_SLOT_MINUTES;
@@ -5204,7 +5215,7 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);
   const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false});
-  if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة أو تعبئة الجدول قبل معالجة البيانات واستكمال حقول القاعات والأساتذة والأوقات بدقة. يرجى مراجعة الملاحظات ومعالجة الأخطاء الظاهرة في جدول المعاينة أولاً.",issues});return;}
+  if(issues.length){res.status(400).json({error:"أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.",issues});return;}
   const importLayout=req.body?.importLayout==="authority-pdf"?"authority-pdf":req.body?.importLayout==="worksheet"?"worksheet":undefined;
   if(importLayout==="authority-pdf"){
     const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});

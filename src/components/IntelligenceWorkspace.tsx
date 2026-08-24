@@ -1378,7 +1378,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       await reload();
       return d;
     } catch (e: any) {
-      setError(smartMessage(e));
+      const text=smartMessage(e);
+      if(source==="import"&&/جدول المعاينة|الحقول المطلوبة|الملاحظات/.test(text)){setError(null);setImportErrorModal("راجع الملاحظات والحقول المطلوبة قبل حفظ المسودة.");}
+      else setError(text);
       return null;
     } finally {
       setBusy(false);
@@ -1697,7 +1699,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const preflight=[...validateImportRowsLocally(importPreview.rows as ImportRow[]),...await validateImportAgainstLiveSchedule(importPreview.rows as ImportRow[])];
     if(preflight.length){
       setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
-      setError(`لا يمكن النشر قبل معالجة ${preflight.length.toLocaleString("ar-KW-u-nu-latn")} خطأ أو تعارض.`);
+      setError(null);
+      setImportErrorModal(`يوجد ${preflight.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة تحتاج معالجة قبل تعبئة الجدول.`);
       return;
     }
     const ok = await visualConfirm({
@@ -1723,7 +1726,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       await reload();
       setTab("command");
     } catch (e: any) {
-      setError(smartMessage(e));
+      const text=smartMessage(e);
+      if(/جدول المعاينة|الحقول المطلوبة|الملاحظات/.test(text)){setError(null);setImportErrorModal("راجع الملاحظات والحقول المطلوبة قبل تعبئة الجدول.");}
+      else setError(text);
     } finally {
       setBusy(false);
     }
@@ -5365,11 +5370,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           <div style={{ background: "var(--surface)", padding: "32px", borderRadius: "18px", maxWidth: "480px", width: "90%", margin: "auto", boxShadow: "0 20px 40px rgba(0,0,0,0.18)", border: "1px solid var(--line)", direction: "rtl", textAlign: "right" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
               <span style={{ color: "var(--warn)", display: "inline-flex" }}><AlertTriangle size={28} /></span>
-              <h3 style={{ margin: 0, fontSize: "18px", color: "var(--foreground)" }}>تعذر حفظ المسودة أو تعبئة الجدول</h3>
+              <h3 style={{ margin: 0, fontSize: "18px", color: "var(--foreground)" }}>أكمل الملاحظات أولاً</h3>
             </div>
             <p style={{ color: "var(--muted)", lineHeight: "1.7", fontSize: "14px", marginBottom: "24px" }}>{importErrorModal}</p>
             <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <PrimaryButton type="button" data-guide-ignore="الانتقال إلى ملاحظات الاستيراد" onClick={() => { setImportErrorModal(null); window.setTimeout(() => document.querySelector(".import-preview")?.scrollIntoView({ behavior: "smooth", block: "start" }), 60); }}>اذهب إلى الملاحظات</PrimaryButton>
+              <PrimaryButton type="button" data-guide-ignore="الانتقال إلى ملاحظات الاستيراد" onClick={() => { setImportErrorModal(null); window.setTimeout(() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({ behavior: "smooth", block: "center" }), 60); }}>اذهب إلى الملاحظات</PrimaryButton>
             </div>
           </div>
         </div>
