@@ -780,31 +780,20 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   const surface=lib.createCanvas(image.width,image.height);
   surface.getContext("2d").drawImage(image,0,0);
   const bin=otsuBinarize(lib,surface);
-  const {cols,rows}=findRules(bin);
-  if(cols.length<6||rows.length<5)return null;
+  const geometry=adaptiveGridGeometry(lib,surface);
+  if(!geometry)return null;
+  const {cols,bands}=geometry;
 
-  /* Row bands are the regular runs of the pitch; header bands above the first
-     regular run and footer bands below the last are dropped. */
-  const gaps=rows.slice(1).map((v,i)=>v-rows[i]).filter(g=>g>8).sort((a,b)=>a-b);
-  const pitch=gaps[Math.floor(gaps.length/2)];
-  if(!pitch||pitch<10)return null;
-  const bands:{top:number;bottom:number}[]=[];
-  for(let i=0;i<rows.length-1;i++){
-    const span=rows[i+1]-rows[i];
-    if(span>pitch*0.6&&span<pitch*1.5)bands.push({top:rows[i],bottom:rows[i+1]});
-  }
-  if(bands.length<3)return null;
-
-  /* Column bands between consecutive rules, plus the open band left of the
-     first rule where this layout keeps the instructor names. */
+  /* The adaptive detector includes the OUTER table borders, therefore every
+     physical cell is exactly the space between two consecutive rules. Do not
+     invent an open margin column: doing so shifts TIME/BUILDING/ROOM by one and
+     is precisely how a building token used to land in the room field. */
   const columnBands:{left:number;right:number}[]=[];
-  const leftOpenStart=Math.max(0,cols[0]-Math.round(image.width*0.20));
-  if(cols[0]>image.width*0.02)columnBands.push({left:leftOpenStart,right:cols[0]});
   for(let i=0;i<cols.length-1;i++){
     const width=cols[i+1]-cols[i];
-    if(width>=Math.max(18,image.width*0.008))columnBands.push({left:cols[i],right:cols[i+1]});
+    if(width>=Math.max(10,image.width*0.004))columnBands.push({left:cols[i],right:cols[i+1]});
   }
-  if(columnBands.length<5)return null;
+  if(columnBands.length<6)return null;
 
   const top=bands[0].top,bottom=bands[bands.length-1].bottom;
   const cropScaled=(source:any,left:number,right:number)=>{
@@ -835,14 +824,24 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   /* Grey strips fan out over the pool. The binarized pass — an equal second
      bill — is paid only for the columns the grey pass left weak: on the real
      scan most columns validate from grey alone, so most of that bill vanishes. */
-  const numericGrey:StripRead[]=await runOnPool(pool.eng,
-    columnBands.map(band=>(worker:PooledWorker)=>readStrip(surface,band,NUMERIC,"6",worker)));
+  /* Import only needs the identity/scheduling edges of this report. Capacity,
+     reserved-seat and bundle columns in the middle do not participate in course,
+     time, location or instructor resolution, so OCRing all ~21 strips was pure
+     latency. Keep a safety window on both edges; validators still prove which
+     strip is which before any value is accepted. */
+  const edgeIndices=[...Array.from({length:Math.min(7,columnBands.length)},(_,index)=>index),
+    ...Array.from({length:Math.min(7,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]
+    .filter((index,pos,list)=>index>=0&&list.indexOf(index)===pos).sort((a,b)=>a-b);
+  const greyReads=await runOnPool(pool.eng,edgeIndices.map(index=>(worker:PooledWorker)=>readStrip(surface,columnBands[index],NUMERIC,"6",worker)));
+  const numericGrey:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
+  edgeIndices.forEach((columnIndex,at)=>{numericGrey[columnIndex]=greyReads[at];});
   const anyPattern=Object.values(stripPatterns);
-  const weak=(read:StripRead)=>{
-    const best=Math.max(...anyPattern.map(pattern=>read.cells.filter(cell=>pattern.test(cell.replace(/\s+/g," ").trim())).length));
-    return best<bands.length*0.5;
-  };
-  const binIndices=columnBands.map((_,index)=>index).filter(index=>weak(numericGrey[index]));
+  const bestPatternHits=(read:StripRead)=>Math.max(...anyPattern.map(pattern=>read.cells.filter(cell=>pattern.test(cell.replace(/\s+/g," ").trim())).length));
+  const likelyStructural=new Set<number>([1,3,4,5,...Array.from({length:Math.min(5,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]);
+  const binIndices=edgeIndices.filter(index=>{
+    const best=bestPatternHits(numericGrey[index]);
+    return best<bands.length*0.5&&(best>0||likelyStructural.has(index));
+  });
   const binReads=await runOnPool(pool.eng,
     binIndices.map(index=>(worker:PooledWorker)=>readStrip(bin,columnBands[index],NUMERIC,"6",worker)));
   const numericBin:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
@@ -862,7 +861,10 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     return bestHits>=minimum?bestIndex:-1;
   };
   const taken=new Set<number>();
-  const minimumRows=Math.max(2,Math.floor(bands.length*0.15));
+  /* A final report page can contain one or two rows. Requiring two validator
+     hits made those legitimate tail pages disappear entirely. Geometry has
+     already proved the table, so one row is sufficient evidence here. */
+  const minimumRows=Math.max(1,Math.floor(bands.length*0.15));
   const timeIndex=claim(stripPatterns.time,minimumRows,taken);if(timeIndex>=0)taken.add(timeIndex);
 
   /* SWRSCHA is a ruled report with a fixed physical block on the left:
@@ -881,12 +883,54 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   const geometricDays=timeIndex>=2?timeIndex-2:-1;
   const daysIndex=geometryHits(geometricDays,stripPatterns.days)>=minimumRows?geometricDays:claim(stripPatterns.days,minimumRows,taken);
   if(daysIndex>=0)taken.add(daysIndex);
-  const refcodeIndex=claim(stripPatterns.refcode,minimumRows,taken);if(refcodeIndex>=0)taken.add(refcodeIndex);
-  const codeIndex=refcodeIndex>=0?-1:claim(stripPatterns.code,minimumRows,taken);if(codeIndex>=0)taken.add(codeIndex);
-  const referenceIndex=refcodeIndex>=0?-1:claim(stripPatterns.reference,minimumRows,taken);if(referenceIndex>=0)taken.add(referenceIndex);
-  /* The section column sits beside the reference block in this layout, so its
-     neighbours are auditioned first; a free search only if neither validates. */
-  const anchorIndex=refcodeIndex>=0?refcodeIndex:codeIndex>=0?codeIndex:referenceIndex;
+
+  /* The far-right academic key is structurally anchored. Camera text can draw a
+     false vertical stroke THROUGH the printed 7-digit course code (the real
+     scan produced exactly that), splitting one true cell into two or three
+     strips. Joining only the last 1..3 physical strips repairs that geometry
+     without borrowing from another semantic column. If the real separator
+     between reference and course code is missing, the joined value validates as
+     reference+course (11..13 digits) and is split later at its authoritative
+     seven-digit tail. */
+  type Span={from:number;to:number};
+  const joinedCells=(reads:StripRead[],span:Span)=>bands.map((_,row)=>{
+    let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");
+    return value;
+  });
+  const spanHits=(span:Span,pattern:RegExp)=>Math.max(validatorHits(joinedCells(numericGrey,span),pattern),validatorHits(joinedCells(numericBin,span),pattern));
+  const lastBand=columnBands.length-1,maxJoin=Math.min(3,columnBands.length);
+  let codeSpan:Span|null=null,refcodeSpan:Span|null=null,bestCodeHits=0,bestRefcodeHits=0;
+  for(let width=1;width<=maxJoin;width++){
+    const span={from:lastBand-width+1,to:lastBand};
+    const codeHits=spanHits(span,stripPatterns.code);
+    if(codeHits>bestCodeHits){bestCodeHits=codeHits;codeSpan=span;}
+    const bothHits=spanHits(span,stripPatterns.refcode);
+    if(bothHits>bestRefcodeHits){bestRefcodeHits=bothHits;refcodeSpan=span;}
+  }
+  if(bestCodeHits<minimumRows)codeSpan=null;
+  /* Prefer a proven 7-digit code span over a wider reference+code span: false
+     vertical strokes inside the code are common; a genuinely missing separator
+     still falls through to refcode below. */
+  if(codeSpan)refcodeSpan=null;else if(bestRefcodeHits<minimumRows)refcodeSpan=null;
+  for(const span of [codeSpan,refcodeSpan])if(span)for(let index=span.from;index<=span.to;index++)taken.add(index);
+
+  let refcodeIndex=-1,codeIndex=-1,referenceIndex=-1;
+  if(!codeSpan&&!refcodeSpan){
+    refcodeIndex=claim(stripPatterns.refcode,minimumRows,taken);if(refcodeIndex>=0)taken.add(refcodeIndex);
+    codeIndex=refcodeIndex>=0?-1:claim(stripPatterns.code,minimumRows,taken);if(codeIndex>=0)taken.add(codeIndex);
+  }
+  if(codeSpan){
+    const expected=codeSpan.from-1;
+    referenceIndex=geometryHits(expected,stripPatterns.reference)>=minimumRows?expected:claim(stripPatterns.reference,minimumRows,taken);
+  }else if(!refcodeSpan&&refcodeIndex<0){
+    referenceIndex=claim(stripPatterns.reference,minimumRows,taken);
+  }
+  if(referenceIndex>=0)taken.add(referenceIndex);
+
+  /* The section column sits immediately left of reference (or of a merged
+     reference+course cell). Test that structural neighbour first; only a failed
+     structural read may use the general validator search. */
+  const anchorIndex=refcodeSpan?.from??(refcodeIndex>=0?refcodeIndex:(referenceIndex>=0?referenceIndex:(codeSpan?.from??codeIndex)));
   let scodeIndex=-1;
   for(const near of [anchorIndex-1,anchorIndex+1]){
     if(near<0||near>=columnBands.length||taken.has(near))continue;
@@ -895,10 +939,11 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   }
   if(scodeIndex<0)scodeIndex=claim(stripPatterns.scode,minimumRows,taken);
   if(scodeIndex>=0)taken.add(scodeIndex);
-  if(timeIndex<0&&refcodeIndex<0&&codeIndex<0)return null;
+  if(timeIndex<0&&!codeSpan&&!refcodeSpan&&refcodeIndex<0&&codeIndex<0)return null;
 
   const DIGITS="0123456789 -";
-  const refineIndices=[daysIndex,refcodeIndex,referenceIndex,codeIndex,scodeIndex].filter(index=>index>=0);
+  const spanIndices=[codeSpan,refcodeSpan].filter((span):span is Span=>Boolean(span)).flatMap(span=>Array.from({length:span.to-span.from+1},(_,offset)=>span.from+offset));
+  const refineIndices=[daysIndex,refcodeIndex,referenceIndex,codeIndex,scodeIndex,...spanIndices].filter((index,pos,list)=>index>=0&&list.indexOf(index)===pos);
   const refined=await runOnPool(pool.eng,refineIndices.flatMap(index=>[
     (worker:PooledWorker)=>readStrip(surface,columnBands[index],DIGITS,"6",worker),
     (worker:PooledWorker)=>readStrip(bin,columnBands[index],DIGITS,"6",worker),
@@ -948,18 +993,17 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     .filter(item=>!taken.has(item.index));
   /* Instructor is three physical cells LEFT of TIME:
        instructor | days | activity | time.
-     The scan may include a margin band outside the table, so “index 0” is not
-     a safe identity. Course name is immediately LEFT of section — never “the
-     widest unclaimed column”. The old widest heuristic selected the actual
-     instructor column and put doctor names into Course Name. */
+     Course name is immediately LEFT of section — never “the widest unclaimed
+     column”. The old widest heuristic selected the actual instructor column and
+     put doctor names into Course Name. */
   const instructorIndex=timeIndex>=3?timeIndex-3:-1;
   const instructorBand=unclaimed.find(item=>item.index===instructorIndex);
-  const codePattern=refcodeIndex>=0?stripPatterns.refcode:stripPatterns.code;
+  const codePattern=(refcodeSpan||refcodeIndex>=0)?stripPatterns.refcode:stripPatterns.code;
   const codeSignalIndex=refcodeIndex>=0?refcodeIndex:codeIndex;
-  const codeHits=codeSignalIndex>=0
-    ? Math.max(validatorHits(numericGrey[codeSignalIndex].cells,codePattern),validatorHits(numericBin[codeSignalIndex].cells,codePattern))
-    : 0;
-  const needCourseNames=codeHits<Math.max(3,Math.floor(bands.length*0.72));
+  const codeHits=codeSpan?spanHits(codeSpan,stripPatterns.code)
+    :refcodeSpan?spanHits(refcodeSpan,stripPatterns.refcode)
+    :(codeSignalIndex>=0?Math.max(validatorHits(numericGrey[codeSignalIndex].cells,codePattern),validatorHits(numericBin[codeSignalIndex].cells,codePattern)):0);
+  const needCourseNames=codeHits<Math.max(1,Math.ceil(bands.length*0.72));
   const preferredNameIndex=scodeIndex>0?scodeIndex-1:-1;
   const fallbackNameIndex=anchorIndex>1?anchorIndex-2:-1;
   const nameBand=needCourseNames
@@ -1004,8 +1048,16 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   const buildingAt=pickValidated(buildingIndex,stripPatterns.building);
   const hallAt=pickValidated(hallIndex,stripPatterns.hall);
   const daysAt=pickValidated(daysIndex,stripPatterns.days);
-  const refcodeAt=pickValidated(refcodeIndex,stripPatterns.refcode);
-  const codeAt=pickValidated(codeIndex,stripPatterns.code);
+  const pickSpanValidated=(span:Span|null,pattern:RegExp)=>(row:number)=>{
+    if(!span)return"";
+    const joined=(reads:StripRead[])=>{let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");return value;};
+    const grey=joined(numericGrey),binary=joined(numericBin);
+    if(pattern.test(grey))return grey;
+    if(pattern.test(binary))return binary;
+    return grey||binary;
+  };
+  const refcodeAt=refcodeSpan?pickSpanValidated(refcodeSpan,stripPatterns.refcode):pickValidated(refcodeIndex,stripPatterns.refcode);
+  const codeAt=codeSpan?pickSpanValidated(codeSpan,stripPatterns.code):pickValidated(codeIndex,stripPatterns.code);
   const referenceAt=pickValidated(referenceIndex,stripPatterns.reference);
   const scodeAt=pickValidated(scodeIndex,stripPatterns.scode);
 
@@ -1019,10 +1071,16 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   // ambiguous OCR. A wrong room is more dangerous than an empty one because it
   // can be published unnoticed; only validator-clean values survive.
   const safeBuilding=(raw:string)=>{
-    return cleanBuildingCode(raw);
+    const value=toAscii(raw).replace(/\s+/g,"").trim().toUpperCase();
+    /* Extraction may report uncertainty as empty, never by shortening a value.
+       In particular 012B091 is NOT repaired into 012B09 here: the structural
+       cell boundary must be correct and the canonical registry resolves later. */
+    return stripPatterns.building.test(value)?cleanBuildingCode(value):"";
   };
   const safeHall=(raw:string)=>{
-    return cleanHallCode(raw);
+    const value=toAscii(raw).replace(/\s+/g,"").trim().toUpperCase();
+    if(!/^(?:[A-Z]\d{1,3}|\d{1,4}[A-Z]?)$/.test(value))return"";
+    return cleanHallCode(value);
   };
 
   const rowsOut:GridRow[]=[];
@@ -1085,7 +1143,9 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     });
   }
   const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
-  return meaningful.length>=3?rowsOut:null;
+  /* The final physical page may contain only one or two legitimate rows. The
+     adaptive grid/header proof above is what makes this safe. */
+  return meaningful.length>=1?rowsOut:null;
 }
 
 /**
@@ -1578,7 +1638,11 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
   /* “هيئة تدريسية” is an actual instructor identity in this installation.
      Multiple spaces/titles normalize away; accept only a UNIQUE registry row,
      preferring current-department evidence. Other generic roles stay unresolved. */
-  if(/^هيئه\s*تدريسيه$/.test(rawClean)){
+  if(/^هيئه(?:\s|$)/.test(rawClean)){
+    /* Authority scans sometimes read only «هيئة» or insert extra spaces/noise
+       after it. In this installation «هيئة تدريسية» is a real registry identity;
+       map the prefix ONLY to that exact identity and only when department/global
+       evidence leaves one unique row. Never fuzzy-match “هيئة” to a person. */
     const faculty=instructors.filter(person=>clean(person.AdInstructorName)==="هيئه تدريسيه");
     const preferredFaculty=faculty.filter(person=>preferredIds?.has(Number(person.AdInstructorId)));
     if(preferredFaculty.length===1)return preferredFaculty[0];
