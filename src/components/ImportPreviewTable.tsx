@@ -127,8 +127,8 @@ export default function ImportPreviewTable({
     scode: (row: ImportRow) => !String(row.SCode || "").trim(),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
-    building: (row: ImportRow) => !row.buildingId || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL",
-    room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && (!row.roomId || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL"),
+    building: (row: ImportRow) => !row.buildingId,
+    room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
     instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
@@ -275,7 +275,7 @@ export default function ImportPreviewTable({
                   <td className={red(missing.time(row))} dir="ltr">
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patch(index, { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
-                  <td className={red(missing.building(row))}>
+                  <td className={red(missing.building(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")}>
                     {open ? (
                       <BuildingPicker
                         collegeId={collegeId}
@@ -298,7 +298,7 @@ export default function ImportPreviewTable({
                       <span dir="ltr">{row.AdRoomCode || "—"}</span>
                     )}
                   </td>
-                  <td className={red(missing.room(row))}>
+                  <td className={red(missing.room(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")}>
                     {open ? (
                       <RoomPicker
                         collegeId={collegeId}

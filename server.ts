@@ -5246,7 +5246,17 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     /* No “delete the last digit” repair exists here. A malformed 012B091 is
        evidence of extraction failure and remains REVIEW_REQUIRED. Structural
        cell boundaries upstream must produce the exact canonical token. */
-    const building=explicitFull?resolveBuilding(registry,token,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
+    let building=explicitFull?resolveBuilding(registry,token,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
+    /* A seven-character token such as 012B091 is accepted only when the first
+       six characters are an exact canonical building in the registry. This is
+       a conservative cell-bleed recovery, not a generic last-digit trim. */
+    if(building.status!=="CONFIRMED"||!building.value){
+      const bleed=token.match(/^(\d{3}[A-Z]\d{2})\d$/);
+      if(bleed){
+        const repaired=resolveBuilding(registry,bleed[1],{});
+        if(repaired.status==="CONFIRMED"&&repaired.value)building=repaired;
+      }
+    }
     if(building.status!=="CONFIRMED"||!building.value){
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: المبنى المقروء «${rawBuilding||"فارغ"}» غير محسوم؛ اختر مبنى رسميًا.`);continue;
@@ -5261,7 +5271,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       row.sourceSitePrefix=sourceSitePrefix;
       row.scopeMismatchType="CROSS_BRANCH";
       row.scopeMismatchLabel=`فرع آخر · ${sourceLabel}`;
-      row.scopeMismatchMessage=`هذه الشعبة تابعة إلى «${sourceLabel}» بحسب المبنى ${building.value.officialCode}، بينما الاستيراد الحالي لـ «${targetLabel}». لن تُنشر داخل النطاق الحالي قبل مراجعتها.`;
+      row.scopeMismatchMessage=`هذه الشعبة تابعة إلى «${sourceLabel}» بحسب المبنى ${building.value.officialCode}، بينما الاستيراد الحالي لـ «${targetLabel}». لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته.`;
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: ${row.scopeMismatchMessage}`);
       continue;
     }
