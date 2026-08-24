@@ -529,6 +529,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [importInstructorIds, setImportInstructorIds] = useState<number[]>([]),
     [importVisitingIds, setImportVisitingIds] = useState<Set<number>>(new Set()),
     [importDepartmentRooms, setImportDepartmentRooms] = useState<Array<{ building:string; hall:string }>>([]),
+    [importErrorModal, setImportErrorModal] = useState<string | null>(null),
     [online, setOnline] = useState(navigator.onLine);
   // Help never opens on its own; one deliberate question mark owns it.
   const [decisionCompose, setDecisionCompose] = useState(false);
@@ -1689,7 +1690,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   };
 
   const approveAndPublishPdf = async () => {
-    if (!importPreview?.valid) return;
+    if (!importPreview?.valid) {
+      setImportErrorModal("لا يمكن حفظ المسودة أو تعبئة الجدول قبل معالجة البيانات واستكمال حقول القاعات والأساتذة والأوقات بدقة. يرجى مراجعة الملاحظات ومعالجة الأخطاء الظاهرة في جدول المعاينة أولاً.");
+      return;
+    }
     const preflight=[...validateImportRowsLocally(importPreview.rows as ImportRow[]),...await validateImportAgainstLiveSchedule(importPreview.rows as ImportRow[])];
     if(preflight.length){
       setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
@@ -1726,7 +1730,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   };
 
   const createImportDraft = async () => {
-    if (!importPreview?.valid) return;
+    if (!importPreview?.valid) {
+      setImportErrorModal("لا يمكن حفظ المسودة أو تعبئة الجدول قبل معالجة البيانات واستكمال حقول القاعات والأساتذة والأوقات بدقة. يرجى مراجعة الملاحظات ومعالجة الأخطاء الظاهرة في جدول المعاينة أولاً.");
+      return;
+    }
     const d = await saveDraft("import", importPreview.rows, importPreview.importLayout);
     if (d) {
       setImportPreview(null);
@@ -5049,7 +5056,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   rows={importPreview.rows as ImportRow[]}
                   courses={courses as any}
                   instructors={instructors as any}
-                  departmentIds={importInstructorIds}
+                  departmentIds={instructors.map((i: any) => Number(i.AdInstructorId))}
                   visitingIds={importVisitingIds}
                   departmentRooms={importDepartmentRooms}
                   collegeId={collegeId}
@@ -5350,6 +5357,21 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
               </>
             )}
           </aside>
+        </div>
+      ) : null}
+
+      {importErrorModal ? (
+        <div className="intel-drawer-backdrop" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) setImportErrorModal(null); }}>
+          <div style={{ background: "var(--surface)", padding: "32px", borderRadius: "18px", maxWidth: "480px", width: "90%", margin: "auto", boxShadow: "0 20px 40px rgba(0,0,0,0.18)", border: "1px solid var(--line)", direction: "rtl", textAlign: "right" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+              <span style={{ color: "var(--warn)", display: "inline-flex" }}><AlertTriangle size={28} /></span>
+              <h3 style={{ margin: 0, fontSize: "18px", color: "var(--foreground)" }}>تعذر حفظ المسودة أو تعبئة الجدول</h3>
+            </div>
+            <p style={{ color: "var(--muted)", lineHeight: "1.7", fontSize: "14px", marginBottom: "24px" }}>{importErrorModal}</p>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <PrimaryButton type="button" data-guide-ignore="زر إغلاق نافذة الخطأ الإرشادية" onClick={() => setImportErrorModal(null)}>فهمت، مراجعة الملاحظات</PrimaryButton>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

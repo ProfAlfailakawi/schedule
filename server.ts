@@ -5180,7 +5180,7 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);
   const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false});
-  if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة قبل معالجة البيانات",issues});return;}
+  if(issues.length){res.status(400).json({error:"لا يمكن حفظ المسودة أو تعبئة الجدول قبل معالجة البيانات واستكمال حقول القاعات والأساتذة والأوقات بدقة. يرجى مراجعة الملاحظات ومعالجة الأخطاء الظاهرة في جدول المعاينة أولاً.",issues});return;}
   const importLayout=req.body?.importLayout==="authority-pdf"?"authority-pdf":req.body?.importLayout==="worksheet"?"worksheet":undefined;
   if(importLayout==="authority-pdf"){
     const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
