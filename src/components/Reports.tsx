@@ -552,6 +552,21 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const fallbackCode = optionKey(row.CourseCode);
     return `${sectionId}|${visibleName || fallbackCode}`;
   }, []);
+  const rowLocation = useCallback((row: FSchedule) => {
+    let building = row.buildingId ? locationRegistry.buildings.find(item => item.id === row.buildingId) : undefined;
+    if (!building && row.AdRoomCode) {
+      const resolved = resolveBuilding(locationRegistry, row.AdRoomCode, { collegeId:Number(row.AdCollegeId)||undefined, sectionId:Number(row.AdSectionId)||undefined });
+      if (resolved.status === "CONFIRMED") building = resolved.value;
+    }
+    let room = row.roomId ? locationRegistry.rooms.find(item => item.id === row.roomId) : undefined;
+    if (!room && building && row.AdRoomHall) {
+      const resolved = resolveRoom(locationRegistry, row.AdRoomHall, building.id, { collegeId:Number(row.AdCollegeId)||undefined, sectionId:Number(row.AdSectionId)||undefined, buildingId:building.id });
+      if (resolved.status === "CONFIRMED") room = resolved.value;
+    }
+    return { building, room };
+  }, [locationRegistry]);
+  const rowMatchesBuilding = useCallback((row: FSchedule, buildingId: string) => !buildingId || rowLocation(row).building?.id === buildingId, [rowLocation]);
+  const rowMatchesRoom = useCallback((row: FSchedule, roomId: string) => !roomId || rowLocation(row).room?.id === roomId, [rowLocation]);
   const courseOptions = useMemo(() => {
     // Cascading query logic: once a room/building is chosen, a course selector
     // must describe that physical context, not the whole department catalogue.
@@ -582,21 +597,6 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     instructors,
     row => optionKey(row.AdInstructorCivil) || optionKey(row.AdInstructorName), filters.instructorId, row => Number(row.AdInstructorId),
   ), [instructors, filters.instructorId]);
-  const rowLocation = useCallback((row: FSchedule) => {
-    let building = row.buildingId ? locationRegistry.buildings.find(item => item.id === row.buildingId) : undefined;
-    if (!building && row.AdRoomCode) {
-      const resolved = resolveBuilding(locationRegistry, row.AdRoomCode, { collegeId:Number(row.AdCollegeId)||undefined, sectionId:Number(row.AdSectionId)||undefined });
-      if (resolved.status === "CONFIRMED") building = resolved.value;
-    }
-    let room = row.roomId ? locationRegistry.rooms.find(item => item.id === row.roomId) : undefined;
-    if (!room && building && row.AdRoomHall) {
-      const resolved = resolveRoom(locationRegistry, row.AdRoomHall, building.id, { collegeId:Number(row.AdCollegeId)||undefined, sectionId:Number(row.AdSectionId)||undefined, buildingId:building.id });
-      if (resolved.status === "CONFIRMED") room = resolved.value;
-    }
-    return { building, room };
-  }, [locationRegistry]);
-  const rowMatchesBuilding = useCallback((row: FSchedule, buildingId: string) => !buildingId || rowLocation(row).building?.id === buildingId, [rowLocation]);
-  const rowMatchesRoom = useCallback((row: FSchedule, roomId: string) => !roomId || rowLocation(row).room?.id === roomId, [rowLocation]);
   const instructorById = useMemo(() => new Map(instructors.map(x => [x.AdInstructorId, x])), [instructors]);
   const courseById = useMemo(() => new Map(courses.map(x => [x.AdCourseId, x])), [courses]);
   const collegeById = useMemo(() => new Map(colleges.map(x => [x.AdCollegeId, x])), [colleges]);
