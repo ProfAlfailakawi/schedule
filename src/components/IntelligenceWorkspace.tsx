@@ -2222,11 +2222,15 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       value: formatCompactDurationArabic(Number(item.maxGap || 0)),
     }));
   }, [overview?.professorLoads]);
-  const lateReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => rows.filter(row => twinMinutes(row.fstarttime) >= 16 * 60).sort((a,b) => twinMinutes(a.fstarttime) - twinMinutes(b.fstarttime)).slice(0, 12).map(row => ({
-    title: reasonCourse(row),
-    meta: `${reasonInstructor(row)} · شعبة ${row.SCode || "—"} · ${reasonDays(row) || "بلا أيام"}`,
-    value: formatScheduleTimeRange(row.fstarttime, row.fendtime),
-  })), [rows, reasonCourseById, reasonInstructorById]);
+  const lateReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => rows.filter(row => twinMinutes(row.fstarttime) >= 16 * 60).sort((a,b) => twinMinutes(a.fstarttime) - twinMinutes(b.fstarttime)).slice(0, 12).map(row => {
+    const course = reasonCourseById.get(Number(row.AdCourseId));
+    const courseName = String(row.AdCourseName || course?.CourseName || "").trim();
+    return {
+      title: reasonCourse(row),
+      meta: `${courseName ? `${courseName} · ` : ""}${reasonInstructor(row)} · شعبة ${row.SCode || "—"} · ${reasonDays(row) || "بلا أيام"}`,
+      value: formatScheduleTimeRange(row.fstarttime, row.fendtime),
+    };
+  }), [rows, reasonCourseById, reasonInstructorById]);
   const invalidReasonItems = useMemo<NonNullable<InsightReason["items"]>>(() => rows.filter(row => !row.AdInstructorId || !row.AdCourseId || !row.AdRoomCode || !row.AdRoomHall || twinMinutes(row.fendtime) <= twinMinutes(row.fstarttime) || !reasonDays(row)).slice(0, 12).map(row => {
     const missing = [!row.AdInstructorId ? "الأستاذ" : "", !row.AdCourseId ? "المقرر" : "", !row.AdRoomCode || !row.AdRoomHall ? "القاعة" : "", twinMinutes(row.fendtime) <= twinMinutes(row.fstarttime) ? "الوقت" : "", !reasonDays(row) ? "الأيام" : ""].filter(Boolean);
     return { title: `${reasonCourse(row)} · شعبة ${row.SCode || "—"}`, meta: `ناقص: ${missing.join("، ")}`, value: `${missing.length} حقول` };
@@ -3389,7 +3393,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <div className="genome-rooms">
                   <span>القاعات المعتادة</span>
                   {(genome.dna?.rooms || []).slice(0, 5).map((r: any) => (
-                    <b key={r.key}>{r.key.replace("|", "/")}</b>
+                    <b key={r.key}>{String(r.key).replace(/^legacy:/i, "").replace("|", "/")}</b>
                   ))}
                 </div>
               </div>

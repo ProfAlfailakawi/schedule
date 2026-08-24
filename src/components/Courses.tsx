@@ -460,10 +460,6 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
               </p>
               <div className="inspector-facts">
                 <article>
-                  <span>الرقم الأكاديمي للمقرر</span>
-                  <b>{selected.CourseCode}</b>
-                </article>
-                <article>
                   <span>الوحدات</span>
                   <b>{selected.CourseCredit}</b>
                 </article>

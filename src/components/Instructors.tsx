@@ -361,10 +361,6 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
                   <span>رقم الهاتف</span>
                   <b dir="ltr">{selected.AdInstructorMobile || "—"}</b>
                 </article>
-                <article>
-                  <span>المعرّف</span>
-                  <b>{selected.AdInstructorId}</b>
-                </article>
               </div>
               <div className="inspector-actions">
                 <PrimaryButton onClick={() => edit(selected)}>

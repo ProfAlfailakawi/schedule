@@ -37,6 +37,7 @@ ok('04 whitespace normalization', norm('B 09')=='B09')
 ok('05 lowercase normalization', norm('b09')=='B09')
 ok('06 suspicious G09 not blind building', not any(b['officialCode']=='012G09' and b['confidence']=='CONFIRMED' for b in B) or any(c['rawValue'].upper()=='G09' for c in C))
 ok('07 placeholders not rooms', all(norm(r['canonicalCode']) not in {'TBA','00','0','-','---','PENDING_ROOM'} for r in R))
+ok('07b CANCEL placeholders handled in runtime', all(x in (ROOT/'src/utils/locationRegistry.ts').read_text() for x in ['CANCEL','Pure punctuation/garbage']))
 room_alias=next((r for r in R if r['confidence']=='CONFIRMED' and r.get('aliases')),None)
 ok('08 room alias in building', room_alias is not None and resolve_room(room_alias['aliases'][0]['value'],room_alias['buildingId']) is not None)
 code_multi={}

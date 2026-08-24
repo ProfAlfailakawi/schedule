@@ -329,10 +329,6 @@ export default function Sections({ embedded = false, actionSlot = null }: { embe
                   <span>الكلية</span>
                   <b>{collegeName(selected.AdCollegeId) || "—"}</b>
                 </article>
-                <article>
-                  <span>المعرّف</span>
-                  <b>{selected.AdSectionId}</b>
-                </article>
               </div>
               <div className="inspector-actions inspector-actions-primary">
                 <PrimaryButton onClick={() => edit(selected)}>

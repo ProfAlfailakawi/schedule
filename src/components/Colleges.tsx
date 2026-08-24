@@ -306,10 +306,6 @@ export default function Colleges({ embedded = false, actionSlot = null }: { embe
                   <span>رمز الكلية</span>
                   <b>{selected.AdCollegeCode}</b>
                 </article>
-                <article>
-                  <span>المعرّف</span>
-                  <b>{selected.AdCollegeId}</b>
-                </article>
               </div>
               <section className="campus-mobility-card" aria-labelledby="college-mobility-title">
                 <button

@@ -277,10 +277,6 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
               <h2>{selected.AdTermName}</h2>
               <p>مرجع الجداول والنسخ.</p>
               <div className="inspector-facts">
-                <article>
-                  <span>المعرّف</span>
-                  <b>{selected.AdTermId}</b>
-                </article>
               </div>
               <div className="inspector-actions">
                 <PrimaryButton onClick={() => edit(selected)}>

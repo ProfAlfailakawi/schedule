@@ -315,6 +315,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [printKind, setPrintKind] = useState<Exclude<PrintKind, null>>(() => (LENSES.some(x => x.id === saved.lens) ? saved.lens : LENS_FOR_MODE[mode] || "list"));
   const [authorityReport, setAuthorityReport] = useState<AuthorityReport | null>(null);
   const [authorityReportBusy, setAuthorityReportBusy] = useState(false);
+  const [authorityReportAvailable, setAuthorityReportAvailable] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [visibleLimit, setVisibleLimit] = useState(150);
@@ -551,10 +552,28 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const fallbackCode = optionKey(row.CourseCode);
     return `${sectionId}|${visibleName || fallbackCode}`;
   }, []);
-  const courseOptions = useMemo(() => dedupeVisibleOptions(
-    sortByName(courses.filter(c => !filters.sectionId || c.AdSectionId === filters.sectionId), (c: AdCourse) => c.CourseName),
-    row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
-  ), [courses, filters.sectionId, filters.courseId, courseIdentityKey]);
+  const courseOptions = useMemo(() => {
+    // Cascading query logic: once a room/building is chosen, a course selector
+    // must describe that physical context, not the whole department catalogue.
+    const contextualRows = all.filter(row =>
+      (!filters.collegeId || Number(row.AdCollegeId) === Number(filters.collegeId)) &&
+      (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) &&
+      (!filters.termId || Number(row.AdTermId) === Number(filters.termId)) &&
+      (!filters.building || String(row.buildingId || "") === filters.building) &&
+      (!filters.hall || String(row.roomId || "") === filters.hall)
+    );
+    const allowedIds = (filters.building || filters.hall)
+      ? new Set(contextualRows.map(row => Number(row.AdCourseId)).filter(Boolean))
+      : null;
+    const source = courses.filter(c =>
+      (!filters.sectionId || c.AdSectionId === filters.sectionId) &&
+      (!allowedIds || allowedIds.has(Number(c.AdCourseId)) || Number(c.AdCourseId) === Number(filters.courseId))
+    );
+    return dedupeVisibleOptions(
+      sortByName(source, (c: AdCourse) => c.CourseName),
+      row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
+    );
+  }, [all, courses, filters.collegeId, filters.sectionId, filters.termId, filters.building, filters.hall, filters.courseId, courseIdentityKey]);
   const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
     terms,
     row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
@@ -979,6 +998,18 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     window.setTimeout(() => { if (!leftForPrint && !resumed) openReportEvents(); }, 2500);
   };
 
+  useEffect(() => {
+    let cancelled = false;
+    const { collegeId, sectionId, termId } = filters;
+    if (!collegeId || !sectionId || !termId || !all.length) { setAuthorityReportAvailable(false); return; }
+    const query = new URLSearchParams({ collegeId:String(collegeId), sectionId:String(sectionId), termId:String(termId), meta:"1" });
+    fetch(`/api/reports/authority-pdf-diff?${query}`)
+      .then(async response => response.ok ? response.json() : null)
+      .then(data => { if (!cancelled) setAuthorityReportAvailable(Boolean(data?.hasChanges)); })
+      .catch(() => { if (!cancelled) setAuthorityReportAvailable(false); });
+    return () => { cancelled = true; };
+  }, [filters.collegeId, filters.sectionId, filters.termId, all.length]);
+
   const printAuthorityReport = async () => {
     if (!filters.collegeId || !filters.sectionId || !filters.termId) {
       setError("اختر الفصل والكلية والقسم أولاً لفتح تقرير تغييرات الجدول.");
@@ -1133,7 +1164,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       <PageTitle eyebrow="الاستعلامات والتقارير" subtitle={`سؤال واحد · ${shownLenses.length === 8 ? "ثماني عدسات" : "سبع عدسات"}`}>مركز الاستعلام</PageTitle>
 
       {error ? (
-        <Notice>
+        <Notice onDismiss={() => setError(null)}>
           {error}
           {/* A failure with no way forward is a dead end; one press retries the
               read that failed rather than making the reader reload the page. */}
@@ -1362,7 +1393,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
               <Table2 aria-hidden="true" />التقرير الشامل
             </SecondaryButton>
-            {!pending && all.length ? (
+            {!pending && all.length && authorityReportAvailable ? (
               <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل">
                 <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
               </SecondaryButton>
