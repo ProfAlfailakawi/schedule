@@ -607,8 +607,8 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   /* Column bands between consecutive rules, plus the open band left of the
      first rule where this layout keeps the instructor names. */
   const columnBands:{left:number;right:number}[]=[];
-  const leftOpenStart=Math.max(0,cols[0]-Math.round(image.width*0.11));
-  if(cols[0]>image.width*0.04)columnBands.push({left:leftOpenStart,right:cols[0]});
+  const leftOpenStart=Math.max(0,cols[0]-Math.round(image.width*0.20));
+  if(cols[0]>image.width*0.02)columnBands.push({left:leftOpenStart,right:cols[0]});
   for(let i=0;i<cols.length-1;i++){
     const width=cols[i+1]-cols[i];
     if(width>=Math.max(18,image.width*0.008))columnBands.push({left:cols[i],right:cols[i+1]});
@@ -1403,7 +1403,7 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     return{item,score};
   }).sort((a,b)=>b.score-a.score);
   const top=ranked[0],runner=ranked[1];
-  if(top&&top.score>=0.65&&(!runner||top.score-runner.score>=0.12))return top.item.person;
+  if(top&&top.score>=0.38&&(!runner||top.score-runner.score>=0.06))return top.item.person;
   return undefined;
 }
 
@@ -1496,16 +1496,38 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   }
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
   for(const {grid,course} of firstPass){
-    if(!course){
-      if(grid.code||grid.courseText.length>4)
-        issues.push(`صف غير مطابق: «${grid.courseText||grid.code}» — لا يقابله مقرر في كتالوج القسم`);
-      continue;
-    }
     const flags = parseDays(grid.days) || parseDays(grid.courseText) || parseDays(grid.instructorText) || parseDays(`${grid.code} ${grid.courseText}`) || EMPTY_DAYS;
     const instructorHit=matchInstructorName(grid.instructorText||`${grid.courseText} ${grid.code}`,instructors,preferredInstructorIds)
       ||matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
     const cleanBuilding = cleanBuildingCode(grid.building) || cleanBuildingCode(grid.hall);
     const cleanHall = cleanHallCode(grid.hall) || cleanHallCode(grid.building);
+
+    if(!course){
+      // Include unmapped row instead of discarding it, so the user can easily select the course and fix data
+      const rawLabel = grid.courseText || grid.code || "مقرر غير معروف";
+      rows.push({
+        sourceOrder:order++,
+        referenceNumber:grid.reference,
+        AdCourseId:0,AdCourseName:rawLabel,SCode:grid.scode,
+        AdInstructorId:instructorHit?.AdInstructorId||0,
+        TotalHours:3,TotalUnits:3,
+        CourseHours:3,CourseCredit:3,
+        fcontacthours:3,fcredithours:3,
+        ...flags,
+        fstarttime:grid.start,fendtime:grid.end,
+        AdRoomCode:cleanBuilding,AdRoomHall:cleanHall,
+        ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,cleanBuilding,cleanHall,grid.instructorText].filter(Boolean).join(" | "),
+        sourceInstructorText:instructorHit?.AdInstructorName||grid.instructorText,
+      });
+      issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
+      if(!grid.start)issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
+      if(!Object.values(flags).some(Boolean))issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الأيام`);
+      if(!instructorHit&&grid.instructorText&&!grid.instructorText.includes("هيئة")&&!grid.instructorText.includes("هيئه"))
+        issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على أستاذ المقرر («${grid.instructorText}»)`);
+      if(!cleanBuilding&&!cleanHall)issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
+      continue;
+    }
+
     rows.push({
       sourceOrder:order++,
       referenceNumber:grid.reference,
@@ -1608,7 +1630,43 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       }
     }
 
-    if(!matchedCourse)continue;
+    if(!matchedCourse){
+      const rawCourseText = cells.find(c => /[ء-ي]/.test(c.text) && !activityTokens.some(act => c.text.includes(act)))?.text || line;
+      // Extract time, days, room, instructor for unmapped row
+      let time:{start:string;end:string}|null=null;
+      for(const cell of cells){const found=timePair(cell.text);if(found){time=found;break;}}
+      if(!time)time=timePair(line);
+
+      let flags:typeof EMPTY_DAYS|null=null;
+      for(const cell of cells){const found=parseDays(cell.text);if(found){flags=found;break;}}
+      if(!flags)flags=parseDays(line);
+
+      let roomCode="",roomHall="";
+      for(const cell of cells){
+        const text=toAscii(cell.text).trim();
+        const b=cleanBuildingCode(text);if(b&&!roomCode)roomCode=b;
+        const h=cleanHallCode(text);if(h&&!roomHall)roomHall=h;
+      }
+      if(!roomCode)roomCode=cleanBuildingCode(line);
+      if(!roomHall)roomHall=cleanHallCode(line);
+
+      const reference=digitRuns.find(value=>/^\d{4,8}$/.test(value))||"";
+      const instructorHit=matchInstructorName(line,instructors,preferredInstructorIds);
+
+      rows.push({
+        sourceOrder:order++,referenceNumber:reference,
+        AdCourseId:0,AdCourseName:rawCourseText,SCode:section||"501",
+        AdInstructorId:instructorHit?.AdInstructorId||0,
+        TotalHours:3,TotalUnits:3,CourseHours:3,CourseCredit:3,
+        fcontacthours:3,fcredithours:3,
+        ...(flags||EMPTY_DAYS),
+        fstarttime:time?.start||"",fendtime:time?.end||"",
+        AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,
+        sourceInstructorText:instructorHit?.AdInstructorName||"",
+      });
+      issues.push(`صف «${rawCourseText}»: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
+      continue;
+    }
     const courseName=matchedCourse.CourseName;
 
     // Rule 6: Exact time extraction with valid university lecture range

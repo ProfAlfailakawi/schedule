@@ -123,6 +123,7 @@ export default function ImportPreviewTable({
 
   const hasDays = (row: ImportRow) => DAY_CHIPS.some(day => Boolean(row[day.key]));
   const missing = {
+    course: (row: ImportRow) => !Number(row.AdCourseId),
     scode: (row: ImportRow) => !String(row.SCode || "").trim(),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
@@ -226,11 +227,41 @@ export default function ImportPreviewTable({
               <React.Fragment key={`${row.referenceNumber || "row"}-${index}`}>
                 <tr className={open ? "is-editing" : ""}>
                   <td className="num">{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
-                  <td className="import-cell-course">
-                    <div className="import-locked-course">
-                      <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
-                      {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
-                    </div>
+                  <td className={`import-cell-course ${red(missing.course(row))}`}>
+                    {open ? (
+                      <div className="import-course-editor">
+                        <select
+                          value={Number(row.AdCourseId) || ""}
+                          onChange={e => {
+                            const cid = Number(e.target.value) || 0;
+                            const sel = courseById.get(cid);
+                            patch(index, {
+                              AdCourseId: cid,
+                              AdCourseName: sel?.CourseName || row.AdCourseName,
+                              CourseHours: sel?.CourseHours || row.CourseHours,
+                              CourseCredit: sel?.CourseCredit || row.CourseCredit,
+                              fcontacthours: sel?.CourseHours || row.fcontacthours,
+                              fcredithours: sel?.CourseCredit || row.fcredithours,
+                            });
+                          }}
+                        >
+                          <option value="">-- اختر المقرر من كتالوج القسم --</option>
+                          {courses.map(c => (
+                            <option key={c.AdCourseId} value={c.AdCourseId}>
+                              {c.CourseName} ({c.CourseCode || "بلا رمز"})
+                            </option>
+                          ))}
+                        </select>
+                        {row.AdCourseName && !course ? (
+                          <small className="muted">قرأ الملف: {row.AdCourseName}</small>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="import-locked-course">
+                        <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
+                        {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
+                      </div>
+                    )}
                   </td>
                   <td className={red(missing.scode(row))}>
                     {open ? <div className="import-section-editor"><input inputMode="numeric" value={String(row.SCode || "")} readOnly aria-readonly="true" /><small>تلقائي حسب ظهورها</small></div> : (String(row.SCode || "").trim() || "—")}

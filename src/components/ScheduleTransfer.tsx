@@ -417,7 +417,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const saveExcelDraft = async (publishNow=false) => {
-    if (!xlsxPreview?.valid) return;
+    if (!xlsxPreview?.valid) {
+      setError("لا يمكن حفظ المسودة أو تعبئة الجدول قبل إكمال الحقول الناقصة (المميزة باللون الأحمر أعلاه مثل اسم المقرر، أستاذ المقرر، الوقت أو القاعة). يرجى الضغط على زر التعديل (✏️) بجانب الصفوف غير المكتملة لتعديلها.");
+      return;
+    }
     setBusy(true); setError(null);
     try {
       const response = await fetch("/api/intelligence/drafts", {
@@ -638,6 +641,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         rows={xlsxPreview.rows as ImportRow[]}
                         courses={deptCourses as any}
                         instructors={instructors as any}
+                        collegeId={collegeId}
+                        sectionId={sectionId}
+                        termId={termId}
                         onRows={next => setXlsxPreview((prev: any) => prev ? { ...prev, rows: next, count: next.length, valid: next.length > 0 } : prev)}
                       />
                       {xlsxPreview.issues?.length ? (
@@ -663,15 +669,20 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")
                       ? "اكتمل تعبئة الجدول ونشره بنجاح. تقرير تغييرات PDF أصبح متاحاً في مركز الاستعلامات والتقارير."
                       : "حُفظت المسودة داخل أدوات البيانات. يمكنك نشرها من هنا متى شئت."}</p>
-                  ) : xlsxPreview.valid ? (
-                    <div className="transfer-import-commit">
-                      <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy}>
-                        {busy ? "يجهّز…" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
-                      </PrimaryButton>
-                      {importKind==="authority-pdf" ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy}>حفظ كمسودة فقط</SecondaryButton> : null}
-                    </div>
                   ) : (
-                    <p className="muted">صحّح الخانات الحمراء ثم اعتمدها — لا يُنشر صف ناقص أو غير مطابق.</p>
+                    <div className="transfer-import-commit-wrap">
+                      <div className="transfer-import-commit">
+                        <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy}>
+                          {busy ? "يجهّز…" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
+                        </PrimaryButton>
+                        {importKind==="authority-pdf" ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy}>حفظ كمسودة فقط</SecondaryButton> : null}
+                      </div>
+                      {!xlsxPreview.valid ? (
+                        <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-xs mt-2">
+                          ⚠️ تنبيه: توجد صفوف بحاجة لإكمال بياناتها (المقرر، الوقت، اليوم، المبنى/القاعة، أو أستاذ المقرر). اضغط على زر <b>تعديل (✏️)</b> في يمين أي صف ملون بالأحمر لتصحيحه، ثم اضغط حفظ لتعبئة ونشر الجدول.
+                        </p>
+                      ) : null}
+                    </div>
                   )}
                 </div>
               ) : null}
