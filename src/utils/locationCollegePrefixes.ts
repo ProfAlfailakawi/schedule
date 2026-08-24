@@ -4,18 +4,18 @@
  * Example: 012B + building 7 => 012B07.
  */
 export const OFFICIAL_COLLEGE_SITE_PREFIXES = [
-  { collegeName: "كلية التربية الأساسية - بنات", sitePrefix: "012B" },
-  { collegeName: "كلية التربية الأساسية - بنين", sitePrefix: "011B" },
-  { collegeName: "كلية التربية الأساسية - بنات - الجهراء", sitePrefix: "012J" },
-  { collegeName: "كلية التربية الأساسية - بنات - الفحيحيل", sitePrefix: "012F" },
-  { collegeName: "كلية الدراسات التجارية - بنات", sitePrefix: "022T" },
-  { collegeName: "كلية الدراسات التجارية - بنين", sitePrefix: "021T" },
-  { collegeName: "كلية العلوم الصحية - بنات", sitePrefix: "032B" },
-  { collegeName: "كلية العلوم الصحية - بنين", sitePrefix: "031B" },
-  { collegeName: "كلية التمريض - بنين", sitePrefix: "0510" },
-  { collegeName: "كلية التمريض - بنات", sitePrefix: "0520" },
-  { collegeName: "كلية الدراسات التكنولوجية - بنات", sitePrefix: "0420" },
-  { collegeName: "كلية الدراسات التكنولوجية - بنين", sitePrefix: "0410" },
+  { collegeName: "كلية التربية الأساسية - بنات", sitePrefix: "012B", siteLabel: "التربية الأساسية" },
+  { collegeName: "كلية التربية الأساسية - بنين", sitePrefix: "011B", siteLabel: "التربية الأساسية - بنين" },
+  { collegeName: "كلية التربية الأساسية - بنات - الجهراء", sitePrefix: "012J", siteLabel: "التربية الأساسية - الجهراء" },
+  { collegeName: "كلية التربية الأساسية - بنات - الفحيحيل", sitePrefix: "012F", siteLabel: "التربية الأساسية - الفحيحيل" },
+  { collegeName: "كلية الدراسات التجارية - بنات", sitePrefix: "022T", siteLabel: "الدراسات التجارية - بنات" },
+  { collegeName: "كلية الدراسات التجارية - بنين", sitePrefix: "021T", siteLabel: "الدراسات التجارية - بنين" },
+  { collegeName: "كلية العلوم الصحية - بنات", sitePrefix: "032B", siteLabel: "العلوم الصحية - بنات" },
+  { collegeName: "كلية العلوم الصحية - بنين", sitePrefix: "031B", siteLabel: "العلوم الصحية - بنين" },
+  { collegeName: "كلية التمريض - بنين", sitePrefix: "0510", siteLabel: "التمريض - بنين" },
+  { collegeName: "كلية التمريض - بنات", sitePrefix: "0520", siteLabel: "التمريض - بنات" },
+  { collegeName: "كلية الدراسات التكنولوجية - بنات", sitePrefix: "0420", siteLabel: "الدراسات التكنولوجية - بنات" },
+  { collegeName: "كلية الدراسات التكنولوجية - بنين", sitePrefix: "0410", siteLabel: "الدراسات التكنولوجية - بنين" },
 ] as const;
 
 export const normalizeCollegeName = (value: unknown): string => String(value ?? "")
@@ -23,12 +23,33 @@ export const normalizeCollegeName = (value: unknown): string => String(value ?? 
   .replace(/[\s\-–—_]+/g, "")
   .trim();
 
-const PREFIX_BY_COLLEGE_NAME = new Map(
-  OFFICIAL_COLLEGE_SITE_PREFIXES.map(item => [normalizeCollegeName(item.collegeName), item.sitePrefix] as const),
+const EXTRA_COLLEGE_NAME_ALIASES: Record<string, string> = {
+  [normalizeCollegeName("التربية الأساسية")]: "012B",
+  [normalizeCollegeName("التربية الاساسية")]: "012B",
+  [normalizeCollegeName("الجهراء")]: "012J",
+  [normalizeCollegeName("التربية الأساسية - الجهراء")]: "012J",
+  [normalizeCollegeName("كلية التربية الأساسية - الجهراء")]: "012J",
+  [normalizeCollegeName("الفحيحيل")]: "012F",
+  [normalizeCollegeName("التربية الأساسية - الفحيحيل")]: "012F",
+  [normalizeCollegeName("كلية التربية الأساسية - الفحيحيل")]: "012F",
+};
+
+const PREFIX_BY_COLLEGE_NAME = new Map<string, string>([
+  ...OFFICIAL_COLLEGE_SITE_PREFIXES.map(item => [normalizeCollegeName(item.collegeName), item.sitePrefix] as const),
+  ...Object.entries(EXTRA_COLLEGE_NAME_ALIASES),
+]);
+
+const SITE_LABEL_BY_PREFIX = new Map(
+  OFFICIAL_COLLEGE_SITE_PREFIXES.map(item => [item.sitePrefix, item.siteLabel] as const),
 );
 
 export const officialCollegeSitePrefix = (collegeName: unknown): string | undefined =>
   PREFIX_BY_COLLEGE_NAME.get(normalizeCollegeName(collegeName));
+
+export const officialSiteLabel = (sitePrefix: unknown, fallback?: unknown): string => {
+  const prefix = String(sitePrefix ?? "").trim().toUpperCase();
+  return SITE_LABEL_BY_PREFIX.get(prefix) || String(fallback ?? "").trim() || prefix || "موقع غير محدد";
+};
 
 export function officialBuildingCode(sitePrefix: string, buildingNumber: unknown): string | null {
   const prefix = String(sitePrefix || "").trim().toUpperCase();
