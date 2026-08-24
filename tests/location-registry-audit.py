@@ -2,8 +2,20 @@
 import json,re,sys
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-ANALYSIS=Path('/mnt/data/location-analysis.json')
-data=json.loads(ANALYSIS.read_text())
+SEED=ROOT/'src/generated/locationRegistrySeed.ts'
+
+def load_seed():
+    # The generated seed is intentionally JSON embedded in TypeScript:
+    #   export const LOCATION_REGISTRY_SEED = {...} as const;
+    # Read that checked-in, privacy-safe artifact so CI never depends on
+    # /mnt/data, the historical backup, or a developer-specific workspace.
+    text=SEED.read_text(encoding='utf-8')
+    match=re.search(r'export\s+const\s+LOCATION_REGISTRY_SEED\s*=\s*(\{.*\})\s+as\s+const;?\s*$', text, re.S)
+    if not match:
+        raise RuntimeError(f'Unable to parse LOCATION_REGISTRY_SEED from {SEED}')
+    return json.loads(match.group(1))
+
+data=load_seed()
 B=data['buildings'];R=data['rooms'];C=data['reviewCases']; summary=data['summary']
 passed=[]
 def ok(name,cond):
