@@ -75,3 +75,10 @@ A src/server/locationRegistryEngine.ts
 A src/utils/locationCollegePrefixes.ts
 A src/utils/locationRegistry.ts
 A tests/location-registry-audit.py
+
+
+CI HOTFIX V4
+- Fixed term rollover compatibility between canonical registry identities and legacy display-room inputs.
+- `liveRooms` values such as `12/F6` are normalized at the read boundary and match the same historical room identity.
+- This fixes the three behavior regressions: confident carry count, concern count, and retired-room list.
+- New/current writes remain canonical (`buildingId` / `roomId`); this compatibility is read-only.

@@ -1,7 +1,7 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
 import { learnRhythm, offRhythm } from "./departmentRhythm";
-import { roomIdentityKey, roomDisplay } from "./locationRegistry";
+import { normalizeLocationToken, roomIdentityKey, roomDisplay } from "./locationRegistry";
 
 /**
  * ── ما الذي ينتقل من الفصل الماضي، وما الذي يحتاج قراراً ────────────────────
@@ -92,6 +92,30 @@ export interface RolloverStyle {
 
 const roomKey = (row: FSchedule) => roomIdentityKey(row);
 
+/**
+ * `liveRooms` predates the master registry and some callers still provide the
+ * display form (`12/F6`). Registry-aware callers provide `id:<roomId>` while
+ * historical rows may resolve to `legacy:12|F6`. Normalize every boundary form
+ * here so rollover decisions are about the room, not the serialization used by
+ * the caller.
+ */
+const legacyDisplayRoomKey = (code: unknown, hall: unknown) => {
+  const building = normalizeLocationToken(code);
+  const room = normalizeLocationToken(hall);
+  return building && room ? `legacy:${building}|${room}` : "";
+};
+
+const liveRoomKey = (value: unknown): string => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("id:") || raw.startsWith("legacy:")) return raw;
+  const slash = raw.indexOf("/");
+  if (slash > 0) return legacyDisplayRoomKey(raw.slice(0, slash), raw.slice(slash + 1));
+  const pipe = raw.indexOf("|");
+  if (pipe > 0) return legacyDisplayRoomKey(raw.slice(0, pipe), raw.slice(pipe + 1));
+  return raw;
+};
+
 const REASONS: Record<RolloverFlag, string> = {
   "course-gone": "المقرر لم يعد ضمن مقررات القسم",
   "course-changed": "بيانات المقرر تغيّرت عن الفصل الماضي",
@@ -118,7 +142,7 @@ export function readTermRollover(
 ): RolloverReading {
   const courseById = new Map(catalogue.map(course => [course.AdCourseId, course]));
   const instructorById = new Map(instructors.map(person => [person.AdInstructorId, person]));
-  const roomsInUse = new Set(liveRooms.filter(Boolean));
+  const roomsInUse = new Set(liveRooms.map(liveRoomKey).filter(Boolean));
 
   const unavailable = new Map<number, AdInstructor>();
   const changed = new Map<number, AdCourse>();
@@ -148,7 +172,11 @@ export function readTermRollover(
     }
 
     const place = roomKey(row);
-    if (place && !roomsInUse.has(place)) {
+    // A verified row is keyed by roomId, while an older caller may still pass
+    // the same room as `building/hall`. Accept both at this compatibility
+    // boundary; new writes remain canonical everywhere else.
+    const legacyPlace = legacyDisplayRoomKey(row.AdRoomCode, row.AdRoomHall);
+    if (place && !roomsInUse.has(place) && !roomsInUse.has(legacyPlace)) {
       flags.push("room-retired");
       retired.add(roomDisplay(row) || place);
     }
