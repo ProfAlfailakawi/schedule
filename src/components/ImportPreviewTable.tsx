@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Building2, Check, Clock3, MapPin, Pencil, Trash2, UsersRound } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
 import InstructorPicker from "./InstructorPicker";
-import LocationPicker from "./LocationPicker";
+import LocationPicker, { BuildingPicker, RoomPicker } from "./LocationPicker";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { expectedMinutesForDay, type DayKey as RegulationDayKey } from "../utils/scheduleRegulations";
 import { cleanBuildingCode, cleanHallCode } from "../utils/cleanRoom";
@@ -126,7 +126,8 @@ export default function ImportPreviewTable({
     scode: (row: ImportRow) => !String(row.SCode || "").trim(),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
-    room: (row: ImportRow) => !row.buildingId || (!row.roomId && row.locationStatus !== "PENDING_ROOM"),
+    building: (row: ImportRow) => !row.buildingId && row.locationStatus !== "PENDING_ROOM",
+    room: (row: ImportRow) => !row.roomId && row.locationStatus !== "PENDING_ROOM",
     instructor: (row: ImportRow) => !Number(row.AdInstructorId),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
@@ -240,8 +241,43 @@ export default function ImportPreviewTable({
                   <td className={red(missing.time(row))} dir="ltr">
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patch(index, { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
-                  <td className={red(missing.room(row))} colSpan={2}>
-                    {open ? <LocationPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={row as any} showRaw onChange={location=>patch(index,location as Partial<ImportRow>)} /> : <span dir="ltr">{row.locationStatus==="PENDING_ROOM"?"بانتظار تثبيت القاعة":([row.AdRoomCode,row.AdRoomHall].filter(Boolean).join("/")||"—")}</span>}
+                  <td className={red(missing.building(row))}>
+                    {open ? (
+                      <BuildingPicker
+                        collegeId={collegeId}
+                        sectionId={sectionId}
+                        termId={termId}
+                        value={row.buildingId || ""}
+                        onChange={b => patch(index, {
+                          buildingId: b?.id,
+                          roomId: undefined,
+                          AdRoomCode: b?.officialCode || "",
+                          AdRoomHall: "",
+                          locationStatus: undefined,
+                        })}
+                      />
+                    ) : (
+                      <span dir="ltr">{row.AdRoomCode || "—"}</span>
+                    )}
+                  </td>
+                  <td className={red(missing.room(row))}>
+                    {open ? (
+                      <RoomPicker
+                        collegeId={collegeId}
+                        sectionId={sectionId}
+                        termId={termId}
+                        buildingId={row.buildingId}
+                        roomId={row.roomId}
+                        locationStatus={row.locationStatus}
+                        onChange={({ roomId, canonicalCode, locationStatus }) => patch(index, {
+                          roomId,
+                          AdRoomHall: canonicalCode,
+                          locationStatus,
+                        })}
+                      />
+                    ) : (
+                      <span dir="ltr">{row.locationStatus === "PENDING_ROOM" ? "بانتظار تثبيت القاعة" : (row.AdRoomHall || "—")}</span>
+                    )}
                   </td>
                   <td className={red(missing.instructor(row))}>
                     {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds.length ? departmentIds : pickerInstructors.map(person => Number(person.AdInstructorId)).filter(Boolean)} visitingIds={visitingIds} collegeId={collegeId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || "—")}

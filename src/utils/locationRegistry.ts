@@ -15,7 +15,11 @@ export const canonicalBuildingShape = (value: unknown): string | null => {
   const token = normalizeLocationToken(value);
   if (isInvalidLocationToken(token)) return null;
   const alpha = token.match(/^(\d{1,6})([A-Z])(\d{1,3})$/);
-  if (alpha) return `${alpha[1]}${alpha[2]}${alpha[3].padStart(2,"0")}`;
+  if (alpha) {
+    let num = alpha[3];
+    if (num.length === 3 && num.endsWith("0")) num = num.slice(0, 2);
+    return `${alpha[1]}${alpha[2]}${num.padStart(2,"0")}`;
+  }
   return /^\d{4,10}$/.test(token) ? token : null;
 };
 

@@ -109,8 +109,11 @@ export default function InstructorPicker({ value, onChange, instructors, departm
   const results = useMemo(() => {
     const needle = withoutTitles(query);
     if (!needle) {
-      // Nothing typed: the department, in the order it actually teaches.
-      return departmentIds.map(id => byId.get(id)).filter(p => p && !isHidden(p)) as Instructor[];
+      // Nothing typed: the department instructors first, then any other available staff in scope.
+      const deptList = departmentIds.map(id => byId.get(id)).filter(p => p && !isHidden(p)) as Instructor[];
+      const deptSet = new Set(deptList.map(p => p.AdInstructorId));
+      const remaining = instructors.filter(p => !deptSet.has(p.AdInstructorId) && !isHidden(p));
+      return [...deptList, ...remaining];
     }
     const pool = [...new Map([...instructors, ...wider].map(person => [person.AdInstructorId, person])).values()];
     const scored = pool

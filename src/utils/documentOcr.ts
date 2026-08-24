@@ -1122,8 +1122,22 @@ const minutesOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(val
 export const cleanBuildingCode = (raw: string): string => {
   const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
   if (!clean) return "";
-  const mFull = clean.match(/(?:012|011|010)?B\d{1,3}/);
-  if (mFull) return mFull[0];
+  const mFull = clean.match(/(?:012|011|010|[0-9]{3})?([A-Z])(\d{1,3})/);
+  if (mFull) {
+    const full = clean.match(/^(\d{3})?([A-Z])(\d{1,3})$/);
+    if (full) {
+      let num = full[3];
+      if (num.length === 3 && num.endsWith("0")) num = num.slice(0, 2);
+      const prefix = full[1] || "";
+      return prefix ? `${prefix}${full[2]}${num.padStart(2, "0")}` : `${full[2]}${num.padStart(2, "0")}`;
+    }
+  }
+  const m = clean.match(/(?:012|011|010)?B\d{1,3}/);
+  if (m) {
+    let b = m[0];
+    if (b.length === 7 && b.endsWith("0")) b = b.slice(0, 6);
+    return b;
+  }
   if (/^B\d{1,3}$/.test(clean)) return clean;
   return "";
 };
@@ -1132,8 +1146,16 @@ export const cleanHallCode = (raw: string): string => {
   const clean = String(raw || "").replace(/\s+/g, "").toUpperCase();
   if (!clean) return "";
   if (/^(?:012|011|010)?B\d{1,3}$/.test(clean)) return "";
-  const m = clean.match(/([FGACDEMNPLK]|[A-Z])\d{1,4}/);
-  if (m && !/^B\d+$/.test(m[0])) return m[0];
+  const m = clean.match(/([FGACDEMNPLK]|[A-Z])(\d{1,4})/);
+  if (m && !/^B\d+$/.test(m[0])) {
+    let numStr = m[2];
+    // Remove trailing digits bleeding from adjacent seat columns (e.g. F1501 -> F15, F130 -> F13)
+    if (numStr.length >= 3 && (numStr.endsWith("0") || numStr.endsWith("01") || numStr.endsWith("00"))) {
+      if (numStr.length === 4 && numStr.endsWith("01")) numStr = numStr.slice(0, 2);
+      else if (numStr.endsWith("0")) numStr = numStr.slice(0, -1);
+    }
+    return `${m[1]}${numStr}`;
+  }
   return "";
 };
 
@@ -1310,11 +1332,26 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     return{person,normalized,tokens,preferred};
   }).filter(item=>item.tokens.length);
 
-  // 1. Direct normalized full name contains
+  // 1. Direct normalized full name contains or candidate tokens are exact ordered subset of raw tokens
   const fullMatches=candidates.filter(item=>rawClean.includes(item.normalized));
   if(fullMatches.length===1)return fullMatches[0].person;
   const prefFull=fullMatches.filter(item=>item.preferred);
   if(prefFull.length===1)return prefFull[0].person;
+
+  // 1.1 Candidate tokens are an exact subset of the longer raw name (e.g. system has 2-3 names, PDF has 4-5 names)
+  const subsetMatches = candidates.filter(item => {
+    if (item.tokens.length < 2) return false;
+    let rawIdx = 0;
+    for (const t of item.tokens) {
+      const foundIdx = rawTokens.findIndex((rt, i) => i >= rawIdx && (rt === t || (rt.length >= 3 && (rt.startsWith(t) || t.startsWith(rt)))));
+      if (foundIdx === -1) return false;
+      rawIdx = foundIdx + 1;
+    }
+    return true;
+  });
+  if (subsetMatches.length === 1) return subsetMatches[0].person;
+  const prefSubset = subsetMatches.filter(item => item.preferred);
+  if (prefSubset.length === 1) return prefSubset[0].person;
 
   // 2. First + Last name token presence
   const firstLastMatches=candidates.filter(item=>{

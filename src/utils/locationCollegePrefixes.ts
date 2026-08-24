@@ -39,7 +39,7 @@ const PREFIX_BY_COLLEGE_NAME = new Map<string, string>([
   ...Object.entries(EXTRA_COLLEGE_NAME_ALIASES),
 ]);
 
-const SITE_LABEL_BY_PREFIX = new Map(
+const SITE_LABEL_BY_PREFIX = new Map<string, string>(
   OFFICIAL_COLLEGE_SITE_PREFIXES.map(item => [item.sitePrefix, item.siteLabel] as const),
 );
 

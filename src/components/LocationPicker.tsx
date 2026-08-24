@@ -21,6 +21,23 @@ export function BuildingPicker({collegeId,sectionId,termId,value,onChange,disabl
   </select>;
 }
 
+export function RoomPicker({collegeId,sectionId,termId,buildingId,roomId,locationStatus,onChange,disabled=false,allowPending=true}:{collegeId:number;sectionId:number;termId?:number;buildingId?:string;roomId?:string;locationStatus?:string;onChange:(patch:{roomId?:string;canonicalCode:string;locationStatus?:"VERIFIED"|"PENDING_ROOM"})=>void;disabled?:boolean;allowPending?:boolean}){
+  const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId);
+  const registry=useMemo(()=>({buildings,rooms}),[buildings,rooms]);
+  const groups=useMemo(()=>buildingId?roomGroups(registry,buildingId,sectionId):{own:[],shared:[],other:[]},[registry,buildingId,sectionId]);
+  const borrowed=useMemo(()=>{const ids=new Set(borrowedRoomIds);const already=new Set([...groups.own,...groups.shared,...groups.other].map(r=>r.id));return buildingId?rooms.filter(room=>room.buildingId===buildingId&&ids.has(room.id)&&!already.has(room.id)):[];},[borrowedRoomIds,groups,rooms,buildingId]);
+  const locationPending=locationStatus==="PENDING_ROOM";
+  const chooseRoom=(id:string)=>{if(id===PENDING_ROOM){onChange({roomId:undefined,canonicalCode:"",locationStatus:"PENDING_ROOM"});return;}const r=rooms.find(x=>x.id===id);onChange({roomId:r?.id,canonicalCode:r?.canonicalCode||"",locationStatus:r?"VERIFIED":undefined});};
+  return <select aria-label="القاعة الرسمية" value={locationPending?PENDING_ROOM:(roomId||"")} disabled={disabled||!buildingId||loading} onChange={e=>chooseRoom(e.target.value)}>
+    <option value="">{buildingId?"اختر القاعة الرسمية":"اختر المبنى أولاً"}</option>
+    {groups.own.length?<optgroup label="قاعات قسمك">{groups.own.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}
+    {groups.shared.length?<optgroup label="القاعات المشتركة">{groups.shared.map(r=><option key={r.id} value={r.id}>{r.canonicalCode} — مشتركة</option>)}</optgroup>:null}
+    {borrowed.length?<optgroup label="قاعات مستعارة معتمدة">{borrowed.map(r=><option key={r.id} value={r.id}>{r.canonicalCode} — استعارة معتمدة</option>)}</optgroup>:null}
+    {groups.other.length?<optgroup label="قاعات المبنى غير المخصصة">{groups.other.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}
+    {allowPending?<option value={PENDING_ROOM}>بانتظار تثبيت القاعة</option>:null}
+  </select>;
+}
+
 export default function LocationPicker({collegeId,sectionId,termId,value,onChange,disabled=false,showRaw=false,allowPending=true}:{collegeId:number;sectionId:number;termId?:number;value:Partial<LocationValue>;onChange:(patch:Partial<LocationValue>)=>void;disabled?:boolean;showRaw?:boolean;allowPending?:boolean}){
   const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId);
   const registry=useMemo(()=>({buildings,rooms}),[buildings,rooms]);

@@ -1629,24 +1629,41 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const sectionId = Number(req.query.sectionId || 0);
   const collegeId = Number(req.query.collegeId || 0);
   const termId = Number(req.query.termId || 0);
+  const query = String(req.query.q || "").trim();
+  const limit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
+
+  // If query is provided, search across the university instructors catalog
+  if (query) {
+    const fold = (value: string) => String(value || "")
+      .replace(/[ً-ْـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
+      .replace(/[^ء-ي0-9a-zA-Z ]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+    const needle = fold(query);
+    const allInstructors = await Repository.getInstructors();
+    const filtered = allInstructors.filter(person => {
+      const name = fold(person.AdInstructorName);
+      return name.includes(needle) || String(person.AdInstructorCivil || "").includes(needle);
+    });
+    res.json(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
+    return;
+  }
+
   if (sectionId) {
     const canReadSection = Boolean(req.user?.IsAdminUser || req.scopes?.some(scope => scope.AdSectionId === sectionId));
     if (!canReadSection) { res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" }); return; }
-    const scopedInstructors = await Repository.getInstructorsByScope(sectionId, termId);
+    const termScoped = termId ? await Repository.getInstructorsByScope(sectionId, termId) : [];
+    const allDeptHistorical = await Repository.getInstructorsByScope(sectionId, 0);
     // «يدرّس هذا الفصل» must make a delegate selectable before their first row
     // exists. Merge the term roster into the ordinary scoped staff list.
     const rosterIds = collegeId && termId ? await Repository.getVisitingRoster(collegeId, sectionId, termId) : [];
     const rosterPeople = rosterIds.length
       ? (await Repository.getInstructors()).filter(person => rosterIds.includes(Number(person.AdInstructorId)))
       : [];
-    const merged = [...new Map([...scopedInstructors, ...rosterPeople].map(person => [Number(person.AdInstructorId), person])).values()];
+    const merged = [...new Map([...allDeptHistorical, ...termScoped, ...rosterPeople].map(person => [Number(person.AdInstructorId), person])).values()];
     res.json(sortArabicNamed(merged, row => row.AdInstructorName));
     return;
   }
 
-  // A wider lookup is an explicit search, never an eager 743-row payload.
-  const query = String(req.query.q || "").trim();
-  const limit = Math.max(1, Math.min(60, Number(req.query.limit || 40)));
+  // A wider lookup
   if (collegeId && !req.user?.IsAdminUser && !req.scopes?.some(scope => scope.AdCollegeId === collegeId)) {
     res.status(403).json({ error: "الكلية خارج نطاق صلاحيتك" });
     return;
@@ -1654,15 +1671,7 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
   const instructors = collegeId
     ? await Repository.getInstructorsByScheduleScope({ collegeId, termId })
     : await Repository.getInstructors();
-  if (!query) { res.json(sortArabicNamed(instructors, row => row.AdInstructorName)); return; }
-  const fold = (value: string) => String(value || "")
-    .replace(/[ً-ْـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
-    .replace(/[^ء-ي0-9a-zA-Z ]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
-  const needle = fold(query);
-  res.json(sortArabicNamed(instructors.filter(person => {
-    const name = fold(person.AdInstructorName);
-    return name.includes(needle) || String(person.AdInstructorCivil || "").includes(needle);
-  }), row => row.AdInstructorName).slice(0, limit));
+  res.json(sortArabicNamed(instructors, row => row.AdInstructorName));
 });
 
 app.post("/api/instructors", requirePermission(3), async (req: Request, res: Response) => {

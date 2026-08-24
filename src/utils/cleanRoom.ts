@@ -9,7 +9,11 @@ export const isBuildingCode = (str: string): boolean => /^(?:\d{3}[A-Z]\d{1,3}|\
 export const cleanBuildingCode = (raw: string): string => {
   const value=compact(raw); if(!value)return "";
   const full=value.match(/^(\d{3})([A-Z])(\d{1,3})$/);
-  if(full)return `${full[1]}${full[2]}${full[3].padStart(2,"0")}`;
+  if(full) {
+    let num = full[3];
+    if (num.length === 3 && num.endsWith("0")) num = num.slice(0, 2);
+    return `${full[1]}${full[2]}${num.padStart(2,"0")}`;
+  }
   if(/^\d{6}$/.test(value))return value;
   return /^[A-Z]?\d{1,3}$/.test(value)?value:"";
 };
@@ -18,7 +22,14 @@ export const cleanHallCode = (raw: string): string => {
   const value=compact(raw); if(!value)return "";
   if(isBuildingCode(value))return "";
   const alpha=value.match(/^([A-Z]+)0*(\d+)([A-Z]?)$/);
-  if(alpha)return `${alpha[1]}${Number(alpha[2])<100?String(Number(alpha[2])).padStart(2,"0"):Number(alpha[2])}${alpha[3]}`;
+  if(alpha) {
+    let numStr = alpha[2];
+    if (numStr.length >= 3 && (numStr.endsWith("0") || numStr.endsWith("01") || numStr.endsWith("00"))) {
+      if (numStr.length === 4 && numStr.endsWith("01")) numStr = numStr.slice(0, 2);
+      else if (numStr.endsWith("0")) numStr = numStr.slice(0, -1);
+    }
+    return `${alpha[1]}${Number(numStr)<100?String(Number(numStr)).padStart(2,"0"):Number(numStr)}${alpha[3]}`;
+  }
   return /^\d{1,4}[A-Z]?$/.test(value)?value:"";
 };
 

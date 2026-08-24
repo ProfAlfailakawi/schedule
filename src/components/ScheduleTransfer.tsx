@@ -599,7 +599,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
             <>
               <div className="transfer-import-hero">
                 <span><Sparkles aria-hidden="true" /></span>
-                <div><strong>المسار الافتراضي والأسهل</strong><p>نزّل النموذج، يملؤه الدكتور، ثم ارفعه؛ يطابق النظام البيانات ويجهزها للنشر تلقائياً. ويمكنك أيضاً نسخ جدول الجهة المعتمد من PDF إلى فصل فارغ.</p></div>
+                <div><strong>المسار الافتراضي والأسهل</strong><p>نزّل النموذج، املؤه ، ثم ارفعه؛ يطابق النظام البيانات ويجهزها للنشر تلقائياً. ويمكنك أيضاً نسخ جدول الجهة المعتمد من PDF إلى فصل فارغ.</p></div>
               </div>
               <input
                 ref={fileRef}
