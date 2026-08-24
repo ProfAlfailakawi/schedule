@@ -110,6 +110,15 @@ export interface FSchedule {
   fendtime: string;
   AdRoomCode: string;
   AdRoomHall: string;
+  /** Stable canonical location references. Raw legacy strings remain for historical display/audit only. */
+  buildingId?: string;
+  roomId?: string;
+  locationStatus?: "VERIFIED" | "PENDING_ROOM" | "LOCATION_REVIEW_REQUIRED" | "INVALID_HISTORICAL";
+  sourceBuildingText?: string;
+  sourceRoomText?: string;
+  locationMigrationId?: string;
+  locationMigrationVersion?: string;
+  locationResolvedAt?: string;
   fdetail?: string;
   /** Source-PDF trace. Empty for ordinary/new rows; never used as an internal id. */
   referenceNumber?: string;
@@ -138,6 +147,135 @@ export interface AdRoom {
   AdRoomCode: string;
   AdRoomHall: string;
   AdRoomDescrip: string;
+}
+
+export type LocationConfidence = "CONFIRMED" | "PROBABLE" | "REVIEW_REQUIRED" | "INVALID";
+export type ScheduleLocationStatus = "VERIFIED" | "PENDING_ROOM" | "LOCATION_REVIEW_REQUIRED" | "INVALID_HISTORICAL";
+
+export interface LocationRegistryAlias {
+  value: string;
+  usageCount?: number;
+  confidence: LocationConfidence;
+  evidence?: string[];
+}
+
+export interface LocationAuditRecord {
+  id?: string;
+  at: string;
+  byUserId?: number;
+  action: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  note?: string;
+}
+
+export interface MasterBuilding {
+  id: string;
+  officialCode: string;
+  /** Authoritative college/site identity, e.g. 012B, 0510. */
+  sitePrefix?: string;
+  prefix: string;
+  siteLetter: string;
+  buildingNumber: string;
+  siteName?: string;
+  branchName?: string;
+  description?: string;
+  active: boolean;
+  aliases: LocationRegistryAlias[];
+  collegeIds: number[];
+  sectionIds: number[];
+  historicalUsageCount: number;
+  firstTermId?: number;
+  lastTermId?: number;
+  roomCount: number;
+  confidence: LocationConfidence;
+  source: string;
+  adminVerified: boolean;
+  evidence: string[];
+  auditHistory: LocationAuditRecord[];
+  createdAt?: string;
+  updatedAt?: string;
+  lastVerifiedAt?: string;
+}
+
+export interface MasterRoom {
+  id: string;
+  buildingId: string;
+  buildingCode: string;
+  canonicalCode: string;
+  active: boolean;
+  aliases: LocationRegistryAlias[];
+  collegeIds: number[];
+  sectionIds: number[];
+  primarySectionIds?: number[];
+  shared: boolean;
+  sharedConfidence?: LocationConfidence;
+  historicalUsageCount: number;
+  firstTermId?: number;
+  lastTermId?: number;
+  confidence: LocationConfidence;
+  source: string;
+  adminVerified: boolean;
+  evidence: string[];
+  auditHistory: LocationAuditRecord[];
+  createdAt?: string;
+  updatedAt?: string;
+  lastVerifiedAt?: string;
+}
+
+export interface LocationReviewCase {
+  id: string;
+  kind: "BUILDING" | "ROOM" | "PAIR" | "SWAPPED_FIELDS" | "UNKNOWN_PREFIX" | "CROSS_BUILDING_ROOM_CODE";
+  rawValue: string;
+  occurrences: number;
+  termNames: string[];
+  sectionNames: string[];
+  collegeNames: string[];
+  sectionIds: number[];
+  collegeIds: number[];
+  buildingCandidate?: string;
+  buildingCandidates: string[];
+  roomCandidate?: string;
+  roomCandidates: string[];
+  reason: string;
+  recommendation: string;
+  confidence: LocationConfidence;
+  status: "open" | "resolved" | "ignored";
+  resolution?: string;
+  resolvedAt?: string;
+  resolvedBy?: number;
+}
+
+export interface LocationMigrationLog {
+  id: string;
+  migrationId: string;
+  scheduleId: number;
+  timestamp: string;
+  oldBuilding: string;
+  newBuilding?: string;
+  oldRoom: string;
+  newRoom?: string;
+  oldBuildingId?: string;
+  newBuildingId?: string;
+  oldRoomId?: string;
+  newRoomId?: string;
+  oldStatus?: ScheduleLocationStatus;
+  newStatus?: ScheduleLocationStatus;
+  oldMigrationVersion?: string;
+  newMigrationVersion?: string;
+  confidence: LocationConfidence;
+  rule: string;
+}
+
+export interface LocationMigrationRun {
+  id: string;
+  version: string;
+  createdAt: string;
+  completedAt?: string;
+  byUserId: number;
+  status: "preview" | "running" | "completed" | "rolled_back" | "failed";
+  restorePointId?: string;
+  stats: Record<string, number>;
 }
 
 // Additive campus-mobility settings. Existing legacy college/room records stay untouched.
@@ -315,6 +453,8 @@ export interface HallBarterRequest {
   createdAt: string;
   updatedAt: string;
   AdTermId: number;
+  buildingId?: string;
+  roomId?: string;
   roomCode: string;
   roomHall: string;
   day: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
@@ -438,6 +578,9 @@ export interface ScheduleConstraint {
   AdCourseId?: number;
   day?: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
   time?: string;
+  buildingId?: string;
+  roomId?: string;
+  /** Canonical display values retained for readable audit/history; IDs are authoritative. */
   roomCode?: string;
   roomHall?: string;
   maxMinutes?: number;

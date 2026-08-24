@@ -1,6 +1,7 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Clock3, Maximize2, X } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
+import LocationPicker from "./LocationPicker";
 import type { DayKey } from "./scheduleWorkspace";
 import {
   formatScheduleTimeRange,
@@ -40,6 +41,9 @@ export type QuickDraft = {
   instructorId: number;
   room: string;
   hall: string;
+  buildingId?: string;
+  roomId?: string;
+  locationStatus?: "VERIFIED" | "PENDING_ROOM";
   start: string;
   end: string;
 };
@@ -117,11 +121,9 @@ export default function QuickCreatePopover({
   seed,
   courses,
   instructors,
-  buildings,
-  hallsFor,
-  isKnownRoom,
-  onPinRoom,
-  roomPinBusy,
+  collegeId,
+  sectionId,
+  termId,
   durationForDay,
   conflictOf,
   nextSectionCode,
@@ -134,13 +136,9 @@ export default function QuickCreatePopover({
   seed: QuickSeed;
   courses: AdCourse[];
   instructors: AdInstructor[];
-  buildings: string[];
-  hallsFor: (building: string) => string[];
-  /** Complete department room history. Typing remains free; this only decides
-      whether the typed pair is new and may be pinned. */
-  isKnownRoom?: (building: string, hall: string) => boolean;
-  onPinRoom?: (building: string, hall: string) => Promise<boolean | void>;
-  roomPinBusy?: boolean;
+  collegeId: number;
+  sectionId: number;
+  termId: number;
   /** The department's learned duration for the chosen day, with the
       institutional 50/80-minute rhythm supplied by the parent as fallback. */
   durationForDay?: (day: DayKey) => number;
@@ -165,8 +163,9 @@ export default function QuickCreatePopover({
     courseId: 0,
     scode: "",
     instructorId: seed.instructorId || 0,
-    room: seed.room || "",
-    hall: seed.hall || "",
+    room: "",
+    hall: "",
+    buildingId: undefined, roomId: undefined, locationStatus: undefined,
     start: timeOf(openedStart),
     end: timeOf(openedEnd),
   });
@@ -254,9 +253,7 @@ export default function QuickCreatePopover({
     };
   }, [onCancel]);
 
-  const halls = hallsFor(draft.room);
-  const newRoom = Boolean(draft.room.trim() && draft.hall.trim() && isKnownRoom && !isKnownRoom(draft.room, draft.hall));
-  const ready = Boolean(draft.courseId && draft.scode.trim() && draft.instructorId && draft.room.trim() && draft.hall.trim());
+  const ready = Boolean(draft.courseId && draft.scode.trim() && draft.instructorId && draft.buildingId && (draft.roomId || draft.locationStatus === "PENDING_ROOM"));
   const digitsOk = /^\d*$/.test(toEnglishDigits(draft.scode));
   const clash = ready && digitsOk ? conflictOf(draft, seed.day) : null;
 
@@ -354,46 +351,16 @@ export default function QuickCreatePopover({
             ))}
           </select>
         </label>
-        <label className="qc-field qc-narrow">
-          <span>المبنى</span>
-          <input
-            value={draft.room}
-            list="qc-buildings"
-            dir="ltr"
-            onChange={(e) => patch({ room: e.target.value, hall: "" })}
+        <div className="qc-wide">
+          <LocationPicker
+            collegeId={collegeId}
+            sectionId={sectionId}
+            termId={termId}
+            value={{AdRoomCode:draft.room,AdRoomHall:draft.hall,buildingId:draft.buildingId,roomId:draft.roomId,locationStatus:draft.locationStatus}}
+            onChange={(location)=>patch({room:String(location.AdRoomCode||""),hall:String(location.AdRoomHall||""),buildingId:location.buildingId,roomId:location.roomId,locationStatus:location.locationStatus as any})}
           />
-          <datalist id="qc-buildings">
-            {buildings.map((code) => <option key={code} value={code} />)}
-          </datalist>
-        </label>
-        <label className="qc-field qc-narrow">
-          <span>القاعة</span>
-          <input
-            value={draft.hall}
-            list="qc-halls"
-            dir="ltr"
-            onChange={(e) => patch({ hall: e.target.value })}
-          />
-          <datalist id="qc-halls">
-            {halls.map((hall) => <option key={hall} value={hall} />)}
-          </datalist>
-        </label>
-      </div>
-
-      {newRoom ? (
-        <div className="qc-new-room" role="status">
-          <AlertTriangle aria-hidden="true" />
-          <div>
-            <strong>هذه قاعة جديدة لم تكن موجودة لديكم.</strong>
-            <small>يمكنك إنشاء الموعد بدون تثبيت، أو إضافتها الآن إلى قائمة قاعات القسم.</small>
-          </div>
-          {onPinRoom ? (
-            <button type="button" data-guide-ignore="تثبيت قاعة جديدة من الإدخال السريع إجراء محلي تابع لحقل القاعة" disabled={roomPinBusy} onClick={() => void onPinRoom(draft.room, draft.hall)}>
-              {roomPinBusy ? "أثبت…" : "ثبّت القاعة"}
-            </button>
-          ) : null}
         </div>
-      ) : null}
+      </div>
 
       {error ? (
         <p className="qc-warn qc-warn-hard"><AlertTriangle aria-hidden="true" />{error}</p>

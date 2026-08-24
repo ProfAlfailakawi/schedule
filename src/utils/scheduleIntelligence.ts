@@ -1,3 +1,4 @@
+import { roomIdentityKey } from "./locationRegistry";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
@@ -44,7 +45,7 @@ const roomsTouch=(a:Partial<FSchedule>,b:Partial<FSchedule>,doorway:number):bool
   const bStart=timeToMinutes(String(b.fstarttime||"")),bEnd=timeToMinutes(String(b.fendtime||""));
   return aStart < bEnd + doorway && bStart < aEnd + doorway;
 };
-const roomKey=(row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${String(row.AdRoomHall||"").trim()}`;
+const roomKey=(row:Partial<FSchedule>)=>roomIdentityKey(row);
 const duration=(row:Partial<FSchedule>)=>Math.max(0,timeToMinutes(String(row.fendtime||""))-timeToMinutes(String(row.fstarttime||"")));
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 
@@ -121,7 +122,7 @@ const isCombinedDelivery=(a:FSchedule,b:FSchedule)=>
   a.AdCourseId===b.AdCourseId &&
   String(a.SCode)!==String(b.SCode) &&
   Boolean(a.AdInstructorId) && a.AdInstructorId===b.AdInstructorId &&
-  roomKey(a)!=="|" && roomKey(a)===roomKey(b) &&
+  Boolean(roomKey(a)) && roomKey(a)===roomKey(b) &&
   samePlacement(a,b);
 
 /**
@@ -193,7 +194,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     for(const day of dayKeys){
       if(!other[day]) continue;
       if(other.AdInstructorId) push(byDayInstructor,`${String(day)}|${other.AdInstructorId}`,at);
-      if(place!=="|") push(byDayRoom,`${String(day)}|${place}`,at);
+      if(place) push(byDayRoom,`${String(day)}|${place}`,at);
       if(wantCohort) push(byDayCourse,`${String(day)}|${other.AdCourseId}`,at);
     }
     push(byCourseSection,`${other.AdCourseId}|${String(other.SCode)}`,at);
@@ -206,7 +207,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     for(const day of dayKeys){
       if(!row[day]) continue;
       if(row.AdInstructorId) take(byDayInstructor.get(`${String(day)}|${row.AdInstructorId}`));
-      if(place!=="|") take(byDayRoom.get(`${String(day)}|${place}`));
+      if(place) take(byDayRoom.get(`${String(day)}|${place}`));
       if(wantCohort) for(const partner of partners.get(row.AdCourseId)||[]) take(byDayCourse.get(`${String(day)}|${partner}`));
     }
     take(byCourseSection.get(`${row.AdCourseId}|${String(row.SCode)}`));
@@ -218,7 +219,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
       if(row.id===other.id || row.AdTermId!==other.AdTermId) continue;
       if(isCombinedDelivery(row,other)) continue;
       const clashing=overlaps(row,other);
-      const sameRoom=roomKey(row)!=="|" && roomKey(row)===roomKey(other);
+      const sameRoom=Boolean(roomKey(row)) && roomKey(row)===roomKey(other);
       /* A turnaround too short to empty the hall. Only meaningful when the two
          do not already overlap — an overlap is the louder problem, and naming
          one pair twice would double every count in the product. */
@@ -289,7 +290,7 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
       if(row.id===other.id || row.AdTermId!==other.AdTermId) continue;
       if(isCombinedDelivery(row,other)) continue;
       const clashing=overlaps(row,other);
-      const sameRoom=roomKey(row)!=="|" && roomKey(row)===roomKey(other);
+      const sameRoom=Boolean(roomKey(row)) && roomKey(row)===roomKey(other);
       /* A turnaround too short to empty the hall. Only meaningful when the two
          do not already overlap — an overlap is the louder problem, and naming
          one pair twice would double every count in the product. */
@@ -393,7 +394,7 @@ export function fastConflictScan(rows:FSchedule[]):LiveClashScan {
         const a=meta.row,b=other.row;
         if(a.id===b.id||a.AdTermId!==b.AdTermId) continue;
         const sameInstructor=Boolean(a.AdInstructorId)&&a.AdInstructorId===b.AdInstructorId;
-        const sameRoom=meta.room!=="|"&&meta.room===other.room;
+        const sameRoom=Boolean(meta.room)&&meta.room===other.room;
         if(!sameInstructor&&!sameRoom) continue;
         if(isCombinedDelivery(a,b)) continue;
         const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
@@ -456,7 +457,7 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   const activeDayCounts=dayLoad.map(x=>x.count); const maxDay=Math.max(0,...activeDayCounts),minDay=Math.min(...activeDayCounts);
   const gaps=instructorGapStats(targetRows); const gapValues=[...gaps.values()]; const totalGap=gapValues.reduce((s,g)=>s+g.gapMinutes,0); const avgGap=gapValues.length?Math.round(totalGap/gapValues.length):0;
   const lateRows=targetRows.filter(row=>timeToMinutes(row.fstarttime)>=16*60).length;
-  const invalidRows=targetRows.filter(row=>!row.AdInstructorId||!row.AdCourseId||!row.AdRoomCode||!row.AdRoomHall||duration(row)<=0||activeDays(row).length===0).length;
+  const invalidRows=targetRows.filter(row=>!row.AdInstructorId||!row.AdCourseId||!row.buildingId||(row.locationStatus!=="PENDING_ROOM"&&!row.roomId)||duration(row)<=0||activeDays(row).length===0).length;
   const imbalance=maxDay?Math.round((maxDay-minDay)/maxDay*100):0;
   // Conflict counts can become large in imported/legacy semesters because every overlapping
   // pair is counted. A square-root curve keeps the score sensitive to meaningful reductions
@@ -471,8 +472,8 @@ export function analyzeSchedule(targetRows:FSchedule[], allRows:FSchedule[], cou
   for(const day of SCHEDULE_DAYS){for(let minute=SCHEDULE_DAY_START;minute<SCHEDULE_DAY_END;minute+=SCHEDULE_SLOT_MINUTES){const count=targetRows.filter(row=>Boolean(row[day.key])&&timeToMinutes(row.fstarttime)<minute+SCHEDULE_SLOT_MINUTES&&timeToMinutes(row.fendtime)>minute).length;heatmap.push({day:day.key,label:day.label,time:minutesToTime(minute),count})}}
 
   const roomGroups=new Map<string,FSchedule[]>();
-  targetRows.forEach(row=>{const key=roomKey(row);if(key!=="|"){const list=roomGroups.get(key)||[];list.push(row);roomGroups.set(key,list)}});
-  const rooms=[...roomGroups.entries()].map(([key,list])=>{const [code,hall]=key.split("|");const occupied=list.reduce((sum,row)=>sum+duration(row)*activeDays(row).length,0);return{key,code,hall,sessions:list.length,occupiedMinutes:occupied,utilization:Math.round(clamp(occupied/(5*SCHEDULE_DAY_SPAN)*100,0,100))}}).sort((a,b)=>b.occupiedMinutes-a.occupiedMinutes);
+  targetRows.forEach(row=>{const key=roomKey(row);if(key){const list=roomGroups.get(key)||[];list.push(row);roomGroups.set(key,list)}});
+  const rooms=[...roomGroups.entries()].map(([key,list])=>{const representative=list[0];const code=String(representative?.AdRoomCode||"");const hall=String(representative?.AdRoomHall||"");const occupied=list.reduce((sum,row)=>sum+duration(row)*activeDays(row).length,0);return{key,code,hall,buildingId:representative?.buildingId,roomId:representative?.roomId,sessions:list.length,occupiedMinutes:occupied,utilization:Math.round(clamp(occupied/(5*SCHEDULE_DAY_SPAN)*100,0,100))}}).sort((a,b)=>b.occupiedMinutes-a.occupiedMinutes);
 
   const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const professorLoads=[...gaps.entries()].map(([id,g])=>({id,name:instructorById.get(id)?.AdInstructorName||`أستاذ ${id}`,weeklyHours:Number((g.weeklyMinutes/60).toFixed(1)),days:g.days.size,gapMinutes:g.gapMinutes,maxGap:g.maxGap,maxContinuous:g.maxContinuous})).sort((a,b)=>b.weeklyHours-a.weeklyHours);
@@ -513,33 +514,34 @@ function candidateConflictCount(candidate:FSchedule, allRows:FSchedule[], exclud
   for(const other of allRows){
     if(other.id===excludeId||other.AdTermId!==candidate.AdTermId||!overlaps(candidate,other))continue;
     if(candidate.AdInstructorId===other.AdInstructorId)count++;
-    if(roomKey(candidate)!=="|"&&roomKey(candidate)===roomKey(other))count++;
+    if(roomKey(candidate)&&roomKey(candidate)===roomKey(other))count++;
   }
   return count;
 }
 
 export function conflictSolutions(row:FSchedule, allRows:FSchedule[], max=5){
-  const rooms=[...new Map(allRows.filter(r=>r.AdRoomCode&&r.AdRoomHall).map(r=>[roomKey(r),{code:r.AdRoomCode,hall:r.AdRoomHall}])).values()];
-  const preferredRooms=rooms.sort((a,b)=>Number(b.code===row.AdRoomCode)-Number(a.code===row.AdRoomCode)).slice(0,60);
+  const rooms=[...new Map(allRows.filter(r=>r.buildingId&&r.roomId&&r.locationStatus!=="PENDING_ROOM"&&roomKey(r)).map(r=>[roomKey(r),{key:roomKey(r),code:r.AdRoomCode,hall:r.AdRoomHall,buildingId:r.buildingId,roomId:r.roomId}])).values()];
+  const preferredRooms=rooms.sort((a,b)=>Number(b.buildingId===row.buildingId)-Number(a.buildingId===row.buildingId)).slice(0,60);
   // The universe checked against is only the rows that could ever collide: a
   // candidate never changes the instructor and only lands in a preferred room,
   // so the whole-term scan (millions of comparisons — seconds of thinking)
   // narrows to the instructor's own rows plus the rows already in those rooms.
   // Same answer, a fraction of the work.
-  const roomScope=new Set(preferredRooms.map(r=>`${String(r.code||"").trim()}|${String(r.hall||"").trim()}`));
-  roomScope.add(roomKey(row));
+  const roomScope=new Set(preferredRooms.map(r=>r.key));
+  if(roomKey(row))roomScope.add(roomKey(row));
   const relevant=allRows.filter(r=>r.AdInstructorId===row.AdInstructorId||roomScope.has(roomKey(r)));
   const dur=Math.max(30,duration(row)); const original=timeToMinutes(row.fstarttime); const candidates:Array<any>=[];
   for(let start=SCHEDULE_DAY_START;start+dur<=SCHEDULE_DAY_END;start+=SCHEDULE_SLOT_MINUTES){
-    for(const room of [{code:row.AdRoomCode,hall:row.AdRoomHall},...preferredRooms]){
-      const candidate={...row,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+dur),AdRoomCode:room.code,AdRoomHall:room.hall};
-      const conflicts=candidateConflictCount(candidate,relevant,row.id); const roomChanged=room.code!==row.AdRoomCode||room.hall!==row.AdRoomHall;
+    const currentRoom=row.roomId&&row.buildingId?{key:roomKey(row),code:row.AdRoomCode,hall:row.AdRoomHall,buildingId:row.buildingId,roomId:row.roomId}:null;
+    for(const room of [...(currentRoom?[currentRoom]:[]),...preferredRooms]){
+      const candidate={...row,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+dur),AdRoomCode:room.code,AdRoomHall:room.hall,buildingId:room.buildingId,roomId:room.roomId,locationStatus:"VERIFIED" as const};
+      const conflicts=candidateConflictCount(candidate,relevant,row.id); const roomChanged=room.roomId!==row.roomId;
       const score=conflicts*10000+Math.abs(start-original)+(roomChanged?90:0)+(start>=16*60?80:0);
-      candidates.push({score,conflicts,start:candidate.fstarttime,end:candidate.fendtime,roomCode:room.code,roomHall:room.hall,roomChanged});
+      candidates.push({score,conflicts,start:candidate.fstarttime,end:candidate.fendtime,buildingId:room.buildingId,roomId:room.roomId,roomCode:room.code,roomHall:room.hall,roomChanged});
     }
   }
   const unique=new Map<string,any>();
-  candidates.sort((a,b)=>a.score-b.score).forEach(item=>{const key=`${item.start}|${item.roomCode}|${item.roomHall}`;if(!unique.has(key))unique.set(key,item)});
+  candidates.sort((a,b)=>a.score-b.score).forEach(item=>{const key=`${item.start}|${item.roomId}`;if(!unique.has(key))unique.set(key,item)});
   return [...unique.values()].slice(0,max).map((item,index)=>({...item,rank:index+1,label:item.conflicts===0?"بدون مانع ظاهر":`${item.conflicts} مانع محتمل`,reason:item.roomChanged?"تغيير الوقت والقاعة لتحقيق أفضل مساحة متاحة":"الإبقاء على القاعة مع تحسين الوقت"}));
 }
 
@@ -632,8 +634,8 @@ export function compareTerms(a:FSchedule[],b:FSchedule[]){
     removed:[...aKeys].filter(k=>!bKeys.has(k)).length,
     uniqueInstructorsFrom:new Set(a.map(r=>r.AdInstructorId)).size,
     uniqueInstructorsTo:new Set(b.map(r=>r.AdInstructorId)).size,
-    uniqueRoomsFrom:new Set(a.map(roomKey)).size,
-    uniqueRoomsTo:new Set(b.map(roomKey)).size,
+    uniqueRoomsFrom:new Set(a.map(roomKey).filter(Boolean)).size,
+    uniqueRoomsTo:new Set(b.map(roomKey).filter(Boolean)).size,
     appeared,disappeared,moved
   };
 }

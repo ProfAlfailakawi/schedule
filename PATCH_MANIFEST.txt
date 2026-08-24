@@ -1,0 +1,77 @@
+SCHEDULE — Location Registry Patch
+Generated: 2026-08-24
+
+ROOT CAUSE
+- Building and room identity was stored/compared in several paths as raw AdRoomCode/AdRoomHall strings.
+- That allowed aliases such as B9 / B09 / 9 / 012B09 to behave as separate locations.
+- Some OCR/copy/intelligence/Hall Barter flows could reintroduce raw location strings.
+- There was no authoritative central building/room registry with backend enforcement.
+
+FIX
+- Master Building/Room Registry with stable IDs, aliases, confidence/evidence and historical review queue.
+- Authoritative college/site prefixes supplied by the system owner; e.g. 012B + building 7 = 012B07.
+- Runtime uses canonical buildingId/roomId; rooms are scoped to a building.
+- PENDING_ROOM is a system state, not a room.
+- Admin-only building/room mutation enforced on backend.
+- Conservative, idempotent and reversible historical migration with preview + rollback records.
+- Import/copy/edit/intelligence/Hall Barter/conflicts/reports use the registry/preflight path.
+
+DATA ANALYSIS (current backup)
+- 15,430 schedules
+- 172 historical building spellings
+- 34 confirmed buildings + 3 probable inactive
+- 265 confirmed rooms + 90 probable inactive
+- 38 shared rooms
+- 444 grouped human-review cases
+
+TESTS ACTUALLY RUN
+- Location registry audit: 38/38 PASS
+- Guide structural audit: PASS
+- Guide behavior: 82/82 PASS
+- Guide performance: PASS
+- Full npm test: BLOCKED after location tests because tsx is absent in this execution environment
+- npm run lint: BLOCKED by missing installed dependencies/type packages
+- npm run build: reaches guide audits, then BLOCKED because vite is absent
+- npm install/ci could not complete because this environment could not fetch the missing npm tarball(s).
+
+MODIFIED FILES
+M package.json
+M server.ts
+M src/App.tsx
+M src/components/AdminUsers.tsx
+M src/components/HallBarterBoard.tsx
+M src/components/ImportPreviewTable.tsx
+M src/components/IntelligenceWorkspace.tsx
+M src/components/LivingScheduleLayer.tsx
+M src/components/QuickCreatePopover.tsx
+M src/components/Reports.tsx
+M src/components/ScheduleExperienceLayer.tsx
+M src/components/SchedulePhysics/physics.ts
+M src/components/ScheduleReview.tsx
+M src/components/Schedules.tsx
+M src/db/repository.ts
+M src/guide/smartGuide.ts
+M src/index.css
+M src/types.ts
+M src/utils/advancedIntelligence.ts
+M src/utils/campusFlow.ts
+M src/utils/cleanRoom.ts
+M src/utils/departmentMemory.ts
+M src/utils/livingSchedule.ts
+M src/utils/repairChain.ts
+M src/utils/scheduleInnovation.ts
+M src/utils/scheduleIntelligence.ts
+M src/utils/sectionOpening.ts
+M src/utils/termRollover.ts
+
+ADDED FILES
+A ROOMS_REVIEW.md
+A room-registry-review.xlsx
+A scripts/analyze-location-backup.py
+A src/components/LocationPicker.tsx
+A src/components/LocationRegistryAdmin.tsx
+A src/generated/locationRegistrySeed.ts
+A src/server/locationRegistryEngine.ts
+A src/utils/locationCollegePrefixes.ts
+A src/utils/locationRegistry.ts
+A tests/location-registry-audit.py

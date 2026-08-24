@@ -1,9 +1,10 @@
+import { roomIdentityKey } from "./locationRegistry";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleConstraint } from "../types";
 import { activeDays, analyzeSchedule, autoScheduleProposal, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
 const cloneRows=(rows:FSchedule[])=>rows.map(row=>({...row}));
-const roomKey=(row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${String(row.AdRoomHall||"").trim()}`;
+const roomKey=(row:Partial<FSchedule>)=>roomIdentityKey(row);
 const replaceById=(rows:FSchedule[],next:FSchedule)=>rows.map(row=>row.id===next.id?next:row);
 const clamp=(n:number,min:number,max:number)=>Math.max(min,Math.min(max,n));
 const displayTimeBucket=(key:string)=>{const match=/^(\d{2})-(\d{2})$/.exec(key);return match?formatScheduleTimeRange(`${match[1]}:00`,`${match[2]}:00`):key.replace(/^0/,"")};
@@ -32,8 +33,8 @@ export function evaluateScheduleConstraints(rows:FSchedule[],constraints:Schedul
     if(c.type==="department_day_off"&&c.day){
       rows.filter(r=>Boolean((r as any)[c.day!])).forEach(r=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`يوجد ${r.AdCourseName||"مقرر"} في ${SCHEDULE_DAYS.find(d=>d.key===c.day)?.label||"اليوم المحجوز"}.`,rowId:r.id,severity:"critical"}));
     }
-    if(c.type==="course_room"&&c.AdCourseId&&c.roomCode&&c.roomHall){
-      rows.filter(r=>r.AdCourseId===c.AdCourseId&&(String(r.AdRoomCode)!==String(c.roomCode)||String(r.AdRoomHall)!==String(c.roomHall))).forEach(r=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`الشعبة ${r.SCode} في ${r.AdRoomCode}/${r.AdRoomHall} بدل ${c.roomCode}/${c.roomHall}.`,rowId:r.id,severity:"critical"}));
+    if(c.type==="course_room"&&c.AdCourseId&&(c.roomId||(c.roomCode&&c.roomHall))){
+      rows.filter(r=>r.AdCourseId===c.AdCourseId&&(c.roomId?String(r.roomId||"")!==String(c.roomId):(String(r.AdRoomCode)!==String(c.roomCode)||String(r.AdRoomHall)!==String(c.roomHall)))).forEach(r=>violations.push({constraintId:c.id,type:c.type,label:c.label,detail:`الشعبة ${r.SCode} في ${r.AdRoomCode}/${r.AdRoomHall} بدل ${c.roomCode}/${c.roomHall}.`,rowId:r.id,severity:"critical"}));
     }
     if(c.type==="max_instructor_gap"&&c.maxMinutes){
       const ids=c.AdInstructorId?[c.AdInstructorId]:[...new Set(rows.map(r=>r.AdInstructorId).filter(Boolean))];
@@ -49,7 +50,7 @@ function profileTerm(rows:FSchedule[],courses:AdCourse[],instructors:AdInstructo
   const dayShares=Object.fromEntries(SCHEDULE_DAYS.map(day=>[day.key,Math.round(rows.filter(r=>Boolean(r[day.key])).length/occurrences*1000)/10]));
   const buckets=[{key:"08-10",from:8*60,to:10*60},{key:"10-12",from:10*60,to:12*60},{key:"12-14",from:12*60,to:14*60},{key:"14-16",from:14*60,to:16*60},{key:"16-20",from:16*60,to:SCHEDULE_DAY_END}];
   const timeShares=Object.fromEntries(buckets.map(b=>[b.key,Math.round(rows.filter(r=>{const m=timeToMinutes(r.fstarttime);return m>=b.from&&m<b.to}).length/Math.max(1,rows.length)*1000)/10]));
-  const roomCounts=new Map<string,number>();rows.forEach(r=>{const key=roomKey(r);if(key!=="|")roomCounts.set(key,(roomCounts.get(key)||0)+1)});
+  const roomCounts=new Map<string,number>();rows.forEach(r=>{const key=roomKey(r);if(key)roomCounts.set(key,(roomCounts.get(key)||0)+1)});
   const rooms=[...roomCounts.entries()].sort((a,b)=>b[1]-a[1]).map(([key,count])=>({key,count,share:Math.round(count/Math.max(1,rows.length)*1000)/10}));
   const analysis=analyzeSchedule(rows,rows,courses,instructors);
   const peak=[...analysis.heatmap].sort((a:any,b:any)=>b.count-a.count).slice(0,5);
@@ -153,7 +154,7 @@ export function buildWarRoom(baseRows:FSchedule[],termRows:FSchedule[],courses:A
   if(!target)return {issue:null,baseline:{score:baseline.score},options:[]};
   const solutions=conflictSolutions(target,termRows,6);
   const scenarios:Array<{title:string;reason:string;rows:FSchedule[]}>=[];
-  for(const sol of solutions){if(scenarios.length>=2)break;const moved={...target,fstarttime:sol.start,fendtime:sol.end,AdRoomCode:sol.roomCode,AdRoomHall:sol.roomHall};scenarios.push({title:scenarios.length?"حل متوازن":"أقل تدخل",reason:sol.reason,rows:replaceById(baseRows,moved)})}
+  for(const sol of solutions){if(scenarios.length>=2)break;const moved={...target,fstarttime:sol.start,fendtime:sol.end,buildingId:sol.buildingId,roomId:sol.roomId,AdRoomCode:sol.roomCode,AdRoomHall:sol.roomHall,locationStatus:"VERIFIED" as const};scenarios.push({title:scenarios.length?"حل متوازن":"أقل تدخل",reason:sol.reason,rows:replaceById(baseRows,moved)})}
   // A third option uses a compact global proposal but still remains only a scenario.
   const compact=cloneRows(baseRows);const profRows=compact.filter(r=>r.AdInstructorId===target!.AdInstructorId).sort((a,b)=>timeToMinutes(a.fstarttime)-timeToMinutes(b.fstarttime));
   if(profRows.length>1){const pivot=profRows[Math.min(1,profRows.length-1)],dur=Math.max(30,timeToMinutes(pivot.fendtime)-timeToMinutes(pivot.fstarttime));const anchor=timeToMinutes(profRows[0].fendtime);const start=clamp(anchor,SCHEDULE_DAY_START,SCHEDULE_DAY_END-dur);const shifted={...pivot,fstarttime:minutesToTime(start),fendtime:minutesToTime(start+dur)};scenarios.push({title:"ضغط الفراغات",reason:"يقرب مواعيد الأستاذ من بعضها لتقليل المسافات الزمنية.",rows:replaceById(baseRows,shifted)})}

@@ -1,3 +1,4 @@
+import { roomIdentityKey } from "./locationRegistry";
 import type { AdCourse, AdInstructor, FSchedule, ScheduleConstraint, ScheduleDecisionMemory } from "../types";
 import { activeDays, analyzeSchedule, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./scheduleIntelligence";
 import { evaluateScheduleConstraints } from "./scheduleInnovation";
@@ -5,7 +6,10 @@ import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCH
 
 const DAY_LABEL = new Map(SCHEDULE_DAYS.map(day => [day.key, day.label]));
 const clamp = (value:number,min:number,max:number)=>Math.max(min,Math.min(max,value));
-const roomKey = (row:Partial<FSchedule>)=>`${String(row.AdRoomCode||"").trim()}|${String(row.AdRoomHall||"").trim()}`;
+const roomKey=(row:Partial<FSchedule>)=>roomIdentityKey(row);
+type RoomPlacement={key:string;buildingId:string;roomId:string;code:string;hall:string};
+const roomPlacement=(row:FSchedule):RoomPlacement|undefined=>{const key=roomKey(row);return key&&row.buildingId&&row.roomId&&row.locationStatus!=="PENDING_ROOM"?{key,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||"")}:undefined;};
+const placeInRoom=(row:FSchedule,room:RoomPlacement):FSchedule=>({...row,buildingId:room.buildingId,roomId:room.roomId,AdRoomCode:room.code,AdRoomHall:room.hall,locationStatus:"VERIFIED"});
 const rowSignature = (row:Partial<FSchedule>)=>`${row.AdCourseId||0}:${row.SCode||""}:${row.AdInstructorId||0}:${activeDays(row).join(",")}:${row.fstarttime||""}:${row.fendtime||""}:${roomKey(row)}`;
 const rowsEqual = (a:FSchedule,b:FSchedule)=>rowSignature(a)===rowSignature(b);
 const replaceRow = (rows:FSchedule[],candidate:FSchedule)=>rows.map(row=>row.id===candidate.id?candidate:row);
@@ -104,16 +108,16 @@ function computeFairnessEngine(rows:FSchedule[], instructors:AdInstructor[]){
   return {score,label:score>=90?"عادل جدًا":score>=78?"متوازن":score>=62?"يحتاج موازنة":"غير عادل",averageBurden:Number(avg.toFixed(1)),spread:Number(stdev.toFixed(1)),profiles:ranked,warnings};
 }
 
-function roomFreeFor(row:FSchedule, room:{code:string;hall:string}, universe:FSchedule[]){
-  const candidate={...row,AdRoomCode:room.code,AdRoomHall:room.hall};
+function roomFreeFor(row:FSchedule, room:RoomPlacement, universe:FSchedule[]){
+  const candidate=placeInRoom(row,room);
   const conflicts=findConflicts([candidate],universe.filter(x=>x.id!==row.id).concat(candidate));
   return !conflicts.some(c=>c.severity==="high"&&(c.rowId===candidate.id||c.otherId===candidate.id));
 }
 
 function computeRoomResilience(rows:FSchedule[], universe:FSchedule[]){
-  const groups=new Map<string,FSchedule[]>(); rows.forEach(r=>{const key=roomKey(r);if(key!=="|"){const list=groups.get(key)||[];list.push(r);groups.set(key,list)}});
-  const universeRooms=[...new Map(universe.filter(r=>roomKey(r)!=="|").map(r=>[roomKey(r),{code:r.AdRoomCode,hall:r.AdRoomHall}])).values()];
-  const rooms=[...groups.entries()].map(([key,list])=>{const [code,hall]=key.split("|");let recoverable=0;for(const row of list){if(universeRooms.some(room=>`${room.code}|${room.hall}`!==key&&roomFreeFor(row,room,universe)))recoverable++}const dependency=rows.length?list.length/rows.length:0;const recoverability=list.length?recoverable/list.length:1;const risk=clamp(dependency*72+(1-recoverability)*42,0,100);return{key,code,hall,sessions:list.length,dependencyPct:Math.round(dependency*100),recoverable,recoverabilityPct:Math.round(recoverability*100),risk:Math.round(risk),singlePoint:risk>=38&&list.length>=Math.max(3,rows.length*.08)}}).sort((a,b)=>b.risk-a.risk);
+  const groups=new Map<string,FSchedule[]>(); rows.forEach(r=>{const key=roomKey(r);if(key){const list=groups.get(key)||[];list.push(r);groups.set(key,list)}});
+  const universeRooms=[...new Map(universe.map(roomPlacement).filter((r):r is RoomPlacement=>Boolean(r)).map(r=>[r.key,r])).values()];
+  const rooms=[...groups.entries()].map(([key,list])=>{const representative=roomPlacement(list[0]);const code=representative?.code||String(list[0]?.AdRoomCode||""),hall=representative?.hall||String(list[0]?.AdRoomHall||"");let recoverable=0;for(const row of list){if(universeRooms.some(room=>room.key!==key&&roomFreeFor(row,room,universe)))recoverable++}const dependency=rows.length?list.length/rows.length:0;const recoverability=list.length?recoverable/list.length:1;const risk=clamp(dependency*72+(1-recoverability)*42,0,100);return{key,buildingId:representative?.buildingId,roomId:representative?.roomId,code,hall,sessions:list.length,dependencyPct:Math.round(dependency*100),recoverable,recoverabilityPct:Math.round(recoverability*100),risk:Math.round(risk),singlePoint:risk>=38&&list.length>=Math.max(3,rows.length*.08)}}).sort((a,b)=>b.risk-a.risk);
   return {rooms,topRisk:rooms[0]||null,singlePoints:rooms.filter(r=>r.singlePoint)};
 }
 
@@ -171,15 +175,15 @@ export function buildDecisionMemoryInsight(memories:ScheduleDecisionMemory[], co
 }
 
 export function createEmergencyPlans(kind:"room"|"day"|"instructor",value:string|number,rows:FSchedule[],universe:FSchedule[],courses:AdCourse[],instructors:AdInstructor[],constraints:ScheduleConstraint[]=[]){
-  const baseIds=new Set(rows.map(r=>r.id));const external=universe.filter(r=>!baseIds.has(r.id));const allRooms=[...new Map(universe.filter(r=>roomKey(r)!=="|").map(r=>[roomKey(r),{code:r.AdRoomCode,hall:r.AdRoomHall}])).values()];const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
+  const baseIds=new Set(rows.map(r=>r.id));const external=universe.filter(r=>!baseIds.has(r.id));const allRooms=[...new Map(universe.map(roomPlacement).filter((r):r is RoomPlacement=>Boolean(r)).map(r=>[r.key,r])).values()];const instructorById=new Map(instructors.map(i=>[i.AdInstructorId,i]));
   const affected=kind==="room"?rows.filter(r=>roomKey(r)===String(value)):kind==="day"?rows.filter(r=>Boolean((r as any)[String(value)])):rows.filter(r=>r.AdInstructorId===Number(value));
   const courseTeachers=new Map<number,number[]>();universe.forEach(r=>{const list=courseTeachers.get(r.AdCourseId)||[];if(r.AdInstructorId&&!list.includes(r.AdInstructorId))list.push(r.AdInstructorId);courseTeachers.set(r.AdCourseId,list)});
   const strategies=[{id:"minimal",title:"الأقل تغييرًا",timeWeight:5,roomWeight:2,qualityWeight:1},{id:"comfort",title:"الأقل إزعاجًا للأساتذة",timeWeight:2,roomWeight:1,qualityWeight:4},{id:"quality",title:"الأعلى جودة",timeWeight:1,roomWeight:1,qualityWeight:8}];
   const plans=strategies.map(strategy=>{let scenario=rows.map(r=>({...r}));const unresolved:string[]=[];
     for(const item of affected){const index=scenario.findIndex(r=>r.id===item.id);if(index<0)continue;const current=scenario[index];const candidates:FSchedule[]=[];
       if(kind==="room"){
-        for(const room of allRooms){if(`${room.code}|${room.hall}`===String(value))continue;candidates.push({...current,AdRoomCode:room.code,AdRoomHall:room.hall})}
-        for(let offset of [-60,-30,30,60]){const start=timeToMinutes(current.fstarttime)+offset,end=timeToMinutes(current.fendtime)+offset;if(start>=SCHEDULE_DAY_START&&end<=SCHEDULE_DAY_END)for(const room of allRooms.slice(0,18))candidates.push({...current,fstarttime:minutesToTime(start),fendtime:minutesToTime(end),AdRoomCode:room.code,AdRoomHall:room.hall})}
+        for(const room of allRooms){if(room.key===String(value))continue;candidates.push(placeInRoom(current,room))}
+        for(let offset of [-60,-30,30,60]){const start=timeToMinutes(current.fstarttime)+offset,end=timeToMinutes(current.fendtime)+offset;if(start>=SCHEDULE_DAY_START&&end<=SCHEDULE_DAY_END)for(const room of allRooms.slice(0,18))candidates.push(placeInRoom({...current,fstarttime:minutesToTime(start),fendtime:minutesToTime(end)},room))}
       } else if(kind==="day"){
         for(const day of SCHEDULE_DAYS){if(day.key===String(value))continue;const c:any={...current};for(const d of SCHEDULE_DAYS)c[d.key]=false;c[day.key]=true;candidates.push(c)}
         for(const day of SCHEDULE_DAYS){if(day.key===String(value))continue;for(let offset of [-60,-30,30,60]){const start=timeToMinutes(current.fstarttime)+offset,end=timeToMinutes(current.fendtime)+offset;if(start<SCHEDULE_DAY_START||end>SCHEDULE_DAY_END)continue;const c:any={...current,fstarttime:minutesToTime(start),fendtime:minutesToTime(end)};for(const d of SCHEDULE_DAYS)c[d.key]=false;c[day.key]=true;candidates.push(c)}}

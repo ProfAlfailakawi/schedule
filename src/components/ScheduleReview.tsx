@@ -10,6 +10,7 @@ import {
 import type { CourseNature } from "../utils/courseNature";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { findConflicts } from "../utils/scheduleIntelligence";
+import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 import { AR, countOf } from "../utils/arabicCount";
 
 /**
@@ -255,7 +256,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
       if (names.length > 1) return `أساتذة ${names.length.toLocaleString("ar-KW-u-nu-latn")}`;
     }
     if (finding.title.includes("قاعة")) {
-      const rooms = [...new Set(affectedRows.map(row => `${row.AdRoomCode}/${row.AdRoomHall}`).filter(room => room !== "/"))];
+      const rooms = [...new Map(affectedRows.map(row => [roomIdentityKey(row), roomDisplay(row)] as const).filter(([key])=>Boolean(key))).values()];
       if (rooms.length === 1) return `القاعة ${rooms[0]}`;
       if (rooms.length > 1) return countOf(rooms.length, AR.room);
     }

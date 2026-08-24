@@ -10,6 +10,7 @@ import {
 import type { RhythmReading } from "./departmentRhythm";
 import { cohortPairs, type DemandReading } from "./studentDemand";
 import type { Prediction } from "./courseSuccession";
+import { roomIdentityKey } from "./locationRegistry";
 
 /**
  * ── الشعبة الجديدة، وأين توضع ───────────────────────────────────────────────
@@ -57,6 +58,8 @@ export interface Placement {
   dayLabel: string;
   start: string;
   end: string;
+  buildingId: string;
+  roomId: string;
   roomCode: string;
   roomHall: string;
   /** Zero when nobody who teaches this course is free at that hour. */
@@ -121,7 +124,7 @@ const draft = (
   day: DayKey,
   start: number,
   length: number,
-  room: { code: string; hall: string },
+  room: { key: string; buildingId: string; roomId: string; code: string; hall: string },
   instructorId: number,
   id: number,
 ): FSchedule => {
@@ -130,8 +133,11 @@ const draft = (
   next[day] = true;
   next.fstarttime = minutesToTime(start);
   next.fendtime = minutesToTime(start + length);
+  next.buildingId = room.buildingId;
+  next.roomId = room.roomId;
   next.AdRoomCode = room.code;
   next.AdRoomHall = room.hall;
+  next.locationStatus = "VERIFIED";
   next.AdInstructorId = instructorId;
   // A new section is a new SCode; inside the sweep it only has to be unlike
   // every other, and the number a person would actually save is carried on the
@@ -164,14 +170,14 @@ const physicallyFree = (candidate: FSchedule, week: FSchedule[]): boolean => {
   const day = dayOf(candidate);
   if (!day) return false;
   const from = timeToMinutes(candidate.fstarttime), to = timeToMinutes(candidate.fendtime);
-  const room = `${candidate.AdRoomCode || ""}|${candidate.AdRoomHall || ""}`;
+  const room = roomIdentityKey(candidate);
   for (const row of week) {
     if (row.id === candidate.id) continue;
     if (Number(row.AdTermId) !== Number(candidate.AdTermId)) continue;
     if (!(row as any)[day]) continue;
     const overlaps = timeToMinutes(row.fstarttime) < to && timeToMinutes(row.fendtime) > from;
     if (!overlaps) continue;
-    if (room !== "|" && `${row.AdRoomCode || ""}|${row.AdRoomHall || ""}` === room) return false;
+    if (room && roomIdentityKey(row) === room) return false;
     if (candidate.AdInstructorId && Number(row.AdInstructorId) === Number(candidate.AdInstructorId)) return false;
   }
   return true;
@@ -206,15 +212,16 @@ export function readSectionOpenings(
 
   /* Rooms this section actually uses, commonest first. A proposal that puts a
      lecture in a hall the department has never taught in is not a proposal. */
-  const roomUse = new Map<string, number>();
+  const roomUse = new Map<string, { count:number; buildingId:string; roomId:string; code:string; hall:string }>();
   for (const row of history) {
-    if (!row.AdRoomCode) continue;
-    const key = `${row.AdRoomCode}|${row.AdRoomHall || ""}`;
-    roomUse.set(key, (roomUse.get(key) || 0) + 1);
+    const key=roomIdentityKey(row);
+    if (!key || !row.buildingId || !row.roomId || row.locationStatus === "PENDING_ROOM") continue;
+    const current=roomUse.get(key);
+    roomUse.set(key,{count:(current?.count||0)+1,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||"")});
   }
   const rooms = [...roomUse.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .map(([key]) => { const [code, hall] = key.split("|"); return { code, hall }; });
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([key,item]) => ({ key, buildingId:item.buildingId, roomId:item.roomId, code:item.code, hall:item.hall }));
 
   const proposals: SectionProposal[] = [];
   const noCeiling: OpeningReading["noCeiling"] = [];
@@ -291,7 +298,7 @@ export function readSectionOpenings(
               placed = {
                 index: slot, day, dayLabel: DAY_LABEL.get(day) || "",
                 start: minutesToTime(at), end: minutesToTime(at + length),
-                roomCode: room.code, roomHall: room.hall,
+                buildingId: room.buildingId, roomId: room.roomId, roomCode: room.code, roomHall: room.hall,
                 instructorId: teacherId,
                 instructorName: person?.AdInstructorName || "",
                 sectionCode: String(nextCode + slot - 1),

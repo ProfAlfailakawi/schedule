@@ -4,6 +4,7 @@ import {
   SAME_BUILDING_MINUTES,
 } from "./campusTravel";
 import { SCHEDULE_DAYS, activeDays, timeToMinutes, type DayKey } from "./scheduleIntelligence";
+import { buildingIdentityKey } from "./locationRegistry";
 
 /**
  * ── حركة الحرم ─────────────────────────────────────────────────────────────
@@ -65,13 +66,14 @@ export interface CampusFlowReading {
   buildings: string[];
 }
 
-const buildingOf = (row: FSchedule) => String(row.AdRoomCode || "").trim();
+const buildingKeyOf = (row: FSchedule) => buildingIdentityKey(row);
+const buildingLabelOf = (row: FSchedule) => String(row.AdRoomCode || "").trim();
 const placeOf = (row: FSchedule) =>
   [String(row.AdRoomCode || "").trim(), String(row.AdRoomHall || "").trim()].filter(Boolean).join("/");
 
 /** Minutes a move between two rooms needs, using the campus defaults. */
 const walkMinutes = (from: FSchedule, to: FSchedule): number => {
-  const a = buildingOf(from), b = buildingOf(to);
+  const a = buildingKeyOf(from), b = buildingKeyOf(to);
   if (!a || !b) return 0;
   return a === b ? SAME_BUILDING_MINUTES : DEFAULT_TRAVEL_MINUTES;
 };
@@ -93,7 +95,9 @@ export function readCampusFlow(
     row.fstarttime && row.fendtime &&
     (!dayFilter || Boolean((row as any)[dayFilter])));
 
-  const buildings = [...new Set(inScope.map(buildingOf).filter(Boolean))].sort();
+  const buildingLabels=new Map<string,string>();
+  inScope.forEach(row=>{const key=buildingKeyOf(row);if(key&&!buildingLabels.has(key))buildingLabels.set(key,buildingLabelOf(row));});
+  const buildings = [...buildingLabels.values()].filter(Boolean).sort();
 
   /* --- 1. The crossing ---------------------------------------------------- */
   const bands = new Map<number, FlowBand & { paths: Map<string, number> }>();
@@ -120,8 +124,9 @@ export function readCampusFlow(
       band.leaving += 1;
       band.arriving += next.length;
       for (const arriving of next) {
-        const from = buildingOf(ending), to = buildingOf(arriving);
-        if (!from || !to || from === to) continue;
+        const fromKey = buildingKeyOf(ending), toKey = buildingKeyOf(arriving);
+        if (!fromKey || !toKey || fromKey === toKey) continue;
+        const from=buildingLabelOf(ending),to=buildingLabelOf(arriving);
         band.crossing += 1;
         // Written in words rather than with an arrow: a bare "12 → 14" sits in
         // an Arabic sentence as a neutral-direction run, and the two ends swap

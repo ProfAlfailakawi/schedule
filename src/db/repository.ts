@@ -38,6 +38,11 @@ import {
   StudentNeed,
   HallBarterRequest,
   ScheduleWeekException,
+  MasterBuilding,
+  MasterRoom,
+  LocationReviewCase,
+  LocationMigrationLog,
+  LocationMigrationRun,
 } from "../types";
 import { DEFAULT_TRAVEL_MINUTES, SAME_BUILDING_MINUTES } from "../utils/campusTravel";
 import { sortByName } from "../utils/sorting";
@@ -197,6 +202,11 @@ interface DBState {
   scheduleShareLinks?: ScheduleShareLink[];
   hallBarterRequests?: HallBarterRequest[];
   scheduleWeekExceptions?: ScheduleWeekException[];
+  locationBuildings?: MasterBuilding[];
+  locationRooms?: MasterRoom[];
+  locationReviewCases?: LocationReviewCase[];
+  locationMigrationLogs?: LocationMigrationLog[];
+  locationMigrationRuns?: LocationMigrationRun[];
 }
 
 interface LegacySnapshot extends DBState {
@@ -208,7 +218,8 @@ let baseDb: DBState = {
   users: [], formNames: [], formSecurity: [], collegeUserAssign: [], terms: [], colleges: [], sections: [], instructors: [],
   courses: [], schedules: [], rooms: [], auditLogs: [], scheduleVersions: [], scheduleDrafts: [], scheduleOpenDecisions: [],
   clientTelemetry: [], scheduleComments: [], studentNeeds: [], schedulePublications: [], scheduleConstraints: [], degreeRules: [], visitingRosters: [], departmentDelegates: [], departmentRooms: [],
-  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: []
+  scheduleDecisionMemories: [], campusMobilityProfiles: [], scheduleShareLinks: [], hallBarterRequests: [], scheduleWeekExceptions: [],
+  locationBuildings: [], locationRooms: [], locationReviewCases: [], locationMigrationLogs: [], locationMigrationRuns: []
 };
 
 type DemoSandboxRecord = { state: DBState; expiresAt: number };
@@ -3908,7 +3919,7 @@ export const Repository = {
     return row;
   },
 
-  updateScheduleConstraint: async (id: string, fields: Partial<Pick<ScheduleConstraint, "label" | "enabled" | "time" | "maxMinutes" | "roomCode" | "roomHall" | "day">>): Promise<ScheduleConstraint> => {
+  updateScheduleConstraint: async (id: string, fields: Partial<Pick<ScheduleConstraint, "label" | "enabled" | "time" | "maxMinutes" | "buildingId" | "roomId" | "roomCode" | "roomHall" | "day">>): Promise<ScheduleConstraint> => {
     const updatedAt = new Date().toISOString();
     if (firestoreDb && !demoSandboxContext.getStore()) {
       const ref = firestoreDb.collection("scheduleConstraints").doc(id);
@@ -4047,6 +4058,77 @@ export const Repository = {
     else db.campusMobilityProfiles.push(normalized);
     saveDatabase();
     return normalized;
+  },
+
+  // Canonical building/room registry -------------------------------------------------
+  getLocationBuildings: async (): Promise<MasterBuilding[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap=await firestoreDb.collection("locationBuildings").get();
+      return snap.docs.map(doc=>doc.data() as MasterBuilding).sort((a,b)=>a.officialCode.localeCompare(b.officialCode));
+    }
+    return [...(db.locationBuildings||[])];
+  },
+  getLocationRooms: async (): Promise<MasterRoom[]> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap=await firestoreDb.collection("locationRooms").get();
+      return snap.docs.map(doc=>doc.data() as MasterRoom).sort((a,b)=>`${a.buildingCode}/${a.canonicalCode}`.localeCompare(`${b.buildingCode}/${b.canonicalCode}`));
+    }
+    return [...(db.locationRooms||[])];
+  },
+  upsertLocationBuildings: async (rows: MasterBuilding[]): Promise<void> => {
+    if(!rows.length)return;
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      for(let i=0;i<rows.length;i+=400){const batch=firestoreDb.batch();rows.slice(i,i+400).forEach(row=>batch.set(firestoreDb!.collection("locationBuildings").doc(row.id),row,{merge:true}));await batch.commit();}
+      return;
+    }
+    const map=new Map((db.locationBuildings||[]).map(x=>[x.id,x]));rows.forEach(x=>map.set(x.id,{...map.get(x.id),...x}));db.locationBuildings=[...map.values()];saveDatabase();
+  },
+  upsertLocationRooms: async (rows: MasterRoom[]): Promise<void> => {
+    if(!rows.length)return;
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      for(let i=0;i<rows.length;i+=400){const batch=firestoreDb.batch();rows.slice(i,i+400).forEach(row=>batch.set(firestoreDb!.collection("locationRooms").doc(row.id),row,{merge:true}));await batch.commit();}
+      return;
+    }
+    const map=new Map((db.locationRooms||[]).map(x=>[x.id,x]));rows.forEach(x=>map.set(x.id,{...map.get(x.id),...x}));db.locationRooms=[...map.values()];saveDatabase();
+  },
+  getLocationReviewCases: async (): Promise<LocationReviewCase[]> => {
+    if(firestoreDb&&!demoSandboxContext.getStore()){const snap=await firestoreDb.collection("locationReviewCases").get();return snap.docs.map(d=>d.data() as LocationReviewCase);}
+    return [...(db.locationReviewCases||[])];
+  },
+  upsertLocationReviewCases: async (rows: LocationReviewCase[]): Promise<void> => {
+    if(!rows.length)return;
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      for(let i=0;i<rows.length;i+=400){const batch=firestoreDb.batch();rows.slice(i,i+400).forEach(row=>batch.set(firestoreDb!.collection("locationReviewCases").doc(row.id),row,{merge:true}));await batch.commit();}return;
+    }
+    const map=new Map((db.locationReviewCases||[]).map(x=>[x.id,x]));rows.forEach(x=>map.set(x.id,{...map.get(x.id),...x}));db.locationReviewCases=[...map.values()];saveDatabase();
+  },
+  appendLocationMigrationLogs: async (rows: LocationMigrationLog[]): Promise<void> => {
+    if(!rows.length)return;
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      for(let i=0;i<rows.length;i+=400){const batch=firestoreDb.batch();rows.slice(i,i+400).forEach(row=>batch.set(firestoreDb!.collection("locationMigrationLogs").doc(row.id),row));await batch.commit();}return;
+    }
+    db.locationMigrationLogs=[...(db.locationMigrationLogs||[]),...rows];saveDatabase();
+  },
+  getLocationMigrationLogs: async (migrationId?:string): Promise<LocationMigrationLog[]> => {
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      let q:any=firestoreDb.collection("locationMigrationLogs");if(migrationId)q=q.where("migrationId","==",migrationId);const snap=await q.get();return snap.docs.map((d:any)=>d.data() as LocationMigrationLog);
+    }
+    return (db.locationMigrationLogs||[]).filter(x=>!migrationId||x.migrationId===migrationId);
+  },
+  saveLocationMigrationRun: async (row: LocationMigrationRun): Promise<void> => {
+    if(firestoreDb&&!demoSandboxContext.getStore()){await firestoreDb.collection("locationMigrationRuns").doc(row.id).set(row,{merge:true});return;}
+    const list=db.locationMigrationRuns||[],i=list.findIndex(x=>x.id===row.id);if(i>=0)list[i]={...list[i],...row};else list.push(row);db.locationMigrationRuns=list;saveDatabase();
+  },
+  getLocationMigrationRuns: async (): Promise<LocationMigrationRun[]> => {
+    if(firestoreDb&&!demoSandboxContext.getStore()){const snap=await firestoreDb.collection("locationMigrationRuns").get();return snap.docs.map(d=>d.data() as LocationMigrationRun).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));}
+    return [...(db.locationMigrationRuns||[])].sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+  },
+  applyLocationSchedulePatches: async (patches: Array<{id:number;fields:Partial<FSchedule>}>): Promise<void> => {
+    if(!patches.length)return;invalidateSchedules();
+    if(firestoreDb&&!demoSandboxContext.getStore()){
+      for(let i=0;i<patches.length;i+=400){const batch=firestoreDb.batch();patches.slice(i,i+400).forEach(p=>batch.set(firestoreDb!.collection("schedules").doc(`schedule_${p.id}`),p.fields,{merge:true}));await batch.commit();}return;
+    }
+    const byId=new Map(patches.map(p=>[p.id,p.fields]));db.schedules=db.schedules.map(row=>byId.has(row.id)?{...row,...byId.get(row.id)}:row);saveDatabase();
   },
 
   // Rooms

@@ -1,6 +1,7 @@
 import { formatScheduleTimeRange, scheduleClockForDisplay } from "./scheduleTime";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule, ScheduleVersion } from "../types";
 import { SCHEDULE_DAYS, timeToMinutes, minutesToTime, type DayKey } from "./scheduleIntelligence";
+import { roomIdentityKey } from "./locationRegistry";
 
 export type HistoricalDayModel = {
   minute: number;
@@ -40,7 +41,7 @@ const daysOf = (row: FSchedule) => dayKeys.filter(day => Boolean((row as any)[da
 export const patternKeyOf = (row: Partial<FSchedule>) => dayKeys.filter(day => Boolean((row as any)[day])).join("+");
 const placementKey = (row: Partial<FSchedule>) => [
   patternKeyOf(row), String(row.fstarttime || ""), String(row.fendtime || ""),
-  String(row.AdRoomCode || ""), String(row.AdRoomHall || ""), Number(row.AdInstructorId || 0),
+  roomIdentityKey(row), Number(row.AdInstructorId || 0),
 ].join("|");
 const identityKey = (row: Partial<FSchedule>) => `${Number(row.AdCourseId || 0)}:${String(row.SCode || "")}`;
 
@@ -256,6 +257,13 @@ const top = <T>(values: T[]) => {
   return ranked[0] ? { value: ranked[0][0], count: ranked[0][1], share: Math.round(ranked[0][1] / total * 100) } : null;
 };
 
+const topRoom = (rows: FSchedule[]) => {
+  const grouped=new Map<string,{count:number,label:string}>();
+  for(const row of rows){const key=roomIdentityKey(row);if(!key)continue;const label=[row.AdRoomCode,row.AdRoomHall].filter(Boolean).join("/");const current=grouped.get(key);grouped.set(key,{count:(current?.count||0)+1,label:current?.label||label});}
+  const ranked=[...grouped.entries()].sort((a,b)=>b[1].count-a[1].count);const total=[...grouped.values()].reduce((sum,item)=>sum+item.count,0)||1;
+  return ranked[0]?{key:ranked[0][0],value:ranked[0][1].label,count:ranked[0][1].count,share:Math.round(ranked[0][1].count/total*100)}:null;
+};
+
 function termName(termId: number, terms: AdTerm[]) {
   return terms.find(term => Number(term.AdTermId) === Number(termId))?.AdTermName || String(termId || "—");
 }
@@ -267,7 +275,7 @@ export function buildCourseLife(courseId: number, history: FSchedule[], terms: A
   const starts = top(rows.map(row => String(row.fstarttime || "")).filter(Boolean));
   const durations = top(rows.map(row => timeToMinutes(row.fendtime) - timeToMinutes(row.fstarttime)).filter(value => value > 0 && value <= 300));
   const patterns = top(rows.map(patternKeyOf).filter(Boolean));
-  const rooms = top(rows.map(row => `${row.AdRoomCode || ""}/${row.AdRoomHall || ""}`).filter(value => value !== "/"));
+  const rooms = topRoom(rows);
   const teachers = top(rows.map(row => Number(row.AdInstructorId || 0)).filter(Boolean));
   const placements = top(rows.map(placementKey));
   const sectionsPerTerm = termIds.length ? Math.round(rows.length / termIds.length * 10) / 10 : rows.length;
@@ -295,7 +303,7 @@ export function buildOfferingLife(selected: FSchedule, history: FSchedule[], ter
   let last = "";
   rows.forEach(row => { const key = placementKey(row); if (last && key !== last) transitions += 1; last = key; });
   const starts = top(rows.map(row => row.fstarttime));
-  const rooms = top(rows.map(row => `${row.AdRoomCode || ""}/${row.AdRoomHall || ""}`));
+  const rooms = topRoom(rows);
   const teachers = top(rows.map(row => Number(row.AdInstructorId || 0)).filter(Boolean));
   const journey = [...versions]
     .filter(version => Array.isArray(version.rows))
@@ -325,7 +333,8 @@ export function buildOfferingLife(selected: FSchedule, history: FSchedule[], ter
 export function buildDecisionCost(selected: FSchedule, currentRows: FSchedule[], history: FSchedule[]) {
   const active = daysOf(selected);
   const professorLinks = currentRows.filter(row => row.id !== selected.id && row.AdInstructorId === selected.AdInstructorId && active.some(day => Boolean((row as any)[day]))).length;
-  const roomLinks = currentRows.filter(row => row.id !== selected.id && row.AdRoomCode === selected.AdRoomCode && row.AdRoomHall === selected.AdRoomHall && active.some(day => Boolean((row as any)[day]))).length;
+  const selectedRoomKey=roomIdentityKey(selected);
+  const roomLinks = currentRows.filter(row => row.id !== selected.id && Boolean(selectedRoomKey) && roomIdentityKey(row)===selectedRoomKey && active.some(day => Boolean((row as any)[day]))).length;
   const courseLinks = currentRows.filter(row => row.id !== selected.id && row.AdCourseId === selected.AdCourseId).length;
   const historical = history.filter(row => row.AdCourseId === selected.AdCourseId);
   const stable = top(historical.map(placementKey))?.share || 0;
@@ -363,7 +372,7 @@ export function investigateCrowding(rows: FSchedule[], day: DayKey, history: FSc
   const historicShares = [...historyByTerm.values()].map(list => list.length ? list.filter(row => Boolean((row as any)[day])).length / list.length : 0).filter(Number.isFinite);
   const historicAverage = historicShares.length ? historicShares.reduce((a,b)=>a+b,0) / historicShares.length : 0;
   const patterns = top(today.map(patternKeyOf).filter(Boolean));
-  const roomCount = new Set(today.map(row => `${row.AdRoomCode}/${row.AdRoomHall}`)).size;
+  const roomCount = new Set(today.map(roomIdentityKey).filter(Boolean)).size;
   const professorCount = new Set(today.map(row => row.AdInstructorId)).size;
   const concentration = rows.length ? Math.round(currentShare * 100) : 0;
   const inherited = historicAverage ? Math.round(historicAverage * 100) : 0;
@@ -405,7 +414,7 @@ export function discoverUnwrittenRules(history: FSchedule[], terms: AdTerm[], co
   const byCourse = new Map<number,FSchedule[]>(); rows.forEach(row=>byCourse.set(row.AdCourseId,[...(byCourse.get(row.AdCourseId)||[]),row]));
   for (const [courseId,list] of byCourse) {
     if (list.length < 6) continue;
-    const room = top(list.map(row=>`${row.AdRoomCode}/${row.AdRoomHall}`).filter(x=>x!=="/"));
+    const room = topRoom(list);
     if (room && room.share >= 75) {
       const course = courses.find(c=>Number(c.AdCourseId)===Number(courseId));
       rules.push({ id:`room:${courseId}`, kind:"course-room", confidence:room.share, title:`${course?.CourseCode||course?.CourseName||courseId} يرتبط غالباً بـ ${room.value}`, detail:`${room.share}٪ من الحالات`, });
@@ -465,7 +474,7 @@ export function scheduleAccuracyFromVersions(versions: ScheduleVersion[], curren
     if(placementKey(row)===placementKey(now)){unchanged++;continue;}
     changed++;
     if(row.fstarttime!==now.fstarttime||row.fendtime!==now.fendtime)dimensions.time++;
-    if(row.AdRoomCode!==now.AdRoomCode||row.AdRoomHall!==now.AdRoomHall)dimensions.room++;
+    if(roomIdentityKey(row)!==roomIdentityKey(now))dimensions.room++;
     if(row.AdInstructorId!==now.AdInstructorId)dimensions.instructor++;
     if(patternKeyOf(row)!==patternKeyOf(now))dimensions.days++;
   }

@@ -12,6 +12,7 @@ import type {
 } from "./types";
 import { SCHEDULE_DAY_END } from "../../utils/scheduleTime";
 import { expectedMinutesForDay } from "../../utils/scheduleRegulations";
+import { roomIdentityKey } from "../../utils/locationRegistry";
 
 export const PHYSICS_DAYS: Array<{ key: ScheduleDayKey; label: string }> = [
   { key: "fsunday", label: "الأحد" },
@@ -252,6 +253,6 @@ export function relatedness(row: FSchedule, candidate: FSchedule) {
   return {
     professor: row.AdInstructorId === candidate.AdInstructorId,
     course: row.AdCourseId === candidate.AdCourseId,
-    room: Boolean(row.AdRoomCode && row.AdRoomHall && row.AdRoomCode === candidate.AdRoomCode && row.AdRoomHall === candidate.AdRoomHall),
+    room: Boolean(roomIdentityKey(row) && roomIdentityKey(row) === roomIdentityKey(candidate)),
   };
 }

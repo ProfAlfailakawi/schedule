@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Building2, Check, Clock3, MapPin, Pencil, Pin, Trash2, UsersRound } from "lucide-react";
+import { AlertTriangle, Building2, Check, Clock3, MapPin, Pencil, Trash2, UsersRound } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
 import InstructorPicker from "./InstructorPicker";
+import LocationPicker from "./LocationPicker";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { expectedMinutesForDay, type DayKey as RegulationDayKey } from "../utils/scheduleRegulations";
 import { cleanBuildingCode, cleanHallCode } from "../utils/cleanRoom";
+import { roomIdentityKey } from "../utils/locationRegistry";
 
 /**
  * Editable authority-PDF preview.
@@ -21,6 +23,8 @@ export type ImportRow = {
   fsunday: boolean; fmonday: boolean; ftuesday: boolean; fwednesday: boolean; fthursday: boolean;
   fstarttime: string; fendtime: string;
   AdRoomCode: string; AdRoomHall: string;
+  buildingId?: string; roomId?: string; locationStatus?: "VERIFIED" | "PENDING_ROOM" | "LOCATION_REVIEW_REQUIRED" | "INVALID_HISTORICAL";
+  sourceBuildingText?: string; sourceRoomText?: string;
   AdInstructorId: number;
   sourceInstructorText?: string;
   [extra: string]: unknown;
@@ -52,7 +56,7 @@ const cleanRoom = (value: unknown) => String(value || "").trim().toLocaleUpperCa
 
 export default function ImportPreviewTable({
   rows, courses, instructors, departmentIds = [], visitingIds = [], departmentRooms = [],
-  collegeId = 0, sectionId = 0, termId = 0, onPinRoom, onRows,
+  collegeId = 0, sectionId = 0, termId = 0, onRows,
 }: {
   rows: ImportRow[];
   courses: AdCourse[];
@@ -63,14 +67,12 @@ export default function ImportPreviewTable({
   collegeId?: number;
   sectionId?: number;
   termId?: number;
-  onPinRoom?: (building: string, hall: string) => Promise<boolean> | boolean;
   onRows: (next: ImportRow[]) => void;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [extraInstructors, setExtraInstructors] = useState<AdInstructor[]>([]);
   const [serverConflicts, setServerConflicts] = useState<ConflictNote[]>([]);
   const [checkingConflicts, setCheckingConflicts] = useState(false);
-  const [pinBusy, setPinBusy] = useState(false);
   const [roomOwner, setRoomOwner] = useState<any>(null);
 
   const courseById = useMemo(() => new Map(courses.map(course => [Number(course.AdCourseId), course])), [courses]);
@@ -124,7 +126,7 @@ export default function ImportPreviewTable({
     scode: (row: ImportRow) => !String(row.SCode || "").trim(),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
-    room: (row: ImportRow) => !String(row.AdRoomCode || "").trim() || !String(row.AdRoomHall || "").trim(),
+    room: (row: ImportRow) => !row.buildingId || (!row.roomId && row.locationStatus !== "PENDING_ROOM"),
     instructor: (row: ImportRow) => !Number(row.AdInstructorId),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
@@ -162,7 +164,7 @@ export default function ImportPreviewTable({
       if (row.AdInstructorId && Number(row.AdInstructorId) === Number(other.AdInstructorId)) {
         notes.push({ type: "instructor", severity: "high", message: "تعارض أستاذ", detail: `${instructorById.get(Number(row.AdInstructorId))?.AdInstructorName || "الأستاذ"} مرتبط أيضاً بالصف ${(at + 1).toLocaleString("ar-KW-u-nu-latn")} · ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}.` });
       }
-      if (cleanRoom(row.AdRoomCode) && cleanRoom(row.AdRoomHall) && cleanRoom(row.AdRoomCode) === cleanRoom(other.AdRoomCode) && cleanRoom(row.AdRoomHall) === cleanRoom(other.AdRoomHall)) {
+      if (roomIdentityKey(row as any) && roomIdentityKey(row as any) === roomIdentityKey(other as any)) {
         notes.push({ type: "room", severity: "high", message: "تعارض قاعة", detail: `${cleanRoom(row.AdRoomCode)}/${cleanRoom(row.AdRoomHall)} مستخدمة أيضاً في الصف ${(at + 1).toLocaleString("ar-KW-u-nu-latn")} · ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}.` });
       }
     });
@@ -219,8 +221,6 @@ export default function ImportPreviewTable({
             const course = courseById.get(Number(row.AdCourseId));
             const person = instructorById.get(Number(row.AdInstructorId));
             const open = editing === index;
-            const newRoom = open && Boolean(cleanRoom(row.AdRoomCode) && cleanRoom(row.AdRoomHall)) && !roomKnown(row.AdRoomCode, row.AdRoomHall);
-            const halls = hallsFor(row.AdRoomCode);
             return (
               <React.Fragment key={`${row.referenceNumber || "row"}-${index}`}>
                 <tr className={open ? "is-editing" : ""}>
@@ -240,11 +240,8 @@ export default function ImportPreviewTable({
                   <td className={red(missing.time(row))} dir="ltr">
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patch(index, { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
-                  <td className={red(missing.room(row))} dir="ltr">
-                    {open ? <div className="import-room-editor"><input list={`import-buildings-${index}`} value={String(row.AdRoomCode || "")} onChange={event => patch(index, { AdRoomCode: cleanBuildingCode(event.target.value).slice(0, 12), AdRoomHall: "" })} placeholder="اختر أو اكتب المبنى" /><datalist id={`import-buildings-${index}`}>{buildings.map(item => <option key={item} value={item} />)}</datalist>{buildings.length?<small>{buildings.length.toLocaleString("ar-KW-u-nu-latn")} مبنى من تاريخ القسم</small>:null}</div> : (String(row.AdRoomCode || "").trim() || "—")}
-                  </td>
-                  <td className={red(missing.room(row))} dir="ltr">
-                    {open ? <div className="import-room-editor"><div className="import-hall-input-row"><input list={`import-halls-${index}`} value={String(row.AdRoomHall || "")} onChange={event => patch(index, { AdRoomHall: event.target.value.toUpperCase().slice(0, 12) })} placeholder="اختر أو اكتب القاعة" />{halls.length?<details className="import-hall-picker"><summary data-guide-ignore="اختيار سريع لقاعة داخل محرر الاستيراد"><MapPin/><span>{halls.length.toLocaleString("ar-KW-u-nu-latn")}</span></summary><div>{halls.map(hall=><button type="button" key={hall} data-guide-ignore="اختيار قاعة محفوظة داخل الاستيراد" className={cleanRoom(row.AdRoomHall)===hall?"active":""} onClick={event=>{patch(index,{AdRoomHall:hall});event.currentTarget.closest("details")?.removeAttribute("open");}}><MapPin/><bdi dir="ltr">{hall}</bdi></button>)}</div></details>:null}</div><datalist id={`import-halls-${index}`}>{halls.map(item => <option key={item} value={item} />)}</datalist>{halls.length ? <small>{halls.length.toLocaleString("ar-KW-u-nu-latn")} قاعة محفوظة في هذا المبنى</small> : null}</div> : (String(row.AdRoomHall || "").trim() || "—")}
+                  <td className={red(missing.room(row))} colSpan={2}>
+                    {open ? <LocationPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={row as any} showRaw onChange={location=>patch(index,location as Partial<ImportRow>)} /> : <span dir="ltr">{row.locationStatus==="PENDING_ROOM"?"بانتظار تثبيت القاعة":([row.AdRoomCode,row.AdRoomHall].filter(Boolean).join("/")||"—")}</span>}
                   </td>
                   <td className={red(missing.instructor(row))}>
                     {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds.length ? departmentIds : pickerInstructors.map(person => Number(person.AdInstructorId)).filter(Boolean)} visitingIds={visitingIds} collegeId={collegeId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || "—")}
@@ -254,9 +251,8 @@ export default function ImportPreviewTable({
                     <button type="button" data-guide-ignore="حذف صف من معاينة الاستيراد قبل أي حفظ" className="danger" title="حذف المقرر كاملاً" onClick={() => remove(index)}><Trash2 /></button>
                   </td>
                 </tr>
-                {open && (newRoom || roomOwner || checkingConflicts || conflictNotes.length) ? <tr className="import-row-review"><td colSpan={9}>
+                {open && (roomOwner || checkingConflicts || conflictNotes.length) ? <tr className="import-row-review"><td colSpan={9}>
                   <div className="import-row-review-grid">
-                    {newRoom ? <article className="import-review-card room-new"><Building2 /><div><strong>هذه قاعة جديدة لم تكن موجودة في تاريخ القسم.</strong><span dir="ltr">{cleanRoom(row.AdRoomCode)}/{cleanRoom(row.AdRoomHall)}</span><p>يمكنك استخدامها الآن، أو تثبيتها لتظهر مباشرة ضمن اختيارات القسم لاحقاً.</p></div>{onPinRoom ? <button type="button" data-guide-ignore="تثبيت قاعة جديدة من معاينة الاستيراد" disabled={pinBusy} onClick={async () => { setPinBusy(true); try { await onPinRoom(row.AdRoomCode, row.AdRoomHall); } finally { setPinBusy(false); } }}><Pin />{pinBusy ? "يثبت…" : "ثبّت القاعة"}</button> : null}</article> : null}
                     {roomOwner ? <article className="import-review-card room-owner"><Building2/><div><strong><bdi dir="ltr">{roomOwner.room}/{roomOwner.hall}</bdi> قاعة {roomOwner.section || "قسم آخر"}</strong><p>{roomOwner.college ? `${roomOwner.college} · ` : ""}{roomOwner.share ? `${roomOwner.share}٪ من حجوزاتها المسجلة لهذا القسم.` : "القاعة مرتبطة بنطاق آخر."} يمكنك المتابعة إذا كان الاستخدام متفقاً عليه.</p></div></article> : null}
                     {checkingConflicts ? <article className="import-review-card checking"><Clock3 /><div><strong>جاري فحص التعارضات…</strong><p>نفحص الوقت والقاعة والأستاذ قبل اعتماد هذا الصف.</p></div></article> : null}
                     {conflictNotes.map((note, at) => { const room = note.type === "room" || String(note.message || "").includes("قاعة"); const instructor = note.type === "instructor" || String(note.message || "").includes("أستاذ"); const Icon = room ? Building2 : instructor ? UsersRound : AlertTriangle; return <article key={`${note.type || "note"}-${at}`} className={`import-review-card conflict ${room ? "room" : instructor ? "instructor" : "generic"}`}><Icon /><div><strong>{note.message || (room ? "تعارض قاعة" : instructor ? "تعارض أستاذ" : "تعارض")}</strong>{note.detail ? <p>{note.detail}</p> : null}</div></article>; })}

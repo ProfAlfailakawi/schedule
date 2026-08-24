@@ -29,6 +29,7 @@ import {
   Zap,
 } from "lucide-react";
 import { Badge, GhostButton, Notice, PrimaryButton, SecondaryButton } from "./ui";
+import LocationPicker from "./LocationPicker";
 import {
   BriefScene,
   ContextPicker,
@@ -43,6 +44,7 @@ import type { ScheduleExperience } from "./ScheduleExperienceLayer";
 import { SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { telemetryApi, telemetryBreadcrumb, telemetryError, telemetryTiming } from "../utils/clientTelemetry";
 import { sortByName } from "../utils/sorting";
+import { roomIdentityKey } from "../utils/locationRegistry";
 
 type Scene =
   | "pulse"
@@ -120,6 +122,9 @@ export default function LivingScheduleLayer({
     [candidateEnd, setCandidateEnd] = useState(""),
     [candidateRoomCode, setCandidateRoomCode] = useState(""),
     [candidateRoomHall, setCandidateRoomHall] = useState(""),
+    [candidateBuildingId, setCandidateBuildingId] = useState<string | undefined>(undefined),
+    [candidateRoomId, setCandidateRoomId] = useState<string | undefined>(undefined),
+    [candidateLocationStatus, setCandidateLocationStatus] = useState<FSchedule["locationStatus"]>(undefined),
     [candidateDay, setCandidateDay] = useState<"same" | DayKey>("same");
   const [sourceTerm, setSourceTerm] = useState(0),
     [genesis, setGenesis] = useState<any>(null),
@@ -307,6 +312,9 @@ export default function LivingScheduleLayer({
     setCandidateEnd(selected.fendtime);
     setCandidateRoomCode(selected.AdRoomCode);
     setCandidateRoomHall(selected.AdRoomHall);
+    setCandidateBuildingId(selected.buildingId);
+    setCandidateRoomId(selected.roomId);
+    setCandidateLocationStatus(selected.locationStatus);
     setCandidateDay("same");
     setWhyResult(null);
   }, [selected?.id]);
@@ -336,6 +344,9 @@ export default function LivingScheduleLayer({
       fendtime: candidateEnd,
       AdRoomCode: candidateRoomCode,
       AdRoomHall: candidateRoomHall,
+      buildingId: candidateBuildingId,
+      roomId: candidateRoomId,
+      locationStatus: candidateLocationStatus,
     };
     if (candidateDay !== "same")
       DAYS.forEach((day) => (c[day.key] = day.key === candidateDay));
@@ -447,8 +458,13 @@ export default function LivingScheduleLayer({
       AdInstructorId: Number(source?.AdInstructorId || instructors.find(i => i.AdInstructorName === row.instructor)?.AdInstructorId || 0),
       fstarttime: row.start || source?.fstarttime || "",
       fendtime: row.end || source?.fendtime || "",
-      AdRoomCode: row.building || source?.AdRoomCode || "",
-      AdRoomHall: row.hall || source?.AdRoomHall || "",
+      buildingId: source?.buildingId,
+      roomId: source?.roomId,
+      locationStatus: source?.locationStatus,
+      sourceBuildingText: source?.sourceBuildingText,
+      sourceRoomText: source?.sourceRoomText,
+      AdRoomCode: source?.AdRoomCode || row.building || "",
+      AdRoomHall: source?.AdRoomHall || row.hall || "",
       fsunday: Boolean(row.fsunday ?? source?.fsunday),
       fmonday: Boolean(row.fmonday ?? source?.fmonday),
       ftuesday: Boolean(row.ftuesday ?? source?.ftuesday),
@@ -902,24 +918,22 @@ export default function LivingScheduleLayer({
                             onChange={(e) => setCandidateEnd(e.target.value)}
                           />
                         </label>
-                        <label>
-                          <span>المبنى</span>
-                          <input
-                            value={candidateRoomCode}
-                            onChange={(e) =>
-                              setCandidateRoomCode(e.target.value)
-                            }
-                          />
-                        </label>
-                        <label>
-                          <span>القاعة</span>
-                          <input
-                            value={candidateRoomHall}
-                            onChange={(e) =>
-                              setCandidateRoomHall(e.target.value)
-                            }
-                          />
-                        </label>
+                        <LocationPicker
+                          collegeId={collegeId}
+                          sectionId={sectionId}
+                          termId={termId}
+                          value={{
+                            AdRoomCode: candidateRoomCode, AdRoomHall: candidateRoomHall,
+                            buildingId: candidateBuildingId, roomId: candidateRoomId, locationStatus: candidateLocationStatus,
+                          }}
+                          onChange={(patch) => {
+                            if ("AdRoomCode" in patch) setCandidateRoomCode(String(patch.AdRoomCode || ""));
+                            if ("AdRoomHall" in patch) setCandidateRoomHall(String(patch.AdRoomHall || ""));
+                            if ("buildingId" in patch) setCandidateBuildingId(patch.buildingId);
+                            if ("roomId" in patch) setCandidateRoomId(patch.roomId);
+                            if ("locationStatus" in patch) setCandidateLocationStatus(patch.locationStatus);
+                          }}
+                        />
                       </div>
                       <div className="why-actions">
                         <PrimaryButton
@@ -1119,8 +1133,7 @@ export default function LivingScheduleLayer({
                                       <label><span>الأستاذ</span><select value={genesisEdit?.AdInstructorId || ""} onChange={e => setGenesisEdit((v:any)=>({...v,AdInstructorId:Number(e.target.value)||0}))}><option value="">اختر</option>{sortByName(instructors, i => i.AdInstructorName).map(i=><option key={i.AdInstructorId} value={i.AdInstructorId}>{i.AdInstructorName}</option>)}</select></label>
                                       <label><span>من</span><input type="time" value={genesisEdit?.fstarttime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fstarttime:e.target.value}))}/></label>
                                       <label><span>إلى</span><input type="time" value={genesisEdit?.fendtime || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,fendtime:e.target.value}))}/></label>
-                                      <label><span>المبنى</span><input value={genesisEdit?.AdRoomCode || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,AdRoomCode:e.target.value}))}/></label>
-                                      <label><span>القاعة</span><input value={genesisEdit?.AdRoomHall || ""} onChange={e=>setGenesisEdit((v:any)=>({...v,AdRoomHall:e.target.value}))}/></label>
+                                      <LocationPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={genesisEdit || {}} onChange={patch=>setGenesisEdit((v:any)=>({...v,...patch}))} showRaw />
                                       <fieldset className="genesis-days"><legend>الأيام</legend>{[["fsunday","الأحد"],["fmonday","الاثنين"],["ftuesday","الثلاثاء"],["fwednesday","الأربعاء"],["fthursday","الخميس"]].map(([key,label]) => <label key={key}><input type="checkbox" checked={Boolean(genesisEdit?.[key])} onChange={e=>setGenesisEdit((v:any)=>({...v,[key]:e.target.checked}))}/><span>{label}</span></label>)}</fieldset>
                                       <PrimaryButton type="button" onClick={() => void saveGenesisRow()} disabled={busy}><Save />حفظ وفحص</PrimaryButton>
                                       <GhostButton type="button" onClick={() => {setGenesisEditId(null);setGenesisEdit(null);setGenesisBulkEdit(false);}}>إلغاء</GhostButton>
@@ -1363,10 +1376,11 @@ export default function LivingScheduleLayer({
                         </span>
                       </button>
                       <button
+                        data-guide-feature-id="page.intelligence"
                         onClick={() =>
                           runCopilot(
                             "room",
-                            `${selected.AdRoomCode}|${selected.AdRoomHall}`,
+                            roomIdentityKey(selected),
                           )
                         }
                       >

@@ -7,6 +7,7 @@ import {
   BrainCircuit,
   Building2,
   CalendarDays,
+  CircleAlert,
   ClipboardCheck,
   CheckCircle2,
   ChevronLeft,
@@ -79,6 +80,7 @@ import {
 } from "../types";
 import LivingScheduleLayer from "./LivingScheduleLayer";
 import HallBarterBoard, { type HallBarterReservationView } from "./HallBarterBoard";
+import LocationPicker from "./LocationPicker";
 import DaySubstitute from "./DaySubstitute";
 import MeetingSlots from "./MeetingSlots";
 import ScheduleExperienceLayer, {
@@ -125,6 +127,7 @@ import {
 import ScheduleTransfer from "./ScheduleTransfer";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
+import { historicalLocationNeedsReview, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
@@ -855,7 +858,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     [ripple, setRipple] = useState<any>(null),
     [replay, setReplay] = useState<any>(null),
     [replayLoading, setReplayLoading] = useState(false),
-    [quickSearch, setQuickSearch] = useState("");
+    [quickSearch, setQuickSearch] = useState(""),
+    [pendingOnly, setPendingOnly] = useState(false),
+    [pendingNoticeVisible, setPendingNoticeVisible] = useState(false);
   const [decisionEditQueue, setDecisionEditQueue] = useState<{ ids: number[]; index: number } | null>(null);
   /* The timetable stays the main object. Secondary controls disclose only
      when they are being used, while an active lens keeps its result visible in
@@ -1039,7 +1044,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   // disappearing merely because the term changed made the picker forget the
   // department's own history.
   const [departmentRooms, setDepartmentRooms] = useState<Array<{ building: string; hall: string }>>([]);
-  const [roomPinBusy, setRoomPinBusy] = useState(false);
   const [copyCollege, setCopyCollege] = useState(0),
     [copySection, setCopySection] = useState(0),
     [copyFromTerm, setCopyFromTerm] = useState(0),
@@ -1356,30 +1360,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (!buildingKey || !hallKey) return false;
     return estate.get(buildingKey)?.halls.has(hallKey) === true;
   }, [estate]);
-  const pinDepartmentRoom = useCallback(async (building: string, hall: string) => {
-    const cleanBuilding = String(building || "").trim();
-    const cleanHall = String(hall || "").trim();
-    if (!roomScopeCollegeId || !roomScopeSectionId || !cleanBuilding || !cleanHall) return false;
-    setRoomPinBusy(true);
-    try {
-      const data = await fetchJson("/api/department-rooms", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          collegeId: roomScopeCollegeId, sectionId: roomScopeSectionId,
-          building: cleanBuilding, hall: cleanHall,
-        }),
-      });
-      setDepartmentRooms(Array.isArray(data?.rooms) ? data.rooms : []);
-      setMessage(`تم تثبيت القاعة ${cleanBuilding}/${cleanHall} في قائمة قاعات القسم.`);
-      return true;
-    } catch (e: any) {
-      setError(e?.message || "تعذر تثبيت القاعة الآن.");
-      return false;
-    } finally {
-      setRoomPinBusy(false);
-    }
-  }, [roomScopeCollegeId, roomScopeSectionId]);
+
 
   /**
    * The next section number, offered rather than imposed.
@@ -2451,8 +2432,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     return () => { alive = false; };
   }, [mode, editor, form.AdCollegeId, form.AdSectionId, form.AdTermId, filterCollege, filterSection, filterTerm, departmentStartRhythm, liveFeedSerial]);
 
-  // Room suggestions come from the complete history of the department, not
-  // only the rows painted in the currently selected term. Administrators may
+  // Room suggestions come only from the confirmed Master Registry. Administrators may
   // edit another department while viewing this board, so the form's scope wins
   // while the editor is open.
   useEffect(() => {
@@ -2667,8 +2647,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       const next = blank();
       const last = lastSavedRef.current || savedPrefs.lastSaved || null;
       if (last) Object.assign(next, last);
-      next.AdRoomCode = next.AdRoomCode || savedPrefs.lastRoomCode || "";
-      next.AdRoomHall = next.AdRoomHall || savedPrefs.lastRoomHall || "";
+      if (!next.buildingId) { next.AdRoomCode = ""; next.AdRoomHall = ""; next.roomId = undefined; next.locationStatus = undefined; }
       // Scope is inherited only when the user has explicitly activated the
       // board. Never revive a saved college/term behind an empty selector.
       const preferredCollege = Number(filterCollege) || 0;
@@ -2682,8 +2661,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       if (seed?.day) {
         days.forEach(day => { (next as any)[day.key] = day.key === seed.day; });
       }
-      if (seed?.roomCode !== undefined) next.AdRoomCode = seed.roomCode;
-      if (seed?.roomHall !== undefined) next.AdRoomHall = seed.roomHall;
+      // Location is never seeded from a raw string. The user selects a canonical registry record below.
       if (seed?.start) {
         next.fstarttime = seed.start;
         const seededMinutes = seed.day ? expectedMinutesForDay(seed.day as RegDayKey) : 50;
@@ -2837,12 +2815,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const from = mins(draft.start), to = mins(draft.end);
     if (to <= from) return "وقت النهاية يجب أن يكون بعد وقت البداية.";
     if (!withinScheduleDay(from, to)) return `الوقت خارج اليوم الدراسي (${formatScheduleTimeRange(SCHEDULE_DAY_START_TIME, SCHEDULE_DAY_END_TIME)}).`;
-    const room = draft.room.trim(), hall = draft.hall.trim();
     const busy = rows.find(r =>
       Boolean((r as any)[day]) &&
       mins(r.fstarttime) < to && mins(r.fendtime) > from &&
       ((draft.instructorId && r.AdInstructorId === draft.instructorId) ||
-        (room && hall && String(r.AdRoomCode) === room && String(r.AdRoomHall) === hall)));
+        (draft.roomId && String(r.roomId || "") === String(draft.roomId))));
     if (!busy) return null;
     const what = busy.AdCourseName || courseById.get(busy.AdCourseId)?.CourseName || "موعد آخر";
     const why = draft.instructorId && busy.AdInstructorId === draft.instructorId ? "الأستاذ مرتبط بـ" : "القاعة محجوزة لـ";
@@ -2917,7 +2894,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   };
   const takeSlot = (slot: any) => {
     setScheduleTouched(true);
-    setForm(prev => ({ ...prev, fstarttime: slot.start, fendtime: slot.end, AdRoomCode: slot.room, AdRoomHall: slot.hall }));
+    setForm(prev => ({ ...prev, fstarttime: slot.start, fendtime: slot.end, ...(slot.roomId&&slot.buildingId?{buildingId:slot.buildingId,roomId:slot.roomId,AdRoomCode:slot.room,AdRoomHall:slot.hall,locationStatus:"VERIFIED" as const}:{}) }));
     setSlotIdeas(null);
   };
   /**
@@ -3182,15 +3159,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   /* The keystroke updates the input; the two-hundred-card grid follows a beat
      behind. Deferring the query keeps typing at the keyboard's speed instead of
      the layout's — React drops the stale in-between renders entirely. */
+  const pendingOwnRows=useMemo(()=>rows.filter(row=>row.locationStatus==="PENDING_ROOM"&&(!user?.AdInstructorId||Number(row.AdInstructorId)===Number(user.AdInstructorId))),[rows,user?.AdInstructorId]);
+  useEffect(()=>{
+    if(isPowerAdmin||!user?.AdInstructorId||!filterTerm||!pendingOwnRows.length)return;
+    const key=`pending-room-notice:${user.SystemUserId}:${filterTerm}`;
+    if(sessionStorage.getItem(key))return;
+    sessionStorage.setItem(key,"1");setPendingNoticeVisible(true);
+  },[isPowerAdmin,user?.AdInstructorId,user?.SystemUserId,filterTerm,pendingOwnRows.length]);
   const deferredSearch = useDeferredValue(quickSearch);
   const filteredRows=useMemo(()=>{
     const q=deferredSearch.trim().toLowerCase();
-    const visible=q?rows.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)}):[...rows];
+    const source=pendingOnly?rows.filter(r=>r.locationStatus==="PENDING_ROOM"&&(!user?.AdInstructorId||Number(r.AdInstructorId)===Number(user.AdInstructorId))):rows;
+    const visible=q?source.filter(r=>{const c=courseById.get(r.AdCourseId),i=instructorById.get(r.AdInstructorId);return[r.AdCourseName,c?.CourseName,c?.CourseCode,r.SCode,i?.AdInstructorName,i?.AdInstructorCivil,r.AdRoomCode,r.AdRoomHall,arabicDays(r)].join(" ").toLowerCase().includes(q)}):[...source];
     return visible.sort((a,b)=>
       byArabic(a.AdCourseName||courseById.get(a.AdCourseId)?.CourseName||"",b.AdCourseName||courseById.get(b.AdCourseId)?.CourseName||"")||
       byArabic(a.SCode,b.SCode)||mins(a.fstarttime)-mins(b.fstarttime)||Number(a.id)-Number(b.id)
     );
-  },[rows,deferredSearch,courseById,instructorById]);
+  },[rows,deferredSearch,courseById,instructorById,pendingOnly,user?.AdInstructorId]);
 
   /**
    * The legend is a real shared filter, not three unrelated paint effects.
@@ -3871,9 +3856,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         // carrying a lecture from F6 to F7 at the same hour is exactly the move
         // the reader said left no trace, and the old test — same day, same start
         // — called it a card that had stayed put.
-        const sameRoom =
-          String((before as any).AdRoomCode || "") === String((after as any).AdRoomCode || "") &&
-          String((before as any).AdRoomHall || "") === String((after as any).AdRoomHall || "");
+        const sameRoom = roomIdentityKey(before) === roomIdentityKey(after);
         if (Boolean((after as any)[d.key]) && before.fstarttime === after.fstarttime && sameRoom) return;
         traces.push({
           key: `${d.key}-${sourceRoom.key}-${before.id}-${before.fstarttime}`,
@@ -3903,7 +3886,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const rememberSave = (row: any) => {
     lastSavedRef.current = {
       AdCollegeId: row.AdCollegeId, AdSectionId: row.AdSectionId, AdTermId: row.AdTermId,
-      AdInstructorId: row.AdInstructorId, AdRoomCode: row.AdRoomCode, AdRoomHall: row.AdRoomHall,
+      AdInstructorId: row.AdInstructorId, AdRoomCode: row.AdRoomCode, AdRoomHall: row.AdRoomHall, buildingId: row.buildingId, roomId: row.roomId, locationStatus: row.locationStatus,
       fstarttime: row.fstarttime, fendtime: row.fendtime,
       fsunday: row.fsunday, fmonday: row.fmonday, ftuesday: row.ftuesday,
       fwednesday: row.fwednesday, fthursday: row.fthursday
@@ -3924,8 +3907,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       !form.AdInstructorId ||
       !form.fstarttime ||
       !form.fendtime ||
-      !form.AdRoomCode ||
-      !form.AdRoomHall
+      !form.buildingId ||
+      (!form.roomId && form.locationStatus !== "PENDING_ROOM")
     ) {
       setError("الرجاء إدخال الحقول المطلوبة بالأحمر");
       return;
@@ -4141,6 +4124,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       fendtime: draft.end,
       AdRoomCode: draft.room.trim(),
       AdRoomHall: draft.hall.trim(),
+      buildingId: draft.buildingId,
+      roomId: draft.roomId,
+      locationStatus: draft.locationStatus,
     };
     payload[quick.day] = true;
     setSaving(true);
@@ -4201,6 +4187,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       AdInstructorId: draft.instructorId || prev.AdInstructorId,
       AdRoomCode: draft.room.trim() || prev.AdRoomCode,
       AdRoomHall: draft.hall.trim() || prev.AdRoomHall,
+      buildingId: draft.buildingId || prev.buildingId,
+      roomId: draft.roomId || prev.roomId,
+      locationStatus: draft.locationStatus || prev.locationStatus,
     }));
     if (draft.courseId) setCourseName(courseById.get(draft.courseId)?.CourseName || "");
   };
@@ -7119,6 +7108,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           ftuesday: move.day === "ftuesday", fwednesday: move.day === "fwednesday",
           fthursday: move.day === "fthursday",
           fstarttime: move.start, fendtime: move.end,
+          buildingId: move.buildingId, roomId: move.roomId, locationStatus: "VERIFIED",
           AdRoomCode: move.roomCode, AdRoomHall: move.roomHall,
         },
       }));
@@ -7136,6 +7126,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       leaveMoveTraces(repair.moves.map(move => ({
         before: move.before,
         after: { ...move.before, fstarttime: move.start, fendtime: move.end,
+          buildingId: move.buildingId, roomId: move.roomId, locationStatus: "VERIFIED",
           AdRoomCode: move.roomCode, AdRoomHall: move.roomHall } as FSchedule,
       })));
       offerUndo(
@@ -8125,128 +8116,14 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     />
                   </div>
                 </Field>
-                <div className="schedule-location-pair">
-                  <div className="schedule-location-field schedule-location-field--building">
-                    <Field label="رقم المبنى" required>
-                      <input
-                        value={form.AdRoomCode}
-                        list="schedule-buildings"
-                        onChange={(e) =>
-                          // A different building means the old hall no longer exists.
-                          setForm((p) => ({ ...p, AdRoomCode: e.target.value, AdRoomHall: "" }))
-                        }
-                        required
-                      />
-                      <datalist id="schedule-buildings">
-                        {buildingOptions.map(code => <option key={code} value={code} />)}
-                      </datalist>
-                    </Field>
-                  </div>
-                  <div className="schedule-location-field schedule-location-field--hall">
-                    <Field label="رقم القاعة" required>
-                      <div className="schedule-hall-input-row">
-                        <input
-                          value={form.AdRoomHall}
-                          list="schedule-halls"
-                          onChange={(e) =>
-                            setForm((p) => ({ ...p, AdRoomHall: e.target.value }))
-                          }
-                          required
-                        />
-                        {hallOptions.length ? (
-                          <details className="schedule-hall-picker">
-                            <summary
-                              data-guide-ignore="اختيار قاعة سريع داخل محرر الموعد؛ المرشد يشرح حقل القاعة الأساسي"
-                              aria-label={`عرض قاعات المبنى ${form.AdRoomCode}`}
-                              title={`اختيار سريع من ${hallOptions.length.toLocaleString("ar-KW-u-nu-latn")} قاعة في المبنى ${form.AdRoomCode}`}
-                            >
-                              <MapPin aria-hidden="true" />
-                              <span className="schedule-hall-picker-count" dir="ltr">{hallOptions.length}</span>
-                            </summary>
-                            <div className="schedule-hall-picker-popover" role="group" aria-label={`قاعات المبنى ${form.AdRoomCode}`}>
-                              <header>
-                                <div>
-                                  <small>اختيار سريع</small>
-                                  <strong>قاعات المبنى <bdi dir="ltr">{form.AdRoomCode}</bdi></strong>
-                                  {hallAvailabilityReady ? <p className="schedule-hall-picker-status"><b>{availableHallCount.toLocaleString("ar-KW-u-nu-latn")}</b> متاحة · <b>{busyHallCount.toLocaleString("ar-KW-u-nu-latn")}</b> مشغولة</p> : <p className="schedule-hall-picker-status">اختر الأيام والوقت لمعرفة المتاح فوراً</p>}
-                                </div>
-                                <span>{hallOptions.length.toLocaleString("ar-KW-u-nu-latn")}</span>
-                              </header>
-                              <div className="schedule-hall-picker-grid">
-                                {hallAvailability.map(item => {
-                                  const occupant = item.occupants[0];
-                                  const occupantCourse = occupant
-                                    ? (occupant.AdCourseName || courseById.get(Number(occupant.AdCourseId || 0))?.CourseName || "مقرر")
-                                    : "";
-                                  const occupantInstructor = occupant
-                                    ? (instructorById.get(Number(occupant.AdInstructorId || 0))?.AdInstructorName || "")
-                                    : "";
-                                  const isActive = String(form.AdRoomHall) === String(item.hall);
-                                  const previewOpen = hallBusyPreview === item.hall;
-                                  return (
-                                    <div className={`schedule-hall-choice ${item.occupied ? "is-busy" : "is-free"}`} key={item.hall}>
-                                      <button
-                                        type="button"
-                                        data-guide-ignore="خيار قاعة داخل قائمة الاختيار السريع التابعة لحقل القاعة"
-                                        className={`${isActive ? "active" : ""} ${item.occupied ? "busy" : "free"}`}
-                                        aria-label={item.occupied ? `القاعة ${item.hall} مشغولة؛ اضغط لمعرفة الموعد` : `اختيار القاعة ${item.hall}`}
-                                        onClick={(event) => {
-                                          if (item.occupied) {
-                                            setHallBusyPreview(current => current === item.hall ? null : item.hall);
-                                            return;
-                                          }
-                                          setHallBusyPreview(null);
-                                          setForm((current) => ({ ...current, AdRoomHall: item.hall }));
-                                          event.currentTarget.closest("details")?.removeAttribute("open");
-                                        }}
-                                      >
-                                        <MapPin aria-hidden="true" />
-                                        <bdi dir="ltr">{item.hall}</bdi>
-                                        {item.occupied ? <span className="schedule-hall-busy-dot" aria-hidden="true" /> : null}
-                                      </button>
-                                      {previewOpen && occupant ? (
-                                        <div className="schedule-hall-busy-card" role="status">
-                                          <div className="schedule-hall-busy-card-head">
-                                            <strong><bdi dir="ltr">{item.hall}</bdi> مشغولة</strong>
-                                            <span dir="ltr">{formatScheduleTimeRange(occupant.fstarttime, occupant.fendtime)}</span>
-                                          </div>
-                                          <p>{occupantCourse}</p>
-                                          {occupantInstructor ? <small>{occupantInstructor}</small> : null}
-                                          <button type="button" className="schedule-hall-busy-open" data-guide-ignore="تنقل ثانوي من معاينة إشغال القاعة إلى تفاصيل الموعد الموجود؛ لا يغيّر بيانات الجدول" onClick={() => revealHallOccupant(occupant)}>عرض الموعد</button>
-                                          {item.occupants.length > 1 ? <em>+{(item.occupants.length - 1).toLocaleString("ar-KW-u-nu-latn")} موعد متداخل</em> : null}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          </details>
-                        ) : null}
-                      </div>
-                      <datalist id="schedule-halls">
-                        {hallOptions.map(hall => <option key={hall} value={hall} />)}
-                      </datalist>
-                    </Field>
-                  </div>
-                </div>
-                {String(form.AdRoomCode || "").trim() && String(form.AdRoomHall || "").trim() && !roomKnown(form.AdRoomCode, form.AdRoomHall) ? (
-                  <div className="schedule-new-room-note" role="status">
-                    <MapPin aria-hidden="true" />
-                    <div>
-                      <strong>هذه قاعة جديدة لم تكن موجودة لديكم.</strong>
-                      <span>يمكنك حفظ الموعد كما هو، أو تثبيتها لتظهر من الآن في قائمة قاعات القسم.</span>
-                    </div>
-                    <button
-                      type="button"
-                      data-guide-ignore="تثبيت قاعة جديدة من نموذج الموعد إجراء محلي تابع لحقل القاعة"
-                      disabled={roomPinBusy}
-                      onClick={() => void pinDepartmentRoom(form.AdRoomCode, form.AdRoomHall)}
-                    >
-                      {roomPinBusy ? "أثبت…" : "نعم، ثبّت القاعة"}
-                    </button>
-                  </div>
-                ) : null}
+                <LocationPicker
+                  collegeId={Number(form.AdCollegeId||0)}
+                  sectionId={Number(form.AdSectionId||0)}
+                  termId={Number(form.AdTermId||0)}
+                  value={form}
+                  onChange={(patch)=>{setScheduleTouched(true);setForm(current=>({...current,...patch}));}}
+                  showRaw={editor==="edit"}
+                />
                 {roomOwner ? (
                   <div className="room-owner-note" role="status">
                     <span className="room-owner-mark" aria-hidden="true"><Building2 /></span>
@@ -8259,7 +8136,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         {roomOwner.share}٪ من حجوزاتها المسجلة لهذا القسم. يمكنك المتابعة إذا كان الحجز متفقاً عليه.
                       </span>
                     </div>
-                    <button type="button" data-guide-feature-id="schedule.action.move-room" onClick={() => setForm(p => ({ ...p, AdRoomCode: "", AdRoomHall: "" }))}>
+                    <button type="button" data-guide-feature-id="schedule.action.move-room" onClick={() => setForm(p => ({ ...p, AdRoomCode: "", AdRoomHall: "", buildingId: undefined, roomId: undefined, locationStatus: undefined }))}>
                       تغيير القاعة
                     </button>
                   </div>
@@ -9070,13 +8947,15 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           </div>
         </div>
       ) : null}
+      {pendingNoticeVisible&&pendingOwnRows.length?<div className="pending-room-notice no-print"><div><CircleAlert aria-hidden="true"/><span>لديك <b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")}</b> شعب لم يتم تثبيت قاعاتها بعد.</span></div><div><SecondaryButton type="button" data-guide-ignore="فلتر القاعات المعلقة" onClick={()=>{setPendingOnly(true);setPendingNoticeVisible(false)}}>استكمال القاعات</SecondaryButton><button type="button" data-guide-ignore="إخفاء تنبيه القاعات المعلقة" className="pending-room-dismiss" aria-label="إخفاء التنبيه" onClick={()=>setPendingNoticeVisible(false)}><X/></button></div></div>:null}
       {returnNote || error || message ? <div className="schedule-feedback-stack" aria-live="polite">
         {returnNote ? <Notice type="success">{returnNote}</Notice> : null}
         {error ? <Notice>{error}</Notice> : null}
         {message ? <Notice type="success">{message}</Notice> : null}
       </div> : null}
-      {!networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders ? (
+      {!networkOnline || offlinePending || liveCollaborators || liveEditors + liveHolders || pendingOwnRows.length ? (
         <div className="schedule-ops-strip no-print" aria-label="حالة العمل الذكي">
+          {pendingOwnRows.length?<button type="button" data-guide-ignore="فلتر القاعات المعلقة" className={`schedule-ops-pill warn ${pendingOnly?"on":""}`} onClick={()=>setPendingOnly(value=>!value)}><CircleAlert aria-hidden="true"/><b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")} بانتظار قاعة</b></button>:null}
           {!networkOnline ? <span className="schedule-ops-pill warn"><Radio aria-hidden="true"/><b>دون اتصال · التغييرات الآمنة محلية</b></span> : null}
           {offlinePending ? <span className="schedule-ops-pill warn"><Upload aria-hidden="true"/><b>{offlinePending.toLocaleString("ar-KW-u-nu-latn")} بانتظار المزامنة</b></span> : null}
           {liveCollaborators ? <span className="schedule-ops-pill"><UsersRound aria-hidden="true"/><b>{liveCollaborators.toLocaleString("ar-KW-u-nu-latn")} يعمل الآن</b></span> : null}
@@ -9098,7 +8977,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         <StatCard
           icon={<Table2 />}
           value={
-            new Set(filteredRows.map((x) => x.AdRoomCode + "|" + x.AdRoomHall)).size
+            new Set(filteredRows.map((x) => roomIdentityKey(x)).filter(Boolean)).size
           }
           label="قاعة مستخدمة"
         />
@@ -9500,9 +9379,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </div>
                     <div className="agenda-place" title="المكان">
                       <MapPin aria-hidden="true" />
-                      <strong>
-                        {s.AdRoomCode || "—"} / {s.AdRoomHall || "—"}
-                      </strong>
+                      <strong>{roomDisplay(s) || "—"}</strong>
+                      {historicalLocationNeedsReview(s)?<Badge tone="neutral">بيانات مكان تاريخية غير موثقة</Badge>:null}
                     </div>
                     <div className="agenda-meta">
                       <span className="unit-pill" title="وحدات">
@@ -11051,11 +10929,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           seed={quick}
           courses={quickCourses}
           instructors={instructors}
-          buildings={buildingOptions}
-          hallsFor={hallsOf}
-          isKnownRoom={roomKnown}
-          onPinRoom={pinDepartmentRoom}
-          roomPinBusy={roomPinBusy}
+          collegeId={Number(filterCollege||0)}
+          sectionId={Number(filterSection||0)}
+          termId={Number(filterTerm||0)}
           durationForDay={(day) => expectedDurationForDay({
             AdCollegeId: filterCollege, AdSectionId: filterSection, AdTermId: filterTerm,
           }, day)}
@@ -11510,9 +11386,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 <td className="print-ltr">
                   {formatScheduleTimeRange(s.fstarttime, s.fendtime)}
                 </td>
-                <td className="print-ltr">
-                  {s.AdRoomCode}/{s.AdRoomHall}
-                </td>
+                <td className="print-ltr">{roomDisplay(s) || "—"}{historicalLocationNeedsReview(s)?" · بيانات مكان تاريخية غير موثقة":""}</td>
               </tr>
             ))}
           </tbody>
@@ -11596,7 +11470,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 </h2>
                 <p>
                   {context.instructor?.AdInstructorName} ·{" "}
-                  {context.selected.AdRoomCode}/{context.selected.AdRoomHall}
+                  {roomDisplay(context.selected) || "—"}{historicalLocationNeedsReview(context.selected)?" · بيانات مكان تاريخية غير موثقة":""}
                 </p>
               </div>
             </div>

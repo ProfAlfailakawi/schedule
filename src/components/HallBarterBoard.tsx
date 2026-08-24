@@ -15,6 +15,8 @@ import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 type Opportunity = {
   id: string;
+  buildingId?: string;
+  roomId?: string;
   roomCode: string;
   roomHall: string;
   building: string;
@@ -34,6 +36,8 @@ type Opportunity = {
 
 export type HallBarterReservationView = {
   id: string;
+  buildingId?: string;
+  roomId?: string;
   status: "pending" | "approved" | "rejected" | "cancelled";
   day: "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
   roomCode: string;

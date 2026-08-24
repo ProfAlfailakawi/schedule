@@ -76,6 +76,8 @@ import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext"
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
+import LocationPicker, { BuildingPicker } from "./LocationPicker";
+import { roomIdentityKey } from "../utils/locationRegistry";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import {
   IntelligenceVersionCanvas as VersionCanvas,
@@ -398,9 +400,7 @@ const validateImportRowsLocally = (rows: ImportRow[]) => {
     const otherIndex=index+offset+1;
     if(Number(row.AdInstructorId)&&Number(row.AdInstructorId)===Number(other.AdInstructorId))
       issues.push(`الصفان ${index+1} و${otherIndex+1}: أستاذ المقرر متعارض في الوقت نفسه`);
-    if(String(row.AdRoomCode||"").trim()&&String(row.AdRoomHall||"").trim()&&
-       String(row.AdRoomCode).trim().toUpperCase()===String(other.AdRoomCode||"").trim().toUpperCase()&&
-       String(row.AdRoomHall).trim().toUpperCase()===String(other.AdRoomHall||"").trim().toUpperCase())
+    if(roomIdentityKey(row)&&roomIdentityKey(row)===roomIdentityKey(other))
       issues.push(`الصفان ${index+1} و${otherIndex+1}: القاعة متعارضة في الوقت نفسه`);
   }));
   return [...new Set(issues)];
@@ -585,6 +585,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     AdCourseId: 0,
     day: "fwednesday",
     time: "14:00",
+    buildingId: "",
+    roomId: "",
     roomCode: "",
     roomHall: "",
     maxMinutes: 120,
@@ -1263,6 +1265,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       SCode: String(slot.sectionCode || proposal.openSections + slot.index),
       AdRoomCode: slot.roomCode,
       AdRoomHall: slot.roomHall,
+      buildingId: slot.buildingId,
+      roomId: slot.roomId,
+      locationStatus: slot.buildingId && slot.roomId ? "VERIFIED" : undefined,
       AdInstructorId: slot.instructorId || 0,
       fstarttime: slot.start,
       fendtime: slot.end,
@@ -1505,6 +1510,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setBusy(true);
     try {
       const p = new URLSearchParams({
+        ...(room.roomId ? { roomId: String(room.roomId) } : {}),
         code: room.code,
         hall: room.hall,
         termId: String(termId),
@@ -2003,33 +2009,36 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           const toMinutes = (value:string) => { const [h,m]=String(value||"0:0").split(":").map(Number); return h*60+m; };
           const start = toMinutes(after.fstarttime);
           const end = toMinutes(after.fendtime);
-          const unique = new Map<string,{code:string;hall:string}>();
+          const unique = new Map<string,{key:string;code:string;hall:string;buildingId:string;roomId:string}>();
           (overview?.rooms || []).forEach((room:any) => {
-            const code=String(room?.code||"").trim(), hall=String(room?.hall||"").trim();
-            if(code&&hall) unique.set(`${code}|${hall}`,{code,hall});
+            const code=String(room?.code||"").trim(), hall=String(room?.hall||"").trim(), buildingId=String(room?.buildingId||""), roomId=String(room?.roomId||"");
+            if(code&&hall&&buildingId&&roomId) unique.set(`id:${roomId}`,{key:`id:${roomId}`,code,hall,buildingId,roomId});
           });
           copy.forEach((row:any) => {
-            const code=String(row?.AdRoomCode||"").trim(), hall=String(row?.AdRoomHall||"").trim();
-            if(code&&hall) unique.set(`${code}|${hall}`,{code,hall});
+            const code=String(row?.AdRoomCode||"").trim(), hall=String(row?.AdRoomHall||"").trim(), buildingId=String(row?.buildingId||""), roomId=String(row?.roomId||"");
+            if(code&&hall&&buildingId&&roomId) unique.set(`id:${roomId}`,{key:`id:${roomId}`,code,hall,buildingId,roomId});
           });
-          const occupied = (room:{code:string;hall:string}) => copy.some((row:any,rowIndex:number) => {
+          const occupied = (room:{key:string;code:string;hall:string;buildingId:string;roomId:string}) => copy.some((row:any,rowIndex:number) => {
             if(rowIndex===index) return false;
-            if(String(row.AdRoomCode||"").trim()!==room.code || String(row.AdRoomHall||"").trim()!==room.hall) return false;
+            if(roomIdentityKey(row)!==room.key) return false;
             if(!activeDays.some(day => Boolean(row[day]))) return false;
             const rowStart=toMinutes(row.fstarttime), rowEnd=toMinutes(row.fendtime);
             return start < rowEnd && end > rowStart;
           });
           const candidates=[...unique.values()]
-            .filter(room => !(room.code===String(before.AdRoomCode||"").trim() && room.hall===String(before.AdRoomHall||"").trim()))
+            .filter(room => room.key !== roomIdentityKey(before))
             .filter(room => !occupied(room))
             .sort((a,b) => {
-              const aSame=a.code===String(before.AdRoomCode||"").trim()?0:1;
-              const bSame=b.code===String(before.AdRoomCode||"").trim()?0:1;
+              const aSame=a.buildingId===String(before.buildingId||"")?0:1;
+              const bSame=b.buildingId===String(before.buildingId||"")?0:1;
               return aSame-bSame || byRoom(a.code, a.hall, b.code, b.hall);
             });
           if(candidates[0]) {
+            after.buildingId=candidates[0].buildingId;
+            after.roomId=candidates[0].roomId;
             after.AdRoomCode=candidates[0].code;
             after.AdRoomHall=candidates[0].hall;
+            after.locationStatus="VERIFIED";
           }
         }
         if (Number(intent?.entities?.instructorId || 0) && !intent?.constraints?.keepInstructor) after.AdInstructorId = Number(intent.entities.instructorId);
@@ -2784,9 +2793,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   <div className="castling-head"><span className="castling-mark"><Building2 /></span><div><strong>تبديل القاعات</strong><span>اقتراحات أقرب دون تغيير الوقت</span></div></div>
                   <div className="castling-options">
                   {overview.roomCastling.slice(0, 3).map((proposal: any, index: number) => (
-                    <button key={`${proposal.rowId}-${index}`} type="button" onClick={() => {
+                    <button key={`${proposal.rowId}-${index}`} type="button" data-guide-ignore="اقتراح تبديل قاعة تجريبي داخل مساحة الذكاء؛ يفتح سيناريو للمراجعة ولا يحفظ تلقائيًا" onClick={() => {
                       const changes = new Map((proposal.changes || []).map((c: any) => [Number(c.id), c]));
-                      const next = rows.map(row => { const change: any = changes.get(Number(row.id)); return change ? { ...row, AdRoomCode: change.AdRoomCode, AdRoomHall: change.AdRoomHall } : row; });
+                      const next = rows.map(row => { const change: any = changes.get(Number(row.id)); return change ? { ...row, ...change, locationStatus: change.locationStatus || "VERIFIED" } : row; });
                       setScenario(next); setScenarioEval(null); setTab("twin"); setTwinCard("board"); setMessage(`تم فتح «${proposal.title}» كتجربة فقط — لا شيء محفوظ.`);
                     }}>
                       <span className="castling-person"><UsersRound />{proposal.instructorName}</span>
@@ -3939,30 +3948,26 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       </Field>
                     ) : null}
                     {constraintDraft.type === "course_room" ? (
-                      <>
-                        <Field label="المبنى">
-                          <input
-                            value={constraintDraft.roomCode}
-                            onChange={(e) =>
-                              setConstraintDraft((p: any) => ({
-                                ...p,
-                                roomCode: e.target.value,
-                              }))
-                            }
-                          />
-                        </Field>
-                        <Field label="القاعة">
-                          <input
-                            value={constraintDraft.roomHall}
-                            onChange={(e) =>
-                              setConstraintDraft((p: any) => ({
-                                ...p,
-                                roomHall: e.target.value,
-                              }))
-                            }
-                          />
-                        </Field>
-                      </>
+                      <LocationPicker
+                        collegeId={collegeId}
+                        sectionId={sectionId}
+                        termId={termId}
+                        allowPending={false}
+                        value={{
+                          buildingId: constraintDraft.buildingId || undefined,
+                          roomId: constraintDraft.roomId || undefined,
+                          AdRoomCode: constraintDraft.roomCode || "",
+                          AdRoomHall: constraintDraft.roomHall || "",
+                          locationStatus: constraintDraft.roomId ? "VERIFIED" : undefined,
+                        }}
+                        onChange={(patch) => setConstraintDraft((p: any) => ({
+                          ...p,
+                          buildingId: "buildingId" in patch ? (patch.buildingId || "") : p.buildingId,
+                          roomId: "roomId" in patch ? (patch.roomId || "") : p.roomId,
+                          roomCode: "AdRoomCode" in patch ? (patch.AdRoomCode || "") : p.roomCode,
+                          roomHall: "AdRoomHall" in patch ? (patch.AdRoomHall || "") : p.roomHall,
+                        }))}
+                      />
                     ) : null}
                     {constraintDraft.type === "max_instructor_gap" ? (
                       <Field label="الدقائق">
@@ -4197,7 +4202,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     </select>
                   </Field>
                   {policyDraft.type==="day_off"?<Field label="اليوم"><select value={policyDraft.day} onChange={e=>setPolicyDraft((p:any)=>({...p,day:e.target.value}))}>{Object.entries(dayLabels).map(([key,label])=><option key={key} value={key}>{String(label)}</option>)}</select></Field>:null}
-                  {policyDraft.type==="close_building"?<Field label="المبنى"><input value={policyDraft.building} onChange={e=>setPolicyDraft((p:any)=>({...p,building:e.target.value}))} placeholder="B7" /></Field>:null}
+                  {policyDraft.type==="close_building"?<Field label="المبنى"><BuildingPicker collegeId={collegeId} sectionId={sectionId} termId={termId} value={policyDraft.buildingId||""} onChange={building=>setPolicyDraft((p:any)=>({...p,buildingId:building?.id||"",building:building?.officialCode||""}))} /></Field>:null}
                   {policyDraft.type==="no_classes_after"?<Field label="آخر وقت"><input type="time" value={policyDraft.time} onChange={e=>setPolicyDraft((p:any)=>({...p,time:e.target.value}))} /></Field>:null}
                   {policyDraft.type==="growth"?<Field label="النمو %"><input type="number" min="1" max="100" value={policyDraft.growth} onChange={e=>setPolicyDraft((p:any)=>({...p,growth:Number(e.target.value)||1}))} /></Field>:null}
                   {isPowerAdmin?<Field label="النطاق"><select value={policyDraft.scope} onChange={e=>setPolicyDraft((p:any)=>({...p,scope:e.target.value}))}><option value="university">الجامعة</option><option value="department">القسم الحالي</option></select></Field>:null}
@@ -4477,22 +4482,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                           }
                         />
                       </Field>
-                      <Field label="المبنى">
-                        <input
-                          value={selectedScenario.AdRoomCode}
-                          onChange={(e) =>
-                            patchScenario({ AdRoomCode: e.target.value })
-                          }
-                        />
-                      </Field>
-                      <Field label="القاعة">
-                        <input
-                          value={selectedScenario.AdRoomHall}
-                          onChange={(e) =>
-                            patchScenario({ AdRoomHall: e.target.value })
-                          }
-                        />
-                      </Field>
+                      <LocationPicker
+                        collegeId={collegeId}
+                        sectionId={sectionId}
+                        termId={termId}
+                        value={selectedScenario}
+                        onChange={(location) => patchScenario(location as Partial<FSchedule>)}
+                        showRaw
+                      />
                       <div className="scenario-days">
                         {Object.entries(dayLabels).map(([key, label]) => (
                           <label key={key}>
@@ -5058,16 +5055,6 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   collegeId={collegeId}
                   sectionId={sectionId}
                   termId={termId}
-                  onPinRoom={async (building, hall) => {
-                    try {
-                      const data = await fetchJson("/api/department-rooms", {
-                        method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ collegeId, sectionId, building, hall }),
-                      });
-                      setImportDepartmentRooms(Array.isArray(data?.rooms) ? data.rooms : []);
-                      return true;
-                    } catch { return false; }
-                  }}
                   onRows={next => setImportPreview((prev: any) => {
                     if (!prev) return prev;
                     const normalized=normalizeImportSectionSeries(next);

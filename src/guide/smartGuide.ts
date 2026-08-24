@@ -103,6 +103,7 @@ export const GUIDE_FEATURES: GuideFeature[] = [
   { id:"page.permissions", title:"الصلاحيات", summary:"إدارة ما يستطيع كل مستخدم الوصول إليه وتنفيذه.", view:"permissions", group:"الإدارة", keywords:["صلاحيات","إذن"], permission:12, adminOnly:true, version:1 },
   { id:"page.scopes", title:"نطاقات المستخدمين", summary:"تحديد الكليات والأقسام المسموحة لكل مستخدم.", view:"scopes", group:"الإدارة", keywords:["نطاق","قسم","كلية"], permission:15, adminOnly:true, version:1 },
   { id:"page.audit", title:"سجل النظام", summary:"قراءة الأحداث والتغييرات الإدارية المهمة.", view:"audit", group:"الإدارة", keywords:["سجل","تدقيق","تاريخ"], adminOnly:true, version:1 },
+  { id:"page.locations", title:"المباني والقاعات", summary:"إدارة السجل الرسمي للمباني والقاعات ومراجعة المهاجرة والحالات الملتبسة.", view:"locations", group:"الإدارة", keywords:["مبنى","قاعة","قاعات","موقع","مهاجرة"], adminOnly:true, version:1 },
   { id:"page.backup", title:"النسخ والاستعادة", summary:"إدارة النسخ الاحتياطية والاستعادة للمسؤول الرئيسي.", view:"backup", group:"الإدارة", keywords:["نسخة","استعادة","احتياط"], rootOnly:true, version:1 },
   { id:"page.about", title:"عن النظام", summary:"معلومات موجزة عن SCHEDULE ورحلته ووظيفته داخل العمل الأكاديمي.", view:"about", group:"المرجع", keywords:["عن","النظام","رحلة"], adminOnly:true, version:1 },
   { id:"schedule.practice", title:"تجربة آمنة", summary:"وضع تدريبي داخل واجهة الجدول يسمح بالتجربة على نسخة مؤقتة دون تغيير البيانات الحقيقية.", view:"schedules", group:"التعلم", keywords:["تجربة","تدريب","اجرب","بدون حفظ","آمن"], version:1, permission:7, target:"schedule.practice", risk:"read" },
@@ -556,7 +557,7 @@ export const GUIDE_INTENT_FEATURES:Record<string,string>={
   "dashboard":"page.dashboard","schedules":"page.schedules","intelligence":"page.intelligence","intelligence-understand":"intelligence.scene.understand","ask-table":"intelligence.ask-table","intelligence-try":"intelligence.scene.try","intelligence-approve":"intelligence.scene.approve",
   "search-instructor":"page.searchInstructor","search-room":"page.searchRoom","search-time":"page.searchTime","search-room-time":"page.searchRoomTime","search-advanced":"page.searchAdvanced",
   "report-department":"page.reportDepartment","report-instructor":"page.reportInstructor","report-room":"page.reportRoom","report-time":"page.reportTime","report-room-time":"page.reportRoomTime",
-  "terms":"page.terms","colleges":"page.colleges","sections":"page.sections","instructors":"page.instructors","courses":"page.courses","users":"page.users","permissions":"page.permissions","scopes":"page.scopes","audit":"page.audit","backup":"page.backup","about":"page.about",
+  "terms":"page.terms","colleges":"page.colleges","sections":"page.sections","instructors":"page.instructors","courses":"page.courses","users":"page.users","permissions":"page.permissions","scopes":"page.scopes","audit":"page.audit","locations":"page.locations","backup":"page.backup","about":"page.about",
 };
 export function featureIdForGuideIntentGoal(goal:string){
   const clean=String(goal||"").trim();

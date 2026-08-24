@@ -8,6 +8,7 @@ import {
   type DayKey,
 } from "./scheduleIntelligence";
 import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
+import { roomIdentityKey } from "./locationRegistry";
 
 /**
  * ── إصلاح بأقل أثر ─────────────────────────────────────────────────────────
@@ -38,6 +39,8 @@ export interface RepairMove {
   day: DayKey;
   start: string;
   end: string;
+  buildingId: string;
+  roomId: string;
   roomCode: string;
   roomHall: string;
   /** Plain-words reason this particular card had to move. */
@@ -70,8 +73,9 @@ const placed = (row: FSchedule, day: DayKey, start: string): FSchedule => {
   return next as FSchedule;
 };
 
-const withRoom = (row: FSchedule, code: string, hall: string): FSchedule =>
-  ({ ...row, AdRoomCode: code, AdRoomHall: hall });
+type RoomPlacement={key:string;buildingId:string;roomId:string;code:string;hall:string};
+const withRoom = (row: FSchedule, room: RoomPlacement): FSchedule =>
+  ({ ...row, buildingId:room.buildingId,roomId:room.roomId,AdRoomCode:room.code,AdRoomHall:room.hall,locationStatus:"VERIFIED" });
 
 /** Every whole-slot start a lecture of this length could legally begin at. */
 function slotsFor(row: FSchedule): string[] {
@@ -83,13 +87,12 @@ function slotsFor(row: FSchedule): string[] {
 }
 
 /** The rooms this department actually uses, learned from the board itself. */
-function estateOf(rows: FSchedule[]): Array<{ code: string; hall: string }> {
-  const seen = new Map<string, { code: string; hall: string }>();
+function estateOf(rows: FSchedule[]): RoomPlacement[] {
+  const seen = new Map<string, RoomPlacement>();
   rows.forEach(row => {
-    const code = String(row.AdRoomCode || "").trim();
-    const hall = String(row.AdRoomHall || "").trim();
-    if (!code || !hall) return;
-    seen.set(`${code}|${hall}`, { code, hall });
+    const key=roomIdentityKey(row),code=String(row.AdRoomCode||"").trim(),hall=String(row.AdRoomHall||"").trim();
+    if(!key||!row.buildingId||!row.roomId||!code||!hall||row.locationStatus==="PENDING_ROOM")return;
+    seen.set(key,{key,buildingId:row.buildingId,roomId:row.roomId,code,hall});
   });
   return [...seen.values()];
 }
@@ -101,14 +104,14 @@ function collidesWith(candidate: FSchedule, rows: FSchedule[]): FSchedule[] {
   const days = activeDays(candidate);
   const from = timeToMinutes(candidate.fstarttime);
   const to = timeToMinutes(candidate.fendtime);
-  const room = `${candidate.AdRoomCode}|${candidate.AdRoomHall}`;
+  const room = roomIdentityKey(candidate);
   return rows.filter(other => {
     if (other.id === candidate.id) return false;
     if (Number(other.AdTermId) !== Number(candidate.AdTermId)) return false;
     if (!days.some(day => Boolean((other as any)[day]))) return false;
     if (!(timeToMinutes(other.fstarttime) < to && timeToMinutes(other.fendtime) > from)) return false;
     const sameInstructor = Boolean(candidate.AdInstructorId) && other.AdInstructorId === candidate.AdInstructorId;
-    const sameRoom = room !== "|" && `${other.AdRoomCode}|${other.AdRoomHall}` === room;
+    const sameRoom = Boolean(room) && roomIdentityKey(other) === room;
     return sameInstructor || sameRoom;
   });
 }
@@ -121,21 +124,23 @@ function collidesWith(candidate: FSchedule, rows: FSchedule[]): FSchedule[] {
  * hall you already have. A repair that is technically valid but scatters a
  * teacher across five days is not a repair anyone will accept.
  */
-function candidatesFor(row: FSchedule, rows: FSchedule[], estate: Array<{ code: string; hall: string }>) {
+function candidatesFor(row: FSchedule, rows: FSchedule[], estate: RoomPlacement[]) {
   const mine = rows.filter(other => other.id !== row.id && other.AdInstructorId === row.AdInstructorId);
-  const rooms = [{ code: String(row.AdRoomCode || ""), hall: String(row.AdRoomHall || "") }, ...estate];
-  const out: Array<{ row: FSchedule; score: number; day: DayKey; start: string; room: { code: string; hall: string } }> = [];
+  const currentKey=roomIdentityKey(row);
+  const currentRoom:RoomPlacement|undefined=currentKey&&row.buildingId&&row.roomId?{key:currentKey,buildingId:row.buildingId,roomId:row.roomId,code:String(row.AdRoomCode||""),hall:String(row.AdRoomHall||"")}:undefined;
+  const rooms = [...(currentRoom?[currentRoom]:[]), ...estate.filter(room=>room.key!==currentKey)];
+  const out: Array<{ row: FSchedule; score: number; day: DayKey; start: string; room: RoomPlacement }> = [];
   const currentDay = activeDays(row)[0];
   for (const day of SCHEDULE_DAYS) {
     for (const start of slotsFor(row)) {
       for (const room of rooms) {
         if (!room.code || !room.hall) continue;
         if (day.key === currentDay && start === row.fstarttime &&
-            room.code === row.AdRoomCode && room.hall === row.AdRoomHall) continue;
-        const candidate = withRoom(placed(row, day.key, start), room.code, room.hall);
+            room.key === currentKey) continue;
+        const candidate = withRoom(placed(row, day.key, start), room);
         let score = 0;
         // Keeping the hall is worth a lot: a room change is a notice to send.
-        if (room.code === row.AdRoomCode && room.hall === row.AdRoomHall) score += 30;
+        if (room.key === currentKey) score += 30;
         // Staying on a day the instructor already works costs them nothing.
         if (mine.some(other => Boolean((other as any)[day.key]))) score += 24;
         if (day.key === currentDay) score += 18;
@@ -222,6 +227,8 @@ export function findRepairChain(
         day: option.day,
         start: option.start,
         end: option.row.fendtime,
+        buildingId: option.room.buildingId,
+        roomId: option.room.roomId,
         roomCode: option.room.code,
         roomHall: option.room.hall,
         because: reasonFor(card, displacedBy),
@@ -254,7 +261,7 @@ export function findRepairChain(
 
   const after = conflictCount(moves.reduce((board, move) => board.map(row => (
     row.id === move.id
-      ? withRoom(placed(row, move.day, move.start), move.roomCode, move.roomHall)
+      ? withRoom(placed(row, move.day, move.start), {key:`id:${move.roomId}`,buildingId:move.buildingId,roomId:move.roomId,code:move.roomCode,hall:move.roomHall})
       : row
   )), scope));
 
@@ -283,8 +290,9 @@ export function planDisruption(
   if (!affected.length) return null;
   const scope = allRows.filter(row => Number(row.AdTermId) === Number(affected[0].AdTermId));
   // By default the unavailable halls are the ones the affected lectures sit in.
-  const closed = new Set(affected.map(row => `${row.AdRoomCode}|${row.AdRoomHall}`));
-  const forbidRoom = options?.forbidRoom || ((code: string, hall: string) => closed.has(`${code}|${hall}`));
+  const closed = new Set(affected.map(row => roomIdentityKey(row)).filter(Boolean));
+  const closedDisplay = new Set(affected.filter(row=>roomIdentityKey(row)).map(row => `${row.AdRoomCode}|${row.AdRoomHall}`));
+  const forbidRoom = options?.forbidRoom || ((code: string, hall: string) => closedDisplay.has(`${code}|${hall}`));
   const chains: RepairChain[] = [];
   let board = scope;
   for (const row of affected) {
@@ -307,7 +315,7 @@ export function planDisruption(
     chains.push(chain);
     board = chain.moves.reduce((rows, move) => rows.map(item => (
       item.id === move.id
-        ? withRoom(placed(item, move.day, move.start), move.roomCode, move.roomHall)
+        ? withRoom(placed(item, move.day, move.start), {key:`id:${move.roomId}`,buildingId:move.buildingId,roomId:move.roomId,code:move.roomCode,hall:move.roomHall})
         : item
     )), board);
   }

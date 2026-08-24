@@ -1,6 +1,7 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
 import { learnRhythm, offRhythm } from "./departmentRhythm";
+import { roomIdentityKey, roomDisplay } from "./locationRegistry";
 
 /**
  * ── ما الذي ينتقل من الفصل الماضي، وما الذي يحتاج قراراً ────────────────────
@@ -89,8 +90,7 @@ export interface RolloverStyle {
   learnedFrom: { rows: number; terms: number };
 }
 
-const roomKey = (row: FSchedule) =>
-  [String(row.AdRoomCode || "").trim(), String(row.AdRoomHall || "").trim()].filter(Boolean).join("/");
+const roomKey = (row: FSchedule) => roomIdentityKey(row);
 
 const REASONS: Record<RolloverFlag, string> = {
   "course-gone": "المقرر لم يعد ضمن مقررات القسم",
@@ -150,7 +150,7 @@ export function readTermRollover(
     const place = roomKey(row);
     if (place && !roomsInUse.has(place)) {
       flags.push("room-retired");
-      retired.add(place);
+      retired.add(roomDisplay(row) || place);
     }
 
     if (flags.length)

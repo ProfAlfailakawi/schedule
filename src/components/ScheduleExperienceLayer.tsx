@@ -19,6 +19,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
 import { sortTermsNewest } from "../utils/termSequence";
 import { scheduleClockForDisplay } from "../utils/scheduleTime";
+import { roomIdentityKey } from "../utils/locationRegistry";
 
 type DayKey = "fsunday" | "fmonday" | "ftuesday" | "fwednesday" | "fthursday";
 const dayKeys: DayKey[] = [
@@ -37,8 +38,7 @@ const dayLabels: Record<DayKey, string> = {
 };
 const activeDays = (row: Partial<FSchedule>) =>
   dayKeys.filter((day) => Boolean(row[day]));
-const roomKey = (row: Partial<FSchedule>) =>
-  `${String(row.AdRoomCode || "").trim()}|${String(row.AdRoomHall || "").trim()}`;
+const roomKey = (row: Partial<FSchedule>) => roomIdentityKey(row);
 const rowIdentity = (row: Partial<FSchedule>) =>
   `${row.AdCourseId || 0}:${String(row.SCode || "").trim()}`;
 const placement = (row: Partial<FSchedule>) =>

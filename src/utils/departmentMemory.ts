@@ -1,6 +1,7 @@
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { SCHEDULE_DAYS, timeToMinutes, type DayKey } from "./scheduleIntelligence";
 import { AR, countOf } from "./arabicCount";
+import { normalizeLocationToken, roomIdentityKey } from "./locationRegistry";
 
 /**
  * ── ذاكرة القسم ─────────────────────────────────────────────────────────────
@@ -62,7 +63,7 @@ export interface DepartmentMemory {
   /** What history says about placing something here. */
   atSlot(day: DayKey, start: string): Evidence | null;
   /** What history says about this hall. */
-  aboutRoom(code: string, hall: string): Evidence | null;
+  aboutRoom(code: string, hall: string, roomId?: string): Evidence | null;
   /** What history says about this person's week. */
   aboutInstructor(instructorId: number): Evidence | null;
   /** What history says about where this course has lived. */
@@ -73,8 +74,7 @@ export interface DepartmentMemory {
   surprises(): Evidence[];
 }
 
-const roomKey = (row: FSchedule) =>
-  `${String(row.AdRoomCode || "").trim()}|${String(row.AdRoomHall || "").trim()}`;
+const roomKey = (row: FSchedule) => roomIdentityKey(row);
 const hourOf = (time: string) => Math.floor(timeToMinutes(String(time || "")) / 60);
 const clock = (hour: number) => `${String(hour).padStart(2, "0")}:00`;
 const dayLabel = (day: DayKey) => SCHEDULE_DAYS.find(item => item.key === day)?.label || "";
@@ -108,6 +108,7 @@ export function readDepartmentMemory(
   /** room → terms that used it, and the departments that used it. */
   const roomTerms = new Map<string, Set<number>>();
   const roomRows = new Map<string, FSchedule[]>();
+  const roomLabels = new Map<string, string>();
   /** instructor → their rows. */
   const personRows = new Map<number, FSchedule[]>();
   /** course → their rows. */
@@ -122,10 +123,11 @@ export function readDepartmentMemory(
       slotTerms.get(key)!.add(Number(row.AdTermId));
     }
     const place = roomKey(row);
-    if (place !== "|") {
+    if (place) {
       if (!roomTerms.has(place)) roomTerms.set(place, new Set());
       roomTerms.get(place)!.add(Number(row.AdTermId));
       (roomRows.get(place) || roomRows.set(place, []).get(place)!).push(row);
+      if (!roomLabels.has(place)) roomLabels.set(place,[row.AdRoomCode,row.AdRoomHall].filter(Boolean).join("/"));
     }
     if (row.AdInstructorId) {
       const bucket = personRows.get(row.AdInstructorId);
@@ -175,13 +177,11 @@ export function readDepartmentMemory(
     return null;
   };
 
-  const aboutRoom = (code: string, hall: string): Evidence | null => {
+  const aboutRoomByKey = (place:string,label:string): Evidence | null => {
     if (!enough) return null;
-    const place = `${String(code || "").trim()}|${String(hall || "").trim()}`;
     const mine = roomRows.get(place) || [];
     const used = roomTerms.get(place) || new Set<number>();
     const share = pct(used.size, termCount);
-    const label = `${code}/${hall}`;
 
     if (!mine.length) return null;
 
@@ -210,6 +210,11 @@ export function readDepartmentMemory(
     // Same bar for halls: «هذه قاعتك المعتادة» is not news to anybody who has
     // been booking it for a decade.
     return null;
+  };
+
+  const aboutRoom = (code:string,hall:string,roomId?:string):Evidence|null => {
+    const place=roomId?`id:${roomId}`:`legacy:${normalizeLocationToken(code)}|${normalizeLocationToken(hall)}`;
+    return aboutRoomByKey(place,[code,hall].filter(Boolean).join("/"));
   };
 
   const aboutInstructor = (instructorId: number): Evidence | null => {
@@ -386,8 +391,7 @@ export function readDepartmentMemory(
         if (said?.surprising) found.push(said);
       }
     for (const place of roomTerms.keys()) {
-      const [code, hall] = place.split("|");
-      const said = aboutRoom(code, hall);
+      const said = aboutRoomByKey(place,roomLabels.get(place)||"القاعة");
       if (said?.surprising) found.push(said);
     }
     for (const instructorId of personRows.keys()) {

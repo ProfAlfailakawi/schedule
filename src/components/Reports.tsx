@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { parseNaturalQuery } from "../utils/naturalQuery";
 import { EmptyState, Field, GhostButton, Notice, PageTitle, PrintLetterhead, PrintPortal, SecondaryButton } from "./ui";
-import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule } from "../types";
+import { AdCollege, AdCourse, AdInstructor, AdSection, AdTerm, FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
@@ -16,6 +16,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
+import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
 
 /**
  * One question, seven lenses.
@@ -296,6 +297,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
+  const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
   const [filters, setFilters] = useState<Filters>(() => ({
     ...fresh(),
     ...(saved.filters || {}),
@@ -349,6 +351,18 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       filterTerm: Number(filters.termId || 0) || 0,
     }));
   }, [prefKey, workspacePrefKey, lens, filters]);
+
+  useEffect(() => {
+    if(!filters.collegeId){ setLocationRegistry({buildings:[],rooms:[]}); return; }
+    const controller=new AbortController();
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId)});
+    if(filters.sectionId)qs.set("sectionId",String(filters.sectionId));
+    fetch(`/api/location-registry?${qs}`,{signal:controller.signal})
+      .then(async response=>{if(!response.ok)throw new Error("تعذر تحميل سجل المباني والقاعات");return response.json();})
+      .then(data=>setLocationRegistry({buildings:Array.isArray(data.buildings)?data.buildings:[],rooms:Array.isArray(data.rooms)?data.rooms:[]}))
+      .catch(error=>{if(error?.name!=="AbortError")setError(String(error?.message||error));});
+    return()=>controller.abort();
+  },[filters.collegeId,filters.sectionId]);
 
   useEffect(() => {
     (async () => {
@@ -555,12 +569,11 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const termById = useMemo(() => new Map(terms.map(x => [x.AdTermId, x])), [terms]);
   const departmentInstructorIds = useMemo(() => Array.from(new Set(all.filter(row => (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) && (!filters.termId || Number(row.AdTermId) === Number(filters.termId))).map(row => Number(row.AdInstructorId)).filter(Boolean))), [all, filters.sectionId, filters.termId]);
 
-  const buildings = useMemo(() => uniqueTextOptions(all.map(s => s.AdRoomCode)).sort(byRoomPart), [all]);
-  const halls = useMemo(() => uniqueTextOptions(
-    all
-      .filter(s => !filters.building || optionKey(s.AdRoomCode) === optionKey(filters.building))
-      .map(s => s.AdRoomHall),
-  ).sort(byRoomPart), [all, filters.building]);
+  const buildings = useMemo(() => [...locationRegistry.buildings].sort((a,b)=>byRoomPart(a.officialCode,b.officialCode)), [locationRegistry.buildings]);
+  const halls = useMemo(() => {
+    if(!filters.building)return [] as MasterRoom[];
+    return locationRegistry.rooms.filter(room=>room.buildingId===filters.building).sort((a,b)=>byRoomPart(a.canonicalCode,b.canonicalCode));
+  }, [locationRegistry.rooms, filters.building]);
 
   /** One predicate serves every lens. Nothing is mode-specific any more. */
   const results = useMemo(() => {
@@ -581,8 +594,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           : sortKey(instructor?.AdInstructorName || "").toLowerCase().includes(nameQuery);
       });
     }
-    if (filters.building) rows = rows.filter(s => optionKey(s.AdRoomCode) === optionKey(filters.building));
-    if (filters.hall) rows = rows.filter(s => optionKey(s.AdRoomHall) === optionKey(filters.hall));
+    if (filters.building) rows = rows.filter(s => String(s.buildingId||"") === filters.building);
+    if (filters.hall) rows = rows.filter(s => String(s.roomId||"") === filters.hall);
     if (filters.startTime && filters.endTime) {
       /* A lecture that lives entirely inside the window is the most obvious
          answer to "what is on between ten and twelve", and the old test — which
@@ -638,8 +651,10 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     }
     if (question.room) {
       const [code, hall] = question.room.split("-");
-      next.building = code; next.hall = hall;
-      said.push(`${code}-${hall}`);
+      const building=locationRegistry.buildings.find(item=>optionKey(item.officialCode)===optionKey(code));
+      const room=building?locationRegistry.rooms.find(item=>item.buildingId===building.id&&optionKey(item.canonicalCode)===optionKey(hall)):undefined;
+      if(building)next.building=building.id;if(room)next.hall=room.id;
+      said.push(building&&room?`${building.officialCode}-${room.canonicalCode}`:`${code}-${hall}`);
     }
     const named = question.name
       ? instructors.find(row => String(row.AdInstructorName || "").includes(question.name as string))
@@ -673,8 +688,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   if (selectedInstructor) chips.push({ key: "instructor", label: `الأستاذ: ${selectedInstructor.AdInstructorName}`, clear: () => set("instructorId", 0) });
   if (filters.civil) chips.push({ key: "civil", label: `الرقم المدني: ${filters.civil}`, clear: () => set("civil", "") });
   if (filters.instructorQuery) chips.push({ key: "instructor-query", label: `الأستاذ: ${filters.instructorQuery}`, clear: () => set("instructorQuery", "") });
-  if (filters.building) chips.push({ key: "building", label: `المبنى: ${filters.building}`, clear: () => setFilters(prev => ({ ...prev, building: "", hall: "" })) });
-  if (filters.hall) chips.push({ key: "hall", label: `القاعة: ${filters.hall}`, clear: () => set("hall", "") });
+  if (filters.building) chips.push({ key: "building", label: `المبنى: ${locationRegistry.buildings.find(b=>b.id===filters.building)?.officialCode||"رسمي"}`, clear: () => setFilters(prev => ({ ...prev, building: "", hall: "" })) });
+  if (filters.hall) chips.push({ key: "hall", label: `القاعة: ${locationRegistry.rooms.find(r=>r.id===filters.hall)?.canonicalCode||"رسمية"}`, clear: () => set("hall", "") });
   if (selectedCourse) chips.push({ key: "course", label: `المقرر: ${selectedCourse.CourseName}`, clear: () => set("courseId", 0) });
   if (filters.courseCode) chips.push({ key: "course-code", label: `الرقم الأكاديمي: ${filters.courseCode}`, clear: () => set("courseCode", "") });
   if (filters.startTime && filters.endTime) chips.push({
@@ -726,7 +741,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       .map(([key, rows]) => {
         const courses = new Set(rows.map(row => Number(row.AdCourseId || 0)).filter(Boolean)).size;
         const instructors = new Set(rows.map(row => Number(row.AdInstructorId || 0)).filter(Boolean)).size;
-        const rooms = [...new Set(rows.map(row => [row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/")).filter(Boolean))].sort(byRoomLabel);
+        const rooms = [...new Map(rows.map(row => [roomIdentityKey(row), roomDisplay(row)] as const).filter(([key])=>Boolean(key))).values()].sort(byRoomLabel);
         const days = new Set(rows.flatMap(row => DAYS.filter(day => (row as any)[day.flag]).map(day => day.key))).size;
         return { key, rows, count: rows.length, courses, instructors, rooms, days };
       })
@@ -794,13 +809,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       { id: "ste", label: "الأحد · الثلاثاء · الخميس", days: [0, 2, 4] },
       { id: "mw", label: "الاثنين · الأربعاء", days: [1, 3] },
     ];
-    const placed = results.filter(row => row.fstarttime && row.fendtime && (row.AdRoomCode || row.AdRoomHall));
+    const placed = results.filter(row => row.fstarttime && row.fendtime && row.buildingId && row.roomId && row.locationStatus !== "PENDING_ROOM" && row.locationStatus !== "LOCATION_REVIEW_REQUIRED" && row.locationStatus !== "INVALID_HISTORICAL");
     if (!placed.length) return null;
 
-    const buildings = uniqueTextOptions(placed.map(row => row.AdRoomCode)).sort(byRoomPart);
+    const usedBuildingIds = new Set(placed.map(row => String(row.buildingId)));
+    const buildings = locationRegistry.buildings.filter(building => usedBuildingIds.has(building.id)).sort((a,b)=>byRoomPart(a.officialCode,b.officialCode));
     const scoped = placed.filter(row =>
-      (!matrixBuilding || optionKey(row.AdRoomCode) === optionKey(matrixBuilding)) &&
-      (!matrixHall || optionKey(row.AdRoomHall).includes(optionKey(matrixHall))));
+      (!matrixBuilding || String(row.buildingId) === matrixBuilding) &&
+      (!matrixHall || String(row.roomId) === matrixHall));
 
     const from = GRID_START;
     const to = GRID_END;
@@ -811,14 +827,13 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const halls: Hall[] = [...new Map<string, Hall>(scoped.map(row => {
       const building = cleanOptionText(row.AdRoomCode);
       const hall = cleanOptionText(row.AdRoomHall);
-      const key = `${optionKey(building)}|${optionKey(hall)}`;
+      const key = roomIdentityKey(row);
       return [key, { key, building, hall }] as const;
     })).values()].sort((a, b) => byRoom(a.building, a.hall, b.building, b.hall));
 
     const lines = halls.flatMap(room => DAY_GROUPS.map(group => {
       const inRoom = scoped.filter(row =>
-        optionKey(row.AdRoomCode) === optionKey(room.building) &&
-        optionKey(row.AdRoomHall) === optionKey(room.hall) &&
+        roomIdentityKey(row) === room.key &&
         group.days.some(index => Boolean((row as any)[DAYS[index].flag])));
       const cells = columns.map(point => ({
         point,
@@ -828,7 +843,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     })).filter(line => line.used > 0);
 
     return { columns, lines, buildings, total: scoped.length };
-  }, [results, matrixBuilding, matrixHall]);
+  }, [results, matrixBuilding, matrixHall, locationRegistry.buildings]);
 
   const roomLoad = useMemo(() => {
     if (!occupancy?.rooms?.length) return null;
@@ -1219,13 +1234,13 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <Field label="المبنى">
               <select value={filters.building} onChange={event => { set("building", event.target.value); set("hall", ""); }}>
                 <option value="">الكل</option>
-                {buildings.map(value => <option key={value}>{value}</option>)}
+                {buildings.map(value => <option key={value.id} value={value.id}>{value.officialCode}</option>)}
               </select>
             </Field>
             <Field label="القاعة">
               <select value={filters.hall} onChange={event => set("hall", event.target.value)}>
                 <option value="">الكل</option>
-                {halls.map(value => <option key={value}>{value}</option>)}
+                {halls.map(value => <option key={value.id} value={value.id}>{value.canonicalCode}</option>)}
               </select>
             </Field>
             {/* Wrapped so the course can claim two columns of the filter grid:
@@ -1444,14 +1459,17 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <div className="matrix-controls no-print">
               <label>
                 <span>المبنى</span>
-                <select value={matrixBuilding} onChange={e => setMatrixBuilding(e.target.value)}>
+                <select value={matrixBuilding} onChange={e => { setMatrixBuilding(e.target.value); setMatrixHall(""); }}>
                   <option value="">كل المباني</option>
-                  {(matrix?.buildings || []).map(code => <option key={code} value={code}>{code}</option>)}
+                  {(matrix?.buildings || []).map(building => <option key={building.id} value={building.id}>{building.officialCode}</option>)}
                 </select>
               </label>
               <label>
                 <span>القاعة</span>
-                <input value={matrixHall} onChange={e => setMatrixHall(e.target.value)} placeholder="F10 مثلاً" />
+                <select value={matrixHall} onChange={e => setMatrixHall(e.target.value)}>
+                  <option value="">كل القاعات</option>
+                  {locationRegistry.rooms.filter(room => (!matrixBuilding || room.buildingId === matrixBuilding) && results.some(row => row.roomId === room.id)).sort((a,b)=>byRoomPart(a.canonicalCode,b.canonicalCode)).map(room => <option key={room.id} value={room.id}>{room.canonicalCode}</option>)}
+                </select>
               </label>
               {matrix ? <span className="matrix-count">{num(matrix.lines.length)} صف · {num(matrix.total)} موعد</span> : null}
             </div>

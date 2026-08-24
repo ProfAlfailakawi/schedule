@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { sortByName } from "../utils/sorting";
+import LocationRegistryAdmin from "./LocationRegistryAdmin";
 import { Activity, ArchiveRestore, Building2, Check, ChevronLeft, CopyPlus, DatabaseBackup, Download, Eraser, FileArchive, FileCheck2, KeyRound, Landmark, RefreshCw, Save, ScrollText, Search, ShieldCheck, Trash2, Upload, UserCog, UsersRound, X } from "lucide-react";
 import {
   AddButton,
@@ -27,7 +28,7 @@ import {
 /* «نسخ فصل» is administration, not day-to-day scheduling: it belongs on this
    rail beside the users, the scopes and the log. It keeps its own screen and
    its own URL — this only moves the door it is opened from. */
-export type AdminMode = "users" | "permissions" | "scopes" | "audit" | "backup" | "copyTerm";
+export type AdminMode = "users" | "permissions" | "scopes" | "audit" | "backup" | "copyTerm" | "locations";
 type PageMode = "index" | "create" | "edit";
 interface SafeUser {
   SystemUserId: number;
@@ -522,6 +523,7 @@ export default function AdminUsers({
   const load = async () => {
     setError(null);
     try {
+      if (mode === "locations") return;
       if (mode === "backup") {
         if (!rootAdmin) throw new Error("هذه الخزنة مخصصة لحساب الإدارة الرئيسي فقط");
         const status = await api("/api/system-backup/status") as BackupStatus;
@@ -802,6 +804,7 @@ export default function AdminUsers({
       ? { value: "scopes", label: "النطاقات", icon: <Building2 /> }
       : null,
     { value: "audit", label: "السجل", icon: <ScrollText /> },
+    rootAdmin ? { value: "locations", label: "المباني والقاعات", icon: <Landmark /> } : null,
     rootAdmin ? { value: "copyTerm", label: "نسخ فصل", icon: <CopyPlus /> } : null,
     rootAdmin ? { value: "backup", label: "النسخة الاحتياطية", icon: <DatabaseBackup /> } : null,
   ].filter(Boolean) as Array<{ value: string; label: string; icon: React.ReactNode }>;
@@ -823,6 +826,12 @@ export default function AdminUsers({
       {error ? <Notice>{error}</Notice> : null}
     </>
   );
+
+  if (mode === "locations") {
+    return rootAdmin
+      ? <LocationRegistryAdmin header={consoleHead()} demoReadOnly={demoReadOnly} />
+      : <div className="content-stack admin-page">{consoleHead()}<Notice>إدارة السجل المركزي للمباني والقاعات محصورة بالمدير الرئيسي.</Notice></div>;
+  }
 
   const usersFormDrawer = (mode === "users" && page !== "index") ? (
       <CatalogFormDrawer onClose={back} label={page === "create" ? "إنشاء مستخدم" : "تعديل المستخدم"}>
