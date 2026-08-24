@@ -40,60 +40,6 @@ interface Props {
 
 type Tab = "export" | "import" | "publish" | "retire" | "visiting";
 
-const IMPORT_DAY_KEYS: Array<keyof ImportRow> = ["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"];
-const importMinutes = (value: unknown) => {
-  const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/);
-  return match ? Number(match[1]) * 60 + Number(match[2]) : -1;
-};
-const importRowBlockers = (row: ImportRow, index: number) => {
-  const blockers: string[] = [];
-  const label = `الصف ${index + 1}`;
-  if (!Number(row.AdCourseId)) blockers.push(`${label}: اختر المقرر`);
-  if (!String(row.SCode || "").trim()) blockers.push(`${label}: رقم الشعبة مفقود`);
-  if (!IMPORT_DAY_KEYS.some(key => Boolean(row[key]))) blockers.push(`${label}: اختر الأيام`);
-  const start = importMinutes(row.fstarttime), end = importMinutes(row.fendtime);
-  if (start < 0 || end <= start) blockers.push(`${label}: الوقت غير مكتمل أو غير صالح`);
-  if (!String(row.buildingId || "").trim()) blockers.push(`${label}: اختر مبنى رسميًا`);
-  if (row.locationStatus !== "PENDING_ROOM" && !String(row.roomId || "").trim()) blockers.push(`${label}: اختر قاعة رسمية أو «بانتظار تثبيت القاعة»`);
-  if (!Number(row.AdInstructorId)) blockers.push(`${label}: اختر أستاذ المقرر`);
-  return blockers;
-};
-const issueTargetsRow = (issue: string, rows: ImportRow[]) => {
-  const courseMatch = issue.match(/صف «([^»]+)»/);
-  const sectionMatch = issue.match(/شعبة\s+([^:؛—]+)(?=[:؛]|$)/);
-  if (!courseMatch) return [] as ImportRow[];
-  const courseLabel = String(courseMatch[1] || "").trim();
-  const sectionLabel = String(sectionMatch?.[1] || "").trim();
-  return rows.filter(row => {
-    const courseOk = String(row.AdCourseName || "").trim() === courseLabel || String(row.AdCourseId || "").trim() === courseLabel;
-    const sectionOk = !sectionLabel || sectionLabel === "—" || String(row.SCode || "").trim() === sectionLabel;
-    return courseOk && sectionOk;
-  });
-};
-const parserIssueStillApplies = (issue: unknown, rows: ImportRow[]) => {
-  const text = String(issue || "").trim();
-  if (!text) return false;
-  if (/^تحذير:/.test(text)) return true;
-  if (/لم أتعرف على صفوف الجدول/.test(text)) return rows.length === 0;
-  const targets = issueTargetsRow(text, rows);
-  if (!targets.length) return true;
-  if (/رمز المقرر|المقرر/.test(text) && /لم يتم العثور|لم أجد/.test(text)) return targets.some(row => !Number(row.AdCourseId));
-  if (/الوقت/.test(text)) return targets.some(row => { const start=importMinutes(row.fstarttime), end=importMinutes(row.fendtime); return start < 0 || end <= start; });
-  if (/الأيام/.test(text)) return targets.some(row => !IMPORT_DAY_KEYS.some(key => Boolean(row[key])));
-  if (/أستاذ المقرر/.test(text)) return targets.some(row => !Number(row.AdInstructorId));
-  if (/رقم الشعبة/.test(text)) return targets.some(row => !String(row.SCode || "").trim());
-  if (/المبنى المقروء|المبنى والقاعة/.test(text)) return targets.some(row => !String(row.buildingId || "").trim());
-  if (/القاعة المقروءة|القاعة/.test(text)) return targets.some(row => row.locationStatus !== "PENDING_ROOM" && !String(row.roomId || "").trim());
-  return true;
-};
-const collectImportBlockers = (preview: any) => {
-  const rows: ImportRow[] = Array.isArray(preview?.rows) ? preview.rows : [];
-  const rowBlockers = rows.flatMap((row, index) => importRowBlockers(row, index));
-  const readingNotes = Array.isArray(preview?.issues) ? preview.issues.filter((issue: unknown) => parserIssueStillApplies(issue, rows)).map(String) : [];
-  const blockingNotes = Array.isArray(preview?.blockingIssues) ? preview.blockingIssues.filter((issue: unknown) => parserIssueStillApplies(issue, rows)).map(String) : [];
-  return [...new Set([...rowBlockers, ...readingNotes, ...blockingNotes])];
-};
-
 export default function ScheduleTransfer({ collegeId, sectionId, termId, instructors, departmentIds, terms, onChanged, onClose }: Props) {
   const [tab, setTab] = useState<Tab>("export");
   const [busy, setBusy] = useState(false);
@@ -129,8 +75,6 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [copyPeople, setCopyPeople] = useState<Instructor[]>([]);
   const [copyIds, setCopyIds] = useState<number[]>([]);
   const [copySelected, setCopySelected] = useState<number[]>([]);
-  const importBlockingIssues = useMemo(() => collectImportBlockers(xlsxPreview), [xlsxPreview]);
-  const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
 
   React.useEffect(() => {
     if (tab !== "visiting" || !collegeId || !sectionId || !termId) return;
@@ -473,9 +417,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const saveExcelDraft = async (publishNow=false) => {
-    if (!importReady) {
-      setError("أكمل جميع الملاحظات والحقول المطلوبة في جدول المعاينة أولاً.");
-      window.setTimeout(() => document.querySelector(".import-issues-fold, .import-cell-missing")?.scrollIntoView({ behavior: "smooth", block: "center" }), 40);
+    if (!xlsxPreview?.valid) {
+      setError("لا يمكن حفظ المسودة أو تعبئة الجدول قبل إكمال الحقول الناقصة (المميزة باللون الأحمر أعلاه مثل اسم المقرر، أستاذ المقرر، الوقت أو القاعة). يرجى الضغط على زر التعديل (✏️) بجانب الصفوف غير المكتملة لتعديلها.");
       return;
     }
     setBusy(true); setError(null);
@@ -493,7 +436,6 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           sourceFileName:xlsxPreview.fileName,
           sourceBranchCode:importKind==="authority-pdf"?xlsxPreview.sourceBranchCode:undefined,
           sourceBranchName:importKind==="authority-pdf"?xlsxPreview.sourceBranchName:undefined,
-          previewIssues: importBlockingIssues,
         }),
       });
       const data = await response.json();
@@ -702,11 +644,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}
-                        onRows={next => setXlsxPreview((prev: any) => {
-                          if (!prev) return prev;
-                          const updated = { ...prev, rows: next, count: next.length };
-                          return { ...updated, valid: next.length > 0 && collectImportBlockers(updated).length === 0 };
-                        })}
+                        onRows={next => setXlsxPreview((prev: any) => prev ? { ...prev, rows: next, count: next.length, valid: next.length > 0 } : prev)}
                       />
                       {xlsxPreview.issues?.length ? (
                         <details className="import-issues-fold">
@@ -734,14 +672,16 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   ) : (
                     <div className="transfer-import-commit-wrap">
                       <div className="transfer-import-commit">
-                        <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady} aria-disabled={busy || !importReady} title={!importReady ? "أكمل جميع الملاحظات والحقول المطلوبة أولاً" : undefined}>
-                          {busy ? "يجهّز…" : importReady ? `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها` : "أكمل الملاحظات أولاً"}
-                        </PrimaryButton>
-                        {importKind==="authority-pdf" ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy || !importReady}>حفظ كمسودة فقط</SecondaryButton> : null}
+                        {xlsxPreview.valid && !(xlsxPreview.issues?.length) ? (
+                          <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy}>
+                            {busy ? "يجهّز…" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
+                          </PrimaryButton>
+                        ) : null}
+                        {importKind==="authority-pdf" ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy}>حفظ كمسودة فقط</SecondaryButton> : null}
                       </div>
-                      {!importReady ? (
+                      {!xlsxPreview.valid ? (
                         <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-xs mt-2">
-                          ⚠️ لا يمكن التعبئة أو النشر الآن. بقيت {importBlockingIssues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة أو خانة مطلوبة. صحّح الخانات الحمراء وملاحظات القراءة أولاً.
+                          ⚠️ تنبيه: توجد صفوف بحاجة لإكمال بياناتها (المقرر، الوقت، اليوم، المبنى/القاعة، أو أستاذ المقرر). اضغط على زر <b>تعديل (✏️)</b> في يمين أي صف ملون بالأحمر لتصحيحه، ثم اضغط حفظ لتعبئة ونشر الجدول.
                         </p>
                       ) : null}
                     </div>
