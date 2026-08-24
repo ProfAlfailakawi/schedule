@@ -22,6 +22,13 @@ interface Props {
 export default class ErrorBoundary extends React.Component<Props, State> {
   declare props: Props;
   declare state: State;
+  // This project intentionally does not ship @types/react. Declare the
+  // inherited React state updater explicitly for TypeScript while preserving
+  // React.Component's real runtime implementation.
+  declare setState: (
+    state: Partial<State> | ((prevState: Readonly<State>, props: Readonly<Props>) => Partial<State> | State | null),
+    callback?: () => void,
+  ) => void;
 
   private retryTimer: number | null = null;
   private readonly maxImmediateAttempts = 3;
