@@ -273,7 +273,9 @@ async function runTests() {
       id: seed++, AdCollegeId: 1, AdSectionId: 1, AdTermId: 27, AdCourseId: 1, AdCourseName: "مقرر",
       SCode: String(100 + seed), AdInstructorId: 1,
       fsunday: false, fmonday: false, ftuesday: false, fwednesday: false, fthursday: false,
-      fstarttime: "08:00", fendtime: "09:00", AdRoomCode: "12", AdRoomHall: "F6", fdetail: "",
+      fstarttime: "08:00", fendtime: "09:00",
+      buildingId: "building-012B12", roomId: "room-012B12-F6", locationStatus: "VERIFIED",
+      AdRoomCode: "012B12", AdRoomHall: "F6", fdetail: "",
       ...over,
     });
 
@@ -301,16 +303,16 @@ async function runTests() {
     for (let hour = 8; hour < 20; hour++)
       for (const hall of ["F6", "F7"])
         full.push(card({ fsunday: true, fmonday: true, ftuesday: true, fwednesday: true, fthursday: true,
-          AdInstructorId: 1, AdRoomHall: hall, AdCourseName: `ملء${hour}${hall}`,
+          AdInstructorId: 1, AdRoomHall: hall, roomId: `room-012B12-${hall}`, AdCourseName: `ملء${hour}${hall}`,
           fstarttime: `${String(hour).padStart(2, "0")}:00`, fendtime: `${String(hour + 1).padStart(2, "0")}:00` }));
     const stuck = findRepairChain(full[0], full, { maxDepth: 2, maxBranch: 3 });
     assert(stuck === null || stuck.after <= stuck.before, "an impossible board yields no chain, never a worse one");
 
     // A hall closes tomorrow: every lecture in it must find somewhere else.
     const hallRows = [
-      card({ fsunday: true, AdInstructorId: 1, AdRoomHall: "F6", AdCourseName: "أ" }),
-      card({ fsunday: true, AdInstructorId: 2, AdRoomHall: "F6", AdCourseName: "ب", fstarttime: "10:00", fendtime: "11:00" }),
-      card({ fmonday: true, AdInstructorId: 3, AdRoomHall: "F7", AdCourseName: "ج" }),
+      card({ fsunday: true, AdInstructorId: 1, AdRoomHall: "F6", roomId: "room-012B12-F6", AdCourseName: "أ" }),
+      card({ fsunday: true, AdInstructorId: 2, AdRoomHall: "F6", roomId: "room-012B12-F6", AdCourseName: "ب", fstarttime: "10:00", fendtime: "11:00" }),
+      card({ fmonday: true, AdInstructorId: 3, AdRoomHall: "F7", roomId: "room-012B12-F7", AdCourseName: "ج" }),
     ];
     const closed = hallRows.filter(row => row.AdRoomHall === "F6");
     const rescue = planDisruption(closed, hallRows, { maxDepth: 3 });
