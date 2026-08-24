@@ -1426,25 +1426,17 @@ function isHeaderLine(text:string):boolean{
   if(!text) return false;
   const f=fold(text);
   const headerPhrases=[
-    "جدول الفصل", "جميع الشعب", "الفصل الدراسي", "كلية التربيه", "كليه التربيه",
+    "جدول الفصل", "جميع الشعب", "الفصل الدراسي", "كلية التربيه", "كليه التربيه", "كلية التربية", "التربية الاساسية", "التربيه الاساسيه",
     "القسم", "الفرع", "رقم المقرر", "مسمى مقرر", "الرقم المرجعي", "الرقم المرجعى",
     "الحد الاقصى", "مقاعد مسجلة", "مقاعد مسجله", "الحالة في الرزم", "عدد الرزم",
     "swrscha", "صفحة رقم", "من أصل", "من اصل", "تاريخ الطباعة", "طبع في",
-    "الكلية", "الكلي ه", "الفصل", "التقرير", "جدول", "صفحة", "التاريخ"
+    "التسجيل التقرير", "القسم :", "القسم:", "الفرع :", "الفرع:", "الكلية :", "الكلية:", "الفصل :", "الفصل:"
   ];
-  if(headerPhrases.some(phrase => f.includes(fold(phrase)))) {
-    if(
-      f.includes("جدول") ||
-      f.includes("جميع الشعب") ||
-      f.includes("الفصل") ||
-      f.includes("القسم") ||
-      f.includes("الفرع") ||
-      f.includes("الكلية") || f.includes("كليه") || f.includes("كلية") ||
-      f.includes("صفحة") || f.includes("تاريخ") || f.includes("طبع في") ||
-      f.includes("رقم المقرر") || f.includes("مسمى مقرر") || f.includes("الرقم المرجعي")
-    ) {
-      return true;
-    }
+  if(headerPhrases.some(phrase => {
+    const foldedPhrase = fold(phrase);
+    return foldedPhrase.length > 2 && f.includes(foldedPhrase);
+  })) {
+    return true;
   }
   if(f.startsWith("القسم") || f.startsWith("الفصل") || f.startsWith("التقرير") || f.startsWith("جدول") || f.startsWith("كليه") || f.startsWith("كلية") || f.includes("صفحة :") || f.includes("صفحة رقم") || f.includes("تاريخ :")) {
     return true;
