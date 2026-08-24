@@ -2314,8 +2314,8 @@
   display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--s2) var(--s3);
   padding:var(--s3) var(--s4);border-radius:var(--r-md);background:var(--surface-2);
 }
-.opening-math span{display:grid;gap:2px;min-width:0}
-.opening-math small{color:var(--muted);font-size:var(--t-xs)}
+.opening-math span{display:grid;gap:2px;min-width:0;text-align:center;justify-items:center}
+.opening-math small{color:var(--muted);font-size:var(--t-xs);text-align:center}
 .opening-math b{
   font-size:var(--t-h4);font-weight:650;line-height:1;
   font-variant-numeric:tabular-nums lining-nums;direction:ltr;unicode-bidi:isolate;
@@ -4057,3 +4057,7 @@ button.twin-delta{width:100%}
 .import-review-card.room-owner{border-color:color-mix(in srgb,var(--warning) 35%,var(--line));background:color-mix(in srgb,var(--warning-soft) 55%,var(--surface))}
 .import-review-card.room-owner>svg{color:var(--warning)}
 @media(max-width:760px){.import-time-editor{grid-template-columns:1fr}.import-time-editor>span{display:none}}
+
+.intel-reason-course-name{font-weight:350!important;color:color-mix(in srgb,var(--muted) 88%,transparent)!important;font-size:9px!important;line-height:1.35!important}
+.import-review-jump{border:0;background:transparent;color:var(--danger,#a33);font:inherit;font-size:var(--t-xs);cursor:pointer;text-decoration:underline;text-underline-offset:3px;margin-inline:auto}
+.import-review-jump:hover{color:var(--foreground)}

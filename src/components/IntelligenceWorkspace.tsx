@@ -216,7 +216,7 @@ type InsightReason = {
   summary?: string;
   facts?: Array<{ label: string; value: string }>;
   bars?: Array<{ label: string; value: number; max: number; caption?: string }>;
-  items?: Array<{ title: string; meta?: string; value?: string }>;
+  items?: Array<{ title: string; subtitle?: string; meta?: string; value?: string }>;
 };
 interface Props {
   user: any;
@@ -1692,7 +1692,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   };
 
   const approveAndPublishPdf = async () => {
-    if (!importPreview?.valid) {
+    if (!importPreview?.valid || importBlockingIssues.length) {
       setImportErrorModal("أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.");
       return;
     }
@@ -1735,7 +1735,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   };
 
   const createImportDraft = async () => {
-    if (!importPreview?.valid) {
+    if (!importPreview?.valid || importBlockingIssues.length) {
       setImportErrorModal("أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.");
       return;
     }
@@ -1745,6 +1745,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       setTab("history");
     }
   };
+
+  const importBlockingIssues = useMemo(() => {
+    if (!importPreview) return [] as string[];
+    const rows = Array.isArray(importPreview.rows) ? importPreview.rows as ImportRow[] : [];
+    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows)])];
+  }, [importPreview]);
+  const importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0);
 
   const scopedCourses = useMemo(
     () => sortByName(
@@ -2227,7 +2234,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     const courseName = String(row.AdCourseName || course?.CourseName || "").trim();
     return {
       title: reasonCourse(row),
-      meta: `${courseName ? `${courseName} · ` : ""}${reasonInstructor(row)} · شعبة ${row.SCode || "—"} · ${reasonDays(row) || "بلا أيام"}`,
+      subtitle: courseName || undefined,
+      meta: `${reasonInstructor(row)} · شعبة ${row.SCode || "—"} · ${reasonDays(row) || "بلا أيام"}`,
       value: formatScheduleTimeRange(row.fstarttime, row.fendtime),
     };
   }), [rows, reasonCourseById, reasonInstructorById]);
@@ -3484,7 +3492,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 {insightReason.items.map((item, index) => (
                   <article key={`${item.title}-${index}`}>
                     <span className="intel-reason-item-index">{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</span>
-                    <div><strong>{item.title}</strong>{item.meta ? <small>{item.meta}</small> : null}</div>
+                    <div><strong>{item.title}</strong>{item.subtitle ? <small className="intel-reason-course-name">{item.subtitle}</small> : null}{item.meta ? <small>{item.meta}</small> : null}</div>
                     {item.value ? <b dir="ltr"><Num value={item.value} /></b> : null}
                   </article>
                 ))}
@@ -5105,6 +5113,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 ))}
               </RecordDeck>
               )}
+              {importBlockingIssues.length ? <button type="button" data-guide-ignore="ينقل المستخدم إلى ملاحظات الاستيراد داخل نفس المعاينة" className="import-review-jump" onClick={() => (document.querySelector(".import-preview [data-import-issue='true']")||document.querySelector(".import-preview"))?.scrollIntoView({behavior:"smooth",block:"center"})}>راجع {importBlockingIssues.length.toLocaleString("ar-KW-u-nu-latn")} ملاحظة لتفعيل الحفظ والنشر</button> : null}
               <div className="import-actions">
                 <SecondaryButton
                   onClick={() => {
@@ -5116,17 +5125,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </SecondaryButton>
                 {importPreview.importLayout === "authority-pdf" ? (
                   <>
-                    <SecondaryButton data-guide-ignore="حفظ نسخة PDF كمسودة قابلة للتعديل قبل الاعتماد" onClick={createImportDraft} disabled={!importPreview.valid || busy}>
+                    <SecondaryButton data-guide-ignore="حفظ نسخة PDF كمسودة قابلة للتعديل قبل الاعتماد" onClick={createImportDraft} disabled={!importReady || busy}>
                       <Save /> حفظ كمسودة للتعديل
                     </SecondaryButton>
-                    <PrimaryButton data-guide-ignore="اعتماد ونشر جدول PDF كاملاً إلى الفصل الفارغ بعد تأكيد صريح" onClick={approveAndPublishPdf} disabled={!importPreview.valid || busy}>
+                    <PrimaryButton data-guide-ignore="اعتماد ونشر جدول PDF كاملاً إلى الفصل الفارغ بعد تأكيد صريح" onClick={approveAndPublishPdf} disabled={!importReady || busy}>
                       <CheckCircle2 /> اعتمد وانزّل الجدول كاملاً
                     </PrimaryButton>
                   </>
                 ) : (
                   <PrimaryButton
+                    data-guide-ignore="تحويل ملف الاستيراد المعاين إلى مسودة بعد اكتمال التحقق"
                     onClick={createImportDraft}
-                    disabled={!importPreview.valid || busy}
+                    disabled={!importReady || busy}
                   >
                     <Save /> تحويل إلى مسودة
                   </PrimaryButton>

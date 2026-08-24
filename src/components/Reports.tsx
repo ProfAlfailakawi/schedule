@@ -17,7 +17,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
-import { roomIdentityKey, roomDisplay } from "../utils/locationRegistry";
+import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
 
 /**
  * One question, seven lenses.
@@ -559,8 +559,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       (!filters.collegeId || Number(row.AdCollegeId) === Number(filters.collegeId)) &&
       (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) &&
       (!filters.termId || Number(row.AdTermId) === Number(filters.termId)) &&
-      (!filters.building || String(row.buildingId || "") === filters.building) &&
-      (!filters.hall || String(row.roomId || "") === filters.hall)
+      rowMatchesBuilding(row, filters.building) &&
+      rowMatchesRoom(row, filters.hall)
     );
     const allowedIds = (filters.building || filters.hall)
       ? new Set(contextualRows.map(row => Number(row.AdCourseId)).filter(Boolean))
@@ -573,7 +573,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       sortByName(source, (c: AdCourse) => c.CourseName),
       row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
     );
-  }, [all, courses, filters.collegeId, filters.sectionId, filters.termId, filters.building, filters.hall, filters.courseId, courseIdentityKey]);
+  }, [all, courses, filters.collegeId, filters.sectionId, filters.termId, filters.building, filters.hall, filters.courseId, courseIdentityKey, rowMatchesBuilding, rowMatchesRoom]);
   const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
     terms,
     row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
@@ -582,6 +582,21 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     instructors,
     row => optionKey(row.AdInstructorCivil) || optionKey(row.AdInstructorName), filters.instructorId, row => Number(row.AdInstructorId),
   ), [instructors, filters.instructorId]);
+  const rowLocation = useCallback((row: FSchedule) => {
+    let building = row.buildingId ? locationRegistry.buildings.find(item => item.id === row.buildingId) : undefined;
+    if (!building && row.AdRoomCode) {
+      const resolved = resolveBuilding(locationRegistry, row.AdRoomCode, { collegeId:Number(row.AdCollegeId)||undefined, sectionId:Number(row.AdSectionId)||undefined });
+      if (resolved.status === "CONFIRMED") building = resolved.value;
+    }
+    let room = row.roomId ? locationRegistry.rooms.find(item => item.id === row.roomId) : undefined;
+    if (!room && building && row.AdRoomHall) {
+      const resolved = resolveRoom(locationRegistry, row.AdRoomHall, building.id, { collegeId:Number(row.AdCollegeId)||undefined, sectionId:Number(row.AdSectionId)||undefined, buildingId:building.id });
+      if (resolved.status === "CONFIRMED") room = resolved.value;
+    }
+    return { building, room };
+  }, [locationRegistry]);
+  const rowMatchesBuilding = useCallback((row: FSchedule, buildingId: string) => !buildingId || rowLocation(row).building?.id === buildingId, [rowLocation]);
+  const rowMatchesRoom = useCallback((row: FSchedule, roomId: string) => !roomId || rowLocation(row).room?.id === roomId, [rowLocation]);
   const instructorById = useMemo(() => new Map(instructors.map(x => [x.AdInstructorId, x])), [instructors]);
   const courseById = useMemo(() => new Map(courses.map(x => [x.AdCourseId, x])), [courses]);
   const collegeById = useMemo(() => new Map(colleges.map(x => [x.AdCollegeId, x])), [colleges]);
@@ -589,11 +604,19 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const termById = useMemo(() => new Map(terms.map(x => [x.AdTermId, x])), [terms]);
   const departmentInstructorIds = useMemo(() => Array.from(new Set(all.filter(row => (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) && (!filters.termId || Number(row.AdTermId) === Number(filters.termId))).map(row => Number(row.AdInstructorId)).filter(Boolean))), [all, filters.sectionId, filters.termId]);
 
-  const buildings = useMemo(() => [...locationRegistry.buildings].sort((a,b)=>byRoomPart(a.officialCode,b.officialCode)), [locationRegistry.buildings]);
+  const buildings = useMemo(() => {
+    const ids = new Set<string>();
+    all.forEach(row => { const building=rowLocation(row).building; if(building?.active) ids.add(building.id); });
+    if (filters.building) ids.add(filters.building);
+    return locationRegistry.buildings.filter(item=>ids.has(item.id)).sort((a,b)=>byRoomPart(a.officialCode,b.officialCode));
+  }, [all, locationRegistry.buildings, filters.building, rowLocation]);
   const halls = useMemo(() => {
     if(!filters.building)return [] as MasterRoom[];
-    return locationRegistry.rooms.filter(room=>room.buildingId===filters.building).sort((a,b)=>byRoomPart(a.canonicalCode,b.canonicalCode));
-  }, [locationRegistry.rooms, filters.building]);
+    const ids = new Set<string>();
+    all.filter(row=>rowMatchesBuilding(row,filters.building)).forEach(row=>{const room=rowLocation(row).room;if(room?.active)ids.add(room.id);});
+    if(filters.hall)ids.add(filters.hall);
+    return locationRegistry.rooms.filter(room=>room.buildingId===filters.building&&ids.has(room.id)).sort((a,b)=>byRoomPart(a.canonicalCode,b.canonicalCode));
+  }, [all, locationRegistry.rooms, filters.building, filters.hall, rowLocation, rowMatchesBuilding]);
 
   /** One predicate serves every lens. Nothing is mode-specific any more. */
   const results = useMemo(() => {
@@ -614,8 +637,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           : sortKey(instructor?.AdInstructorName || "").toLowerCase().includes(nameQuery);
       });
     }
-    if (filters.building) rows = rows.filter(s => String(s.buildingId||"") === filters.building);
-    if (filters.hall) rows = rows.filter(s => String(s.roomId||"") === filters.hall);
+    if (filters.building) rows = rows.filter(s => rowMatchesBuilding(s, filters.building));
+    if (filters.hall) rows = rows.filter(s => rowMatchesRoom(s, filters.hall));
     if (filters.startTime && filters.endTime) {
       /* A lecture that lives entirely inside the window is the most obvious
          answer to "what is on between ten and twelve", and the old test — which
@@ -1380,7 +1403,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <span>موعد</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
-          <div className="query-canvas-actions">
+          {results.length && !pending ? <div className="query-canvas-actions">
             <button
               type="button"
               className="query-print-icon"
@@ -1398,7 +1421,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
               </SecondaryButton>
             ) : null}
-          </div>
+          </div> : null}
         </header>
 
 

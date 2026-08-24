@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { BookOpen, Building2, Clock3, Trash2, Users } from "lucide-react";
 import { sortByName, byArabic } from "../utils/sorting";
 import { decimalText, numericText } from "../utils/digits";
+import type { AdSection } from "../types";
 import {
   AddButton,
   EmbeddedAction,
@@ -473,7 +474,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
                 </article>
                 <article>
                   <span>رمز المقرر</span>
-                  <b>{selected.AdCourseId}</b>
+                  <b>{selected.CourseCode || "—"}</b>
                 </article>
               </div>
               <div className="inspector-actions">
