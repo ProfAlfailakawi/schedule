@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { FSchedule, MasterBuilding, MasterRoom } from "../types";
-import { PENDING_ROOM, roomGroups } from "../utils/locationRegistry";
+import { PENDING_ROOM, compareLocationCodes, roomGroups } from "../utils/locationRegistry";
 import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
 
 type LocationValue=Pick<FSchedule,"AdRoomCode"|"AdRoomHall"|"buildingId"|"roomId"|"locationStatus"|"sourceBuildingText"|"sourceRoomText">;
@@ -25,7 +25,7 @@ export function RoomPicker({collegeId,sectionId,termId,buildingId,roomId,locatio
   const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId);
   const registry=useMemo(()=>({buildings,rooms}),[buildings,rooms]);
   const groups=useMemo(()=>buildingId?roomGroups(registry,buildingId,sectionId):{own:[],shared:[],other:[]},[registry,buildingId,sectionId]);
-  const borrowed=useMemo(()=>{const ids=new Set(borrowedRoomIds);const already=new Set([...groups.own,...groups.shared].map(r=>r.id));return buildingId?rooms.filter(room=>room.buildingId===buildingId&&ids.has(room.id)&&!already.has(room.id)):[];},[borrowedRoomIds,groups,rooms,buildingId]);
+  const borrowed=useMemo(()=>{const ids=new Set(borrowedRoomIds);const already=new Set([...groups.own,...groups.shared].map(r=>r.id));return buildingId?rooms.filter(room=>room.buildingId===buildingId&&ids.has(room.id)&&!already.has(room.id)).sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)):[];},[borrowedRoomIds,groups,rooms,buildingId]);
   const locationPending=locationStatus==="PENDING_ROOM";
   const chooseRoom=(id:string)=>{if(id===PENDING_ROOM){onChange({roomId:undefined,canonicalCode:"",locationStatus:"PENDING_ROOM"});return;}const r=rooms.find(x=>x.id===id);onChange({roomId:r?.id,canonicalCode:r?.canonicalCode||"",locationStatus:r?"VERIFIED":undefined});};
   return <select aria-label="القاعة الرسمية" value={locationPending?PENDING_ROOM:(roomId||"")} disabled={disabled||!buildingId||loading} onChange={e=>chooseRoom(e.target.value)}>
@@ -40,7 +40,7 @@ export default function LocationPicker({collegeId,sectionId,termId,value,onChang
   const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId);
   const registry=useMemo(()=>({buildings,rooms}),[buildings,rooms]);
   const groups=useMemo(()=>value.buildingId?roomGroups(registry,value.buildingId,sectionId):{own:[],shared:[],other:[]},[registry,value.buildingId,sectionId]);
-  const borrowed=useMemo(()=>{const ids=new Set(borrowedRoomIds);const already=new Set([...groups.own,...groups.shared].map(r=>r.id));return value.buildingId?rooms.filter(room=>room.buildingId===value.buildingId&&ids.has(room.id)&&!already.has(room.id)):[];},[borrowedRoomIds,groups,rooms,value.buildingId]);
+  const borrowed=useMemo(()=>{const ids=new Set(borrowedRoomIds);const already=new Set([...groups.own,...groups.shared].map(r=>r.id));return value.buildingId?rooms.filter(room=>room.buildingId===value.buildingId&&ids.has(room.id)&&!already.has(room.id)).sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)):[];},[borrowedRoomIds,groups,rooms,value.buildingId]);
   const selectedBuilding=buildings.find(b=>b.id===value.buildingId);
   const locationPending=value.locationStatus==="PENDING_ROOM";
   const chooseBuilding=(id:string)=>{const b=buildings.find(x=>x.id===id);onChange({buildingId:b?.id,roomId:undefined,AdRoomCode:b?.officialCode||"",AdRoomHall:"",locationStatus:undefined});};

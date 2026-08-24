@@ -4,7 +4,7 @@
  * Example: 012B + building 7 => 012B07.
  */
 export const OFFICIAL_COLLEGE_SITE_PREFIXES = [
-  { collegeName: "كلية التربية الأساسية - بنات", sitePrefix: "012B", siteLabel: "التربية الأساسية" },
+  { collegeName: "كلية التربية الأساسية - بنات", sitePrefix: "012B", siteLabel: "التربية الأساسية - بنات" },
   { collegeName: "كلية التربية الأساسية - بنين", sitePrefix: "011B", siteLabel: "التربية الأساسية - بنين" },
   { collegeName: "كلية التربية الأساسية - بنات - الجهراء", sitePrefix: "012J", siteLabel: "التربية الأساسية - الجهراء" },
   { collegeName: "كلية التربية الأساسية - بنات - الفحيحيل", sitePrefix: "012F", siteLabel: "التربية الأساسية - الفحيحيل" },

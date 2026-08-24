@@ -1424,16 +1424,18 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
  */
 function isHeaderLine(text:string):boolean{
   const f=fold(text);
-  const headerKeywords=[
-    "التقرير","جدول الفصل","جميع الشعب","صفحة","صفحه","التاريخ",
-    "الفصل الدراسي","كلية التربيه","كليه التربيه","الكلية","الكلي ه",
-    "القسم","الفرع","رقم المقرر","مسمى المقرر","الرقم المرجعى",
-    "الرقم المرجعي","الشعبة","الشعبه","الحد الأقصى","الحد الاقصى",
-    "مقاعد مسجلة","مقاعد مسجله","الوحدات","الساعات","النشاط",
-    "الأيام","الايام","المدرس","القاعة","القاعه","المبنى","المبني",
-    "استجابة صوتية","استجابة صوتيه","الحالة في الرزم","عدد الرزم","swrscha"
+  const headerPhrases=[
+    "جدول الفصل", "جميع الشعب", "الفصل الدراسي", "كلية التربيه", "كليه التربيه",
+    "القسم :", "القسم:", "الفرع :", "الفرع:", "رقم المقرر", "مسمى مقرر",
+    "الرقم المرجعي", "الرقم المرجعى", "الحد الاقصى", "مقاعد مسجلة", "مقاعد مسجله",
+    "الحالة في الرزم", "عدد الرزم", "swrscha", "صفحة رقم", "من أصل", "من اصل",
+    "تاريخ الطباعة", "طبع في", "الكلية", "الكلي ه"
   ];
-  return headerKeywords.some(kw=>f.includes(fold(kw)));
+  if(headerPhrases.some(phrase => f.includes(fold(phrase)))) return true;
+  if(f.startsWith("القسم") || f.startsWith("الفصل") || f.startsWith("التقرير") || f.startsWith("جدول") || (f.includes("صفحة") && f.includes("من"))) {
+    return true;
+  }
+  return false;
 }
 
 function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number,preferredInstructorIds?:Set<number>){
@@ -1489,7 +1491,12 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     return null;
   };
 
-  const validGrids=gridRows.filter(grid=>!isHeaderLine(`${grid.code} ${grid.courseText} ${grid.instructorText}`));
+  const validGrids=gridRows.filter(grid=>{
+    const combined = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText} ${grid.building} ${grid.hall}`;
+    if(isHeaderLine(combined))return false;
+    const hasData = Boolean(grid.code || grid.reference || grid.start || grid.days || grid.scode || grid.courseText.length > 2);
+    return hasData;
+  });
   const firstPass=validGrids.map(grid=>({grid,course:matchCourse(grid.code,grid.courseText)}));
   for(let i=0;i<firstPass.length;i++){
     if(firstPass[i].course)continue;
@@ -1498,7 +1505,8 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   }
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=startOrder;
   for(const {grid,course} of firstPass){
-    if(isHeaderLine(`${grid.code} ${grid.courseText}`))continue;
+    const combinedCheck = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText}`;
+    if(isHeaderLine(combinedCheck))continue;
     const flags = parseDays(grid.days) || parseDays(grid.courseText) || parseDays(grid.instructorText) || parseDays(`${grid.code} ${grid.courseText}`) || EMPTY_DAYS;
     const instructorHit=matchInstructorName(grid.instructorText||`${grid.courseText} ${grid.code}`,instructors,preferredInstructorIds)
       ||matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
@@ -1506,8 +1514,11 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     const cleanHall = cleanHallCode(grid.hall) || cleanHallCode(grid.building);
 
     if(!course){
-      // Include unmapped row instead of discarding it, so the user can easily select the course and fix data
-      const rawLabel = grid.courseText || grid.code || "مقرر غير معروف";
+      const rawLabel = grid.courseText || grid.code || "";
+      const hasScheduleData = Boolean(grid.start || grid.days || grid.scode || grid.reference || (grid.code && grid.code.length >= 3));
+      if(!hasScheduleData || isHeaderLine(rawLabel) || !rawLabel || rawLabel.length < 3) {
+        continue;
+      }
       rows.push({
         sourceOrder:order++,
         referenceNumber:grid.reference,

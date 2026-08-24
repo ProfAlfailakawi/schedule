@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Building2, CheckCircle2, CircleAlert, Database, DoorOpen, Info, Plus, RefreshCw, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
+import { Building2, CheckCircle2, CircleAlert, Database, DoorOpen, Info, Plus, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
 import type { AdCollege, AdSection, LocationMigrationRun, LocationReviewCase, MasterBuilding, MasterRoom } from "../types";
 import { Badge, Field, Notice, PrimaryButton, SecondaryButton, Surface } from "./ui";
 import { buildingNumberLabel, normalizeCollegeName, officialCollegeSitePrefix, officialSiteLabel } from "../utils/locationCollegePrefixes";
+import { compareLocationCodes } from "../utils/locationRegistry";
 
 type Payload={buildings:MasterBuilding[];rooms:MasterRoom[];reviewCases:LocationReviewCase[];runs:LocationMigrationRun[];health:Record<string,number>;pending:any[];colleges:AdCollege[];sections:AdSection[]};
 type CollegeGroup={key:string;label:string;ids:number[];prefix?:string};
@@ -13,22 +14,22 @@ async function json(url:string,init?:RequestInit){const r=await fetch(url,{...in
 const aliases=(items:any[]|undefined)=>Array.isArray(items)?items.map(item=>String(item?.value||"").trim()).filter(Boolean):[];
 const intersects=(a:number[],b:number[])=>a.some(id=>b.includes(id));
 const buildingPrefix=(building:MasterBuilding)=>String(building.sitePrefix||building.officialCode.slice(0,4)||"").trim().toUpperCase();
-const migrationLabel=(key:string)=>({scanned:"تم فحصها",verified:"موثقة",buildingChanged:"تم توحيد المبنى",roomChanged:"تم توحيد القاعة",review:"تحتاج مراجعة",invalid:"قيم غير صالحة",unchanged:"بدون تغيير"} as Record<string,string>)[key]||key;
+const migrationLabel=(key:string)=>({scanned:"تم فحصها",verified:"موثقة",buildingChanged:"تم توحيد المبنى",roomChanged:"تم توحيد القاعة",review:"تحتاج مراجعة",invalid:"Placeholder تاريخي",unchanged:"بدون تغيير"} as Record<string,string>)[key]||key;
 const reviewKindLabel=(kind:string)=>({BUILDING:"مبنى",ROOM:"قاعة",PAIR:"مبنى/قاعة",SWAPPED_FIELDS:"احتمال تبديل الحقول",UNKNOWN_PREFIX:"كود موقع غير معروف",CROSS_BUILDING_ROOM_CODE:"رمز قاعة في أكثر من مبنى"} as Record<string,string>)[kind]||kind;
 
 export default function LocationRegistryAdmin({header,demoReadOnly=false}:{header?:React.ReactNode;demoReadOnly?:boolean}){
   const [data,setData]=useState<Payload>(empty),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[message,setMessage]=useState<string|null>(null);
-  const [query,setQuery]=useState(""),[selectedBuilding,setSelectedBuilding]=useState<string>(""),[reviewOnly,setReviewOnly]=useState(true);
+  const [query,setQuery]=useState(""),[selectedBuilding,setSelectedBuilding]=useState<string>("");
   const [statusFilter,setStatusFilter]=useState("all"),[collegeFilter,setCollegeFilter]=useState("all"),[sectionFilter,setSectionFilter]=useState(0),[siteFilter,setSiteFilter]=useState("all");
   const [editEntity,setEditEntity]=useState<any>(null),[aliasEditor,setAliasEditor]=useState<AliasEditor>(null);
   const [newBuilding,setNewBuilding]=useState({collegeId:0,buildingNumber:"",siteName:"",branchName:""});
   const [newRoom,setNewRoom]=useState({buildingId:"",canonicalCode:""});
   const [showBuildingCreate,setShowBuildingCreate]=useState(false),[showRoomCreate,setShowRoomCreate]=useState(false);
   const [migrationPreview,setMigrationPreview]=useState<any>(null);
-  const [workspaceTab,setWorkspaceTab]=useState<"registry"|"review"|"pending"|"migration">("registry");
+  const [workspaceTab,setWorkspaceTab]=useState<"registry"|"migration">("registry");
 
   const load=async()=>{setBusy(true);setError(null);try{setData(await json("/api/admin/location-registry"));}catch(e:any){setError(e.message);}finally{setBusy(false);}};
-  useEffect(()=>{void load();},[]);
+  useEffect(()=>{void load();const onFocus=()=>void load();const onVisibility=()=>{if(document.visibilityState==="visible")void load();};window.addEventListener("focus",onFocus);document.addEventListener("visibilitychange",onVisibility);return()=>{window.removeEventListener("focus",onFocus);document.removeEventListener("visibilitychange",onVisibility);};},[]);
 
   const collegeGroups=useMemo<CollegeGroup[]>(()=>{
     const groups=new Map<string,CollegeGroup>();
@@ -84,13 +85,20 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
     if(statusFilter!=="all"&&(statusFilter==="active"?!building.active:building.active))return false;
     if(siteFilter!=="all"&&buildingPrefix(building)!==siteFilter)return false;
     if(selectedCollegeIds.length&&!intersects(bCollegeIds,selectedCollegeIds))return false;
-    if(sectionFilter&&!bSectionIds.includes(sectionFilter))return false;
+    if(sectionFilter){
+      const hasDepartmentRoom=(roomIdsByBuilding.get(building.id)||[]).some(room=>room.sectionIds.includes(sectionFilter));
+      if(!hasDepartmentRoom)return false;
+    }
     return true;
-  }).sort((a,b)=>a.officialCode.localeCompare(b.officialCode)),[data.buildings,data.colleges,data.sections,roomIdsByBuilding,q,statusFilter,siteFilter,selectedCollegeIds.join(","),sectionFilter]);
+  }).sort((a,b)=>compareLocationCodes(a.officialCode,b.officialCode)),[data.buildings,data.colleges,data.sections,roomIdsByBuilding,q,statusFilter,siteFilter,selectedCollegeIds.join(","),sectionFilter]);
 
   const current=buildings.find(building=>building.id===selectedBuilding)||buildings[0];
-  const rooms=useMemo(()=>data.rooms.filter(room=>current&&room.buildingId===current.id&&(!q||[room.canonicalCode,...aliases(room.aliases)].join(" ").toLowerCase().includes(q))).sort((a,b)=>a.canonicalCode.localeCompare(b.canonicalCode)),[data.rooms,current,q]);
-  const reviews=data.reviewCases.filter(c=>!reviewOnly||c.status==="open");
+  const rooms=useMemo(()=>data.rooms.filter(room=>
+    current&&room.buildingId===current.id&&
+    (!sectionFilter||room.sectionIds.includes(sectionFilter))&&
+    (!selectedCollegeIds.length||!room.collegeIds.length||intersects(room.collegeIds,selectedCollegeIds))&&
+    (!q||[room.canonicalCode,...aliases(room.aliases)].join(" ").toLowerCase().includes(q))
+  ).sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)),[data.rooms,current,q,sectionFilter,selectedCollegeIds.join(",")]);
   const collegeName=(id:number)=>data.colleges.find(c=>Number(c.AdCollegeId)===Number(id))?.AdCollegeName||String(id);
   const sectionName=(id:number)=>data.sections.find(s=>Number(s.AdSectionId)===Number(id))?.AdSectionName||String(id);
   const selectedNewBuildingCollege=data.colleges.find(c=>Number(c.AdCollegeId)===Number(newBuilding.collegeId));
@@ -123,8 +131,6 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
 
     <nav className="location-admin-tabs" aria-label="أقسام إدارة المباني والقاعات">
       <button type="button" data-guide-ignore="تبويب داخلي في إدارة سجل المواقع" className={workspaceTab==="registry"?"active":""} onClick={()=>setWorkspaceTab("registry")}><Building2/>السجل الرسمي</button>
-      <button type="button" data-guide-ignore="تبويب داخلي في إدارة سجل المواقع" className={workspaceTab==="review"?"active":""} onClick={()=>setWorkspaceTab("review")}><ShieldCheck/>المراجعة {reviews.length?<Badge>{reviews.length}</Badge>:null}</button>
-      <button type="button" data-guide-ignore="تبويب داخلي في إدارة سجل المواقع" className={workspaceTab==="pending"?"active":""} onClick={()=>setWorkspaceTab("pending")}><CircleAlert/>بانتظار قاعة {data.pending.length?<Badge>{data.pending.length}</Badge>:null}</button>
       <button type="button" data-guide-ignore="تبويب داخلي في إدارة سجل المواقع" className={workspaceTab==="migration"?"active":""} onClick={()=>setWorkspaceTab("migration")}><Database/>المهاجرة</button>
     </nav>
 
@@ -135,8 +141,6 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
       <select aria-label="الكلية" value={collegeFilter} onChange={e=>{setCollegeFilter(e.target.value);setSectionFilter(0);}}><option value="all">كل الكليات</option>{collegeGroups.map(group=><option key={group.key} value={group.key}>{group.label}</option>)}</select>
       <select aria-label="القسم" value={sectionFilter} onChange={e=>setSectionFilter(Number(e.target.value))}><option value={0}>كل الأقسام</option>{data.sections.filter(section=>!selectedCollegeIds.length||selectedCollegeIds.includes(Number(section.AdCollegeId))).map(section=><option key={section.AdSectionId} value={section.AdSectionId}>{section.AdSectionName}</option>)}</select>
       {filterActive?<SecondaryButton type="button" data-guide-ignore="مسح فلاتر سجل المواقع" onClick={resetFilters}>مسح الفلاتر</SecondaryButton>:null}
-      <SecondaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" onClick={()=>void load()} disabled={busy}><RefreshCw/>تحديث</SecondaryButton>
-      <SecondaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" onClick={()=>{setWorkspaceTab("migration");void previewMigration();}} disabled={busy}><Database/>معاينة المهاجرة</SecondaryButton>
     </Surface>:null}
 
     {workspaceTab==="registry"?<><div className="location-filter-summary"><span>النتيجة: <b>{buildings.length}</b> من {data.buildings.length} مبنى</span>{siteFilter!=="all"?<Badge>{officialSiteLabel(siteFilter)}</Badge>:null}{selectedCollegeGroup?<Badge>{selectedCollegeGroup.label}</Badge>:null}{sectionFilter?<Badge>{sectionName(sectionFilter)}</Badge>:null}</div>
@@ -158,13 +162,7 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
       </>:<div className="location-empty-state"><Building2/><strong>اختر مبنى من القائمة</strong><span>ستظهر قاعاته وإدارته هنا.</span></div>}</Surface>
     </div></>:null}
 
-    {workspaceTab==="review"?<Surface className="location-review"><div className="location-admin-title"><div><h2>طابور المراجعة</h2><p>الحالات غير المحسومة تبقى هنا ولا يتم تحويلها تلقائيًا.</p></div><label className="location-toggle"><input type="checkbox" checked={reviewOnly} onChange={e=>setReviewOnly(e.target.checked)}/> المفتوحة فقط</label></div>
-      <div className="location-review-list">{reviews.map(c=><article key={c.id}><header><strong dir="ltr">{c.rawValue||"—"}</strong><Badge>{reviewKindLabel(c.kind)}</Badge><span>{c.occurrences} ظهور</span></header><p>{c.reason}</p><small>الكليات: {c.collegeNames.join("، ")||"—"} · الأقسام: {c.sectionNames.join("، ")||"—"}</small><small>المرشح: {[c.buildingCandidate,c.roomCandidate].filter(Boolean).join(" / ")||[...c.buildingCandidates,...c.roomCandidates].join("، ")||"لا يوجد حسم"}</small><em>{c.recommendation}</em>{c.status==="open"?<div className="location-admin-actions"><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={demoReadOnly} onClick={()=>{const resolution=window.prompt("اكتب القرار البشري الذي يحسم هذه الحالة");if(resolution?.trim())void mutate(`/api/admin/location-registry/review/${encodeURIComponent(c.id)}`,{method:"PUT",body:JSON.stringify({status:"resolved",resolution:resolution.trim()})},"تم حسم حالة المراجعة");}}>حسم</PrimaryButton><SecondaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={demoReadOnly} onClick={()=>void mutate(`/api/admin/location-registry/review/${encodeURIComponent(c.id)}`,{method:"PUT",body:JSON.stringify({status:"ignored",resolution:"تحتاج معرفة بشرية/تم تأجيلها"})},"تم تحديث حالة المراجعة")}>تأجيل</SecondaryButton></div>:<Badge>{c.status==="resolved"?"محسومة":"مؤجلة"}</Badge>}</article>)}</div>
-    </Surface>:null}
-
-    {workspaceTab==="pending"?<Surface className="location-pending-admin"><div className="location-admin-title"><div><h2>الشعب بانتظار تثبيت القاعة</h2><p>هذه حالة نظام مقصودة وليست قاعة، ولا تدخل في إحصائيات استخدام القاعات.</p></div><Badge>{data.pending.length}</Badge></div>{data.pending.length?<div className="location-pending-table"><div className="head"><span>الكلية / القسم</span><span>الأستاذ</span><span>المقرر / الشعبة</span><span>المبنى</span><span>الأيام / الوقت</span></div>{data.pending.map(row=><div key={row.id}><span>{row.collegeName||collegeName(row.AdCollegeId)} · {row.sectionName||sectionName(row.AdSectionId)}</span><span>{row.instructorName||row.AdInstructorId||"—"}</span><span>{row.AdCourseName||row.AdCourseId||"—"} · {row.SCode||"—"}</span><span dir="ltr">{row.AdRoomCode||"—"}</span><span>{(row.days||[]).join("، ")||"—"} · {row.fstarttime||"—"}–{row.fendtime||"—"}</span></div>)}</div>:<p>لا توجد شعب معلقة حاليًا.</p>}</Surface>:null}
-
-    {workspaceTab==="migration"&&migrationPreview?<Surface className="location-migration-preview"><div className="location-admin-title"><div><strong>معاينة آمنة للمهاجرة</strong><p>لا يتم تغيير أي بيانات قبل الضغط على زر التهيئة.</p></div><Badge>{migrationPreview.version}</Badge></div><div className="location-stat-row">{Object.entries(migrationPreview.stats||{}).map(([k,v])=><span key={k}><b>{String(v)}</b><small>{migrationLabel(k)}</small></span>)}</div><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={busy||demoReadOnly} onClick={()=>void applyMigration()}><CheckCircle2/>تهيئة سجل المباني والقاعات</PrimaryButton></Surface>:null}
+    {workspaceTab==="migration"&&migrationPreview?<Surface className="location-migration-preview"><div className="location-admin-title"><div><strong>معاينة آمنة للمهاجرة</strong><p>هذه المعاينة تستخدم الكلية والقسم وPrefix الرسمي وبصمة القاعات والصيغ التاريخية. لا تغيّر أي بيانات.</p></div><Badge>{migrationPreview.version}</Badge></div><div className="location-stat-row">{Object.entries(migrationPreview.stats||{}).map(([k,v])=><span key={k}><b>{String(v)}</b><small>{migrationLabel(k)}</small></span>)}</div><div className="location-migration-explain"><article><b>ما معنى «تحتاج مراجعة»؟</b><p>بقي أكثر من تفسير آمن بعد كل القرائن؛ لذلك لا يختار النظام عشوائيًا. مبنى غير محسوم: {migrationPreview.details?.reviewReasons?.building||0} · قاعة غير محسومة: {migrationPreview.details?.reviewReasons?.room||0}.</p></article><article><b>ما معنى «Placeholder تاريخي»؟</b><p>قيم قديمة مثل 0 و00 و- وTBA وليست مبنى أو قاعة حقيقية. مبنى Placeholder: {migrationPreview.details?.invalidReasons?.buildingPlaceholder||0} · قاعة Placeholder: {migrationPreview.details?.invalidReasons?.roomPlaceholder||0}.</p></article>{migrationPreview.details?.smartRecovered?<article className="success"><b>حسم ذكي إضافي</b><p>تم إنقاذ {migrationPreview.details.smartRecovered} سجلًا كان المبنى فيه Placeholder لأن القاعة + القسم حددا مكانًا رسميًا وحيدًا.</p></article>:null}</div><PrimaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" disabled={busy||demoReadOnly} onClick={()=>void applyMigration()}><CheckCircle2/>تهيئة سجل المباني والقاعات</PrimaryButton></Surface>:null}
 
     {workspaceTab==="migration"&&!migrationPreview?<Surface className="location-migration-empty"><Database/><div><h2>المهاجرة الآمنة</h2><p>عاين أثر التهيئة قبل أي تغيير. المعاينة لا تعدّل قاعدة البيانات.</p></div><PrimaryButton type="button" data-guide-ignore="معاينة مهاجرة سجل المواقع" onClick={()=>void previewMigration()} disabled={busy}>معاينة المهاجرة</PrimaryButton></Surface>:null}
     {workspaceTab==="migration"&&data.runs.length?<Surface className="location-migration-history"><h2>سجل المهاجرات</h2>{data.runs.map(run=><div key={run.id}><span>{new Date(run.createdAt).toLocaleString("ar-KW-u-nu-latn")}</span><Badge>{run.status==="completed"?"مكتملة":run.status==="rolled_back"?"تم التراجع":run.status}</Badge><code>{run.version}</code>{run.status==="completed"?<SecondaryButton type="button" data-guide-ignore="إجراء إداري خاص بسجل المواقع" onClick={()=>void rollback(run)} disabled={demoReadOnly||busy}><RotateCcw/>تراجع عن المهاجرة</SecondaryButton>:null}</div>)}</Surface>:null}

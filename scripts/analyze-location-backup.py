@@ -20,7 +20,7 @@ INVALID_EXACT = {
 }
 USER_CONFIRMED_BUILDINGS = {
     # Explicitly supplied as official BUILDING examples by the system owner.
-    "012B09": {"siteName": "التربية الأساسية", "branchName": "فرع البنات", "source": "USER_CONFIRMED"},
+    "012B09": {"siteName": "التربية الأساسية - بنات", "branchName": "فرع البنات", "source": "USER_CONFIRMED"},
     "012J14": {"siteName": "الجهراء", "branchName": "الجهراء", "source": "USER_CONFIRMED"},
     "012F15": {"siteName": "الفحيحيل", "branchName": "الفحيحيل", "source": "USER_CONFIRMED"},
 }

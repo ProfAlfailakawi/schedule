@@ -91,4 +91,13 @@ ok('41 shared room is derived, never manually checked', 'shared=sectionIds.lengt
 ok('42 suggestions obey the same department room scope', 'room.shared||room.sectionIds.length===0||room.sectionIds.includes(sectionId)' not in server and 'borrowedRoomIds.has(room.id)' in server)
 ok('43 admin workspace collapses secondary controls', '<details className="location-admin-guide">' in admin and 'showBuildingCreate' in admin and 'showRoomCreate' in admin)
 
+
+ok('44 basic education female site label is explicit', 'siteLabel: "التربية الأساسية - بنات"' in prefix_src)
+ok('45 registry ordering is natural everywhere', 'compareLocationCodes' in loc and 'merged.buildings.sort' in server and 'merged.rooms.sort' in server)
+ok('46 admin department filter requires an actual department room', 'hasDepartmentRoom' in admin and 'room.sectionIds.includes(sectionFilter)' in admin)
+ok('47 admin refresh is automatic and duplicate buttons removed', 'visibilitychange' in admin and '<RefreshCw' not in admin and 'setWorkspaceTab("migration");void previewMigration()' not in admin)
+ok('48 empty review and pending tabs removed', 'workspaceTab==="review"' not in admin and 'workspaceTab==="pending"' not in admin)
+ok('49 historical migration uses smart safe recovery', 'RECOVERED_FROM_UNIQUE_ROOM_FINGERPRINT' in engine and 'HISTORICAL_STRONG_PROBABLE_ROOM' in engine and 'resolveStrongHistoricalProbableRoom' in engine)
+ok('50 invalid historical garbage is classified explicitly', 'CANCELLED' in loc and 'Pure punctuation/garbage' in loc and 'Placeholder تاريخي' in admin)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

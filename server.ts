@@ -53,7 +53,7 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode } from "./src/utils/documentOcr";
-import { PENDING_ROOM, buildingIdentityKey, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
+import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 
@@ -97,6 +97,8 @@ async function readLocationRegistry(force=false){
   if(!force&&locationRegistryCache&&Date.now()-locationRegistryCache.at<60_000)return locationRegistryCache;
   const [buildings,rooms]=await Promise.all([Repository.getLocationBuildings(),Repository.getLocationRooms()]);
   const merged=mergeRegistryWithSeed({buildings,rooms});
+  merged.buildings.sort((a,b)=>compareLocationCodes(a.officialCode,b.officialCode));
+  merged.rooms.sort((a,b)=>compareLocationCodes(a.buildingCode,b.buildingCode)||compareLocationCodes(a.canonicalCode,b.canonicalCode));
   locationRegistryCache={at:Date.now(),...merged};return locationRegistryCache;
 }
 function invalidateLocationRegistry(){locationRegistryCache=null;}
@@ -3465,7 +3467,7 @@ app.get("/api/department-rooms", requirePermission(7), async (req: Authenticated
   if(!collegeId||!sectionId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const registry=await readLocationRegistry();
   const buildingById=new Map(registry.buildings.filter(b=>b.active&&b.confidence==="CONFIRMED").map(b=>[b.id,b]));
-  const rooms=registry.rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&buildingById.has(room.buildingId)&&(!room.collegeIds.length||room.collegeIds.includes(collegeId))&&room.sectionIds.includes(sectionId)).map(room=>({building:buildingById.get(room.buildingId)!.officialCode,hall:room.canonicalCode,buildingId:room.buildingId,roomId:room.id,shared:room.shared}));
+  const rooms=registry.rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&buildingById.has(room.buildingId)&&(!room.collegeIds.length||room.collegeIds.includes(collegeId))&&room.sectionIds.includes(sectionId)).map(room=>({building:buildingById.get(room.buildingId)!.officialCode,hall:room.canonicalCode,buildingId:room.buildingId,roomId:room.id,shared:room.shared})).sort((a,b)=>a.building.localeCompare(b.building,"en",{numeric:true})||a.hall.localeCompare(b.hall,"en",{numeric:true}));
   res.json({rooms});
 });
 app.post("/api/department-rooms", requirePermission(7), async (_req: AuthenticatedRequest, res: Response) => {
@@ -3592,7 +3594,7 @@ app.put("/api/admin/location-registry/review/:id", requirePermission(7), require
   const row:LocationReviewCase={...current,status:requested as any,resolution:resolution||current.resolution,resolvedAt:requested==="open"?undefined:new Date().toISOString(),resolvedBy:requested==="open"?undefined:req.user.SystemUserId};await Repository.upsertLocationReviewCases([row]);res.json(row);
 });
 app.get("/api/admin/location-registry/migration/preview", requirePermission(7), requirePowerAdmin, async (_req:AuthenticatedRequest,res:Response)=>{
-  const registry=await readLocationRegistry();const rows=await Repository.getSchedules();const plan=buildMigrationPlan(rows,registry,"preview");res.json({version:plan.version,stats:plan.stats,reviewSeed:seedRegistry().reviewCases.length});
+  const registry=await readLocationRegistry();const rows=await Repository.getSchedules();const plan=buildMigrationPlan(rows,registry,"preview");res.json({version:plan.version,stats:plan.stats,details:plan.details,reviewSeed:seedRegistry().reviewCases.length});
 });
 app.post("/api/admin/location-registry/migration/apply", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   if(req.get("x-schedule-confirm")!=="initialize-location-registry"){res.status(409).json({error:"يتطلب التهيئة تأكيداً صريحاً"});return;}
