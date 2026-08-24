@@ -5052,7 +5052,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   قرأتُ ما استطعت، لكن نسخة أوضح ستقلّل الملاحظات كثيراً.
                 </Notice>
               ) : null}
-              {importPreview.importLayout !== "authority-pdf" ? (importPreview.issues.length ? (
+              {importPreview.issues.length ? (
                 <div className="import-issues">
                   {importPreview.issues
                     .slice(0, 12)
@@ -5067,7 +5067,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <Notice type="success">
                   لا أخطاء ظاهرة.
                 </Notice>
-              )) : null}
+              )}
               {importPreview.importLayout === "authority-pdf" && importPreview.rows?.length ? (
                 <ImportPreviewTable
                   rows={importPreview.rows as ImportRow[]}

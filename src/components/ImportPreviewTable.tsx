@@ -128,8 +128,8 @@ export default function ImportPreviewTable({
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
-    room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
-    instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)),
+    room: (row: ImportRow) => !row.roomId && row.locationStatus !== "PENDING_ROOM",
+    instructor: (row: ImportRow) => !Number(row.AdInstructorId),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
 
@@ -255,13 +255,10 @@ export default function ImportPreviewTable({
                         {row.AdCourseName && !course ? (
                           <small className="muted">قرأ الملف: {row.AdCourseName}</small>
                         ) : null}
-                        {row.scopeMismatchType === "CROSS_BRANCH" ? (
-                          <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span>
-                        ) : null}
                       </div>
                     ) : (
                       <div className="import-locked-course">
-                        <span className="import-course-title-line"><strong>{course?.CourseName || row.AdCourseName || "—"}</strong>{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
+                        <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
                         {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                       </div>
                     )}
@@ -275,7 +272,7 @@ export default function ImportPreviewTable({
                   <td className={red(missing.time(row))} dir="ltr">
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patch(index, { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
-                  <td className={red(missing.building(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")}>
+                  <td className={red(missing.building(row))}>
                     {open ? (
                       <BuildingPicker
                         collegeId={collegeId}
@@ -288,17 +285,13 @@ export default function ImportPreviewTable({
                           AdRoomCode: b?.officialCode || "",
                           AdRoomHall: "",
                           locationStatus: undefined,
-                          sourceSitePrefix: undefined,
-                          scopeMismatchType: undefined,
-                          scopeMismatchLabel: undefined,
-                          scopeMismatchMessage: undefined,
                         })}
                       />
                     ) : (
                       <span dir="ltr">{row.AdRoomCode || "—"}</span>
                     )}
                   </td>
-                  <td className={red(missing.room(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")}>
+                  <td className={red(missing.room(row))}>
                     {open ? (
                       <RoomPicker
                         collegeId={collegeId}
@@ -318,7 +311,7 @@ export default function ImportPreviewTable({
                     )}
                   </td>
                   <td className={red(missing.instructor(row))}>
-                    {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds.length ? departmentIds : pickerInstructors.map(person => Number(person.AdInstructorId)).filter(Boolean)} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || String(row.sourceInstructorText || "").trim() || "—")}
+                    {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds.length ? departmentIds : pickerInstructors.map(person => Number(person.AdInstructorId)).filter(Boolean)} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || "—")}
                   </td>
                   <td className="import-row-tools">
                     <button type="button" data-guide-ignore="تحرير صف داخل معاينة الاستيراد قبل أي حفظ" className={open ? "confirm" : ""} title={open ? "تم" : "تعديل سريع"} onClick={() => open ? setEditing(null) : beginEdit(index)}>{open ? <Check /> : <Pencil />}</button>

@@ -232,10 +232,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
   const importBlockingIssues = useMemo(() => {
     if (!xlsxPreview) return [] as string[];
-    const sourceIssues=(Array.isArray(xlsxPreview.issues) ? xlsxPreview.issues : []).map((item: unknown) => String(item || "").trim()).filter(Boolean);
-    /* PDF row blockers are derived LIVE below. Parser prose must not remain as
-       a stale blocker after the reviewer fixes or deletes the affected row. */
-    const issues = new Set<string>(importKind === "authority-pdf" ? sourceIssues.filter(issue => /^تحذير:/.test(issue)) : sourceIssues);
+    const issues = new Set<string>((Array.isArray(xlsxPreview.issues) ? xlsxPreview.issues : []).map((item: unknown) => String(item || "").trim()).filter(Boolean));
     const rows = Array.isArray(xlsxPreview.rows) ? xlsxPreview.rows as ImportRow[] : [];
     const hasDays = (row: ImportRow) => Boolean(row.fsunday || row.fmonday || row.ftuesday || row.fwednesday || row.fthursday);
     const minutes = (value: string) => { const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/); return match ? Number(match[1]) * 60 + Number(match[2]) : -1; };
@@ -251,7 +248,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       if (!Number(row.AdInstructorId)) issues.add(`الصف ${n}: أستاذ المقرر غير محدد.`);
     });
     return [...issues];
-  }, [xlsxPreview, importKind]);
+  }, [xlsxPreview]);
   const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
 
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
@@ -656,7 +653,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                 <div className="transfer-preview">
                   <div className="transfer-counts">
                     <span><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b>صفاً فُهم</span>
-                    {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>:null}
+                    <span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>
                     {importKind==="authority-pdf"?<span><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b>صفحات PDF</span>:null}
                   </div>
                   {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
@@ -670,12 +667,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}
-                        onRows={next => setXlsxPreview((prev: any) => {
-                          if(!prev)return prev;
-                          const documentWarnings=(Array.isArray(prev.issues)?prev.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
-                          return { ...prev, rows: next, count: next.length, issues: documentWarnings, valid: next.length > 0 };
-                        })}
+                        onRows={next => setXlsxPreview((prev: any) => prev ? { ...prev, rows: next, count: next.length, valid: next.length > 0 } : prev)}
                       />
+                      {xlsxPreview.issues?.length ? (
+                        <details className="import-issues-fold">
+                          <summary>ملاحظات القراءة ({Number(xlsxPreview.issues.length).toLocaleString("ar-KW-u-nu-latn")}) — الخانات الحمراء أعلاه هي مواضعها</summary>
+                          <ul className="transfer-rejected">
+                            {xlsxPreview.issues.map((issue: string, index: number) => (
+                              <li key={index}><span>{issue}</span></li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
                     </>
                   ) : xlsxPreview.issues?.length ? (
                     <ul className="transfer-rejected">

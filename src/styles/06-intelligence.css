@@ -3966,9 +3966,6 @@ button.twin-delta{width:100%}
 .import-preview-table td.num{color:var(--muted);text-align:center;width:34px}
 .import-cell-course strong{display:block;font-size:12px;line-height:1.5}
 .import-cell-course small{color:var(--muted);font-size:10px}
-.import-course-title-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
-.import-course-scope-note{display:inline-flex;align-items:center;gap:4px;width:max-content;max-width:100%;padding:3px 7px;border:1px solid color-mix(in srgb,var(--danger,#a2402f) 34%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--danger,#a2402f) 8%,var(--surface));color:var(--danger,#a2402f);font-size:9.5px;font-weight:800;line-height:1.3;white-space:nowrap}
-.import-course-scope-note svg{width:11px;height:11px;flex:none}
 .import-preview-table td.import-cell-missing{background:color-mix(in srgb,var(--danger,#a2402f) 10%,transparent);box-shadow:inset 3px 0 0 color-mix(in srgb,var(--danger,#a2402f) 55%,transparent)}
 .import-day-chips{display:inline-flex;gap:3px}
 .import-day-chips button{min-width:22px;height:22px;padding:0 4px;border:1px solid var(--line);border-radius:7px;background:var(--surface);color:var(--muted);font-size:10.5px;font-weight:700;cursor:pointer}
