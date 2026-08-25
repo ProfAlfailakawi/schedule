@@ -182,6 +182,71 @@ function authorityBodyOnly(rows:OcrRow[]):OcrRow[]{
   return firstBody>=0?rows.slice(firstBody):rows;
 }
 
+/**
+ * Reconstruct the native SWRSCHA PDF directly from its embedded text
+ * coordinates. This path is intentionally separate from camera OCR: generated
+ * PDFs already know exactly where each glyph lives, so asking Tesseract to
+ * rediscover Building/Room/Instructor is both slower and less accurate.
+ *
+ * The ratios below are the printed SWRSCHA column geometry, expressed as a
+ * fraction of page width (not hard-coded pixels). A row is accepted only when
+ * the far-right academic key proves a 7-digit course number. That proof makes
+ * the remaining fixed cells safe to read without ever mining capacity columns
+ * for a "building".
+ */
+export function authorityPdfTextGridRows(words:Word[],pageWidth:number):GridRow[]{
+  if(!words.length||!Number.isFinite(pageWidth)||pageWidth<=0)return[];
+  const center=(word:Word)=>(word.x0+word.x1)/2;
+  const yCenter=(word:Word)=>(word.y0+word.y1)/2;
+  const heights=words.map(word=>Math.abs(word.y1-word.y0)).filter(Boolean).sort((a,b)=>a-b);
+  const medianHeight=Math.max(7,heights[Math.floor(heights.length/2)]||10);
+  const tolerance=Math.max(1.5,Math.min(4,medianHeight*.42));
+  const groups:{words:Word[];y:number}[]=[];
+  for(const word of [...words].sort((a,b)=>yCenter(a)-yCenter(b))){
+    const y=yCenter(word);let best=-1,dist=Infinity;
+    for(let i=0;i<groups.length;i++){const d=Math.abs(groups[i].y-y);if(d<=tolerance&&d<dist){best=i;dist=d;}}
+    if(best<0)groups.push({words:[word],y});
+    else{groups[best].words.push(word);groups[best].y=groups[best].words.reduce((sum,item)=>sum+yCenter(item),0)/groups[best].words.length;}
+  }
+  const zone=(row:Word[],from:number,to:number)=>row.filter(word=>{const x=center(word)/pageWidth;return x>=from&&x<to;});
+  const rtlText=(row:Word[])=>[...row].sort((a,b)=>b.x1-a.x1).map(word=>word.text).join(" ").replace(/\s+/g," ").trim();
+  const compact=(row:Word[])=>rtlText(row).replace(/\s+/g,"");
+  const rows:GridRow[]=[];
+  for(const group of groups.sort((a,b)=>a.y-b.y)){
+    const row=group.words;
+    const rightText=rtlText(zone(row,.885,1.001));
+    const rightRuns=(toAscii(rightText).match(/\d+/g)||[]);
+    const code=rightRuns.find(run=>/^\d{7}$/.test(run))||"";
+    if(!code)continue;
+
+    const referenceText=toAscii(rtlText(zone(row,.895,.945)));
+    const reference=(referenceText.match(/\b\d{4,8}\b/g)||[]).find(value=>value!==code)||"";
+    const sectionText=toAscii(compact(zone(row,.862,.900)));
+    const scode=(sectionText.match(/(?:50[1-9]|5[1-9]\d|[6-9]\d{2})/)||[])[0]||"";
+    const courseText=rtlText(zone(row,.718,.872));
+    const instructorText=rtlText(zone(row,0,.128));
+    const days=toAscii(rtlText(zone(row,.128,.182))).replace(/[^1-5]+/g," ").trim();
+    const timeRaw=toAscii(rtlText(zone(row,.225,.300)));
+    const pair=timePair(timeRaw);
+
+    /* Building and room are read ONLY from their physical native-PDF cells.
+       Capacity/seat columns start to the right of x=.39 and can therefore never
+       become 345045/520020 in AdRoomCode. */
+    const buildingRaw=toAscii(compact(zone(row,.294,.348))).toUpperCase();
+    const hallRaw=toAscii(compact(zone(row,.348,.390))).toUpperCase();
+    const located=extractAuthorityLocationEvidence(`${buildingRaw} ${hallRaw}`);
+    const building=located.building||cleanBuildingCode(buildingRaw);
+    const hall=located.hall||cleanHallCode(hallRaw);
+
+    rows.push({
+      code,reference,scode,courseText,instructorText,days,
+      start:pair?.start||"",end:pair?.end||"",
+      building,hall,buildingRaw,hallRaw,
+    });
+  }
+  return rows;
+}
+
 async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrResult|null>{
   try{
     const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -216,7 +281,8 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       const pageText=physicalRows.map(row=>row.line).join("\n");
       pageTexts.push(pageText);
       const rows=authorityBodyOnly(physicalRows);
-      const pageStructuralRows=rows.filter(row=>{
+      const nativeGridRows=authorityPdfTextGridRows(words,Number(viewport.width||0));
+      const fallbackStructuralRows=rows.filter(row=>{
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
         const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
           ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—]?\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
@@ -224,9 +290,16 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
         const hasTableKey=digitRuns.some(run=>run.length>=4)||/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii)||/[ء-ي]{4,}/.test(row.line);
         return hasTime||(hasTableKey&&digitRuns.length>=3);
       }).length;
+      /* Native generated PDFs get the coordinate-grid path whenever at least
+         one academic row is proven. A one-row tail page is legitimate. */
+      const pageStructuralRows=nativeGridRows.length||fallbackStructuralRows;
       structuralRows+=pageStructuralRows;
-      if(pageStructuralRows>=2)pagesWithBody++;
-      pages.push({rows,diagnostic:{page:index,visualRows:rows.length,extractedRows:pageStructuralRows,gridDetected:false,orientation:0,suspicious:false}});
+      if(pageStructuralRows>=2||(index===count&&pageStructuralRows>=1))pagesWithBody++;
+      pages.push({
+        rows,
+        ...(nativeGridRows.length?{gridRows:nativeGridRows}:{}),
+        diagnostic:{page:index,visualRows:nativeGridRows.length||rows.length,extractedRows:pageStructuralRows,gridDetected:Boolean(nativeGridRows.length),orientation:0,suspicious:false},
+      });
     }
     const text=pageTexts.join("\n\n--- PAGE ---\n\n");
     /* A few metadata characters or one accidental body-looking line must not
@@ -1877,13 +1950,14 @@ const minutesOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(val
 export const cleanBuildingCode = (raw: string): string => {
   const clean=toAscii(String(raw||"")).replace(/\s+/g,"").toUpperCase();
   if(!clean)return"";
-  /* Full canonical alpha site, e.g. 012B09 / 012F15 / 012J14. Exact length is
-     intentional: 012B091 remains unresolved instead of being silently cut. */
-  if(/^\d{3}[A-Z]\d{2}$/.test(clean))return clean;
-  /* Numeric site prefixes (0510/0520/0410/0420) + two-digit building. */
-  if(/^\d{6}$/.test(clean))return clean;
-  /* Legacy short building evidence may still be resolved by the registry with
-     college context. It is kept raw-ish but normalized to two digits. */
+  /* A numeric six-digit value is NOT automatically a building. SWRSCHA has
+     adjacent capacity columns whose text layer can weld into values such as
+     345045 / 520020 / 320020. Accept a full building only when it starts with
+     one of the owner-supplied official site prefixes. */
+  if(OFFICIAL_BUILDING_PATTERN.test(clean))return clean;
+  /* Legacy short alpha-site evidence (B09/F15/J14) is kept only as evidence;
+     the server can canonicalize it against the proven document branch + finite
+     registry. It is never enough by itself to create a building identity. */
   const short=clean.match(/^([A-Z])(\d{1,2})$/);
   if(short)return`${short[1]}${short[2].padStart(2,"0")}`;
   return"";
@@ -1892,11 +1966,55 @@ export const cleanBuildingCode = (raw: string): string => {
 export const cleanHallCode = (raw: string): string => {
   const clean=toAscii(String(raw||"")).replace(/\s+/g,"").toUpperCase();
   if(!clean)return"";
-  /* A canonical building token can never be a room, even if it contains a
-     room-looking substring such as F15. Whole-cell matching prevents that. */
-  if(/^(?:\d{3}[A-Z]\d{2}|\d{6})$/.test(clean))return"";
+  /* A proven official building token can never be a room, even if it contains
+     a room-looking suffix such as F15. */
+  if(OFFICIAL_BUILDING_PATTERN.test(clean))return"";
   return /^[A-Z]\d{1,3}$/.test(clean)?clean:"";
 };
+
+/** Extract location evidence from a REAL text-layer row without trusting cell
+ * splitting. Generated Authority PDFs often place `012B09 F13` in one physical
+ * text item, while seat/capacity columns can be welded into `345045`. The site
+ * prefix is therefore the identity anchor; only an owner-supplied prefix may
+ * produce a building. */
+export function extractAuthorityLocationEvidence(raw:string):{building:string;hall:string}{
+  const ascii=toAscii(String(raw||"")).toUpperCase();
+  const chunks=ascii.match(/[A-Z0-9]+/g)||[];
+  let building="",hall="";
+  const prefixPattern=officialSitePrefixPattern;
+  const joinedBuilding=new RegExp(`(?:${prefixPattern})\\d{2}`,"i");
+  const joinedPair=new RegExp(`((?:${prefixPattern})\\d{2})([A-Z]\\d{1,3})?`,"i");
+
+  for(const chunk of chunks){
+    const pair=chunk.match(joinedPair);
+    if(pair){
+      const candidate=String(pair[1]||"").toUpperCase();
+      if(OFFICIAL_BUILDING_PATTERN.test(candidate)){building=candidate;if(pair[2])hall=String(pair[2]).toUpperCase();break;}
+    }
+  }
+  if(!building){
+    /* Spaced text items, e.g. `012 B 09`, are compacted only for the narrow
+       official-prefix search. This cannot turn capacity digits into a building
+       because the distinctive official prefix is mandatory. */
+    const compact=ascii.replace(/[^A-Z0-9]/g,"");
+    const match=compact.match(joinedBuilding);
+    if(match&&OFFICIAL_BUILDING_PATTERN.test(String(match[0]).toUpperCase()))building=String(match[0]).toUpperCase();
+  }
+
+  if(building&&!hall){
+    /* Remove the building before looking for a room so the site letter/digits
+       can never masquerade as a hall. Status columns A/Y have no digits and do
+       not match this rule. */
+    const withoutBuilding=ascii.replace(new RegExp(escapeRegex(building),"i")," ");
+    const hallMatches=withoutBuilding.match(/(?:^|[^A-Z0-9])([A-Z]\d{1,3})(?=$|[^A-Z0-9])/g)||[];
+    for(const token of hallMatches){
+      const candidate=token.replace(/[^A-Z0-9]/g,"").toUpperCase();
+      if(/^[A-Z]\d{1,3}$/.test(candidate)){hall=candidate;break;}
+    }
+  }
+  return{building,hall};
+}
+
 
 const timePair=(text:string)=>{
   const ascii=repairClockDigits(toAscii(text));
@@ -2044,26 +2162,91 @@ export type ParsedScheduleRow={
 };
 
 /** Match an instructor printed on the Authority sheet to the registry.
- * Identity is deliberately strict: after ordinary Arabic normalization and
- * removing an academic title, the complete name must equal exactly one system
- * record. Abbreviations, family-name stems and fuzzy similarity stay unresolved. */
-function matchInstructorName(raw:string,instructors:AdInstructor[],_preferredIds?:Set<number>):AdInstructor|undefined{
+ *
+ * Restores the successful behaviour of the original importer without bringing
+ * back unsafe fuzzy guessing:
+ * - د. / أ. / ا. / أ.د. / ا.د. are titles, not identity.
+ * - an exact full system name wins immediately;
+ * - otherwise TWO or THREE real name tokens may identify the instructor, but
+ *   only when the result is unique (department candidates first, then global);
+ * - a truncated fourth/family name does not hurt a three-token proof;
+ * - «هيئة…» maps only to the system's own «هيئة تدريسية» identity;
+ * - ambiguous names stay blank. The PDF spelling is never saved as a new name.
+ */
+function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>):AdInstructor|undefined{
   const clean=(value:string)=>fold(value)
-    /* Titles are presentation only. Apart from removing a title and ordinary
-       Arabic normalization, instructor identity must be EXACT. The import must
-       never turn a shortened/fuzzy OCR name into a real professor. */
-    .replace(/^(?:(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|ا\s*د|د|م|ا)\s+)+/g," ")
-    .replace(/(?:^|\s)(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|ا\s*د)(?=\s|$)/g," ")
+    /* fold() has already removed punctuation and normalized أ -> ا, so
+       «أ.د.» becomes «ا د» and «د.» becomes «د». Strip title tokens only at
+       the START; deleting single-letter tokens from the middle of a real name
+       would be unnecessary and unsafe. */
+    .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|الدكتوره|د|ا|م)\s+)+/g," ")
     .replace(/\s+/g," ").trim();
+  const tokens=(value:string)=>clean(value).split(/\s+/).filter(token=>/[ء-ي]/.test(token)&&token.length>=2);
   const rawClean=clean(raw);
   if(!rawClean)return undefined;
+
+  const catalogue=instructors.map(person=>({
+    person,
+    normalized:clean(person.AdInstructorName),
+    tokens:tokens(person.AdInstructorName),
+    preferred:Boolean(preferredIds?.has(Number(person.AdInstructorId))),
+  })).filter(item=>item.normalized&&item.tokens.length);
+
+  /* «هيئة» is deliberately special. The sheet may print «هيئة», «هيئة
+     تدريسية», or add OCR noise after it. It may NEVER fuzzy-match a person. */
+  if(/^هيئه(?:\s|$)/.test(rawClean)){
+    const faculty=catalogue.filter(item=>item.normalized==="هيئه تدريسيه"||item.normalized.startsWith("هيئه تدريسيه "));
+    const preferred=faculty.filter(item=>item.preferred);
+    if(preferred.length===1)return preferred[0].person;
+    return faculty.length===1?faculty[0].person:undefined;
+  }
   if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
 
-  /* 1000%-rule requested by the owner: one exact normalized registry identity,
-     globally unique. No first/last shortcut, no stems, no edit distance, no
-     department-priority fuzzy rescue. «هيئة تدريسية» follows the same rule. */
-  const exact=instructors.filter(person=>clean(person.AdInstructorName)===rawClean);
-  return exact.length===1?exact[0]:undefined;
+  /* Full registry identity can also occur inside a larger flattened PDF row. */
+  const haystack=` ${rawClean} `;
+  const exact=catalogue.filter(item=>rawClean===item.normalized||haystack.includes(` ${item.normalized} `));
+  if(exact.length===1)return exact[0].person;
+  const preferredExact=exact.filter(item=>item.preferred);
+  if(preferredExact.length===1)return preferredExact[0].person;
+
+  const rawTokens=tokens(raw);
+  if(rawTokens.length<2)return undefined;
+
+  const orderedExactCount=(needle:string[],hay:string[])=>{
+    let at=0,count=0;
+    for(const token of needle){
+      const found=hay.findIndex((candidate,index)=>index>=at&&candidate===token);
+      if(found<0)continue;
+      count++;at=found+1;
+    }
+    return count;
+  };
+  const scorePool=(pool:typeof catalogue)=>{
+    const ranked=pool.map(item=>{
+      const exactCount=orderedExactCount(item.tokens,rawTokens);
+      const reverseCount=orderedExactCount(rawTokens,item.tokens);
+      const common=[...new Set(item.tokens.filter(token=>rawTokens.includes(token)))].length;
+      const required=Math.min(3,Math.max(2,Math.min(item.tokens.length,rawTokens.length)));
+      /* Short catalogue names such as «عيسى شقرة» are allowed when BOTH names
+         appear in order in the longer printed name. Longer identities require
+         three exact name tokens when the document supplies them. */
+      const ordered=Math.max(exactCount,reverseCount);
+      const qualified=ordered>=required&&common>=required;
+      return{item,qualified,ordered,common,required};
+    }).filter(entry=>entry.qualified)
+      .sort((a,b)=>b.ordered-a.ordered||b.common-a.common||b.item.tokens.length-a.item.tokens.length);
+    if(!ranked.length)return undefined;
+    const top=ranked[0],runner=ranked[1];
+    /* A tie means two system people are equally supported by the same two/three
+       names. Leave it blank instead of making a plausible-looking mistake. */
+    if(runner&&runner.ordered===top.ordered&&runner.common===top.common)return undefined;
+    return top.item.person;
+  };
+
+  const preferred=catalogue.filter(item=>item.preferred);
+  const preferredHit=preferred.length?scorePool(preferred):undefined;
+  if(preferredHit)return preferredHit;
+  return scorePool(catalogue);
 }
 
 /**
@@ -2299,14 +2482,18 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       for(const cell of cells){const found=parseDays(cell.text);if(found){flags=found;break;}}
       if(!flags)flags=parseDays(line);
 
-      let roomCode="",roomHall="";
+      const lineLocation=extractAuthorityLocationEvidence(line);
+      let roomCode=lineLocation.building,roomHall=lineLocation.hall;
       for(const cell of cells){
+        if(roomCode&&roomHall)break;
         const text=toAscii(cell.text).trim();
-        const b=cleanBuildingCode(text);if(b&&!roomCode)roomCode=b;
+        const embedded=extractAuthorityLocationEvidence(text);
+        if(!roomCode&&embedded.building)roomCode=embedded.building;
+        if(!roomHall&&embedded.hall)roomHall=embedded.hall;
+        const b=cleanBuildingCode(text);
+        if(b&&!roomCode){roomCode=b;continue;}
         const h=cleanHallCode(text);if(h&&!roomHall)roomHall=h;
       }
-      if(!roomCode)roomCode=cleanBuildingCode(line);
-      if(!roomHall)roomHall=cleanHallCode(line);
 
       const reference=digitRuns.find(value=>/^\d{4,8}$/.test(value))||"";
       const section=digitRuns.find(v=>Number(v)>=500&&Number(v)<=999)||"";
@@ -2357,20 +2544,20 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     }
     if(!flags)flags=parseDays(line);
 
-    // Rule 4 & 5: Room and Building extraction (take last 3 e.g. B07)
-    let roomCode="",roomHall="";
+    // Rule 4 & 5: location identity is anchored by the official site prefix,
+    // not by "any six digits" and not by fragile PDF text-item boundaries.
+    const lineLocation=extractAuthorityLocationEvidence(line);
+    let roomCode=lineLocation.building,roomHall=lineLocation.hall;
     for(const cell of cells){
+      if(roomCode&&roomHall)break;
       const text=toAscii(cell.text).trim();
+      const embedded=extractAuthorityLocationEvidence(text);
+      if(!roomCode&&embedded.building)roomCode=embedded.building;
+      if(!roomHall&&embedded.hall)roomHall=embedded.hall;
       const b=cleanBuildingCode(text);
-      if(b&&!roomCode) roomCode=b;
+      if(b&&!roomCode){roomCode=b;continue;}
       const h=cleanHallCode(text);
-      if(h&&!roomHall) roomHall=h;
-    }
-    if(!roomCode){
-      roomCode=cleanBuildingCode(line);
-    }
-    if(!roomHall){
-      roomHall=cleanHallCode(line);
+      if(h&&!roomHall)roomHall=h;
     }
 
     // Section and Reference (CRN) extraction. The full seven-digit Authority

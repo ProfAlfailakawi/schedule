@@ -5373,11 +5373,14 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     row.importEvidence={
       course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdCourseId)?"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط":"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
       section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",reason:authoritySectionConfirmed?"رقم الشعبة مولد حسب ترتيب شعب المقرر: 501 ثم 502 ثم 503…":"تعذر توليد رقم شعبة canonical",evidence:["المقرر canonical","ترتيب ظهور شعب المقرر في المستند","بداية ثابتة 501"]},
-      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdInstructorId)?"تطابق اسم كامل وحيد مع سجل النظام بعد إزالة اللقب فقط":"لا يوجد تطابق كامل وحيد؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة اللقب الأكاديمي فقط","تطابق كامل وحيد"]:["ممنوع الاختصار أو التشابه أو التخمين"]},
+      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdInstructorId)?"تطابق يقيني مع سجل النظام: اسم كامل أو اسمين/ثلاثة أسماء أعطت مرشحاً واحداً فقط":"لم ينتج النص مرشحاً واحداً يقينياً؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط","مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
       building:{raw:rawBuilding,normalized:token,confidence:"UNRESOLVED",reason:"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
       room:{raw:rawHall,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",reason:rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر",evidence:["خلية القاعة الأصلية"]},
     };
-    const explicitFull=/^(?:\d{3}[A-Z]\d{2}|\d{6})$/.test(token);
+    /* A full building is "explicit" only when that exact token exists in the
+       CONFIRMED owner registry. Shape alone is not identity: 345045/520020 are
+       perfectly six-digit strings but are seat/capacity welds, not buildings. */
+    const explicitFull=confirmedOfficialBuildingCodes.some(code=>String(code).toUpperCase()===token);
     let building=explicitFull?resolveBuilding(registry,token,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
     let prefixRecoveredCode="";
     /* Restore the original owner-supplied location semantics instead of asking
@@ -5403,13 +5406,24 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
     if(building.status!=="CONFIRMED"||!building.value){
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
+      /* Never display unverified OCR as a canonical location. Keep the raw cell
+         only in sourceBuildingText/sourceRoomText for review. This is the final
+         guard against capacity welds such as 345045/520020 appearing in the
+         Building column even if an upstream parser ever regresses. */
+      row.AdRoomCode="";row.AdRoomHall="";
       Object.assign(row.importEvidence.building,{confidence:"UNRESOLVED",reason:"القيمة لا تطابق مبنى Canonical صريحاً",evidence:["سجل المباني الرسمي","لا قصّ لرقم مجاور ولا تخمين"]});
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: المبنى المقروء «${rawBuilding||"فارغ"}» غير محسوم؛ اختر مبنى رسميًا.`);continue;
     }
 
     const sourceSitePrefix=String(building.value.sitePrefix||building.value.officialCode.slice(0,4)).toUpperCase();
     row.AdRoomCode=building.value.officialCode;
-    if(targetSitePrefix&&sourceSitePrefix&&sourceSitePrefix!==targetSitePrefix){
+    /* 012B / 012F / 012J are different SITES of the same Authority branch 012.
+       The department PDF legitimately contains Fahaheel/Jahra rows alongside
+       the main girls campus. Treat a site as cross-branch only when its branch
+       root differs (e.g. 011 boys vs 012 girls), not merely because B/F/J differs. */
+    const sourceBranchCode=sourceSitePrefix.slice(0,3).replace(/\D/g,"");
+    const sameAuthorityBranch=Boolean(sourceBranchRoot&&sourceBranchCode&&sourceBranchRoot===sourceBranchCode);
+    if(targetSitePrefix&&sourceSitePrefix&&sourceSitePrefix!==targetSitePrefix&&!sameAuthorityBranch){
       const sourceLabel=officialSiteLabel(sourceSitePrefix);
       const targetLabel=officialSiteLabel(targetSitePrefix,targetCollegeName);
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
@@ -5424,9 +5438,16 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
     row.buildingId=building.value.id;
     Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",reason:prefixRecoveredCode?"استعادة آمنة من بادئة الفرع المثبتة + رقم المبنى داخل خلية المبنى":"تطابق صريح مع رمز مبنى Canonical",evidence:prefixRecoveredCode?[`النص المقروء ${rawBuilding}`,`الفرع المثبت ${sourceBranchRoot}`,`الرمز الرسمي الوحيد ${building.value.officialCode}`]:[`الرمز الرسمي ${building.value.officialCode}`]});
-    const room=resolveRoom(registry,rawHall,building.value.id,{collegeId,sectionId});
+    /* Once the building identity is confirmed, the user's rule is simple:
+       a room is valid iff it exists under THAT building. Do not wrongly reject
+       a legitimate Jahra/Fahaheel room because the current upload was opened
+       from the main-campus college context. Building -> Room is the authority. */
+    const room=resolveRoom(registry,rawHall,building.value.id,{});
     if(room.status!=="CONFIRMED"||!room.value){
       row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
+      /* Building is confirmed and may remain visible; the unconfirmed room may
+         not. Raw room evidence stays separately for the editor/reviewer. */
+      row.AdRoomHall="";
       Object.assign(row.importEvidence.room,{confidence:"UNRESOLVED",reason:rawHall?`لم تثبت القاعة داخل المبنى ${building.value.officialCode}`:"القاعة فارغة في المصدر؛ يلزم اختيار قاعة أو PENDING_ROOM صراحةً",evidence:["سجل القاعات الرسمي","علاقة Building ↔ Room"]});
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة المقروءة «${rawHall||"فارغة"}» غير معروفة داخل ${building.value.officialCode}؛ اختر قاعة رسمية أو «بانتظار تثبيت القاعة».`);continue;
     }

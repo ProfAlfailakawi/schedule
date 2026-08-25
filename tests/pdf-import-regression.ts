@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityPdfTextGridRows, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -105,6 +105,9 @@ const courses:any[]=[
 const instructors:any[]=[
   {AdInstructorId:21,AdInstructorName:"د. علي يوسف أحمد السند"},
   {AdInstructorId:22,AdInstructorName:"علي يوسف أحمد السندي"},
+  {AdInstructorId:23,AdInstructorName:"د. عبدالرحمن صالح سالم الجميلي"},
+  {AdInstructorId:24,AdInstructorName:"أ.د. عيسى زكي عيسى شقرة"},
+  {AdInstructorId:25,AdInstructorName:"هيئة تدريسية"},
 ];
 const gridRows:any[]=[
   {code:"0101102",reference:"18945",scode:"777",courseText:"اسم OCR خاطئ تماماً",instructorText:"د. علي يوسف أحمد السند",building:"",buildingRaw:"12B09",hall:"F13",hallRaw:"F13",start:"15:30",end:"16:50",days:"42"},
@@ -121,8 +124,42 @@ assert.equal(parsed.rows[1].SCode,"502");
 assert.equal(parsed.rows[2].AdCourseId,12);
 assert.equal(parsed.rows[2].SCode,"501");
 assert.equal(parsed.rows[0].AdInstructorId,21);
-assert.equal(parsed.rows[1].AdInstructorId,0);
+assert.equal(parsed.rows[1].AdInstructorId,21);
 
+
+
+/* Smart-but-safe instructor recovery: titles are presentation only; two/three
+   exact name tokens may select only ONE existing system row; «هيئة» maps only
+   to the system's generic faculty identity. */
+const instructorPages:OcrPage[]=[{rows:[],gridRows:[
+  {...gridRows[0],reference:"20001",instructorText:"د. عبدالرحمن صالح سالم الجي"},
+  {...gridRows[0],reference:"20002",instructorText:"ا. د. عيسى زكي عيسى شقرة"},
+  {...gridRows[0],reference:"20003",instructorText:"هيئة"},
+]} as any];
+const instructorParsed=parseScheduleTable(instructorPages,courses,instructors,new Set([21,23,24,25]),{authorityDepartmentCode:"0101",sequentialSections:true});
+assert.equal(instructorParsed.rows[0].AdInstructorId,23);
+assert.equal(instructorParsed.rows[1].AdInstructorId,24);
+assert.equal(instructorParsed.rows[2].AdInstructorId,25);
+
+/* Native generated PDF geometry: location comes only from its real x-range, so
+   seat/capacity welds can never become Building. Instructor is taken from the
+   leftmost identity cell as one complete phrase. */
+const word=(text:string,x0:number,x1:number,y=200)=>({text,x0,y0:y-5,x1,y1:y+1});
+const nativeWords:any[]=[
+  word("0101102",744,787),word("18945",712,742),word("501",691,709),
+  word("الثقافة",668,686),word("الاسلامية",636,665),
+  word("45",435,447),word("45",388,400),word("0",343,350),
+  word("F13",279,297),word("012B09",236,273),
+  word("1530",213,235),word("-",206,210),word("1650",182,204),
+  word("4",116,122),word("2",127,133),
+  word("د.عبدالرحمن",55,96),word("صالح",35,53),word("سالم",19,32),word("الجي",1,16),
+];
+const native=authorityPdfTextGridRows(nativeWords,792);
+assert.equal(native.length,1);
+assert.equal(native[0].building,"012B09");
+assert.equal(native[0].hall,"F13");
+assert.doesNotMatch(native[0].building,/345045|520020/);
+assert.match(native[0].instructorText,/عبدالرحمن/);
 
 /* The same numbering rule is reused after edits/deletes. Unresolved courses do
    not receive a fake canonical section number. */
@@ -154,7 +191,7 @@ const wrongCodePages:OcrPage[]=[{rows:[],gridRows:[{...gridRows[0],code:"0101999
 const wrong=parseScheduleTable(wrongCodePages,courses,instructors,undefined,{authorityDepartmentCode:"0101",sequentialSections:true});
 assert.equal(wrong.rows[0].AdCourseId,0);
 
-console.log(JSON.stringify({ passed: 28, checks: [
+console.log(JSON.stringify({ passed: 36, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -167,7 +204,13 @@ console.log(JSON.stringify({ passed: 28, checks: [
   "sections are generated 501, 502... independently for each course",
   "section numbering is reapplied after row edits/deletes and unresolved courses stay blank",
   "full course key is preserved as source evidence and never confused with CRN",
-  "instructor requires one exact normalized system name",
+  "instructor full-name match remains exact when available",
+  "two/three exact Arabic name tokens may select only one system instructor",
+  "د./ا./ا.د. academic titles are ignored as presentation",
+  "هيئة maps only to the system هيئة تدريسية identity",
+  "native PDF text geometry reads building only from the physical building cell",
+  "native PDF text geometry reads room only from the physical room cell",
+  "native PDF text geometry preserves the complete instructor cell",
   "course name alone can never create a canonical course identity",
   "time column survives one grid-rule digit without accepting building codes",
   "noisy 1050-10040 remains a plausible time cell",
