@@ -377,9 +377,8 @@ const importRowsOverlap = (a: ImportRow, b: ImportRow) => {
 const normalizeImportSectionSeries = (rows: ImportRow[]) => {
   return rows.map(row=>({...row,SCode:String(row.SCode||"").trim()}));
 };
-const validateImportRowsLocally = (rows: ImportRow[], allowedInstructorIds?: Iterable<number>) => {
+const validateImportRowsLocally = (rows: ImportRow[]) => {
   const issues:string[] = [];
-  const allowed=allowedInstructorIds===undefined?null:new Set([...allowedInstructorIds].map(Number).filter(Boolean));
   rows.forEach((row, index) => {
     const label = `الصف ${(index + 1).toLocaleString("ar-KW-u-nu-latn")}`;
     if (!Number(row.AdCourseId)) issues.push(`${label}: المقرر غير محدد`);
@@ -390,7 +389,6 @@ const validateImportRowsLocally = (rows: ImportRow[], allowedInstructorIds?: Ite
     if (!row.buildingId) issues.push(`${label}: المبنى الرسمي غير محدد`);
     if (!row.roomId && row.locationStatus !== "PENDING_ROOM") issues.push(`${label}: القاعة غير محددة`);
     if (!Number(row.AdInstructorId)) issues.push(`${label}: أستاذ المقرر غير محدد`);
-    else if (allowed && !allowed.has(Number(row.AdInstructorId))) issues.push(`${label}: أستاذ المقرر غير مثبت ضمن القسم الحالي`);
   });
   rows.forEach((row,index)=>rows.slice(index+1).forEach((other,offset)=>{
     if(!importRowsShareDay(row,other)||!importRowsOverlap(row,other))return;
@@ -1369,7 +1367,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   sourceFileName: importPreview?.fileName,
                   sourceBranchCode: importPreview?.headerBranch?.code,
                   sourceBranchName: importPreview?.headerBranch?.name,
-                  previewIssues: validateImportRowsLocally(draftRows as ImportRow[], importInstructorIds),
+                  previewIssues: validateImportRowsLocally(draftRows as ImportRow[]),
                 } : {}),
               }),
             });
@@ -1618,7 +1616,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       if (!data) throw new Error("تعذّرت قراءة PDF");
       {
         const normalizedRows=normalizeImportSectionSeries((Array.isArray(data.rows)?data.rows:[]) as ImportRow[]);
-        const localIssues=validateImportRowsLocally(normalizedRows, importInstructorIds);
+        const localIssues=validateImportRowsLocally(normalizedRows);
         const globalIssues=(Array.isArray(data.issues)?data.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
         const issues=[...globalIssues,...localIssues];
         setImportPreview({ ...data, rows:normalizedRows, count: normalizedRows.length, preview: normalizedRows, valid: normalizedRows.length>0&&issues.length===0, issues, importLayout: "authority-pdf" });
@@ -1688,7 +1686,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }
     /* The publish endpoint checks every conflict in one server-side pass. Do not
        make one network request per imported row before sending the same table. */
-    const preflight=validateImportRowsLocally(importPreview.rows as ImportRow[], importInstructorIds);
+    const preflight=validateImportRowsLocally(importPreview.rows as ImportRow[]);
     if(preflight.length){
       setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
       setError(null);
@@ -1742,9 +1740,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const importBlockingIssues = useMemo(() => {
     if (!importPreview) return [] as string[];
     const rows = Array.isArray(importPreview.rows) ? importPreview.rows as ImportRow[] : [];
-    const instructorScope=importPreview.importLayout==="authority-pdf"?importInstructorIds:undefined;
-    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows,instructorScope)])];
-  }, [importPreview, importInstructorIds]);
+    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows)])];
+  }, [importPreview]);
   const importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0);
 
   const scopedCourses = useMemo(
@@ -5078,7 +5075,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     const normalized=normalizeImportSectionSeries(next);
                     const globalIssues = (Array.isArray(prev.issues) ? prev.issues : [])
                       .filter((issue:string) => /^تحذير:/.test(String(issue)));
-                    const issues = [...globalIssues, ...validateImportRowsLocally(normalized, importInstructorIds)];
+                    const issues = [...globalIssues, ...validateImportRowsLocally(normalized)];
                     return { ...prev, rows: normalized, preview: normalized, count: normalized.length, issues, valid: normalized.length > 0 && issues.length === 0 };
                   })}
                 />

@@ -19,13 +19,13 @@ export function mergeRegistryWithSeed(existing: LocationRegistry): LocationRegis
 }
 
 export type PreflightIssue={type:string;severity:"high"|"warning";message:string};
-export function locationPreflight(row: Partial<FSchedule>, registry: LocationRegistry, opts:{allowHistoricalView?:boolean; sectionId?:number; collegeId?:number; allowOutOfScopeBuilding?:boolean; allowOutOfScopeRoom?:boolean}={}): {ok:boolean;issues:PreflightIssue[];canonical?:Partial<FSchedule>} {
+export function locationPreflight(row: Partial<FSchedule>, registry: LocationRegistry, opts:{allowHistoricalView?:boolean; sectionId?:number; collegeId?:number; allowOutOfScopeRoom?:boolean}={}): {ok:boolean;issues:PreflightIssue[];canonical?:Partial<FSchedule>} {
   const issues:PreflightIssue[]=[];
   if(opts.allowHistoricalView && (row.locationStatus==="LOCATION_REVIEW_REQUIRED"||row.locationStatus==="INVALID_HISTORICAL")) return {ok:true,issues:[]};
   const building=registry.buildings.find(b=>b.id===row.buildingId);
   if(!building){issues.push({type:"unknown_building",severity:"high",message:"اختر مبنى رسميًا من سجل المباني."});return {ok:false,issues};}
   if(!building.active||building.confidence!=="CONFIRMED")issues.push({type:"inactive_building",severity:"high",message:"المبنى غير فعال أو لم يعتمد بعد."});
-  if(opts.collegeId && !opts.allowOutOfScopeBuilding && building.collegeIds.length && !building.collegeIds.includes(Number(opts.collegeId)))issues.push({type:"building_scope",severity:"high",message:"المبنى غير مرتبط بالكلية المختارة."});
+  if(opts.collegeId && building.collegeIds.length && !building.collegeIds.includes(Number(opts.collegeId)))issues.push({type:"building_scope",severity:"high",message:"المبنى غير مرتبط بالكلية المختارة."});
   if(row.locationStatus==="PENDING_ROOM" || row.roomId===PENDING_ROOM){
     return {ok:!issues.some(x=>x.severity==="high"),issues:[...issues,{type:"pending_room",severity:"warning",message:"القاعة بانتظار التثبيت."}],canonical:{...row,buildingId:building.id,roomId:undefined,AdRoomCode:building.officialCode,AdRoomHall:"",locationStatus:"PENDING_ROOM"}};
   }

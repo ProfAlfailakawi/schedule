@@ -5,10 +5,6 @@ const toAscii=(value:string)=>String(value||"")
      (e.g. «ﺟﺪﻭﻝ» instead of «جدول»). NFKC turns those glyph forms back into
      ordinary Arabic letters before ANY header/course/instructor matching. */
   .normalize("NFKC")
-  /* OCR/PDF engines frequently insert invisible bidi marks between an Arabic
-     label and its numeric cell (e.g. «الكلية\u200f 01»). They are display
-     controls, not document evidence, and otherwise make every header regex miss. */
-  .replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g,"")
   .replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
   .replace(/[۰-۹]/g,d=>String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
 const fold=(value:string)=>toAscii(value).replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z0-9: ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
@@ -21,11 +17,10 @@ export type OcrPageDiagnostic={page:number;visualRows:number;extractedRows:numbe
 export type OcrPage={rows:OcrRow[];gridRows?:GridRow[];diagnostic?:OcrPageDiagnostic};
 export type Legibility={readable:boolean;confidence:number;charactersPerPage:number;reason:string};
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
-export type HeaderCollege={code:string;name:string;label:string};
 export type HeaderBranch={code:string;name:string;label:string};
 export type HeaderDepartment={code:string;name:string;label:string};
-export type AuthorityPdfHeader={term?:HeaderTerm;college?:HeaderCollege;branch?:HeaderBranch;department?:HeaderDepartment;source?:"text"|"scan"};
-export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerCollege?:HeaderCollege;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
+export type AuthorityPdfHeader={term?:HeaderTerm;branch?:HeaderBranch;department?:HeaderDepartment;source?:"text"|"scan"};
+export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read";page:number;pages:number;message:string})=>void;
 
 const MAX_PAGES=12;
@@ -237,7 +232,7 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
     return{
       pages,text,pageCount:count,confidence,orientation:0,
       legibility:{readable:true,confidence,charactersPerPage:Math.round(totalChars/Math.max(1,count)),reason:""},
-      headerTerm:readHeaderTerm(text),headerCollege:readHeaderCollege(text),headerBranch:readHeaderBranch(text),headerDepartment:readHeaderDepartment(text),
+      headerTerm:readHeaderTerm(text),headerBranch:readHeaderBranch(text),headerDepartment:readHeaderDepartment(text),
       pageDiagnostics:pages.map(page=>page.diagnostic!),suspiciousExtraction:false,
     };
   }catch{return null;}
@@ -1224,80 +1219,32 @@ function readHeaderTerm(text:string):HeaderTerm|undefined{
   return{season,years,label:`الفصل الدراسي ${seasonLabel} ${years[0]}/${years[1]}`};
 }
 
-/**
- * Header identity cells contain names, not timetable numbers. OCR occasionally
- * drags the first body row into the same visual line; stripping everything that
- * cannot be part of an Arabic authority name prevents those digits from ever
- * becoming a huge user-facing «college/department» label.
- */
-function cleanHeaderIdentityName(value:string):string{
-  return String(value||"")
-    .normalize("NFKC")
-    .replace(/[^ء-ي\s-]/g," ")
-    .replace(/\s+/g," ")
-    .trim()
-    .slice(0,120);
-}
-
-/** College line printed independently from the site/branch line, e.g.
- * «الكلية: 01 كلية التربية الأساسية». Keeping it separate prevents a valid
- * branch-looking token from masking a document that belongs to another college. */
-function readHeaderCollege(text:string):HeaderCollege|undefined{
-  const ascii=toAscii(text).replace(/\r/g,"");
-  const build=(code:string,nameRaw:string):HeaderCollege=>{
-    const name=cleanHeaderIdentityName(String(nameRaw||"")
-      .replace(/\s+(?:القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
-      .replace(/^[|:：-]+|[|:：-]+$/g,""));
-    return{code,name,label:[code,name].filter(Boolean).join(" ")};
-  };
-  for(const rawLine of ascii.split("\n")){
-    const line=rawLine.replace(/\s+/g," ").trim();
-    const match=line.match(/الكلية\s*[:：-]?\s*(\d{1,4})\s*(.*)$/);
-    if(match)return build(match[1],match[2]);
-  }
-  const flat=ascii.replace(/\s+/g," ").trim();
-  const flatMatch=flat.match(/الكلية\s*[:：-]?\s*(\d{1,4})\s*([^]{0,180}?)(?=\s+(?:القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
-  if(flatMatch)return build(flatMatch[1],flatMatch[2]);
-  /* Scan OCR can lose the short label «الكلية» while preserving the ruled
-     identity cell itself. Recover only a one/two-digit parent-college code
-     followed by an explicit college-family name. Branch/site cells are three
-     or four digits and often end in بنات/بنين/الجهراء/الفحيحيل, so they cannot
-     satisfy this rule. This keeps the backend fail-closed while making the
-     first-page reader resilient to a damaged label glyph. */
-  const structural=flat.match(/(?:^|\s)(\d{1,2})\s+((?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)[ء-ي\s-]{3,100}?)(?=\s+(?:\d{3,4}\s+(?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)|القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
-  if(structural){
-    const candidate=build(structural[1],structural[2]);
-    if(candidate.name&&!/(?:بنات|بنين|الجهراء|الفحيحيل)\s*$/.test(candidate.name))return candidate;
-  }
-  return undefined;
-}
-
 /** Branch line printed in the Authority header, e.g.
  * «الفرع: 012 كلية التربية الأساسية بنات». The application does not maintain
  * a separate branch catalogue, so the source header is the authoritative name. */
 function readHeaderBranch(text:string):HeaderBranch|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
   const build=(code:string,nameRaw:string):HeaderBranch=>{
-    const name=cleanHeaderIdentityName(String(nameRaw||"")
+    const name=String(nameRaw||"")
       .replace(/\s+(?:القسم|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
-      .replace(/^[|:：-]+|[|:：-]+$/g,""));
+      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
     return{code,name,label:[code,name].filter(Boolean).join(" ")};
   };
   for(const rawLine of ascii.split("\n")){
     const line=rawLine.replace(/\s+/g," ").trim();
-    const match=line.match(/الفرع\s*[:：-]?\s*(\d{3,4})\s*(.*)$/);
+    const match=line.match(/الفرع\s*[:：-]?\s*(\d{3})\s*(.*)$/);
     if(match)return build(match[1],match[2]);
   }
   /* Fast PDF-header preflight joins text-layer items without rebuilding the
      table. Accept that flattened form too, but stop before the next known
      header label so we never swallow a timetable row into the branch name. */
   const flat=ascii.replace(/\s+/g," ").trim();
-  const flatMatch=flat.match(/الفرع\s*[:：-]?\s*(\d{3,4})\s*([^]{0,180}?)(?=\s+(?:القسم|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
+  const flatMatch=flat.match(/الفرع\s*[:：-]?\s*(\d{3})\s*([^]{0,180}?)(?=\s+(?:القسم|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
   if(flatMatch)return build(flatMatch[1],flatMatch[2]);
   /* Scan OCR can lose the short label «الفرع» while retaining its ruled cell:
      the three-digit branch code followed by «كلية ... بنات/بنين» is still
      explicit document evidence, not an inferred campus. */
-  const structural=flat.match(/(?:^|\s)(\d{3,4})\s+((?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)[ء-ي\s-]{3,100}?(?:بنات|بنين|الجهراء|الفحيحيل))(?=\s|$)/);
+  const structural=flat.match(/(?:^|\s)(\d{3})\s+((?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)[ء-ي\s-]{3,100}?(?:بنات|بنين|الجهراء|الفحيحيل))(?=\s|$)/);
   return structural?build(structural[1],structural[2]):undefined;
 }
 
@@ -1305,9 +1252,9 @@ function readHeaderBranch(text:string):HeaderBranch|undefined{
 function readHeaderDepartment(text:string):HeaderDepartment|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
   const build=(code:string,nameRaw:string):HeaderDepartment=>{
-    const name=cleanHeaderIdentityName(String(nameRaw||"")
+    const name=String(nameRaw||"")
       .replace(/\s+(?:الفرع|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
-      .replace(/^[|:：-]+|[|:：-]+$/g,""));
+      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
     return{code,name,label:[code,name].filter(Boolean).join(" ")};
   };
   for(const rawLine of ascii.split("\n")){
@@ -1322,11 +1269,11 @@ function readHeaderDepartment(text:string):HeaderDepartment|undefined{
      retain that raw Arabic evidence for a conservative name comparison on the
      server. Stop at the independently detected branch code/site name. */
   for(const rawLine of ascii.split("\n")){
-    const branchAt=rawLine.search(/\b\d{3,4}\s+(?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)/);
+    const branchAt=rawLine.search(/\b\d{3}\s+(?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)/);
     if(branchAt<0)continue;
     const before=rawLine.slice(0,branchAt);
     const code=before.match(/\b(\d{4,6})\b/)?.[1]||"";
-    const name=cleanHeaderIdentityName(before.replace(/\d+/g," ").replace(/(?:^|\s)(?:القسم|العم|جح)(?=\s|$)/g," "));
+    const name=before.replace(/\d+/g," ").replace(/[^ء-ي\s]/g," ").replace(/(?:^|\s)(?:القسم|العم|جح)(?=\s|$)/g," ").replace(/\s+/g," ").trim();
     if(name.length>=5)return{code,name,label:[code,name].filter(Boolean).join(" ")};
   }
   return undefined;
@@ -1348,30 +1295,10 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     const pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;
     if(!Number(pdf.numPages||0))return{};
     const page=await pdf.getPage(1);
-    const viewport=page.getViewport({scale:1});
     const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
-    const flatText=(content?.items||[]).map((item:any)=>String(item?.str||"").normalize("NFKC")).filter(Boolean).join(" ");
-    /* Preserve physical header lines as well as the flat token stream. RTL PDF
-       exports often store adjacent cells out of logical order; geometry puts
-       «الكلية / القسم / الفرع» back beside their values before parsing. */
-    const headerWords:Word[]=[];
-    for(const item of content?.items||[]){
-      const token=String(item?.str||"").normalize("NFKC").replace(/\s+/g," ").trim();
-      if(!token||!Array.isArray(item?.transform))continue;
-      const transformed=pdfjs.Util?.transform?pdfjs.Util.transform(viewport.transform,item.transform):item.transform;
-      const x=Number(transformed?.[4]??item.transform[4]??0);
-      const baseline=Number(transformed?.[5]??item.transform[5]??0);
-      const width=Math.max(1,Math.abs(Number(item?.width||0)*Number(viewport.scale||1)));
-      const height=Math.max(7,Math.abs(Number(item?.height||0)*Number(viewport.scale||1))||10);
-      headerWords.push({text:token,x0:x,y0:baseline-height,x1:x+width,y1:baseline+height*.15});
-    }
-    const geometricText=tableFromWords(headerWords,[],"pdf-text").map(row=>row.line).join("\n");
-    const text=[geometricText,flatText].filter(Boolean).join("\n");
-    const embedded:AuthorityPdfHeader={term:readHeaderTerm(text),college:readHeaderCollege(text),branch:readHeaderBranch(text),department:readHeaderDepartment(text),source:"text"};
-    /* A hybrid/image PDF may contain a tiny, stale or partial OCR text layer.
-       Partial evidence is useful, but it is NOT enough to skip the scan header.
-       Only a complete four-authority header can finish preflight from text. */
-    if(embedded.term&&embedded.college&&embedded.branch&&embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
+    const text=(content?.items||[]).map((item:any)=>String(item?.str||"").normalize("NFKC")).filter(Boolean).join(" ");
+    const embedded:AuthorityPdfHeader={term:readHeaderTerm(text),branch:readHeaderBranch(text),department:readHeaderDepartment(text),source:"text"};
+    if(embedded.term||embedded.branch||embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
 
     const probe=await renderPdfFirstPage(input,PROBE_LONG_EDGE);
     if(!probe)return{};
@@ -1395,35 +1322,24 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     for(const candidate of candidates){
       const upright=await rotateImage(probe,candidate.turn as -1|0|1);
       const image=await lib.loadImage(upright);
-      const headerTop=0;
-      /* Some phone exports crop away the report title and push the authority
-         identity block below the first quarter of the page. Reading ~42% still
-         avoids the bulk of the timetable while reliably covering the real
-         CamScanner and photographed fixtures supplied with this project. */
-      const headerHeight=Math.max(180,Math.round(image.height*0.42));
-      /* Small landscape screenshots need more than 1.5× for the thin Arabic
-         header glyphs. This upscales only the bounded header band, not the page. */
-      const headerScale=2;
+      const headerTop=Math.round(image.height*0.01);
+      const headerHeight=Math.max(120,Math.round(image.height*0.24));
+      /* The probe is intentionally small for speed, but the printed department
+         line is fine. Upscaling only this narrow band made the real CamScanner
+         header deterministic while keeping preflight to a few seconds. */
+      const headerScale=1.5;
       const crop=lib.createCanvas(Math.round(image.width*headerScale),Math.round(headerHeight*headerScale)),ctx=crop.getContext("2d");
       ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
       ctx.drawImage(image,0,headerTop,image.width,headerHeight,0,0,crop.width,crop.height);
       const result:any=await worker.recognize(crop.toBuffer("image/png")).catch(()=>null);
       const ocrText=String(result?.data?.text||"").normalize("NFKC");
-      const scanned:AuthorityPdfHeader={term:readHeaderTerm(ocrText),college:readHeaderCollege(ocrText),branch:readHeaderBranch(ocrText),department:readHeaderDepartment(ocrText),source:"scan"};
-      const header:AuthorityPdfHeader={
-        term:embedded.term||scanned.term,
-        college:embedded.college||scanned.college,
-        branch:embedded.branch||scanned.branch,
-        department:embedded.department||scanned.department,
-        source:"scan",
-      };
-      const semantic=(header.term?120:0)+(header.college?80:0)+(header.branch?80:0)+(header.department?80:0)
+      const header:AuthorityPdfHeader={term:readHeaderTerm(ocrText),branch:readHeaderBranch(ocrText),department:readHeaderDepartment(ocrText),source:"scan"};
+      const semantic=(header.term?120:0)+(header.branch?80:0)+(header.department?80:0)
         +(ocrText.match(/الفصل|الفرع|القسم|الكلية/g)||[]).length*8;
       if(!best||semantic>best.score)best={header,score:semantic,turn:candidate.turn};
-      if(header.term&&header.college&&header.branch&&header.department)break;
+      if(header.term&&header.branch&&header.department)break;
     }
     if(best){headerPreflightCache.set(input,{header:best.header,orientation:best.turn});return best.header;}
-    if(embedded.term||embedded.college||embedded.branch||embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
     return{};
   }catch{return{};}
 }
@@ -1560,14 +1476,11 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }
     if(gridRows){
       texts[index]=index===0&&cachedPreflight
-        ?[cachedPreflight.header.term?.label,cachedPreflight.header.college?.label,cachedPreflight.header.branch?.label,cachedPreflight.header.department?.label].filter(Boolean).join("\n")
+        ?[cachedPreflight.header.term?.label,cachedPreflight.header.branch?.label,cachedPreflight.header.department?.label].filter(Boolean).join("\n")
         :"";
       const filled=gridRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
       scores[index]=Math.min(85,55+filled*2);
-      /* A photographed ruled table can lose a few weak rows even when every
-         extracted row is structurally valid. Keep the historical 55% rescue
-         threshold; row/course/location validation still blocks unsafe imports. */
-      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.70);
+      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55);
       pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:gridRows.length,extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
     }else{
       const grid=await spreadColumns(upright);
@@ -1607,7 +1520,6 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     orientation,
     legibility,
     headerTerm:readHeaderTerm(text),
-    headerCollege:readHeaderCollege(text),
     headerBranch:readHeaderBranch(text),
     headerDepartment:readHeaderDepartment(text),
     pageDiagnostics,
@@ -1807,14 +1719,14 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
   /* “هيئة تدريسية” is an actual instructor identity in this installation.
      Multiple spaces/titles normalize away; accept only a UNIQUE registry row,
      preferring current-department evidence. Other generic roles stay unresolved. */
-  if(rawClean==="هيئه تدريسيه"||rawClean.startsWith("هيئه تدريسيه ")){
-    /* In this installation «هيئة تدريسية» is a real registry identity. Extra
-       spaces/titles normalize away, but a bare «هيئة» is not enough evidence.
-       Map only the explicit normalized phrase and only to a unique department row. */
+  if(/^هيئه(?:\s|$)/.test(rawClean)){
+    /* Authority scans sometimes read only «هيئة» or insert extra spaces/noise
+       after it. In this installation «هيئة تدريسية» is a real registry identity;
+       map the prefix ONLY to that exact identity and only when department/global
+       evidence leaves one unique row. Never fuzzy-match “هيئة” to a person. */
     const faculty=instructors.filter(person=>clean(person.AdInstructorName)==="هيئه تدريسيه");
     const preferredFaculty=faculty.filter(person=>preferredIds?.has(Number(person.AdInstructorId)));
     if(preferredFaculty.length===1)return preferredFaculty[0];
-    if(preferredIds)return undefined;
     return faculty.length===1?faculty[0]:undefined;
   }
   if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
@@ -1829,18 +1741,15 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     return{person,normalized,tokens,preferred};
   }).filter(item=>item.tokens.length);
   const preferredCandidates=allCandidates.filter(item=>item.preferred);
-  /* Authority imports are department-scoped. Even an exact university-wide name
-     is not enough when the caller supplied a department evidence set: the same
-     person may belong elsewhere, and a correct-looking wrong instructor is worse
-     than REVIEW_REQUIRED. Generic OCR callers without a department set may still
-     accept one globally exact identity, but never a fuzzy university-wide one. */
-  if(preferredIds){
-    if(!preferredCandidates.length)return undefined;
-  }else{
-    const globalExact=allCandidates.filter(item=>item.normalized===rawClean);
-    if(globalExact.length===1)return globalExact[0].person;
-  }
-  const candidates=preferredIds?preferredCandidates:allCandidates;
+  /* Exact full identity may safely rescue a genuinely new instructor not yet in
+     department history. All partial/fuzzy rules below are department-first. */
+  const globalExact=allCandidates.filter(item=>item.normalized===rawClean);
+  if(globalExact.length===1)return globalExact[0].person;
+  /* Partial/token/fuzzy identity outside the current department is not safe.
+     If we have no department evidence, leave it unresolved rather than choose
+     the closest university-wide name. */
+  if(!preferredCandidates.length)return undefined;
+  const candidates=preferredCandidates;
 
   // 1. Direct normalized full name contains or candidate tokens are exact ordered subset of raw tokens
   const fullMatches=candidates.filter(item=>rawClean.includes(item.normalized));
@@ -1913,7 +1822,7 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     return{item,score};
   }).sort((a,b)=>b.score-a.score);
   const top=ranked[0],runner=ranked[1];
-  if(top&&top.score>=0.70&&(!runner||top.score-runner.score>=0.15))return top.item.person;
+  if(top&&top.score>=0.55&&(!runner||top.score-runner.score>=0.10))return top.item.person;
   return undefined;
 }
 
@@ -1927,10 +1836,10 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
 /**
  * Structured rows from the gridded reader, matched against the catalogue.
  *
- * Course identity is deliberately conservative: accept only an exact canonical
- * course code, or one unique exact normalized Arabic course name. OCR similarity,
- * neighbouring rows, edit-distance, and short numeric tails are not identity
- * evidence; unresolved courses stay unresolved and block review/publish.
+ * The course code is the key that cannot drift: college(2) + department(2) +
+ * course(3). It is matched exactly first, then with one forgiven character,
+ * then by its 3-digit tail when that tail is unique in this department — the
+ * order the user specified. The Arabic name is the last resort, not the first.
  */
 function isHeaderLine(text:string):boolean{
   if(!text) return false;
@@ -2088,6 +1997,11 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     folded:fold(course.CourseName),
   }));
 
+  const tails=new Map<string,number>();
+  for(const item of catalogue){
+    if(item.digits.length>=3){const tail=item.digits.slice(-3);tails.set(tail,(tails.get(tail)||0)+1);}
+  }
+
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=0,scanned=0;
 
   for(const page of pages){
@@ -2114,15 +2028,12 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
     // Rule 1: Course code extraction - match strictly against department courses
     let matchedCourse:AdCourse|null=null;
-    let matchedCourseRawCode="";
     // 1. Exact course key, including a reference+course token whose 7-digit tail is exact.
     for(const item of catalogue){
       if(!item.digits)continue;
       const code=item.digits;
-      const rawHit=digitRuns.find(run=>run===code||(run.length>code.length&&run.endsWith(code)));
-      if(rawHit){
+      if(digitRuns.some(run=>run===code||(run.length>code.length&&run.endsWith(code)))){
         matchedCourse=item.course;
-        matchedCourseRawCode=rawHit;
         break;
       }
     }
@@ -2265,10 +2176,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCandidateText,
-      /* Preserve the token as extracted. In generated text PDFs the reference
-         and 7-digit course code can legitimately share one physical token; the
-         canonical CourseCode remains separate on matchedCourse. */
-      sourceCourseCode:matchedCourseRawCode,sourceCourseText:cells.find(cell=>fold(cell.text)===fold(courseName))?.text||courseName,sourceSectionText:section,
+      sourceCourseCode:courseCode,sourceCourseText:cells.find(cell=>fold(cell.text)===fold(courseName))?.text||courseName,sourceSectionText:section,
     });
 
     if(!time)issues.push(`صف «${courseName}»: لم أتعرف على الوقت`);
