@@ -1258,6 +1258,17 @@ function readHeaderCollege(text:string):HeaderCollege|undefined{
   const flat=ascii.replace(/\s+/g," ").trim();
   const flatMatch=flat.match(/الكلية\s*[:：-]?\s*(\d{1,4})\s*([^]{0,180}?)(?=\s+(?:القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
   if(flatMatch)return build(flatMatch[1],flatMatch[2]);
+  /* Scan OCR can lose the short label «الكلية» while preserving the ruled
+     identity cell itself. Recover only a one/two-digit parent-college code
+     followed by an explicit college-family name. Branch/site cells are three
+     or four digits and often end in بنات/بنين/الجهراء/الفحيحيل, so they cannot
+     satisfy this rule. This keeps the backend fail-closed while making the
+     first-page reader resilient to a damaged label glyph. */
+  const structural=flat.match(/(?:^|\s)(\d{1,2})\s+((?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)[ء-ي\s-]{3,100}?)(?=\s+(?:\d{3,4}\s+(?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)|القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
+  if(structural){
+    const candidate=build(structural[1],structural[2]);
+    if(candidate.name&&!/(?:بنات|بنين|الجهراء|الفحيحيل)\s*$/.test(candidate.name))return candidate;
+  }
   return undefined;
 }
 
@@ -1556,7 +1567,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       /* A photographed ruled table can lose a few weak rows even when every
          extracted row is structurally valid. Keep the historical 55% rescue
          threshold; row/course/location validation still blocks unsafe imports. */
-      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55);
+      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.70);
       pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:gridRows.length,extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
     }else{
       const grid=await spreadColumns(upright);
