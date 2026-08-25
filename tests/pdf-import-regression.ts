@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityPdfTextGridRows, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -53,6 +53,10 @@ assert.equal(authorityDepartmentMatches("01", "01", "01"), false);
 assert.equal(authorityDepartmentMatches("0102", "01", "01"), false);
 assert.equal(authorityCourseCodeMatches("0101102", "102", "0101"), true);
 assert.equal(authorityCourseCodeMatches("0102102", "102", "0101"), false);
+assert.equal(authorityCourseCellLooksPlausible("0101102","0101"),true);
+assert.equal(authorityCourseCellLooksPlausible("5011894","0101"),false);
+assert.equal(authorityReferenceCourseCellLooksPlausible("189450101102","0101"),true);
+assert.equal(authorityReferenceCourseCellLooksPlausible("5011894","0101"),false);
 
 
 /* The clear photographed PDF often appends a grid-rule digit to the second
@@ -221,8 +225,21 @@ assert.equal(fallbackParsed.rows[0].referenceNumber,"18945");
 const wrongCodePages:OcrPage[]=[{rows:[],gridRows:[{...gridRows[0],code:"0101999",courseText:"الثقافة الإسلامية"}]} as any];
 const wrong=parseScheduleTable(wrongCodePages,courses,instructors,undefined,{authorityDepartmentCode:"0101",sequentialSections:true});
 assert.equal(wrong.rows[0].AdCourseId,0);
+assert.equal(wrong.rows[0].AdCourseName,"");
 
-console.log(JSON.stringify({ passed: 44, checks: [
+/* Regression from the photographed four-page PDF: SECTION + CRN welded into
+   5011894/5021894. It is raw evidence, never a canonical course title. */
+const weldedCoursePages:OcrPage[]=[{rows:[],gridRows:[{
+  ...gridRows[0],code:"5011894",reference:"",scode:"",courseText:"5011894",
+}]} as any];
+const weldedCourse=parseScheduleTable(weldedCoursePages,courses,instructors,undefined,{authorityDepartmentCode:"0101",sequentialSections:true});
+assert.equal(weldedCourse.rows.length,1);
+assert.equal(weldedCourse.rows[0].AdCourseId,0);
+assert.equal(weldedCourse.rows[0].AdCourseName,"");
+assert.equal(weldedCourse.rows[0].sourceCourseText,"5011894");
+assert.equal(weldedCourse.rows[0].SCode,"");
+
+console.log(JSON.stringify({ passed: 47, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -232,6 +249,9 @@ console.log(JSON.stringify({ passed: 44, checks: [
   "0101 matches catalogue college 01 + department 01",
   "full course number 0101102 maps to catalogue course 102 only in department 0101",
   "catalogue course name overrides OCR text",
+  "course-column claiming uses the proven scientific-department prefix",
+  "welded section+CRN values such as 5011894 are rejected as course keys",
+  "unresolved OCR course evidence never becomes the canonical display title",
   "sections are generated 501, 502... independently for each course",
   "section numbering is reapplied after row edits/deletes and unresolved courses stay blank",
   "full course key is preserved as source evidence and never confused with CRN",

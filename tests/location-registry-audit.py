@@ -192,6 +192,8 @@ ok('107 sideways image-only Authority PDF is refused before body OCR', 'authorit
 ok('108 rotated later scan page cannot reach schedule parsing', 'const rotatedPages=recognized.pageDiagnostics.filter' in server and server.index('const rotatedPages=recognized.pageDiagnostics.filter') < server.index('parseScheduleTable(recognized.pages'))
 css=(ROOT/'src/styles/06-intelligence.css').read_text()
 ok('109 import confidence legend uses four visually distinct named states', 'أبيض · مؤكد مباشر' in transfer and 'أخضر · مستنتج ومثبت' in transfer and 'ذهبي · يحتاج مراجعة' in transfer and 'أحمر · ناقص' in transfer and 'import-cell-review' in css)
+ok('110 scan course-column proof rejects welded section+CRN as a course key', 'authorityCourseCellLooksPlausible' in doc_ocr and '5011894' in doc_ocr and 'authorityGridDepartment' in doc_ocr and 'readGrid(upright,lanePool,authorityGridDepartment)' in doc_ocr)
+ok('111 unresolved OCR course evidence can never become the user-facing course title', 'AdCourseId:0,AdCourseName:""' in doc_ocr and 'course?.CourseName || "—"' in preview and 'row.AdCourseName=canonicalCourse?String(canonicalCourse.CourseName||""):""' in server)
 
 ok('P0 probable room never becomes verified from usage alone', 'HISTORICAL_STRONG_PROBABLE_REVIEW' in engine and 'locationStatus:"LOCATION_REVIEW_REQUIRED"' in engine)
 ok('P1 room college metadata follows canonical target building', 'roomCollegeIds=targetBuilding.collegeIds.length?[...targetBuilding.collegeIds]' in server and 'لا يمكن نقل/ربط القاعة بكلية لا يتبع لها المبنى الهدف' in server)

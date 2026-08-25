@@ -5399,6 +5399,17 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
   const documentDepartmentCode=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection?.AdSectionCode);
   const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,{authorityDepartmentCode:documentDepartmentCode,sequentialSections:true,courseInstructorIds});
+  /* Defence in depth: the preview title is canonical system data, never OCR.
+     Even if a future parser regression welds SECTION+CRN into a plausible
+     seven-digit token (e.g. 5011894), an unresolved row cannot expose that raw
+     evidence as the course title. Raw source text remains in sourceCourseText
+     for the editor/audit trail; only a proven AdCourseId may populate the
+     user-facing name. */
+  const importCourseById=new Map(courses.map((course:any)=>[Number(course.AdCourseId),course]));
+  for(const row of parsed.rows as any[]){
+    const canonicalCourse=importCourseById.get(Number(row.AdCourseId||0));
+    row.AdCourseName=canonicalCourse?String(canonicalCourse.CourseName||""):"";
+  }
   const geometryRows=recognized.pageDiagnostics.reduce((sum:any,page:any)=>sum+Number(page.extractedRows||0),0);
   if(geometryRows>=3&&parsed.rows.length<Math.ceil(geometryRows*.7)){
     const message=`أوقفت الاستيراد: حدود الجدول أثبتت ${geometryRows} صفاً تقريباً، لكن المطابقة أعادت ${parsed.rows.length} فقط. هذا فرق غير آمن وقد يعني انزياح أعمدة أو دمج صفوف. لم يتم استيراد أي صف.`;

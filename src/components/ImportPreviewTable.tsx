@@ -59,6 +59,11 @@ const timeOverlap = (a: ImportRow, b: ImportRow) => {
 };
 
 const cleanRoom = (value: unknown) => String(value || "").trim().toLocaleUpperCase();
+const readableCourseEvidence = (value: unknown) => {
+  const text=String(value||"").trim();
+  if(!text||/^\d[\d\s._/-]*$/.test(text))return"";
+  return /[ء-يA-Za-z]/.test(text)?text:"";
+};
 
 export default function ImportPreviewTable({
   rows, courses, instructors, departmentIds = [], visitingIds = [], visitingPeople = [], departmentRooms = [],
@@ -242,7 +247,9 @@ export default function ImportPreviewTable({
                             const sel = courseById.get(cid);
                             patch(index, {
                               AdCourseId: cid,
-                              AdCourseName: sel?.CourseName || row.AdCourseName,
+                              /* Course title is always system-owned. Clearing
+                                 the selection must not resurrect raw OCR text. */
+                              AdCourseName: sel?.CourseName || "",
                               CourseHours: sel?.CourseHours || row.CourseHours,
                               CourseCredit: sel?.CourseCredit || row.CourseCredit,
                               fcontacthours: sel?.CourseHours || row.fcontacthours,
@@ -257,8 +264,8 @@ export default function ImportPreviewTable({
                             </option>
                           ))}
                         </select>
-                        {row.AdCourseName && !course ? (
-                          <small className="muted">قرأ الملف: {row.AdCourseName}</small>
+                        {!course && readableCourseEvidence(row.sourceCourseText) ? (
+                          <small className="muted">قرأ الملف: {readableCourseEvidence(row.sourceCourseText)}</small>
                         ) : null}
                         {row.courseSiteLabel ? (
                           <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span>
@@ -269,7 +276,7 @@ export default function ImportPreviewTable({
                       </div>
                     ) : (
                       <div className="import-locked-course">
-                        <span className="import-course-title-line"><strong>{course?.CourseName || row.AdCourseName || "—"}</strong>{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
+                        <span className="import-course-title-line"><strong>{course?.CourseName || "—"}</strong>{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
                         {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                       </div>
                     )}

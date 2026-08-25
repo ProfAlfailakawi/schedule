@@ -923,6 +923,39 @@ const stripPatterns={
   days:/^[1-5](?:[\s,\-–—./]*[1-5])*$/,
 };
 
+/**
+ * A seven-digit token is not automatically an Authority course key.
+ *
+ * On photographed SWRSCHA pages the SECTION + CRN columns can weld into a
+ * perfectly plausible seven-digit number such as `5011894`. Treating that as
+ * the course column is catastrophic because every row then looks structurally
+ * valid while the real course column is ignored. When the page header already
+ * proved the scientific-department key (for example `0101`), the printed course
+ * key must be exactly:
+ *
+ *   department key + three-digit course number  =>  0101 + 102 = 0101102
+ *
+ * With no proven department we retain the older shape check and fail closed
+ * later at catalogue matching; with a proven department this function is the
+ * semantic proof used to CLAIM the physical course column.
+ */
+export const authorityCourseCellLooksPlausible=(raw:string,departmentCode=""):boolean=>{
+  const token=academicDigits(raw);
+  if(!/^\d{7}$/.test(token))return false;
+  const department=academicDigits(departmentCode);
+  if(!department)return true;
+  return token.length===department.length+3&&token.startsWith(department);
+};
+
+/** Combined CRN/reference + full course key in one OCR span. The only part
+ * that carries academic identity is the seven-digit TAIL, which must satisfy
+ * the same department proof as a standalone course cell. */
+export const authorityReferenceCourseCellLooksPlausible=(raw:string,departmentCode=""):boolean=>{
+  const token=academicDigits(raw);
+  if(!/^\d{11,13}$/.test(token))return false;
+  return authorityCourseCellLooksPlausible(token.slice(-7),departmentCode);
+};
+
 /* Claim the TIME column without going back to the old unsafe shape-only regex.
    Phone scans often append one grid-rule digit to a clock (1000 -> 10040) or
    drop the leading zero (0920 -> 920). A candidate still has to contain TWO
@@ -951,7 +984,11 @@ export const authorityTimeCellLooksPlausible=(raw:string):boolean=>{
  * Read the ruled table cell by cell. Returns null when the page carries no
  * usable grid, so the caller can fall back to the flat-text path.
  */
-async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker}):Promise<GridRow[]|null>{
+async function readGrid(
+  upright:Buffer,
+  pool:{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker},
+  authorityDepartmentCode="",
+):Promise<GridRow[]|null>{
   const lib=await canvas();
   const image=await lib.loadImage(upright);
   const surface=lib.createCanvas(image.width,image.height);
@@ -1037,6 +1074,8 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   const normalizeCell=(value:string)=>value.replace(/\s+/g," ").trim();
   const validatorHits=(cells:string[],pattern:RegExp)=>cells.filter(cell=>pattern.test(normalizeCell(cell))).length;
   const validatorHitsBy=(cells:string[],test:(value:string)=>boolean)=>cells.filter(cell=>test(normalizeCell(cell))).length;
+  const courseCellTest=(value:string)=>authorityCourseCellLooksPlausible(value,authorityDepartmentCode);
+  const refCourseCellTest=(value:string)=>authorityReferenceCourseCellLooksPlausible(value,authorityDepartmentCode);
 
   /* Columns claim their meaning by what validates in them. */
   const claim=(pattern:RegExp,minimum:number,exclude:Set<number>)=>{
@@ -1127,6 +1166,7 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     return value;
   });
   const spanHits=(span:Span,pattern:RegExp)=>Math.max(validatorHits(joinedCells(numericGrey,span),pattern),validatorHits(joinedCells(numericBin,span),pattern));
+  const spanHitsBy=(span:Span,test:(value:string)=>boolean)=>Math.max(validatorHitsBy(joinedCells(numericGrey,span),test),validatorHitsBy(joinedCells(numericBin,span),test));
   const lastBand=columnBands.length-1,maxJoin=Math.min(3,columnBands.length);
   const keySearchFrom=Math.max(0,columnBands.length-7);
   let codeSpan:Span|null=null,refcodeSpan:Span|null=null,bestCodeHits=0,bestRefcodeHits=0;
@@ -1134,9 +1174,9 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     for(let width=1;width<=maxJoin;width++){
       const from=end-width+1;if(from<keySearchFrom)continue;
       const span={from,to:end};
-      const codeHits=spanHits(span,stripPatterns.code);
+      const codeHits=spanHitsBy(span,courseCellTest);
       if(codeHits>bestCodeHits||(codeHits===bestCodeHits&&codeHits>0&&codeSpan&&(span.to>codeSpan.to||(span.to===codeSpan.to&&width<(codeSpan.to-codeSpan.from+1))))){bestCodeHits=codeHits;codeSpan=span;}
-      const bothHits=spanHits(span,stripPatterns.refcode);
+      const bothHits=spanHitsBy(span,refCourseCellTest);
       if(bothHits>bestRefcodeHits||(bothHits===bestRefcodeHits&&bothHits>0&&refcodeSpan&&(span.to>refcodeSpan.to||(span.to===refcodeSpan.to&&width<(refcodeSpan.to-refcodeSpan.from+1))))){bestRefcodeHits=bothHits;refcodeSpan=span;}
     }
   }
@@ -1149,8 +1189,8 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
 
   let refcodeIndex=-1,codeIndex=-1,referenceIndex=-1;
   if(!codeSpan&&!refcodeSpan){
-    refcodeIndex=claim(stripPatterns.refcode,minimumRows,taken);if(refcodeIndex>=0)taken.add(refcodeIndex);
-    codeIndex=refcodeIndex>=0?-1:claim(stripPatterns.code,minimumRows,taken);if(codeIndex>=0)taken.add(codeIndex);
+    refcodeIndex=claimBy(refCourseCellTest,minimumRows,taken);if(refcodeIndex>=0)taken.add(refcodeIndex);
+    codeIndex=refcodeIndex>=0?-1:claimBy(courseCellTest,minimumRows,taken);if(codeIndex>=0)taken.add(codeIndex);
   }
   if(codeSpan){
     const expected=codeSpan.from-1;
@@ -1297,11 +1337,13 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     band:{left:columnBands[instructorStart].left,right:columnBands[instructorEnd].right},
     width:columnBands[instructorEnd].right-columnBands[instructorStart].left,
   }:undefined;
-  const codePattern=(refcodeSpan||refcodeIndex>=0)?stripPatterns.refcode:stripPatterns.code;
   const codeSignalIndex=refcodeIndex>=0?refcodeIndex:codeIndex;
-  const codeHits=codeSpan?spanHits(codeSpan,stripPatterns.code)
-    :refcodeSpan?spanHits(refcodeSpan,stripPatterns.refcode)
-    :(codeSignalIndex>=0?Math.max(validatorHits(numericGrey[codeSignalIndex].cells,codePattern),validatorHits(numericBin[codeSignalIndex].cells,codePattern)):0);
+  const codeHits=codeSpan?spanHitsBy(codeSpan,courseCellTest)
+    :refcodeSpan?spanHitsBy(refcodeSpan,refCourseCellTest)
+    :(codeSignalIndex>=0?Math.max(
+      validatorHitsBy(numericGrey[codeSignalIndex].cells,refcodeIndex>=0?refCourseCellTest:courseCellTest),
+      validatorHitsBy(numericBin[codeSignalIndex].cells,refcodeIndex>=0?refCourseCellTest:courseCellTest),
+    ):0);
   /* Always preserve the printed Arabic course-name column. Course catalogues in
      this system often store the short 3-digit code (101/156/201), while the
      Authority PDF prints the full 7-digit institutional key. Skipping names
@@ -1349,6 +1391,14 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     if(pattern.test(binary))return binary;
     return grey||binary;
   };
+  const pickValidatedBy=(index:number,test:(value:string)=>boolean)=>(row:number)=>{
+    if(index<0)return"";
+    const grey=normalizeCell(numericGrey[index].cells[row]||"");
+    const binary=normalizeCell(numericBin[index].cells[row]||"");
+    if(test(grey))return grey;
+    if(test(binary))return binary;
+    return grey||binary;
+  };
   const timeAt=pickValidated(timeIndex,stripPatterns.time);
   const buildingAt=pickValidated(buildingIndex,stripPatterns.building);
   const hallAt=pickValidated(hallIndex,stripPatterns.hall);
@@ -1361,8 +1411,16 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     if(pattern.test(binary))return binary;
     return grey||binary;
   };
-  const refcodeAt=refcodeSpan?pickSpanValidated(refcodeSpan,stripPatterns.refcode):pickValidated(refcodeIndex,stripPatterns.refcode);
-  const codeAt=codeSpan?pickSpanValidated(codeSpan,stripPatterns.code):pickValidated(codeIndex,stripPatterns.code);
+  const pickSpanValidatedBy=(span:Span|null,test:(value:string)=>boolean)=>(row:number)=>{
+    if(!span)return"";
+    const joined=(reads:StripRead[])=>{let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");return value;};
+    const grey=joined(numericGrey),binary=joined(numericBin);
+    if(test(grey))return grey;
+    if(test(binary))return binary;
+    return grey||binary;
+  };
+  const refcodeAt=refcodeSpan?pickSpanValidatedBy(refcodeSpan,refCourseCellTest):pickValidatedBy(refcodeIndex,refCourseCellTest);
+  const codeAt=codeSpan?pickSpanValidatedBy(codeSpan,courseCellTest):pickValidatedBy(codeIndex,courseCellTest);
   const referenceAt=pickValidated(referenceIndex,stripPatterns.reference);
   const scodeAt=pickValidated(scodeIndex,stripPatterns.scode);
 
@@ -1945,6 +2003,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   const pages:OcrPage[]=new Array(images.length);
   const texts:string[]=new Array(images.length).fill("");
   const scores:number[]=new Array(images.length).fill(0);
+  /* The page-1 preflight already proved the scientific department before the
+     body is allowed to publish. Feed that proof into grid-column claiming so a
+     welded SECTION+CRN token such as 5011894 can never impersonate 0101102. */
+  const authorityGridDepartment=academicDigits(cachedPreflight?.header.department?.code);
 
   /* FAST OCR LANES
      ----------------
@@ -1960,7 +2022,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
-    try{gridRows=await readGrid(upright,lanePool);}catch{/* an unreadable grid falls back */}
+    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment);}catch{/* an unreadable grid falls back */}
     /* Scanned PDFs are often saved with a wrong orientation flag or a camera
        rotation that the first-page probe cannot infer reliably. Do not give up
        after one guess: only when the chosen turn fails, try the two remaining
@@ -1974,7 +2036,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         if(tried.has(turn))continue;
         try{
           const candidate=await deskew(await rotateImage(pageImage,turn));
-          const candidateRows=await readGrid(candidate,lanePool);
+          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment);
           const strength=(candidateRows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           const bestStrength=(best?.rows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows,turn};
@@ -2039,7 +2101,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       for(const turn of [bestOrientation,-1,0,1] as Array<-1|0|1>){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
-          const rows=await readGrid(upright,rescuePool);
+          const rows=await readGrid(upright,rescuePool,authorityGridDepartment);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
           if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
@@ -2550,16 +2612,24 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     const cleanHall = cleanHallCode(grid.hall);
 
     if(!course){
-      const rawLabel = grid.courseText || grid.code || "";
-      if(isHeaderLine(rawLabel)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
+      const rawEvidence = grid.courseText || grid.code || "";
+      if(isHeaderLine(rawEvidence)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
       const hasScheduleData = Boolean(grid.start || grid.days || (grid.scode && Number(grid.scode)>=500) || grid.reference || (grid.code && grid.code.length >= 3));
-      if(!hasScheduleData || !rawLabel || rawLabel.length < 3) {
+      if(!hasScheduleData || !rawEvidence || rawEvidence.length < 3) {
         continue;
       }
+      /* Canonical course display is system-owned. A raw OCR number/text is
+         audit evidence only and must never occupy AdCourseName when the course
+         ID was not proven. This is the final display guard against welded
+         section+CRN values such as 5011894 looking like a real course. */
+      const readableCourseEvidence=/[ء-يA-Za-z]/.test(rawEvidence)&&!/^\s*\d[\d\s._/-]*\s*$/.test(rawEvidence)
+        ?rawEvidence.trim()
+        :"";
+      const issueLabel=readableCourseEvidence||"مقرر غير محسوم";
       rows.push({
         sourceOrder:order++,
         referenceNumber:grid.reference,
-        AdCourseId:0,AdCourseName:rawLabel,SCode:grid.scode,
+        AdCourseId:0,AdCourseName:"",SCode:grid.scode,
         AdInstructorId:instructorHit?.AdInstructorId||0,
         TotalHours:3,TotalUnits:3,
         CourseHours:3,CourseCredit:3,
@@ -2574,12 +2644,12 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
         sourceDaysText:grid.daysRaw||grid.days,sourceTimeText:grid.timeRaw||[grid.start,grid.end].filter(Boolean).join(" - "),sourceReadMode:grid.sourceMode||"ocr-grid",
         instructorMatchMethod:instructorMatch?.method,instructorMatchScore:instructorMatch?.score,instructorMatchedTokens:instructorMatch?.matchedTokens,
       });
-      issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
-      if(!grid.start)issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
-      if(!Object.values(flags).some(Boolean))issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الأيام`);
+      issues.push(`صف «${issueLabel}» شعبة ${grid.scode||"—"}: لم يتم إثبات رقم المقرر من كتالوج القسم — يرجى اختياره من القائمة`);
+      if(!grid.start)issues.push(`صف «${issueLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
+      if(!Object.values(flags).some(Boolean))issues.push(`صف «${issueLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الأيام`);
       if(!instructorHit&&grid.instructorText&&!grid.instructorText.includes("هيئة")&&!grid.instructorText.includes("هيئه"))
-        issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على أستاذ المقرر («${grid.instructorText}»)`);
-      if(!cleanBuilding&&!cleanHall)issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
+        issues.push(`صف «${issueLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على أستاذ المقرر («${grid.instructorText}»)`);
+      if(!cleanBuilding&&!cleanHall)issues.push(`صف «${issueLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على المبنى والقاعة`);
       continue;
     }
 
@@ -2693,7 +2763,9 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
       rows.push({
         sourceOrder:order++,referenceNumber:reference,
-        AdCourseId:0,AdCourseName:rawCourseText,SCode:section,
+        /* Raw prose belongs to sourceCourseText only. Canonical course display
+           remains empty until a real catalogue ID is proven. */
+        AdCourseId:0,AdCourseName:"",SCode:section,
         AdInstructorId:instructorHit?.AdInstructorId||0,
         TotalHours:3,TotalUnits:3,CourseHours:3,CourseCredit:3,
         fcontacthours:3,fcredithours:3,
@@ -2707,7 +2779,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
         sourceBuildingText:roomCode,sourceRoomText:roomHall,
         sourceDaysText:Object.keys(flags||{}).filter(key=>(flags as any)?.[key]).join(" "),sourceTimeText:time?[time.start,time.end].join(" - "):"",sourceReadMode:"ocr-fallback",
       });
-      issues.push(`صف «${rawCourseText}»: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
+      issues.push(`صف «${/[ء-يA-Za-z]/.test(rawCourseText)?rawCourseText:"مقرر غير محسوم"}»: لم يتم إثبات رقم المقرر من كتالوج القسم — يرجى اختياره من القائمة`);
       continue;
     }
     const courseName=matchedCourse.CourseName;
