@@ -137,5 +137,8 @@ ok('72 building and room stay in their physical cells next to time', 'const geom
 ok('73 instructor and course-name columns are structurally separated', 'const instructorIndex=timeIndex>=3?timeIndex-3:-1' in doc_ocr and 'const preferredNameIndex=scodeIndex>0?scodeIndex-1:-1' in doc_ocr and 'put doctor names into Course Name' in doc_ocr)
 ok('74 parsed instructor evidence comes only from the instructor cell', 'const instructorHit=matchInstructorName(grid.instructorText,instructors,preferredInstructorIds)' in doc_ocr and 'sourceInstructorText:grid.instructorText' in doc_ocr)
 ok('75 PDF header preflight is back to the proven term branch department contract before full OCR', '!headerPreflight.term||!headerPreflight.branch||!headerPreflight.department' in server and 'headerPreflight.college' not in server and server.index('readAuthorityPdfHeader(bytes)') < server.index('ocrDocument(bytes,"application/pdf"'))
+ok('76 partial text-layer header cannot short-circuit scan recovery', 'Partial evidence is useful, but it is NOT enough to skip the scan header' in doc_ocr and 'if(embedded.term&&embedded.college&&embedded.branch&&embedded.department)' in doc_ocr and 'embedded.branch||scanned.branch' in doc_ocr)
+ok('77 scanned header recovery covers the full authority identity block at readable scale', 'image.height*0.42' in doc_ocr and 'const headerScale=2' in doc_ocr and 'Reading ~42%' in doc_ocr)
+ok('78 bidi controls and explicit college branch cells survive header normalization', r'\u061C' in doc_ocr and r'\u200E' in doc_ocr and 'readHeaderCollege' in doc_ocr and r'match(/الفرع\s*[:：-]?\s*(\d{3,4})' in doc_ocr)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
