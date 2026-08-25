@@ -79,3 +79,56 @@ export const buildingNumberLabel = (building: { buildingNumber?: string; officia
   const n = Number(building.buildingNumber);
   return Number.isFinite(n) && n > 0 ? String(n) : building.officialCode;
 };
+
+/**
+ * Recover an OFFICIAL building code from the already-proven building cell of an
+ * Authority/SWRSCHA report. This is deliberately registry constrained.
+ *
+ * Example for branch 012:
+ *   printed 012B09 -> site prefix 012B + building 09.
+ * Phone OCR may drop the leading zero or paint a border over it (12B09,
+ * 112B09), but the meaningful suffix B09 is still present in the BUILDING
+ * cell. We reconstruct only when that suffix points to exactly one CONFIRMED
+ * code supplied by the caller for the document branch. No code is invented.
+ */
+export function recoverOfficialBuildingCodeFromAuthorityCell(
+  raw: unknown,
+  branchCode: unknown,
+  knownOfficialCodes: readonly string[],
+): string | null {
+  const token=String(raw??"").normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g,"");
+  if(!token)return null;
+  const branch=String(branchCode??"").normalize("NFKC").replace(/[^0-9]/g,"").slice(0,3);
+  const codes=[...new Set(knownOfficialCodes.map(code=>String(code||"").trim().toUpperCase()).filter(Boolean))];
+  const inBranch=(code:string)=>!branch||code.startsWith(branch);
+  const candidates=codes.filter(inBranch);
+  const exact=candidates.filter(code=>code===token);
+  if(exact.length===1)return exact[0];
+
+  /* Alpha-site colleges: branch 012 + site B + building 09 => 012B09.
+     Require at least the last two branch digits immediately before the site
+     letter. This rejects a stray room token such as F13 while accepting the
+     measured scan artefacts 12B09 / 112B09 / J12B07. */
+  const alphaPieces=[...token.matchAll(/([0-9]{2,4})([A-Z])0*([0-9]{1,2})/g)];
+  for(const piece of alphaPieces){
+    const beforeDigits=piece[1],siteLetter=piece[2],building=String(Number(piece[3])).padStart(2,"0");
+    if(branch&&beforeDigits.slice(-2)!==branch.slice(-2))continue;
+    const suffix=`${siteLetter}${building}`;
+    const hits=candidates.filter(code=>/^\d{3}[A-Z]\d{2}$/.test(code)&&code.slice(-3)===suffix);
+    if(hits.length===1)return hits[0];
+  }
+
+  /* A clean short site+building token (B09) is accepted only if the supplied
+     branch catalogue has one and only one such official code. */
+  const short=token.match(/^([A-Z])0*([0-9]{1,2})$/);
+  if(short){
+    const suffix=`${short[1]}${String(Number(short[2])).padStart(2,"0")}`;
+    const hits=candidates.filter(code=>/^\d{3}[A-Z]\d{2}$/.test(code)&&code.slice(-3)===suffix);
+    if(hits.length===1)return hits[0];
+  }
+
+  /* Numeric-site prefixes (0510/0520/0410/0420) are intentionally conservative:
+     only the already-complete official six-digit token is accepted. Without the
+     site digit, a two-digit building number alone is not enough evidence. */
+  return null;
+}

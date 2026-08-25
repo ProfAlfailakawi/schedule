@@ -95,6 +95,23 @@ export function resolveRoom(registry: LocationRegistry, raw: unknown, buildingId
   if(exact.length===1){const r=exact[0];return {status:"CONFIRMED",value:r,evidence:[...r.evidence,`هوية القاعة مقيدة بالمبنى ${r.buildingCode}.`]};}
   if(exact.length>1)return {status:"REVIEW_REQUIRED",evidence:["أكثر من مرشح للقاعة داخل المبنى."]};
 
+  /* Same-cell OCR repair, still constrained by the OFFICIAL room registry.
+     On the photographed Authority sheet F07 is commonly read as FO7: the round
+     zero is the only ambiguous glyph. Convert OCR-confusable characters only in
+     the numeric tail, then accept the result only when exactly one confirmed
+     room under THIS building owns that canonical code. This never creates a new
+     room and never borrows a room from another building. */
+  const ocrRoom=token.match(/^([A-Z])([0-9OIL]{1,3})$/);
+  if(ocrRoom){
+    const digits=ocrRoom[2].replace(/O/g,"0").replace(/[IL]/g,"1");
+    const repaired=`${ocrRoom[1]}${digits}`;
+    if(repaired!==token){
+      const repairedMatches=base.filter(r=>canonicalRoomShape(r.canonicalCode)===canonicalRoomShape(repaired));
+      if(repairedMatches.length===1){const r=repairedMatches[0];return {status:"CONFIRMED",value:r,evidence:[`استعادة OCR مقيدة بالمبنى: ${token} ← ${r.canonicalCode} داخل ${r.buildingCode}.`]};}
+      if(repairedMatches.length>1)return {status:"REVIEW_REQUIRED",evidence:[`إصلاح OCR ${token} يطابق أكثر من قاعة داخل المبنى.`]};
+    }
+  }
+
   // F6/f06/F 06 -> F06, but never invent a letter for a bare number.
   const shaped=canonicalRoomShape(raw);
   if(shaped){

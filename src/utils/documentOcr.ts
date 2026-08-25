@@ -586,6 +586,10 @@ function tableFromWords(words:Word[],columns:number[],rowGrouping:"default"|"pdf
 export type GridRow={
   code:string;reference:string;scode:string;courseText:string;instructorText:string;
   days:string;start:string;end:string;building:string;hall:string;
+  /** Same proven physical cells before strict token validation. They are kept as
+   * evidence so the registry can reconstruct only an already-known official
+   * code (e.g. a dropped leading 0 in 012B09), never invent a location. */
+  buildingRaw?:string;hallRaw?:string;
 };
 type GridPage={gridRows:GridRow[]};
 
@@ -793,6 +797,30 @@ const stripPatterns={
   days:/^[1-5](?:[\s,\-–—./]*[1-5])*$/,
 };
 
+/* Claim the TIME column without going back to the old unsafe shape-only regex.
+   Phone scans often append one grid-rule digit to a clock (1000 -> 10040) or
+   drop the leading zero (0920 -> 920). A candidate still has to contain TWO
+   independently plausible teaching clocks and a 30–240 minute interval. A
+   building such as 012B09 can therefore never claim the time role. */
+export const authorityTimeCellLooksPlausible=(raw:string):boolean=>{
+  const text=toAscii(String(raw||"")).toUpperCase().replace(/[Oo]/g,"0");
+  const parts=(text.match(/\d{3,5}/g)||[]);
+  if(parts.length<2)return false;
+  const clocks=(piece:string)=>{
+    const variants=new Set<string>();
+    if(piece.length===4)variants.add(piece);
+    if(piece.length===3){variants.add(piece.padStart(4,"0"));variants.add(piece.padEnd(4,"0"));}
+    if(piece.length===5){variants.add(piece.slice(0,4));variants.add(piece.slice(-4));}
+    return [...variants].filter(value=>{const h=Number(value.slice(0,2)),m=Number(value.slice(2));return h>=7&&h<21&&m>=0&&m<60;});
+  };
+  const left=clocks(parts[0]),right=clocks(parts[1]);
+  for(const a of left)for(const b of right){
+    const am=Number(a.slice(0,2))*60+Number(a.slice(2)),bm=Number(b.slice(0,2))*60+Number(b.slice(2));
+    const diff=Math.abs(am-bm);if(diff>=30&&diff<=240)return true;
+  }
+  return false;
+};
+
 /**
  * Read the ruled table cell by cell. Returns null when the page carries no
  * usable grid, so the caller can fall back to the flat-text path.
@@ -882,6 +910,7 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
 
   const normalizeCell=(value:string)=>value.replace(/\s+/g," ").trim();
   const validatorHits=(cells:string[],pattern:RegExp)=>cells.filter(cell=>pattern.test(normalizeCell(cell))).length;
+  const validatorHitsBy=(cells:string[],test:(value:string)=>boolean)=>cells.filter(cell=>test(normalizeCell(cell))).length;
 
   /* Columns claim their meaning by what validates in them. */
   const claim=(pattern:RegExp,minimum:number,exclude:Set<number>)=>{
@@ -893,12 +922,21 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     }
     return bestHits>=minimum?bestIndex:-1;
   };
+  const claimBy=(test:(value:string)=>boolean,minimum:number,exclude:Set<number>)=>{
+    let bestIndex=-1,bestHits=0;
+    for(let i=0;i<columnBands.length;i++){
+      if(exclude.has(i))continue;
+      const hits=Math.max(validatorHitsBy(numericGrey[i].cells,test),validatorHitsBy(numericBin[i].cells,test));
+      if(hits>bestHits){bestHits=hits;bestIndex=i;}
+    }
+    return bestHits>=minimum?bestIndex:-1;
+  };
   const taken=new Set<number>();
   /* A final report page can contain one or two rows. Requiring two validator
      hits made those legitimate tail pages disappear entirely. Geometry has
      already proved the table, so one row is sufficient evidence here. */
   const minimumRows=Math.max(1,Math.floor(bands.length*0.15));
-  const timeIndex=claim(stripPatterns.time,minimumRows,taken);if(timeIndex>=0)taken.add(timeIndex);
+  const timeIndex=claimBy(authorityTimeCellLooksPlausible,minimumRows,taken);if(timeIndex>=0)taken.add(timeIndex);
 
   /* SWRSCHA is a ruled report with a fixed physical block on the left:
        instructor | days | activity | time | building | room | ...
@@ -1276,6 +1314,8 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
       start,end,
       building,
       hall,
+      buildingRaw:bRaw,
+      hallRaw:hRaw,
     });
   }
   const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
@@ -1939,7 +1979,7 @@ export type ParsedScheduleRow={
   TotalHours?:number;TotalUnits?:number;CourseCredit?:number;CourseHours?:number;fcredithours?:number;fcontacthours?:number;
   fsunday:boolean;fmonday:boolean;ftuesday:boolean;fwednesday:boolean;fthursday:boolean;
   fstarttime:string;fendtime:string;AdRoomCode:string;AdRoomHall:string;ocrLine:string;sourceInstructorText?:string;
-  sourceCourseCode?:string;sourceCourseText?:string;sourceSectionText?:string;
+  sourceCourseCode?:string;sourceCourseText?:string;sourceSectionText?:string;sourceBuildingText?:string;sourceRoomText?:string;
 };
 
 /** Match an instructor printed on the Authority sheet to the registry.
@@ -2098,6 +2138,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
         ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,cleanBuilding,cleanHall,grid.instructorText].filter(Boolean).join(" | "),
         sourceInstructorText:grid.instructorText,
         sourceCourseCode:grid.code,sourceCourseText:grid.courseText,sourceSectionText:grid.scode,
+        sourceBuildingText:grid.buildingRaw||grid.building,sourceRoomText:grid.hallRaw||grid.hall,
       });
       issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
       if(!grid.start)issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
@@ -2122,6 +2163,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       ocrLine:[grid.code,grid.scode,grid.courseText,grid.days,`${grid.start}-${grid.end}`,cleanBuilding,cleanHall,grid.instructorText].filter(Boolean).join(" | "),
       sourceInstructorText:grid.instructorText,
       sourceCourseCode:grid.code,sourceCourseText:grid.courseText,sourceSectionText:grid.scode,
+      sourceBuildingText:grid.buildingRaw||grid.building,sourceRoomText:grid.hallRaw||grid.hall,
     });
     const label=course.CourseName;
     if(!grid.start)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
@@ -2222,6 +2264,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
            separately in AdInstructorId and must never overwrite raw evidence. */
         sourceInstructorText:line,
         sourceCourseCode:sourceCourseRuns[0]||"",sourceCourseText:rawCourseText,sourceSectionText:section,
+        sourceBuildingText:roomCode,sourceRoomText:roomHall,
       });
       issues.push(`صف «${rawCourseText}»: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
       continue;
@@ -2318,6 +2361,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       fstarttime:time?.start||"",fendtime:time?.end||"",
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCandidateText,
       sourceCourseCode,sourceCourseText:cells.find(cell=>fold(cell.text)===fold(courseName))?.text||courseName,sourceSectionText:section,
+      sourceBuildingText:roomCode,sourceRoomText:roomHall,
     });
 
     if(!time)issues.push(`صف «${courseName}»: لم أتعرف على الوقت`);

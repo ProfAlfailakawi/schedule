@@ -55,7 +55,7 @@ import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseS
 import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
-import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
+import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode, recoverOfficialBuildingCodeFromAuthorityCell } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 
 // Resolve environment/private paths before database initialization.
@@ -5361,8 +5361,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      values need department context. This also lets us identify a real Fahaheel
      or Jahra exception instead of misclassifying it as an unknown main-campus
      building. */
+  const confirmedOfficialBuildingCodes=registry.buildings.filter((item:any)=>item.confidence==="CONFIRMED").map((item:any)=>String(item.officialCode||""));
+  const sourceBranchRoot=academicDigits(headerPreflight.branch?.code).slice(0,3);
   for(const row of parsed.rows as any[]){
-    const rawBuilding=String(row.AdRoomCode||"");const rawHall=String(row.AdRoomHall||"");
+    const rawBuilding=String(row.sourceBuildingText||row.AdRoomCode||"");const rawHall=String(row.sourceRoomText||row.AdRoomHall||"");
     row.sourceBuildingText=rawBuilding;row.sourceRoomText=rawHall;
     const token=rawBuilding.normalize("NFKC").replace(/\s+/g,"").toUpperCase();
     const normalizedInstructor=foldHeaderIdentity(row.sourceInstructorText);
@@ -5377,11 +5379,21 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     };
     const explicitFull=/^(?:\d{3}[A-Z]\d{2}|\d{6})$/.test(token);
     let building=explicitFull?resolveBuilding(registry,token,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
-    /* A photographed/ruled PDF can occasionally bleed the first digit of the
-       adjacent room cell into an otherwise complete building code (012B09 + 1
-       => 012B091). This is repaired only when the six-character prefix resolves
-       to one CONFIRMED canonical building. We never invent a new code and never
-       trim arbitrary unknown values. */
+    let prefixRecoveredCode="";
+    /* Restore the original owner-supplied location semantics instead of asking
+       OCR to "understand" a campus. The report cell carries site+building: for
+       branch 012, B09 means official 012B09. If the camera drops the first zero
+       or paints a border over it, reconstruct ONLY an official CONFIRMED code
+       from the finite registry for the document branch. */
+    if(building.status!=="CONFIRMED"||!building.value){
+      prefixRecoveredCode=recoverOfficialBuildingCodeFromAuthorityCell(rawBuilding,sourceBranchRoot,confirmedOfficialBuildingCodes)||"";
+      if(prefixRecoveredCode){
+        const recovered=resolveBuilding(registry,prefixRecoveredCode,{});
+        if(recovered.status==="CONFIRMED"&&recovered.value)building=recovered;
+      }
+    }
+    /* One older ruled-export artefact can append the first ROOM digit to a full
+       building cell. Keep the repair registry-bound and exact. */
     if(building.status!=="CONFIRMED"||!building.value){
       const bleed=token.match(/^(\d{3}[A-Z]\d{2})\d$/);
       if(bleed){
@@ -5411,7 +5423,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
 
     row.buildingId=building.value.id;
-    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",reason:"تطابق صريح مع رمز مبنى Canonical",evidence:[`الرمز الرسمي ${building.value.officialCode}`]});
+    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",reason:prefixRecoveredCode?"استعادة آمنة من بادئة الفرع المثبتة + رقم المبنى داخل خلية المبنى":"تطابق صريح مع رمز مبنى Canonical",evidence:prefixRecoveredCode?[`النص المقروء ${rawBuilding}`,`الفرع المثبت ${sourceBranchRoot}`,`الرمز الرسمي الوحيد ${building.value.officialCode}`]:[`الرمز الرسمي ${building.value.officialCode}`]});
     const room=resolveRoom(registry,rawHall,building.value.id,{collegeId,sectionId});
     if(room.status!=="CONFIRMED"||!room.value){
       row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";

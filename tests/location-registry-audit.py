@@ -130,7 +130,7 @@ ok('69 instructor import keeps department roster evidence but only accepts exact
 
 # PDF import regressions observed on real Authority text PDFs and CamScanner scans.
 ok('70 partial text PDF header falls back instead of rejecting a valid branch', 'const physicalText=tableFromWords(headerWords,[],"pdf-text")' in doc_ocr and 'if(embedded.term&&embedded.branch&&embedded.department)' in doc_ocr and 'A PARTIAL text-layer hit is not success' in doc_ocr)
-ok('71 time-column proof rejects building-shaped OCR before assigning semantic roles', '(?:0[7-9]|1\\d|20)[0-5]\\d' in doc_ocr and '012-809' in doc_ocr and 'const timeIndex=claim(stripPatterns.time' in doc_ocr)
+ok('71 time-column proof tolerates one ruled-border digit while rejecting building-shaped OCR', 'authorityTimeCellLooksPlausible' in doc_ocr and '012-809' in doc_ocr and 'const timeIndex=claimBy(authorityTimeCellLooksPlausible' in doc_ocr)
 ok('72 academic key searches the bounded right table edge instead of the last physical band', 'const keySearchFrom=Math.max(0,columnBands.length-7)' in doc_ocr and 'for(let end=lastBand;end>=keySearchFrom;end--)' in doc_ocr)
 ok('73 full Authority course keys resolve by number inside the selected document department', 'authorityCourseCodeMatches(source,item.digits,authorityDepartment)' in doc_ocr and 'Course NAMES are display evidence only' in doc_ocr)
 schedules_src=(ROOT/'src/components/Schedules.tsx').read_text()
@@ -160,4 +160,10 @@ ok('88 authority section sequence is re-applied in both import UIs', 'assignAuth
 ok('89 canonical header receipt uses system department label after numeric proof', 'canonical system label in the receipt/preview' in server and 'name:canonicalName' in server)
 ok('90 fallback parser never confuses full course key with CRN', 'value!==sourceCourseCode' in doc and 'sourceCourseCode=sourceCourseRuns.find' in doc)
 
+
+location_prefixes=(ROOT/'src/utils/locationCollegePrefixes.ts').read_text()
+location_registry=(ROOT/'src/utils/locationRegistry.ts').read_text()
+ok('91 owner grammar reconstructs 012B09 only from branch 012 + B09 + official registry', 'recoverOfficialBuildingCodeFromAuthorityCell' in location_prefixes and 'site prefix 012B + building 09' in location_prefixes and 'knownOfficialCodes' in location_prefixes)
+ok('92 PDF import preserves raw same-cell building evidence for registry recovery', 'buildingRaw?:string' in doc_ocr and 'sourceBuildingText:grid.buildingRaw||grid.building' in doc_ocr and 'row.sourceBuildingText||row.AdRoomCode' in server)
+ok('93 room OCR correction is constrained to confirmed room inside already resolved building', 'Same-cell OCR repair' in location_registry and 'repairedMatches=base.filter' in location_registry and 'repairedMatches.length===1' in location_registry)
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

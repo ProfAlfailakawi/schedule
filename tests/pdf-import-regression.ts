@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
-import { parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
+import { recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
+import { resolveRoom } from "../src/utils/locationRegistry.ts";
 
 const generatedPhysical = `
 01كليه التربيه الاساسيه الكلية : الفصل الدراسي الاول 2027-2026 الفصل :
@@ -52,6 +54,40 @@ assert.equal(authorityDepartmentMatches("0102", "01", "01"), false);
 assert.equal(authorityCourseCodeMatches("0101102", "102", "0101"), true);
 assert.equal(authorityCourseCodeMatches("0102102", "102", "0101"), false);
 
+
+/* The clear photographed PDF often appends a grid-rule digit to the second
+   clock. It must still claim the TIME column, while a building token must never
+   look like a clock pair. */
+assert.equal(authorityTimeCellLooksPlausible("1050 - 10040"),true);
+assert.equal(authorityTimeCellLooksPlausible("1650 - 15340"),true);
+assert.equal(authorityTimeCellLooksPlausible("012B09"),false);
+
+/* Owner-supplied location grammar: branch 012 + site B + building 09 is the
+   official code 012B09. Camera loss of the leading zero/grid stroke is repaired
+   only against the finite official registry for that branch. */
+const officialBuildings=["012B07","012B09","012F15","012J14","011B17"];
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012B09","012",officialBuildings),"012B09");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12B09","012",officialBuildings),"012B09");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("112B09","012",officialBuildings),"012B09");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12B07 F","012",officialBuildings),"012B07");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12F15","012",officialBuildings),"012F15");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("F13","012",officialBuildings),null);
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("011B17","012",officialBuildings),null);
+
+/* A hall is accepted only inside its already-confirmed building. FO7 is a
+   measured OCR form of F07; it may recover only because that exact official
+   room exists under 012B07. */
+const roomRegistry:any={
+  buildings:[{id:"building_012B07",officialCode:"012B07",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true}],
+  rooms:[
+    {id:"room_012B07_F07",buildingId:"building_012B07",buildingCode:"012B07",canonicalCode:"F07",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true,shared:false,evidence:[]},
+    {id:"room_012B07_F31",buildingId:"building_012B07",buildingCode:"012B07",canonicalCode:"F31",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true,shared:false,evidence:[]},
+  ],
+};
+assert.equal(resolveRoom(roomRegistry,"FO7","building_012B07",{collegeId:6,sectionId:9}).value?.canonicalCode,"F07");
+assert.equal(resolveRoom(roomRegistry,"F31","building_012B07",{collegeId:6,sectionId:9}).value?.canonicalCode,"F31");
+assert.equal(resolveRoom(roomRegistry,"F99","building_012B07",{collegeId:6,sectionId:9}).status,"REVIEW_REQUIRED");
+
 /* Course NUMBER is canonical; system name wins; sections are generated 501+ per
    course; an abbreviated professor name never receives a real instructor ID. */
 const courses:any[]=[
@@ -63,7 +99,7 @@ const instructors:any[]=[
   {AdInstructorId:22,AdInstructorName:"علي يوسف أحمد السندي"},
 ];
 const gridRows:any[]=[
-  {code:"0101102",reference:"18945",scode:"777",courseText:"اسم OCR خاطئ تماماً",instructorText:"د. علي يوسف أحمد السند",building:"012B09",hall:"F13",start:"15:30",end:"16:50",days:"42"},
+  {code:"0101102",reference:"18945",scode:"777",courseText:"اسم OCR خاطئ تماماً",instructorText:"د. علي يوسف أحمد السند",building:"",buildingRaw:"12B09",hall:"F13",hallRaw:"F13",start:"15:30",end:"16:50",days:"42"},
   {code:"0101102",reference:"18946",scode:"123",courseText:"اسم آخر خاطئ",instructorText:"علي السند",building:"012B07",hall:"F31",start:"11:00",end:"11:50",days:"531"},
   {code:"0101103",reference:"18947",scode:"999",courseText:"حتى لو اسم OCR لا يطابق",instructorText:"",building:"012B07",hall:"F31",start:"08:00",end:"09:20",days:"42"},
 ];
@@ -110,7 +146,7 @@ const wrongCodePages:OcrPage[]=[{rows:[],gridRows:[{...gridRows[0],code:"0101999
 const wrong=parseScheduleTable(wrongCodePages,courses,instructors,undefined,{authorityDepartmentCode:"0101",sequentialSections:true});
 assert.equal(wrong.rows[0].AdCourseId,0);
 
-console.log(JSON.stringify({ passed: 14, checks: [
+console.log(JSON.stringify({ passed: 23, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -125,4 +161,13 @@ console.log(JSON.stringify({ passed: 14, checks: [
   "full course key is preserved as source evidence and never confused with CRN",
   "instructor requires one exact normalized system name",
   "course name alone can never create a canonical course identity",
+  "time column survives one grid-rule digit without accepting building codes",
+  "noisy 1050-10040 remains a plausible time cell",
+  "012B09 can never claim the time column",
+  "012B + building 09 reconstructs only official 012B09",
+  "dropped/painted leading zero in building cell is registry-recovered",
+  "cross-branch official code is never silently rebound",
+  "room is resolved only under its confirmed building",
+  "FO7 may normalize to official F07 only inside that building",
+  "unknown hall stays unresolved instead of being invented",
 ] }, null, 2));
