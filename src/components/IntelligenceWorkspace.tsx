@@ -372,30 +372,23 @@ const importRowsOverlap = (a: ImportRow, b: ImportRow) => {
   const a0=importClockMinutes(a.fstarttime),a1=importClockMinutes(a.fendtime),b0=importClockMinutes(b.fstarttime),b1=importClockMinutes(b.fendtime);
   return a0>=0&&a1>a0&&b0>=0&&b1>b0&&a0<b1&&b0<a1;
 };
-/** Authority sections are the printed 5xx identifiers (501, 502, ...).
- * Preserve the source value exactly; never manufacture a missing sequence.
- * Real Authority exports legitimately skip numbers (for example 508 → 510).
- * A value such as “3” is units/hours column drift and must become unresolved. */
-const normalizeImportSectionSeries = (rows: ImportRow[]) =>
-  rows.map(row=>{
-    const rawSection=String((row as any).sourceSectionText??row.SCode??"").trim();
-    const candidate=String(row.SCode||"").trim();
-    return{...row,sourceSectionText:rawSection||undefined,SCode:/^5\d{2}$/.test(candidate)?candidate:""};
-  });
-const validateImportRowsLocally = (rows: ImportRow[], allowedInstructorIds?: Iterable<number>) => {
+/** Preserve the section printed in the source; normalization may trim display
+ * whitespace, but it must never invent a 501/502 sequence. */
+const normalizeImportSectionSeries = (rows: ImportRow[]) => {
+  return rows.map(row=>({...row,SCode:String(row.SCode||"").trim()}));
+};
+const validateImportRowsLocally = (rows: ImportRow[]) => {
   const issues:string[] = [];
-  const allowed=allowedInstructorIds===undefined?null:new Set([...allowedInstructorIds].map(Number).filter(Boolean));
   rows.forEach((row, index) => {
     const label = `الصف ${(index + 1).toLocaleString("ar-KW-u-nu-latn")}`;
     if (!Number(row.AdCourseId)) issues.push(`${label}: المقرر غير محدد`);
-    if (!/^5\d{2}$/.test(String(row.SCode || ""))) issues.push(`${label}: رقم الشعبة مفقود أو غير صالح؛ شعب الجدول المعتمد تبدأ من 501 وتبقى كما وردت في المصدر`);
+    if (!/^\d{3,4}$/.test(String(row.SCode || ""))) issues.push(`${label}: رقم الشعبة مفقود أو غير صالح`);
     if (![row.fsunday,row.fmonday,row.ftuesday,row.fwednesday,row.fthursday].some(Boolean)) issues.push(`${label}: الأيام غير محددة`);
     const start=importClockMinutes(row.fstarttime),end=importClockMinutes(row.fendtime);
     if (start < 0 || end < 0 || end <= start) issues.push(`${label}: الوقت غير مكتمل أو غير منطقي`);
     if (!row.buildingId) issues.push(`${label}: المبنى الرسمي غير محدد`);
     if (!row.roomId && row.locationStatus !== "PENDING_ROOM") issues.push(`${label}: القاعة غير محددة`);
     if (!Number(row.AdInstructorId)) issues.push(`${label}: أستاذ المقرر غير محدد`);
-    else if (allowed && !allowed.has(Number(row.AdInstructorId))) issues.push(`${label}: أستاذ المقرر غير مثبت ضمن القسم الحالي`);
   });
   rows.forEach((row,index)=>rows.slice(index+1).forEach((other,offset)=>{
     if(!importRowsShareDay(row,other)||!importRowsOverlap(row,other))return;
@@ -1374,7 +1367,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   sourceFileName: importPreview?.fileName,
                   sourceBranchCode: importPreview?.headerBranch?.code,
                   sourceBranchName: importPreview?.headerBranch?.name,
-                  previewIssues: validateImportRowsLocally(draftRows as ImportRow[], importInstructorIds),
+                  previewIssues: validateImportRowsLocally(draftRows as ImportRow[]),
                 } : {}),
               }),
             });
@@ -1584,7 +1577,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setImportPreview(null);
     setBusy(true);
     setError(null);
-    setImportProgress({ phase: "render", page: 0, pages: 0, message: "يتحقق من ترويسة الملف قبل قراءة الجدول" });
+    setImportProgress({ phase: "render", page: 0, pages: 0, message: "يجهّز الملف للقراءة" });
     try {
       const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
       const response = await fetch(`/api/intelligence/pdf-import?${query}`, {
@@ -1623,7 +1616,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       if (!data) throw new Error("تعذّرت قراءة PDF");
       {
         const normalizedRows=normalizeImportSectionSeries((Array.isArray(data.rows)?data.rows:[]) as ImportRow[]);
-        const localIssues=validateImportRowsLocally(normalizedRows, importInstructorIds);
+        const localIssues=validateImportRowsLocally(normalizedRows);
         const globalIssues=(Array.isArray(data.issues)?data.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
         const issues=[...globalIssues,...localIssues];
         setImportPreview({ ...data, rows:normalizedRows, count: normalizedRows.length, preview: normalizedRows, valid: normalizedRows.length>0&&issues.length===0, issues, importLayout: "authority-pdf" });
@@ -1693,7 +1686,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     }
     /* The publish endpoint checks every conflict in one server-side pass. Do not
        make one network request per imported row before sending the same table. */
-    const preflight=validateImportRowsLocally(importPreview.rows as ImportRow[], importInstructorIds);
+    const preflight=validateImportRowsLocally(importPreview.rows as ImportRow[]);
     if(preflight.length){
       setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
       setError(null);
@@ -1747,9 +1740,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const importBlockingIssues = useMemo(() => {
     if (!importPreview) return [] as string[];
     const rows = Array.isArray(importPreview.rows) ? importPreview.rows as ImportRow[] : [];
-    const instructorScope=importPreview.importLayout==="authority-pdf"?importInstructorIds:undefined;
-    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows,instructorScope)])];
-  }, [importPreview, importInstructorIds]);
+    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows)])];
+  }, [importPreview]);
   const importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0);
 
   const scopedCourses = useMemo(
@@ -5083,7 +5075,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     const normalized=normalizeImportSectionSeries(next);
                     const globalIssues = (Array.isArray(prev.issues) ? prev.issues : [])
                       .filter((issue:string) => /^تحذير:/.test(String(issue)));
-                    const issues = [...globalIssues, ...validateImportRowsLocally(normalized, importInstructorIds)];
+                    const issues = [...globalIssues, ...validateImportRowsLocally(normalized)];
                     return { ...prev, rows: normalized, preview: normalized, count: normalized.length, issues, valid: normalized.length > 0 && issues.length === 0 };
                   })}
                 />

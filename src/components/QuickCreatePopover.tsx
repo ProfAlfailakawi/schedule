@@ -170,9 +170,9 @@ export default function QuickCreatePopover({
     end: timeOf(openedEnd),
   });
   const patch = (values: Partial<QuickDraft>) => setDraft((prev) => ({ ...prev, ...values }));
-  /* New sections follow the department rule 501, 502, 503… per course. The
-     full editor owns the same allocator, so quick-create cannot drift to a
-     different sequence. Anything typed by hand still wins. */
+  /* Typing 101, 102, 103 by hand is work nobody should be doing, and the full
+     editor already stopped asking for it. Anything typed by hand wins; the
+     suggestion only refills while the field is still untouched. */
   const sectionTyped = useRef(false);
   const chooseCourse = (courseId: number) => {
     const next: Partial<QuickDraft> = { courseId };

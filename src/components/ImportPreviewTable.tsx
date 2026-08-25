@@ -107,12 +107,12 @@ export default function ImportPreviewTable({
   const hasDays = (row: ImportRow) => DAY_CHIPS.some(day => Boolean(row[day.key]));
   const missing = {
     course: (row: ImportRow) => !Number(row.AdCourseId),
-    scode: (row: ImportRow) => !/^5\d{2}$/.test(String(row.SCode || "").trim()),
+    scode: (row: ImportRow) => !/^\d{3,4}$/.test(String(row.SCode || "").trim()),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
     room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
-    instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)) || (!departmentIds.includes(Number(row.AdInstructorId))),
+    instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)) || (departmentIds.length>0&&!departmentIds.includes(Number(row.AdInstructorId))),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
   const evidenceTitle = (row:ImportRow,key:"course"|"section"|"instructor"|"building"|"room") => {
