@@ -66,7 +66,9 @@ async function getHeaderWorker(){
   })();
   return headerWorkerPromise;
 }
-let poolPromise:Promise<{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker}>|null=null;
+type OcrWorkerPool={eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker};
+let poolPromise:Promise<OcrWorkerPool>|null=null;
+let fastLanePoolPromise:Promise<OcrWorkerPool>|null=null;
 async function getWorkerPool(){
   if(!poolPromise)poolPromise=(async()=>{
     const {createWorker}=await import("tesseract.js");
@@ -79,6 +81,21 @@ async function getWorkerPool(){
     return{eng:[e1,e2,e3,e4,e5] as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
   })();
   return poolPromise;
+}
+/* Independent page lane. It NEVER shares Tesseract workers with the primary
+   lane, so setParameters cannot bleed between pages. Four numeric workers are
+   enough because each page already batches strip/cell rescue jobs. The lane is
+   lazy: text PDFs and one-page scans never pay its memory/startup cost. */
+async function getFastLaneWorkerPool(){
+  if(!fastLanePoolPromise)fastLanePoolPromise=(async()=>{
+    const {createWorker}=await import("tesseract.js");
+    const [e1,e2,e3,e4,a1,a2]=await Promise.all([
+      createWorker("eng"),createWorker("eng"),createWorker("eng"),createWorker("eng"),
+      createWorker("ara+eng"),createWorker("ara+eng"),
+    ]);
+    return{eng:[e1,e2,e3,e4] as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
+  })();
+  return fastLanePoolPromise;
 }
 /** Run jobs over the eng workers, one in flight per worker. */
 async function runOnPool<T>(workers:PooledWorker[],jobs:Array<(worker:PooledWorker)=>Promise<T>>):Promise<T[]>{
@@ -1777,15 +1794,39 @@ async function readAuthorityHeaderBand(upright:Buffer,worker:PooledWorker):Promi
   return bestText;
 }
 
+/* Short-lived result cache: keeps no uploaded bytes, only the parsed result.
+   Re-opening the same scan during review is therefore effectively instant. */
+const OCR_RESULT_TTL_MS=10*60*1000;
+const OCR_RESULT_CACHE_MAX=12;
+const ocrResultCache=new Map<string,{at:number;value:OcrResult}>();
+async function documentFingerprint(input:Buffer){
+  const {createHash}=await import("node:crypto");
+  return createHash("sha256").update(input).digest("hex");
+}
+function cachedOcr(key:string){
+  const hit=ocrResultCache.get(key);
+  if(!hit||Date.now()-hit.at>OCR_RESULT_TTL_MS){if(hit)ocrResultCache.delete(key);return null;}
+  ocrResultCache.delete(key);ocrResultCache.set(key,hit);
+  return structuredClone(hit.value);
+}
+function rememberOcr(key:string,value:OcrResult){
+  ocrResultCache.set(key,{at:Date.now(),value:structuredClone(value)});
+  while(ocrResultCache.size>OCR_RESULT_CACHE_MAX)ocrResultCache.delete(ocrResultCache.keys().next().value!);
+}
+
 /**
  * OCR is deliberately server-side: the PDF import and the public survey share
- * one implementation, and no uploaded document is kept after it is read.
+ * one implementation. Uploaded bytes are never retained; only a short-lived
+ * parsed-result cache is kept to make repeat review of the same scan instant.
  */
 export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgress):Promise<OcrResult>{
+  const fingerprint=await documentFingerprint(input);
+  const cacheHit=cachedOcr(fingerprint);
+  if(cacheHit){onProgress?.({phase:"read",page:cacheHit.pageCount,pages:cacheHit.pageCount,message:"تم استرجاع القراءة المحفوظة"});return cacheHit;}
   const looksLikePdf=/pdf/i.test(mime)||input.subarray(0,4).toString("latin1")==="%PDF";
   if(looksLikePdf){
     const embedded=await pdfTextLayer(input,onProgress);
-    if(embedded)return embedded;
+    if(embedded){rememberOcr(fingerprint,embedded);return embedded;}
   }
   /* One render. The old flow paid pdfjs twice — a probe pass and a full pass —
      when a probe is only a downscale of the full page it already had. */
@@ -1847,24 +1888,21 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   const texts:string[]=new Array(images.length).fill("");
   const scores:number[]=new Array(images.length).fill(0);
 
-  /* Pages run one after another, but INSIDE each page the strips fan out over
-     the pool — and the full-page recognition, the single most expensive call
-     in the old pipeline, is skipped entirely whenever the grid succeeds. The
-     header strip (the top of the page) is all the prose the caller still
-     needs: the term line for the mismatch warning, and a text sample for the
-     legibility verdict. */
+  /* FAST OCR LANES
+     ----------------
+     Page work is parallel only across completely independent worker pools.
+     This preserves the safety property that fixed the historical parameter
+     bleed, while allowing a four-page scan to use two CPU lanes. Each lane is
+     serial internally; strip/cell jobs still fan out over that lane's workers.
+     One-page scans keep the old path and allocate no secondary workers. */
   let pagesDone=0;
-  /* Do not run whole pages against the same Tesseract workers concurrently.
-     The previous Promise.all made three pages race through the same worker
-     objects and their setParameters calls, which both slowed recognition and
-     made Arabic/numeric settings bleed between pages. Strips still fan out
-     across the worker pool inside each page; pages themselves are serialized. */
-  for(let index=0;index<images.length;index++){
+  const secondaryPool=images.length>1?await getFastLaneWorkerPool():null;
+  const processPage=async(index:number,lanePool:OcrWorkerPool)=>{
     const pageImage=images[index];
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
-    try{gridRows=await readGrid(upright,pool);}catch{/* an unreadable grid falls back */}
+    try{gridRows=await readGrid(upright,lanePool);}catch{/* an unreadable grid falls back */}
     /* Scanned PDFs are often saved with a wrong orientation flag or a camera
        rotation that the first-page probe cannot infer reliably. Do not give up
        after one guess: only when the chosen turn fails, try the two remaining
@@ -1878,7 +1916,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         if(tried.has(turn))continue;
         try{
           const candidate=await deskew(await rotateImage(pageImage,turn));
-          const candidateRows=await readGrid(candidate,pool);
+          const candidateRows=await readGrid(candidate,lanePool);
           const strength=(candidateRows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           const bestStrength=(best?.rows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows,turn};
@@ -1894,7 +1932,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
            preflight header is incomplete, however, recover the header from this
            already-upright 2800px page before returning recognition metadata. */
         const needsHeaderRescue=!cachedHeader?.term||!cachedHeader?.branch||!cachedHeader?.department;
-        const rescued=needsHeaderRescue?await readAuthorityHeaderBand(upright,pool.ara):"";
+        const rescued=needsHeaderRescue?await readAuthorityHeaderBand(upright,lanePool.ara):"";
         texts[index]=[cachedText,rescued].filter(Boolean).join("\n");
       }else texts[index]="";
       const filled=gridRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
@@ -1903,8 +1941,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:gridRows.length,extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
     }else{
       const grid=await spreadColumns(upright);
-      await pool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
-      const result:any=await pool.ara.recognize(grid.image,{},{text:true,blocks:true});
+      await lanePool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
+      const result:any=await lanePool.ara.recognize(grid.image,{},{text:true,blocks:true});
       const surface=result?.data||{};
       texts[index]=String(surface.text||"");
       scores[index]=Number(surface.confidence||0);
@@ -1913,7 +1951,11 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     }
     pagesDone++;
     onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
-  }
+  
+  };
+  const laneA=async()=>{for(let index=0;index<images.length;index+=2)await processPage(index,pool);};
+  const laneB=async()=>{if(!secondaryPool)return;for(let index=1;index<images.length;index+=2)await processPage(index,secondaryPool);};
+  await Promise.all([laneA(),laneB()]);
 
   const text=texts.join("\n\n--- PAGE ---\n\n");
   const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));
@@ -1932,7 +1974,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       :{...proseLegibility,readable:false,reason:pageDiagnostics.find(page=>page.suspicious)?.reason||proseLegibility.reason||"استخراج الجدول غير مكتمل ويحتاج إلى ملف أوضح"})
     :proseLegibility;
   const header=parseAuthorityHeaderText(text);
-  return{
+  const finalResult:OcrResult={
     pages:pages.map(page=>page||{rows:[]}),
     text,
     pageCount:images.length,
@@ -1945,6 +1987,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     pageDiagnostics,
     suspiciousExtraction,
   };
+  rememberOcr(fingerprint,finalResult);
+  return finalResult;
 }
 
 const repairClockDigits=(value:string)=>value.replace(/[Oo°QDﻩ]/g,"0").replace(/[¢()\[\]{}|!lI]/g,"0");

@@ -4067,3 +4067,23 @@ button.twin-delta{width:100%}
 .intel-reason-course-name{font-weight:350!important;color:color-mix(in srgb,var(--muted) 88%,transparent)!important;font-size:9px!important;line-height:1.35!important}
 .import-review-jump{border:0;background:transparent;color:var(--danger,#a33);font:inherit;font-size:var(--t-xs);cursor:pointer;text-decoration:underline;text-underline-offset:3px;margin-inline:auto}
 .import-review-jump:hover{color:var(--foreground)}
+
+/* Import confidence palette — quiet, semantic and deliberately low-saturation.
+   Green = registry-confirmed inference; amber = review; rose = genuinely missing. */
+.import-preview-table td.import-cell-derived{
+  background:color-mix(in srgb,var(--success,#3f7f67) 8%,var(--surface));
+  box-shadow:inset 3px 0 0 color-mix(in srgb,var(--success,#3f7f67) 48%,transparent);
+}
+.import-preview-table td.import-cell-missing{
+  background:color-mix(in srgb,var(--danger,#a2402f) 8%,var(--surface));
+  box-shadow:inset 3px 0 0 color-mix(in srgb,var(--danger,#a2402f) 48%,transparent);
+}
+.transfer-counts .ready{
+  border-color:color-mix(in srgb,var(--success,#3f7f67) 28%,var(--line));
+  background:color-mix(in srgb,var(--success,#3f7f67) 8%,var(--surface));
+}
+.transfer-counts .ready b{color:var(--success,#3f7f67)}
+.transfer-counts .warn{
+  border-color:color-mix(in srgb,var(--warning,#a8792a) 28%,var(--line));
+  background:color-mix(in srgb,var(--warning,#a8792a) 8%,var(--surface));
+}
