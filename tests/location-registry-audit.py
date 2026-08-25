@@ -98,7 +98,7 @@ ok('45 registry ordering is natural everywhere', 'compareLocationCodes' in loc a
 ok('46 admin department filter requires an actual department room', 'hasDepartmentRoom' in admin and 'room.sectionIds.includes(sectionFilter)' in admin)
 ok('47 admin refresh is automatic and duplicate buttons removed', 'visibilitychange' in admin and '<RefreshCw' not in admin and 'setWorkspaceTab("migration");void previewMigration()' not in admin)
 ok('48 empty review and pending tabs removed', 'workspaceTab==="review"' not in admin and 'workspaceTab==="pending"' not in admin)
-ok('49 historical migration uses smart safe recovery', 'RECOVERED_FROM_UNIQUE_ROOM_FINGERPRINT' in engine and 'HISTORICAL_STRONG_PROBABLE_ROOM' in engine and 'resolveStrongHistoricalProbableRoom' in engine)
+ok('49 historical migration uses smart safe recovery without promoting PROBABLE to VERIFIED', 'RECOVERED_FROM_UNIQUE_ROOM_FINGERPRINT' in engine and 'HISTORICAL_STRONG_PROBABLE_REVIEW' in engine and 'resolveStrongHistoricalProbableRoom' in engine and 'HISTORICAL_STRONG_PROBABLE_ROOM' not in engine)
 ok('50 invalid historical garbage is classified explicitly', 'CANCELLED' in loc and 'Pure punctuation/garbage' in loc and 'Placeholder تاريخي' in admin)
 
 
@@ -110,7 +110,7 @@ ok('53 section selectors are Arabic-natural sorted', 'sortByName(data.sections.f
 
 ok('54 import publish is disabled while any issue remains', 'importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0)' in intel and 'disabled={!importReady || busy}' in intel)
 ok('55 empty query hides print and report actions', 'results.length && !pending ? <div className="query-canvas-actions">' in reports)
-ok('56 course selector cascades through historical canonical location', 'rowLocation = useCallback' in reports and 'rowMatchesBuilding(row, filters.building)' in reports and 'rowMatchesRoom(row, filters.hall)' in reports)
+ok('56 query facets cascade through the actual intersected dataset', 'rowLocation = useCallback' in reports and 'rowsForFacet = useCallback' in reports and 'rowsForFacet("course")' in reports and 'rowsForFacet("instructor")' in reports and 'rowsForFacet("building")' in reports and 'rowsForFacet("room")' in reports)
 ok('57 late alert shows thin course name under course code', 'subtitle: courseName || undefined' in intel and 'intel-reason-course-name' in intel)
 ok('58 demand arithmetic values are centered under labels', 'justify-items:center' in (ROOT/'src/styles/06-intelligence.css').read_text())
 courses_src=(ROOT/'src/components/Courses.tsx').read_text()
@@ -183,9 +183,16 @@ ok('98 authority location grammar has one central resolver', 'export function re
 ok('99 import evidence covers all seven canonical fields', all(key in server for key in ['course:{raw:', 'section:{raw:', 'days:{raw:', 'time:{raw:', 'instructor:{raw:', 'building:{raw:', 'room:{raw:']))
 ok('100 provenance survives preview and carries source/method/score', 'score?: number; source?: string; method?: string; derived?: boolean' in preview and 'evidenceTitle' in preview)
 ok('101 safely-derived cells use a calm non-danger preview state', 'import-cell-derived' in preview and 'td.import-cell-derived' in (ROOT/'src/styles/06-intelligence.css').read_text())
-ok('102 PDF preview exposes quiet ready/review counts instead of a large blocker banner', 'pdfReadinessSummary' in transfer and '>جاهز</span>' in transfer and '>للمراجعة</span>' in transfer)
+ok('102 PDF preview exposes quiet ready/review counts instead of a large blocker banner', 'pdfReadinessSummary' in transfer and '<small>جاهز</small>' in transfer and '<small>للمراجعة</small>' in transfer and 'import-color-key' in transfer)
 ok('103 golden Authority fixture and regression guard are wired into npm test', (ROOT/'tests/fixtures/authority-import-golden.json').exists() and (ROOT/'tests/pdf-import-golden.ts').exists() and 'tsx tests/pdf-import-regression.ts && tsx tests/pdf-import-golden.ts' in (ROOT/'package.json').read_text())
 ok('104 golden baseline documents no-regression change protocol', 'Existing golden fixtures must remain unchanged' in (ROOT/'docs/PDF_IMPORT_GOLDEN_BASELINE.md').read_text() and 'Never weaken a validator' in (ROOT/'docs/PDF_IMPORT_GOLDEN_BASELINE.md').read_text())
 ok('105 instructor resolver uses course history before department before global proof', doc_ocr.index('const courseHit=') < doc_ocr.index('const preferredHit=') < doc_ocr.index('const globalHit='))
 ok('106 seat/capacity numerics cannot enter contextual building shorthand', 'Never send arbitrary six-digit numeric seat/capacity strings' in location_registry and '/^(?:0*\\d{1,3}|[A-Z]0*\\d{1,3})$/' in location_registry)
+
+ok('P0 probable room never becomes verified from usage alone', 'HISTORICAL_STRONG_PROBABLE_REVIEW' in engine and 'locationStatus:"LOCATION_REVIEW_REQUIRED"' in engine)
+ok('P1 room college metadata follows canonical target building', 'roomCollegeIds=targetBuilding.collegeIds.length?[...targetBuilding.collegeIds]' in server and 'لا يمكن نقل/ربط القاعة بكلية لا يتبع لها المبنى الهدف' in server)
+ok('P1 shared identity derives from section associations', 'shared:room.sectionIds.length>1' in engine and 'shared:room.sectionIds.length>1' in server)
+ok('P1 punctuation garbage is classified consistently', '*+=~!|:;,' in location_registry)
+ok('P1 query filters use dependent facet intersections', all(x in reports for x in ['rowsForFacet("course")','rowsForFacet("instructor")','rowsForFacet("building")','rowsForFacet("room")']))
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

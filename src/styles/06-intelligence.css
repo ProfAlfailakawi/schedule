@@ -4091,3 +4091,23 @@ button.twin-delta{width:100%}
 /* Import identity micro-badges: informative, never visually louder than the name. */
 .import-instructor-name{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 .import-visiting-badge{display:inline-flex;align-items:center;min-height:18px;padding:0 6px;border-radius:999px;border:1px solid color-mix(in srgb,var(--brass) 28%,var(--line));background:color-mix(in srgb,var(--brass) 7%,var(--surface));color:color-mix(in srgb,var(--brass) 78%,var(--ink));font-size:9px;font-weight:750;line-height:1}
+
+
+/* Import summary: compact visual hierarchy, not four unrelated pills. */
+.import-summary-cards{display:grid!important;grid-template-columns:repeat(4,minmax(94px,1fr));gap:10px!important;margin-block:12px 6px}
+.import-summary-cards>span{display:grid!important;grid-template-columns:auto 1fr;align-items:center;column-gap:8px;min-height:62px;padding:9px 12px!important;border:1px solid var(--line);border-radius:18px!important;background:var(--surface);box-shadow:0 8px 22px color-mix(in srgb,var(--ink) 5%,transparent)}
+.import-summary-cards>span b{grid-row:1 / span 2;font-size:28px!important;font-weight:760!important;line-height:1;font-variant-numeric:tabular-nums}
+.import-summary-cards>span small{font-size:11px;color:var(--muted);font-weight:650;white-space:nowrap}
+.import-summary-cards .understood b{color:var(--accent,#236f61)}
+.import-summary-cards .pages b{color:var(--ink)}
+.import-summary-cards .ready{border-color:color-mix(in srgb,var(--success,#3f7f67) 26%,var(--line));background:color-mix(in srgb,var(--success,#3f7f67) 6%,var(--surface))}
+.import-summary-cards .warn{border-color:color-mix(in srgb,var(--warning,#a8792a) 26%,var(--line));background:color-mix(in srgb,var(--warning,#a8792a) 6%,var(--surface))}
+.import-color-key{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:4px 2px 14px;color:var(--muted);font-size:10px}
+.import-color-key span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+.import-color-key i{width:8px;height:8px;border-radius:999px;border:1px solid color-mix(in srgb,currentColor 24%,var(--line))}
+.import-color-key .confirmed i{background:var(--surface);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--ink) 16%,transparent)}
+.import-color-key .derived i{background:color-mix(in srgb,var(--success,#3f7f67) 34%,white)}
+.import-color-key .review i{background:color-mix(in srgb,var(--warning,#a8792a) 38%,white)}
+.import-color-key .missing i{background:color-mix(in srgb,var(--danger,#a2402f) 36%,white)}
+.import-visiting-badge{padding-inline:7px!important;background:color-mix(in srgb,var(--brass,#a8792a) 10%,var(--surface))!important;border-color:color-mix(in srgb,var(--brass,#a8792a) 32%,var(--line))!important;letter-spacing:0!important}
+@media(max-width:720px){.import-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.import-summary-cards>span{min-height:56px}.import-summary-cards>span b{font-size:24px!important}}

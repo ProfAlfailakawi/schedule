@@ -19,7 +19,7 @@ export const isInvalidLocationToken = (value: unknown): boolean => {
   if(/^(CANCEL|CANCELED|CANCELLED|CANCELATION|CANCELLATION)$/.test(token))return true;
   if(["ملغي","ملغى","ملغيه","ملغية"].includes(token))return true;
   // Pure punctuation/garbage produced by historical placeholders or OCR is not a building/room.
-  return /^[#?._\/\\-]+$/.test(token);
+  return /^[#?._\/\\*+=~!|:;,-]+$/.test(token);
 };
 
 export const canonicalBuildingShape = (value: unknown): string | null => {

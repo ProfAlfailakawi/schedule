@@ -6,7 +6,9 @@ import { PENDING_ROOM, canonicalRoomShape, isInvalidLocationToken, normalizeLoca
 export const LOCATION_MIGRATION_VERSION = `${String(LOCATION_REGISTRY_SEED.version)}-smart3`;
 
 export function seedRegistry(): { buildings: MasterBuilding[]; rooms: MasterRoom[]; reviewCases: LocationReviewCase[] } {
-  return JSON.parse(JSON.stringify({buildings:LOCATION_REGISTRY_SEED.buildings,rooms:LOCATION_REGISTRY_SEED.rooms,reviewCases:LOCATION_REGISTRY_SEED.reviewCases}));
+  const seeded=JSON.parse(JSON.stringify({buildings:LOCATION_REGISTRY_SEED.buildings,rooms:LOCATION_REGISTRY_SEED.rooms,reviewCases:LOCATION_REGISTRY_SEED.reviewCases}));
+  seeded.rooms=seeded.rooms.map((room:MasterRoom)=>({...room,shared:room.sectionIds.length>1,sharedConfidence:room.sectionIds.length>1?"CONFIRMED":room.sharedConfidence}));
+  return seeded;
 }
 
 export function mergeRegistryWithSeed(existing: LocationRegistry): LocationRegistry {
@@ -15,7 +17,7 @@ export function mergeRegistryWithSeed(existing: LocationRegistry): LocationRegis
   for(const row of seed.buildings) if(!buildings.has(row.id)) buildings.set(row.id,row);
   const rooms=new Map(existing.rooms.map(x=>[x.id,x]));
   for(const row of seed.rooms) if(!rooms.has(row.id)) rooms.set(row.id,row);
-  return {buildings:[...buildings.values()],rooms:[...rooms.values()]};
+  return {buildings:[...buildings.values()],rooms:[...rooms.values()].map(room=>({...room,shared:room.sectionIds.length>1,sharedConfidence:room.sectionIds.length>1?"CONFIRMED":room.sharedConfidence}))};
 }
 
 export type PreflightIssue={type:string;severity:"high"|"warning";message:string};
@@ -91,7 +93,7 @@ export function resolveHistoricalLocation(row: Partial<FSchedule>, registry: Loc
   const r=resolveRoom(registry,rraw,b.value.id,{collegeId,sectionId});
   if(r.status!=="CONFIRMED"||!r.value){
     const strongProbable=resolveStrongHistoricalProbableRoom(registry,rraw,b.value.id,sectionId,collegeId);
-    if(strongProbable)return {patch:{buildingId:b.value.id,roomId:strongProbable.id,AdRoomCode:b.value.officialCode,AdRoomHall:strongProbable.canonicalCode,locationStatus:"VERIFIED",sourceBuildingText:braw,sourceRoomText:rraw,locationResolvedAt:new Date().toISOString()},confidence:"CONFIRMED",rule:"HISTORICAL_STRONG_PROBABLE_ROOM"};
+    if(strongProbable)return {patch:{buildingId:b.value.id,AdRoomCode:b.value.officialCode,locationStatus:"LOCATION_REVIEW_REQUIRED",sourceBuildingText:braw,sourceRoomText:rraw},confidence:"REVIEW_REQUIRED",rule:"HISTORICAL_STRONG_PROBABLE_REVIEW"};
     return {patch:{buildingId:b.value.id,AdRoomCode:b.value.officialCode,locationStatus:"LOCATION_REVIEW_REQUIRED",sourceBuildingText:braw,sourceRoomText:rraw},confidence:r.status,rule:"ROOM_CONTEXT_REVIEW"};
   }
   return {patch:{buildingId:b.value.id,roomId:r.value.id,AdRoomCode:b.value.officialCode,AdRoomHall:r.value.canonicalCode,locationStatus:"VERIFIED",sourceBuildingText:braw,sourceRoomText:rraw,locationResolvedAt:new Date().toISOString()},confidence:"CONFIRMED",rule:"HISTORICAL_CONTEXT_CONFIRMED"};
@@ -113,7 +115,7 @@ export function buildMigrationPlan(rows: readonly FSchedule[], registry: Locatio
   const ruleCounts=logs.reduce<Record<string,number>>((acc,log)=>{acc[log.rule]=(acc[log.rule]||0)+1;return acc;},{});
   const reviewReasons={building:ruleCounts.BUILDING_CONTEXT_REVIEW||0,room:ruleCounts.ROOM_CONTEXT_REVIEW||0};
   const invalidReasons={buildingPlaceholder:ruleCounts.INVALID_BUILDING_PLACEHOLDER||0,roomPlaceholder:ruleCounts.INVALID_ROOM_PLACEHOLDER||0};
-  const smartRecovered=(ruleCounts.RECOVERED_FROM_UNIQUE_ROOM_FINGERPRINT||0)+(ruleCounts.HISTORICAL_STRONG_PROBABLE_ROOM||0);
+  const smartRecovered=(ruleCounts.RECOVERED_FROM_UNIQUE_ROOM_FINGERPRINT||0);
   return {migrationId,version:LOCATION_MIGRATION_VERSION,stats,patches,logs,details:{ruleCounts,reviewReasons,invalidReasons,smartRecovered}};
 }
 

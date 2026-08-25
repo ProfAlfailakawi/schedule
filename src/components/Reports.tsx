@@ -567,56 +567,64 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   }, [locationRegistry]);
   const rowMatchesBuilding = useCallback((row: FSchedule, buildingId: string) => !buildingId || rowLocation(row).building?.id === buildingId, [rowLocation]);
   const rowMatchesRoom = useCallback((row: FSchedule, roomId: string) => !roomId || rowLocation(row).room?.id === roomId, [rowLocation]);
-  const courseOptions = useMemo(() => {
-    // Cascading query logic: once a room/building is chosen, a course selector
-    // must describe that physical context, not the whole department catalogue.
-    const contextualRows = all.filter(row =>
-      (!filters.collegeId || Number(row.AdCollegeId) === Number(filters.collegeId)) &&
-      (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) &&
-      (!filters.termId || Number(row.AdTermId) === Number(filters.termId)) &&
-      rowMatchesBuilding(row, filters.building) &&
-      rowMatchesRoom(row, filters.hall)
-    );
-    const allowedIds = (filters.building || filters.hall)
-      ? new Set(contextualRows.map(row => Number(row.AdCourseId)).filter(Boolean))
-      : null;
-    const source = courses.filter(c =>
-      (!filters.sectionId || c.AdSectionId === filters.sectionId) &&
-      (!allowedIds || allowedIds.has(Number(c.AdCourseId)) || Number(c.AdCourseId) === Number(filters.courseId))
-    );
-    return dedupeVisibleOptions(
-      sortByName(source, (c: AdCourse) => c.CourseName),
-      row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
-    );
-  }, [all, courses, filters.collegeId, filters.sectionId, filters.termId, filters.building, filters.hall, filters.courseId, courseIdentityKey, rowMatchesBuilding, rowMatchesRoom]);
-  const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
-    terms,
-    row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
-  ), [terms, filters.termId]);
-  const instructorOptions = useMemo(() => dedupeVisibleOptions<AdInstructor>(
-    instructors,
-    row => optionKey(row.AdInstructorCivil) || optionKey(row.AdInstructorName), filters.instructorId, row => Number(row.AdInstructorId),
-  ), [instructors, filters.instructorId]);
   const instructorById = useMemo(() => new Map(instructors.map(x => [x.AdInstructorId, x])), [instructors]);
   const courseById = useMemo(() => new Map(courses.map(x => [x.AdCourseId, x])), [courses]);
   const collegeById = useMemo(() => new Map(colleges.map(x => [x.AdCollegeId, x])), [colleges]);
   const sectionById = useMemo(() => new Map(sections.map(x => [x.AdSectionId, x])), [sections]);
   const termById = useMemo(() => new Map(terms.map(x => [x.AdTermId, x])), [terms]);
+  const rowsForFacet = useCallback((omit:"course"|"instructor"|"building"|"room") => {
+    let rows=[...all];
+    if(filters.collegeId)rows=rows.filter(r=>Number(r.AdCollegeId)===Number(filters.collegeId));
+    if(filters.sectionId)rows=rows.filter(r=>Number(r.AdSectionId)===Number(filters.sectionId));
+    if(filters.termId)rows=rows.filter(r=>Number(r.AdTermId)===Number(filters.termId));
+    if(omit!=="instructor"&&filters.instructorId)rows=rows.filter(r=>Number(r.AdInstructorId)===Number(filters.instructorId));
+    if(omit!=="course"&&filters.courseId)rows=rows.filter(r=>Number(r.AdCourseId)===Number(filters.courseId));
+    if(omit!=="course"&&filters.courseCode.trim())rows=rows.filter(r=>(courseById.get(r.AdCourseId)?.CourseCode||"")===filters.courseCode.trim());
+    if(omit!=="building"&&filters.building)rows=rows.filter(r=>rowMatchesBuilding(r,filters.building));
+    if(omit!=="room"&&filters.hall)rows=rows.filter(r=>rowMatchesRoom(r,filters.hall));
+    if(filters.startTime&&filters.endTime)rows=rows.filter(r=>r.fstarttime<filters.endTime&&r.fendtime>filters.startTime);
+    const chosenDays=DAYS.filter(day=>filters[day.key]);
+    if(chosenDays.length)rows=rows.filter(r=>chosenDays.some(day=>Boolean((r as any)[day.flag])));
+    return rows;
+  },[all,filters,courseById,rowMatchesBuilding,rowMatchesRoom]);
+  const courseOptions = useMemo(() => {
+    // Cascading query logic: once a room/building is chosen, a course selector
+    // must describe that physical context, not the whole department catalogue.
+    const contextualRows = rowsForFacet("course");
+    const allowedIds = new Set(contextualRows.map(row => Number(row.AdCourseId)).filter(Boolean));
+    const source = courses.filter(c =>
+      (!filters.sectionId || c.AdSectionId === filters.sectionId) &&
+      (allowedIds.has(Number(c.AdCourseId)) || Number(c.AdCourseId) === Number(filters.courseId))
+    );
+    return dedupeVisibleOptions(
+      sortByName(source, (c: AdCourse) => c.CourseName),
+      row => courseIdentityKey(row), filters.courseId, row => Number(row.AdCourseId),
+    );
+  }, [courses, filters.sectionId, filters.building, filters.hall, filters.courseId, courseIdentityKey, rowsForFacet]);
+  const termOptions = useMemo(() => dedupeVisibleOptions<AdTerm>(
+    terms,
+    row => optionKey(row.AdTermName), filters.termId, row => Number(row.AdTermId),
+  ), [terms, filters.termId]);
+  const instructorOptions = useMemo(() => {
+    const allowed=new Set(rowsForFacet("instructor").map(row=>Number(row.AdInstructorId)).filter(Boolean));
+    const source=instructors.filter(person=>allowed.has(Number(person.AdInstructorId))||Number(person.AdInstructorId)===Number(filters.instructorId));
+    return dedupeVisibleOptions<AdInstructor>(source,row=>optionKey(row.AdInstructorCivil)||optionKey(row.AdInstructorName),filters.instructorId,row=>Number(row.AdInstructorId));
+  }, [instructors, filters.instructorId, rowsForFacet]);
   const departmentInstructorIds = useMemo(() => Array.from(new Set(all.filter(row => (!filters.sectionId || Number(row.AdSectionId) === Number(filters.sectionId)) && (!filters.termId || Number(row.AdTermId) === Number(filters.termId))).map(row => Number(row.AdInstructorId)).filter(Boolean))), [all, filters.sectionId, filters.termId]);
 
   const buildings = useMemo(() => {
     const ids = new Set<string>();
-    all.forEach(row => { const building=rowLocation(row).building; if(building?.active) ids.add(building.id); });
+    rowsForFacet("building").forEach(row => { const building=rowLocation(row).building; if(building?.active) ids.add(building.id); });
     if (filters.building) ids.add(filters.building);
     return locationRegistry.buildings.filter(item=>ids.has(item.id)).sort((a,b)=>byRoomPart(a.officialCode,b.officialCode));
-  }, [all, locationRegistry.buildings, filters.building, rowLocation]);
+  }, [locationRegistry.buildings, filters.building, rowLocation, rowsForFacet]);
   const halls = useMemo(() => {
     if(!filters.building)return [] as MasterRoom[];
     const ids = new Set<string>();
-    all.filter(row=>rowMatchesBuilding(row,filters.building)).forEach(row=>{const room=rowLocation(row).room;if(room?.active)ids.add(room.id);});
+    rowsForFacet("room").filter(row=>rowMatchesBuilding(row,filters.building)).forEach(row=>{const room=rowLocation(row).room;if(room?.active)ids.add(room.id);});
     if(filters.hall)ids.add(filters.hall);
     return locationRegistry.rooms.filter(room=>room.buildingId===filters.building&&ids.has(room.id)).sort((a,b)=>byRoomPart(a.canonicalCode,b.canonicalCode));
-  }, [all, locationRegistry.rooms, filters.building, filters.hall, rowLocation, rowMatchesBuilding]);
+  }, [locationRegistry.rooms, filters.building, filters.hall, rowLocation, rowMatchesBuilding, rowsForFacet]);
 
   /** One predicate serves every lens. Nothing is mode-specific any more. */
   const results = useMemo(() => {

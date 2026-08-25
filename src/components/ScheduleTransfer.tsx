@@ -78,7 +78,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [copySelected, setCopySelected] = useState<number[]>([]);
 
   React.useEffect(() => {
-    if (tab !== "visiting" || !collegeId || !sectionId || !termId) return;
+    if ((tab !== "visiting" && tab !== "import") || !collegeId || !sectionId || !termId) return;
     setRosterLoaded(false);
     const controller = new AbortController();
     const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
@@ -88,6 +88,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       fetch(`/api/department-delegates?${directoryQuery}`, { signal: controller.signal }).then(response => response.ok ? response.json() : { instructorIds: [], instructors: [] }),
     ]).then(([termData, directoryData]) => {
       setRoster(termData.instructorIds || []);
+      // Keep the delegate identities available on Import as well as Visiting.
+      // The import table already knows which ids belong to the current-term roster;
+      // it only needs the matching system person to render the tiny "منتدب" badge.
       setDirectoryIds(directoryData.instructorIds || []);
       setDirectoryPeople(sortByName(directoryData.instructors || [], (person: Instructor) => person.AdInstructorName));
       setRosterLoaded(true);
@@ -250,10 +253,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       if (start < 0 || end <= start) issues.add(`الصف ${n}: الوقت غير مكتمل أو غير صالح.`);
       if (!row.buildingId) issues.add(`الصف ${n}: المبنى الرسمي غير محدد.`);
       if (!row.roomId && row.locationStatus !== "PENDING_ROOM") issues.add(`الصف ${n}: القاعة غير محددة.`);
-      if (!Number(row.AdInstructorId)||!departmentIds.includes(Number(row.AdInstructorId))) issues.add(`الصف ${n}: أستاذ المقرر غير محدد أو غير مثبت ضمن القسم الحالي.`);
+      if (!Number(row.AdInstructorId)||(!departmentIds.includes(Number(row.AdInstructorId))&&!roster.includes(Number(row.AdInstructorId)))) issues.add(`الصف ${n}: أستاذ المقرر غير محدد أو غير مثبت ضمن القسم/منتدبي الفصل الحالي.`);
     });
     return [...issues];
-  }, [xlsxPreview, importKind, departmentIds]);
+  }, [xlsxPreview, importKind, departmentIds, roster]);
   const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
   const pdfReadinessSummary = useMemo(() => {
     if (importKind !== "authority-pdf" || !Array.isArray(xlsxPreview?.rows)) return null;
@@ -268,14 +271,14 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         /^\d{3}$/.test(String(row.SCode || "").trim()) && sectionNumber >= 501 &&
         hasDays(row) && start >= 0 && end > start &&
         row.buildingId && (row.roomId || row.locationStatus === "PENDING_ROOM") &&
-        Number(row.AdInstructorId) && departmentIds.includes(Number(row.AdInstructorId))
+        Number(row.AdInstructorId) && (departmentIds.includes(Number(row.AdInstructorId)) || roster.includes(Number(row.AdInstructorId)))
       );
     };
     const ready = rows.filter(rowReady).length;
     const review = Math.max(0, rows.length - ready);
     const derived = rows.reduce((sum, row) => sum + Object.values(row.importEvidence || {}).filter((proof: any) => proof?.confidence === "CONFIRMED" && proof?.derived).length, 0);
     return { ready, review, derived };
-  }, [importKind, xlsxPreview?.rows, departmentIds]);
+  }, [importKind, xlsxPreview?.rows, departmentIds, roster]);
 
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();
@@ -687,13 +690,14 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
               {xlsxPreview ? (
                 <div className="transfer-preview">
-                  <div className="transfer-counts">
-                    <span><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b>صفاً فُهم</span>
-                    {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>:null}
-                    {importKind==="authority-pdf"?<span><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b>صفحات PDF</span>:null}
-                    {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b>جاهز</span>:null}
-                    {importKind==="authority-pdf"&&pdfReadinessSummary?.review?<span className="warn"><b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b>للمراجعة</span>:null}
+                  <div className="transfer-counts import-summary-cards">
+                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفاً فُهم</small></span>
+                    {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>:null}
+                    {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفحات PDF</small></span>:null}
+                    {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز</small></span>:null}
+                    {importKind==="authority-pdf"&&pdfReadinessSummary?.review?<span className="warn"><b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b><small>للمراجعة</small></span>:null}
                   </div>
+                  {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="confirmed"><i/>مؤكد</span><span className="derived"><i/>مستنتج ومثبت</span><span className="review"><i/>للمراجعة</span><span className="missing"><i/>ناقص</span></div> : null}
                   {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
                     <>
                       {/* The whole table, red on what the scan could not read,
@@ -704,6 +708,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         instructors={instructors as any}
                         departmentIds={departmentIds}
                         visitingIds={roster}
+                        visitingPeople={directoryPeople as any}
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}

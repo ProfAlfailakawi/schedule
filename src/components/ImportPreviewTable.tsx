@@ -61,7 +61,7 @@ const timeOverlap = (a: ImportRow, b: ImportRow) => {
 const cleanRoom = (value: unknown) => String(value || "").trim().toLocaleUpperCase();
 
 export default function ImportPreviewTable({
-  rows, courses, instructors, departmentIds = [], visitingIds = [], departmentRooms = [],
+  rows, courses, instructors, departmentIds = [], visitingIds = [], visitingPeople = [], departmentRooms = [],
   collegeId = 0, sectionId = 0, termId = 0, onRows,
 }: {
   rows: ImportRow[];
@@ -69,6 +69,7 @@ export default function ImportPreviewTable({
   instructors: AdInstructor[];
   departmentIds?: number[];
   visitingIds?: Iterable<number>;
+  visitingPeople?: AdInstructor[];
   departmentRooms?: DepartmentRoom[];
   collegeId?: number;
   sectionId?: number;
@@ -85,7 +86,13 @@ export default function ImportPreviewTable({
   const pickerInstructors = useMemo(() => [...new Map(
     [...instructors, ...extraInstructors].map(person => [Number(person.AdInstructorId), person] as const),
   ).values()], [instructors, extraInstructors]);
-  const instructorById = useMemo(() => new Map(pickerInstructors.map(person => [Number(person.AdInstructorId), person])), [pickerInstructors]);
+  // Display lookup includes the department delegate directory so a current-term
+  // visiting instructor can show the badge even when that person is not part of
+  // the department's ordinary instructor picker. Picker behaviour is unchanged.
+  const displayInstructors = useMemo(() => [...new Map(
+    [...pickerInstructors, ...visitingPeople].map(person => [Number(person.AdInstructorId), person] as const),
+  ).values()], [pickerInstructors, visitingPeople]);
+  const instructorById = useMemo(() => new Map(displayInstructors.map(person => [Number(person.AdInstructorId), person])), [displayInstructors]);
   const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], value => Number(value)).filter(Boolean)), [visitingIds]);
 
   const normalizedRooms = useMemo(() => [...new Map(departmentRooms
