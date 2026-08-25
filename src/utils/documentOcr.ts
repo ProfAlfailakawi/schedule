@@ -57,7 +57,11 @@ let headerWorkerPromise:Promise<PooledWorker>|null=null;
 async function getHeaderWorker(){
   if(!headerWorkerPromise)headerWorkerPromise=(async()=>{
     const {createWorker}=await import("tesseract.js");
-    return await createWorker("ara+eng") as PooledWorker;
+    /* Header labels are Arabic; loading English beside Arabic measurably made
+       «الفصل الدراسي الأول» less stable on the real CamScanner fixture. Arabic
+       alone still recognizes Latin digits/codes, and the table has dedicated
+       English/numeric workers for location keys. */
+    return await createWorker("ara") as PooledWorker;
   })();
   return headerWorkerPromise;
 }
@@ -213,8 +217,8 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
       const rows=authorityBodyOnly(physicalRows);
       const pageStructuralRows=rows.filter(row=>{
         const ascii=toAscii(row.line).replace(/[Oo]/g,"0");
-        const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—]?\s*[0-2]?\d[0-5]\d\b/.test(ascii)
-          ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—]?\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
+        const hasTime=/\b[0-2]?\d[0-5]\d\s*[-–—~]\s*[0-2]?\d[0-5]\d\b/.test(ascii)
+          ||/\b(?:[01]?\d|2[0-3])[:.]?[0-5]\d\s*[-–—~]\s*(?:[01]?\d|2[0-3])[:.]?[0-5]\d\b/.test(ascii);
         const digitRuns=ascii.match(/\d+/g)||[];
         const hasTableKey=digitRuns.some(run=>run.length>=4)||/\b\d{3}[A-Za-z]\d{2}\b/.test(ascii)||/[ء-ي]{4,}/.test(row.line);
         return hasTime||(hasTableKey&&digitRuns.length>=3);
@@ -766,15 +770,22 @@ function findRules(bin:any){
 }
 
 const stripPatterns={
-  time:/^\d{3,4}\s*[-–—]?\s*\d{3,4}$/,
+  /* A timetable time cell MUST contain a real boundary between two four-digit
+     clock values. The optional-separator version could misclassify a merged
+     capacity strip such as 345045 as “345 / 045”, shifting Building/Room to
+     the wrong physical columns. A lost dash may still survive as whitespace. */
+  time:/^(?:[0-2]\d[0-5]\d\s*[-–—~]\s*[0-2]\d[0-5]\d|[0-2]\d[0-5]\d\s+[0-2]\d[0-5]\d)$/,
   code:/^\d{7}$/,
   refcode:/^\d{11,13}$/,
   reference:/^\d{4,8}$/,
-  scode:/^\d{1,4}$/,
-  /* Canonical alpha-site buildings are six characters (012B09/012F15/012J14).
-     Numeric-site colleges are six digits (051007 etc.). No 7th neighbour digit
-     is accepted here: column boundaries, not trimming, must solve bleed. */
-  building:/^(?:\d{3}[A-Z]\d{2}|\d{6})$/i,
+  /* Authority section identity is a 5xx series. Values 1/2/3 are hours/units,
+     never sections. Preserve the printed 5xx value exactly — gaps such as
+     508 → 510 are legitimate in real Authority exports and must not be filled. */
+  scode:/^5\d{2}$/,
+  /* Only approved numeric-site prefixes may form a six-digit building. This
+     prevents merged capacity cells such as 345045/520020 from looking like a
+     numeric building merely because they contain six digits. */
+  building:/^(?:\d{3}[A-Z]\d{2}|(?:0510|0520|0410|0420)\d{2})$/i,
   hall:/^[A-Z]\d{1,3}$/i,
   days:/^[1-5](?:[\s,\-–—./]*[1-5])*$/,
 };
@@ -874,21 +885,39 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
     return bestHits>=minimum?bestIndex:-1;
   };
   const taken=new Set<number>();
-  /* A final report page can contain one or two rows. Requiring two validator
-     hits made those legitimate tail pages disappear entirely. Geometry has
-     already proved the table, so one row is sufficient evidence here. */
+  /* A final report page can contain one or two legitimate rows. Requiring two
+     validator hits made those tail pages disappear. Geometry already proved the
+     table, so one row may establish a column on a short final page. */
   const minimumRows=Math.max(1,Math.floor(bands.length*0.15));
-  const timeIndex=claim(stripPatterns.time,minimumRows,taken);if(timeIndex>=0)taken.add(timeIndex);
 
-  /* SWRSCHA is a ruled report with a fixed physical block on the left:
-       instructor | days | activity | time | building | room | ...
-     Once TIME is proven, Building and Room are the two adjacent CELLS to its
-     right. They are never searched across the page and never borrow from each
-     other. This is the structural guard that prevents 012F15 becoming room
-     F15/F151 and prevents adjacent digits creating 012B091. */
+  /* TIME and BUILDING are a structural pair, not independent guesses. Earlier
+     code allowed an optional separator in TIME, so a merged capacity cell such
+     as 345045 could win the time claim and shift Building/Room onto the wrong
+     columns. First claim both strong signatures; when both exist they must be
+     adjacent exactly as the Authority layout defines. If TIME is weak but a
+     canonical-looking building column is strong, infer only the neighbouring
+     TIME cell and let its per-cell validator decide every value later. */
+  const timeClaim=claim(stripPatterns.time,minimumRows,new Set<number>());
+  const buildingClaim=claim(stripPatterns.building,minimumRows,new Set<number>());
+  let timeIndex=timeClaim;
+  if(timeIndex<0&&buildingClaim>0)timeIndex=buildingClaim-1;
+
   const geometryHits=(index:number,pattern:RegExp)=>index>=0&&index<columnBands.length
     ? Math.max(validatorHits(numericGrey[index].cells,pattern),validatorHits(numericBin[index].cells,pattern))
     : 0;
+  if(timeClaim>=0&&buildingClaim>=0&&buildingClaim!==timeClaim+1){
+    const pairFromBuilding=buildingClaim>0&&geometryHits(buildingClaim-1,stripPatterns.time)>=minimumRows;
+    const pairFromTime=timeClaim+1<columnBands.length&&geometryHits(timeClaim+1,stripPatterns.building)>=minimumRows;
+    if(pairFromBuilding&&!pairFromTime)timeIndex=buildingClaim-1;
+    else if(!pairFromTime)return null;
+  }
+  if(timeIndex>=0)taken.add(timeIndex);
+
+  /* SWRSCHA is a ruled report with a fixed physical block on the left:
+       instructor | days | activity | time | building | room | ...
+     Once TIME is structurally anchored, Building and Room are the two adjacent
+     CELLS to its right. They are never searched across the page and never borrow
+     from one another. */
   const geometricBuilding=timeIndex>=0&&timeIndex+1<columnBands.length?timeIndex+1:-1;
   const geometricHall=timeIndex>=0&&timeIndex+2<columnBands.length?timeIndex+2:-1;
   const buildingIndex=geometricBuilding>=0?geometricBuilding:-1;if(buildingIndex>=0)taken.add(buildingIndex);
@@ -1031,7 +1060,13 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   else if(refcodeSpan)await rescueSpan(refcodeSpan,stripPatterns.refcode,KEY_DIGITS);
   else if(refcodeIndex>=0)await rescueIndex(refcodeIndex,stripPatterns.refcode,KEY_DIGITS);
   else await rescueIndex(codeIndex,stripPatterns.code,KEY_DIGITS);
-  await rescueIndex(scodeIndex,/^\d{3,4}$/,KEY_DIGITS);
+  await rescueIndex(scodeIndex,stripPatterns.scode,KEY_DIGITS);
+  /* Location rescue is cell-local and pattern-gated. It may recover a faint B/F/J
+     or room letter from the SAME proven physical cell, but cannot borrow a token
+     from capacity/time/adjacent columns. */
+  const LOCATION_KEY="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  await rescueIndex(buildingIndex,stripPatterns.building,LOCATION_KEY);
+  await rescueIndex(hallIndex,stripPatterns.hall,LOCATION_KEY);
 
   /* Pass 2 — Arabic. Instructor names are mandatory because the system must
      display every doctor after upload. Course names are only an OCR fallback:
@@ -1208,10 +1243,11 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
  */
 function readHeaderTerm(text:string):HeaderTerm|undefined{
   const ascii=toAscii(text);
-  const match=ascii.match(/الفصل\s*الدراسي\s*(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*-\s*(\d{4})/)
-    /* The header strip often garbles «الدراسي» while the season word and the
-       year pair survive; they are unambiguous inside a header line. */
-    ||ascii.match(/(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*-\s*(\d{4})/);
+  const match=ascii.match(/الفصل\s*الدراسي\s*(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*(?:[-–—/]|\s)\s*(\d{4})/)
+    /* The header strip often garbles «الدراسي» or the tiny dash while the
+       season and two adjacent academic years survive. Inside the HEADER band
+       that pair is explicit enough to compare before body parsing. */
+    ||ascii.match(/(الاول|الأول|الثاني|الثانى|الصيفي|الصيفى)\s*(\d{4})\s*(?:[-–—/]|\s)\s*(\d{4})/);
   if(!match)return undefined;
   const season=/الاول|الأول/.test(match[1])?"first":/الثاني|الثانى/.test(match[1])?"second":"summer";
   const a=Number(match[2]),b=Number(match[3]);
@@ -1233,11 +1269,11 @@ function readHeaderCollege(text:string):HeaderCollege|undefined{
   };
   for(const rawLine of ascii.split("\n")){
     const line=rawLine.replace(/\s+/g," ").trim();
-    const match=line.match(/الكلية\s*[:：-]?\s*(\d{1,4})\s*(.*)$/);
+    const match=line.match(/الكل(?:ية|يه)\s*[:：-]?\s*(\d{1,4})\s*(.*)$/);
     if(match)return build(match[1],match[2]);
   }
   const flat=ascii.replace(/\s+/g," ").trim();
-  const flatMatch=flat.match(/الكلية\s*[:：-]?\s*(\d{1,4})\s*([^]{0,180}?)(?=\s+(?:القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
+  const flatMatch=flat.match(/الكل(?:ية|يه)\s*[:：-]?\s*(\d{1,4})\s*([^]{0,180}?)(?=\s+(?:القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
   if(flatMatch)return build(flatMatch[1],flatMatch[2]);
   return undefined;
 }
@@ -1269,6 +1305,20 @@ function readHeaderBranch(text:string):HeaderBranch|undefined{
      explicit document evidence, not an inferred campus. */
   const structural=flat.match(/(?:^|\s)(\d{3,4})\s+((?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)[ء-ي\s-]{3,100}?(?:بنات|بنين|الجهراء|الفحيحيل))(?=\s|$)/);
   return structural?build(structural[1],structural[2]):undefined;
+}
+
+/** The branch line is redundant evidence for its parent college. If the tiny
+ * «الكلية» label disappears in a scan but an explicit branch such as
+ * «012 كلية التربية الأساسية بنات» survives, the first two branch digits and
+ * the printed college family prove the parent college without reading the table. */
+function collegeFromBranch(branch?:HeaderBranch):HeaderCollege|undefined{
+  if(!branch)return undefined;
+  const digits=toAscii(String(branch.code||"")).replace(/\D/g,"");
+  if(digits.length<2)return undefined;
+  const name=String(branch.name||"")
+    .replace(/(?:بنات|بنين|الجهراء|الفحيحيل)/g," ")
+    .replace(/\s+/g," ").replace(/[\s-]+$/g,"").trim();
+  return{code:digits.slice(0,2),name,label:[digits.slice(0,2),name].filter(Boolean).join(" ")};
 }
 
 /** Department printed in the document header, e.g. «القسم: 0101 التربية الإسلامية». */
@@ -1320,10 +1370,12 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     const page=await pdf.getPage(1);
     const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
     const text=(content?.items||[]).map((item:any)=>String(item?.str||"").normalize("NFKC")).filter(Boolean).join(" ");
-    const embedded:AuthorityPdfHeader={term:readHeaderTerm(text),college:readHeaderCollege(text),branch:readHeaderBranch(text),department:readHeaderDepartment(text),source:"text"};
+    const embeddedBranch=readHeaderBranch(text);
+    const embedded:AuthorityPdfHeader={term:readHeaderTerm(text),college:readHeaderCollege(text)||collegeFromBranch(embeddedBranch),branch:embeddedBranch,department:readHeaderDepartment(text),source:"text"};
     /* A hybrid/image PDF may contain a tiny, stale or partial OCR text layer.
        Partial evidence is useful, but it is NOT enough to skip the scan header.
-       Only a complete four-authority header can finish preflight from text. */
+       A parent college may be proven from the explicit branch line; body rows
+       are still never read during this preflight. */
     if(embedded.term&&embedded.college&&embedded.branch&&embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
 
     const probe=await renderPdfFirstPage(input,PROBE_LONG_EDGE);
@@ -1349,17 +1401,21 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
       const upright=await rotateImage(probe,candidate.turn as -1|0|1);
       const image=await lib.loadImage(upright);
       const headerTop=Math.round(image.height*0.01);
-      const headerHeight=Math.max(120,Math.round(image.height*0.24));
-      /* The probe is intentionally small for speed, but the printed department
-         line is fine. Upscaling only this narrow band made the real CamScanner
-         header deterministic while keeping preflight to a few seconds. */
+      /* Include the complete metadata block, not only its first line. 24% was
+         fast but clipped the department/branch cells on several phone scans and
+         made a valid upload look broken. 32% is still header-only at probe
+         resolution and remains far cheaper than reading one timetable row. */
+      const headerHeight=Math.max(140,Math.round(image.height*0.32));
+      /* The probe is intentionally small for speed; upscale only this header
+         band so the tiny Arabic labels survive CamScanner compression. */
       const headerScale=1.5;
       const crop=lib.createCanvas(Math.round(image.width*headerScale),Math.round(headerHeight*headerScale)),ctx=crop.getContext("2d");
       ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
       ctx.drawImage(image,0,headerTop,image.width,headerHeight,0,0,crop.width,crop.height);
       const result:any=await worker.recognize(crop.toBuffer("image/png")).catch(()=>null);
       const ocrText=String(result?.data?.text||"").normalize("NFKC");
-      const scanned:AuthorityPdfHeader={term:readHeaderTerm(ocrText),college:readHeaderCollege(ocrText),branch:readHeaderBranch(ocrText),department:readHeaderDepartment(ocrText),source:"scan"};
+      const scannedBranch=readHeaderBranch(ocrText);
+      const scanned:AuthorityPdfHeader={term:readHeaderTerm(ocrText),college:readHeaderCollege(ocrText)||collegeFromBranch(scannedBranch),branch:scannedBranch,department:readHeaderDepartment(ocrText),source:"scan"};
       const header:AuthorityPdfHeader={
         term:embedded.term||scanned.term,
         college:embedded.college||scanned.college,
@@ -1403,7 +1459,7 @@ function judgeLegibility(text:string,pages:number,confidence:number):Legibility{
  * OCR is deliberately server-side: the PDF import and the public survey share
  * one implementation, and no uploaded document is kept after it is read.
  */
-export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgress):Promise<OcrResult>{
+export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgress,options:{authorityTable?:boolean}={}):Promise<OcrResult>{
   const looksLikePdf=/pdf/i.test(mime)||input.subarray(0,4).toString("latin1")==="%PDF";
   if(looksLikePdf){
     const embedded=await pdfTextLayer(input,onProgress);
@@ -1516,6 +1572,15 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       scores[index]=Math.min(85,55+filled*2);
       const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.70);
       pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:gridRows.length,extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+    }else if(options.authorityTable){
+      /* Authority timetable safety mode is deliberately fail-fast. If the ruled
+         grid cannot be proven after bounded orientation rescue, DO NOT spend
+         another full-page OCR pass trying to reconstruct columns from text flow.
+         That old fallback was both slow and the source of Building/Room/Section
+         drift. The page is rejected immediately and the user gets a precise
+         page diagnostic instead of a plausible-looking corrupted table. */
+      texts[index]="";scores[index]=0;
+      pages[index]={rows:[],diagnostic:{page:index+1,visualRows:0,extractedRows:0,gridDetected:false,orientation:pageOrientation,suspicious:true,reason:"لم يتم إثبات حدود الجدول والخلايا في هذه الصفحة؛ أوقف الاستيراد الآمن قبل OCR النصي الكامل"}};
     }else{
       const grid=await spreadColumns(upright);
       await pool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"3" as any});
@@ -1571,8 +1636,9 @@ export const cleanBuildingCode = (raw: string): string => {
   /* Full canonical alpha site, e.g. 012B09 / 012F15 / 012J14. Exact length is
      intentional: 012B091 remains unresolved instead of being silently cut. */
   if(/^\d{3}[A-Z]\d{2}$/.test(clean))return clean;
-  /* Numeric site prefixes (0510/0520/0410/0420) + two-digit building. */
-  if(/^\d{6}$/.test(clean))return clean;
+  /* Approved numeric site prefixes only (0510/0520/0410/0420) + building.
+     Arbitrary six-digit OCR such as 345045 is not location evidence. */
+  if(/^(?:0510|0520|0410|0420)\d{2}$/.test(clean))return clean;
   /* Legacy short building evidence may still be resolved by the registry with
      college context. It is kept raw-ish but normalized to two digits. */
   const short=clean.match(/^([A-Z])(\d{1,2})$/);
@@ -2044,8 +2110,6 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     }
   }
   if(rows.length){
-    /* Section is source evidence. Never replace 505/507/... with an invented
-       sequential series; an unreadable section remains empty and blocks review. */
     return{rows,issues:[...new Set(issues)],lines:scanned};
   }
 
@@ -2176,12 +2240,12 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       const adjacentCells=cells.slice(Math.max(0,referenceCellIndex-2),referenceCellIndex+3);
       const exactCell=adjacentCells.find(c=>{
         const t=toAscii(c.text).trim();
-        return /^\d{1,4}$/.test(t) && t!==courseCode.slice(-3) && t!==reference;
+        return /^5\d{2}$/.test(t) && t!==courseCode.slice(-3) && t!==reference;
       });
       if(exactCell) section=toAscii(exactCell.text).trim();
     }
     if(!section){
-      const secCandidate=digitRuns.find(v=>/^(50[1-9]|5[1-9]\d|\d{3})$/.test(v)&&v!==reference&&v!==courseCode.slice(-3));
+      const secCandidate=digitRuns.find(v=>/^5\d{2}$/.test(v)&&v!==reference&&v!==courseCode.slice(-3));
       if(secCandidate)section=secCandidate;
     }
 

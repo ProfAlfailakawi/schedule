@@ -81,6 +81,30 @@ const foldHeaderIdentity = (value: unknown) => String(value ?? "").normalize("NF
 const foldCollegeFamily = (value: unknown) => foldHeaderIdentity(value)
   .replace(/(?:^|\s)(?:بنات|بنين|الجهراء|الفحيحيل)(?=\s|$)/g," ")
   .replace(/\s+/g," ").trim();
+/** Resolve site identity from explicit HEADER evidence only. OCR frequently
+ * writes «كليه/التربيه/الاساسيه», which is semantically the same Arabic but
+ * does not survive the display-name exact map. The branch code plus a printed
+ * site/gender word is enough evidence; the code alone is never enough. */
+const resolveHeaderSitePrefix = (branchName: unknown, branchCode: unknown): string | undefined => {
+  const exact=officialCollegeSitePrefix(branchName);
+  if(exact)return exact;
+  const name=foldHeaderIdentity(branchName);
+  const code=asciiDigits(String(branchCode??"")).replace(/\D/g,"");
+  const has=(word:string)=>new RegExp(`(?:^|\\s)${word}(?:\\s|$)`).test(name);
+  if(code==="012"&&has("الفحيحيل"))return"012F";
+  if(code==="012"&&has("الجهراء"))return"012J";
+  if(code==="012"&&has("بنات"))return"012B";
+  if(code==="011"&&has("بنين"))return"011B";
+  if(code==="022"&&has("بنات"))return"022T";
+  if(code==="021"&&has("بنين"))return"021T";
+  if(code==="032"&&has("بنات"))return"032B";
+  if(code==="031"&&has("بنين"))return"031B";
+  if(code==="0510"&&has("بنين"))return"0510";
+  if(code==="0520"&&has("بنات"))return"0520";
+  if(code==="0420"&&has("بنات"))return"0420";
+  if(code==="0410"&&has("بنين"))return"0410";
+  return undefined;
+};
 const sortArabicNamed = <T>(rows: readonly T[], pick: (row: T) => unknown): T[] =>
   [...rows].sort((a, b) => arabicUiCollator.compare(normalizeArabicSortName(pick(a)), normalizeArabicSortName(pick(b))));
 const verifiedRoomKey = (row: Partial<FSchedule>): string =>
@@ -861,7 +885,9 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     if (!course || course.AdCollegeId !== collegeId || course.AdSectionId !== sectionId) errors.push(`السطر ${index + 1}: المقرر غير صالح للقسم المحدد`);
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
     else if(options.requireDepartmentInstructor&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
-    if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية كما ورد في المصدر`);
+    if (options.requireDepartmentInstructor) {
+      if (!/^5\d{2}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة في الجدول المعتمد يجب أن يكون من سلسلة 5xx كما ورد في المصدر؛ لم يتم توليد رقم بديل`);
+    } else if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية كما ورد في المصدر`);
     let location=locationPreflight(row,registry,{collegeId,sectionId});
     const locationBlocking=location.issues.filter(issue=>issue.severity==="high");
     if(locationBlocking.length&&locationBlocking.every(issue=>issue.type==="room_scope")&&location.canonical&&await hallBarterAllowsRoomUse({...row,...location.canonical},collegeId,sectionId)){
@@ -5226,12 +5252,20 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      hard stop; a different building prefix in ONE body row is handled later as
      CROSS_BRANCH and is not confused with this check. */
   if(headerPreflight.branch&&targetSitePrefix){
-    const sourceSite=officialCollegeSitePrefix(headerPreflight.branch.name);
-    const branchCode=String(headerPreflight.branch.code||"").replace(/\D/g,"");
-    const targetBranchCode=targetSitePrefix.replace(/\D/g,"");
-    const definiteMismatch=sourceSite
-      ? sourceSite!==targetSitePrefix
-      : Boolean(branchCode&&targetBranchCode&&branchCode!==targetBranchCode);
+    const sourceSite=resolveHeaderSitePrefix(headerPreflight.branch.name,headerPreflight.branch.code);
+    /* A three-digit branch code such as 012 does NOT distinguish 012B/012F/012J.
+       If OCR preserved only the number but lost the site/gender word, evidence is
+       incomplete and the document must stop here rather than silently assuming
+       the currently selected campus. */
+    if(!sourceSite){
+      res.status(422).json({
+        error:`قرأت رمز الفرع «${headerPreflight.branch.code||"—"}» لكن لم أستطع إثبات الموقع (بنات/بنين/الجهراء/الفحيحيل) من الترويسة. لم تتم قراءة الجدول ولم يتم استيراد أي صف.`,
+        code:"PDF_HEADER_SITE_UNRESOLVED",
+        sourceBranch:headerPreflight.branch.label,
+      });
+      return;
+    }
+    const definiteMismatch=sourceSite!==targetSitePrefix;
     if(definiteMismatch){
       const sourceLabel=sourceSite?officialSiteLabel(sourceSite,headerPreflight.branch.name):headerPreflight.branch.label;
       res.status(409).json({
@@ -5311,7 +5345,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
   let recognized;
   try{
-    recognized=await ocrDocument(bytes,"application/pdf",stage=>emit({type:"progress",...stage}));
+    recognized=await ocrDocument(bytes,"application/pdf",stage=>emit({type:"progress",...stage}),{authorityTable:true});
   }catch(error:any){
     const message=String(error?.message||"تعذّرت قراءة ملف PDF");
     if(streaming){emit({type:"error",error:message});res.end();return;}
@@ -5320,17 +5354,17 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   /* An unreadable scan is refused outright rather than returned as a table of
      blanks: the reader could not otherwise tell which empty cells are the
      document and which are the camera. */
-  if(!recognized.legibility.readable){
-    const message=recognized.legibility.reason;
-    if(streaming){emit({type:"error",error:message});res.end();return;}
-    res.status(422).json({error:message});return;
-  }
   if(recognized.suspiciousExtraction){
     const affected=recognized.pageDiagnostics.filter((page:any)=>page.suspicious);
     const detail=affected.map((page:any)=>`الصفحة ${page.page}: ${page.reason||"لم تثبت هندسة الجدول"}`).join(" · ");
     const message=`أوقفت الاستيراد لأن استخراج الجدول غير آمن. ${detail} لم يتم استيراد أي صف.`;
     if(streaming){emit({type:"error",error:message,code:"SUSPICIOUS_EXTRACTION",pageDiagnostics:recognized.pageDiagnostics});res.end();return;}
     res.status(422).json({error:message,code:"SUSPICIOUS_EXTRACTION",pageDiagnostics:recognized.pageDiagnostics});return;
+  }
+  if(!recognized.legibility.readable){
+    const message=recognized.legibility.reason;
+    if(streaming){emit({type:"error",error:message});res.end();return;}
+    res.status(422).json({error:message});return;
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
   const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds);
@@ -5341,6 +5375,9 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(422).json({error:message,code:"COUNT_RECONCILIATION_FAILED",pageDiagnostics:recognized.pageDiagnostics});return;
   }
 
+  /* Section values are already source-preserving 5xx evidence at this point.
+     Invalid OCR such as «3» remains unresolved and is blocked later; no sequence
+     is generated and legitimate gaps such as 508 → 510 remain intact. */
   /* OCR values are evidence, not registry writes. Full building codes are first
      resolved globally because the code itself is unambiguous; only short/legacy
      values need department context. This also lets us identify a real Fahaheel
@@ -5360,18 +5397,20 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       :"اسم المقرر العربي يطابق اسماً واحداً فقط بعد NFKC داخل كتالوج القسم";
     row.importEvidence={
       course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:rawCourseDigits,canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",reason:courseReason,evidence:["كتالوج القسم الحالي","القيمة الخام محفوظة دون استبدال"]},
-      section:{raw:String(row.sourceSectionText||row.SCode||""),normalized:String(row.SCode||"").replace(/\D/g,""),canonical:String(row.SCode||"")||undefined,confidence:/^\d{3,4}$/.test(String(row.SCode||""))?"CONFIRMED":"UNRESOLVED",reason:/^\d{3,4}$/.test(String(row.SCode||""))?"رقم الشعبة محفوظ كما قرأه المستند":"رقم الشعبة غير مقروء",evidence:["خلية الشعبة الأصلية"]},
+      section:{raw:String(row.sourceSectionText||row.SCode||""),normalized:String(row.SCode||"").replace(/\D/g,""),canonical:/^5\d{2}$/.test(String(row.SCode||""))?String(row.SCode):undefined,confidence:/^5\d{2}$/.test(String(row.SCode||""))?"CONFIRMED":"UNRESOLVED",reason:/^5\d{2}$/.test(String(row.SCode||""))?"رقم شعبة 5xx مقروء من خلية الشعبة ومحتفظ به كما ورد في المصدر":"خلية الشعبة لم تنتج قيمة 5xx موثوقة؛ لا يتم توليد رقم بديل",evidence:["خلية الشعبة الأصلية","لا إعادة ترقيم ولا ملء تلقائي للفجوات"]},
       instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdInstructorId)?"مرشح وحيد بعد التطبيع وأولوية القسم":"لا يوجد مرشح فريد موثوق",evidence:Number(row.AdInstructorId)?["عضوية/سجل تدريس القسم","تطبيع NFKC والعناوين","تطابق اسم فريد"]:["لا تخمين عند التعادل أو الغموض"]},
       building:{raw:rawBuilding,normalized:token,confidence:"UNRESOLVED",reason:"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
       room:{raw:rawHall,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",reason:rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر",evidence:["خلية القاعة الأصلية"]},
     };
-    const explicitFull=/^(?:\d{3}[A-Z]\d{2}|\d{6})$/.test(token);
+    const explicitFull=/^(?:\d{3}[A-Z]\d{2}|(?:0510|0520|0410|0420)\d{2})$/.test(token);
     /* No “delete the last digit” repair exists here. A malformed 012B091 is
        evidence of extraction failure and remains REVIEW_REQUIRED. Structural
        cell boundaries upstream must produce the exact canonical token. */
     let building=explicitFull?resolveBuilding(registry,token,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
     if(building.status!=="CONFIRMED"||!building.value){
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
+      /* Keep OCR garbage only as evidence; never display it as canonical. */
+      row.AdRoomCode="";row.AdRoomHall="";
       Object.assign(row.importEvidence.building,{confidence:"UNRESOLVED",reason:"القيمة لا تطابق مبنى Canonical صريحاً",evidence:["سجل المباني الرسمي","لا قصّ لرقم مجاور ولا تخمين"]});
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: المبنى المقروء «${rawBuilding||"فارغ"}» غير محسوم؛ اختر مبنى رسميًا.`);continue;
     }
@@ -5396,6 +5435,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const room=resolveRoom(registry,rawHall,building.value.id,{collegeId,sectionId});
     if(room.status!=="CONFIRMED"||!room.value){
       row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
+      row.AdRoomHall="";
       Object.assign(row.importEvidence.room,{confidence:"UNRESOLVED",reason:rawHall?`لم تثبت القاعة داخل المبنى ${building.value.officialCode}`:"القاعة فارغة في المصدر؛ يلزم اختيار قاعة أو PENDING_ROOM صراحةً",evidence:["سجل القاعات الرسمي","علاقة Building ↔ Room"]});
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة المقروءة «${rawHall||"فارغة"}» غير معروفة داخل ${building.value.officialCode}؛ اختر قاعة رسمية أو «بانتظار تثبيت القاعة».`);continue;
     }
@@ -5456,7 +5496,8 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   if(importLayout==="authority-pdf"&&!await verifyPdfImportReceipt(importReceipt,{collegeId,sectionId,termId})){
     res.status(409).json({error:"غابت أو لم تعد صالحة شهادة فحص ترويسة PDF لهذا السياق. أعد رفع الملف؛ لا يمكن تجاوز فحص الفصل والكلية والفرع والقسم من الواجهة.",code:"PDF_IMPORT_RECEIPT_REQUIRED"});return;
   }
-  const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);
+  let rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);
+  
   const previewIssues=Array.isArray(req.body?.previewIssues)?[...new Set(req.body.previewIssues.map((item:any)=>String(item||"").trim()).filter(Boolean))].slice(0,80):[];
   if(previewIssues.length){res.status(400).json({error:"لا يمكن حفظ المسودة أو نشرها قبل معالجة جميع ملاحظات المعاينة.",issues:previewIssues});return;}
   const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false,requireDepartmentInstructor:importLayout==="authority-pdf"});
@@ -5527,7 +5568,7 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
 });
 
 app.put("/api/intelligence/drafts/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);if(draft.importLayout==="authority-pdf"&&draft.baselineRows?.length){const baselineByOrder=new Map(draft.baselineRows.map((row:any)=>[Number(row.sourceOrder),row]));const renamed=rows.find((row:any)=>{const base=baselineByOrder.get(Number(row.sourceOrder));return base&&(Number(base.AdCourseId)!==Number(row.AdCourseId)||String(base.AdCourseName)!==String(row.AdCourseName));});if(renamed){res.status(409).json({error:"اسم المقرر من ملف PDF ثابت وفق لائحة الجدول. يمكنك حذف المقرر كاملاً، لكن لا يمكن تبديل اسمه.",code:"COURSE_NAME_LOCKED",rowId:renamed.id});return;}}const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false,requireDepartmentInstructor:draft.importLayout==="authority-pdf"});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
+  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){let rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);if(draft.importLayout==="authority-pdf"&&draft.baselineRows?.length){const baselineByOrder=new Map(draft.baselineRows.map((row:any)=>[Number(row.sourceOrder),row]));const renamed=rows.find((row:any)=>{const base=baselineByOrder.get(Number(row.sourceOrder));return base&&(Number(base.AdCourseId)!==Number(row.AdCourseId)||String(base.AdCourseName)!==String(row.AdCourseName));});if(renamed){res.status(409).json({error:"اسم المقرر من ملف PDF ثابت وفق لائحة الجدول. يمكنك حذف المقرر كاملاً، لكن لا يمكن تبديل اسمه.",code:"COURSE_NAME_LOCKED",rowId:renamed.id});return;}}const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false,requireDepartmentInstructor:draft.importLayout==="authority-pdf"});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
 });
 app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const draft = await Repository.getScheduleDraftById(String(req.params.id));
@@ -5545,7 +5586,8 @@ app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asyn
   Object.assign(candidate,locationResult.check.canonical||{});
   const structural = await validateSmartRows([candidate], draft.AdCollegeId, draft.AdSectionId, { checkConflicts: false,requireDepartmentInstructor:draft.importLayout==="authority-pdf" });
   if (structural.length) { res.status(400).json({ error: structural[0], issues: structural }); return; }
-  const rows = safeDraftRows(draft.rows.map((row:any, i:number) => i === index ? candidate : row), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  let rows = safeDraftRows(draft.rows.map((row:any, i:number) => i === index ? candidate : row), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  
   const issues = await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
@@ -5562,7 +5604,8 @@ app.delete("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asy
   if (!isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const rowId = Number(req.params.rowId || 0);
   if (!draft.rows.some((row:any) => Number(row.id) === rowId)) { res.status(404).json({ error: "الموعد غير موجود داخل المسودة" }); return; }
-  const rows = safeDraftRows(draft.rows.filter((row:any) => Number(row.id) !== rowId), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  let rows = safeDraftRows(draft.rows.filter((row:any) => Number(row.id) !== rowId), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  
   const issues = rows.length ? await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"}) : [];
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
@@ -5592,6 +5635,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   }
 
   let publishRows=safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);
+  
   let issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
   let adjusted=0;
   /* Beginning-of-term drafts may only be blocked because the copied placement

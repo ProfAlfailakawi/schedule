@@ -372,18 +372,23 @@ const importRowsOverlap = (a: ImportRow, b: ImportRow) => {
   const a0=importClockMinutes(a.fstarttime),a1=importClockMinutes(a.fendtime),b0=importClockMinutes(b.fstarttime),b1=importClockMinutes(b.fendtime);
   return a0>=0&&a1>a0&&b0>=0&&b1>b0&&a0<b1&&b0<a1;
 };
-/** Preserve the section printed in the source; normalization may trim display
- * whitespace, but it must never invent a 501/502 sequence. */
-const normalizeImportSectionSeries = (rows: ImportRow[]) => {
-  return rows.map(row=>({...row,SCode:String(row.SCode||"").trim()}));
-};
+/** Authority sections are the printed 5xx identifiers (501, 502, ...).
+ * Preserve the source value exactly; never manufacture a missing sequence.
+ * Real Authority exports legitimately skip numbers (for example 508 → 510).
+ * A value such as “3” is units/hours column drift and must become unresolved. */
+const normalizeImportSectionSeries = (rows: ImportRow[]) =>
+  rows.map(row=>{
+    const rawSection=String((row as any).sourceSectionText??row.SCode??"").trim();
+    const candidate=String(row.SCode||"").trim();
+    return{...row,sourceSectionText:rawSection||undefined,SCode:/^5\d{2}$/.test(candidate)?candidate:""};
+  });
 const validateImportRowsLocally = (rows: ImportRow[], allowedInstructorIds?: Iterable<number>) => {
   const issues:string[] = [];
   const allowed=allowedInstructorIds===undefined?null:new Set([...allowedInstructorIds].map(Number).filter(Boolean));
   rows.forEach((row, index) => {
     const label = `الصف ${(index + 1).toLocaleString("ar-KW-u-nu-latn")}`;
     if (!Number(row.AdCourseId)) issues.push(`${label}: المقرر غير محدد`);
-    if (!/^\d{3,4}$/.test(String(row.SCode || ""))) issues.push(`${label}: رقم الشعبة مفقود أو غير صالح`);
+    if (!/^5\d{2}$/.test(String(row.SCode || ""))) issues.push(`${label}: رقم الشعبة مفقود أو غير صالح؛ شعب الجدول المعتمد تبدأ من 501 وتبقى كما وردت في المصدر`);
     if (![row.fsunday,row.fmonday,row.ftuesday,row.fwednesday,row.fthursday].some(Boolean)) issues.push(`${label}: الأيام غير محددة`);
     const start=importClockMinutes(row.fstarttime),end=importClockMinutes(row.fendtime);
     if (start < 0 || end < 0 || end <= start) issues.push(`${label}: الوقت غير مكتمل أو غير منطقي`);
@@ -1579,7 +1584,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     setImportPreview(null);
     setBusy(true);
     setError(null);
-    setImportProgress({ phase: "render", page: 0, pages: 0, message: "يجهّز الملف للقراءة" });
+    setImportProgress({ phase: "render", page: 0, pages: 0, message: "يتحقق من ترويسة الملف قبل قراءة الجدول" });
     try {
       const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
       const response = await fetch(`/api/intelligence/pdf-import?${query}`, {

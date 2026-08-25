@@ -242,7 +242,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     rows.forEach((row, index) => {
       const n = (index + 1).toLocaleString("ar-KW-u-nu-latn");
       if (!Number(row.AdCourseId)) issues.add(`الصف ${n}: المقرر غير محدد.`);
-      if (!/^\d{3,4}$/.test(String(row.SCode || "").trim())) issues.add(`الصف ${n}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام كما في المصدر.`);
+      const sectionValue=String(row.SCode||"").trim();
+      if(importKind==="authority-pdf" ? !/^5\d{2}$/.test(sectionValue) : !/^\d{3,4}$/.test(sectionValue))
+        issues.add(`الصف ${n}: رقم الشعبة غير صالح${importKind==="authority-pdf"?"؛ شعب PDF المعتمد تبدأ من 501 وتبقى كما وردت في المصدر":""}.`);
       if (!hasDays(row)) issues.add(`الصف ${n}: أيام المحاضرة غير محددة.`);
       const start = minutes(row.fstarttime), end = minutes(row.fendtime);
       if (start < 0 || end <= start) issues.add(`الصف ${n}: الوقت غير مكتمل أو غير صالح.`);
@@ -376,7 +378,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
   const readPdf = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
-    setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
+    setReadProgress({ pct: 4, message: "يتحقق من ترويسة الملف قبل قراءة الجدول" });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId)});
       const response=await fetch(`/api/intelligence/pdf-import?${query}`,{
@@ -415,7 +417,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
          preview — zero rows, zero message. An error object IS the message. */
       if(data&&(data as any).error&&!(data as any).rows)throw new Error((data as any).error);
       if(!data)throw new Error("تعذرت قراءة PDF");
-      const scannedRows=Array.isArray(data.rows)?data.rows:[];
+      const scannedRows=(Array.isArray(data.rows)?data.rows:[]).map((row:any)=>{
+        const rawSection=String(row?.sourceSectionText??row?.SCode??"").trim();
+        const candidate=String(row?.SCode||"").trim();
+        return{...row,sourceSectionText:rawSection||undefined,SCode:/^5\d{2}$/.test(candidate)?candidate:""};
+      });
       setXlsxPreview({
         ...data,
         rows:scannedRows,
@@ -477,8 +483,19 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const readFile = async (file: File) => {
-    if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") { await readPdf(file); return; }
-    if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
+    const name=String(file.name||"").trim(),mime=String(file.type||"").toLowerCase();
+    let isPdf=/\.pdf$/i.test(name)||mime.includes("pdf");
+    /* iOS share sheets and scanner apps sometimes send application/octet-stream
+       or an empty MIME type. The five-byte PDF signature is authoritative and
+       avoids routing a valid PDF into JSON/Excel parsing. */
+    if(!isPdf){
+      try{
+        const head=new Uint8Array(await file.slice(0,5).arrayBuffer());
+        isPdf=String.fromCharCode(...head)==="%PDF-";
+      }catch{/* keep extension/MIME result */}
+    }
+    if (isPdf) { await readPdf(file); return; }
+    if (/\.xlsx?$/i.test(name)||mime.includes("spreadsheet")||mime.includes("excel")) { await readExcel(file); return; }
     setError(null); setPreview(null); setPayload(null);
     try {
       const text = await file.text();

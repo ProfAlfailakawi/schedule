@@ -66,6 +66,20 @@ def assert_text_fixture(path: Path) -> None:
     assert "012F15" in text, "real text fixture no longer contains Fahaheel building 012F15"
     assert "012J14" in text, "real text fixture no longer contains Jahra building 012J14"
 
+    # Course 0101102 is the important section-number regression: the Authority
+    # source starts at 501 but legitimately skips 509 and continues at 510.
+    # The importer must preserve those printed 5xx values exactly; auto-filling
+    # a sequence would silently corrupt section 510 into 509.
+    clean_bidi = re.sub(r"[\u202a-\u202e\u2066-\u2069]", "", text)
+    sections_101 = []
+    for line in clean_bidi.splitlines():
+        m = re.search(r"(?:^|\s)(5\d{2})\s+(\d{4,6})\s+0101102", line)
+        if m:
+            sections_101.append(int(m.group(1)))
+    assert sections_101 == [501,502,503,504,505,506,507,508,510], (
+        f"source 0101102 section series changed: {sections_101}"
+    )
+
     known = [
         line for line in text.splitlines()
         if "0101206" in line and "18998" in line and "505" in line and "012F15" in line
@@ -78,6 +92,7 @@ def assert_text_fixture(path: Path) -> None:
     )
 
     print("PASS text fixture: 3 pages, rows 28+28+26=82")
+    print("PASS source evidence: 0101102 sections preserve 501..508 then legitimate gap to 510")
     print("PASS source evidence: 012F15 and 012J14 are real cross-branch buildings")
     print("PASS known row: 0101206 / section 505 keeps 012F15 with blank room source cell")
 

@@ -107,7 +107,7 @@ export default function ImportPreviewTable({
   const hasDays = (row: ImportRow) => DAY_CHIPS.some(day => Boolean(row[day.key]));
   const missing = {
     course: (row: ImportRow) => !Number(row.AdCourseId),
-    scode: (row: ImportRow) => !/^\d{3,4}$/.test(String(row.SCode || "").trim()),
+    scode: (row: ImportRow) => !/^5\d{2}$/.test(String(row.SCode || "").trim()),
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
