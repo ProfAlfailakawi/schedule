@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -61,6 +61,14 @@ assert.equal(authorityCourseCodeMatches("0102102", "102", "0101"), false);
 assert.equal(authorityTimeCellLooksPlausible("1050 - 10040"),true);
 assert.equal(authorityTimeCellLooksPlausible("1650 - 15340"),true);
 assert.equal(authorityTimeCellLooksPlausible("012B09"),false);
+
+/* Building-column proof is anchored to the owner's official site prefixes.
+   Concatenated seat/capacity values must never be allowed to claim BUILDING. */
+assert.equal(authorityBuildingCellLooksPlausible("012B09"),true);
+assert.equal(authorityBuildingCellLooksPlausible("12B09"),true);
+assert.equal(authorityBuildingCellLooksPlausible("052007"),true);
+assert.equal(authorityBuildingCellLooksPlausible("345045"),false);
+assert.equal(authorityBuildingCellLooksPlausible("520020"),false);
 
 /* Owner-supplied location grammar: branch 012 + site B + building 09 is the
    official code 012B09. Camera loss of the leading zero/grid stroke is repaired
@@ -146,7 +154,7 @@ const wrongCodePages:OcrPage[]=[{rows:[],gridRows:[{...gridRows[0],code:"0101999
 const wrong=parseScheduleTable(wrongCodePages,courses,instructors,undefined,{authorityDepartmentCode:"0101",sequentialSections:true});
 assert.equal(wrong.rows[0].AdCourseId,0);
 
-console.log(JSON.stringify({ passed: 23, checks: [
+console.log(JSON.stringify({ passed: 28, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -164,6 +172,11 @@ console.log(JSON.stringify({ passed: 23, checks: [
   "time column survives one grid-rule digit without accepting building codes",
   "noisy 1050-10040 remains a plausible time cell",
   "012B09 can never claim the time column",
+  "official site prefix is required to claim the building column",
+  "dropped leading zero may still identify the correct building column",
+  "numeric official site prefixes remain supported",
+  "capacity weld 345045 can never claim the building column",
+  "capacity weld 520020 can never claim the building column",
   "012B + building 09 reconstructs only official 012B09",
   "dropped/painted leading zero in building cell is registry-recovered",
   "cross-branch official code is never silently rebound",

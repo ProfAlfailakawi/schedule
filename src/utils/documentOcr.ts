@@ -1,5 +1,6 @@
 import type { AdCourse, AdInstructor } from "../types";
 import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches } from "./authorityAcademicCodes";
+import { OFFICIAL_COLLEGE_SITE_PREFIXES } from "./locationCollegePrefixes";
 
 const toAscii=(value:string)=>String(value||"")
   /* Generated Authority PDFs often store Arabic as Presentation Forms
@@ -774,6 +775,29 @@ function findRules(bin:any){
   return{cols:peaks(colInk,H*0.35),rows:peaks(rowInk,W*0.35)};
 }
 
+const OFFICIAL_SITE_PREFIXES=[...new Set(OFFICIAL_COLLEGE_SITE_PREFIXES.map(item=>String(item.sitePrefix||"").toUpperCase()).filter(Boolean))];
+const escapeRegex=(value:string)=>value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
+const officialSitePrefixPattern=OFFICIAL_SITE_PREFIXES.map(escapeRegex).sort((a,b)=>b.length-a.length).join("|");
+/* IMPORTANT: a generic six-digit number is NOT a building. Values such as
+   345045/520020 are capacity-seat columns welded by OCR and were the exact
+   regression visible in the import preview. A building candidate must carry
+   one of the owner-supplied site prefixes (012B, 011B, 0520, 0410, ...). */
+const OFFICIAL_BUILDING_PATTERN=new RegExp(`^(?:${officialSitePrefixPattern})\\d{2}$`,"i");
+
+export const authorityBuildingCellLooksPlausible=(raw:string):boolean=>{
+  const token=toAscii(String(raw||"")).toUpperCase().replace(/[^A-Z0-9]/g,"");
+  if(!token)return false;
+  if(OFFICIAL_BUILDING_PATTERN.test(token))return true;
+  /* Column claiming may tolerate the camera dropping leading zeroes from the
+     SITE PREFIX (e.g. 012B09 -> 12B09). This does not canonicalize anything;
+     the server still resolves the raw value against the finite official
+     registry before it can be imported. */
+  return OFFICIAL_SITE_PREFIXES.some(prefix=>{
+    const compactPrefix=prefix.replace(/^0+/,"");
+    return Boolean(compactPrefix)&&new RegExp(`^${escapeRegex(compactPrefix)}\\d{2}$`,"i").test(token);
+  });
+};
+
 const stripPatterns={
   /* A building such as 012B09 can OCR as «012-809». The old shape-only
      time regex accepted that and shifted every left-side role by one column:
@@ -789,10 +813,7 @@ const stripPatterns={
      the structural reader to 501–999 stops border artefacts such as 150/450/
      1507 from being presented as confirmed sections. */
   scode:/^(?:50[1-9]|5[1-9]\d|[6-9]\d{2})$/,
-  /* Canonical alpha-site buildings are six characters (012B09/012F15/012J14).
-     Numeric-site colleges are six digits (051007 etc.). No 7th neighbour digit
-     is accepted here: column boundaries, not trimming, must solve bleed. */
-  building:/^(?:\d{3}[A-Z]\d{2}|\d{6})$/i,
+  building:OFFICIAL_BUILDING_PATTERN,
   hall:/^[A-Z]\d{1,3}$/i,
   days:/^[1-5](?:[\s,\-–—./]*[1-5])*$/,
 };
@@ -938,19 +959,51 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   const minimumRows=Math.max(1,Math.floor(bands.length*0.15));
   const timeIndex=claimBy(authorityTimeCellLooksPlausible,minimumRows,taken);if(timeIndex>=0)taken.add(timeIndex);
 
-  /* SWRSCHA is a ruled report with a fixed physical block on the left:
+  /* SWRSCHA's semantic block is:
        instructor | days | activity | time | building | room | ...
-     Once TIME is proven, Building and Room are the two adjacent CELLS to its
-     right. They are never searched across the page and never borrow from each
-     other. This is the structural guard that prevents 012F15 becoming room
-     F15/F151 and prevents adjacent digits creating 012B091. */
+     but photographed pages can contain FALSE vertical strokes inside a wide
+     cell. Therefore `time + 1` is only a starting hypothesis, not proof. Probe
+     a tiny bounded window to the right of TIME and let the OWNER-SUPPLIED site
+     prefixes prove the building column. This is what stops seat/capacity text
+     such as 345045 or 520020 from ever being displayed as a building. */
   const geometryHits=(index:number,pattern:RegExp)=>index>=0&&index<columnBands.length
     ? Math.max(validatorHits(numericGrey[index].cells,pattern),validatorHits(numericBin[index].cells,pattern))
     : 0;
+  const boundedIndices=(from:number,to:number)=>Array.from({length:Math.max(0,to-from+1)},(_,offset)=>from+offset)
+    .filter(index=>index>=0&&index<columnBands.length);
+  const locationProbeIndices=timeIndex>=0?boundedIndices(timeIndex+1,timeIndex+6):[];
+  if(locationProbeIndices.length){
+    /* These strips are cheap and were previously outside the first-six edge
+       window on scans with a false instructor rule. Reading them now prevents
+       the later rescue from being locked onto the wrong physical column. */
+    const locationReads=await runOnPool(pool.eng,locationProbeIndices.flatMap(index=>[
+      (worker:PooledWorker)=>readStrip(surface,columnBands[index],"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ","6",worker),
+      (worker:PooledWorker)=>readStrip(bin,columnBands[index],"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ","6",worker),
+    ]));
+    locationProbeIndices.forEach((index,at)=>{numericGrey[index]=locationReads[at*2];numericBin[index]=locationReads[at*2+1];});
+  }
+  const bestBy=(indices:number[],test:(value:string)=>boolean,minimum:number)=>{
+    let bestIndex=-1,bestHits=0;
+    for(const index of indices){
+      const hits=Math.max(validatorHitsBy(numericGrey[index].cells,test),validatorHitsBy(numericBin[index].cells,test));
+      if(hits>bestHits){bestHits=hits;bestIndex=index;}
+    }
+    return bestHits>=minimum?bestIndex:-1;
+  };
+  const provenBuilding=bestBy(locationProbeIndices,authorityBuildingCellLooksPlausible,minimumRows);
   const geometricBuilding=timeIndex>=0&&timeIndex+1<columnBands.length?timeIndex+1:-1;
-  const geometricHall=timeIndex>=0&&timeIndex+2<columnBands.length?timeIndex+2:-1;
-  const buildingIndex=geometricBuilding>=0?geometricBuilding:-1;if(buildingIndex>=0)taken.add(buildingIndex);
-  const hallIndex=geometricHall>=0?geometricHall:-1;if(hallIndex>=0)taken.add(hallIndex);
+  const buildingIndex=provenBuilding>=0?provenBuilding:geometricBuilding;
+  if(buildingIndex>=0)taken.add(buildingIndex);
+
+  /* Room is resolved only AFTER the building column. If a false rule split the
+     building cell, scan at most the next three strips and pick the first column
+     with real room-shaped evidence; never search the capacities block. */
+  const roomProbeIndices=buildingIndex>=0?boundedIndices(buildingIndex+1,buildingIndex+3):[];
+  const provenHall=bestBy(roomProbeIndices,value=>stripPatterns.hall.test(normalizeCell(value)),minimumRows);
+  const geometricHall=buildingIndex>=0&&buildingIndex+1<columnBands.length?buildingIndex+1:-1;
+  const hallIndex=provenHall>=0?provenHall:geometricHall;
+  if(hallIndex>=0)taken.add(hallIndex);
+
   const geometricDays=timeIndex>=2?timeIndex-2:-1;
   const daysIndex=geometryHits(geometricDays,stripPatterns.days)>=minimumRows?geometricDays:claim(stripPatterns.days,minimumRows,taken);
   if(daysIndex>=0)taken.add(daysIndex);
@@ -1124,13 +1177,21 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
   await pool.ara.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"4" as any});
   const unclaimed=columnBands.map((band,index)=>({band,index,width:band.right-band.left}))
     .filter(item=>!taken.has(item.index));
-  /* Instructor is three physical cells LEFT of TIME:
-       instructor | days | activity | time.
-     Course name is immediately LEFT of section — never “the widest unclaimed
-     column”. The old widest heuristic selected the actual instructor column and
-     put doctor names into Course Name. */
-  const instructorIndex=timeIndex>=3?timeIndex-3:-1;
-  const instructorBand=unclaimed.find(item=>item.index===instructorIndex);
+  /* Instructor is the semantic field immediately LEFT of DAYS, but a phone
+     photo can draw one or two false "vertical rules" through the wide Arabic
+     name cell. `time - 3` then reads only the LAST fragment of the doctor's
+     name, which destroyed the previously-good exact instructor matching.
+     Rejoin up to three contiguous physical bands ending immediately before DAYS.
+     On a clean PDF this is exactly one band; on the measured photo it rejoins
+     the three fragments of the same instructor cell. No neighbouring semantic
+     field is crossed because DAYS is the hard right boundary. */
+  const instructorEnd=daysIndex>0?daysIndex-1:(timeIndex>=3?timeIndex-3:-1);
+  const instructorStart=instructorEnd>=0?Math.max(0,instructorEnd-2):-1;
+  const instructorBand=instructorEnd>=0?{
+    index:instructorEnd,
+    band:{left:columnBands[instructorStart].left,right:columnBands[instructorEnd].right},
+    width:columnBands[instructorEnd].right-columnBands[instructorStart].left,
+  }:undefined;
   const codePattern=(refcodeSpan||refcodeIndex>=0)?stripPatterns.refcode:stripPatterns.code;
   const codeSignalIndex=refcodeIndex>=0?refcodeIndex:codeIndex;
   const codeHits=codeSpan?spanHits(codeSpan,stripPatterns.code)
