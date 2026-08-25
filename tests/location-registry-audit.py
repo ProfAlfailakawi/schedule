@@ -128,4 +128,15 @@ ok('67 wrong academic term is rejected before table OCR', 'readAuthorityPdfHeade
 ok('68 cross-branch PDF rows are surfaced and never silently assigned to current college', 'sourceSitePrefix!==targetSitePrefix' in server and 'لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته' in server and 'officialSiteLabel(sourceSitePrefix)' in server)
 ok('69 instructor matching prioritizes real department rosters and normalizes academic titles', 'Repository.getDepartmentDelegates(collegeId,sectionId)' in server and 'Repository.getVisitingRoster(collegeId,sectionId,termId)' in server and 'Academic titles are presentation, not identity' in doc_ocr)
 
+# PDF import regressions observed on real Authority text PDFs and CamScanner scans.
+ok('70 partial text PDF header falls back instead of rejecting a valid branch', 'const physicalText=tableFromWords(headerWords,[],"pdf-text")' in doc_ocr and 'if(embedded.term&&embedded.branch&&embedded.department)' in doc_ocr and 'A PARTIAL text-layer hit is not success' in doc_ocr)
+ok('71 time-column proof rejects building-shaped OCR before assigning semantic roles', '(?:0[7-9]|1\\d|20)[0-5]\\d' in doc_ocr and '012-809' in doc_ocr and 'const timeIndex=claim(stripPatterns.time' in doc_ocr)
+ok('72 academic key searches the bounded right table edge instead of the last physical band', 'const keySearchFrom=Math.max(0,columnBands.length-7)' in doc_ocr and 'for(let end=lastBand;end>=keySearchFrom;end--)' in doc_ocr)
+ok('73 full Authority course keys resolve against unique three-digit catalogue tails', 'tailCounts.get(tail)===1' in doc_ocr and 'item.digits.slice(-3)===tail' in doc_ocr)
+schedules_src=(ROOT/'src/components/Schedules.tsx').read_text()
+ok('74 section numbering starts at 501 and ignores legacy/broken lower values when suggesting next section', 'return "501"' in schedules_src and 'value >= 501 && value <= 999' in schedules_src and 'Sections of one course run 501, 502, 503' in schedules_src)
+
+ok('75 narrow room cells are re-read in isolation after geometry proves the room column', 'Rooms are the narrowest identity cells in SWRSCHA' in doc_ocr and 'readCell(surface,columnBands[hallIndex],row,LOCATION_ALNUM,worker)' in doc_ocr and 'if(stripPatterns.hall.test(value))next[row]=value' in doc_ocr)
+ok('76 scan clock border artefacts use a same-page dominant tail rather than a hard-coded time guess', 'const clockTailCounts=new Map<string,number>()' in doc_ocr and 'pageClockTail' in doc_ocr and 'one-character tail correction' in doc_ocr)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

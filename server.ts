@@ -5324,9 +5324,11 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     row.sourceBuildingText=rawBuilding;row.sourceRoomText=rawHall;
     const token=rawBuilding.normalize("NFKC").replace(/\s+/g,"").toUpperCase();
     const normalizedInstructor=foldHeaderIdentity(row.sourceInstructorText);
+    const sectionToken=String(row.SCode||"").replace(/\D/g,"");
+    const authoritySectionConfirmed=/^\d{3}$/.test(sectionToken)&&Number(sectionToken)>=501;
     row.importEvidence={
       course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdCourseId)?"رمز/اسم مقرر مطابق تطابقاً صريحاً داخل كتالوج القسم":"لم يثبت المقرر من مفتاح صريح",evidence:["كتالوج القسم الحالي"]},
-      section:{raw:String(row.sourceSectionText||row.SCode||""),normalized:String(row.SCode||"").replace(/\D/g,""),canonical:String(row.SCode||"")||undefined,confidence:/^\d{3,4}$/.test(String(row.SCode||""))?"CONFIRMED":"UNRESOLVED",reason:/^\d{3,4}$/.test(String(row.SCode||""))?"رقم الشعبة محفوظ كما قرأه المستند":"رقم الشعبة غير مقروء",evidence:["خلية الشعبة الأصلية"]},
+      section:{raw:String(row.sourceSectionText||row.SCode||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",reason:authoritySectionConfirmed?"رقم الشعبة 501+ محفوظ كما قرأه المستند":"رقم الشعبة غير مقروء أو لا يطابق ترقيم الشعب 501+",evidence:["خلية الشعبة الأصلية"]},
       instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdInstructorId)?"مرشح وحيد بعد التطبيع وأولوية القسم":"لا يوجد مرشح فريد موثوق",evidence:Number(row.AdInstructorId)?["عضوية/سجل تدريس القسم","تطبيع NFKC والعناوين","تطابق اسم فريد"]:["لا تخمين عند التعادل أو الغموض"]},
       building:{raw:rawBuilding,normalized:token,confidence:"UNRESOLVED",reason:"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
       room:{raw:rawHall,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",reason:rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر",evidence:["خلية القاعة الأصلية"]},

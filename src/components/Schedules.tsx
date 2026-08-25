@@ -1365,7 +1365,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   /**
    * The next section number, offered rather than imposed.
    *
-   * Sections of one course run 101, 102, 103. Typing that sequence by hand is
+   * Sections of one course run 501, 502, 503. Typing that sequence by hand is
    * the kind of work a person should never be doing, but guessing wrong is
    * worse than not guessing — so the number is filled in only while the field
    * is still untouched for this course, and anything typed by hand wins.
@@ -1374,8 +1374,8 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const used = rows
       .filter(row => (!excludeId || Number(row.id) !== Number(excludeId)) && Number(row.AdCourseId) === Number(courseId) && Number(row.AdTermId) === Number(termId))
       .map(row => Number(String(row.SCode || "").trim()))
-      .filter(value => Number.isFinite(value) && value > 0);
-    if (!used.length) return "101";
+      .filter(value => Number.isFinite(value) && value >= 501 && value <= 999);
+    if (!used.length) return "501";
     return String(Math.max(...used) + 1);
   };
   const sectionAutofilled = useRef(false);
