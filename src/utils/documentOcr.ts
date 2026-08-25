@@ -27,7 +27,7 @@ export type HeaderBranch={code:string;name:string;label:string};
 export type HeaderDepartment={code:string;name:string;label:string};
 export type AuthorityPdfHeader={term?:HeaderTerm;branch?:HeaderBranch;department?:HeaderDepartment;source?:"text"|"scan"};
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
-export type OcrProgress=(stage:{phase:"render"|"orient"|"read";page:number;pages:number;message:string})=>void;
+export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:number;pages:number;message:string})=>void;
 
 const MAX_PAGES=12;
 /** A4 at ~300dpi. The old 157dpi render was the single largest cause of
@@ -1956,6 +1956,51 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   const laneA=async()=>{for(let index=0;index<images.length;index+=2)await processPage(index,pool);};
   const laneB=async()=>{if(!secondaryPool)return;for(let index=1;index<images.length;index+=2)await processPage(index,secondaryPool);};
   await Promise.all([laneA(),laneB()]);
+
+  /* SAFE FALLBACK — suspicious pages only
+     ---------------------------------------
+     The fast lanes are never allowed to trade correctness for speed. Once both
+     lanes finish, ONLY pages whose geometry/row yield is suspicious are retried
+     through the other, isolated worker pool. Clean pages are never re-read.
+     This is intentionally page-scoped (not document-scoped): a weak page 3 in a
+     four-page scan no longer makes pages 1, 2 and 4 pay the slow path again. */
+  const suspiciousIndexes=pages.map((page,index)=>page?.diagnostic?.suspicious?index:-1).filter(index=>index>=0);
+  if(suspiciousIndexes.length){
+    onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${suspiciousIndexes.length} صفحة تحتاج مراجعة دقيقة`});
+    let rescuedCount=0;
+    for(const index of suspiciousIndexes){
+      const rescuePool=(index%2===0&&secondaryPool)?secondaryPool:pool;
+      const pageImage=images[index];
+      let bestRows=pages[index]?.gridRows||[];
+      let bestFilled=bestRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
+      let bestOrientation=(pages[index]?.diagnostic?.orientation??orientation) as -1|0|1;
+      let bestUpright=await deskew(await rotateImage(pageImage,bestOrientation));
+      /* Re-read the same page in a clean worker context, then try the remaining
+         quarter-turns only if they improve the number of semantically useful
+         rows. This is the conservative Safe Path behind the fast lanes. */
+      for(const turn of [bestOrientation,-1,0,1] as Array<-1|0|1>){
+        try{
+          const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
+          const rows=await readGrid(upright,rescuePool);
+          const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
+          if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
+        }catch{/* retain the fast-lane result when rescue cannot improve it */}
+      }
+      if(bestRows.length){
+        const suspicious=bestRows.length>=3&&bestFilled<Math.ceil(bestRows.length*0.55);
+        pages[index]={rows:[],gridRows:bestRows,diagnostic:{page:index+1,visualRows:bestRows.length,extractedRows:bestFilled,gridDetected:true,orientation:bestOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
+        scores[index]=Math.min(92,60+bestFilled*2);
+        if(index===0&&(!texts[index]||!parseAuthorityHeaderText(texts[index]).term||!parseAuthorityHeaderText(texts[index]).branch||!parseAuthorityHeaderText(texts[index]).department)){
+          const cachedHeader=cachedPreflight?.header;
+          const cachedText=[cachedHeader?.term?.label,cachedHeader?.branch?.label,cachedHeader?.department?.label].filter(Boolean).join("\n");
+          const rescuedHeader=await readAuthorityHeaderBand(bestUpright,rescuePool.ara);
+          texts[index]=[cachedText,rescuedHeader].filter(Boolean).join("\n");
+        }
+      }
+      rescuedCount++;
+      onProgress?.({phase:"rescue",page:rescuedCount,pages:suspiciousIndexes.length,message:`تدقيق الصفحة ${index+1} بدقة`});
+    }
+  }
 
   const text=texts.join("\n\n--- PAGE ---\n\n");
   const confidence=Math.round(scores.reduce((sum,value)=>sum+value,0)/Math.max(1,scores.length));

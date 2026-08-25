@@ -3945,10 +3945,10 @@ button.twin-delta{width:100%}
 
 /* PDF read progress: the scan takes over a minute, so the card shows page-by-
    page advance instead of a frozen button. */
-.import-progress{display:grid;gap:6px;width:100%;margin-top:10px}
-.import-progress-track{height:6px;border-radius:999px;background:var(--surface-3,var(--line));overflow:hidden}
-.import-progress-track i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .35s var(--ease,ease)}
-.import-progress span{font-size:var(--t-xs);color:var(--muted);text-align:center}
+.import-progress{display:grid;gap:7px;width:100%;margin-top:10px;padding:9px 11px;border:1px solid color-mix(in srgb,var(--accent) 14%,var(--line));border-radius:12px;background:color-mix(in srgb,var(--accent) 3%,var(--surface))}
+.import-progress-track{height:5px;border-radius:999px;background:var(--surface-3,var(--line));overflow:hidden}
+.import-progress-track i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .45s var(--ease,ease);box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 18%,transparent)}
+.import-progress span{font-size:var(--t-xs);color:var(--muted);text-align:center;font-weight:650}
 /* The card is a centred column: the lede and the footnote were reading ragged
    against the buttons because only the buttons were centred. */
 .import-drop{text-align:center}
@@ -4087,3 +4087,7 @@ button.twin-delta{width:100%}
   border-color:color-mix(in srgb,var(--warning,#a8792a) 28%,var(--line));
   background:color-mix(in srgb,var(--warning,#a8792a) 8%,var(--surface));
 }
+
+/* Import identity micro-badges: informative, never visually louder than the name. */
+.import-instructor-name{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
+.import-visiting-badge{display:inline-flex;align-items:center;min-height:18px;padding:0 6px;border-radius:999px;border:1px solid color-mix(in srgb,var(--brass) 28%,var(--line));background:color-mix(in srgb,var(--brass) 7%,var(--surface));color:color-mix(in srgb,var(--brass) 78%,var(--ink));font-size:9px;font-weight:750;line-height:1}

@@ -141,12 +141,15 @@ ok('76 scan clock border artefacts use a same-page dominant tail rather than a h
 ok('77 generated RTL header keeps glued 012 branch separate from 0101 department', 'Some Oracle/PDF extractors glue the code to the Arabic word visually' in doc_ocr and 'nearestDepartmentName' in doc_ocr and 'التربية الاسلامية 0101 القسم' in doc_ocr)
 ok('78 CamScanner page-1 header has bounded high-resolution rescue', 'Deep header rescue' in doc_ocr and 'renderPdfFirstPage(input,TARGET_LONG_EDGE)' in doc_ocr and 'for(const psm of [6,11])' in doc_ocr)
 ok('79 partial preflight is rescued before PDF_HEADER_UNRESOLVED is emitted', 'A partial preflight is NOT a rejection' in server and server.index('ocrDocument(bytes,"application/pdf"') < server.index('code:"PDF_HEADER_UNRESOLVED"'))
-ok('80 successful scan grid still rereads page-1 header when preflight is incomplete', 'readAuthorityHeaderBand(upright,pool.ara)' in doc_ocr and 'needsHeaderRescue' in doc_ocr and 'already-upright 2800px page' in doc_ocr)
+ok('80 successful scan grid still rereads page-1 header when preflight is incomplete', 'readAuthorityHeaderBand(upright,lanePool.ara)' in doc_ocr and 'needsHeaderRescue' in doc_ocr and 'already-upright 2800px page' in doc_ocr)
 ok('81 native text PDF reconstructs SWRSCHA cells from embedded coordinates instead of camera OCR', 'authorityPdfTextGridRows(words,Number(viewport.width||0))' in doc_ocr and 'Native generated PDFs get the coordinate-grid path' in doc_ocr)
 ok('82 native text PDF building/room are physically bounded away from seat-capacity columns', 'Capacity/seat columns start to the right of x=.39' in doc_ocr and 'zone(row,.294,.348)' in doc_ocr and 'zone(row,.348,.390)' in doc_ocr)
 ok('83 building identity is owned by one registry resolver rather than shape alone', 'resolveAuthorityLocation(registry' in server and 'EXACT_REGISTRY' in loc and 'known.includes(token)' in loc and 'Never send arbitrary six-digit numeric seat/capacity strings' in loc)
 ok('84 room validity is building-bound and not incorrectly rejected by main-campus context', 'a room is valid iff it exists under THAT building' in server and 'resolveRoom(registry,rawHall,building.value.id,{})' in server)
 ok('85 instructor titles d/a/a.d are stripped only as presentation and هيئة is registry-bound', 'د./ا./ا.د.' in server and 'هيئة تدريسية' in doc_ocr and 'ambiguous names stay blank' in doc_ocr)
+ok('86 fast OCR lanes have page-scoped safe fallback and do not reread clean pages', 'SAFE FALLBACK — suspicious pages only' in doc_ocr and 'const suspiciousIndexes=pages.map' in doc_ocr and 'Clean pages are never re-read' in doc_ocr)
+preview_import=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
+ok('87 visiting instructor is shown as a quiet badge beside the canonical system name', 'import-visiting-badge' in preview_import and 'visitingIdSet.has' in preview_import)
 
 
 # Owner academic-import identity rules (2026-08-25).
@@ -158,7 +161,7 @@ ok('82 course identity is number-only and canonical name comes from system', 'Co
 ok('83 imported sections restart at 501 per canonical course', 'assignAuthoritySections' in auth and 'nextByCourse' in auth and 'sequentialSections:true' in server and 'assignAuthoritySections(safeDraftRows(parsed.rows' in server)
 ok('84 instructor import uses unique full/two/three-name system identity with no edit-distance rescue', 'TWO or THREE real name tokens' in doc and 'ambiguous names stay blank' in doc and 'const globalHit=choose(catalogue,false)' in doc)
 preview=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
-ok('85 unmatched instructor source text is never displayed as a canonical professor', 'person?.AdInstructorName || "—"' in preview and 'person?.AdInstructorName || String(row.sourceInstructorText' not in preview)
+ok('85 unmatched instructor source text is never displayed as a canonical professor', 'person?.AdInstructorName ?' in preview and 'person.AdInstructorName' in preview and 'person?.AdInstructorName || String(row.sourceInstructorText' not in preview)
 ok('86 document department rejects local-only code when college composite is known', 'if (college && composite) return source === composite' in auth)
 ok('87 authority section sequence is re-applied server-side after preview, edit, delete and publish', server.count('assignAuthoritySections(safeDraftRows') >= 5)
 transfer=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()

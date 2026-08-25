@@ -86,6 +86,7 @@ export default function ImportPreviewTable({
     [...instructors, ...extraInstructors].map(person => [Number(person.AdInstructorId), person] as const),
   ).values()], [instructors, extraInstructors]);
   const instructorById = useMemo(() => new Map(pickerInstructors.map(person => [Number(person.AdInstructorId), person])), [pickerInstructors]);
+  const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], value => Number(value)).filter(Boolean)), [visitingIds]);
 
   const normalizedRooms = useMemo(() => [...new Map(departmentRooms
     .filter(room => cleanRoom(room.building) && cleanRoom(room.hall))
@@ -319,7 +320,7 @@ export default function ImportPreviewTable({
                     )}
                   </td>
                   <td className={evidenceClass(row,"instructor",missing.instructor(row))} title={evidenceTitle(row,"instructor")}>
-                    {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || "—")}
+                    {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : "—")}
                   </td>
                   <td className="import-row-tools">
                     <button type="button" data-guide-ignore="تحرير صف داخل معاينة الاستيراد قبل أي حفظ" className={open ? "confirm" : ""} title={open ? "تم" : "تعديل سريع"} onClick={() => open ? setEditing(null) : beginEdit(index)}>{open ? <Check /> : <Pencil />}</button>

@@ -423,9 +423,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           if(!line)continue;
           let event:any; try{event=JSON.parse(line);}catch{continue;}
           if(event.type==="progress"){
-            const total=Math.max(Number(event.pages)||0,1);
-            const seen=event.phase==="match"?total:Math.max(0,Number(event.page)||0);
-            setReadProgress({pct:Math.min(97,Math.max(4,Math.round(seen/total*100))),message:String(event.message||"")});
+            const total=Math.max(Number(event.pages)||0,1),page=Math.max(0,Number(event.page)||0);
+            const phase=String(event.phase||"");
+            /* Parallel OCR pages finish out of numeric order, so progress must
+               represent completed work, not the physical page number. Reserve
+               a small final slice for safe rescue/matching to avoid 100% while
+               the server is still validating identities. */
+            const pct=phase==="match"?96:phase==="rescue"
+              ?Math.min(94,82+Math.round((page/total)*12))
+              :phase==="read"?Math.min(82,14+Math.round((page/total)*68))
+              :phase==="orient"?10:6;
+            const fallback=phase==="rescue"?"تدقيق دقيق للصفحات المحتاجة":phase==="match"?"مطابقة البيانات مع السجل الرسمي":"قراءة الجدول";
+            setReadProgress({pct,message:String(event.message||fallback)});
           }
           else if(event.type==="done")data=event.result;
           else if(event.type==="error")failure=event.error;
