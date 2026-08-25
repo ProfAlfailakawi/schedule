@@ -140,5 +140,6 @@ ok('75 PDF header preflight is back to the proven term branch department contrac
 ok('76 partial text-layer header cannot short-circuit scan recovery', 'Partial evidence is useful, but it is NOT enough to skip the scan header' in doc_ocr and 'if(embedded.term&&embedded.college&&embedded.branch&&embedded.department)' in doc_ocr and 'embedded.branch||scanned.branch' in doc_ocr)
 ok('77 scanned header recovery covers the full authority identity block at readable scale', 'image.height*0.42' in doc_ocr and 'const headerScale=2' in doc_ocr and 'Reading ~42%' in doc_ocr)
 ok('78 bidi controls and explicit college branch cells survive header normalization', r'\u061C' in doc_ocr and r'\u200E' in doc_ocr and 'readHeaderCollege' in doc_ocr and r'match(/الفرع\s*[:：-]?\s*(\d{3,4})' in doc_ocr)
+ok('79 authority department identity accepts 0101 التربية الإسلامية as قسم التربية الإسلامية', 'const sameDepartmentName=Boolean(' in server and 'const selectedIdentityConfirmed=sameDepartmentCode||sameDepartmentName||selectedByName||selectedByCode' in server and 'const definiteMismatch=Boolean(!selectedIdentityConfirmed&&(' in server)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

@@ -5235,20 +5235,36 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(headerPreflight.department&&targetSection){
     const sourceDepartment=asciiDigits(String(headerPreflight.department.code||"")).replace(/\D/g,"");
     const targetDepartment=asciiDigits(String(targetSection.AdSectionCode||"")).replace(/\D/g,"");
-    /* Header OCR may preserve/duplicate leading zeroes around the ruled cell.
-       Department codes are numeric identifiers, so leading-zero formatting is
-       not identity evidence. Compare their numeric value, not display width. */
-    const sameDepartment=Boolean(sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment));
-    const sourceName=foldHeaderIdentity(headerPreflight.department.name);
-    const namedMatches=sourceName.length>=5?sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId).filter((item:any)=>{
-      const candidate=foldHeaderIdentity(item.AdSectionName);
-      return candidate.length>=5&&(sourceName.includes(candidate)||candidate.includes(sourceName));
+    /* Department identity is not a literal label comparison. Authority PDFs may
+       print «0101 التربية الإسلامية» while the registry displays
+       «قسم التربية الإسلامية». OCR may also duplicate a digit around a ruled
+       cell. A strong match to the SELECTED department by either canonical code
+       or normalized Arabic name is positive identity evidence and must win over
+       a contradictory OCR fragment. */
+    const sameDepartmentCode=Boolean(sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment));
+    const normalizeDepartmentName=(value:unknown)=>foldHeaderIdentity(value).replace(/\b\d{3,6}\b/g," ").replace(/\s+/g," ").trim();
+    const sourceName=normalizeDepartmentName(headerPreflight.department.name);
+    const targetName=normalizeDepartmentName(targetSection.AdSectionName);
+    const sameDepartmentName=Boolean(sourceName.length>=5&&targetName.length>=5&&sourceName===targetName);
+    const collegeSections=sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId);
+    const namedMatches=sourceName.length>=5?collegeSections.filter((item:any)=>{
+      const candidate=normalizeDepartmentName(item.AdSectionName);
+      return candidate.length>=5&&sourceName===candidate;
     }):[];
     const namedSection=namedMatches.length===1?namedMatches[0]:undefined;
-    const definiteMismatch=Boolean(
-      (sourceDepartment&&targetDepartment&&!sameDepartment)
-      ||(namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId))
-    );
+    const codedMatches=sourceDepartment?collegeSections.filter((item:any)=>{
+      const candidate=asciiDigits(String(item.AdSectionCode||"")).replace(/\D/g,"");
+      return Boolean(candidate&&Number(candidate)===Number(sourceDepartment));
+    }):[];
+    const codedSection=codedMatches.length===1?codedMatches[0]:undefined;
+    const selectedByName=Boolean(namedSection&&Number(namedSection.AdSectionId)===Number(targetSection.AdSectionId));
+    const selectedByCode=Boolean(codedSection&&Number(codedSection.AdSectionId)===Number(targetSection.AdSectionId));
+    const selectedIdentityConfirmed=sameDepartmentCode||sameDepartmentName||selectedByName||selectedByCode;
+    const definiteMismatch=Boolean(!selectedIdentityConfirmed&&(
+      (namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId))
+      ||(codedSection&&Number(codedSection.AdSectionId)!==Number(targetSection.AdSectionId))
+      ||(sourceDepartment&&targetDepartment&&Number(sourceDepartment)!==Number(targetDepartment))
+    ));
     if(definiteMismatch){
       res.status(409).json({
         error:`هذا الملف للقسم «${headerPreflight.department.label}»، بينما القسم المحدد هو «${String(targetSection.AdSectionName||targetSection.AdSectionCode||"")}». لم يتم استيراد أي صف.`,
