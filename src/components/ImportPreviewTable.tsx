@@ -128,6 +128,8 @@ export default function ImportPreviewTable({
   const evidenceClass = (row:ImportRow,key:EvidenceKey,bad:boolean) => {
     if(bad)return "import-cell-missing";
     const proof=row.importEvidence?.[key];
+    if(proof?.confidence==="REVIEW_REQUIRED")return "import-cell-review";
+    if(proof?.confidence==="UNRESOLVED")return "import-cell-missing";
     return proof?.confidence==="CONFIRMED"&&proof.derived?"import-cell-derived":"";
   };
   const evidenceTitle = (row:ImportRow,key:EvidenceKey) => {

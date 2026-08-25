@@ -188,6 +188,10 @@ ok('103 golden Authority fixture and regression guard are wired into npm test', 
 ok('104 golden baseline documents no-regression change protocol', 'Existing golden fixtures must remain unchanged' in (ROOT/'docs/PDF_IMPORT_GOLDEN_BASELINE.md').read_text() and 'Never weaken a validator' in (ROOT/'docs/PDF_IMPORT_GOLDEN_BASELINE.md').read_text())
 ok('105 instructor resolver uses course history before department before global proof', doc_ocr.index('const courseHit=') < doc_ocr.index('const preferredHit=') < doc_ocr.index('const globalHit='))
 ok('106 seat/capacity numerics cannot enter contextual building shorthand', 'Never send arbitrary six-digit numeric seat/capacity strings' in location_registry and '/^(?:0*\\d{1,3}|[A-Z]0*\\d{1,3})$/' in location_registry)
+ok('107 sideways image-only Authority PDF is refused before body OCR', 'authorityScanRequiresLandscape' in doc_ocr and 'ROOT SAFETY GUARD' in doc_ocr and 'PDF_SCAN_REQUIRES_LANDSCAPE' in server and server.index('PDF_SCAN_REQUIRES_LANDSCAPE') < server.index('ocrDocument(bytes,"application/pdf"'))
+ok('108 rotated later scan page cannot reach schedule parsing', 'const rotatedPages=recognized.pageDiagnostics.filter' in server and server.index('const rotatedPages=recognized.pageDiagnostics.filter') < server.index('parseScheduleTable(recognized.pages'))
+css=(ROOT/'src/styles/06-intelligence.css').read_text()
+ok('109 import confidence legend uses four visually distinct named states', 'أبيض · مؤكد مباشر' in transfer and 'أخضر · مستنتج ومثبت' in transfer and 'ذهبي · يحتاج مراجعة' in transfer and 'أحمر · ناقص' in transfer and 'import-cell-review' in css)
 
 ok('P0 probable room never becomes verified from usage alone', 'HISTORICAL_STRONG_PROBABLE_REVIEW' in engine and 'locationStatus:"LOCATION_REVIEW_REQUIRED"' in engine)
 ok('P1 room college metadata follows canonical target building', 'roomCollegeIds=targetBuilding.collegeIds.length?[...targetBuilding.collegeIds]' in server and 'لا يمكن نقل/ربط القاعة بكلية لا يتبع لها المبنى الهدف' in server)

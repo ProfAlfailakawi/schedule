@@ -25,7 +25,20 @@ export type Legibility={readable:boolean;confidence:number;charactersPerPage:num
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
 export type HeaderBranch={code:string;name:string;label:string};
 export type HeaderDepartment={code:string;name:string;label:string};
-export type AuthorityPdfHeader={term?:HeaderTerm;branch?:HeaderBranch;department?:HeaderDepartment;source?:"text"|"scan"};
+export type AuthorityPdfHeader={
+  term?:HeaderTerm;
+  branch?:HeaderBranch;
+  department?:HeaderDepartment;
+  source?:"text"|"scan";
+  /**
+   * Authority timetable scans are expected to be uploaded already horizontal.
+   * We deliberately do NOT silently rotate an image-only PDF anymore: rotating
+   * a dense ruled table can make OCR bind the right text to the wrong physical
+   * column while still producing plausible-looking rows. Text-layer PDFs keep
+   * their old behaviour because their cell geometry is read from coordinates.
+   */
+  requiresLandscapeUpload?:boolean;
+};
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:number;pages:number;message:string})=>void;
 
@@ -1615,6 +1628,24 @@ export function parseAuthorityHeaderText(text:string):AuthorityPdfHeader{
 }
 
 /**
+ * Cheap, deterministic guard for scanned Authority timetables.
+ *
+ * A portrait PDF page is not automatically "wrong" in general, but the
+ * Authority timetable template is a landscape table. We apply this rule only
+ * when the page has no meaningful embedded text layer; native text PDFs are
+ * reconstructed from glyph coordinates and are therefore exempt.
+ */
+export function authorityScanRequiresLandscape(
+  width:number,
+  height:number,
+  embeddedCharacters:number,
+  embeddedItems:number,
+):boolean{
+  const imageOnly=embeddedCharacters<120&&embeddedItems<12;
+  return imageOnly&&height>width*1.05;
+}
+
+/**
  * Cheap first-page preflight for Authority PDFs.
  *
  * It first inspects ONLY page 1's embedded text. For image-only/CamScanner
@@ -1652,6 +1683,24 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     const embeddedParsed=parseAuthorityHeaderText(text);
     const embedded:AuthorityPdfHeader={...embeddedParsed,source:"text"};
     if(embedded.term&&embedded.branch&&embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
+
+    /* ROOT SAFETY GUARD — image-only portrait scans are refused BEFORE table
+       OCR. The old auto-rotation made a sideways page readable to Tesseract,
+       but could also shift the dense SWRSCHA columns and turn seat/capacity or
+       reference values into courses/buildings. The user can fix the source in
+       seconds by rotating the PDF once; silently guessing orientation is not a
+       safe trade-off for schedule data. */
+    const embeddedCharacters=text.replace(/\s+/g,"").length;
+    if(authorityScanRequiresLandscape(
+      Number(viewport.width||0),
+      Number(viewport.height||0),
+      embeddedCharacters,
+      headerWords.length,
+    )){
+      const rotated:AuthorityPdfHeader={...embedded,source:"scan",requiresLandscapeUpload:true};
+      headerPreflightCache.set(input,{header:rotated,orientation:0});
+      return rotated;
+    }
 
     /* A PARTIAL text-layer hit is not success. The regression that prompted
        this guard returned immediately after finding only the term, then told
@@ -1708,6 +1757,15 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
       department:embedded.department||best?.header.department,
       source:(embedded.term&&embedded.branch&&embedded.department)?"text":best?.header.source||embedded.source,
     };
+
+    /* A landscape PDF can still contain a sideways raster. If semantic header
+       evidence becomes stronger only after a ±90° turn, stop here rather than
+       carrying that automatic rotation into body-column extraction. */
+    if(best&&best.turn!==0){
+      const rotated:AuthorityPdfHeader={...merged,source:"scan",requiresLandscapeUpload:true};
+      headerPreflightCache.set(input,{header:rotated,orientation:best.turn});
+      return rotated;
+    }
 
     /* Deep header rescue: cheap 1400px preflight can still lose tiny Arabic
        dots in a phone-scanned/CamScanner page. Do NOT reject the document at

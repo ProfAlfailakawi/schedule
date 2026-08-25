@@ -4111,3 +4111,75 @@ button.twin-delta{width:100%}
 .import-color-key .missing i{background:color-mix(in srgb,var(--danger,#a2402f) 36%,white)}
 .import-visiting-badge{padding-inline:7px!important;background:color-mix(in srgb,var(--brass,#a8792a) 10%,var(--surface))!important;border-color:color-mix(in srgb,var(--brass,#a8792a) 32%,var(--line))!important;letter-spacing:0!important}
 @media(max-width:720px){.import-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.import-summary-cards>span{min-height:56px}.import-summary-cards>span b{font-size:24px!important}}
+
+/* V49 — import safety is readable at a glance.
+   These four states intentionally do NOT share one pale ramp: the operator must
+   distinguish them instantly without opening a tooltip. */
+.import-preview-table td.import-cell-review{
+  background:color-mix(in srgb,#b57916 13%,var(--surface))!important;
+  box-shadow:inset 3px 0 0 #b57916!important;
+}
+.import-preview-table td.import-cell-derived{
+  background:color-mix(in srgb,#197052 11%,var(--surface))!important;
+  box-shadow:inset 3px 0 0 #197052!important;
+}
+.import-preview-table td.import-cell-missing{
+  background:color-mix(in srgb,#b43b32 12%,var(--surface))!important;
+  box-shadow:inset 3px 0 0 #b43b32!important;
+}
+.import-color-key{
+  gap:8px!important;
+  margin-block:8px 14px!important;
+  color:var(--ink)!important;
+}
+.import-color-key span{
+  min-height:28px;
+  padding:0 9px;
+  border:1px solid var(--line);
+  border-radius:999px;
+  background:var(--surface);
+  font-size:9.5px;
+  font-weight:700;
+}
+.import-color-key i{
+  width:12px!important;
+  height:12px!important;
+  border-radius:4px!important;
+  flex:none;
+}
+.import-color-key .confirmed{background:#fff;border-color:color-mix(in srgb,var(--ink) 20%,var(--line));color:color-mix(in srgb,var(--ink) 84%,transparent)}
+.import-color-key .confirmed i{background:#fff!important;border:2px solid #66716d!important;box-shadow:none!important}
+.import-color-key .derived{background:color-mix(in srgb,#197052 9%,var(--surface));border-color:color-mix(in srgb,#197052 36%,var(--line));color:#175f49}
+.import-color-key .derived i{background:#197052!important;border-color:#197052!important}
+.import-color-key .review{background:color-mix(in srgb,#b57916 10%,var(--surface));border-color:color-mix(in srgb,#b57916 38%,var(--line));color:#84530c}
+.import-color-key .review i{background:#c88717!important;border-color:#c88717!important}
+.import-color-key .missing{background:color-mix(in srgb,#b43b32 9%,var(--surface));border-color:color-mix(in srgb,#b43b32 36%,var(--line));color:#91342d}
+.import-color-key .missing i{background:#b43b32!important;border-color:#b43b32!important}
+
+/* Rotated scan refusal — guidance, not a frightening generic error. */
+.transfer-orientation-guidance{
+  display:grid;
+  grid-template-columns:44px minmax(0,1fr);
+  align-items:center;
+  gap:12px;
+  margin-block:10px 14px;
+  padding:12px 14px;
+  border:1px solid color-mix(in srgb,#b57916 34%,var(--line));
+  border-radius:16px;
+  background:linear-gradient(135deg,color-mix(in srgb,#b57916 9%,var(--surface)),var(--surface));
+  box-shadow:0 8px 22px color-mix(in srgb,var(--ink) 4%,transparent);
+}
+.transfer-orientation-icon{
+  width:40px;height:40px;border-radius:13px;
+  display:grid;place-items:center;
+  background:color-mix(in srgb,#b57916 14%,var(--surface));
+  color:#9b6511;
+}
+.transfer-orientation-icon svg{width:20px;height:20px}
+.transfer-orientation-guidance strong{display:block;color:var(--ink);font-size:12px;line-height:1.45}
+.transfer-orientation-guidance p{margin:3px 0 0;color:var(--muted);font-size:10.5px;line-height:1.7}
+@media(max-width:620px){
+  .transfer-orientation-guidance{grid-template-columns:36px minmax(0,1fr);padding:10px 11px}
+  .transfer-orientation-icon{width:34px;height:34px;border-radius:11px}
+  .import-color-key span{font-size:9px;padding-inline:8px}
+}

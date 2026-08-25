@@ -258,6 +258,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds, roster]);
   const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
+  const rotatedPdfGuidance = Boolean(error && /اتجاه المستند|الوضع الأفقي|اتجاه .*الصفحة|اتجاه .*الصفحات/.test(error));
   const pdfReadinessSummary = useMemo(() => {
     if (importKind !== "authority-pdf" || !Array.isArray(xlsxPreview?.rows)) return null;
     const rows = xlsxPreview.rows as ImportRow[];
@@ -629,7 +630,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         {!scopeReady ? (
           <p className="transfer-note"><AlertTriangle />اختر الكلية والقسم والفصل أولاً.</p>
         ) : null}
-        {error && tab !== "visiting" ? <p className="transfer-error"><AlertTriangle />{error}</p> : null}
+        {error && tab !== "visiting" ? rotatedPdfGuidance ? (
+          <div className="transfer-orientation-guidance" role="alert">
+            <span className="transfer-orientation-icon"><RotateCcw aria-hidden="true" /></span>
+            <div><strong>دوّر الجدول للوضع الأفقي ثم أعد الرفع</strong><p>{error}</p></div>
+          </div>
+        ) : <p className="transfer-error"><AlertTriangle />{error}</p> : null}
 
         <div className="transfer-body">
           {tab === "export" ? (
@@ -697,7 +703,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?.review?<span className="warn"><b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b><small>للمراجعة</small></span>:null}
                   </div>
-                  {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="confirmed"><i/>مؤكد</span><span className="derived"><i/>مستنتج ومثبت</span><span className="review"><i/>للمراجعة</span><span className="missing"><i/>ناقص</span></div> : null}
+                  {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="confirmed"><i/>أبيض · مؤكد مباشر</span><span className="derived"><i/>أخضر · مستنتج ومثبت</span><span className="review"><i/>ذهبي · يحتاج مراجعة</span><span className="missing"><i/>أحمر · ناقص</span></div> : null}
                   {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
                     <>
                       {/* The whole table, red on what the scan could not read,
