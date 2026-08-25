@@ -5171,8 +5171,25 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
   const headerPreflight=await readAuthorityPdfHeader(bytes);
 
-  if(!headerPreflight.term||!headerPreflight.college||!headerPreflight.branch||!headerPreflight.department){
-    const missing=[!headerPreflight.term?"الفصل والسنة":"",!headerPreflight.college?"الكلية":"",!headerPreflight.branch?"الفرع":"",!headerPreflight.department?"القسم":""].filter(Boolean);
+  /* The branch line itself prints the college family («كلية التربية الأساسية
+     بنات/بنين ...»). If OCR loses only the short parent-college line, that
+     explicit branch wording is still independent document evidence for the
+     parent college; do not reject an otherwise verified scan just because the
+     tiny «الكلية: 01» cell was missed. */
+  const targetCollegeFamily=foldCollegeFamily(targetCollegeName);
+  const branchCollegeFamily=foldCollegeFamily(headerPreflight.branch?.name||"");
+  const branchProvesCollege=Boolean(
+    headerPreflight.branch
+    &&targetCollegeFamily.length>=4
+    &&branchCollegeFamily.length>=4
+    &&(branchCollegeFamily.includes(targetCollegeFamily)||targetCollegeFamily.includes(branchCollegeFamily))
+  );
+  const effectiveHeaderCollege=headerPreflight.college||(branchProvesCollege
+    ?{code:"",name:String(headerPreflight.branch?.name||""),label:String(headerPreflight.branch?.name||"")}
+    :undefined);
+
+  if(!headerPreflight.term||!effectiveHeaderCollege||!headerPreflight.branch||!headerPreflight.department){
+    const missing=[!headerPreflight.term?"الفصل والسنة":"",!effectiveHeaderCollege?"الكلية":"",!headerPreflight.branch?"الفرع":"",!headerPreflight.department?"القسم":""].filter(Boolean);
     res.status(422).json({
       error:`لم أتمكن من إثبات ${missing.join(" و")} من ترويسة الصفحة الأولى. لم تتم قراءة الجدول ولم يتم استيراد أي صف. ارفع نسخة أوضح أو راجع الملف.`,
       code:"PDF_HEADER_UNRESOLVED",
@@ -5203,19 +5220,19 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
      while the branch line adds «بنات/بنين/الجهراء/الفحيحيل». Compare the
      numeric college code when both sides have one; otherwise compare the parent
      college family after removing site/gender suffixes. */
-  if(headerPreflight.college&&targetCollege){
-    const sourceCollegeCode=asciiDigits(String(headerPreflight.college.code||"")).replace(/\D/g,"");
+  if(effectiveHeaderCollege&&targetCollege){
+    const sourceCollegeCode=asciiDigits(String(effectiveHeaderCollege.code||"")).replace(/\D/g,"");
     const targetCollegeCode=asciiDigits(String(targetCollege.AdCollegeCode||"")).replace(/\D/g,"");
     const codeMismatch=Boolean(sourceCollegeCode&&targetCollegeCode&&Number(sourceCollegeCode)!==Number(targetCollegeCode));
-    const sourceCollegeName=foldCollegeFamily(headerPreflight.college.name);
+    const sourceCollegeName=foldCollegeFamily(effectiveHeaderCollege.name);
     const targetCollegeFamily=foldCollegeFamily(targetCollegeName);
     const namesComparable=sourceCollegeName.length>=4&&targetCollegeFamily.length>=4;
     const nameMismatch=namesComparable&&!(sourceCollegeName.includes(targetCollegeFamily)||targetCollegeFamily.includes(sourceCollegeName));
     if(codeMismatch||(!sourceCollegeCode||!targetCollegeCode)&&nameMismatch){
       res.status(409).json({
-        error:`هذا الملف تابع إلى الكلية «${headerPreflight.college.label}»، بينما أنت تعمل على «${targetCollegeName}». لم يتم استيراد أي صف.`,
+        error:`هذا الملف تابع إلى الكلية «${effectiveHeaderCollege.label}»، بينما أنت تعمل على «${targetCollegeName}». لم يتم استيراد أي صف.`,
         code:"PDF_COLLEGE_MISMATCH",
-        sourceCollege:headerPreflight.college.label,
+        sourceCollege:effectiveHeaderCollege.label,
         targetCollege:targetCollegeName,
       });
       return;
@@ -5247,19 +5264,23 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   if(headerPreflight.department&&targetSection){
     const sourceDepartment=asciiDigits(String(headerPreflight.department.code||"")).replace(/\D/g,"");
     const targetDepartment=asciiDigits(String(targetSection.AdSectionCode||"")).replace(/\D/g,"");
-    /* Header OCR may preserve/duplicate leading zeroes around the ruled cell.
-       Department codes are numeric identifiers, so leading-zero formatting is
-       not identity evidence. Compare their numeric value, not display width. */
-    const sameDepartment=Boolean(sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment));
     const sourceName=foldHeaderIdentity(headerPreflight.department.name);
     const namedMatches=sourceName.length>=5?sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId).filter((item:any)=>{
       const candidate=foldHeaderIdentity(item.AdSectionName);
       return candidate.length>=5&&(sourceName.includes(candidate)||candidate.includes(sourceName));
     }):[];
     const namedSection=namedMatches.length===1?namedMatches[0]:undefined;
+    /* Scan OCR can duplicate a neighbouring digit into the short department
+       code (e.g. 0101 -> 020101). A unique Arabic department name is stronger
+       evidence than that noisy numeric cell. Only call it a mismatch when the
+       code disagrees AND the name does not uniquely identify the selected
+       department, or when the unique name explicitly identifies another one. */
+    const exactDepartmentCode=Boolean(sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment));
+    const namedIsTarget=Boolean(namedSection&&Number(namedSection.AdSectionId)===Number(targetSection.AdSectionId));
+    const namedIsOther=Boolean(namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId));
     const definiteMismatch=Boolean(
-      (sourceDepartment&&targetDepartment&&!sameDepartment)
-      ||(namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId))
+      namedIsOther
+      ||(sourceDepartment&&targetDepartment&&!exactDepartmentCode&&!namedIsTarget)
     );
     if(definiteMismatch){
       res.status(409).json({
@@ -5428,7 +5449,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const issues=[...new Set([...blocking,...parserNotes])];
   const importReceipt=await signPdfImportReceipt({
     v:1,collegeId,sectionId,termId,issuedAt:new Date().toISOString(),
-    sourceTerm:headerPreflight.term.label,sourceCollege:headerPreflight.college.label,sourceBranch:headerPreflight.branch.label,sourceDepartment:headerPreflight.department.label,
+    sourceTerm:headerPreflight.term.label,sourceCollege:effectiveHeaderCollege.label,sourceBranch:headerPreflight.branch.label,sourceDepartment:headerPreflight.department.label,
   });
   const result={
     rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,
@@ -5438,7 +5459,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     pageDiagnostics:recognized.pageDiagnostics,
     suspiciousExtraction:recognized.suspiciousExtraction,
     importReceipt,
-    headerCollege:headerPreflight.college||recognized.headerCollege||undefined,
+    headerCollege:effectiveHeaderCollege||recognized.headerCollege||undefined,
     headerBranch:headerPreflight.branch||recognized.headerBranch||undefined,
     headerDepartment:headerPreflight.department||recognized.headerDepartment||undefined,
     headerTerm:headerPreflight.term||recognized.headerTerm||undefined,

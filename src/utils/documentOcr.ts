@@ -5,6 +5,10 @@ const toAscii=(value:string)=>String(value||"")
      (e.g. «ﺟﺪﻭﻝ» instead of «جدول»). NFKC turns those glyph forms back into
      ordinary Arabic letters before ANY header/course/instructor matching. */
   .normalize("NFKC")
+  /* OCR/PDF engines frequently insert invisible bidi marks between an Arabic
+     label and its numeric cell (e.g. «الكلية\u200f 01»). They are display
+     controls, not document evidence, and otherwise make every header regex miss. */
+  .replace(/[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g,"")
   .replace(/[٠-٩]/g,d=>String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
   .replace(/[۰-۹]/g,d=>String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
 const fold=(value:string)=>toAscii(value).replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z0-9: ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
@@ -1220,15 +1224,30 @@ function readHeaderTerm(text:string):HeaderTerm|undefined{
   return{season,years,label:`الفصل الدراسي ${seasonLabel} ${years[0]}/${years[1]}`};
 }
 
+/**
+ * Header identity cells contain names, not timetable numbers. OCR occasionally
+ * drags the first body row into the same visual line; stripping everything that
+ * cannot be part of an Arabic authority name prevents those digits from ever
+ * becoming a huge user-facing «college/department» label.
+ */
+function cleanHeaderIdentityName(value:string):string{
+  return String(value||"")
+    .normalize("NFKC")
+    .replace(/[^ء-ي\s-]/g," ")
+    .replace(/\s+/g," ")
+    .trim()
+    .slice(0,120);
+}
+
 /** College line printed independently from the site/branch line, e.g.
  * «الكلية: 01 كلية التربية الأساسية». Keeping it separate prevents a valid
  * branch-looking token from masking a document that belongs to another college. */
 function readHeaderCollege(text:string):HeaderCollege|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
   const build=(code:string,nameRaw:string):HeaderCollege=>{
-    const name=String(nameRaw||"")
+    const name=cleanHeaderIdentityName(String(nameRaw||"")
       .replace(/\s+(?:القسم|الفرع|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
-      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
+      .replace(/^[|:：-]+|[|:：-]+$/g,""));
     return{code,name,label:[code,name].filter(Boolean).join(" ")};
   };
   for(const rawLine of ascii.split("\n")){
@@ -1248,9 +1267,9 @@ function readHeaderCollege(text:string):HeaderCollege|undefined{
 function readHeaderBranch(text:string):HeaderBranch|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
   const build=(code:string,nameRaw:string):HeaderBranch=>{
-    const name=String(nameRaw||"")
+    const name=cleanHeaderIdentityName(String(nameRaw||"")
       .replace(/\s+(?:القسم|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
-      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
+      .replace(/^[|:：-]+|[|:：-]+$/g,""));
     return{code,name,label:[code,name].filter(Boolean).join(" ")};
   };
   for(const rawLine of ascii.split("\n")){
@@ -1275,9 +1294,9 @@ function readHeaderBranch(text:string):HeaderBranch|undefined{
 function readHeaderDepartment(text:string):HeaderDepartment|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
   const build=(code:string,nameRaw:string):HeaderDepartment=>{
-    const name=String(nameRaw||"")
+    const name=cleanHeaderIdentityName(String(nameRaw||"")
       .replace(/\s+(?:الفرع|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
-      .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
+      .replace(/^[|:：-]+|[|:：-]+$/g,""));
     return{code,name,label:[code,name].filter(Boolean).join(" ")};
   };
   for(const rawLine of ascii.split("\n")){
@@ -1296,7 +1315,7 @@ function readHeaderDepartment(text:string):HeaderDepartment|undefined{
     if(branchAt<0)continue;
     const before=rawLine.slice(0,branchAt);
     const code=before.match(/\b(\d{4,6})\b/)?.[1]||"";
-    const name=before.replace(/\d+/g," ").replace(/[^ء-ي\s]/g," ").replace(/(?:^|\s)(?:القسم|العم|جح)(?=\s|$)/g," ").replace(/\s+/g," ").trim();
+    const name=cleanHeaderIdentityName(before.replace(/\d+/g," ").replace(/(?:^|\s)(?:القسم|العم|جح)(?=\s|$)/g," "));
     if(name.length>=5)return{code,name,label:[code,name].filter(Boolean).join(" ")};
   }
   return undefined;
@@ -1318,8 +1337,25 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     const pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;
     if(!Number(pdf.numPages||0))return{};
     const page=await pdf.getPage(1);
+    const viewport=page.getViewport({scale:1});
     const content:any=await page.getTextContent({includeMarkedContent:false,disableNormalization:false});
-    const text=(content?.items||[]).map((item:any)=>String(item?.str||"").normalize("NFKC")).filter(Boolean).join(" ");
+    const flatText=(content?.items||[]).map((item:any)=>String(item?.str||"").normalize("NFKC")).filter(Boolean).join(" ");
+    /* Preserve physical header lines as well as the flat token stream. RTL PDF
+       exports often store adjacent cells out of logical order; geometry puts
+       «الكلية / القسم / الفرع» back beside their values before parsing. */
+    const headerWords:Word[]=[];
+    for(const item of content?.items||[]){
+      const token=String(item?.str||"").normalize("NFKC").replace(/\s+/g," ").trim();
+      if(!token||!Array.isArray(item?.transform))continue;
+      const transformed=pdfjs.Util?.transform?pdfjs.Util.transform(viewport.transform,item.transform):item.transform;
+      const x=Number(transformed?.[4]??item.transform[4]??0);
+      const baseline=Number(transformed?.[5]??item.transform[5]??0);
+      const width=Math.max(1,Math.abs(Number(item?.width||0)*Number(viewport.scale||1)));
+      const height=Math.max(7,Math.abs(Number(item?.height||0)*Number(viewport.scale||1))||10);
+      headerWords.push({text:token,x0:x,y0:baseline-height,x1:x+width,y1:baseline+height*.15});
+    }
+    const geometricText=tableFromWords(headerWords,[],"pdf-text").map(row=>row.line).join("\n");
+    const text=[geometricText,flatText].filter(Boolean).join("\n");
     const embedded:AuthorityPdfHeader={term:readHeaderTerm(text),college:readHeaderCollege(text),branch:readHeaderBranch(text),department:readHeaderDepartment(text),source:"text"};
     /* A hybrid/image PDF may contain a tiny, stale or partial OCR text layer.
        Partial evidence is useful, but it is NOT enough to skip the scan header.
@@ -1348,12 +1384,15 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     for(const candidate of candidates){
       const upright=await rotateImage(probe,candidate.turn as -1|0|1);
       const image=await lib.loadImage(upright);
-      const headerTop=Math.round(image.height*0.01);
-      const headerHeight=Math.max(120,Math.round(image.height*0.24));
-      /* The probe is intentionally small for speed, but the printed department
-         line is fine. Upscaling only this narrow band made the real CamScanner
-         header deterministic while keeping preflight to a few seconds. */
-      const headerScale=1.5;
+      const headerTop=0;
+      /* Some phone exports crop away the report title and push the authority
+         identity block below the first quarter of the page. Reading ~42% still
+         avoids the bulk of the timetable while reliably covering the real
+         CamScanner and photographed fixtures supplied with this project. */
+      const headerHeight=Math.max(180,Math.round(image.height*0.42));
+      /* Small landscape screenshots need more than 1.5× for the thin Arabic
+         header glyphs. This upscales only the bounded header band, not the page. */
+      const headerScale=2;
       const crop=lib.createCanvas(Math.round(image.width*headerScale),Math.round(headerHeight*headerScale)),ctx=crop.getContext("2d");
       ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
       ctx.drawImage(image,0,headerTop,image.width,headerHeight,0,0,crop.width,crop.height);
@@ -1514,7 +1553,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         :"";
       const filled=gridRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
       scores[index]=Math.min(85,55+filled*2);
-      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.70);
+      /* A photographed ruled table can lose a few weak rows even when every
+         extracted row is structurally valid. Keep the historical 55% rescue
+         threshold; row/course/location validation still blocks unsafe imports. */
+      const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55);
       pages[index]={rows:[],gridRows,diagnostic:{page:index+1,visualRows:gridRows.length,extractedRows:filled,gridDetected:true,orientation:pageOrientation,suspicious,reason:suspicious?"عدد الصفوف المقروءة أقل بكثير من حدود الجدول المرئية":undefined}};
     }else{
       const grid=await spreadColumns(upright);
