@@ -53,6 +53,7 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
+import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
@@ -858,7 +859,10 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     if (!course || course.AdCollegeId !== collegeId || course.AdSectionId !== sectionId) errors.push(`السطر ${index + 1}: المقرر غير صالح للقسم المحدد`);
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
     else if(options.requireDepartmentInstructor&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
-    if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية كما ورد في المصدر`);
+    if(options.requireDepartmentInstructor){
+      const authoritySection=Number(String(row.SCode||""));
+      if(!/^\d{3}$/.test(String(row.SCode||""))||authoritySection<501||authoritySection>999)errors.push(`السطر ${index + 1}: شعبة جدول PDF يجب أن تبدأ من 501 وتستمر 502، 503… لكل مقرر`);
+    }else if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية`);
     let location=locationPreflight(row,registry,{collegeId,sectionId});
     const locationBlocking=location.issues.filter(issue=>issue.severity==="high");
     if(locationBlocking.length&&locationBlocking.every(issue=>issue.type==="room_scope")&&location.canonical&&await hallBarterAllowsRoomUse({...row,...location.canonical},collegeId,sectionId)){
@@ -5205,21 +5209,25 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
 
     if(header?.department&&targetSection){
-      const sourceDepartment=asciiDigits(String(header.department.code||"")).replace(/\D/g,"");
-      const targetDepartment=asciiDigits(String(targetSection.AdSectionCode||"")).replace(/\D/g,"");
-      /* Header OCR may preserve/duplicate leading zeroes around the ruled cell.
-         Department codes are numeric identifiers, so leading-zero formatting
-         is not identity evidence. Compare their numeric value, not width. */
-      const sameDepartment=Boolean(sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment));
+      const sourceDepartment=academicDigits(header.department.code);
+      const targetDepartment=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection.AdSectionCode);
+      /* SWRSCHA prints the scientific department as COLLEGE + LOCAL DEPARTMENT:
+         college 01 + department 01 => 0101. The system catalogue stores those
+         two authorities separately, so comparing 0101 directly with local 01
+         is a false mismatch. Build the document key from the real catalogue. */
+      const sameDepartment=authorityDepartmentMatches(sourceDepartment,targetCollege?.AdCollegeCode,targetSection.AdSectionCode);
       const sourceName=foldHeaderIdentity(header.department.name);
       const namedMatches=sourceName.length>=5?sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId).filter((item:any)=>{
         const candidate=foldHeaderIdentity(item.AdSectionName);
         return candidate.length>=5&&(sourceName.includes(candidate)||candidate.includes(sourceName));
       }):[];
       const namedSection=namedMatches.length===1?namedMatches[0]:undefined;
+      /* A proven numeric department key outranks OCR name noise. Only when the
+         document code is missing do we fall back to a unique Arabic-name match. */
       const definiteMismatch=Boolean(
-        (sourceDepartment&&targetDepartment&&!sameDepartment)
-        ||(namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId))
+        sourceDepartment&&targetDepartment
+          ?!sameDepartment
+          :namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId)
       );
       if(definiteMismatch)return{status:409,body:{
         error:`هذا الملف للقسم «${header.department.label}»، بينما القسم المحدد هو «${String(targetSection.AdSectionName||targetSection.AdSectionCode||"")}». لم يتم استيراد أي صف.`,
@@ -5246,11 +5254,10 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   ]);
   const courses=allCourses.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
 
-  /* Instructor matching is department-first, university-second. The permanent
-     instructor register itself has no department field, so the trustworthy
-     department roster is: historical teaching + delegate directory + this
-     term's visiting roster. Titles/three-vs-four-part names are normalized by
-     documentOcr before a unique match is accepted. */
+  /* Department history/delegates/visitors remain useful review evidence, but
+     automatic instructor identity is stricter than roster membership: the PDF
+     name must equal one unique system name after title removal only. No fuzzy or
+     abbreviated university-wide match may create an instructor ID. */
   const preferredInstructorIds=new Set<number>([
     ...sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)),
     ...departmentDelegates.map(Number),
@@ -5309,6 +5316,21 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(finalHeaderProblem.status).json(finalHeaderProblem.body);return;
   }
 
+  /* Once the numeric scientific-department identity is proven, expose the
+     canonical system label in the receipt/preview. OCR text such as `0101 01`
+     is source evidence, not the department's canonical display identity. */
+  if(headerPreflight.department&&targetSection&&authorityDepartmentMatches(
+    headerPreflight.department.code,targetCollege?.AdCollegeCode,targetSection.AdSectionCode
+  )){
+    const canonicalCode=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection.AdSectionCode);
+    const canonicalName=String(targetSection.AdSectionName||"").trim();
+    headerPreflight.department={
+      code:canonicalCode||academicDigits(headerPreflight.department.code),
+      name:canonicalName,
+      label:[canonicalCode||academicDigits(headerPreflight.department.code),canonicalName].filter(Boolean).join(" "),
+    };
+  }
+
   /* An unreadable scan is refused outright rather than returned as a table of
      blanks: the reader could not otherwise tell which empty cells are the
      document and which are the camera. */
@@ -5325,7 +5347,8 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(422).json({error:message,code:"SUSPICIOUS_EXTRACTION",pageDiagnostics:recognized.pageDiagnostics});return;
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
-  const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds);
+  const documentDepartmentCode=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection?.AdSectionCode);
+  const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,{authorityDepartmentCode:documentDepartmentCode,sequentialSections:true});
   const geometryRows=recognized.pageDiagnostics.reduce((sum:any,page:any)=>sum+Number(page.extractedRows||0),0);
   if(geometryRows>=3&&parsed.rows.length<Math.ceil(geometryRows*.7)){
     const message=`أوقفت الاستيراد: حدود الجدول أثبتت ${geometryRows} صفاً تقريباً، لكن المطابقة أعادت ${parsed.rows.length} فقط. هذا فرق غير آمن وقد يعني انزياح أعمدة أو دمج صفوف. لم يتم استيراد أي صف.`;
@@ -5346,9 +5369,9 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const sectionToken=String(row.SCode||"").replace(/\D/g,"");
     const authoritySectionConfirmed=/^\d{3}$/.test(sectionToken)&&Number(sectionToken)>=501;
     row.importEvidence={
-      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdCourseId)?"رمز/اسم مقرر مطابق تطابقاً صريحاً داخل كتالوج القسم":"لم يثبت المقرر من مفتاح صريح",evidence:["كتالوج القسم الحالي"]},
-      section:{raw:String(row.sourceSectionText||row.SCode||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",reason:authoritySectionConfirmed?"رقم الشعبة 501+ محفوظ كما قرأه المستند":"رقم الشعبة غير مقروء أو لا يطابق ترقيم الشعب 501+",evidence:["خلية الشعبة الأصلية"]},
-      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdInstructorId)?"مرشح وحيد بعد التطبيع وأولوية القسم":"لا يوجد مرشح فريد موثوق",evidence:Number(row.AdInstructorId)?["عضوية/سجل تدريس القسم","تطبيع NFKC والعناوين","تطابق اسم فريد"]:["لا تخمين عند التعادل أو الغموض"]},
+      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdCourseId)?"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط":"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
+      section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",reason:authoritySectionConfirmed?"رقم الشعبة مولد حسب ترتيب شعب المقرر: 501 ثم 502 ثم 503…":"تعذر توليد رقم شعبة canonical",evidence:["المقرر canonical","ترتيب ظهور شعب المقرر في المستند","بداية ثابتة 501"]},
+      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdInstructorId)?"تطابق اسم كامل وحيد مع سجل النظام بعد إزالة اللقب فقط":"لا يوجد تطابق كامل وحيد؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة اللقب الأكاديمي فقط","تطابق كامل وحيد"]:["ممنوع الاختصار أو التشابه أو التخمين"]},
       building:{raw:rawBuilding,normalized:token,confidence:"UNRESOLVED",reason:"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
       room:{raw:rawHall,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",reason:rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر",evidence:["خلية القاعة الأصلية"]},
     };
@@ -5413,7 +5436,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       parsed.issues.unshift(`تحذير: الملف يذكر «${recognized.headerTerm.label}» بينما الفصل المختار هو «${String(targetTerm.AdTermName||"")}». تأكد أنك ترفع الجدول إلى الفصل الصحيح.`);
     }
   }
-  const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
+  const rows=assignAuthoritySections(safeDraftRows(parsed.rows,collegeId,sectionId,termId));
   const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true}):[];
   /* Conflict errors and structural errors block publishing until resolved */
   const parserNotes=[...new Set(parsed.issues)];
@@ -5451,7 +5474,9 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   if(importLayout==="authority-pdf"&&!await verifyPdfImportReceipt(importReceipt,{collegeId,sectionId,termId})){
     res.status(409).json({error:"انتهت أو غابت شهادة فحص ترويسة PDF. أعد رفع الملف؛ لا يمكن تجاوز فحص الفصل والكلية والقسم من الواجهة.",code:"PDF_IMPORT_RECEIPT_REQUIRED"});return;
   }
-  const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);
+  const rows=importLayout==="authority-pdf"
+    ?assignAuthoritySections(safeDraftRows(req.body?.rows,collegeId,sectionId,termId))
+    :safeDraftRows(req.body?.rows,collegeId,sectionId,termId);
   const previewIssues=Array.isArray(req.body?.previewIssues)?[...new Set(req.body.previewIssues.map((item:any)=>String(item||"").trim()).filter(Boolean))].slice(0,80):[];
   if(previewIssues.length){res.status(400).json({error:"لا يمكن حفظ المسودة أو نشرها قبل معالجة جميع ملاحظات المعاينة.",issues:previewIssues});return;}
   const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false,requireDepartmentInstructor:importLayout==="authority-pdf"});
@@ -5522,7 +5547,7 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
 });
 
 app.put("/api/intelligence/drafts/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);if(draft.importLayout==="authority-pdf"&&draft.baselineRows?.length){const baselineByOrder=new Map(draft.baselineRows.map((row:any)=>[Number(row.sourceOrder),row]));const renamed=rows.find((row:any)=>{const base=baselineByOrder.get(Number(row.sourceOrder));return base&&(Number(base.AdCourseId)!==Number(row.AdCourseId)||String(base.AdCourseName)!==String(row.AdCourseName));});if(renamed){res.status(409).json({error:"اسم المقرر من ملف PDF ثابت وفق لائحة الجدول. يمكنك حذف المقرر كاملاً، لكن لا يمكن تبديل اسمه.",code:"COURSE_NAME_LOCKED",rowId:renamed.id});return;}}const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false,requireDepartmentInstructor:draft.importLayout==="authority-pdf"});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
+  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=draft.importLayout==="authority-pdf"?assignAuthoritySections(safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId)):safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);if(draft.importLayout==="authority-pdf"&&draft.baselineRows?.length){const baselineByOrder=new Map(draft.baselineRows.map((row:any)=>[Number(row.sourceOrder),row]));const renamed=rows.find((row:any)=>{const base=baselineByOrder.get(Number(row.sourceOrder));return base&&(Number(base.AdCourseId)!==Number(row.AdCourseId)||String(base.AdCourseName)!==String(row.AdCourseName));});if(renamed){res.status(409).json({error:"اسم المقرر من ملف PDF ثابت وفق لائحة الجدول. يمكنك حذف المقرر كاملاً، لكن لا يمكن تبديل اسمه.",code:"COURSE_NAME_LOCKED",rowId:renamed.id});return;}}const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false,requireDepartmentInstructor:draft.importLayout==="authority-pdf"});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
 });
 app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const draft = await Repository.getScheduleDraftById(String(req.params.id));
@@ -5540,7 +5565,9 @@ app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asyn
   Object.assign(candidate,locationResult.check.canonical||{});
   const structural = await validateSmartRows([candidate], draft.AdCollegeId, draft.AdSectionId, { checkConflicts: false,requireDepartmentInstructor:draft.importLayout==="authority-pdf" });
   if (structural.length) { res.status(400).json({ error: structural[0], issues: structural }); return; }
-  const rows = safeDraftRows(draft.rows.map((row:any, i:number) => i === index ? candidate : row), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  const rows = draft.importLayout==="authority-pdf"
+    ? assignAuthoritySections(safeDraftRows(draft.rows.map((row:any, i:number) => i === index ? candidate : row), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId))
+    : safeDraftRows(draft.rows.map((row:any, i:number) => i === index ? candidate : row), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
   const issues = await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
@@ -5557,7 +5584,9 @@ app.delete("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asy
   if (!isScopeAllowed(req, draft.AdCollegeId, draft.AdSectionId)) { res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" }); return; }
   const rowId = Number(req.params.rowId || 0);
   if (!draft.rows.some((row:any) => Number(row.id) === rowId)) { res.status(404).json({ error: "الموعد غير موجود داخل المسودة" }); return; }
-  const rows = safeDraftRows(draft.rows.filter((row:any) => Number(row.id) !== rowId), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
+  const rows = draft.importLayout==="authority-pdf"
+    ? assignAuthoritySections(safeDraftRows(draft.rows.filter((row:any) => Number(row.id) !== rowId), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId))
+    : safeDraftRows(draft.rows.filter((row:any) => Number(row.id) !== rowId), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
   const issues = rows.length ? await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"}) : [];
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
@@ -5586,7 +5615,9 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
     res.status(409).json({error:"شهادة مطابقة ترويسة PDF غائبة أو غير صالحة لهذه المسودة؛ أوقف النشر وأعد الاستيراد. لا يمكن تجاوز فحص الفصل والكلية والقسم.",code:"PDF_IMPORT_RECEIPT_INVALID"});return;
   }
 
-  let publishRows=safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);
+  let publishRows=draft.importLayout==="authority-pdf"
+    ?assignAuthoritySections(safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId))
+    :safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);
   let issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
   let adjusted=0;
   /* Beginning-of-term drafts may only be blocked because the copied placement

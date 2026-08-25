@@ -1,4 +1,5 @@
 import type { AdCourse, AdInstructor } from "../types";
+import { academicDigits, assignAuthoritySections, authorityCourseCodeMatches } from "./authorityAcademicCodes";
 
 const toAscii=(value:string)=>String(value||"")
   /* Generated Authority PDFs often store Arabic as Presentation Forms
@@ -1360,6 +1361,10 @@ function readHeaderDepartment(text:string):HeaderDepartment|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
   const cleanName=(value:string)=>String(value||"")
     .replace(/\s+(?:الفرع|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
+    /* College/header numbers can sit physically beside the department cell in
+       RTL text extraction (e.g. department 0101 followed by college 01). They
+       are not part of the department name. Keep Arabic identity text only. */
+    .replace(/(?:^|\s)\d{1,6}(?=\s|$)/g," ")
     .replace(/^[|:：_-]+|[|:：_-]+$/g,"").replace(/\s+/g," ").trim();
   const nearestDepartmentName=(value:string)=>{
     /* Physical RTL extraction may place the whole branch phrase before the
@@ -1937,131 +1942,27 @@ export type ParsedScheduleRow={
   sourceCourseCode?:string;sourceCourseText?:string;sourceSectionText?:string;
 };
 
-/** Match the abbreviated instructor name printed on the Authority sheet to
- * the exact catalogue record.
- * Supports:
- * - Full names, e.g. «د. علي يوسف أحمد السند»
- * - First + Last names, e.g. «علي السند», «سعد الحيص», «عيسى شقرة»
- * - Truncated / stemmed family names, e.g. «الدر» for «الدرعان»
- * - Department instructor preference weighting
- * - Clean detection of faculty / unassigned roles («هيئة تدريسية») */
-function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>):AdInstructor|undefined{
+/** Match an instructor printed on the Authority sheet to the registry.
+ * Identity is deliberately strict: after ordinary Arabic normalization and
+ * removing an academic title, the complete name must equal exactly one system
+ * record. Abbreviations, family-name stems and fuzzy similarity stay unresolved. */
+function matchInstructorName(raw:string,instructors:AdInstructor[],_preferredIds?:Set<number>):AdInstructor|undefined{
   const clean=(value:string)=>fold(value)
-    /* Academic titles are presentation, not identity. NFKC/fold removes the
-       dots first, so «أ.د.» becomes «ا د» and «أ.» becomes a standalone «ا». */
+    /* Titles are presentation only. Apart from removing a title and ordinary
+       Arabic normalization, instructor identity must be EXACT. The import must
+       never turn a shortened/fuzzy OCR name into a real professor. */
     .replace(/^(?:(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|ا\s*د|د|م|ا)\s+)+/g," ")
     .replace(/(?:^|\s)(?:دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|ا\s*د)(?=\s|$)/g," ")
     .replace(/\s+/g," ").trim();
   const rawClean=clean(raw);
   if(!rawClean)return undefined;
-  /* “هيئة تدريسية” is an actual instructor identity in this installation.
-     Multiple spaces/titles normalize away; accept only a UNIQUE registry row,
-     preferring current-department evidence. Other generic roles stay unresolved. */
-  if(/^هيئه(?:\s|$)/.test(rawClean)){
-    /* Authority scans sometimes read only «هيئة» or insert extra spaces/noise
-       after it. In this installation «هيئة تدريسية» is a real registry identity;
-       map the prefix ONLY to that exact identity and only when department/global
-       evidence leaves one unique row. Never fuzzy-match “هيئة” to a person. */
-    const faculty=instructors.filter(person=>clean(person.AdInstructorName)==="هيئه تدريسيه");
-    const preferredFaculty=faculty.filter(person=>preferredIds?.has(Number(person.AdInstructorId)));
-    if(preferredFaculty.length===1)return preferredFaculty[0];
-    return faculty.length===1?faculty[0]:undefined;
-  }
   if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
 
-  const rawTokens=rawClean.split(/\s+/).filter(w=>/[ء-ي]/.test(w)&&w.length>=2);
-  if(!rawTokens.length)return undefined;
-
-  const allCandidates=instructors.map(person=>{
-    const normalized=clean(person.AdInstructorName);
-    const tokens=normalized.split(/\s+/).filter(w=>/[ء-ي]/.test(w)&&w.length>=2);
-    const preferred=Boolean(preferredIds?.has(Number(person.AdInstructorId)));
-    return{person,normalized,tokens,preferred};
-  }).filter(item=>item.tokens.length);
-  const preferredCandidates=allCandidates.filter(item=>item.preferred);
-  /* Exact full identity may safely rescue a genuinely new instructor not yet in
-     department history. All partial/fuzzy rules below are department-first. */
-  const globalExact=allCandidates.filter(item=>item.normalized===rawClean);
-  if(globalExact.length===1)return globalExact[0].person;
-  /* Partial/token/fuzzy identity outside the current department is not safe.
-     If we have no department evidence, leave it unresolved rather than choose
-     the closest university-wide name. */
-  if(!preferredCandidates.length)return undefined;
-  const candidates=preferredCandidates;
-
-  // 1. Direct normalized full name contains or candidate tokens are exact ordered subset of raw tokens
-  const fullMatches=candidates.filter(item=>rawClean.includes(item.normalized));
-  if(fullMatches.length===1)return fullMatches[0].person;
-  const prefFull=fullMatches.filter(item=>item.preferred);
-  if(prefFull.length===1)return prefFull[0].person;
-
-  // 1.1 Candidate tokens are an exact subset of the longer raw name (e.g. system has 2-3 names, PDF has 4-5 names)
-  const subsetMatches = candidates.filter(item => {
-    if (item.tokens.length < 2) return false;
-    let rawIdx = 0;
-    for (const t of item.tokens) {
-      const foundIdx = rawTokens.findIndex((rt, i) => i >= rawIdx && (rt === t || (rt.length >= 3 && (rt.startsWith(t) || t.startsWith(rt)))));
-      if (foundIdx === -1) return false;
-      rawIdx = foundIdx + 1;
-    }
-    return true;
-  });
-  if (subsetMatches.length === 1) return subsetMatches[0].person;
-  const prefSubset = subsetMatches.filter(item => item.preferred);
-  if (prefSubset.length === 1) return prefSubset[0].person;
-
-  // 2. First + Last name token presence
-  const firstLastMatches=candidates.filter(item=>{
-    if(item.tokens.length<2)return false;
-    const first=item.tokens[0];
-    const last=item.tokens[item.tokens.length-1];
-    const hasFirst=rawTokens.some(t=>t===first||(t.length>=3&&(first.startsWith(t)||t.startsWith(first))));
-    const hasLast=rawTokens.some(t=>t===last||(t.length>=3&&(last.startsWith(t)||t.startsWith(last))));
-    return hasFirst&&hasLast;
-  });
-  if(firstLastMatches.length===1)return firstLastMatches[0].person;
-  const prefFirstLast=firstLastMatches.filter(item=>item.preferred);
-  if(prefFirstLast.length===1)return prefFirstLast[0].person;
-
-  // 3. Any 2 common tokens (>= 3 chars)
-  const multiTokenMatches=candidates.filter(item=>{
-    let count=0;
-    for(const it of item.tokens){
-      if(rawTokens.some(t=>t===it||(t.length>=4&&(it.startsWith(t)||t.startsWith(it)))))count++;
-    }
-    return count>=2;
-  });
-  if(multiTokenMatches.length===1)return multiTokenMatches[0].person;
-  const prefMulti=multiTokenMatches.filter(item=>item.preferred);
-  if(prefMulti.length===1)return prefMulti[0].person;
-
-  // 4. Distinctive family/last name match in this department
-  const lastMatches=candidates.filter(item=>{
-    const last=item.tokens[item.tokens.length-1];
-    return last.length>=4&&rawTokens.some(t=>t===last||t===last.replace(/^ال/,"")||t==="ال"+last);
-  });
-  if(lastMatches.length===1)return lastMatches[0].person;
-  const prefLast=lastMatches.filter(item=>item.preferred);
-  if(prefLast.length===1)return prefLast[0].person;
-
-  // 5. Unique first token match
-  if(rawTokens.length<=2){
-    const first=rawTokens[0];
-    const firstMatches=candidates.filter(item=>item.tokens[0]===first);
-    const prefFirst=firstMatches.filter(item=>item.preferred);
-    if(prefFirst.length===1)return prefFirst[0].person;
-    if(firstMatches.length===1)return firstMatches[0].person;
-  }
-
-  // 6. Weighted fuzzy scoring fallback
-  const ranked=candidates.map(item=>{
-    let score=fuzzyNameScore(rawClean,item.person.AdInstructorName);
-    if(item.preferred)score+=0.15;
-    return{item,score};
-  }).sort((a,b)=>b.score-a.score);
-  const top=ranked[0],runner=ranked[1];
-  if(top&&top.score>=0.55&&(!runner||top.score-runner.score>=0.10))return top.item.person;
-  return undefined;
+  /* 1000%-rule requested by the owner: one exact normalized registry identity,
+     globally unique. No first/last shortcut, no stems, no edit distance, no
+     department-priority fuzzy rescue. «هيئة تدريسية» follows the same rule. */
+  const exact=instructors.filter(person=>clean(person.AdInstructorName)===rawClean);
+  return exact.length===1?exact[0]:undefined;
 }
 
 /**
@@ -2075,9 +1976,9 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
  * Structured rows from the gridded reader, matched against the catalogue.
  *
  * The course code is the key that cannot drift: college(2) + department(2) +
- * course(3). It is matched exactly first, then with one forgiven character,
- * then by its 3-digit tail when that tail is unique in this department — the
- * order the user specified. The Arabic name is the last resort, not the first.
+ * course(3). Only that number may create a canonical course identity. The
+ * Arabic name is evidence for the reviewer; the displayed canonical name comes
+ * exclusively from the selected system catalogue row.
  */
 function isHeaderLine(text:string):boolean{
   if(!text) return false;
@@ -2137,29 +2038,23 @@ function isHeaderLine(text:string):boolean{
   return false;
 }
 
-function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number,preferredInstructorIds?:Set<number>){
-  const catalogue=courses.map(course=>({course,digits:toAscii(String(course.CourseCode||"")).replace(/\D/g,""),folded:fold(course.CourseName)}));
+function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number,preferredInstructorIds?:Set<number>,authorityDepartment=""){
+  const catalogue=courses.map(course=>({course,digits:academicDigits(course.CourseCode),folded:fold(course.CourseName)}));
   const tailCounts=new Map<string,number>();
   for(const item of catalogue){
     if(item.digits.length>=3){const tail=item.digits.slice(-3);tailCounts.set(tail,(tailCounts.get(tail)||0)+1);}
   }
   const matchCourse=(code:string,nameText:string)=>{
     if(isHeaderLine(code)||isHeaderLine(nameText))return null;
-    if(code){
-      const exact=catalogue.find(item=>item.digits===code);
-      if(exact)return exact.course;
-      /* The Authority prints 0101102 while the academic catalogue may store
-         simply 102. Inside one already-selected department, a UNIQUE 3-digit
-         tail is authoritative enough to bridge those two representations. */
-      const tail=code.replace(/\D/g,"").slice(-3);
-      if(tail.length===3&&tailCounts.get(tail)===1){
-        const unique=catalogue.find(item=>item.digits.slice(-3)===tail);
-        if(unique)return unique.course;
-      }
-    }
-    if(nameText.length>=5){
-      const exactName=catalogue.filter(item=>fold(nameText)===item.folded);
-      if(exactName.length===1)return exactName[0].course;
+    const source=academicDigits(code);
+    if(!source)return null;
+    const matches=catalogue.filter(item=>authorityCourseCodeMatches(source,item.digits,authorityDepartment));
+    if(matches.length===1)return matches[0].course;
+    /* A 3-digit source can only resolve when that tail is unique in the selected
+       department. Course NAMES are display evidence only and never create ID. */
+    if(source.length===3&&tailCounts.get(source)===1){
+      const unique=catalogue.find(item=>item.digits.slice(-3)===source);
+      if(unique)return unique.course;
     }
     return null;
   };
@@ -2239,7 +2134,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   return{rows,issues,order};
 }
 
-export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>){
+export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>,options?:{authorityDepartmentCode?:string;sequentialSections?:boolean}){
   const activeCourses=courses;
   const catalogue=activeCourses.map(course=>({
     course,
@@ -2256,14 +2151,21 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
   for(const page of pages){
     if(page.gridRows?.length){
-      const parsed=parseGridRows(page.gridRows,activeCourses,instructors,order,preferredInstructorIds);
+      const parsed=parseGridRows(page.gridRows,activeCourses,instructors,order,preferredInstructorIds,academicDigits(options?.authorityDepartmentCode));
       rows.push(...parsed.rows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
     }
   }
+  const assignSequentialSections=()=>{
+    if(options?.sequentialSections===false)return;
+    const numbered=assignAuthoritySections(rows);
+    rows.splice(0,rows.length,...numbered);
+  };
   if(rows.length){
-    /* Section is source evidence. Never replace 505/507/... with an invented
-       sequential series; an unreadable section remains empty and blocks review. */
-    return{rows,issues:[...new Set(issues)],lines:scanned};
+    /* Owner rule: the canonical section code is generated per canonical course,
+       starting 501 for the first imported row of that course, then 502, 503… .
+       The PDF cell remains in sourceSectionText for audit only. */
+    assignSequentialSections();
+    return{rows,issues:[...new Set(issues).values()].filter(issue=>!/لم أتعرف على رقم الشعبة/.test(issue)),lines:scanned};
   }
 
   const activityTokens=["محاضرة","مختبر","تمارين","كلينيكي","عملي","نظري","ورشة","تدريب","بحث"];
@@ -2276,27 +2178,13 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     const rowDigitsSpaced=cells.map(cell=>toAscii(cell.text)).join(" ");
     const digitRuns=(rowDigitsSpaced.match(/\d+/g)||[]);
 
-    // Rule 1: Course code extraction - match strictly against department courses
+    // Rule 1: Course identity comes from its NUMBER only. The Arabic name is
+    // never allowed to manufacture a canonical course ID.
     let matchedCourse:AdCourse|null=null;
-    // 1. Exact course key, including a reference+course token whose 7-digit tail is exact.
-    for(const item of catalogue){
-      if(!item.digits)continue;
-      const code=item.digits;
-      if(digitRuns.some(run=>run===code||(run.length>code.length&&run.endsWith(code)))){
-        matchedCourse=item.course;
-        break;
-      }
-    }
-    // 2. Exact normalized Arabic course name only.
-    if(!matchedCourse){
-      for(const item of catalogue){
-        const exactName=cells.some(cell=>fold(cell.text)===item.folded);
-        if(item.folded.length>=4&&exactName){
-          matchedCourse=item.course;
-          break;
-        }
-      }
-    }
+    const authorityDepartment=academicDigits(options?.authorityDepartmentCode);
+    const sourceCourseRuns=digitRuns.filter(run=>run.length===3||run.length===7);
+    const courseMatches=catalogue.filter(item=>sourceCourseRuns.some(run=>authorityCourseCodeMatches(run,item.digits,authorityDepartment)));
+    if(courseMatches.length===1)matchedCourse=courseMatches[0].course;
     if(!matchedCourse){
       const rawCourseText = cells.find(c => /[ء-ي]/.test(c.text) && !activityTokens.some(act => c.text.includes(act)))?.text || line;
       // Extract time, days, room, instructor for unmapped row
@@ -2333,7 +2221,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
         /* Keep what the document said. Canonical instructor identity is stored
            separately in AdInstructorId and must never overwrite raw evidence. */
         sourceInstructorText:line,
-        sourceCourseCode:digitRuns.find(value=>/^\d{7}$/.test(value))||"",sourceCourseText:rawCourseText,sourceSectionText:section,
+        sourceCourseCode:sourceCourseRuns[0]||"",sourceCourseText:rawCourseText,sourceSectionText:section,
       });
       issues.push(`صف «${rawCourseText}»: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
       continue;
@@ -2381,9 +2269,12 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       roomHall=cleanHallCode(line);
     }
 
-    // Section and Reference (CRN) extraction
+    // Section and Reference (CRN) extraction. The full seven-digit Authority
+    // course key must never be mistaken for the reference number when the live
+    // catalogue stores only its three-digit tail.
     const courseCode=toAscii(String(matchedCourse.CourseCode||"")).replace(/\D/g,"");
-    const reference=digitRuns.find(value=>/^\d{4,8}$/.test(value)&&value!==courseCode&&value!==time?.start.replace(":","")&&value!==time?.end.replace(":",""))||"";
+    const sourceCourseCode=sourceCourseRuns.find(run=>authorityCourseCodeMatches(run,courseCode,authorityDepartment))||"";
+    const reference=digitRuns.find(value=>/^\d{4,8}$/.test(value)&&value!==courseCode&&value!==sourceCourseCode&&value!==time?.start.replace(":","")&&value!==time?.end.replace(":",""))||"";
     const referenceCellIndex=reference ? cells.findIndex(c=>toAscii(c.text).includes(reference)) : -1;
     let section="";
     if(referenceCellIndex>=0){
@@ -2426,7 +2317,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       ...(flags||EMPTY_DAYS),
       fstarttime:time?.start||"",fendtime:time?.end||"",
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCandidateText,
-      sourceCourseCode:courseCode,sourceCourseText:cells.find(cell=>fold(cell.text)===fold(courseName))?.text||courseName,sourceSectionText:section,
+      sourceCourseCode,sourceCourseText:cells.find(cell=>fold(cell.text)===fold(courseName))?.text||courseName,sourceSectionText:section,
     });
 
     if(!time)issues.push(`صف «${courseName}»: لم أتعرف على الوقت`);
@@ -2438,7 +2329,8 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
   }
 
   if(!rows.length)issues.push("لم أتعرف على صفوف الجدول. تأكد أن الملف واضح وبنفس نموذج الجدول المعتمد.");
-  return{rows,issues:[...new Set(issues)],lines:scanned};
+  assignSequentialSections();
+  return{rows,issues:[...new Set(issues).values()].filter(issue=>!/لم أتعرف على رقم الشعبة/.test(issue)),lines:scanned};
 }
 
 export function transcriptFacts(text:string){

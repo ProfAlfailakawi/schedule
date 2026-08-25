@@ -126,13 +126,13 @@ ok('65 authority PDF text layer keeps one physical timetable row and drops each 
 ok('66 authority PDF building bleed is repaired only through a confirmed registry code', 'const bleed=token.match(/^(\\d{3}[A-Z]\\d{2})\\d$/)' in server and 'if(repaired.status==="CONFIRMED"&&repaired.value)building=repaired' in server)
 ok('67 wrong academic term is rejected before table OCR', 'readAuthorityPdfHeader(bytes)' in server and server.index('readAuthorityPdfHeader(bytes)') < server.index('ocrDocument(bytes,"application/pdf"') and 'PDF_TERM_MISMATCH' in server)
 ok('68 cross-branch PDF rows are surfaced and never silently assigned to current college', 'sourceSitePrefix!==targetSitePrefix' in server and 'لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته' in server and 'officialSiteLabel(sourceSitePrefix)' in server)
-ok('69 instructor matching prioritizes real department rosters and normalizes academic titles', 'Repository.getDepartmentDelegates(collegeId,sectionId)' in server and 'Repository.getVisitingRoster(collegeId,sectionId,termId)' in server and 'Academic titles are presentation, not identity' in doc_ocr)
+ok('69 instructor import keeps department roster evidence but only accepts exact identity', 'Repository.getDepartmentDelegates(collegeId,sectionId)' in server and 'Repository.getVisitingRoster(collegeId,sectionId,termId)' in server and 'Titles are presentation only' in doc_ocr and 'exact.length===1?exact[0]:undefined' in doc_ocr)
 
 # PDF import regressions observed on real Authority text PDFs and CamScanner scans.
 ok('70 partial text PDF header falls back instead of rejecting a valid branch', 'const physicalText=tableFromWords(headerWords,[],"pdf-text")' in doc_ocr and 'if(embedded.term&&embedded.branch&&embedded.department)' in doc_ocr and 'A PARTIAL text-layer hit is not success' in doc_ocr)
 ok('71 time-column proof rejects building-shaped OCR before assigning semantic roles', '(?:0[7-9]|1\\d|20)[0-5]\\d' in doc_ocr and '012-809' in doc_ocr and 'const timeIndex=claim(stripPatterns.time' in doc_ocr)
 ok('72 academic key searches the bounded right table edge instead of the last physical band', 'const keySearchFrom=Math.max(0,columnBands.length-7)' in doc_ocr and 'for(let end=lastBand;end>=keySearchFrom;end--)' in doc_ocr)
-ok('73 full Authority course keys resolve against unique three-digit catalogue tails', 'tailCounts.get(tail)===1' in doc_ocr and 'item.digits.slice(-3)===tail' in doc_ocr)
+ok('73 full Authority course keys resolve by number inside the selected document department', 'authorityCourseCodeMatches(source,item.digits,authorityDepartment)' in doc_ocr and 'Course NAMES are display evidence only' in doc_ocr)
 schedules_src=(ROOT/'src/components/Schedules.tsx').read_text()
 ok('74 section numbering starts at 501 and ignores legacy/broken lower values when suggesting next section', 'return "501"' in schedules_src and 'value >= 501 && value <= 999' in schedules_src and 'Sections of one course run 501, 502, 503' in schedules_src)
 
@@ -142,5 +142,22 @@ ok('77 generated RTL header keeps glued 012 branch separate from 0101 department
 ok('78 CamScanner page-1 header has bounded high-resolution rescue', 'Deep header rescue' in doc_ocr and 'renderPdfFirstPage(input,TARGET_LONG_EDGE)' in doc_ocr and 'for(const psm of [6,11])' in doc_ocr)
 ok('79 partial preflight is rescued before PDF_HEADER_UNRESOLVED is emitted', 'A partial preflight is NOT a rejection' in server and server.index('ocrDocument(bytes,"application/pdf"') < server.index('code:"PDF_HEADER_UNRESOLVED"'))
 ok('80 successful scan grid still rereads page-1 header when preflight is incomplete', 'readAuthorityHeaderBand(upright,pool.ara)' in doc_ocr and 'needsHeaderRescue' in doc_ocr and 'already-upright 2800px page' in doc_ocr)
+
+# Owner academic-import identity rules (2026-08-25).
+auth=(ROOT/'src/utils/authorityAcademicCodes.ts').read_text()
+doc=(ROOT/'src/utils/documentOcr.ts').read_text()
+server=(ROOT/'server.ts').read_text()
+ok('81 scientific department code is college + local department', 'college 01 + department 01 => 0101' in auth and 'authorityDepartmentMatches' in server)
+ok('82 course identity is number-only and canonical name comes from system', 'Course NAMES are display evidence only' in doc and 'AdCourseName:course.CourseName' in doc)
+ok('83 imported sections restart at 501 per canonical course', 'assignAuthoritySections' in auth and 'nextByCourse' in auth and 'sequentialSections:true' in server and 'assignAuthoritySections(safeDraftRows(parsed.rows' in server)
+ok('84 instructor import is exact-only with no fuzzy rescue', '1000%-rule requested by the owner' in doc and 'exact.length===1?exact[0]:undefined' in doc)
+preview=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
+ok('85 unmatched instructor source text is never displayed as a canonical professor', 'person?.AdInstructorName || "—"' in preview and 'person?.AdInstructorName || String(row.sourceInstructorText' not in preview)
+ok('86 document department rejects local-only code when college composite is known', 'if (college && composite) return source === composite' in auth)
+ok('87 authority section sequence is re-applied server-side after preview, edit, delete and publish', server.count('assignAuthoritySections(safeDraftRows') >= 5)
+transfer=(ROOT/'src/components/ScheduleTransfer.tsx').read_text()
+ok('88 authority section sequence is re-applied in both import UIs', 'assignAuthoritySections(next)' in transfer and 'assignAuthoritySections(rows)' in intel)
+ok('89 canonical header receipt uses system department label after numeric proof', 'canonical system label in the receipt/preview' in server and 'name:canonicalName' in server)
+ok('90 fallback parser never confuses full course key with CRN', 'value!==sourceCourseCode' in doc and 'sourceCourseCode=sourceCourseRuns.find' in doc)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

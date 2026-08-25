@@ -8,6 +8,7 @@ import SchedulePublish from "./SchedulePublish";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
+import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -242,7 +243,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     rows.forEach((row, index) => {
       const n = (index + 1).toLocaleString("ar-KW-u-nu-latn");
       if (!Number(row.AdCourseId)) issues.add(`الصف ${n}: المقرر غير محدد.`);
-      if (!/^\d{3,4}$/.test(String(row.SCode || "").trim())) issues.add(`الصف ${n}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام كما في المصدر.`);
+      const sectionNumber=Number(String(row.SCode||""));
+      if (!/^\d{3}$/.test(String(row.SCode || "").trim()) || sectionNumber < 501) issues.add(`الصف ${n}: الشعبة يجب أن تكون ضمن تسلسل المقرر 501، 502، 503…`);
       if (!hasDays(row)) issues.add(`الصف ${n}: أيام المحاضرة غير محددة.`);
       const start = minutes(row.fstarttime), end = minutes(row.fendtime);
       if (start < 0 || end <= start) issues.add(`الصف ${n}: الوقت غير مكتمل أو غير صالح.`);
@@ -415,7 +417,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
          preview — zero rows, zero message. An error object IS the message. */
       if(data&&(data as any).error&&!(data as any).rows)throw new Error((data as any).error);
       if(!data)throw new Error("تعذرت قراءة PDF");
-      const scannedRows=Array.isArray(data.rows)?data.rows:[];
+      const scannedRows=assignAuthoritySections(Array.isArray(data.rows)?data.rows:[]);
       setXlsxPreview({
         ...data,
         rows:scannedRows,
@@ -675,8 +677,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         termId={termId}
                         onRows={next => setXlsxPreview((prev: any) => {
                           if(!prev)return prev;
+                          const normalized=assignAuthoritySections(next);
                           const documentWarnings=(Array.isArray(prev.issues)?prev.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
-                          return { ...prev, rows: next, count: next.length, issues: documentWarnings, valid: next.length > 0 };
+                          return { ...prev, rows: normalized, count: normalized.length, issues: documentWarnings, valid: normalized.length > 0 };
                         })}
                       />
                     </>
