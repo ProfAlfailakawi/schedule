@@ -705,11 +705,6 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         ) : null}
                         {importKind==="authority-pdf" && importReady ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy || !importReady}>حفظ كمسودة فقط</SecondaryButton> : null}
                       </div>
-                      {!importReady ? (
-                        <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2.5 text-xs mt-2">
-                          ⚠️ تنبيه: توجد صفوف بحاجة لإكمال بياناتها (المقرر، الوقت، اليوم، المبنى/القاعة، أو أستاذ المقرر). اضغط على زر <b>تعديل (✏️)</b> في يمين أي صف ملون بالأحمر لتصحيحه، ثم اضغط حفظ لتعبئة ونشر الجدول.
-                        </p>
-                      ) : null}
                     </div>
                   )}
                 </div>
