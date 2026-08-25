@@ -109,12 +109,32 @@ export function recoverOfficialBuildingCodeFromAuthorityCell(
      Require at least the last two branch digits immediately before the site
      letter. This rejects a stray room token such as F13 while accepting the
      measured scan artefacts 12B09 / 112B09 / J12B07. */
-  const alphaPieces=[...token.matchAll(/([0-9]{2,4})([A-Z])0*([0-9]{1,2})/g)];
+  /* The site letter itself can be the one glyph damaged by a ruled scan: B is
+     commonly read as 8 and J as 1. Because this function receives ONLY the
+     already-proven BUILDING cell, we may repair that single glyph — but still
+     only against the finite official registry for the document branch. A seat
+     weld such as 345045 cannot pass the branch-prefix proof. */
+  const alphaPieces=[...token.matchAll(/([0-9]{2,4})([A-Z0-9])0*([0-9]{1,2})/g)];
+  const siteGlyphMatches=(rawGlyph:string,official:string)=>rawGlyph===official
+    ||(official==="B"&&rawGlyph==="8")
+    ||(official==="J"&&rawGlyph==="1");
+  const packedFull=token.match(/^(\d{3})([A-Z0-9])(\d{2})$/);
+  const packedDropZero=token.match(/^(\d{2})([A-Z0-9])(\d{2})$/);
+  const packed=packedFull||packedDropZero;
+  if(packed&&(!branch||packed[1]===branch||packed[1]===branch.slice(-2))){
+    const hits=candidates.filter(code=>{
+      const parsed=code.match(/^(\d{3})([A-Z])(\d{2})$/);
+      return Boolean(parsed&&parsed[3]===packed[3]&&siteGlyphMatches(packed[2],parsed[2]));
+    });
+    if(hits.length===1)return hits[0];
+  }
   for(const piece of alphaPieces){
-    const beforeDigits=piece[1],siteLetter=piece[2],building=String(Number(piece[3])).padStart(2,"0");
+    const beforeDigits=piece[1],siteGlyph=piece[2],building=String(Number(piece[3])).padStart(2,"0");
     if(branch&&beforeDigits.slice(-2)!==branch.slice(-2))continue;
-    const suffix=`${siteLetter}${building}`;
-    const hits=candidates.filter(code=>/^\d{3}[A-Z]\d{2}$/.test(code)&&code.slice(-3)===suffix);
+    const hits=candidates.filter(code=>{
+      const parsed=code.match(/^(\d{3})([A-Z])(\d{2})$/);
+      return Boolean(parsed&&parsed[3]===building&&siteGlyphMatches(siteGlyph,parsed[2]));
+    });
     if(hits.length===1)return hits[0];
   }
 

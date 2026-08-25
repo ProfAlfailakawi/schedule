@@ -3967,6 +3967,8 @@ button.twin-delta{width:100%}
 .import-cell-course strong{display:block;font-size:12px;line-height:1.5}
 .import-cell-course small{color:var(--muted);font-size:10px}
 .import-course-title-line{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.import-course-site-note{display:inline-flex;align-items:center;gap:4px;width:max-content;max-width:100%;padding:3px 8px;border:1px solid color-mix(in srgb,var(--accent,#9b6a22) 34%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--accent,#9b6a22) 8%,var(--surface));color:color-mix(in srgb,var(--accent,#9b6a22) 86%,var(--ink));font-size:9.5px;font-weight:850;line-height:1.3;white-space:nowrap}
+.import-course-site-note svg{width:11px;height:11px;flex:none}
 .import-course-scope-note{display:inline-flex;align-items:center;gap:4px;width:max-content;max-width:100%;padding:3px 7px;border:1px solid color-mix(in srgb,var(--danger,#a2402f) 34%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--danger,#a2402f) 8%,var(--surface));color:var(--danger,#a2402f);font-size:9.5px;font-weight:800;line-height:1.3;white-space:nowrap}
 .import-course-scope-note svg{width:11px;height:11px;flex:none}
 .import-preview-table td.import-cell-missing{background:color-mix(in srgb,var(--danger,#a2402f) 10%,transparent);box-shadow:inset 3px 0 0 color-mix(in srgb,var(--danger,#a2402f) 55%,transparent)}

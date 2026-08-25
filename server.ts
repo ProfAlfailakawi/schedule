@@ -54,7 +54,7 @@ import {
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
-import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
+import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveBuildingFromUniqueRoom, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode, recoverOfficialBuildingCodeFromAuthorityCell } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 
@@ -735,6 +735,9 @@ function safeDraftRows(input: unknown, collegeId: number, sectionId: number, ter
     locationStatus: raw?.locationStatus, sourceBuildingText: String(raw?.sourceBuildingText || raw?.AdRoomCode || "").slice(0,80) || undefined,
     sourceRoomText: String(raw?.sourceRoomText || raw?.AdRoomHall || "").slice(0,80) || undefined,
     sourceSitePrefix: String(raw?.sourceSitePrefix || "").slice(0,12) || undefined,
+    sourceSiteLabel: String(raw?.sourceSiteLabel || "").slice(0,140) || undefined,
+    courseSiteLabel: String(raw?.courseSiteLabel || "").slice(0,140) || undefined,
+    courseSiteMessage: String(raw?.courseSiteMessage || "").slice(0,420) || undefined,
     scopeMismatchType: raw?.scopeMismatchType === "CROSS_BRANCH" ? "CROSS_BRANCH" : undefined,
     scopeMismatchLabel: String(raw?.scopeMismatchLabel || "").slice(0,140) || undefined,
     scopeMismatchMessage: String(raw?.scopeMismatchMessage || "").slice(0,420) || undefined,
@@ -5404,6 +5407,14 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
         if(repaired.status==="CONFIRMED"&&repaired.value)building=repaired;
       }
     }
+    if((building.status!=="CONFIRMED"||!building.value)&&rawHall){
+      /* If the building glyph alone is damaged, a distinctive confirmed room
+         may still prove the building. This rescue is allowed only when that
+         room belongs to ONE confirmed building in the document branch; common
+         rooms such as F10/F12 remain unresolved instead of being guessed. */
+      const buildingFromRoom=resolveBuildingFromUniqueRoom(registry,rawHall,{branchRoot:sourceBranchRoot});
+      if(buildingFromRoom.status==="CONFIRMED"&&buildingFromRoom.value)building=buildingFromRoom;
+    }
     if(building.status!=="CONFIRMED"||!building.value){
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       /* Never display unverified OCR as a canonical location. Keep the raw cell
@@ -5416,7 +5427,19 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
 
     const sourceSitePrefix=String(building.value.sitePrefix||building.value.officialCode.slice(0,4)).toUpperCase();
+    const sourceSiteLabel=officialSiteLabel(sourceSitePrefix);
     row.AdRoomCode=building.value.officialCode;
+    row.sourceSitePrefix=sourceSitePrefix;
+    row.sourceSiteLabel=sourceSiteLabel;
+    /* Keep the old professional cue beside the course name for legitimate
+       alternate sites of the SAME Authority branch (e.g. 012J/012F inside the
+       012 girls report). It is informational, not a blocking mismatch. */
+    if(targetSitePrefix&&sourceSitePrefix!==targetSitePrefix&&sourceBranchRoot&&sourceSitePrefix.slice(0,3).replace(/\D/g,"")===sourceBranchRoot){
+      row.courseSiteLabel=sourceSiteLabel;
+      row.courseSiteMessage=`هذه الشعبة تُدرّس في «${sourceSiteLabel}» بحسب المبنى ${building.value.officialCode}.`;
+    }else{
+      row.courseSiteLabel=undefined;row.courseSiteMessage=undefined;
+    }
     /* 012B / 012F / 012J are different SITES of the same Authority branch 012.
        The department PDF legitimately contains Fahaheel/Jahra rows alongside
        the main girls campus. Treat a site as cross-branch only when its branch

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { authorityBuildingCellLooksPlausible, authorityPdfTextGridRows, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
-import { recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
-import { resolveRoom } from "../src/utils/locationRegistry.ts";
+import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
+import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
 
 const generatedPhysical = `
 01كليه التربيه الاساسيه الكلية : الفصل الدراسي الاول 2027-2026 الفصل :
@@ -79,7 +79,12 @@ assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12B09","012",official
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("112B09","012",officialBuildings),"012B09");
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12B07 F","012",officialBuildings),"012B07");
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12F15","012",officialBuildings),"012F15");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012809","012",officialBuildings),"012B09");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012114","012",officialBuildings),"012J14");
+assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("345045","012",officialBuildings),null);
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("F13","012",officialBuildings),null);
+assert.equal(officialSiteLabel("012J"),"التربية الأساسية - الجهراء");
+assert.equal(officialSiteLabel("012F"),"التربية الأساسية - الفحيحيل");
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("011B17","012",officialBuildings),null);
 
 /* A hall is accepted only inside its already-confirmed building. FO7 is a
@@ -95,6 +100,19 @@ const roomRegistry:any={
 assert.equal(resolveRoom(roomRegistry,"FO7","building_012B07",{collegeId:6,sectionId:9}).value?.canonicalCode,"F07");
 assert.equal(resolveRoom(roomRegistry,"F31","building_012B07",{collegeId:6,sectionId:9}).value?.canonicalCode,"F31");
 assert.equal(resolveRoom(roomRegistry,"F99","building_012B07",{collegeId:6,sectionId:9}).status,"REVIEW_REQUIRED");
+const roomFingerprintRegistry:any={
+  buildings:[
+    {id:"building_012B07",officialCode:"012B07",sitePrefix:"012B",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true},
+    {id:"building_012B09",officialCode:"012B09",sitePrefix:"012B",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true},
+  ],
+  rooms:[
+    {id:"room_012B07_F31",buildingId:"building_012B07",buildingCode:"012B07",canonicalCode:"F31",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true,shared:false,evidence:[]},
+    {id:"room_012B07_F12",buildingId:"building_012B07",buildingCode:"012B07",canonicalCode:"F12",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true,shared:false,evidence:[]},
+    {id:"room_012B09_F12",buildingId:"building_012B09",buildingCode:"012B09",canonicalCode:"F12",confidence:"CONFIRMED",aliases:[],collegeIds:[6],sectionIds:[9],active:true,shared:false,evidence:[]},
+  ],
+};
+assert.equal(resolveBuildingFromUniqueRoom(roomFingerprintRegistry,"F31",{branchRoot:"012"}).value?.officialCode,"012B07");
+assert.equal(resolveBuildingFromUniqueRoom(roomFingerprintRegistry,"F12",{branchRoot:"012"}).status,"REVIEW_REQUIRED");
 
 /* Course NUMBER is canonical; system name wins; sections are generated 501+ per
    course; an abbreviated professor name never receives a real instructor ID. */
@@ -108,6 +126,8 @@ const instructors:any[]=[
   {AdInstructorId:23,AdInstructorName:"د. عبدالرحمن صالح سالم الجميلي"},
   {AdInstructorId:24,AdInstructorName:"أ.د. عيسى زكي عيسى شقرة"},
   {AdInstructorId:25,AdInstructorName:"هيئة تدريسية"},
+  {AdInstructorId:26,AdInstructorName:"أ. عبدالله عبداللطيف عبدالله الهاجري"},
+  {AdInstructorId:27,AdInstructorName:"د. عبد الرحمن نوري أحمد المطيري"},
 ];
 const gridRows:any[]=[
   {code:"0101102",reference:"18945",scode:"777",courseText:"اسم OCR خاطئ تماماً",instructorText:"د. علي يوسف أحمد السند",building:"",buildingRaw:"12B09",hall:"F13",hallRaw:"F13",start:"15:30",end:"16:50",days:"42"},
@@ -135,11 +155,15 @@ const instructorPages:OcrPage[]=[{rows:[],gridRows:[
   {...gridRows[0],reference:"20001",instructorText:"د. عبدالرحمن صالح سالم الجي"},
   {...gridRows[0],reference:"20002",instructorText:"ا. د. عيسى زكي عيسى شقرة"},
   {...gridRows[0],reference:"20003",instructorText:"هيئة"},
+  {...gridRows[0],reference:"20004",instructorText:"ا.عبد الله عبد اللطيف عبد الله ال"},
+  {...gridRows[0],reference:"20005",instructorText:"عبدالرحمن نوري احمد الم"},
 ]} as any];
-const instructorParsed=parseScheduleTable(instructorPages,courses,instructors,new Set([21,23,24,25]),{authorityDepartmentCode:"0101",sequentialSections:true});
+const instructorParsed=parseScheduleTable(instructorPages,courses,instructors,new Set([21,23,24,25,26,27]),{authorityDepartmentCode:"0101",sequentialSections:true});
 assert.equal(instructorParsed.rows[0].AdInstructorId,23);
 assert.equal(instructorParsed.rows[1].AdInstructorId,24);
 assert.equal(instructorParsed.rows[2].AdInstructorId,25);
+assert.equal(instructorParsed.rows[3].AdInstructorId,26);
+assert.equal(instructorParsed.rows[4].AdInstructorId,27);
 
 /* Native generated PDF geometry: location comes only from its real x-range, so
    seat/capacity welds can never become Building. Instructor is taken from the
@@ -191,7 +215,7 @@ const wrongCodePages:OcrPage[]=[{rows:[],gridRows:[{...gridRows[0],code:"0101999
 const wrong=parseScheduleTable(wrongCodePages,courses,instructors,undefined,{authorityDepartmentCode:"0101",sequentialSections:true});
 assert.equal(wrong.rows[0].AdCourseId,0);
 
-console.log(JSON.stringify({ passed: 36, checks: [
+console.log(JSON.stringify({ passed: 44, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -226,4 +250,10 @@ console.log(JSON.stringify({ passed: 36, checks: [
   "room is resolved only under its confirmed building",
   "FO7 may normalize to official F07 only inside that building",
   "unknown hall stays unresolved instead of being invented",
+  "B↔8 and J↔1 building glyph recovery is registry-and-branch constrained",
+  "Jahra/Fahaheel site labels are restored for course-side location badges",
+  "a unique confirmed room may rescue only one building in the same Authority branch",
+  "an ambiguous room can never invent a building",
+  "عبد الله/عبدالله compound-name spelling is canonicalized before instructor matching",
+  "two/three department name tokens still return only a system instructor identity",
 ] }, null, 2));

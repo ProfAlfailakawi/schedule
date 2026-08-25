@@ -28,6 +28,7 @@ export type ImportRow = {
   AdInstructorId: number;
   sourceInstructorText?: string;
   sourceCourseCode?: string; sourceCourseText?: string; sourceSectionText?: string;
+  sourceSitePrefix?: string; sourceSiteLabel?: string; courseSiteLabel?: string; courseSiteMessage?: string;
   importEvidence?: Partial<Record<"course"|"section"|"instructor"|"building"|"room", {
     raw?: string; normalized?: string; canonical?: string; confidence?: "CONFIRMED"|"REVIEW_REQUIRED"|"UNRESOLVED"; reason?: string; evidence?: string[];
   }>>;
@@ -243,13 +244,16 @@ export default function ImportPreviewTable({
                         {row.AdCourseName && !course ? (
                           <small className="muted">قرأ الملف: {row.AdCourseName}</small>
                         ) : null}
+                        {row.courseSiteLabel ? (
+                          <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span>
+                        ) : null}
                         {row.scopeMismatchType === "CROSS_BRANCH" ? (
                           <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span>
                         ) : null}
                       </div>
                     ) : (
                       <div className="import-locked-course">
-                        <span className="import-course-title-line"><strong>{course?.CourseName || row.AdCourseName || "—"}</strong>{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
+                        <span className="import-course-title-line"><strong>{course?.CourseName || row.AdCourseName || "—"}</strong>{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
                         {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                       </div>
                     )}
@@ -277,6 +281,9 @@ export default function ImportPreviewTable({
                           AdRoomHall: "",
                           locationStatus: undefined,
                           sourceSitePrefix: undefined,
+                          sourceSiteLabel: undefined,
+                          courseSiteLabel: undefined,
+                          courseSiteMessage: undefined,
                           scopeMismatchType: undefined,
                           scopeMismatchLabel: undefined,
                           scopeMismatchMessage: undefined,

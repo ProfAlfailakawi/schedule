@@ -2175,25 +2175,34 @@ export type ParsedScheduleRow={
  */
 function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>):AdInstructor|undefined{
   const clean=(value:string)=>fold(value)
-    /* fold() has already removed punctuation and normalized أ -> ا, so
-       «أ.د.» becomes «ا د» and «د.» becomes «د». Strip title tokens only at
-       the START; deleting single-letter tokens from the middle of a real name
-       would be unnecessary and unsafe. */
-    .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|الدكتوره|د|ا|م)\s+)+/g," ")
+    /* Titles are presentation only. fold() removes punctuation first, so
+       «أ.د.» -> «ا د», «د.» -> «د», and «أ.» -> «ا». */
+    .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|بروفيسور|د|ا|م)\s+)+/g," ")
     .replace(/\s+/g," ").trim();
-  const tokens=(value:string)=>clean(value).split(/\s+/).filter(token=>/[ء-ي]/.test(token)&&token.length>=2);
-  const rawClean=clean(raw);
-  if(!rawClean)return undefined;
+
+  /* Authority/system spellings alternate constantly between «عبد الله» and
+     «عبدالله» (same for عبدالرحمن/عبد العزيز/عبد اللطيف...). Canonicalize the
+     pair as ONE identity token on both sides before comparing names. */
+  const identityTokens=(value:string)=>{
+    const source=clean(value).split(/\s+/).filter(token=>/[ء-ي]/.test(token)&&token.length>=2);
+    const out:string[]=[];
+    for(let i=0;i<source.length;i++){
+      if(source[i]==="عبد"&&i+1<source.length&&source[i+1].length>=2){out.push(`عبد${source[i+1]}`);i++;continue;}
+      out.push(source[i]);
+    }
+    return out;
+  };
+  const rawClean=clean(raw),rawTokens=identityTokens(raw);
+  if(!rawClean||!rawTokens.length)return undefined;
 
   const catalogue=instructors.map(person=>({
     person,
-    normalized:clean(person.AdInstructorName),
-    tokens:tokens(person.AdInstructorName),
+    normalized:identityTokens(person.AdInstructorName).join(" "),
+    tokens:identityTokens(person.AdInstructorName),
     preferred:Boolean(preferredIds?.has(Number(person.AdInstructorId))),
   })).filter(item=>item.normalized&&item.tokens.length);
 
-  /* «هيئة» is deliberately special. The sheet may print «هيئة», «هيئة
-     تدريسية», or add OCR noise after it. It may NEVER fuzzy-match a person. */
+  /* «هيئة» is an explicit system identity, not a fuzzy person-name query. */
   if(/^هيئه(?:\s|$)/.test(rawClean)){
     const faculty=catalogue.filter(item=>item.normalized==="هيئه تدريسيه"||item.normalized.startsWith("هيئه تدريسيه "));
     const preferred=faculty.filter(item=>item.preferred);
@@ -2202,51 +2211,62 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
   }
   if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
 
-  /* Full registry identity can also occur inside a larger flattened PDF row. */
-  const haystack=` ${rawClean} `;
-  const exact=catalogue.filter(item=>rawClean===item.normalized||haystack.includes(` ${item.normalized} `));
+  const normalizedRaw=rawTokens.join(" ");
+  const haystack=` ${normalizedRaw} `;
+  const exact=catalogue.filter(item=>normalizedRaw===item.normalized||haystack.includes(` ${item.normalized} `));
   if(exact.length===1)return exact[0].person;
   const preferredExact=exact.filter(item=>item.preferred);
   if(preferredExact.length===1)return preferredExact[0].person;
 
-  const rawTokens=tokens(raw);
-  if(rawTokens.length<2)return undefined;
-
-  const orderedExactCount=(needle:string[],hay:string[])=>{
-    let at=0,count=0;
-    for(const token of needle){
-      const found=hay.findIndex((candidate,index)=>index>=at&&candidate===token);
+  const tokenEqual=(a:string,b:string)=>a===b;
+  const stemEqual=(a:string,b:string)=>a===b||(Math.min(a.length,b.length)>=3&&(a.startsWith(b)||b.startsWith(a)));
+  const orderedEvidence=(candidate:string[],observed:string[])=>{
+    let at=0,exactCount=0,stemCount=0,total=0;
+    for(const token of candidate){
+      let found=-1,exact=false;
+      for(let i=at;i<observed.length;i++){
+        if(tokenEqual(token,observed[i])){found=i;exact=true;break;}
+        if(found<0&&stemEqual(token,observed[i]))found=i;
+      }
       if(found<0)continue;
-      count++;at=found+1;
+      total++;if(exact)exactCount++;else stemCount++;at=found+1;
     }
-    return count;
+    return{total,exactCount,stemCount};
   };
-  const scorePool=(pool:typeof catalogue)=>{
+  const commonExact=(candidate:string[],observed:string[])=>[...new Set(candidate.filter(token=>observed.includes(token)))].length;
+
+  const choose=(pool:typeof catalogue,allowTwo:boolean)=>{
     const ranked=pool.map(item=>{
-      const exactCount=orderedExactCount(item.tokens,rawTokens);
-      const reverseCount=orderedExactCount(rawTokens,item.tokens);
-      const common=[...new Set(item.tokens.filter(token=>rawTokens.includes(token)))].length;
-      const required=Math.min(3,Math.max(2,Math.min(item.tokens.length,rawTokens.length)));
-      /* Short catalogue names such as «عيسى شقرة» are allowed when BOTH names
-         appear in order in the longer printed name. Longer identities require
-         three exact name tokens when the document supplies them. */
-      const ordered=Math.max(exactCount,reverseCount);
-      const qualified=ordered>=required&&common>=required;
-      return{item,qualified,ordered,common,required};
-    }).filter(entry=>entry.qualified)
-      .sort((a,b)=>b.ordered-a.ordered||b.common-a.common||b.item.tokens.length-a.item.tokens.length);
+      const forward=orderedEvidence(item.tokens,rawTokens);
+      const reverse=orderedEvidence(rawTokens,item.tokens);
+      const ordered=forward.total>=reverse.total?forward:reverse;
+      const exactCommon=commonExact(item.tokens,rawTokens);
+      const first=item.tokens[0],last=item.tokens[item.tokens.length-1];
+      const firstHit=rawTokens.some(token=>tokenEqual(first,token));
+      const lastHit=rawTokens.some(token=>stemEqual(last,token));
+      /* Three ordered names are strong evidence even when the printed family
+         name is cut at the cell edge. Two names are accepted only in the
+         department/preferred pool and only when no rival receives the same
+         evidence. This restores the old high hit-rate without saving OCR text. */
+      const threeProof=ordered.total>=3&&ordered.exactCount>=2;
+      const twoExactProof=allowTwo&&exactCommon>=2&&ordered.total>=2;
+      const firstLastProof=allowTwo&&item.tokens.length>=2&&firstHit&&lastHit&&ordered.total>=2;
+      const qualified=threeProof||twoExactProof||firstLastProof;
+      const score=qualified?(ordered.total*100+ordered.exactCount*20+exactCommon*10+(firstHit?3:0)+(lastHit?3:0)-ordered.stemCount):0;
+      return{item,qualified,score,ordered,exactCommon};
+    }).filter(entry=>entry.qualified).sort((a,b)=>b.score-a.score||b.exactCommon-a.exactCommon||b.item.tokens.length-a.item.tokens.length);
     if(!ranked.length)return undefined;
     const top=ranked[0],runner=ranked[1];
-    /* A tie means two system people are equally supported by the same two/three
-       names. Leave it blank instead of making a plausible-looking mistake. */
-    if(runner&&runner.ordered===top.ordered&&runner.common===top.common)return undefined;
+    if(runner&&runner.score===top.score)return undefined;
     return top.item.person;
   };
 
   const preferred=catalogue.filter(item=>item.preferred);
-  const preferredHit=preferred.length?scorePool(preferred):undefined;
+  const preferredHit=preferred.length?choose(preferred,true):undefined;
   if(preferredHit)return preferredHit;
-  return scorePool(catalogue);
+  /* Outside the department, require three-name proof; two-name university-wide
+     matches are deliberately left blank unless the FULL identity matched above. */
+  return choose(catalogue,false);
 }
 
 /**

@@ -85,6 +85,43 @@ export function resolveBuilding(registry: LocationRegistry, raw: unknown, contex
   return {status:"REVIEW_REQUIRED",evidence:["لا يوجد ربط سياقي وحيد وآمن في السجل."]};
 }
 
+/**
+ * Last-resort building recovery from a room fingerprint. This is intentionally
+ * conservative: the room must already exist in the CONFIRMED registry and,
+ * after optional Authority branch/site filtering, it must point to ONE building
+ * only. It is useful when a scan damages the building glyph but preserves a
+ * distinctive room such as F31. Ambiguous rooms (F10/F12/...) stay unresolved.
+ */
+export function resolveBuildingFromUniqueRoom(
+  registry: LocationRegistry,
+  rawRoom: unknown,
+  context: ResolveContext & { branchRoot?: string; sitePrefix?: string } = {},
+): Resolution<MasterBuilding> {
+  if (isInvalidLocationToken(rawRoom)) return {status:"INVALID", evidence:["القاعة فارغة أو Placeholder."]};
+  const token=normalizeLocationToken(rawRoom);
+  const shaped=canonicalRoomShape(rawRoom);
+  const branchRoot=String(context.branchRoot||"").replace(/\D/g,"").slice(0,3);
+  const sitePrefix=normalizeLocationToken(context.sitePrefix||"");
+  const confirmedBuildings=new Map(registry.buildings
+    .filter(b=>b.confidence==="CONFIRMED"&&b.active!==false)
+    .filter(b=>!branchRoot||normalizeLocationToken(b.officialCode).startsWith(branchRoot))
+    .filter(b=>!sitePrefix||normalizeLocationToken(b.sitePrefix||b.officialCode.slice(0,4))===sitePrefix)
+    .map(b=>[b.id,b] as const));
+  if(!confirmedBuildings.size)return {status:"REVIEW_REQUIRED",evidence:["لا توجد مبانٍ مؤكدة في نطاق الفرع/الموقع المحدد."]};
+
+  const roomMatches=registry.rooms.filter(r=>r.confidence==="CONFIRMED"&&confirmedBuildings.has(r.buildingId)).filter(r=>{
+    if(aliasMatches(r.canonicalCode,r.aliases,rawRoom))return true;
+    return Boolean(shaped&&canonicalRoomShape(r.canonicalCode)===shaped);
+  });
+  const buildingIds=[...new Set(roomMatches.map(r=>r.buildingId))];
+  if(buildingIds.length===1){
+    const building=confirmedBuildings.get(buildingIds[0]);
+    if(building)return{status:"CONFIRMED",value:building,evidence:[`القاعة ${token} موجودة رسمياً تحت مبنى واحد فقط في النطاق: ${building.officialCode}.`]};
+  }
+  if(buildingIds.length>1)return{status:"REVIEW_REQUIRED",evidence:[`القاعة ${token} موجودة تحت أكثر من مبنى: ${buildingIds.map(id=>confirmedBuildings.get(id)?.officialCode).filter(Boolean).join("، ")}.`]};
+  return{status:"REVIEW_REQUIRED",evidence:[`القاعة ${token} لا تعطي بصمة مبنى وحيدة داخل السجل الرسمي.`]};
+}
+
 export function resolveRoom(registry: LocationRegistry, raw: unknown, buildingId: string, context: ResolveContext = {}): Resolution<MasterRoom> {
   if (normalizeLocationToken(raw)===PENDING_ROOM) return {status:"REVIEW_REQUIRED",evidence:["PENDING_ROOM حالة نظام وليست قاعة."]};
   if (isInvalidLocationToken(raw)) return {status:"INVALID",evidence:["القيمة Placeholder أو فارغة."]};
