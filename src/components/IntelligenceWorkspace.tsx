@@ -372,28 +372,25 @@ const importRowsOverlap = (a: ImportRow, b: ImportRow) => {
   const a0=importClockMinutes(a.fstarttime),a1=importClockMinutes(a.fendtime),b0=importClockMinutes(b.fstarttime),b1=importClockMinutes(b.fendtime);
   return a0>=0&&a1>a0&&b0>=0&&b1>b0&&a0<b1&&b0<a1;
 };
-/** Every occurrence of one course is numbered 501, 502, 503… in document order. */
+/** Preserve the section printed in the source; normalization may trim display
+ * whitespace, but it must never invent a 501/502 sequence. */
 const normalizeImportSectionSeries = (rows: ImportRow[]) => {
-  const counters=new Map<number,number>();
-  return rows.map(row=>{
-    const courseId=Number(row.AdCourseId||0);
-    if(!courseId)return{...row,SCode:""};
-    const next=(counters.get(courseId)||500)+1;
-    counters.set(courseId,next);
-    return{...row,SCode:String(next)};
-  });
+  return rows.map(row=>({...row,SCode:String(row.SCode||"").trim()}));
 };
-const validateImportRowsLocally = (rows: ImportRow[]) => {
+const validateImportRowsLocally = (rows: ImportRow[], allowedInstructorIds?: Iterable<number>) => {
   const issues:string[] = [];
+  const allowed=allowedInstructorIds===undefined?null:new Set([...allowedInstructorIds].map(Number).filter(Boolean));
   rows.forEach((row, index) => {
     const label = `الصف ${(index + 1).toLocaleString("ar-KW-u-nu-latn")}`;
     if (!Number(row.AdCourseId)) issues.push(`${label}: المقرر غير محدد`);
-    if (!/^5\d{2,}$/.test(String(row.SCode || ""))) issues.push(`${label}: الشعبة يجب أن تكون من تسلسل 501 فما بعد`);
+    if (!/^\d{3,4}$/.test(String(row.SCode || ""))) issues.push(`${label}: رقم الشعبة مفقود أو غير صالح`);
     if (![row.fsunday,row.fmonday,row.ftuesday,row.fwednesday,row.fthursday].some(Boolean)) issues.push(`${label}: الأيام غير محددة`);
     const start=importClockMinutes(row.fstarttime),end=importClockMinutes(row.fendtime);
     if (start < 0 || end < 0 || end <= start) issues.push(`${label}: الوقت غير مكتمل أو غير منطقي`);
-    if (!String(row.AdRoomCode || "").trim() || !String(row.AdRoomHall || "").trim()) issues.push(`${label}: المبنى أو القاعة غير محدد`);
+    if (!row.buildingId) issues.push(`${label}: المبنى الرسمي غير محدد`);
+    if (!row.roomId && row.locationStatus !== "PENDING_ROOM") issues.push(`${label}: القاعة غير محددة`);
     if (!Number(row.AdInstructorId)) issues.push(`${label}: أستاذ المقرر غير محدد`);
+    else if (allowed && !allowed.has(Number(row.AdInstructorId))) issues.push(`${label}: أستاذ المقرر غير مثبت ضمن القسم الحالي`);
   });
   rows.forEach((row,index)=>rows.slice(index+1).forEach((other,offset)=>{
     if(!importRowsShareDay(row,other)||!importRowsOverlap(row,other))return;
@@ -1367,6 +1364,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   `${source === "auto" ? "اقتراح تلقائي" : source === "import" ? (importLayout === "authority-pdf" ? "نسخة PDF المعتمدة" : "استيراد النموذج") : "سيناريو"} — ${new Date().toLocaleString("ar-KW-u-nu-latn")}`,
                 rows: draftRows,
                 ...(importLayout ? { importLayout } : {}),
+                ...(importLayout === "authority-pdf" ? {
+                  importReceipt: importPreview?.importReceipt,
+                  sourceFileName: importPreview?.fileName,
+                  sourceBranchCode: importPreview?.headerBranch?.code,
+                  sourceBranchName: importPreview?.headerBranch?.name,
+                  previewIssues: validateImportRowsLocally(draftRows as ImportRow[], importInstructorIds),
+                } : {}),
               }),
             });
       setActiveDraftId(String(d.id));
@@ -1614,7 +1618,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       if (!data) throw new Error("تعذّرت قراءة PDF");
       {
         const normalizedRows=normalizeImportSectionSeries((Array.isArray(data.rows)?data.rows:[]) as ImportRow[]);
-        const localIssues=validateImportRowsLocally(normalizedRows);
+        const localIssues=validateImportRowsLocally(normalizedRows, importInstructorIds);
         const globalIssues=(Array.isArray(data.issues)?data.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
         const issues=[...globalIssues,...localIssues];
         setImportPreview({ ...data, rows:normalizedRows, count: normalizedRows.length, preview: normalizedRows, valid: normalizedRows.length>0&&issues.length===0, issues, importLayout: "authority-pdf" });
@@ -1677,26 +1681,14 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
    * the immutable baseline the colour report reads) and publishes it straight
    * away, so the professor is not left hunting for a second screen.
    */
-  const validateImportAgainstLiveSchedule = async (previewRows: ImportRow[]) => {
-    const blocking:string[]=[];
-    for (let index=0; index<previewRows.length; index+=1) {
-      const row=previewRows[index];
-      const response=await fetch("/api/schedules/check-conflicts",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...row,AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,id:0,excludeId:0})});
-      const data=await response.json().catch(()=>({}));
-      if(!response.ok){blocking.push(`الصف ${index+1}: تعذر فحص التعارضات`);continue;}
-      (Array.isArray(data?.conflicts)?data.conflicts:[])
-        .filter((item:any)=>!item?.soft&&(item?.severity==="high"||item?.type==="duplicate"))
-        .forEach((item:any)=>blocking.push(`الصف ${index+1}: ${item.message||item.detail||"يوجد تعارض يمنع النشر"}`));
-    }
-    return [...new Set(blocking)];
-  };
-
   const approveAndPublishPdf = async () => {
     if (!importPreview?.valid || importBlockingIssues.length) {
       setImportErrorModal("أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.");
       return;
     }
-    const preflight=[...validateImportRowsLocally(importPreview.rows as ImportRow[]),...await validateImportAgainstLiveSchedule(importPreview.rows as ImportRow[])];
+    /* The publish endpoint checks every conflict in one server-side pass. Do not
+       make one network request per imported row before sending the same table. */
+    const preflight=validateImportRowsLocally(importPreview.rows as ImportRow[], importInstructorIds);
     if(preflight.length){
       setImportPreview((prev:any)=>prev?{...prev,issues:[...new Set([...(prev.issues||[]),...preflight])],valid:false}:prev);
       setError(null);
@@ -1716,7 +1708,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ collegeId, sectionId, termId, source: "import", importLayout: "authority-pdf",
           name: `نسخة PDF المعتمدة — ${importPreview.fileName || ""}`.trim(),
-          sourceFileName: importPreview.fileName, rows: importPreview.rows }),
+          sourceFileName: importPreview.fileName, rows: importPreview.rows,importReceipt:importPreview.importReceipt,
+          previewIssues:importBlockingIssues,sourceBranchCode:importPreview.headerBranch?.code,sourceBranchName:importPreview.headerBranch?.name }),
       });
       await fetchJson(`/api/intelligence/drafts/${draft.id}/publish`, {
         method: "POST", headers: { "x-schedule-confirm": "publish" },
@@ -1749,8 +1742,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const importBlockingIssues = useMemo(() => {
     if (!importPreview) return [] as string[];
     const rows = Array.isArray(importPreview.rows) ? importPreview.rows as ImportRow[] : [];
-    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows)])];
-  }, [importPreview]);
+    const instructorScope=importPreview.importLayout==="authority-pdf"?importInstructorIds:undefined;
+    return [...new Set([...(Array.isArray(importPreview.issues) ? importPreview.issues : []), ...validateImportRowsLocally(rows,instructorScope)])];
+  }, [importPreview, importInstructorIds]);
   const importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0);
 
   const scopedCourses = useMemo(
@@ -5052,7 +5046,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   قرأتُ ما استطعت، لكن نسخة أوضح ستقلّل الملاحظات كثيراً.
                 </Notice>
               ) : null}
-              {importPreview.issues.length ? (
+              {importPreview.importLayout !== "authority-pdf" ? (importPreview.issues.length ? (
                 <div className="import-issues">
                   {importPreview.issues
                     .slice(0, 12)
@@ -5067,13 +5061,13 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <Notice type="success">
                   لا أخطاء ظاهرة.
                 </Notice>
-              )}
+              )) : null}
               {importPreview.importLayout === "authority-pdf" && importPreview.rows?.length ? (
                 <ImportPreviewTable
                   rows={importPreview.rows as ImportRow[]}
                   courses={courses as any}
                   instructors={instructors as any}
-                  departmentIds={instructors.map((i: any) => Number(i.AdInstructorId))}
+                  departmentIds={importInstructorIds}
                   visitingIds={importVisitingIds}
                   departmentRooms={importDepartmentRooms}
                   collegeId={collegeId}
@@ -5084,7 +5078,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                     const normalized=normalizeImportSectionSeries(next);
                     const globalIssues = (Array.isArray(prev.issues) ? prev.issues : [])
                       .filter((issue:string) => /^تحذير:/.test(String(issue)));
-                    const issues = [...globalIssues, ...validateImportRowsLocally(normalized)];
+                    const issues = [...globalIssues, ...validateImportRowsLocally(normalized, importInstructorIds)];
                     return { ...prev, rows: normalized, preview: normalized, count: normalized.length, issues, valid: normalized.length > 0 && issues.length === 0 };
                   })}
                 />
