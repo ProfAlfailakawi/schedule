@@ -110,12 +110,13 @@ async function readLocationRegistry(force=false){
   locationRegistryCache={at:Date.now(),...merged};return locationRegistryCache;
 }
 function invalidateLocationRegistry(){locationRegistryCache=null;}
-async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:number){
+async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:number,options:{allowAuthorityCrossBranch?:boolean}={}){
   const registry=await readLocationRegistry();
-  let check=locationPreflight(row,registry,{collegeId,sectionId});
+  const allowAuthorityCrossBranch=Boolean(options.allowAuthorityCrossBranch&&row?.scopeMismatchType==="CROSS_BRANCH");
+  let check=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeBuilding:allowAuthorityCrossBranch,allowOutOfScopeRoom:allowAuthorityCrossBranch});
   const blocking=check.issues.filter(issue=>issue.severity==="high");
   if(blocking.length&&blocking.every(issue=>issue.type==="room_scope")&&check.canonical&&await hallBarterAllowsRoomUse({...row,...check.canonical},collegeId,sectionId)){
-    check=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeRoom:true});
+    check=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeBuilding:allowAuthorityCrossBranch,allowOutOfScopeRoom:true});
   }
   return {registry,check};
 }
@@ -830,7 +831,7 @@ function inferAuthorityBranchCode(draft:any,rows:any[]){
   return[...votes.entries()].sort((a,b)=>b[1]-a[1])[0]?.[0]||"";
 }
 
-async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean } = {}) {
+async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean; allowAuthorityCrossBranch?:boolean } = {}) {
   const termId = Number(rows[0]?.AdTermId || 0);
   const checkConflicts = options.checkConflicts !== false;
   const [courses, instructors, currentSchedules, registry,sectionHistory,departmentDelegates,visitingRoster] = await Promise.all([
@@ -862,10 +863,11 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
     else if(options.requireDepartmentInstructor&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
     if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية كما ورد في المصدر`);
-    let location=locationPreflight(row,registry,{collegeId,sectionId});
+    const allowAuthorityCrossBranch=Boolean(options.allowAuthorityCrossBranch&&row?.scopeMismatchType==="CROSS_BRANCH");
+    let location=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeBuilding:allowAuthorityCrossBranch,allowOutOfScopeRoom:allowAuthorityCrossBranch});
     const locationBlocking=location.issues.filter(issue=>issue.severity==="high");
     if(locationBlocking.length&&locationBlocking.every(issue=>issue.type==="room_scope")&&location.canonical&&await hallBarterAllowsRoomUse({...row,...location.canonical},collegeId,sectionId)){
-      location=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeRoom:true});
+      location=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeBuilding:allowAuthorityCrossBranch,allowOutOfScopeRoom:true});
     }
     if(!location.ok) location.issues.filter(issue=>issue.severity==="high").forEach(issue=>errors.push(`السطر ${index + 1}: ${issue.message}`));
     else if(location.canonical) Object.assign(row,location.canonical);
@@ -5385,26 +5387,40 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
 
     const sourceSitePrefix=String(building.value.sitePrefix||building.value.officialCode.slice(0,4)).toUpperCase();
     row.AdRoomCode=building.value.officialCode;
+    row.buildingId=building.value.id;
+    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",reason:"تطابق صريح مع رمز مبنى Canonical كامل",evidence:[`الرمز الرسمي ${building.value.officialCode}`]});
+
+    /* A department timetable can legitimately contain teaching in another
+       campus/branch. An exact full building code is authoritative location data,
+       not an error. Keep the visual badge so the exception is visible, but never
+       erase the confirmed building or block the row merely because its site
+       prefix differs from the report header. */
     if(targetSitePrefix&&sourceSitePrefix&&sourceSitePrefix!==targetSitePrefix){
       const sourceLabel=officialSiteLabel(sourceSitePrefix);
       const targetLabel=officialSiteLabel(targetSitePrefix,targetCollegeName);
-      row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       row.sourceSitePrefix=sourceSitePrefix;
       row.scopeMismatchType="CROSS_BRANCH";
       row.scopeMismatchLabel=`فرع آخر · ${sourceLabel}`;
-      row.scopeMismatchMessage=`هذه الشعبة تابعة إلى «${sourceLabel}» بحسب المبنى ${building.value.officialCode}، بينما الاستيراد الحالي لـ «${targetLabel}». لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته.`;
-      Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"REVIEW_REQUIRED",reason:"المبنى Canonical مؤكد لكنه يعود إلى فرع آخر",evidence:[`الرمز الرسمي ${building.value.officialCode}`,`بادئة الموقع ${sourceSitePrefix}`]});
-      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: ${row.scopeMismatchMessage}`);
+      row.scopeMismatchMessage=`المبنى ${building.value.officialCode} تابع إلى «${sourceLabel}» ومثبت كما ورد في ملف الجهة، بينما سياق الجدول «${targetLabel}».`;
+      Object.assign(row.importEvidence.building,{reason:"رمز مبنى Canonical كامل لفرع آخر؛ حُفظ كما ورد في الجدول الرسمي",evidence:[`الرمز الرسمي ${building.value.officialCode}`,`بادئة الموقع ${sourceSitePrefix}`]});
+    }
+
+    /* Empty room is meaningful source data. Several official rows name the
+       building but intentionally leave the hall blank. Preserve that as
+       PENDING_ROOM; never manufacture F15/F151 (or any other hall) from the
+       building code. */
+    if(!rawHall.trim()){
+      row.roomId=undefined;row.AdRoomHall="";row.locationStatus="PENDING_ROOM";
+      Object.assign(row.importEvidence.room,{canonical:undefined,confidence:"UNRESOLVED",reason:`القاعة فارغة في المصدر؛ حُفظ المبنى ${building.value.officialCode} والقاعة بانتظار التثبيت دون تخمين`,evidence:["خلية القاعة الأصلية فارغة","لم يُشتق رمز قاعة من رمز المبنى"]});
       continue;
     }
 
-    row.buildingId=building.value.id;
-    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",reason:"تطابق صريح مع رمز مبنى Canonical",evidence:[`الرمز الرسمي ${building.value.officialCode}`]});
-    const room=resolveRoom(registry,rawHall,building.value.id,{collegeId,sectionId});
+    const crossBranch=row.scopeMismatchType==="CROSS_BRANCH";
+    const room=resolveRoom(registry,rawHall,building.value.id,crossBranch?{}:{collegeId,sectionId});
     if(room.status!=="CONFIRMED"||!room.value){
       row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
-      Object.assign(row.importEvidence.room,{confidence:"UNRESOLVED",reason:rawHall?`لم تثبت القاعة داخل المبنى ${building.value.officialCode}`:"القاعة فارغة في المصدر؛ يلزم اختيار قاعة أو PENDING_ROOM صراحةً",evidence:["سجل القاعات الرسمي","علاقة Building ↔ Room"]});
-      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة المقروءة «${rawHall||"فارغة"}» غير معروفة داخل ${building.value.officialCode}؛ اختر قاعة رسمية أو «بانتظار تثبيت القاعة».`);continue;
+      Object.assign(row.importEvidence.room,{confidence:"UNRESOLVED",reason:`لم تثبت القاعة «${rawHall}» داخل المبنى ${building.value.officialCode}`,evidence:["سجل القاعات الرسمي","علاقة Building ↔ Room"]});
+      parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة المقروءة «${rawHall}» غير معروفة داخل ${building.value.officialCode}؛ اختر قاعة رسمية أو «بانتظار تثبيت القاعة».`);continue;
     }
     row.roomId=room.value.id;row.AdRoomHall=room.value.canonicalCode;row.locationStatus="VERIFIED";
     Object.assign(row.importEvidence.room,{canonical:room.value.id,confidence:"CONFIRMED",reason:"قاعة Canonical مؤكدة داخل المبنى المحدد",evidence:[`المبنى ${building.value.officialCode}`,`القاعة ${room.value.canonicalCode}`]});
@@ -5425,7 +5441,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
   }
   const rows=safeDraftRows(parsed.rows,collegeId,sectionId,termId);
-  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true}):[];
+  const structural=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,requireDepartmentInstructor:true,allowAuthorityCrossBranch:true}):[];
   /* Conflict errors and structural errors block publishing until resolved */
   const parserNotes=[...new Set(parsed.issues)];
   const blocking=[...new Set([
@@ -5466,7 +5482,7 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   const rows=safeDraftRows(req.body?.rows,collegeId,sectionId,termId);
   const previewIssues=Array.isArray(req.body?.previewIssues)?[...new Set(req.body.previewIssues.map((item:any)=>String(item||"").trim()).filter(Boolean))].slice(0,80):[];
   if(previewIssues.length){res.status(400).json({error:"لا يمكن حفظ المسودة أو نشرها قبل معالجة جميع ملاحظات المعاينة.",issues:previewIssues});return;}
-  const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false,requireDepartmentInstructor:importLayout==="authority-pdf"});
+  const issues=await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:false,requireDepartmentInstructor:importLayout==="authority-pdf",allowAuthorityCrossBranch:importLayout==="authority-pdf"});
   if(issues.length){res.status(400).json({error:"أكمل الحقول المطلوبة والملاحظات في جدول المعاينة أولاً.",issues});return;}
   if(importLayout==="authority-pdf"){
     const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
@@ -5534,7 +5550,7 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
 });
 
 app.put("/api/intelligence/drafts/:id", requirePermission(7), requirePowerAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);if(draft.importLayout==="authority-pdf"&&draft.baselineRows?.length){const baselineByOrder=new Map(draft.baselineRows.map((row:any)=>[Number(row.sourceOrder),row]));const renamed=rows.find((row:any)=>{const base=baselineByOrder.get(Number(row.sourceOrder));return base&&(Number(base.AdCourseId)!==Number(row.AdCourseId)||String(base.AdCourseName)!==String(row.AdCourseName));});if(renamed){res.status(409).json({error:"اسم المقرر من ملف PDF ثابت وفق لائحة الجدول. يمكنك حذف المقرر كاملاً، لكن لا يمكن تبديل اسمه.",code:"COURSE_NAME_LOCKED",rowId:renamed.id});return;}}const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false,requireDepartmentInstructor:draft.importLayout==="authority-pdf"});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
+  const draft=await Repository.getScheduleDraftById(String(req.params.id)); if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;} if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const fields:any={}; if(typeof req.body?.name==="string")fields.name=req.body.name.slice(0,100); if(Array.isArray(req.body?.rows)){const rows=safeDraftRows(req.body.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);if(draft.importLayout==="authority-pdf"&&draft.baselineRows?.length){const baselineByOrder=new Map(draft.baselineRows.map((row:any)=>[Number(row.sourceOrder),row]));const renamed=rows.find((row:any)=>{const base=baselineByOrder.get(Number(row.sourceOrder));return base&&(Number(base.AdCourseId)!==Number(row.AdCourseId)||String(base.AdCourseName)!==String(row.AdCourseName));});if(renamed){res.status(409).json({error:"اسم المقرر من ملف PDF ثابت وفق لائحة الجدول. يمكنك حذف المقرر كاملاً، لكن لا يمكن تبديل اسمه.",code:"COURSE_NAME_LOCKED",rowId:renamed.id});return;}}const issues=await validateSmartRows(rows,draft.AdCollegeId,draft.AdSectionId,{checkConflicts:false,requireDepartmentInstructor:draft.importLayout==="authority-pdf",allowAuthorityCrossBranch:draft.importLayout==="authority-pdf"});if(issues.length){res.status(400).json({error:"المسودة تحتوي بيانات ناقصة أو غير صالحة",issues});return;}fields.rows=rows;} res.json(await Repository.updateScheduleDraft(draft.id,fields));
 });
 app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const draft = await Repository.getScheduleDraftById(String(req.params.id));
@@ -5547,13 +5563,13 @@ app.patch("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asyn
   const nextRaw:any = { ...draft.rows[index] };
   allowed.forEach(key => { if (Object.prototype.hasOwnProperty.call(req.body || {}, key)) nextRaw[key] = req.body[key]; });
   const candidate = safeDraftRows([nextRaw], draft.AdCollegeId, draft.AdSectionId, draft.AdTermId)[0];
-  const locationResult=await canonicalizeLocationForWrite(candidate,draft.AdCollegeId,draft.AdSectionId);
+  const locationResult=await canonicalizeLocationForWrite(candidate,draft.AdCollegeId,draft.AdSectionId,{allowAuthorityCrossBranch:draft.importLayout==="authority-pdf"});
   if(!locationResult.check.ok){res.status(400).json({error:locationResult.check.issues.find(issue=>issue.severity==="high")?.message||"المكان غير صالح",issues:locationResult.check.issues});return;}
   Object.assign(candidate,locationResult.check.canonical||{});
-  const structural = await validateSmartRows([candidate], draft.AdCollegeId, draft.AdSectionId, { checkConflicts: false,requireDepartmentInstructor:draft.importLayout==="authority-pdf" });
+  const structural = await validateSmartRows([candidate], draft.AdCollegeId, draft.AdSectionId, { checkConflicts: false,requireDepartmentInstructor:draft.importLayout==="authority-pdf",allowAuthorityCrossBranch:draft.importLayout==="authority-pdf" });
   if (structural.length) { res.status(400).json({ error: structural[0], issues: structural }); return; }
   const rows = safeDraftRows(draft.rows.map((row:any, i:number) => i === index ? candidate : row), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
-  const issues = await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
+  const issues = await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf",allowAuthorityCrossBranch:draft.importLayout==="authority-pdf"});
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
   const conflictRows = findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate");
@@ -5570,7 +5586,7 @@ app.delete("/api/intelligence/drafts/:id/rows/:rowId", requirePermission(7), asy
   const rowId = Number(req.params.rowId || 0);
   if (!draft.rows.some((row:any) => Number(row.id) === rowId)) { res.status(404).json({ error: "الموعد غير موجود داخل المسودة" }); return; }
   const rows = safeDraftRows(draft.rows.filter((row:any) => Number(row.id) !== rowId), draft.AdCollegeId, draft.AdSectionId, draft.AdTermId);
-  const issues = rows.length ? await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"}) : [];
+  const issues = rows.length ? await validateSmartRows(rows, draft.AdCollegeId, draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf",allowAuthorityCrossBranch:draft.importLayout==="authority-pdf"}) : [];
   const termRows = await Repository.getSchedulesByScope({ termId: draft.AdTermId });
   const external = termRows.filter(row => !(Number(row.AdCollegeId) === draft.AdCollegeId && Number(row.AdSectionId) === draft.AdSectionId));
   const conflictRows = rows.length ? findConflicts(rows as any, [...external, ...rows] as any).filter((item:any) => item.severity === "high" || item.type === "duplicate") : [];
@@ -5599,7 +5615,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
   }
 
   let publishRows=safeDraftRows(draft.rows,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId);
-  let issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
+  let issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf",allowAuthorityCrossBranch:draft.importLayout==="authority-pdf"});
   let adjusted=0;
   /* Beginning-of-term drafts may only be blocked because the copied placement
      collides with the new term. Repair that case before rejecting: the existing
@@ -5615,7 +5631,7 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
       if(!proposal.changed)break;
     }
     adjusted=publishRows.filter(row=>original.get(Number(row.id))!==`${row.fstarttime}|${row.fendtime}`).length;
-    issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
+    issues=await validateSmartRows(publishRows,draft.AdCollegeId,draft.AdSectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf",allowAuthorityCrossBranch:draft.importLayout==="authority-pdf"});
   }
   if(issues.length){
     const termRows=await Repository.getSchedulesByScope({termId:draft.AdTermId});

@@ -125,7 +125,7 @@ ok('64 authority PDF normalizes Arabic presentation forms before header and inst
 ok('65 authority PDF text layer keeps one physical timetable row and drops each repeated page header structurally', 'tableFromWords(words,[],"pdf-text")' in doc_ocr and 'authorityBodyOnly(physicalRows)' in doc_ocr and 'strictPdfRows?dist<=rowTolerance' in doc_ocr and 'hasCourseKey&&(hasTime||hasBuilding)' in doc_ocr)
 ok('66 authority PDF never trims a 7-character building bleed into canonical data', 'No “delete the last digit” repair exists here' in server and 'const bleed=token.match' not in server and '012B091 remains unresolved' in doc_ocr)
 ok('67 wrong academic term is rejected before table OCR', 'readAuthorityPdfHeader(bytes)' in server and server.index('readAuthorityPdfHeader(bytes)') < server.index('ocrDocument(bytes,"application/pdf"') and 'PDF_TERM_MISMATCH' in server)
-ok('68 cross-branch PDF rows are surfaced and never silently assigned to current college', 'sourceSitePrefix!==targetSitePrefix' in server and 'لن يُضاف هذا السطر إلى الكلية المحددة قبل مراجعته' in server and 'officialSiteLabel(sourceSitePrefix)' in server)
+ok('68 exact cross-branch PDF buildings stay canonical while the exception remains visible', 'sourceSitePrefix!==targetSitePrefix' in server and 'row.buildingId=building.value.id' in server and 'scopeMismatchType="CROSS_BRANCH"' in server and 'مثبت كما ورد في ملف الجهة' in server and 'officialSiteLabel(sourceSitePrefix)' in server)
 ok('69 instructor matching prioritizes real department rosters and normalizes academic titles', 'Repository.getDepartmentDelegates(collegeId,sectionId)' in server and 'Repository.getVisitingRoster(collegeId,sectionId,termId)' in server and 'Academic titles are presentation, not identity' in doc_ocr)
 
 ok('70 header preflight is fail-closed for term college branch and department', '!headerPreflight.term||!headerPreflight.college||!headerPreflight.branch||!headerPreflight.department' in server and 'PDF_HEADER_UNRESOLVED' in server)
@@ -150,4 +150,13 @@ ok('88 authority publish revalidates structural rows on backend', 'validateSmart
 ok('89 page row-density catches major visual-to-extracted loss', 'filled<Math.ceil(gridRows.length*0.70)' in doc_ocr and 'SUSPICIOUS_EXTRACTION' in server)
 types_src=(ROOT/'src/types.ts').read_text()
 ok('90 ScheduleDraft persists the signed PDF import receipt contract', 'importReceipt?: string;' in types_src and 'Server-signed proof that the PDF header matched this exact academic scope.' in types_src)
+
+# Regression guards added after the authority-PDF location/section restoration.
+schedules_src=(ROOT/'src/components/Schedules.tsx').read_text()
+quick_src=(ROOT/'src/components/QuickCreatePopover.tsx').read_text()
+engine_src=(ROOT/'src/server/locationRegistryEngine.ts').read_text()
+ok('92 new course sections restart at 501 and allocate the first free 500-series number', 'let candidate = 501' in schedules_src and 'while (used.has(candidate)) candidate += 1' in schedules_src and 'value >= 501' in schedules_src and '501, 502, 503' in quick_src)
+ok('93 blank authority-PDF hall is preserved as PENDING_ROOM without fabricating a room', 'if(!rawHall.trim())' in server and 'row.locationStatus="PENDING_ROOM"' in server and 'لم يُشتق رمز قاعة من رمز المبنى' in server and 'F15/F151' in server)
+ok('94 authority PDF may preserve a confirmed cross-branch building without weakening ordinary location scope', 'allowOutOfScopeBuilding?:boolean' in engine_src and '!opts.allowOutOfScopeBuilding' in engine_src and 'allowAuthorityCrossBranch:true' in server and 'allowOutOfScopeBuilding:allowAuthorityCrossBranch' in server)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
