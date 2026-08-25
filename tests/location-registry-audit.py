@@ -138,5 +138,9 @@ ok('74 section numbering starts at 501 and ignores legacy/broken lower values wh
 
 ok('75 narrow room cells are re-read in isolation after geometry proves the room column', 'Rooms are the narrowest identity cells in SWRSCHA' in doc_ocr and 'readCell(surface,columnBands[hallIndex],row,LOCATION_ALNUM,worker)' in doc_ocr and 'if(stripPatterns.hall.test(value))next[row]=value' in doc_ocr)
 ok('76 scan clock border artefacts use a same-page dominant tail rather than a hard-coded time guess', 'const clockTailCounts=new Map<string,number>()' in doc_ocr and 'pageClockTail' in doc_ocr and 'one-character tail correction' in doc_ocr)
+ok('77 generated RTL header keeps glued 012 branch separate from 0101 department', 'Some Oracle/PDF extractors glue the code to the Arabic word visually' in doc_ocr and 'nearestDepartmentName' in doc_ocr and 'التربية الاسلامية 0101 القسم' in doc_ocr)
+ok('78 CamScanner page-1 header has bounded high-resolution rescue', 'Deep header rescue' in doc_ocr and 'renderPdfFirstPage(input,TARGET_LONG_EDGE)' in doc_ocr and 'for(const psm of [6,11])' in doc_ocr)
+ok('79 partial preflight is rescued before PDF_HEADER_UNRESOLVED is emitted', 'A partial preflight is NOT a rejection' in server and server.index('ocrDocument(bytes,"application/pdf"') < server.index('code:"PDF_HEADER_UNRESOLVED"'))
+ok('80 successful scan grid still rereads page-1 header when preflight is incomplete', 'readAuthorityHeaderBand(upright,pool.ara)' in doc_ocr and 'needsHeaderRescue' in doc_ocr and 'already-upright 2800px page' in doc_ocr)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

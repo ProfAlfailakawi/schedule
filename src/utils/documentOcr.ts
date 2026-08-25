@@ -233,10 +233,11 @@ async function pdfTextLayer(input:Buffer,onProgress?:OcrProgress):Promise<OcrRes
     const requiredBodyPages=count===1?1:Math.max(1,count-1);
     if(structuralRows<Math.max(3,count*2)||pagesWithBody<requiredBodyPages||totalChars<160)return null;
     const confidence=99;
+    const header=parseAuthorityHeaderText(text);
     return{
       pages,text,pageCount:count,confidence,orientation:0,
       legibility:{readable:true,confidence,charactersPerPage:Math.round(totalChars/Math.max(1,count)),reason:""},
-      headerTerm:readHeaderTerm(text),headerBranch:readHeaderBranch(text),headerDepartment:readHeaderDepartment(text),
+      headerTerm:header.term,headerBranch:header.branch,headerDepartment:header.department,
       pageDiagnostics:pages.map(page=>page.diagnostic!),suspiciousExtraction:false,
     };
   }catch{return null;}
@@ -1328,7 +1329,11 @@ function readHeaderBranch(text:string):HeaderBranch|undefined{
     const line=rawLine.replace(/\s+/g," ").trim();
     let match=line.match(/الفرع\s*[:：-]?\s*(\d{3})\s*(.*)$/);
     if(match)return build(match[1],match[2]);
-    match=line.match(new RegExp(`(?:^|\\s)(\\d{3})\\s+(${campusName})\\s*[:：-]?\\s*الفرع(?:\\s|$)`));
+    /* Some Oracle/PDF extractors glue the code to the Arabic word visually:
+       «012كليه التربية الاساسيه بنات الفرع». A word boundary or mandatory
+       space rejects a perfectly valid Authority header, so the campus phrase
+       itself is the boundary evidence. */
+    match=line.match(new RegExp(`(?:^|\\s)(\\d{3})\\s*(${campusName})\\s*[:：-]?\\s*الفرع(?:\\s|$)`));
     if(match)return build(match[1],match[2]);
     /* Some raw layers split the campus name away but keep «012 : الفرع». */
     match=line.match(/(?:^|\s)(\d{3})\s*[:：-]?\s*الفرع(?:\s|$)/);
@@ -1337,7 +1342,7 @@ function readHeaderBranch(text:string):HeaderBranch|undefined{
   const flat=ascii.replace(/\s+/g," ").trim();
   let flatMatch=flat.match(/الفرع\s*[:：-]?\s*(\d{3})\s*([^]{0,180}?)(?=\s+(?:القسم|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
   if(flatMatch)return build(flatMatch[1],flatMatch[2]);
-  flatMatch=flat.match(new RegExp(`(?:^|\\s)(\\d{3})\\s+(${campusName})\\s*[:：-]?\\s*الفرع(?:\\s|$)`));
+  flatMatch=flat.match(new RegExp(`(?:^|\\s)(\\d{3})\\s*(${campusName})\\s*[:：-]?\\s*الفرع(?:\\s|$)`));
   if(flatMatch)return build(flatMatch[1],flatMatch[2]);
   const reversedCode=flat.match(/(?:^|\s)(\d{3})\s*[:：-]?\s*الفرع(?:\s|$)/);
   if(reversedCode){
@@ -1346,7 +1351,7 @@ function readHeaderBranch(text:string):HeaderBranch|undefined{
     const nameMatch=before.match(new RegExp(`(${campusName})$`));
     return build(reversedCode[1],nameMatch?.[1]||"");
   }
-  const structural=flat.match(new RegExp(`(?:^|\\s)(\\d{3})\\s+(${campusName})(?=\\s|$)`));
+  const structural=flat.match(new RegExp(`(?:^|\\s)(\\d{3})\\s*(${campusName})(?=\\s|$)`));
   return structural?build(structural[1],structural[2]):undefined;
 }
 
@@ -1355,44 +1360,59 @@ function readHeaderDepartment(text:string):HeaderDepartment|undefined{
   const ascii=toAscii(text).replace(/\r/g,"");
   const cleanName=(value:string)=>String(value||"")
     .replace(/\s+(?:الفرع|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\s*[:：]?.*$/," ")
-    .replace(/^[|:：-]+|[|:：-]+$/g,"").replace(/\s+/g," ").trim();
+    .replace(/^[|:：_-]+|[|:：_-]+$/g,"").replace(/\s+/g," ").trim();
+  const nearestDepartmentName=(value:string)=>{
+    /* Physical RTL extraction may place the whole branch phrase before the
+       department, e.g. «012كلية... الفرع : التربية الاسلامية 0101 القسم».
+       Only the Arabic phrase nearest the department code belongs to القسم. */
+    const afterBranch=String(value||"").split(/(?:^|\s)الفرع\s*[:：_-]?\s*/).pop()||value;
+    return cleanName(afterBranch);
+  };
   const build=(code:string,nameRaw:string):HeaderDepartment=>{
-    const name=cleanName(nameRaw);return{code,name,label:[code,name].filter(Boolean).join(" ")};
+    const name=nearestDepartmentName(nameRaw);return{code,name,label:[code,name].filter(Boolean).join(" ")};
   };
   for(const rawLine of ascii.split("\n")){
     const line=rawLine.replace(/\s+/g," ").trim();
-    let match=line.match(/القسم\s*[:：-]?\s*(\d{3,6})\s*(.*)$/);
+    let match=line.match(/القسم\s*[:：_-]?\s*(\d{3,6})\s*(.*)$/);
     if(match)return build(match[1],match[2]);
-    /* Physical RTL order: «التربية الاسلامية : القسم 0101». */
-    match=line.match(/([ء-ي][ء-ي\s]{3,100}?)\s*[:：-]?\s*القسم\s*[:：-]?\s*(\d{3,6})(?:\s|$)/);
+    /* Physical RTL order may be either «التربية الاسلامية : القسم 0101» or
+       «التربية الاسلامية 0101 القسم :». Support both explicitly. */
+    match=line.match(/([ء-ي][ء-ي\s:：_-]{3,140}?)\s*[:：_-]?\s*القسم\s*[:：_-]?\s*(\d{3,6})(?:\s|$)/);
     if(match)return build(match[2],match[1]);
-    match=line.match(/(?:^|\s)(\d{3,6})\s*[:：-]?\s*القسم(?:\s|$)/);
+    match=line.match(/([ء-ي][ء-ي\s:：_-]{3,180}?)\s*(\d{4,6})\s*[:：_-]?\s*القسم(?:\s*[:：_-]?|$)/);
+    if(match)return build(match[2],match[1]);
+    match=line.match(/(?:^|\s)(\d{3,6})\s*[:：_-]?\s*القسم(?:\s|$)/);
     if(match){
-      const before=line.slice(0,match.index||0).replace(/\d+/g," ").replace(/[^ء-ي\s]/g," ").replace(/\s+/g," ").trim();
+      const before=line.slice(0,match.index||0).replace(/\d+/g," ").replace(/[^ء-ي\s:：_-]/g," ").replace(/\s+/g," ").trim();
       return build(match[1],before);
     }
   }
   const flat=ascii.replace(/\s+/g," ").trim();
-  let flatMatch=flat.match(/القسم\s*[:：-]?\s*(\d{3,6})\s*([^]{0,180}?)(?=\s+(?:الفرع|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
+  let flatMatch=flat.match(/القسم\s*[:：_-]?\s*(\d{3,6})\s*([^]{0,180}?)(?=\s+(?:الفرع|الكلية|الفصل|التاريخ|رقم\s*المقرر|مسمى\s*المقرر)\b|$)/);
   if(flatMatch)return build(flatMatch[1],flatMatch[2]);
-  flatMatch=flat.match(/([ء-ي][ء-ي\s]{3,100}?)\s*[:：-]?\s*القسم\s*[:：-]?\s*(\d{3,6})(?=\s|$)/);
-  if(flatMatch){
-    /* Do not let the greedy Arabic prefix swallow the branch/college phrase. */
-    const name=cleanName(flatMatch[1]).split(/\s+(?=كلي[هة]\s+التربي[هة])/).pop()||flatMatch[1];
-    return build(flatMatch[2],name);
-  }
+  flatMatch=flat.match(/([ء-ي][ء-ي\s:：_-]{3,140}?)\s*[:：_-]?\s*القسم\s*[:：_-]?\s*(\d{3,6})(?=\s|$)/);
+  if(flatMatch)return build(flatMatch[2],flatMatch[1]);
+  flatMatch=flat.match(/([ء-ي][ء-ي\s:：_-]{3,180}?)\s*(\d{4,6})\s*[:：_-]?\s*القسم(?:\s*[:：_-]?|$)/);
+  if(flatMatch)return build(flatMatch[2],flatMatch[1]);
   /* When the label/code glyphs are damaged but the department name survives,
      retain that raw Arabic evidence for a conservative name comparison on the
      server. Stop at the independently detected branch code/site name. */
   for(const rawLine of ascii.split("\n")){
-    const branchAt=rawLine.search(/\b\d{3}\s+(?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)/);
+    const branchAt=rawLine.search(/\b\d{3}\s*(?:كلي[هة]|التربي[هة]|الدراسات|العلوم|التمريض)/);
     if(branchAt<0)continue;
     const before=rawLine.slice(0,branchAt);
     const code=before.match(/\b(\d{4,6})\b/)?.[1]||"";
-    const name=before.replace(/\d+/g," ").replace(/[^ء-ي\s]/g," ").replace(/(?:^|\s)(?:القسم|العم|جح)(?=\s|$)/g," ").replace(/\s+/g," ").trim();
+    const name=nearestDepartmentName(before.replace(/\d+/g," ").replace(/[^ء-ي\s:：_-]/g," ").replace(/(?:^|\s)(?:القسم|العم|جح)(?=\s|$)/g," ").replace(/\s+/g," ").trim());
     if(name.length>=5)return{code,name,label:[code,name].filter(Boolean).join(" ")};
   }
   return undefined;
+}
+
+/** Pure parser used by both text-layer and scan header paths, and by regression
+ * tests. Keeping one parser prevents the fast preflight and the full OCR path
+ * from disagreeing about the same visible Authority header. */
+export function parseAuthorityHeaderText(text:string):AuthorityPdfHeader{
+  return{term:readHeaderTerm(text),branch:readHeaderBranch(text),department:readHeaderDepartment(text)};
 }
 
 /**
@@ -1430,7 +1450,8 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     }
     const physicalText=tableFromWords(headerWords,[],"pdf-text").map(row=>row.line).join("\n");
     const text=[logicalText,physicalText].filter(Boolean).join("\n");
-    const embedded:AuthorityPdfHeader={term:readHeaderTerm(text),branch:readHeaderBranch(text),department:readHeaderDepartment(text),source:"text"};
+    const embeddedParsed=parseAuthorityHeaderText(text);
+    const embedded:AuthorityPdfHeader={...embeddedParsed,source:"text"};
     if(embedded.term&&embedded.branch&&embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
 
     /* A PARTIAL text-layer hit is not success. The regression that prompted
@@ -1453,39 +1474,79 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
        remaining turn; semantic header fields, not a geometric tie-break, decide. */
     const candidates=scored;
     const worker=await getHeaderWorker();
-    await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6" as any});
     let best:{header:AuthorityPdfHeader;score:number;turn:-1|0|1}|null=null;
     const lib=await canvas();
+    const semanticScore=(header:AuthorityPdfHeader,ocrText:string)=>(header.term?120:0)+(header.branch?80:0)+(header.department?80:0)
+      +(ocrText.match(/الفصل|الفرع|القسم|الكلية/g)||[]).length*8;
+    const remember=(header:AuthorityPdfHeader,ocrText:string,turn:-1|0|1)=>{
+      const score=semanticScore(header,ocrText);
+      if(!best||score>best.score)best={header,score,turn};
+    };
     for(const candidate of candidates){
       const upright=await rotateImage(probe,candidate.turn as -1|0|1);
       const image=await lib.loadImage(upright);
-      const headerTop=Math.round(image.height*0.01);
-      const headerHeight=Math.max(120,Math.round(image.height*0.24));
+      const headerTop=Math.round(image.height*0.005);
+      const headerHeight=Math.max(130,Math.round(image.height*0.27));
       /* The probe is intentionally small for speed, but the printed department
          line is fine. Upscaling only this narrow band made the real CamScanner
          header deterministic while keeping preflight to a few seconds. */
-      const headerScale=1.5;
+      const headerScale=1.65;
       const crop=lib.createCanvas(Math.round(image.width*headerScale),Math.round(headerHeight*headerScale)),ctx=crop.getContext("2d");
       ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
       ctx.drawImage(image,0,headerTop,image.width,headerHeight,0,0,crop.width,crop.height);
+      await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:"6" as any});
       const result:any=await worker.recognize(crop.toBuffer("image/png")).catch(()=>null);
       const ocrText=String(result?.data?.text||"").normalize("NFKC");
-      const header:AuthorityPdfHeader={term:readHeaderTerm(ocrText),branch:readHeaderBranch(ocrText),department:readHeaderDepartment(ocrText),source:"scan"};
-      const semantic=(header.term?120:0)+(header.branch?80:0)+(header.department?80:0)
-        +(ocrText.match(/الفصل|الفرع|القسم|الكلية/g)||[]).length*8;
-      if(!best||semantic>best.score)best={header,score:semantic,turn:candidate.turn};
+      const parsed=parseAuthorityHeaderText(ocrText);
+      const header:AuthorityPdfHeader={...parsed,source:"scan"};
+      remember(header,ocrText,candidate.turn);
       if(header.term&&header.branch&&header.department)break;
     }
-    if(best){
-      const merged:AuthorityPdfHeader={
-        term:embedded.term||best.header.term,
-        branch:embedded.branch||best.header.branch,
-        department:embedded.department||best.header.department,
-        source:(embedded.term&&embedded.branch&&embedded.department)?"text":best.header.source||"scan",
-      };
-      headerPreflightCache.set(input,{header:merged,orientation:best.turn});return merged;
+
+    let merged:AuthorityPdfHeader={
+      term:embedded.term||best?.header.term,
+      branch:embedded.branch||best?.header.branch,
+      department:embedded.department||best?.header.department,
+      source:(embedded.term&&embedded.branch&&embedded.department)?"text":best?.header.source||embedded.source,
+    };
+
+    /* Deep header rescue: cheap 1400px preflight can still lose tiny Arabic
+       dots in a phone-scanned/CamScanner page. Do NOT reject the document at
+       that point. Re-render page 1 only at the same 2800px quality used by the
+       table reader, crop a slightly taller header band, and try sparse-text
+       segmentation as a second pass. This is bounded to page 1 and only runs
+       when at least one required authority field is still unresolved. */
+    if(!merged.term||!merged.branch||!merged.department){
+      const deep=await renderPdfFirstPage(input,TARGET_LONG_EDGE);
+      if(deep){
+        const deepTurns:Array<-1|0|1>=[...(best?[best.turn]:[]),...candidates.map(item=>item.turn)].filter((turn,index,array)=>array.indexOf(turn)===index) as Array<-1|0|1>;
+        for(const turn of deepTurns){
+          let upright=await rotateImage(deep,turn);
+          upright=await deskew(upright);
+          const image=await lib.loadImage(upright);
+          const headerTop=0,headerHeight=Math.max(220,Math.round(image.height*0.34));
+          const crop=lib.createCanvas(image.width,headerHeight),ctx=crop.getContext("2d");
+          ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
+          ctx.drawImage(image,0,headerTop,image.width,headerHeight,0,0,crop.width,headerHeight);
+          let deepText="";
+          for(const psm of [6,11]){
+            await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:String(psm) as any});
+            const result:any=await worker.recognize(crop.toBuffer("image/png")).catch(()=>null);
+            deepText=String(result?.data?.text||"").normalize("NFKC");
+            const parsed=parseAuthorityHeaderText(deepText);
+            const header:AuthorityPdfHeader={...parsed,source:"scan"};
+            remember(header,deepText,turn);
+            merged={term:embedded.term||header.term||merged.term,branch:embedded.branch||header.branch||merged.branch,department:embedded.department||header.department||merged.department,source:"scan"};
+            if(merged.term&&merged.branch&&merged.department)break;
+          }
+          if(merged.term&&merged.branch&&merged.department)break;
+        }
+      }
     }
-    if(embedded.term||embedded.branch||embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
+
+    if(merged.term||merged.branch||merged.department){
+      headerPreflightCache.set(input,{header:merged,orientation:best?.turn||0});return merged;
+    }
     return{};
   }catch{return{};}
 }
@@ -1509,6 +1570,29 @@ function judgeLegibility(text:string,pages:number,confidence:number):Legibility{
   if(confidence<LEGIBLE_MIN_CONFIDENCE)
     return{readable:false,confidence,charactersPerPage,reason:"الصورة غير واضحة بما يكفي للقراءة. صوّر الورقة في إضاءة جيدة ومن زاوية مستقيمة، أو ارفع نسخة PDF أوضح."};
   return{readable:true,confidence,charactersPerPage,reason:""};
+}
+
+/** Read only the authority band from an already upright high-resolution page.
+ * This is the safety net used when grid extraction succeeds (so full-page OCR
+ * is intentionally skipped) but the cheap preflight could not prove all three
+ * scope fields. The table body is never used as a substitute for the header. */
+async function readAuthorityHeaderBand(upright:Buffer,worker:PooledWorker):Promise<string>{
+  const lib=await canvas(),image=await lib.loadImage(upright);
+  const height=Math.max(220,Math.round(image.height*0.34));
+  const crop=lib.createCanvas(image.width,height),ctx=crop.getContext("2d");
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,0,crop.width,crop.height);
+  ctx.drawImage(image,0,0,image.width,height,0,0,crop.width,height);
+  let bestText="",bestScore=-1;
+  for(const psm of [6,11]){
+    await worker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:String(psm) as any});
+    const result:any=await worker.recognize(crop.toBuffer("image/png")).catch(()=>null);
+    const text=String(result?.data?.text||"").normalize("NFKC");
+    const header=parseAuthorityHeaderText(text);
+    const score=(header.term?120:0)+(header.branch?80:0)+(header.department?80:0)+(text.match(/الفصل|الفرع|القسم|الكلية/g)||[]).length*8;
+    if(score>bestScore){bestScore=score;bestText=text;}
+    if(header.term&&header.branch&&header.department)break;
+  }
+  return bestText;
 }
 
 /**
@@ -1621,9 +1705,16 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       if(best){upright=best.upright;gridRows=best.rows;pageOrientation=best.turn;}
     }
     if(gridRows){
-      texts[index]=index===0&&cachedPreflight
-        ?[cachedPreflight.header.term?.label,cachedPreflight.header.branch?.label,cachedPreflight.header.department?.label].filter(Boolean).join("\n")
-        :"";
+      if(index===0){
+        const cachedHeader=cachedPreflight?.header;
+        const cachedText=[cachedHeader?.term?.label,cachedHeader?.branch?.label,cachedHeader?.department?.label].filter(Boolean).join("\n");
+        /* A successful grid deliberately skips expensive whole-page OCR. If the
+           preflight header is incomplete, however, recover the header from this
+           already-upright 2800px page before returning recognition metadata. */
+        const needsHeaderRescue=!cachedHeader?.term||!cachedHeader?.branch||!cachedHeader?.department;
+        const rescued=needsHeaderRescue?await readAuthorityHeaderBand(upright,pool.ara):"";
+        texts[index]=[cachedText,rescued].filter(Boolean).join("\n");
+      }else texts[index]="";
       const filled=gridRows.filter(row=>row.code||row.start||row.courseText.length>3).length;
       scores[index]=Math.min(85,55+filled*2);
       const suspicious=gridRows.length>=3&&filled<Math.ceil(gridRows.length*0.55);
@@ -1658,6 +1749,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       ?{readable:true,confidence,charactersPerPage:Math.round(text.replace(/\s+/g,"").length/Math.max(1,images.length)),reason:""}
       :{...proseLegibility,readable:false,reason:pageDiagnostics.find(page=>page.suspicious)?.reason||proseLegibility.reason||"استخراج الجدول غير مكتمل ويحتاج إلى ملف أوضح"})
     :proseLegibility;
+  const header=parseAuthorityHeaderText(text);
   return{
     pages:pages.map(page=>page||{rows:[]}),
     text,
@@ -1665,9 +1757,9 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     confidence,
     orientation,
     legibility,
-    headerTerm:readHeaderTerm(text),
-    headerBranch:readHeaderBranch(text),
-    headerDepartment:readHeaderDepartment(text),
+    headerTerm:header.term,
+    headerBranch:header.branch,
+    headerDepartment:header.department,
     pageDiagnostics,
     suspiciousExtraction,
   };

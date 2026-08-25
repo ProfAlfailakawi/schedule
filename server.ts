@@ -5166,83 +5166,76 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const targetSection=sections.find((row:any)=>Number(row.AdSectionId)===sectionId&&Number(row.AdCollegeId)===collegeId);
   const targetCollegeName=String(targetCollege?.AdCollegeName||"");
   const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
-  const headerPreflight=await readAuthorityPdfHeader(bytes);
+  let headerPreflight=await readAuthorityPdfHeader(bytes);
 
-  if(!headerPreflight.term||!headerPreflight.branch||!headerPreflight.department){
-    const missing=[!headerPreflight.term?"الفصل والسنة":"",!headerPreflight.branch?"الكلية/الفرع":"",!headerPreflight.department?"القسم":""].filter(Boolean);
-    res.status(422).json({
-      error:`لم أتمكن من إثبات ${missing.join(" و")} من ترويسة الصفحة الأولى. لم تتم قراءة الجدول ولم يتم استيراد أي صف. ارفع نسخة أوضح أو راجع الملف.`,
-      code:"PDF_HEADER_UNRESOLVED",
-      missingHeaderFields:missing,
-    });
-    return;
-  }
-
-  if(headerPreflight.term&&targetTerm){
-    const targetName=asciiDigits(String(targetTerm.AdTermName||"")).normalize("NFKC");
-    const seasonWord=headerPreflight.term.season==="first"?/الاول|الأول/:headerPreflight.term.season==="second"?/الثاني|الثانى/:/صيفي|صيفى/;
-    const seasonOk=seasonWord.test(targetName);
-    const targetYears=(targetName.match(/(?:19|20)\d{2}/g)||[]).map(Number);
-    const yearsOk=headerPreflight.term.years.every(year=>targetYears.includes(year));
-    if(!seasonOk||!yearsOk){
-      res.status(409).json({
-        error:`هذا الملف للفصل «${headerPreflight.term.label}»، بينما أنت تعمل على «${String(targetTerm.AdTermName||"")}». لم يتم استيراد أي صف.`,
-        code:"PDF_TERM_MISMATCH",
-        sourceTerm:headerPreflight.term.label,
-        targetTerm:String(targetTerm.AdTermName||""),
-      });
-      return;
+  /* Scope validation is shared by the cheap page-1 preflight and the full OCR
+     rescue. A partial preflight is NOT a rejection: image-only CamScanner PDFs
+     can make one tiny header field disappear at probe resolution even when the
+     same field is perfectly readable on the high-resolution page. */
+  const headerScopeProblem=(header:any):{status:number;body:any}|null=>{
+    if(header?.term&&targetTerm){
+      const targetName=asciiDigits(String(targetTerm.AdTermName||"")).normalize("NFKC");
+      const seasonWord=header.term.season==="first"?/الاول|الأول/:header.term.season==="second"?/الثاني|الثانى/:/صيفي|صيفى/;
+      const seasonOk=seasonWord.test(targetName);
+      const targetYears=(targetName.match(/(?:19|20)\d{2}/g)||[]).map(Number);
+      const yearsOk=header.term.years.every((year:number)=>targetYears.includes(year));
+      if(!seasonOk||!yearsOk)return{status:409,body:{
+        error:`هذا الملف للفصل «${header.term.label}»، بينما أنت تعمل على «${String(targetTerm.AdTermName||"")}». لم يتم استيراد أي صف.`,
+        code:"PDF_TERM_MISMATCH",sourceTerm:header.term.label,targetTerm:String(targetTerm.AdTermName||""),
+      }};
     }
-  }
 
-  /* Header branch is a DOCUMENT property. A different document branch is a
-     hard stop; a different building prefix in ONE body row is handled later as
-     CROSS_BRANCH and is not confused with this check. */
-  if(headerPreflight.branch&&targetSitePrefix){
-    const sourceSite=officialCollegeSitePrefix(headerPreflight.branch.name);
-    const branchCode=String(headerPreflight.branch.code||"").replace(/\D/g,"");
-    const targetBranchCode=targetSitePrefix.slice(0,3).replace(/\D/g,"");
-    const definiteMismatch=sourceSite
-      ? sourceSite!==targetSitePrefix
-      : Boolean(branchCode&&targetBranchCode&&branchCode!==targetBranchCode);
-    if(definiteMismatch){
-      const sourceLabel=sourceSite?officialSiteLabel(sourceSite,headerPreflight.branch.name):headerPreflight.branch.label;
-      res.status(409).json({
-        error:`هذا الملف تابع إلى «${sourceLabel}»، بينما أنت تعمل على «${officialSiteLabel(targetSitePrefix,targetCollegeName)}». لم يتم استيراد أي صف.`,
-        code:"PDF_BRANCH_MISMATCH",
-        sourceBranch:headerPreflight.branch.label,
-        targetBranch:officialSiteLabel(targetSitePrefix,targetCollegeName),
-      });
-      return;
+    /* Header branch is a DOCUMENT property. A different document branch is a
+       hard stop; a different building prefix in ONE body row is handled later
+       as CROSS_BRANCH and is not confused with this check. */
+    if(header?.branch&&targetSitePrefix){
+      const sourceSite=officialCollegeSitePrefix(header.branch.name);
+      const branchCode=String(header.branch.code||"").replace(/\D/g,"");
+      const targetBranchCode=targetSitePrefix.slice(0,3).replace(/\D/g,"");
+      const definiteMismatch=sourceSite
+        ?sourceSite!==targetSitePrefix
+        :Boolean(branchCode&&targetBranchCode&&branchCode!==targetBranchCode);
+      if(definiteMismatch){
+        const sourceLabel=sourceSite?officialSiteLabel(sourceSite,header.branch.name):header.branch.label;
+        return{status:409,body:{
+          error:`هذا الملف تابع إلى «${sourceLabel}»، بينما أنت تعمل على «${officialSiteLabel(targetSitePrefix,targetCollegeName)}». لم يتم استيراد أي صف.`,
+          code:"PDF_BRANCH_MISMATCH",sourceBranch:header.branch.label,targetBranch:officialSiteLabel(targetSitePrefix,targetCollegeName),
+        }};
+      }
     }
-  }
 
-  if(headerPreflight.department&&targetSection){
-    const sourceDepartment=asciiDigits(String(headerPreflight.department.code||"")).replace(/\D/g,"");
-    const targetDepartment=asciiDigits(String(targetSection.AdSectionCode||"")).replace(/\D/g,"");
-    /* Header OCR may preserve/duplicate leading zeroes around the ruled cell.
-       Department codes are numeric identifiers, so leading-zero formatting is
-       not identity evidence. Compare their numeric value, not display width. */
-    const sameDepartment=Boolean(sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment));
-    const sourceName=foldHeaderIdentity(headerPreflight.department.name);
-    const namedMatches=sourceName.length>=5?sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId).filter((item:any)=>{
-      const candidate=foldHeaderIdentity(item.AdSectionName);
-      return candidate.length>=5&&(sourceName.includes(candidate)||candidate.includes(sourceName));
-    }):[];
-    const namedSection=namedMatches.length===1?namedMatches[0]:undefined;
-    const definiteMismatch=Boolean(
-      (sourceDepartment&&targetDepartment&&!sameDepartment)
-      ||(namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId))
-    );
-    if(definiteMismatch){
-      res.status(409).json({
-        error:`هذا الملف للقسم «${headerPreflight.department.label}»، بينما القسم المحدد هو «${String(targetSection.AdSectionName||targetSection.AdSectionCode||"")}». لم يتم استيراد أي صف.`,
-        code:"PDF_DEPARTMENT_MISMATCH",
-        sourceDepartment:headerPreflight.department.label,
-        targetDepartment:String(targetSection.AdSectionName||targetSection.AdSectionCode||""),
-      });
-      return;
+    if(header?.department&&targetSection){
+      const sourceDepartment=asciiDigits(String(header.department.code||"")).replace(/\D/g,"");
+      const targetDepartment=asciiDigits(String(targetSection.AdSectionCode||"")).replace(/\D/g,"");
+      /* Header OCR may preserve/duplicate leading zeroes around the ruled cell.
+         Department codes are numeric identifiers, so leading-zero formatting
+         is not identity evidence. Compare their numeric value, not width. */
+      const sameDepartment=Boolean(sourceDepartment&&targetDepartment&&Number(sourceDepartment)===Number(targetDepartment));
+      const sourceName=foldHeaderIdentity(header.department.name);
+      const namedMatches=sourceName.length>=5?sections.filter((item:any)=>Number(item.AdCollegeId)===collegeId).filter((item:any)=>{
+        const candidate=foldHeaderIdentity(item.AdSectionName);
+        return candidate.length>=5&&(sourceName.includes(candidate)||candidate.includes(sourceName));
+      }):[];
+      const namedSection=namedMatches.length===1?namedMatches[0]:undefined;
+      const definiteMismatch=Boolean(
+        (sourceDepartment&&targetDepartment&&!sameDepartment)
+        ||(namedSection&&Number(namedSection.AdSectionId)!==Number(targetSection.AdSectionId))
+      );
+      if(definiteMismatch)return{status:409,body:{
+        error:`هذا الملف للقسم «${header.department.label}»، بينما القسم المحدد هو «${String(targetSection.AdSectionName||targetSection.AdSectionCode||"")}». لم يتم استيراد أي صف.`,
+        code:"PDF_DEPARTMENT_MISMATCH",sourceDepartment:header.department.label,targetDepartment:String(targetSection.AdSectionName||targetSection.AdSectionCode||""),
+      }};
     }
+    return null;
+  };
+
+  /* Reject a clearly wrong document immediately when all three independent
+     header authorities were proven cheaply. If even one field is missing, the
+     high-resolution OCR path gets the chance to rescue it instead of producing
+     the old false «لم أتمكن من إثبات الكلية/الفرع» regression. */
+  if(headerPreflight.term&&headerPreflight.branch&&headerPreflight.department){
+    const earlyProblem=headerScopeProblem(headerPreflight);
+    if(earlyProblem){res.status(earlyProblem.status).json(earlyProblem.body);return;}
   }
 
   const [allCourses,allInstructors,sectionHistory,departmentRooms,registry,departmentDelegates,visitingRoster]=await Promise.all([
@@ -5290,6 +5283,32 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     if(streaming){emit({type:"error",error:message});res.end();return;}
     res.status(422).json({error:message});return;
   }
+
+  /* The full reader may recover header glyphs that were too small for the cheap
+     probe. Merge only missing fields; never overwrite a field already proven by
+     the embedded/page-1 preflight. No row parsing or import is allowed until the
+     merged header proves term + branch + department and matches the chosen scope. */
+  headerPreflight={
+    term:headerPreflight.term||recognized.headerTerm,
+    branch:headerPreflight.branch||recognized.headerBranch,
+    department:headerPreflight.department||recognized.headerDepartment,
+    source:headerPreflight.source||((recognized.headerTerm||recognized.headerBranch||recognized.headerDepartment)?"scan":undefined),
+  };
+  if(!headerPreflight.term||!headerPreflight.branch||!headerPreflight.department){
+    const missing=[!headerPreflight.term?"الفصل والسنة":"",!headerPreflight.branch?"الكلية/الفرع":"",!headerPreflight.department?"القسم":""].filter(Boolean);
+    const body={
+      error:`لم أتمكن من إثبات ${missing.join(" و")} من ترويسة الصفحة الأولى بعد القراءة عالية الدقة. لم يتم استيراد أي صف. ارفع نسخة أوضح أو راجع الملف.`,
+      code:"PDF_HEADER_UNRESOLVED",missingHeaderFields:missing,
+    };
+    if(streaming){emit({type:"error",...body});res.end();return;}
+    res.status(422).json(body);return;
+  }
+  const finalHeaderProblem=headerScopeProblem(headerPreflight);
+  if(finalHeaderProblem){
+    if(streaming){emit({type:"error",...finalHeaderProblem.body});res.end();return;}
+    res.status(finalHeaderProblem.status).json(finalHeaderProblem.body);return;
+  }
+
   /* An unreadable scan is refused outright rather than returned as a table of
      blanks: the reader could not otherwise tell which empty cells are the
      document and which are the camera. */
