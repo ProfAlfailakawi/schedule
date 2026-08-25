@@ -148,4 +148,6 @@ ok('86 canonical room resolution always depends on confirmed building', 'resolve
 ok('87 OCR cannot create canonical rooms', 'Repository.create' not in doc_ocr and 'resolveRoom(registry,rawHall,building.value.id' in server)
 ok('88 authority publish revalidates structural rows on backend', 'validateSmartRows(publishRows' in server and 'requireDepartmentInstructor:draft.importLayout==="authority-pdf"' in server)
 ok('89 page row-density catches major visual-to-extracted loss', 'filled<Math.ceil(gridRows.length*0.70)' in doc_ocr and 'SUSPICIOUS_EXTRACTION' in server)
+types_src=(ROOT/'src/types.ts').read_text()
+ok('90 ScheduleDraft persists the signed PDF import receipt contract', 'importReceipt?: string;' in types_src and 'Server-signed proof that the PDF header matched this exact academic scope.' in types_src)
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

@@ -126,6 +126,18 @@ export interface FSchedule {
   /** Raw instructor text read from the imported PDF. Kept only as a review aid
    * when a catalogue match is uncertain; reports always print the system name. */
   sourceInstructorText?: string;
+  /** Immutable source cells and their canonicalization proof for imported PDFs. */
+  sourceCourseCode?: string;
+  sourceCourseText?: string;
+  sourceSectionText?: string;
+  importEvidence?: Partial<Record<"course"|"section"|"instructor"|"building"|"room", {
+    raw?: string;
+    normalized?: string;
+    canonical?: string;
+    confidence?: "CONFIRMED"|"REVIEW_REQUIRED"|"UNRESOLVED";
+    reason?: string;
+    evidence?: string[];
+  }>>;
   /**
    * How many times this appointment has been written.
    *
@@ -355,6 +367,8 @@ export interface ScheduleDraft {
   /** Branch label read from the source PDF header (for the authority report). */
   sourceBranchCode?: string;
   sourceBranchName?: string;
+  /** Server-signed proof that the PDF header matched this exact academic scope. */
+  importReceipt?: string;
   publishedAt?: string;
 }
 
