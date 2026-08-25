@@ -239,9 +239,9 @@ export function authorityPdfTextGridRows(words:Word[],pageWidth:number):GridRow[
     const hall=located.hall||cleanHallCode(hallRaw);
 
     rows.push({
-      code,reference,scode,courseText,instructorText,days,
+      code,reference,scode,courseText,instructorText,days,daysRaw:days,timeRaw,
       start:pair?.start||"",end:pair?.end||"",
-      building,hall,buildingRaw,hallRaw,
+      building,hall,buildingRaw,hallRaw,sourceMode:"pdf-text",
     });
   }
   return rows;
@@ -660,6 +660,8 @@ function tableFromWords(words:Word[],columns:number[],rowGrouping:"default"|"pdf
 export type GridRow={
   code:string;reference:string;scode:string;courseText:string;instructorText:string;
   days:string;start:string;end:string;building:string;hall:string;
+  /** Literal same-cell evidence kept for field-level provenance. */
+  daysRaw?:string;timeRaw?:string;sourceMode?:"pdf-text"|"ocr-grid"|"ocr-fallback";
   /** Same proven physical cells before strict token validation. They are kept as
    * evidence so the registry can reconstruct only an already-known official
    * code (e.g. a dropped leading 0 in 012B09), never invent a location. */
@@ -1444,12 +1446,13 @@ async function readGrid(upright:Buffer,pool:{eng:PooledWorker[];ara:PooledWorker
       code,reference,scode,
       courseText:normalizeCell(nameCells.cells[row]||""),
       instructorText:normalizeCell(instructorCells.cells[row]||""),
-      days:rowDays,
+      days:rowDays,daysRaw:rowDays,timeRaw:rawTime,
       start,end,
       building,
       hall,
       buildingRaw:bRaw,
       hallRaw:hRaw,
+      sourceMode:"ocr-grid",
     });
   }
   const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
@@ -2159,6 +2162,8 @@ export type ParsedScheduleRow={
   fsunday:boolean;fmonday:boolean;ftuesday:boolean;fwednesday:boolean;fthursday:boolean;
   fstarttime:string;fendtime:string;AdRoomCode:string;AdRoomHall:string;ocrLine:string;sourceInstructorText?:string;
   sourceCourseCode?:string;sourceCourseText?:string;sourceSectionText?:string;sourceBuildingText?:string;sourceRoomText?:string;
+  sourceDaysText?:string;sourceTimeText?:string;sourceReadMode?:"pdf-text"|"ocr-grid"|"ocr-fallback";
+  instructorMatchMethod?:string;instructorMatchScore?:number;instructorMatchedTokens?:number;
 };
 
 /** Match an instructor printed on the Authority sheet to the registry.
@@ -2173,7 +2178,9 @@ export type ParsedScheduleRow={
  * - «هيئة…» maps only to the system's own «هيئة تدريسية» identity;
  * - ambiguous names stay blank. The PDF spelling is never saved as a new name.
  */
-function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>):AdInstructor|undefined{
+type InstructorIdentityMatch={person:AdInstructor;method:"EXACT_FULL"|"FACULTY_IDENTITY"|"COURSE_TWO_NAME"|"DEPARTMENT_TWO_NAME"|"GLOBAL_THREE_NAME";score:number;matchedTokens:number};
+
+function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):InstructorIdentityMatch|undefined{
   const clean=(value:string)=>fold(value)
     /* Titles are presentation only. fold() removes punctuation first, so
        «أ.د.» -> «ا د», «د.» -> «د», and «أ.» -> «ا». */
@@ -2206,17 +2213,17 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
   if(/^هيئه(?:\s|$)/.test(rawClean)){
     const faculty=catalogue.filter(item=>item.normalized==="هيئه تدريسيه"||item.normalized.startsWith("هيئه تدريسيه "));
     const preferred=faculty.filter(item=>item.preferred);
-    if(preferred.length===1)return preferred[0].person;
-    return faculty.length===1?faculty[0].person:undefined;
+    if(preferred.length===1)return{person:preferred[0].person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2};
+    return faculty.length===1?{person:faculty[0].person,method:"FACULTY_IDENTITY",score:100,matchedTokens:2}:undefined;
   }
   if(/عضو\s*هيئه|شاغر|منتدب/.test(rawClean))return undefined;
 
   const normalizedRaw=rawTokens.join(" ");
   const haystack=` ${normalizedRaw} `;
   const exact=catalogue.filter(item=>normalizedRaw===item.normalized||haystack.includes(` ${item.normalized} `));
-  if(exact.length===1)return exact[0].person;
+  if(exact.length===1)return{person:exact[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,exact[0].tokens.length)};
   const preferredExact=exact.filter(item=>item.preferred);
-  if(preferredExact.length===1)return preferredExact[0].person;
+  if(preferredExact.length===1)return{person:preferredExact[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,preferredExact[0].tokens.length)};
 
   const tokenEqual=(a:string,b:string)=>a===b;
   const stemEqual=(a:string,b:string)=>a===b||(Math.min(a.length,b.length)>=3&&(a.startsWith(b)||b.startsWith(a)));
@@ -2258,15 +2265,27 @@ function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?
     if(!ranked.length)return undefined;
     const top=ranked[0],runner=ranked[1];
     if(runner&&runner.score===top.score)return undefined;
-    return top.item.person;
+    return top;
   };
+
+  /* Course history is a tie-breaker, never identity by itself. Two-name proof is
+     allowed here only when the printed tokens leave ONE existing system person
+     among instructors who have actually taught this canonical course. */
+  const coursePool=coursePreferredIds?.size?catalogue.filter(item=>coursePreferredIds.has(Number(item.person.AdInstructorId))):[];
+  const courseHit=coursePool.length?choose(coursePool,true):undefined;
+  if(courseHit)return{person:courseHit.item.person,method:"COURSE_TWO_NAME",score:99,matchedTokens:courseHit.ordered.total};
 
   const preferred=catalogue.filter(item=>item.preferred);
   const preferredHit=preferred.length?choose(preferred,true):undefined;
-  if(preferredHit)return preferredHit;
+  if(preferredHit)return{person:preferredHit.item.person,method:"DEPARTMENT_TWO_NAME",score:98,matchedTokens:preferredHit.ordered.total};
   /* Outside the department, require three-name proof; two-name university-wide
      matches are deliberately left blank unless the FULL identity matched above. */
-  return choose(catalogue,false);
+  const globalHit=choose(catalogue,false);
+  return globalHit?{person:globalHit.item.person,method:"GLOBAL_THREE_NAME",score:96,matchedTokens:globalHit.ordered.total}:undefined;
+}
+
+function matchInstructorName(raw:string,instructors:AdInstructor[],preferredIds?:Set<number>,coursePreferredIds?:Set<number>):AdInstructor|undefined{
+  return matchInstructorIdentity(raw,instructors,preferredIds,coursePreferredIds)?.person;
 }
 
 /**
@@ -2342,7 +2361,7 @@ function isHeaderLine(text:string):boolean{
   return false;
 }
 
-function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number,preferredInstructorIds?:Set<number>,authorityDepartment=""){
+function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstructor[],startOrder:number,preferredInstructorIds?:Set<number>,authorityDepartment="",courseInstructorIds?:Map<number,Set<number>>){
   const catalogue=courses.map(course=>({course,digits:academicDigits(course.CourseCode),folded:fold(course.CourseName)}));
   const tailCounts=new Map<string,number>();
   for(const item of catalogue){
@@ -2377,7 +2396,9 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     const combinedCheck = `${grid.code} ${grid.scode} ${grid.courseText} ${grid.instructorText}`;
     if(isHeaderLine(combinedCheck)||isHeaderLine(grid.courseText)||isHeaderLine(grid.code))continue;
     const flags = parseDays(grid.days) || EMPTY_DAYS;
-    const instructorHit=matchInstructorName(grid.instructorText,instructors,preferredInstructorIds);
+    const coursePreferred=course?courseInstructorIds?.get(Number(course.AdCourseId)):undefined;
+    const instructorMatch=matchInstructorIdentity(grid.instructorText,instructors,preferredInstructorIds,coursePreferred);
+    const instructorHit=instructorMatch?.person;
     const cleanBuilding = cleanBuildingCode(grid.building);
     const cleanHall = cleanHallCode(grid.hall);
 
@@ -2403,6 +2424,8 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
         sourceInstructorText:grid.instructorText,
         sourceCourseCode:grid.code,sourceCourseText:grid.courseText,sourceSectionText:grid.scode,
         sourceBuildingText:grid.buildingRaw||grid.building,sourceRoomText:grid.hallRaw||grid.hall,
+        sourceDaysText:grid.daysRaw||grid.days,sourceTimeText:grid.timeRaw||[grid.start,grid.end].filter(Boolean).join(" - "),sourceReadMode:grid.sourceMode||"ocr-grid",
+        instructorMatchMethod:instructorMatch?.method,instructorMatchScore:instructorMatch?.score,instructorMatchedTokens:instructorMatch?.matchedTokens,
       });
       issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
       if(!grid.start)issues.push(`صف «${rawLabel}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
@@ -2428,6 +2451,8 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
       sourceInstructorText:grid.instructorText,
       sourceCourseCode:grid.code,sourceCourseText:grid.courseText,sourceSectionText:grid.scode,
       sourceBuildingText:grid.buildingRaw||grid.building,sourceRoomText:grid.hallRaw||grid.hall,
+      sourceDaysText:grid.daysRaw||grid.days,sourceTimeText:grid.timeRaw||[grid.start,grid.end].filter(Boolean).join(" - "),sourceReadMode:grid.sourceMode||"ocr-grid",
+      instructorMatchMethod:instructorMatch?.method,instructorMatchScore:instructorMatch?.score,instructorMatchedTokens:instructorMatch?.matchedTokens,
     });
     const label=course.CourseName;
     if(!grid.start)issues.push(`صف «${label}» شعبة ${grid.scode||"—"}: لم أتعرف على الوقت`);
@@ -2440,7 +2465,7 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   return{rows,issues,order};
 }
 
-export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>,options?:{authorityDepartmentCode?:string;sequentialSections?:boolean}){
+export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructors:AdInstructor[],preferredInstructorIds?:Set<number>,options?:{authorityDepartmentCode?:string;sequentialSections?:boolean;courseInstructorIds?:Map<number,Set<number>>}){
   const activeCourses=courses;
   const catalogue=activeCourses.map(course=>({
     course,
@@ -2457,7 +2482,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
   for(const page of pages){
     if(page.gridRows?.length){
-      const parsed=parseGridRows(page.gridRows,activeCourses,instructors,order,preferredInstructorIds,academicDigits(options?.authorityDepartmentCode));
+      const parsed=parseGridRows(page.gridRows,activeCourses,instructors,order,preferredInstructorIds,academicDigits(options?.authorityDepartmentCode),options?.courseInstructorIds);
       rows.push(...parsed.rows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
     }
   }
@@ -2533,6 +2558,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
         sourceInstructorText:line,
         sourceCourseCode:sourceCourseRuns[0]||"",sourceCourseText:rawCourseText,sourceSectionText:section,
         sourceBuildingText:roomCode,sourceRoomText:roomHall,
+        sourceDaysText:Object.keys(flags||{}).filter(key=>(flags as any)?.[key]).join(" "),sourceTimeText:time?[time.start,time.end].join(" - "):"",sourceReadMode:"ocr-fallback",
       });
       issues.push(`صف «${rawCourseText}»: لم يتم العثور على رمز المقرر في كتالوج القسم تلقائياً — يرجى اختياره من القائمة`);
       continue;
@@ -2615,8 +2641,10 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     });
 
     const instructorCandidateText=instructorCandidates.join(" ");
-    const instructorHit=matchInstructorName(instructorCandidateText||line,instructors,preferredInstructorIds)
-      ||matchInstructorName(line,instructors,preferredInstructorIds);
+    const fallbackCoursePreferred=options?.courseInstructorIds?.get(Number(matchedCourse.AdCourseId));
+    const instructorIdentity=matchInstructorIdentity(instructorCandidateText||line,instructors,preferredInstructorIds,fallbackCoursePreferred)
+      ||matchInstructorIdentity(line,instructors,preferredInstructorIds,fallbackCoursePreferred);
+    const instructorHit=instructorIdentity?.person;
 
     rows.push({
       sourceOrder:order++,referenceNumber:reference,
@@ -2630,6 +2658,8 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       AdRoomCode:roomCode,AdRoomHall:roomHall,ocrLine:line,sourceInstructorText:instructorCandidateText,
       sourceCourseCode,sourceCourseText:cells.find(cell=>fold(cell.text)===fold(courseName))?.text||courseName,sourceSectionText:section,
       sourceBuildingText:roomCode,sourceRoomText:roomHall,
+      sourceDaysText:Object.keys(flags||{}).filter(key=>(flags as any)?.[key]).join(" "),sourceTimeText:time?[time.start,time.end].join(" - "):"",sourceReadMode:"ocr-fallback",
+      instructorMatchMethod:instructorIdentity?.method,instructorMatchScore:instructorIdentity?.score,instructorMatchedTokens:instructorIdentity?.matchedTokens,
     });
 
     if(!time)issues.push(`صف «${courseName}»: لم أتعرف على الوقت`);

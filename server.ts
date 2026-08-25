@@ -54,8 +54,8 @@ import {
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { ocrDocument, parseScheduleTable, transcriptFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
-import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveBuilding, resolveBuildingFromUniqueRoom, resolveRoom } from "./src/utils/locationRegistry";
-import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode, recoverOfficialBuildingCodeFromAuthorityCell } from "./src/utils/locationCollegePrefixes";
+import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
+import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 
 // Resolve environment/private paths before database initialization.
@@ -693,11 +693,15 @@ function safeImportEvidence(input:any){
     raw:String(value.raw||"").slice(0,220),normalized:String(value.normalized||"").slice(0,220),
     canonical:value.canonical===undefined||value.canonical===null?undefined:String(value.canonical).slice(0,180),
     confidence:["CONFIRMED","REVIEW_REQUIRED","UNRESOLVED"].includes(String(value.confidence))?String(value.confidence):"UNRESOLVED",
+    score:Number.isFinite(Number(value.score))?Math.max(0,Math.min(100,Math.round(Number(value.score)))):undefined,
+    source:String(value.source||"").slice(0,60)||undefined,
+    method:String(value.method||"").slice(0,80)||undefined,
+    derived:Boolean(value.derived),
     reason:String(value.reason||"").slice(0,300),
     evidence:Array.isArray(value.evidence)?value.evidence.map((item:any)=>String(item||"").slice(0,180)).filter(Boolean).slice(0,8):[],
   }:undefined;
   const safe:any={};
-  for(const key of ["course","section","instructor","building","room"]){const item=field(input[key]);if(item)safe[key]=item;}
+  for(const key of ["course","section","days","time","instructor","building","room"]){const item=field(input[key]);if(item)safe[key]=item;}
   return Object.keys(safe).length?safe:undefined;
 }
 
@@ -5267,6 +5271,15 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     ...visitingRoster.map(Number),
   ].filter((id:number)=>Number.isFinite(id)&&id>0));
   const instructors=allInstructors;
+  /* A course-specific roster is only a tie-breaker for NAME evidence. It never
+     creates identity by itself: the observed PDF still has to prove two/three
+     ordered name tokens and the remaining system candidate must be unique. */
+  const courseInstructorIds=new Map<number,Set<number>>();
+  for(const historyRow of sectionHistory as any[]){
+    const courseId=Number(historyRow.AdCourseId||0),instructorId=Number(historyRow.AdInstructorId||0);
+    if(!courseId||!instructorId)continue;
+    const set=courseInstructorIds.get(courseId)||new Set<number>();set.add(instructorId);courseInstructorIds.set(courseId,set);
+  }
 
   /* Reading a scan takes over a minute, so the client is kept informed rather
      than left staring at a frozen button. Progress is streamed as NDJSON — one
@@ -5351,7 +5364,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   }
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
   const documentDepartmentCode=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection?.AdSectionCode);
-  const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,{authorityDepartmentCode:documentDepartmentCode,sequentialSections:true});
+  const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,{authorityDepartmentCode:documentDepartmentCode,sequentialSections:true,courseInstructorIds});
   const geometryRows=recognized.pageDiagnostics.reduce((sum:any,page:any)=>sum+Number(page.extractedRows||0),0);
   if(geometryRows>=3&&parsed.rows.length<Math.ceil(geometryRows*.7)){
     const message=`أوقفت الاستيراد: حدود الجدول أثبتت ${geometryRows} صفاً تقريباً، لكن المطابقة أعادت ${parsed.rows.length} فقط. هذا فرق غير آمن وقد يعني انزياح أعمدة أو دمج صفوف. لم يتم استيراد أي صف.`;
@@ -5373,48 +5386,29 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const normalizedInstructor=foldHeaderIdentity(row.sourceInstructorText);
     const sectionToken=String(row.SCode||"").replace(/\D/g,"");
     const authoritySectionConfirmed=/^\d{3}$/.test(sectionToken)&&Number(sectionToken)>=501;
+    const activeDayKeys=["fsunday","fmonday","ftuesday","fwednesday","fthursday"].filter(key=>Boolean(row[key]));
+    const timeConfirmed=/^\d{2}:\d{2}$/.test(String(row.fstarttime||""))&&/^\d{2}:\d{2}$/.test(String(row.fendtime||""))&&String(row.fendtime)>String(row.fstarttime);
+    const readMode=String(row.sourceReadMode||"ocr-grid");
+    const readSource=readMode==="pdf-text"?"PDF_TEXT_LAYER":readMode==="ocr-fallback"?"OCR_FALLBACK":"OCR_GRID_CELL";
+    const instructorMethod=String(row.instructorMatchMethod||"");
+    const instructorScore=Number(row.instructorMatchScore||0);
     row.importEvidence={
-      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdCourseId)?"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط":"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
-      section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",reason:authoritySectionConfirmed?"رقم الشعبة مولد حسب ترتيب شعب المقرر: 501 ثم 502 ثم 503…":"تعذر توليد رقم شعبة canonical",evidence:["المقرر canonical","ترتيب ظهور شعب المقرر في المستند","بداية ثابتة 501"]},
-      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",reason:Number(row.AdInstructorId)?"تطابق يقيني مع سجل النظام: اسم كامل أو اسمين/ثلاثة أسماء أعطت مرشحاً واحداً فقط":"لم ينتج النص مرشحاً واحداً يقينياً؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط","مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
-      building:{raw:rawBuilding,normalized:token,confidence:"UNRESOLVED",reason:"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
-      room:{raw:rawHall,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",reason:rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر",evidence:["خلية القاعة الأصلية"]},
+      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdCourseId)?100:0,source:readSource,method:"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:false,reason:Number(row.AdCourseId)?"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط":"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
+      section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",score:authoritySectionConfirmed?99:0,source:"SYSTEM_SEQUENCE",method:"COURSE_LOCAL_501_SEQUENCE",derived:true,reason:authoritySectionConfirmed?"رقم الشعبة مولد حسب ترتيب شعب المقرر: 501 ثم 502 ثم 503…":"تعذر توليد رقم شعبة canonical",evidence:["المقرر canonical","ترتيب ظهور شعب المقرر في المستند","بداية ثابتة 501"]},
+      days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?"CONFIRMED":"UNRESOLVED",score:activeDayKeys.length?100:0,source:readSource,method:"SAME_CELL_DAYS",derived:false,reason:activeDayKeys.length?"أيام المحاضرة قُرئت من خلية الأيام نفسها":"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
+      time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?"CONFIRMED":"UNRESOLVED",score:timeConfirmed?100:0,source:readSource,method:"SAME_CELL_TIME_PAIR",derived:false,reason:timeConfirmed?"زوج الوقت مثبت من خلية الوقت نفسها":"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
+      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:readSource,method:instructorMethod||"UNRESOLVED",derived:Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء":"لم ينتج النص مرشحاً واحداً يقينياً؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
+      building:{raw:rawBuilding,normalized:token,confidence:"UNRESOLVED",score:0,source:readSource,method:"REGISTRY_PENDING",derived:false,reason:"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
+      room:{raw:rawHall,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",score:0,source:readSource,method:"BUILDING_BOUND_ROOM_PENDING",derived:false,reason:rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر",evidence:["خلية القاعة الأصلية"]},
     };
-    /* A full building is "explicit" only when that exact token exists in the
-       CONFIRMED owner registry. Shape alone is not identity: 345045/520020 are
-       perfectly six-digit strings but are seat/capacity welds, not buildings. */
-    const explicitFull=confirmedOfficialBuildingCodes.some(code=>String(code).toUpperCase()===token);
-    let building=explicitFull?resolveBuilding(registry,token,{}):resolveBuilding(registry,rawBuilding,{collegeId,sectionId});
-    let prefixRecoveredCode="";
-    /* Restore the original owner-supplied location semantics instead of asking
-       OCR to "understand" a campus. The report cell carries site+building: for
-       branch 012, B09 means official 012B09. If the camera drops the first zero
-       or paints a border over it, reconstruct ONLY an official CONFIRMED code
-       from the finite registry for the document branch. */
-    if(building.status!=="CONFIRMED"||!building.value){
-      prefixRecoveredCode=recoverOfficialBuildingCodeFromAuthorityCell(rawBuilding,sourceBranchRoot,confirmedOfficialBuildingCodes)||"";
-      if(prefixRecoveredCode){
-        const recovered=resolveBuilding(registry,prefixRecoveredCode,{});
-        if(recovered.status==="CONFIRMED"&&recovered.value)building=recovered;
-      }
-    }
-    /* One older ruled-export artefact can append the first ROOM digit to a full
-       building cell. Keep the repair registry-bound and exact. */
-    if(building.status!=="CONFIRMED"||!building.value){
-      const bleed=token.match(/^(\d{3}[A-Z]\d{2})\d$/);
-      if(bleed){
-        const repaired=resolveBuilding(registry,bleed[1],{});
-        if(repaired.status==="CONFIRMED"&&repaired.value)building=repaired;
-      }
-    }
-    if((building.status!=="CONFIRMED"||!building.value)&&rawHall){
-      /* If the building glyph alone is damaged, a distinctive confirmed room
-         may still prove the building. This rescue is allowed only when that
-         room belongs to ONE confirmed building in the document branch; common
-         rooms such as F10/F12 remain unresolved instead of being guessed. */
-      const buildingFromRoom=resolveBuildingFromUniqueRoom(registry,rawHall,{branchRoot:sourceBranchRoot});
-      if(buildingFromRoom.status==="CONFIRMED"&&buildingFromRoom.value)building=buildingFromRoom;
-    }
+    /* One resolver owns the complete Authority location grammar. This prevents
+       parser branches from disagreeing about whether a token is a building and
+       guarantees Building -> Room registry validation for every row. */
+    const location=resolveAuthorityLocation(registry,{
+      rawBuilding,rawRoom:rawHall,collegeId,sectionId,branchRoot:sourceBranchRoot,
+      sitePrefix:targetSitePrefix,knownOfficialCodes:confirmedOfficialBuildingCodes,
+    });
+    const building=location.building;
     if(building.status!=="CONFIRMED"||!building.value){
       row.buildingId=undefined;row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       /* Never display unverified OCR as a canonical location. Keep the raw cell
@@ -5460,12 +5454,13 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
 
     row.buildingId=building.value.id;
-    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",reason:prefixRecoveredCode?"استعادة آمنة من بادئة الفرع المثبتة + رقم المبنى داخل خلية المبنى":"تطابق صريح مع رمز مبنى Canonical",evidence:prefixRecoveredCode?[`النص المقروء ${rawBuilding}`,`الفرع المثبت ${sourceBranchRoot}`,`الرمز الرسمي الوحيد ${building.value.officialCode}`]:[`الرمز الرسمي ${building.value.officialCode}`]});
+    const buildingDerived=location.buildingMethod!=="EXACT_REGISTRY";
+    Object.assign(row.importEvidence.building,{canonical:building.value.id,confidence:"CONFIRMED",score:location.buildingScore,method:location.buildingMethod,derived:buildingDerived,reason:buildingDerived?"استعادة مقيدة بالكامل بالسجل الرسمي؛ لم يتم اختراع كود مبنى":"تطابق صريح مع رمز مبنى رسمي",evidence:[...building.evidence,`طريقة الحسم ${location.buildingMethod}`,`الرمز الرسمي ${building.value.officialCode}`]});
     /* Once the building identity is confirmed, the user's rule is simple:
        a room is valid iff it exists under THAT building. Do not wrongly reject
        a legitimate Jahra/Fahaheel room because the current upload was opened
        from the main-campus college context. Building -> Room is the authority. */
-    const room=resolveRoom(registry,rawHall,building.value.id,{});
+    const room=location.room||resolveRoom(registry,rawHall,building.value.id,{});
     if(room.status!=="CONFIRMED"||!room.value){
       row.roomId=undefined;row.locationStatus="LOCATION_REVIEW_REQUIRED";
       /* Building is confirmed and may remain visible; the unconfirmed room may
@@ -5475,7 +5470,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
       parsed.issues.push(`صف «${row.AdCourseName||row.AdCourseId}» شعبة ${row.SCode||"—"}: القاعة المقروءة «${rawHall||"فارغة"}» غير معروفة داخل ${building.value.officialCode}؛ اختر قاعة رسمية أو «بانتظار تثبيت القاعة».`);continue;
     }
     row.roomId=room.value.id;row.AdRoomHall=room.value.canonicalCode;row.locationStatus="VERIFIED";
-    Object.assign(row.importEvidence.room,{canonical:room.value.id,confidence:"CONFIRMED",reason:"قاعة Canonical مؤكدة داخل المبنى المحدد",evidence:[`المبنى ${building.value.officialCode}`,`القاعة ${room.value.canonicalCode}`]});
+    Object.assign(row.importEvidence.room,{canonical:room.value.id,confidence:"CONFIRMED",score:location.roomScore||100,method:location.roomScore&&location.roomScore<100?"REGISTRY_CONSTRAINED_REPAIR":"EXACT_ROOM_IN_BUILDING",derived:Boolean(location.roomScore&&location.roomScore<100),reason:"قاعة Canonical مؤكدة داخل المبنى المحدد",evidence:[...room.evidence,`المبنى ${building.value.officialCode}`,`القاعة ${room.value.canonicalCode}`]});
   }
 
   /* The sheet names its own term in the header. Uploading last year's export
@@ -5505,8 +5500,20 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     v:1,collegeId,sectionId,termId,issuedAt:new Date().toISOString(),
     sourceTerm:headerPreflight.term.label,sourceBranch:headerPreflight.branch.label,sourceDepartment:headerPreflight.department.label,
   });
+  const evidenceFields=["course","section","days","time","instructor","building","room"];
+  let confirmedCells=0,derivedCells=0,reviewCells=0,readyRows=0;
+  for(const row of rows as any[]){
+    let rowReady=true;
+    for(const key of evidenceFields){
+      const proof=row.importEvidence?.[key];
+      if(proof?.confidence==="CONFIRMED"){confirmedCells++;if(proof.derived)derivedCells++;}
+      else{reviewCells++;rowReady=false;}
+    }
+    if(rowReady)readyRows++;
+  }
+  const verificationSummary={confirmedCells,derivedCells,reviewCells,readyRows,reviewRows:Math.max(0,rows.length-readyRows)};
   const result={
-    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,
+    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,
     fileName:fileName.slice(0,180),
     pages:recognized.pageCount,confidence:recognized.confidence,
     legibility:recognized.legibility,

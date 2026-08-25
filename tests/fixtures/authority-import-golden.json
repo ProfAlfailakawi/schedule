@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "purpose": "Frozen Authority-import invariants. Any parser change must preserve these outcomes or add an explicit reviewed fixture.",
+  "academic": {
+    "departmentCode": "0101",
+    "courses": [
+      { "AdCourseId": 11, "AdCollegeId": 6, "AdSectionId": 9, "CourseCode": "102", "CourseName": "المقرر الرسمي الأول", "CourseHours": 3, "CourseCredit": 3 },
+      { "AdCourseId": 12, "AdCollegeId": 6, "AdSectionId": 9, "CourseCode": "103", "CourseName": "المقرر الرسمي الثاني", "CourseHours": 3, "CourseCredit": 3 }
+    ],
+    "instructors": [
+      { "AdInstructorId": 21, "AdInstructorName": "د. أحمد محمد علي السالم" },
+      { "AdInstructorId": 22, "AdInstructorName": "أ. أحمد محمد حسن السالم" },
+      { "AdInstructorId": 23, "AdInstructorName": "أ.د. يوسف عبد الله ناصر العازمي" },
+      { "AdInstructorId": 24, "AdInstructorName": "هيئة تدريسية" },
+      { "AdInstructorId": 25, "AdInstructorName": "سارة خالد سالم المطيري" },
+      { "AdInstructorId": 26, "AdInstructorName": "سارة خالد أحمد المطيري" }
+    ],
+    "courseInstructorIds": { "11": [21, 23, 24], "12": [22, 25, 26] },
+    "rows": [
+      { "code": "0101102", "reference": "30001", "courseText": "اسم OCR لا يعتمد", "instructorText": "د. أحمد محمد", "building": "012B09", "hall": "F13", "start": "08:00", "end": "09:20", "days": "42", "expectedCourseId": 11, "expectedSection": "501", "expectedInstructorId": 21 },
+      { "code": "0101102", "reference": "30002", "courseText": "اسم آخر", "instructorText": "ا. د. يوسف عبدالله ناصر", "building": "012B07", "hall": "F31", "start": "09:30", "end": "10:50", "days": "531", "expectedCourseId": 11, "expectedSection": "502", "expectedInstructorId": 23 },
+      { "code": "0101102", "reference": "30003", "courseText": "اسم آخر", "instructorText": "هيئة", "building": "012F15", "hall": "F10", "start": "11:00", "end": "12:20", "days": "42", "expectedCourseId": 11, "expectedSection": "503", "expectedInstructorId": 24 },
+      { "code": "0101103", "reference": "30004", "courseText": "اسم غير رسمي", "instructorText": "سارة خالد", "building": "012J14", "hall": "F11", "start": "12:30", "end": "13:50", "days": "531", "expectedCourseId": 12, "expectedSection": "501", "expectedInstructorId": 0 },
+      { "code": "0101103", "reference": "30005", "courseText": "اسم غير رسمي", "instructorText": "سارة خالد سالم", "building": "012B09", "hall": "F12", "start": "14:00", "end": "15:20", "days": "42", "expectedCourseId": 12, "expectedSection": "502", "expectedInstructorId": 25 }
+    ]
+  },
+  "locations": {
+    "buildings": [
+      { "id": "b_012B07", "officialCode": "012B07", "sitePrefix": "012B", "buildingNumber": "7", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "evidence": [] },
+      { "id": "b_012B09", "officialCode": "012B09", "sitePrefix": "012B", "buildingNumber": "9", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "evidence": [] },
+      { "id": "b_012J14", "officialCode": "012J14", "sitePrefix": "012J", "buildingNumber": "14", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "evidence": [] },
+      { "id": "b_012F15", "officialCode": "012F15", "sitePrefix": "012F", "buildingNumber": "15", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "evidence": [] },
+      { "id": "b_052007", "officialCode": "052007", "sitePrefix": "0520", "buildingNumber": "7", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [10], "sectionIds": [20], "active": true, "evidence": [] }
+    ],
+    "rooms": [
+      { "id": "r_012B09_F13", "buildingId": "b_012B09", "buildingCode": "012B09", "canonicalCode": "F13", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "shared": false, "evidence": [] },
+      { "id": "r_012B09_F12", "buildingId": "b_012B09", "buildingCode": "012B09", "canonicalCode": "F12", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "shared": false, "evidence": [] },
+      { "id": "r_012B07_F31", "buildingId": "b_012B07", "buildingCode": "012B07", "canonicalCode": "F31", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "shared": false, "evidence": [] },
+      { "id": "r_012B07_F12", "buildingId": "b_012B07", "buildingCode": "012B07", "canonicalCode": "F12", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "shared": false, "evidence": [] },
+      { "id": "r_012J14_F11", "buildingId": "b_012J14", "buildingCode": "012J14", "canonicalCode": "F11", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "shared": false, "evidence": [] },
+      { "id": "r_012F15_F10", "buildingId": "b_012F15", "buildingCode": "012F15", "canonicalCode": "F10", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [6], "sectionIds": [9], "active": true, "shared": false, "evidence": [] },
+      { "id": "r_052007_G01", "buildingId": "b_052007", "buildingCode": "052007", "canonicalCode": "G01", "confidence": "CONFIRMED", "aliases": [], "collegeIds": [10], "sectionIds": [20], "active": true, "shared": false, "evidence": [] }
+    ],
+    "cases": [
+      { "rawBuilding": "012B09", "rawRoom": "F13", "branchRoot": "012", "sitePrefix": "012B", "collegeId": 6, "sectionId": 9, "expectedBuilding": "012B09", "expectedRoom": "F13", "expectedMethod": "EXACT_REGISTRY" },
+      { "rawBuilding": "12B09", "rawRoom": "F13", "branchRoot": "012", "sitePrefix": "012B", "collegeId": 6, "sectionId": 9, "expectedBuilding": "012B09", "expectedRoom": "F13", "expectedMethod": "BRANCH_RECOVERY" },
+      { "rawBuilding": "012809", "rawRoom": "F13", "branchRoot": "012", "sitePrefix": "012B", "collegeId": 6, "sectionId": 9, "expectedBuilding": "012B09", "expectedRoom": "F13", "expectedMethod": "BRANCH_RECOVERY" },
+      { "rawBuilding": "12J14", "rawRoom": "F11", "branchRoot": "012", "sitePrefix": "012B", "collegeId": 6, "sectionId": 9, "expectedBuilding": "012J14", "expectedRoom": "F11", "expectedMethod": "BRANCH_RECOVERY" },
+      { "rawBuilding": "345045", "rawRoom": "F13", "branchRoot": "012", "sitePrefix": "012B", "collegeId": 6, "sectionId": 9, "expectedBuilding": "012B09", "expectedRoom": "F13", "expectedMethod": "UNIQUE_ROOM_FINGERPRINT" },
+      { "rawBuilding": "520020", "rawRoom": "F12", "branchRoot": "012", "sitePrefix": "012B", "collegeId": 6, "sectionId": 9, "expectedBuilding": null, "expectedRoom": null, "expectedMethod": "UNRESOLVED" },
+      { "rawBuilding": "52007", "rawRoom": "G01", "branchRoot": "052", "sitePrefix": "0520", "collegeId": 10, "sectionId": 20, "expectedBuilding": "052007", "expectedRoom": "G01", "expectedMethod": "NUMERIC_SITE_RECOVERY" }
+    ]
+  }
+}

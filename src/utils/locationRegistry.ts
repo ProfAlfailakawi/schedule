@@ -1,4 +1,5 @@
 import type { FSchedule, LocationConfidence, MasterBuilding, MasterRoom, ScheduleLocationStatus } from "../types";
+import { recoverOfficialBuildingCodeFromAuthorityCell } from "./locationCollegePrefixes";
 
 export const PENDING_ROOM = "PENDING_ROOM" as const;
 const INVALID = new Set(["", "0", "00", "000", "-", "--", "---", "TBA", "N/A", "NA", "NONE", "NULL", "بدون", "بدونقاعة", "الغاء", "إلغاء"]);
@@ -44,6 +45,24 @@ export const canonicalRoomShape = (value: unknown): string | null => {
 export interface LocationRegistry { buildings: MasterBuilding[]; rooms: MasterRoom[]; }
 export interface ResolveContext { collegeId?: number; sectionId?: number; buildingId?: string; }
 export interface Resolution<T> { status: LocationConfidence; value?: T; evidence: string[]; }
+
+export type AuthorityLocationMethod =
+  | "EXACT_REGISTRY"
+  | "CONTEXT_UNIQUE"
+  | "BRANCH_RECOVERY"
+  | "NUMERIC_SITE_RECOVERY"
+  | "BORDER_BLEED_RECOVERY"
+  | "UNIQUE_ROOM_FINGERPRINT"
+  | "UNRESOLVED";
+
+export interface AuthorityLocationResolution {
+  building: Resolution<MasterBuilding>;
+  room?: Resolution<MasterRoom>;
+  buildingMethod: AuthorityLocationMethod;
+  buildingScore: number;
+  roomScore: number;
+  recoveredBuildingCode?: string;
+}
 
 const aliasMatches = (canonical: string, aliases: readonly {value:string}[], raw: unknown) => {
   const n = normalizeLocationToken(raw);
@@ -169,6 +188,112 @@ export function resolveRoom(registry: LocationRegistry, raw: unknown, buildingId
     if(sameNumber.length>1)return {status:"REVIEW_REQUIRED",evidence:[`الرقم ${token} يطابق أكثر من قاعة داخل المبنى: ${sameNumber.map(r=>r.canonicalCode).join("، ")}.`]};
   }
   return {status:"REVIEW_REQUIRED",evidence:["القاعة غير موجودة رسميًا داخل هذا المبنى."]};
+}
+
+
+/**
+ * Single Authority location resolver used by PDF import.
+ *
+ * The importer is not allowed to invent campus semantics in multiple places.
+ * Every row therefore comes through this one finite-state resolver:
+ *   source building cell -> CONFIRMED building registry -> room under THAT building.
+ *
+ * A six-digit number is not a building merely because its shape looks plausible.
+ * Numeric campus codes (0510/0520/0410/0420) are accepted only as exact official
+ * registry identities, or through a unique recovery tied to the selected site's
+ * official prefix. Seat/capacity welds such as 345045/520020 cannot pass.
+ */
+export function resolveAuthorityLocation(
+  registry: LocationRegistry,
+  input: {
+    rawBuilding: unknown;
+    rawRoom: unknown;
+    collegeId?: number;
+    sectionId?: number;
+    branchRoot?: string;
+    sitePrefix?: string;
+    knownOfficialCodes?: readonly string[];
+  },
+): AuthorityLocationResolution {
+  const rawBuilding=input.rawBuilding;
+  const rawRoom=input.rawRoom;
+  const token=normalizeLocationToken(rawBuilding);
+  const branchRoot=String(input.branchRoot||"").replace(/\D/g,"").slice(0,3);
+  const sitePrefix=normalizeLocationToken(input.sitePrefix||"");
+  const known=[...new Set((input.knownOfficialCodes?.length?input.knownOfficialCodes:registry.buildings
+    .filter(b=>b.active!==false&&b.confidence==="CONFIRMED")
+    .map(b=>b.officialCode)).map(code=>normalizeLocationToken(code)).filter(Boolean))];
+
+  let building:Resolution<MasterBuilding>={status:"REVIEW_REQUIRED",evidence:["لم يثبت المبنى بعد."]};
+  let buildingMethod:AuthorityLocationMethod="UNRESOLVED";
+  let buildingScore=0;
+  let recoveredBuildingCode="";
+
+  // 1) Exact registry identity is the strongest possible proof — alpha or numeric.
+  if(token&&known.includes(token)){
+    building=resolveBuilding(registry,token,{});
+    if(building.status==="CONFIRMED"&&building.value){buildingMethod="EXACT_REGISTRY";buildingScore=100;}
+  }
+
+  // 2) Contextual shorthand is allowed only for genuinely short building forms.
+  // Never send arbitrary six-digit numeric seat/capacity strings to the shorthand resolver.
+  if((building.status!=="CONFIRMED"||!building.value)&&/^(?:0*\d{1,3}|[A-Z]0*\d{1,3})$/.test(token)){
+    const contextual=resolveBuilding(registry,rawBuilding,{collegeId:input.collegeId,sectionId:input.sectionId});
+    if(contextual.status==="CONFIRMED"&&contextual.value){building=contextual;buildingMethod="CONTEXT_UNIQUE";buildingScore=97;}
+  }
+
+  // 3) Owner grammar: branch 012 + B09/F15/J14, repaired only against the official registry.
+  if(building.status!=="CONFIRMED"||!building.value){
+    const recovered=recoverOfficialBuildingCodeFromAuthorityCell(rawBuilding,branchRoot,known)||"";
+    if(recovered){
+      const resolved=resolveBuilding(registry,recovered,{});
+      if(resolved.status==="CONFIRMED"&&resolved.value){
+        building=resolved;buildingMethod="BRANCH_RECOVERY";buildingScore=96;recoveredBuildingCode=recovered;
+      }
+    }
+  }
+
+  // 4) Numeric campuses: repair a dropped leading zero only when the selected official
+  // site prefix + registry leave exactly ONE canonical code. No free-form numeric guessing.
+  if((building.status!=="CONFIRMED"||!building.value)&&/^\d{4}$/.test(sitePrefix)&&/^\d{4,6}$/.test(token)){
+    const stripped=token.replace(/^0+/,"");
+    const candidates=known.filter(code=>code.startsWith(sitePrefix)&&code.replace(/^0+/,"")===stripped);
+    if(candidates.length===1){
+      const resolved=resolveBuilding(registry,candidates[0],{});
+      if(resolved.status==="CONFIRMED"&&resolved.value){
+        building=resolved;buildingMethod="NUMERIC_SITE_RECOVERY";buildingScore=96;recoveredBuildingCode=candidates[0];
+      }
+    }
+  }
+
+  // 5) A ruled border can append ONE room digit to an otherwise exact alpha building code.
+  if(building.status!=="CONFIRMED"||!building.value){
+    const bleed=token.match(/^(\d{3}[A-Z]\d{2})\d$/);
+    if(bleed&&known.includes(bleed[1])){
+      const resolved=resolveBuilding(registry,bleed[1],{});
+      if(resolved.status==="CONFIRMED"&&resolved.value){
+        building=resolved;buildingMethod="BORDER_BLEED_RECOVERY";buildingScore=94;recoveredBuildingCode=bleed[1];
+      }
+    }
+  }
+
+  // 6) Last resort: a distinctive official room may prove ONE building inside the branch.
+  if((building.status!=="CONFIRMED"||!building.value)&&!isInvalidLocationToken(rawRoom)){
+    const byRoom=resolveBuildingFromUniqueRoom(registry,rawRoom,{branchRoot});
+    if(byRoom.status==="CONFIRMED"&&byRoom.value){building=byRoom;buildingMethod="UNIQUE_ROOM_FINGERPRINT";buildingScore=90;}
+  }
+
+  if(building.status!=="CONFIRMED"||!building.value){
+    return{building,buildingMethod:"UNRESOLVED",buildingScore:0,roomScore:0};
+  }
+
+  const room=resolveRoom(registry,rawRoom,building.value.id,{});
+  let roomScore=0;
+  if(room.status==="CONFIRMED"&&room.value){
+    const proof=room.evidence.join(" ");
+    roomScore=/استعادة OCR/.test(proof)?96:/تطبيع آمن/.test(proof)?97:/الرقم .* يطابق/.test(proof)?93:100;
+  }
+  return{building,room,buildingMethod,buildingScore,roomScore,recoveredBuildingCode:recoveredBuildingCode||undefined};
 }
 
 export const roomIdentityKey = (row: Partial<FSchedule>): string => {

@@ -255,6 +255,27 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds]);
   const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
+  const pdfReadinessSummary = useMemo(() => {
+    if (importKind !== "authority-pdf" || !Array.isArray(xlsxPreview?.rows)) return null;
+    const rows = xlsxPreview.rows as ImportRow[];
+    const hasDays = (row: ImportRow) => Boolean(row.fsunday || row.fmonday || row.ftuesday || row.fwednesday || row.fthursday);
+    const minutes = (value: string) => { const match = String(value || "").match(/^(\d{1,2}):(\d{2})$/); return match ? Number(match[1]) * 60 + Number(match[2]) : -1; };
+    const rowReady = (row: ImportRow) => {
+      const sectionNumber = Number(String(row.SCode || ""));
+      const start = minutes(row.fstarttime), end = minutes(row.fendtime);
+      return Boolean(
+        Number(row.AdCourseId) &&
+        /^\d{3}$/.test(String(row.SCode || "").trim()) && sectionNumber >= 501 &&
+        hasDays(row) && start >= 0 && end > start &&
+        row.buildingId && (row.roomId || row.locationStatus === "PENDING_ROOM") &&
+        Number(row.AdInstructorId) && departmentIds.includes(Number(row.AdInstructorId))
+      );
+    };
+    const ready = rows.filter(rowReady).length;
+    const review = Math.max(0, rows.length - ready);
+    const derived = rows.reduce((sum, row) => sum + Object.values(row.importEvidence || {}).filter((proof: any) => proof?.confidence === "CONFIRMED" && proof?.derived).length, 0);
+    return { ready, review, derived };
+  }, [importKind, xlsxPreview?.rows, departmentIds]);
 
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();
@@ -661,6 +682,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <span><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b>صفاً فُهم</span>
                     {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b>ملاحظة</span>:null}
                     {importKind==="authority-pdf"?<span><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b>صفحات PDF</span>:null}
+                    {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b>جاهز</span>:null}
+                    {importKind==="authority-pdf"&&pdfReadinessSummary?.review?<span className="warn"><b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b>للمراجعة</span>:null}
                   </div>
                   {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
                     <>

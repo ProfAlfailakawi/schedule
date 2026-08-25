@@ -25,7 +25,7 @@
     "test:guide:perf": "node scripts/guide-performance-audit.mjs",
     "test:conflicts": "tsx tests/conflict-parity.ts",
     "test:locations": "python3 tests/location-registry-audit.py",
-    "test:pdf-import": "tsx tests/pdf-import-regression.ts"
+    "test:pdf-import": "tsx tests/pdf-import-regression.ts && tsx tests/pdf-import-golden.ts"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.7.1",

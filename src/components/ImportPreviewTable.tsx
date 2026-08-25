@@ -29,8 +29,9 @@ export type ImportRow = {
   sourceInstructorText?: string;
   sourceCourseCode?: string; sourceCourseText?: string; sourceSectionText?: string;
   sourceSitePrefix?: string; sourceSiteLabel?: string; courseSiteLabel?: string; courseSiteMessage?: string;
-  importEvidence?: Partial<Record<"course"|"section"|"instructor"|"building"|"room", {
-    raw?: string; normalized?: string; canonical?: string; confidence?: "CONFIRMED"|"REVIEW_REQUIRED"|"UNRESOLVED"; reason?: string; evidence?: string[];
+  importEvidence?: Partial<Record<"course"|"section"|"days"|"time"|"instructor"|"building"|"room", {
+    raw?: string; normalized?: string; canonical?: string; confidence?: "CONFIRMED"|"REVIEW_REQUIRED"|"UNRESOLVED";
+    score?: number; source?: string; method?: string; derived?: boolean; reason?: string; evidence?: string[];
   }>>;
   [extra: string]: unknown;
 };
@@ -108,18 +109,23 @@ export default function ImportPreviewTable({
   const hasDays = (row: ImportRow) => DAY_CHIPS.some(day => Boolean(row[day.key]));
   const missing = {
     course: (row: ImportRow) => !Number(row.AdCourseId),
-    scode: (row: ImportRow) => !/^\d{3,4}$/.test(String(row.SCode || "").trim()),
+    scode: (row: ImportRow) => { const value=String(row.SCode || "").trim(); return !/^\d{3}$/.test(value) || Number(value) < 501; },
     days: (row: ImportRow) => !hasDays(row),
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
     room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
     instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)) || (departmentIds.length>0&&!departmentIds.includes(Number(row.AdInstructorId))),
   };
-  const red = (bad: boolean) => bad ? "import-cell-missing" : "";
-  const evidenceTitle = (row:ImportRow,key:"course"|"section"|"instructor"|"building"|"room") => {
+  type EvidenceKey="course"|"section"|"days"|"time"|"instructor"|"building"|"room";
+  const evidenceClass = (row:ImportRow,key:EvidenceKey,bad:boolean) => {
+    if(bad)return "import-cell-missing";
+    const proof=row.importEvidence?.[key];
+    return proof?.confidence==="CONFIRMED"&&proof.derived?"import-cell-derived":"";
+  };
+  const evidenceTitle = (row:ImportRow,key:EvidenceKey) => {
     const proof=row.importEvidence?.[key];
     if(!proof)return undefined;
-    return [proof.reason,proof.raw?`المصدر: ${proof.raw}`:"",proof.normalized?`بعد التطبيع: ${proof.normalized}`:"",...(proof.evidence||[])].filter(Boolean).join(" · ");
+    return [proof.reason,Number.isFinite(Number(proof.score))?`الثقة: ${Number(proof.score)}٪`:"",proof.source?`المسار: ${proof.source}`:"",proof.method?`القاعدة: ${proof.method}`:"",proof.raw?`المصدر: ${proof.raw}`:"",proof.normalized?`بعد التطبيع: ${proof.normalized}`:"",...(proof.evidence||[])].filter(Boolean).join(" · ");
   };
 
   const autoEndForRow = (row:ImportRow, start:string) => {
@@ -216,7 +222,7 @@ export default function ImportPreviewTable({
               <React.Fragment key={`${row.referenceNumber || "row"}-${index}`}>
                 <tr className={open ? "is-editing" : ""}>
                   <td className="num">{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
-                  <td className={`import-cell-course ${red(missing.course(row))}`} title={evidenceTitle(row,"course")}>
+                  <td className={`import-cell-course ${evidenceClass(row,"course",missing.course(row))}`} title={evidenceTitle(row,"course")}>
                     {open ? (
                       <div className="import-course-editor">
                         <select
@@ -258,16 +264,16 @@ export default function ImportPreviewTable({
                       </div>
                     )}
                   </td>
-                  <td className={red(missing.scode(row))} title={evidenceTitle(row,"section")}>
-                    {open ? <div className="import-section-editor"><input inputMode="numeric" pattern="[0-9]{3,4}" maxLength={4} value={String(row.SCode || "")} onChange={event=>patch(index,{SCode:event.target.value.replace(/\D/g,"").slice(0,4)})} /><small>كما هو مطبوع في المصدر</small></div> : (String(row.SCode || "").trim() || "—")}
+                  <td className={evidenceClass(row,"section",missing.scode(row))} title={evidenceTitle(row,"section")}>
+                    {open ? <div className="import-section-editor"><input inputMode="numeric" pattern="[0-9]{3}" maxLength={3} value={String(row.SCode || "")} onChange={event=>patch(index,{SCode:event.target.value.replace(/\D/g,"").slice(0,3)})} /><small>كما هو مطبوع في المصدر</small></div> : (String(row.SCode || "").trim() || "—")}
                   </td>
-                  <td className={red(missing.days(row))}>
+                  <td className={evidenceClass(row,"days",missing.days(row))} title={evidenceTitle(row,"days")}>
                     <span className="import-day-chips">{DAY_CHIPS.map(day => <button key={day.key} type="button" disabled={!open} data-guide-ignore="تبديل يوم داخل معاينة الاستيراد قبل أي حفظ" className={row[day.key] ? "on" : ""} onClick={() => patch(index, { [day.key]: !row[day.key] } as Partial<ImportRow>)}>{day.label}</button>)}</span>
                   </td>
-                  <td className={red(missing.time(row))} dir="ltr">
+                  <td className={evidenceClass(row,"time",missing.time(row))} title={evidenceTitle(row,"time")} dir="ltr">
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patch(index, { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
-                  <td className={red(missing.building(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"building")}>
+                  <td className={evidenceClass(row,"building",missing.building(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"building")}>
                     {open ? (
                       <BuildingPicker
                         collegeId={collegeId}
@@ -293,7 +299,7 @@ export default function ImportPreviewTable({
                       <span dir="ltr">{row.AdRoomCode || "—"}</span>
                     )}
                   </td>
-                  <td className={red(missing.room(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"room")}>
+                  <td className={evidenceClass(row,"room",missing.room(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"room")}>
                     {open ? (
                       <RoomPicker
                         collegeId={collegeId}
@@ -312,7 +318,7 @@ export default function ImportPreviewTable({
                       <span dir="ltr">{row.locationStatus === "PENDING_ROOM" ? "بانتظار تثبيت القاعة" : (row.AdRoomHall || "—")}</span>
                     )}
                   </td>
-                  <td className={red(missing.instructor(row))} title={evidenceTitle(row,"instructor")}>
+                  <td className={evidenceClass(row,"instructor",missing.instructor(row))} title={evidenceTitle(row,"instructor")}>
                     {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName || "—")}
                   </td>
                   <td className="import-row-tools">
