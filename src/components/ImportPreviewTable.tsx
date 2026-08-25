@@ -112,7 +112,7 @@ export default function ImportPreviewTable({
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
     room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
-    instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)) || (departmentIds.length>0&&!departmentIds.includes(Number(row.AdInstructorId))),
+    instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)) || (!departmentIds.includes(Number(row.AdInstructorId))),
   };
   const red = (bad: boolean) => bad ? "import-cell-missing" : "";
   const evidenceTitle = (row:ImportRow,key:"course"|"section"|"instructor"|"building"|"room") => {
