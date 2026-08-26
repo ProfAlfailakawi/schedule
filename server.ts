@@ -886,9 +886,10 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
         return clean || norm;
       }
       if(["fstarttime","fendtime"].includes(field)){
-        /* 09:00, 9:00 and the Authority import's 0900 all mean the same
-           clock. Keep that storage-format noise out of the change report. */
-        const digits=String(value||"").replace(/\D/g,"");
+        const str = String(value||"").trim();
+        const match = str.match(/(\d{1,2}):(\d{2})/);
+        if(match) return `${match[1].padStart(2,"0")}:${match[2]}`;
+        const digits=str.replace(/\D/g,"");
         if(/^\d{3,4}$/.test(digits)){const hh=digits.slice(0,-2).padStart(2,"0"),mm=digits.slice(-2);return `${hh}:${mm}`;}
         return normalizeEmpty(value);
       }
@@ -917,6 +918,23 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
          genuine yellow cell. */
       return Boolean(sourceName&&currentName&&(sourceName===currentName||sourceName.includes(currentName)||currentName.includes(sourceName)));
     };
+
+    /* HEURISTIC: If OCR failed to extract certain fields on multi-page PDFs, 
+       inherit them from the proven DB source to prevent false 'changed' or 'deleted' states. */
+    if (!next.fstarttime && source.fstarttime) next.fstarttime = source.fstarttime;
+    if (!next.fendtime && source.fendtime) next.fendtime = source.fendtime;
+    if (!next.AdRoomCode && source.AdRoomCode) next.AdRoomCode = source.AdRoomCode;
+    if (!next.AdRoomHall && source.AdRoomHall) next.AdRoomHall = source.AdRoomHall;
+    if (!next.AdCourseName && source.AdCourseName) next.AdCourseName = source.AdCourseName;
+    if (!next.CourseName && source.CourseName) next.CourseName = source.CourseName;
+    if (!next.fsunday && !next.fmonday && !next.ftuesday && !next.fwednesday && !next.fthursday) {
+      next.fsunday = source.fsunday;
+      next.fmonday = source.fmonday;
+      next.ftuesday = source.ftuesday;
+      next.fwednesday = source.fwednesday;
+      next.fthursday = source.fthursday;
+    }
+
     const changedFields=AUTHORITY_PDF_COMPARE_FIELDS.filter(field=>{
       if(field==="AdInstructorId"&&sameInstructorIdentity())return false;
       return comparable(field,source[field])!==comparable(field,next[field]);
