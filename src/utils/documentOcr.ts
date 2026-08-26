@@ -947,12 +947,20 @@ function adaptiveGridGeometry(lib:any,src:any):{cols:number[];bands:{top:number;
   let best:{header:number;end:number;count:number}|null=null;
   for(let index=0;index<allGaps.length;index++){
     const headerGap=allGaps[index];
-    if(headerGap<pitch*1.35||headerGap>pitch*2.6)continue;
+    if(headerGap<pitch*1.1||headerGap>pitch*3.2)continue;
     let cursor=index+1,count=0;
-    while(cursor<allGaps.length&&allGaps[cursor]>=pitch*0.65&&allGaps[cursor]<=pitch*1.5){count++;cursor++;}
+    while(cursor<allGaps.length&&allGaps[cursor]>=pitch*0.55&&allGaps[cursor]<=pitch*1.75){count++;cursor++;}
     /* A final page may legitimately contain only ONE timetable row. Geometry
        is still strong evidence when the header band and columns are present. */
     if(count>=1&&(!best||count>best.count))best={header:index,end:cursor,count};
+  }
+  if(!best){
+    /* Fallback for continuation pages or tables where header band has similar height to body rows */
+    for(let index=0;index<allGaps.length;index++){
+      let cursor=index+1,count=0;
+      while(cursor<allGaps.length&&allGaps[cursor]>=pitch*0.55&&allGaps[cursor]<=pitch*1.75){count++;cursor++;}
+      if(count>=2&&(!best||count>best.count))best={header:index,end:cursor,count};
+    }
   }
   if(!best)return null;
   const headerTop=rowRules[best.header],headerBottom=rowRules[best.header+1];
@@ -972,7 +980,15 @@ function adaptiveGridGeometry(lib:any,src:any):{cols:number[];bands:{top:number;
       else run=0;
     }
     colInk[x]=ink;colRun[x]=bestRun;
-    if(bestRun>=headerHeight*0.55||ink>=headerHeight*0.72)colPoints.push(x);
+    if(bestRun>=headerHeight*0.48||ink>=headerHeight*0.62)colPoints.push(x);
+  }
+  if(colPoints.length<7){
+    for(let x=0;x<W;x++){
+      if(colRun[x]>=headerHeight*0.35||colInk[x]>=headerHeight*0.45){
+        if(!colPoints.includes(x))colPoints.push(x);
+      }
+    }
+    colPoints.sort((a,b)=>a-b);
   }
   const colScore=new Int32Array(W);for(let x=0;x<W;x++)colScore[x]=colRun[x]*4+colInk[x];
   const colsProbe=cluster(colPoints,3,colScore);
@@ -1790,18 +1806,6 @@ async function readGrid(
     const rawTime=timeAt(row);
     const timeText=rawTime.replace(/\D+/g," ").trim();
     let pieces=timeText.split(" ").filter(piece=>piece.length>=3&&piece.length<=4);
-    /* Some OCR passes retain all eight clock digits but lose only the printed
-       dash. The column has already been semantically proven as TIME, so 09200800
-       can be split into its two four-digit clocks without consulting a neighbour. */
-    if(pieces.length<2){
-      const packed=rawTime.replace(/\D/g,"");
-      if(/^\d{8}$/.test(packed))pieces=[packed.slice(0,4),packed.slice(4)];
-      else if(/^\d{7}$/.test(packed)){
-        const p1=[packed.slice(0,3),packed.slice(3)],p2=[packed.slice(0,4),packed.slice(4)];
-        if(p1.map(mend).filter(Boolean).length===2)pieces=p1;
-        else if(p2.map(mend).filter(Boolean).length===2)pieces=p2;
-      }
-    }
     let start="",end="";
     /* A 3-digit piece lost one digit, and which end it lost decides the hour:
        «080» is 0800 with its tail gone, «950» is 0950 with its head gone. Try
@@ -1821,6 +1825,18 @@ async function readGrid(
       const padded=[piece.padEnd(4,"0"),piece.padStart(4,"0")].filter(teachingClock);
       return padded.length===1?padded[0]:null;
     };
+    /* Some OCR passes retain all eight clock digits but lose only the printed
+       dash. The column has already been semantically proven as TIME, so 09200800
+       can be split into its two four-digit clocks without consulting a neighbour. */
+    if(pieces.length<2){
+      const packed=rawTime.replace(/\D/g,"");
+      if(/^\d{8}$/.test(packed))pieces=[packed.slice(0,4),packed.slice(4)];
+      else if(/^\d{7}$/.test(packed)){
+        const p1=[packed.slice(0,3),packed.slice(3)],p2=[packed.slice(0,4),packed.slice(4)];
+        if(p1.map(mend).filter(Boolean).length===2)pieces=p1;
+        else if(p2.map(mend).filter(Boolean).length===2)pieces=p2;
+      }
+    }
     const mended=pieces.map(mend).filter((value):value is string=>Boolean(value));
     if(mended.length>=2){
       const toMinutes=(value:string)=>Number(value.slice(0,2))*60+Number(value.slice(2));
@@ -2361,12 +2377,12 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
        quarter-turns and keep the one that produces the strongest physical
        table. This rescue is paid only for failed pages, so clean exports remain
        fast while photographed/CamScanner sheets stop collapsing into prose. */
-    const scanOrientationLocked=cachedPreflight?.header.source==="scan"&&!cachedPreflight.header.requiresLandscapeUpload;
-    if(!gridRows&&!scanOrientationLocked){
+    const filledInitial=(gridRows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
+    if(!gridRows||filledInitial===0){
       let best:{upright:Buffer;rows:GridRow[];turn:-1|0|1}|null=null;
-      const tried=new Set<number>([orientation]);
-      for(const turn of [-1,0,1] as const){
-        if(tried.has(turn))continue;
+      const turns:Array<-1|0|1>=[-1,0,1];
+      for(const turn of turns){
+        if(turn===orientation)continue;
         try{
           const candidate=await deskew(await rotateImage(pageImage,turn));
           const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,multiPageCourseKeys);
@@ -2375,7 +2391,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
           if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows,turn};
         }catch{/* try the remaining orientation */}
       }
-      if(best){upright=best.upright;gridRows=best.rows;pageOrientation=best.turn;}
+      if(best&&best.rows.length>0){upright=best.upright;gridRows=best.rows;pageOrientation=best.turn;}
     }
     if(gridRows){
       if(index===0){
@@ -2434,8 +2450,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       /* Re-read the same page in a clean worker context, then try the remaining
          quarter-turns only if they improve the number of semantically useful
          rows. This is the conservative Safe Path behind the fast lanes. */
-      const scanOrientationLocked=cachedPreflight?.header.source==="scan"&&!cachedPreflight.header.requiresLandscapeUpload;
-      const rescueTurns=scanOrientationLocked?[bestOrientation]:[bestOrientation,-1,0,1] as Array<-1|0|1>;
+      const rescueTurns=[-1,0,1].sort((a,b)=>a===bestOrientation?-1:b===bestOrientation?1:0) as Array<-1|0|1>;
       for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));

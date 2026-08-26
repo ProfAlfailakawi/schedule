@@ -4071,8 +4071,8 @@ button.twin-delta{width:100%}
 /* Import confidence palette — quiet, semantic and deliberately low-saturation.
    Green = registry-confirmed inference; amber = review; rose = genuinely missing. */
 .import-preview-table td.import-cell-derived{
-  background:color-mix(in srgb,var(--success,#3f7f67) 8%,var(--surface));
-  box-shadow:inset 3px 0 0 color-mix(in srgb,var(--success,#3f7f67) 48%,transparent);
+  background:var(--surface,#ffffff);
+  box-shadow:none;
 }
 .import-preview-table td.import-cell-missing{
   background:color-mix(in srgb,var(--danger,#a2402f) 8%,var(--surface));
@@ -4116,15 +4116,15 @@ button.twin-delta{width:100%}
    These four states intentionally do NOT share one pale ramp: the operator must
    distinguish them instantly without opening a tooltip. */
 .import-preview-table td.import-cell-review{
-  background:color-mix(in srgb,#b57916 13%,var(--surface))!important;
-  box-shadow:inset 3px 0 0 #b57916!important;
+  background:var(--surface,#ffffff)!important;
+  box-shadow:none!important;
 }
 .import-preview-table td.import-cell-derived{
-  background:color-mix(in srgb,#197052 11%,var(--surface))!important;
-  box-shadow:inset 3px 0 0 #197052!important;
+  background:var(--surface,#ffffff)!important;
+  box-shadow:none!important;
 }
 .import-preview-table td.import-cell-missing{
-  background:color-mix(in srgb,#b43b32 12%,var(--surface))!important;
+  background:color-mix(in srgb,#b43b32 10%,var(--surface))!important;
   box-shadow:inset 3px 0 0 #b43b32!important;
 }
 .import-color-key{
