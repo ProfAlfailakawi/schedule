@@ -1126,8 +1126,10 @@ export const recoverAuthorityCourseCell=(raw:string,departmentCode="",canonicalK
      otherwise deterministic repair ambiguous. */
   const structural=catalogue.filter(key=>{
     if(token.length===3)return key.endsWith(token);
-    if(token.length===key.length-1)return key.startsWith(token);
+    if(token.length>=3&&token.length<=6&&key.endsWith(token))return true;
+    if(token.length===key.length-1)return key.startsWith(token)||key.endsWith(token);
     if(token.length===key.length+1)return token.slice(1)===key||token.slice(0,-1)===key;
+    if(token.length===key.length&&token.slice(1)===key.slice(1))return true;
     return false;
   });
   if(structural.length===1)return structural[0];
@@ -1248,14 +1250,14 @@ async function readGrid(
      latency. Keep a safety window on both edges; validators still prove which
      strip is which before any value is accepted. */
   const edgeIndices=[...Array.from({length:Math.min(6,Math.max(0,columnBands.length-1))},(_,index)=>index+1),
-    ...Array.from({length:Math.min(5,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]
+    ...Array.from({length:Math.min(8,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]
     .filter((index,pos,list)=>index>=0&&list.indexOf(index)===pos).sort((a,b)=>a-b);
   const greyReads=await runOnPool(pool.eng,edgeIndices.map(index=>(worker:PooledWorker)=>readStrip(surface,columnBands[index],NUMERIC,"6",worker)));
   const numericGrey:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
   edgeIndices.forEach((columnIndex,at)=>{numericGrey[columnIndex]=greyReads[at];});
   const anyPattern=Object.values(stripPatterns);
   const bestPatternHits=(read:StripRead)=>Math.max(...anyPattern.map(pattern=>read.cells.filter(cell=>pattern.test(cell.replace(/\s+/g," ").trim())).length));
-  const likelyStructural=new Set<number>([1,3,4,5,...Array.from({length:Math.min(5,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]);
+  const likelyStructural=new Set<number>([1,3,4,5,...Array.from({length:Math.min(8,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]);
   const binIndices=edgeIndices.filter(index=>{
     const best=bestPatternHits(numericGrey[index]);
     return best<bands.length*0.5&&(best>0||likelyStructural.has(index));
@@ -1527,7 +1529,11 @@ async function readGrid(
     if(!missing.length)return;
     const rescued=await runOnPool(pool.eng,missing.map(row=>(worker:PooledWorker)=>readCell(surface,columnBands[index],bands[row],alphabet,worker)));
     const next=[...numericGrey[index].cells];
-    missing.forEach((row,at)=>{const value=normalizeCell(rescued[at]||"");if(pattern.test(value))next[row]=value;});
+    missing.forEach((row,at)=>{
+      const value=normalizeCell(rescued[at]||"");
+      if(pattern.test(value))next[row]=value;
+      else if(pattern===stripPatterns.code&&recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys))next[row]=value;
+    });
     numericGrey[index]={cells:next};
   };
   const rescueSpan=async(span:Span|null,pattern:RegExp,alphabet:string)=>{
@@ -1538,10 +1544,14 @@ async function readGrid(
     const band={left:columnBands[span.from].left,right:columnBands[span.to].right};
     const rescued=await runOnPool(pool.eng,missing.map(row=>(worker:PooledWorker)=>readCell(surface,band,bands[row],alphabet,worker)));
     const first=[...numericGrey[span.from].cells];
-    missing.forEach((row,at)=>{const value=normalizeCell(rescued[at]||"").replace(/\s+/g,"");if(pattern.test(value))first[row]=value;});
+    missing.forEach((row,at)=>{
+      const value=normalizeCell(rescued[at]||"").replace(/\s+/g,"");
+      if(pattern.test(value))first[row]=value;
+      else if(pattern===stripPatterns.code&&recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys))first[row]=value;
+    });
     numericGrey[span.from]={cells:first};
     for(let index=span.from+1;index<=span.to;index++){
-      const rest=[...numericGrey[index].cells];missing.forEach(row=>{if(pattern.test(first[row]||""))rest[row]="";});numericGrey[index]={cells:rest};
+      const rest=[...numericGrey[index].cells];missing.forEach(row=>{if(pattern.test(first[row]||"")||recoverAuthorityCourseCell(first[row]||"",authorityDepartmentCode,authorityCourseKeys))rest[row]="";});numericGrey[index]={cells:rest};
     }
   };
   const KEY_DIGITS="0123456789";
@@ -1560,8 +1570,9 @@ async function readGrid(
      then accept a repair only when the selected department catalogue has one
      and only one canonical key consistent with the observed cell. No course
      name, neighbour, row sequence or fuzzy prose can create identity. */
-  if(authorityCourseKeys.length&&(codeSpan||codeIndex>=0)){
-    const span=codeSpan||{from:codeIndex,to:codeIndex};
+  const hasCourseAnchor = Boolean(codeSpan || codeIndex >= 0 || refcodeSpan || refcodeIndex >= 0);
+  if(authorityCourseKeys.length&&(codeSpan||codeIndex>=0) || (authorityCourseKeys.length && hasCourseAnchor)){
+    const span=codeSpan||(codeIndex>=0?{from:codeIndex,to:codeIndex}:(refcodeSpan||{from:refcodeIndex,to:refcodeIndex}));
     const rawAt=(reads:StripRead[],row:number)=>{let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");return value;};
     const unresolved=bands.map((_,row)=>{
       const recovered=[rawAt(numericGrey,row),rawAt(numericBin,row)].map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean);
@@ -1729,8 +1740,9 @@ async function readGrid(
   // ambiguous OCR. A wrong room is more dangerous than an empty one because it
   // can be published unnoticed; only validator-clean values survive.
   const safeBuilding=(raw:string)=>{
-    const value=toAscii(raw).replace(/\s+/g,"").trim().toUpperCase();
-    if(stripPatterns.building.test(value))return cleanBuildingCode(value);
+    const value=toAscii(raw).replace(/[^A-Z0-9]/gi,"").trim().toUpperCase();
+    if(!value)return"";
+    if(stripPatterns.building.test(value)||cleanBuildingCode(value))return cleanBuildingCode(value);
     /* Preserve one very specific extraction artefact as RAW evidence:
        012B09 + a neighbouring room digit can become 012B091. The server only
        repairs this when the six-character prefix resolves to one CONFIRMED
@@ -1739,8 +1751,8 @@ async function readGrid(
     return"";
   };
   const safeHall=(raw:string)=>{
-    const value=toAscii(raw).replace(/\s+/g,"").trim().toUpperCase();
-    if(!/^(?:[A-Z]\d{1,3}|\d{1,4}[A-Z]?)$/.test(value))return"";
+    const value=toAscii(raw).replace(/[^A-Z0-9]/gi,"").trim().toUpperCase();
+    if(!value)return"";
     return cleanHallCode(value);
   };
 
@@ -1784,6 +1796,11 @@ async function readGrid(
     if(pieces.length<2){
       const packed=rawTime.replace(/\D/g,"");
       if(/^\d{8}$/.test(packed))pieces=[packed.slice(0,4),packed.slice(4)];
+      else if(/^\d{7}$/.test(packed)){
+        const p1=[packed.slice(0,3),packed.slice(3)],p2=[packed.slice(0,4),packed.slice(4)];
+        if(p1.map(mend).filter(Boolean).length===2)pieces=p1;
+        else if(p2.map(mend).filter(Boolean).length===2)pieces=p2;
+      }
     }
     let start="",end="";
     /* A 3-digit piece lost one digit, and which end it lost decides the hour:
@@ -1810,6 +1827,10 @@ async function readGrid(
       const sorted=[...mended].sort((a,b)=>toMinutes(a)-toMinutes(b));
       start=`${sorted[0].slice(0,2)}:${sorted[0].slice(2)}`;
       end=`${sorted[sorted.length-1].slice(0,2)}:${sorted[sorted.length-1].slice(2)}`;
+    }
+    if(!start||!end){
+      const pair=timePair(rawTime);
+      if(pair){start=start||pair.start;end=end||pair.end;}
     }
     let scode=scodeAt(row).replace(/\D/g,"");
     if(!/^\d{3}$/.test(scode)||Number(scode)<501)scode="";
@@ -2477,13 +2498,21 @@ const repairClockDigits=(value:string)=>value.replace(/[Oo°QDﻩ]/g,"0").replac
 const minutesOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3));
 
 export const cleanBuildingCode = (raw: string): string => {
-  const clean=toAscii(String(raw||"")).replace(/\s+/g,"").toUpperCase();
+  const clean=toAscii(String(raw||"")).replace(/[^A-Z0-9]/gi,"").toUpperCase();
   if(!clean)return"";
   /* A numeric six-digit value is NOT automatically a building. SWRSCHA has
      adjacent capacity columns whose text layer can weld into values such as
      345045 / 520020 / 320020. Accept a full building only when it starts with
      one of the owner-supplied official site prefixes. */
   if(OFFICIAL_BUILDING_PATTERN.test(clean))return clean;
+  /* If camera dropped leading zero from site prefix (e.g. 12B09 -> 012B09) */
+  for(const prefix of OFFICIAL_SITE_PREFIXES){
+    const compactPrefix=prefix.replace(/^0+/,"");
+    if(compactPrefix&&new RegExp(`^${escapeRegex(compactPrefix)}\\d{2}$`,"i").test(clean)){
+      const suffix=clean.slice(compactPrefix.length);
+      return `${prefix}${suffix}`;
+    }
+  }
   /* Legacy short alpha-site evidence (B09/F15/J14) is kept only as evidence;
      the server can canonicalize it against the proven document branch + finite
      registry. It is never enough by itself to create a building identity. */
@@ -2493,7 +2522,7 @@ export const cleanBuildingCode = (raw: string): string => {
 };
 
 export const cleanHallCode = (raw: string): string => {
-  const clean=toAscii(String(raw||"")).replace(/\s+/g,"").toUpperCase();
+  const clean=toAscii(String(raw||"")).replace(/[^A-Z0-9]/gi,"").toUpperCase();
   if(!clean)return"";
   /* A proven official building token can never be a room, even if it contains
      a room-looking suffix such as F15. */
@@ -2893,6 +2922,12 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
   for(const item of catalogue){
     if(item.digits.length>=3){const tail=item.digits.slice(-3);tailCounts.set(tail,(tailCounts.get(tail)||0)+1);}
   }
+  const canonicalKeys=catalogue.map(item=>{
+    const d=item.digits;
+    if(d.length>=7)return d;
+    if(authorityDepartment&&d.length<=3)return`${authorityDepartment}${d.padStart(3,"0").slice(-3)}`;
+    return d;
+  }).filter(k=>k.length===7);
   const matchCourse=(code:string,nameText:string)=>{
     if(isHeaderLine(code)||isHeaderLine(nameText))return null;
     const source=academicDigits(code);
@@ -2904,6 +2939,13 @@ function parseGridRows(gridRows:GridRow[],courses:AdCourse[],instructors:AdInstr
     if(source.length===3&&tailCounts.get(source)===1){
       const unique=catalogue.find(item=>item.digits.slice(-3)===source);
       if(unique)return unique.course;
+    }
+    if(canonicalKeys.length){
+      const recovered=recoverAuthorityCourseCell(source,authorityDepartment,canonicalKeys);
+      if(recovered){
+        const recoveredMatches=catalogue.filter(item=>authorityCourseCodeMatches(recovered,item.digits,authorityDepartment));
+        if(recoveredMatches.length===1)return recoveredMatches[0].course;
+      }
     }
     return null;
   };
