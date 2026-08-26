@@ -215,7 +215,7 @@ app.use((req, res, next) => {
 // worth the header.
 app.use(compression({
   threshold: 1024,
-  filter: (req: Request, res: Response) => {
+  filter: (req: any, res: any) => {
     const type = String(res.getHeader("Content-Type") || "");
     // Streams must not be buffered: SSE, and the NDJSON progress the PDF reader
     // emits line by line. Compressing either holds every line until the end,
@@ -223,7 +223,7 @@ app.use(compression({
     if (type.includes("text/event-stream") || type.includes("x-ndjson")) return false;
     return compression.filter(req, res);
   },
-}));
+}) as any);
 // Full-system backups are intentionally compressed and can be much larger than
 // ordinary API payloads. Give only the backup upload endpoints a larger raw
 // body allowance; every other JSON route keeps the tight 1 MB limit.
