@@ -1045,7 +1045,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   useEffect(() => {
     let cancelled = false;
     const { collegeId, sectionId, termId } = filters;
-    if (!collegeId || !sectionId || !termId || !all.length) { setAuthorityReportAvailable(false); return; }
+    if (!collegeId || !sectionId || !termId) { setAuthorityReportAvailable(false); return; }
     const query = new URLSearchParams({ collegeId:String(collegeId), sectionId:String(sectionId), termId:String(termId), meta:"1" });
     fetch(`/api/reports/authority-pdf-diff?${query}`)
       .then(async response => response.ok ? response.json() : null)
@@ -1430,20 +1430,22 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <span>موعد</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
-          {results.length && !pending ? <div className="query-canvas-actions">
-            <button
-              type="button"
-              className="query-print-icon"
-              onClick={() => printReport(lens)}
-              aria-label="طباعة هذا العرض"
-              title="طباعة هذا العرض"
-            >
-              <Printer aria-hidden="true" />
-            </button>
-            <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
-              <Table2 aria-hidden="true" />التقرير الشامل
-            </SecondaryButton>
-            {!pending && all.length && authorityReportAvailable ? (
+          {!pending && (results.length || authorityReportAvailable) ? <div className="query-canvas-actions">
+            {results.length ? <>
+              <button
+                type="button"
+                className="query-print-icon"
+                onClick={() => printReport(lens)}
+                aria-label="طباعة هذا العرض"
+                title="طباعة هذا العرض"
+              >
+                <Printer aria-hidden="true" />
+              </button>
+              <SecondaryButton type="button" onClick={() => printReport("comprehensive")} title="وثيقة القسم الرسمية بكل تفاصيل الجدول">
+                <Table2 aria-hidden="true" />التقرير الشامل
+              </SecondaryButton>
+            </> : null}
+            {!pending && authorityReportAvailable ? (
               <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل">
                 <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
               </SecondaryButton>
@@ -1906,6 +1908,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             sectionCode={sectionCode}
             courseById={courseById}
             instructorById={instructorById}
+            visitingIds={visitingIds}
           />
         ) : null}
       </PrintPortal>

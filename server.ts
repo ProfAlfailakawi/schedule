@@ -5662,10 +5662,11 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
   const draft=candidates.find((item:any)=>item.status==="published")||candidates[0];
   if(!draft){res.status(404).json({error:"لا توجد نسخة PDF معتمدة محفوظة لهذا الفصل والقسم بعد."});return;}
   const live=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
-  // The comparison belongs to a live timetable. If the term was cleared, the
-  // old imported baseline must not keep advertising a report in Queries as if
-  // there were still a current board to compare against.
-  if(!live.length){res.status(404).json({error:"لا يوجد جدول حالي لهذا الفصل والقسم؛ تقرير التغييرات لا يظهر بعد حذف بيانات الجدول."});return;}
+  /* An empty live table is still a meaningful comparison: it means every row
+     that existed in the imported Authority PDF was deleted. Returning 404 here
+     hid the most important possible deletion report. Keep the immutable
+     baseline and let buildAuthorityPdfDiff classify every original row as
+     `deleted` instead of suppressing the report. */
   const comparison=buildAuthorityPdfDiff(draft.baselineRows||[],live);
   res.json({
     draftId:draft.id,name:draft.name,sourceFileName:draft.sourceFileName||"الجدول المعتمد.pdf",

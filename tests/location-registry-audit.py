@@ -109,7 +109,7 @@ ok('52 department room picker merges then sorts all department rooms', 'departme
 ok('53 section selectors are Arabic-natural sorted', 'sortByName(data.sections.filter' in admin and 'sortByName(availableSections' in (ROOT/'src/components/IntelligenceContextBar.tsx').read_text())
 
 ok('54 import publish is disabled while any issue remains', 'importReady = Boolean(importPreview?.valid && importBlockingIssues.length === 0)' in intel and 'disabled={!importReady || busy}' in intel)
-ok('55 empty query hides print and report actions', 'results.length && !pending ? <div className="query-canvas-actions">' in reports)
+ok('55 empty query hides ordinary print actions but keeps a valid Authority deletion report', 'results.length || authorityReportAvailable' in reports and '{results.length ? <>' in reports and 'تقرير تغييرات الجدول' in reports)
 ok('56 query facets cascade through the actual intersected dataset', 'rowLocation = useCallback' in reports and 'rowsForFacet = useCallback' in reports and 'rowsForFacet("course")' in reports and 'rowsForFacet("instructor")' in reports and 'rowsForFacet("building")' in reports and 'rowsForFacet("room")' in reports)
 ok('57 late alert shows thin course name under course code', 'subtitle: courseName || undefined' in intel and 'intel-reason-course-name' in intel)
 ok('58 demand arithmetic values are centered under labels', 'justify-items:center' in (ROOT/'src/styles/06-intelligence.css').read_text())
@@ -222,5 +222,16 @@ ok('122 Special Education is one canonical umbrella for its programme sub-specia
 ok('123 graduate proof cannot be bypassed with an old/generic proof token', 'proof.documentKind!=="graduation-sheet"' in server and 'proof.specializationMatched!==true' in server and 'Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)' in server)
 ok('124 public graduate UI explicitly asks for the graduation sheet, not a generic transcript', 'ارفع صحيفة التخرج' in server and 'أي مستند آخر لن يُقبل' in server and 'تحقق من صحيفة التخرج أولاً' in server)
 ok('125 graduate eligibility uses only stored academic degree rules, never name-derived defaults', 'storedDegreeRuleForSection' in server and 'Graduate proof is a hard data gate' in server and 'لا توجد قواعد تخرج أكاديمية معتمدة' in server)
+
+# Authority PDF change-report presentation and deletion invariants.
+authority_report=(ROOT/'src/components/AuthorityPdfReport.tsx').read_text()
+print_css=(ROOT/'src/styles/08-print.css').read_text()
+ok('126 authority change report preserves source PDF column order including section', '["رقم المقرر", "الرقم المرجعي", "الشعبة", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", "الوقت", "الأيام", "المدرس"]' in authority_report)
+ok('127 authority report prints time in the established end-to-start visual order', '`${row.fendtime} - ${row.fstarttime}`' in authority_report)
+ok('128 deleted Authority rows remain visible in red and added rows have their own green state', 'authority-pdf-row-${entry.status}' in authority_report and '.authority-pdf-row-deleted' in print_css and '.authority-pdf-row-added' in print_css and '#fbe8e8' in print_css and '#e8f6ed' in print_css)
+ok('129 changed Authority rows highlight only changed cells and carry a compact row marker', 'authority-pdf-cell-changed' in authority_report and 'authority-pdf-row-marker' in authority_report and '.authority-pdf-row-changed>[role="cell"].authority-pdf-cell-changed' in print_css)
+ok('130 Authority report can represent full deletion against an empty live timetable', 'if(!live.length){res.status(404)' not in server and 'buildAuthorityPdfDiff(draft.baselineRows||[],live)' in server and 'results.length || authorityReportAvailable' in reports_src)
+ok('131 Authority report shows visiting badge beside canonical instructor identity', 'VisitingBadge' in authority_report and 'visitingIds.has(Number(row.AdInstructorId))' in authority_report and 'visitingIds={visitingIds}' in reports_src)
+ok('132 duplicate source PDF filename is not printed under the Authority report title', '<p>{report.sourceFileName}</p>' not in authority_report)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

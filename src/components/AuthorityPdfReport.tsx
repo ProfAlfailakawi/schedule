@@ -1,5 +1,6 @@
 import React from "react";
 import { AdCourse, AdInstructor, FSchedule } from "../types";
+import VisitingBadge from "./VisitingBadge";
 
 export type AuthorityReportEntry = {
   status: "added" | "deleted" | "changed" | "unchanged";
@@ -28,6 +29,7 @@ interface Props {
   sectionCode: string;
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
+  visitingIds: Set<number>;
 }
 
 const pageItems = <T,>(items: T[], size: number): T[][] => {
@@ -45,6 +47,7 @@ export default function AuthorityPdfReport({
   sectionCode,
   courseById,
   instructorById,
+  visitingIds,
 }: Props) {
   const entries = [...report.rows].sort((a, b) => {
     const ar = Number((a.current || a.source)?.sourceOrder ?? Number.MAX_SAFE_INTEGER);
@@ -66,7 +69,6 @@ export default function AuthorityPdfReport({
             <header className="print-comprehensive-classic-head authority-pdf-head">
               <div className="print-comprehensive-title-block authority-pdf-title">
                 <h1>تقرير تغييرات الجدول</h1>
-                <p>{report.sourceFileName}</p>
               </div>
               <div className="authority-pdf-scope-grid">
                 <div><span>الفصل</span><strong>{termName || "—"}</strong></div>
@@ -78,7 +80,7 @@ export default function AuthorityPdfReport({
 
             <div className="print-comprehensive-grid authority-pdf-grid" role="table" aria-label="تقرير تغييرات الجدول">
               <div className="print-comprehensive-grid-row print-comprehensive-grid-head" role="row">
-                {["رقم المقرر", "الرقم المرجعي", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", "الوقت", "الأيام", "المدرس"].map(head => (
+                {["رقم المقرر", "الرقم المرجعي", "الشعبة", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", "الوقت", "الأيام", "المدرس"].map(head => (
                   <div role="columnheader" key={head}>{head}</div>
                 ))}
               </div>
@@ -89,19 +91,25 @@ export default function AuthorityPdfReport({
                   const course = courseById.get(Number(row.AdCourseId));
                   const instructor = instructorById.get(Number(row.AdInstructorId));
                   const cell = (changed: boolean) => changed ? "authority-pdf-cell-changed" : "";
+                  const statusLabel = entry.status === "added" ? "مضاف" : entry.status === "deleted" ? "محذوف" : entry.status === "changed" ? "معدّل" : "";
                   return (
                     <div className={`print-comprehensive-grid-row authority-pdf-row authority-pdf-row-${entry.status}`} role="row" key={`${pageIndex}-${index}-${row.id || row.sourceOrder || index}-${entry.status}`}>
+                      {statusLabel ? <span className="authority-pdf-row-marker" aria-hidden="true">{statusLabel}</span> : null}
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCode || "—"}</div>
                       <div role="cell" className="print-ltr">{entry.referenceNumber || "—"}</div>
+                      <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "SCode"))}`}>{String(row.SCode || "").trim() || "—"}</div>
                       <div role="cell" className={`print-wrap print-course-name ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseName || row.AdCourseName || "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCredit ?? "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseHours ?? "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.MaxStudent ?? "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdRoomHall"))}`}>{String(row.AdRoomHall || "").trim() || "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdRoomCode"))}`}>{String(row.AdRoomCode || "").trim() || "—"}</div>
-                      <div role="cell" className={`print-ltr print-nowrap ${cell(fieldChanged(entry, "fstarttime", "fendtime"))}`}>{row.fstarttime && row.fendtime ? `${row.fstarttime} - ${row.fendtime}` : "—"}</div>
+                      <div role="cell" className={`print-ltr print-nowrap ${cell(fieldChanged(entry, "fstarttime", "fendtime"))}`}>{row.fstarttime && row.fendtime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"))}`}>{dayNumbers(row)}</div>
-                      <div role="cell" className={`print-wrap print-instructor-name ${cell(fieldChanged(entry, "AdInstructorId"))}`}>{instructor?.AdInstructorName || row.sourceInstructorText || "—"}</div>
+                      <div role="cell" className={`print-wrap print-instructor-name authority-pdf-instructor ${cell(fieldChanged(entry, "AdInstructorId"))}`}>
+                        <span>{instructor?.AdInstructorName || row.sourceInstructorText || "—"}</span>
+                        {visitingIds.has(Number(row.AdInstructorId)) ? <VisitingBadge compact /> : null}
+                      </div>
                     </div>
                   );
                 })}
