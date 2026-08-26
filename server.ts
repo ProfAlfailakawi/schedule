@@ -53,6 +53,7 @@ import {
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
+import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
@@ -889,7 +890,7 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
         const str = String(value||"").trim();
         const match = str.match(/(\d{1,2}):(\d{2})/);
         if(match) return `${match[1].padStart(2,"0")}:${match[2]}`;
-        const digits=str.replace(/\D/g,"");
+        const digits=String(value||"").replace(/\D/g,"");
         if(/^\d{3,4}$/.test(digits)){const hh=digits.slice(0,-2).padStart(2,"0"),mm=digits.slice(-2);return `${hh}:${mm}`;}
         return normalizeEmpty(value);
       }
@@ -5537,6 +5538,28 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   emit({type:"progress",phase:"match",page:recognized.pageCount,pages:recognized.pageCount,message:"مطابقة الصفوف بالمقررات والأساتذة"});
   const documentDepartmentCode=authorityDepartmentCode(targetCollege?.AdCollegeCode,targetSection?.AdSectionCode);
   const parsed=parseScheduleTable(recognized.pages,courses,instructors,preferredInstructorIds,{authorityDepartmentCode:documentDepartmentCode,sequentialSections:true,courseInstructorIds});
+
+  /* MULTI-PAGE SCAN — SAFE MISSING-CELL RECOVERY ONLY
+     --------------------------------------------------
+     CamScanner/SWRSCHA pages can physically lose one narrow cell while the
+     remaining row facts (teacher/time/days/building/room) are still crisp.
+     Keep the proven single-page and native-PDF readers untouched. Only for a
+     multi-page IMAGE scan, fill values OCR left EMPTY when the observed facts
+     match one unambiguous historical schedule fingerprint (or repeated history
+     rows that all agree on the recovered value). Existing OCR values are never
+     overwritten. */
+  const instructorNameById=new Map(allInstructors.map((item:any)=>[Number(item.AdInstructorId),String(item.AdInstructorName||"")]));
+  const scanHistoryRecovery=(recognized.pageCount>1&&headerPreflight.source==="scan")
+    ?recoverAuthorityScanRowsFromHistory(parsed.rows as any[],sectionHistory as any[],instructorNameById)
+    :{recoveredRows:0,recoveredCells:0,rowFields:new Map<number,string[]>()};
+  if(scanHistoryRecovery.recoveredRows){
+    /* Course identity may have been the missing cropped cell. Re-run ONLY the
+       existing canonical section numbering after recovery; no OCR geometry or
+       one-page behaviour is changed. */
+    const renumbered=assignAuthoritySections(parsed.rows as any[]);
+    parsed.rows.splice(0,parsed.rows.length,...renumbered);
+  }
+
   /* Defence in depth: the preview title is canonical system data, never OCR.
      Even if a future parser regression welds SECTION+CRN into a plausible
      seven-digit token (e.g. 5011894), an unresolved row cannot expose that raw
@@ -5563,8 +5586,15 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const confirmedOfficialBuildingCodes=registry.buildings.filter((item:any)=>item.confidence==="CONFIRMED").map((item:any)=>String(item.officialCode||""));
   const sourceBranchRoot=academicDigits(headerPreflight.branch?.code).slice(0,3);
   for(const row of parsed.rows as any[]){
-    const rawBuilding=String(row.sourceBuildingText||row.AdRoomCode||"");const rawHall=String(row.sourceRoomText||row.AdRoomHall||"");
-    row.sourceBuildingText=rawBuilding;row.sourceRoomText=rawHall;
+    /* Preserve the scanner's raw cells for audit even when safe historical
+       recovery supplied a missing canonical input. The resolver may use the
+       recovered value, but sourceBuildingText/sourceRoomText remain exactly
+       what OCR actually saw (including an empty cell). */
+    const sourceBuildingRaw=String(row.sourceBuildingText||"");
+    const sourceRoomRaw=String(row.sourceRoomText||"");
+    const rawBuilding=String(row.sourceBuildingText||row.AdRoomCode||"");
+    const rawHall=String(row.sourceRoomText||row.AdRoomHall||"");
+    row.sourceBuildingText=sourceBuildingRaw;row.sourceRoomText=sourceRoomRaw;
     const token=rawBuilding.normalize("NFKC").replace(/\s+/g,"").toUpperCase();
     const normalizedInstructor=foldHeaderIdentity(row.sourceInstructorText);
     const sectionToken=String(row.SCode||"").replace(/\D/g,"");
@@ -5573,16 +5603,19 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     const timeConfirmed=/^\d{2}:\d{2}$/.test(String(row.fstarttime||""))&&/^\d{2}:\d{2}$/.test(String(row.fendtime||""))&&String(row.fendtime)>String(row.fstarttime);
     const readMode=String(row.sourceReadMode||"ocr-grid");
     const readSource=readMode==="pdf-text"?"PDF_TEXT_LAYER":readMode==="ocr-fallback"?"OCR_FALLBACK":"OCR_GRID_CELL";
+    const recoveredFields=new Set<string>(Array.isArray(row.__authorityHistoryRecoveredFields)?row.__authorityHistoryRecoveredFields:[]);
+    const fieldSource=(...fields:string[])=>fields.some(field=>recoveredFields.has(field))?"HISTORICAL_UNIQUE_FINGERPRINT":readSource;
+    const fieldDerived=(...fields:string[])=>fields.some(field=>recoveredFields.has(field));
     const instructorMethod=String(row.instructorMatchMethod||"");
     const instructorScore=Number(row.instructorMatchScore||0);
     row.importEvidence={
-      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdCourseId)?100:0,source:readSource,method:"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:false,reason:Number(row.AdCourseId)?"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط":"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
+      course:{raw:[row.sourceCourseCode,row.sourceCourseText].filter(Boolean).join(" · "),normalized:String(row.sourceCourseCode||"").replace(/\D/g,""),canonical:Number(row.AdCourseId)||undefined,confidence:Number(row.AdCourseId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdCourseId)?100:0,source:fieldSource("AdCourseId"),method:fieldDerived("AdCourseId")?"HISTORICAL_UNIQUE_FINGERPRINT":"COURSE_NUMBER_TO_SYSTEM_CATALOGUE",derived:fieldDerived("AdCourseId"),reason:Number(row.AdCourseId)?(fieldDerived("AdCourseId")?"خلية رقم المقرر كانت فارغة؛ استعيدت فقط لأن بقية حقائق الصف طابقت سجلاً تاريخياً واحد المعنى":"رقم المقرر مطابق صراحةً لكتالوج القسم؛ الاسم مأخوذ من النظام فقط"):"لم يثبت رقم المقرر من مفتاح صريح",evidence:["رقم المقرر في المستند","كتالوج القسم الحالي","اسم المقرر من النظام لا من OCR"]},
       section:{raw:String(row.sourceSectionText||""),normalized:sectionToken,canonical:authoritySectionConfirmed?sectionToken:undefined,confidence:authoritySectionConfirmed?"CONFIRMED":"UNRESOLVED",score:authoritySectionConfirmed?99:0,source:"SYSTEM_SEQUENCE",method:"COURSE_LOCAL_501_SEQUENCE",derived:true,reason:authoritySectionConfirmed?"رقم الشعبة مولد حسب ترتيب شعب المقرر: 501 ثم 502 ثم 503…":"تعذر توليد رقم شعبة canonical",evidence:["المقرر canonical","ترتيب ظهور شعب المقرر في المستند","بداية ثابتة 501"]},
-      days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?"CONFIRMED":"UNRESOLVED",score:activeDayKeys.length?100:0,source:readSource,method:"SAME_CELL_DAYS",derived:false,reason:activeDayKeys.length?"أيام المحاضرة قُرئت من خلية الأيام نفسها":"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
-      time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?"CONFIRMED":"UNRESOLVED",score:timeConfirmed?100:0,source:readSource,method:"SAME_CELL_TIME_PAIR",derived:false,reason:timeConfirmed?"زوج الوقت مثبت من خلية الوقت نفسها":"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
-      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:readSource,method:instructorMethod||"UNRESOLVED",derived:Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء":"لم ينتج النص مرشحاً واحداً يقينياً؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
-      building:{raw:rawBuilding,normalized:token,confidence:"UNRESOLVED",score:0,source:readSource,method:"REGISTRY_PENDING",derived:false,reason:"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
-      room:{raw:rawHall,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",score:0,source:readSource,method:"BUILDING_BOUND_ROOM_PENDING",derived:false,reason:rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر",evidence:["خلية القاعة الأصلية"]},
+      days:{raw:String(row.sourceDaysText||""),normalized:activeDayKeys.join(","),canonical:activeDayKeys.join(",")||undefined,confidence:activeDayKeys.length?"CONFIRMED":"UNRESOLVED",score:activeDayKeys.length?100:0,source:fieldSource("fsunday","fmonday","ftuesday","fwednesday","fthursday"),method:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_DAYS",derived:fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday"),reason:activeDayKeys.length?(fieldDerived("fsunday","fmonday","ftuesday","fwednesday","fthursday")?"خلية الأيام كانت فارغة؛ استعيدت من تطابق تاريخي فريد دون تغيير أي قيمة OCR موجودة":"أيام المحاضرة قُرئت من خلية الأيام نفسها"):"لم تثبت أيام المحاضرة",evidence:["لا استعارة لأرقام الأيام من أعمدة الساعات أو المقاعد"]},
+      time:{raw:String(row.sourceTimeText||""),normalized:[row.fstarttime,row.fendtime].filter(Boolean).join("-"),canonical:timeConfirmed?[row.fstarttime,row.fendtime].join("-"):undefined,confidence:timeConfirmed?"CONFIRMED":"UNRESOLVED",score:timeConfirmed?100:0,source:fieldSource("fstarttime","fendtime"),method:fieldDerived("fstarttime","fendtime")?"HISTORICAL_UNIQUE_FINGERPRINT":"SAME_CELL_TIME_PAIR",derived:fieldDerived("fstarttime","fendtime"),reason:timeConfirmed?(fieldDerived("fstarttime","fendtime")?"خلية الوقت كانت ناقصة؛ استعيدت من تطابق تاريخي فريد مع تطبيع HH:MM فقط":"زوج الوقت مثبت من خلية الوقت نفسها"):"الوقت غير مكتمل أو غير صالح",evidence:["نطاق وقت جامعي صالح","لا استعارة من عمود المبنى"]},
+      instructor:{raw:String(row.sourceInstructorText||""),normalized:normalizedInstructor,canonical:Number(row.AdInstructorId)||undefined,confidence:Number(row.AdInstructorId)?"CONFIRMED":"UNRESOLVED",score:Number(row.AdInstructorId)?Math.max(90,instructorScore||96):0,source:fieldSource("AdInstructorId"),method:fieldDerived("AdInstructorId")?"HISTORICAL_UNIQUE_FINGERPRINT":(instructorMethod||"UNRESOLVED"),derived:fieldDerived("AdInstructorId")||Boolean(Number(row.AdInstructorId)&&!['EXACT_FULL','FACULTY_IDENTITY'].includes(instructorMethod)),reason:Number(row.AdInstructorId)?(fieldDerived("AdInstructorId")?"اسم الأستاذ لم يُحسم من OCR؛ استعيدت الهوية فقط من بصمة صف تاريخية غير ملتبسة":"هوية واحدة مؤكدة من سجل النظام بعد تطبيع الألقاب والأسماء"):"لم ينتج النص مرشحاً واحداً يقينياً؛ تُترك خانة الأستاذ بلا ربط",evidence:Number(row.AdInstructorId)?["تطبيع NFKC","إزالة د./ا./ا.د. من بداية الاسم فقط",`طريقة المطابقة ${instructorMethod||"SYSTEM_UNIQUE"}`,"مطابقة اسم النظام فقط","رفض أي نتيجة متعارضة"]:["لا إنشاء لاسم من PDF","لا اختيار عند تعدد المرشحين"]},
+      building:{raw:sourceBuildingRaw,normalized:token,confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomCode"),method:fieldDerived("AdRoomCode")?"HISTORICAL_UNIQUE_FINGERPRINT":"REGISTRY_PENDING",derived:fieldDerived("AdRoomCode"),reason:fieldDerived("AdRoomCode")?"خلية المبنى كانت فارغة؛ استعيد رمزها من بصمة صف تاريخية غير ملتبسة":"بانتظار المطابقة مع سجل المباني الرسمي",evidence:["خلية المبنى الأصلية"]},
+      room:{raw:sourceRoomRaw,normalized:rawHall.normalize("NFKC").replace(/\s+/g,"").toUpperCase(),confidence:"UNRESOLVED",score:0,source:fieldSource("AdRoomHall"),method:fieldDerived("AdRoomHall")?"HISTORICAL_UNIQUE_FINGERPRINT":"BUILDING_BOUND_ROOM_PENDING",derived:fieldDerived("AdRoomHall"),reason:fieldDerived("AdRoomHall")?"خلية القاعة كانت فارغة؛ استعيدت من بصمة صف تاريخية غير ملتبسة":(rawHall?"بانتظار إثبات علاقة القاعة بالمبنى":"القاعة فارغة في المصدر"),evidence:["خلية القاعة الأصلية"]},
     };
     /* One resolver owns the complete Authority location grammar. This prevents
        parser branches from disagreeing about whether a token is a building and
@@ -5694,7 +5727,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     }
     if(rowReady)readyRows++;
   }
-  const verificationSummary={confirmedCells,derivedCells,reviewCells,readyRows,reviewRows:Math.max(0,rows.length-readyRows)};
+  const verificationSummary={confirmedCells,derivedCells,reviewCells,readyRows,reviewRows:Math.max(0,rows.length-readyRows),historyRecoveredRows:scanHistoryRecovery.recoveredRows,historyRecoveredCells:scanHistoryRecovery.recoveredCells};
   const result={
     rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,
     fileName:fileName.slice(0,180),
