@@ -2128,13 +2128,9 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      welded SECTION+CRN token such as 5011894 can never impersonate 0101102. */
   const authorityGridDepartment=academicDigits(cachedPreflight?.header.department?.code);
 
-  /* GOLDEN PAGE LANES — SAME MEMORY, TWO PAGES AT ONCE
-     -------------------------------------------------
-     The one-page path is untouched. For a multi-page scan we partition the
-     ALREADY-CREATED seven workers into two disjoint lanes (3+2 numeric workers
-     and one Arabic worker per lane). No second OCR engine pool is allocated.
-     This restores page-level concurrency without the historical fatal-memory
-     spike, and — crucially — no worker can receive parameters from two pages. */
+  /* PAGE READER — one proven implementation for one page or many.
+     `processPage` always receives the complete warm pool; multi-page documents
+     are sequenced below so every page gets exactly the one-page behaviour. */
   let pagesDone=0;
   const processPage=async(index:number,lanePool:OcrWorkerPool)=>{
     /* Move the UI out of the orientation stage before the expensive grid read.
@@ -2195,22 +2191,14 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
   
   };
-  if(images.length===1){
-    await processPage(0,pool);
-  }else{
-    const split=Math.max(1,Math.ceil(pool.eng.length/2));
-    const laneA:OcrWorkerPool={eng:pool.eng.slice(0,split),ara:pool.ara,ara2:pool.ara};
-    const laneB:OcrWorkerPool={eng:pool.eng.slice(split),ara:pool.ara2,ara2:pool.ara2};
-    /* Five numeric workers always leave at least two for lane B. Guard anyway
-       so this remains correct if the pool size is tuned in a later release. */
-    if(!laneB.eng.length){
-      for(let index=0;index<images.length;index++)await processPage(index,pool);
-    }else{
-      const laneEven=async()=>{for(let index=0;index<images.length;index+=2)await processPage(index,laneA);};
-      const laneOdd=async()=>{for(let index=1;index<images.length;index+=2)await processPage(index,laneB);};
-      await Promise.all([laneEven(),laneOdd()]);
-    }
-  }
+  /* MULTI-PAGE GOLDEN PATH
+     ----------------------
+     Read every scanned page through the exact same warm worker pool used by a
+     one-page upload. This deliberately trades page-level concurrency for the
+     behaviour the owner already verified as correct: no worker partitioning,
+     no second OCR engine, no parameter bleed, and no memory spike. Workers stay
+     hot between pages, so only recognition work repeats. */
+  for(let index=0;index<images.length;index++)await processPage(index,pool);
 
   /* SAFE FALLBACK — suspicious pages only
      ---------------------------------------
@@ -3053,7 +3041,14 @@ export function transcriptFacts(text:string){
  */
 export function graduationSheetFacts(text:string){
   const plain=toAscii(text),folded=fold(text);
-  const civilCandidates=[...new Set([...plain.matchAll(/\b\d{12}\b/g)].map(match=>match[0]))];
+  /* Civil IDs are sometimes OCR'd with spaces between digit groups. Recover
+     only a complete 12-digit value from ONE visual line; never concatenate
+     unrelated lines or repair digits. The server compares these complete
+     candidates only against the already-validated civil entered by the student. */
+  const directCivil=[...plain.matchAll(/\b\d{12}\b/g)].map(match=>match[0]);
+  const lineCivil=plain.split(/\r?\n/).map(line=>line.replace(/\D/g,""))
+    .filter(value=>value.length===12);
+  const civilCandidates=[...new Set([...directCivil,...lineCivil])];
   const civil=civilCandidates[0]||"";
   const readNumber=(patterns:RegExp[])=>{
     for(const pattern of patterns){const match=folded.match(pattern);if(match)return Number(match[1]||0)||0;}

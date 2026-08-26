@@ -3159,13 +3159,12 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                       <SecondaryButton data-guide-ignore="طباعة حالات الخريج والمتوقع فقط" onClick={() => printStudentCases("graduate")} disabled={!studentCaseCounts.graduate}><Printer />الخريج</SecondaryButton>
                     </div>
                   </div>
-                  {visibleStudentCases.length ? <div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>رقم الحالة</th><th>الطالب</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب / المتطلبات</th>{showStudentCaseVerification ? <th>تحقق التخرج</th> : null}<th>التاريخ</th></tr></thead><tbody>{visibleStudentCases.map((item:any)=>{
+                  {visibleStudentCases.length ? <div className="student-cases-table-wrap"><table className="student-cases-table"><thead><tr><th>رقم الحالة</th><th>الطالب</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th>{showStudentCaseVerification ? <th>تحقق التخرج</th> : null}<th>التاريخ</th></tr></thead><tbody>{visibleStudentCases.map((item:any)=>{
                     const type=item.requestType==="graduate"?"خريج / متوقع تخرجه":item.requestType==="course-conflict"?"تعارض مقررين":"فتح مقرر جديد";
                     const reason=item.graduateReason==="field-conflict"?"مقرر يتعارض مع وقت الميداني":item.graduateReason==="field-prerequisite-conflict"?"مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني":"—";
                     const courses=item.courses||[];
-                    const detail=item.requestType==="graduate"?
-                      <div className="student-graduate-request"><strong>{reason}</strong><span>{String(item.details||"").trim()||"—"}</span></div>:
-                      item.requestType==="course-conflict"?
+                    const graduateDetails=String(item.details||"").trim();
+                    const detail=item.requestType==="graduate"?(graduateDetails?`${reason} — ${graduateDetails}`:reason):item.requestType==="course-conflict"?
                       <div className="student-conflict-courses">{courses.map((course:any,index:number)=><span key={`${course.id||course.code}-${index}`} className={Number(course.sectionId)===Number(sectionId)?"own":"other"}><b>{course.name}{course.code?` (${course.code})`:""}</b>{Number(course.sectionId)!==Number(sectionId)&&course.sectionName?<small>{course.sectionName}</small>:null}</span>)}</div>:
                       courses.map((course:any)=>`${course.name}${course.code?` (${course.code})`:""}`).join(" · ")||"—";
                     return <tr key={item.id} className={`case-${item.requestType}`}><td dir="ltr"><code>{String(item.id||"").slice(0,8).toUpperCase()||"—"}</code></td><td><strong>{item.name||"—"}</strong></td><td dir="ltr">{item.civil||"—"}</td><td>{item.studentSectionName||"—"}</td><td><Badge tone={item.requestType==="graduate"?"warning":item.requestType==="course-conflict"?"danger":"success"}>{type}</Badge></td><td>{detail}</td>{showStudentCaseVerification ? <td>{item.requestType==="graduate"?<span className={item.eligibility==="eligible"?"case-eligible":"case-ineligible"}>{item.passedUnits??"—"} / {item.requiredUnits??"—"} وحدة</span>:null}</td> : null}<td>{new Date(item.createdAt).toLocaleString("ar-KW-u-nu-latn")}</td></tr>;
@@ -5197,7 +5196,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                   {anyGraduate ? <col style={{ width: "8%" }} /> : null}<col style={{ width: "7%" }} />
                 </colgroup>
                 <thead><tr>
-                  <th>م</th><th>رقم الحالة</th><th>الاسم</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب / المتطلبات</th>
+                  <th>م</th><th>رقم الحالة</th><th>الاسم</th><th>الرقم المدني</th><th>قسم الطالب</th><th>نوع الطلب</th><th>المقررات / السبب</th>
                   {anyGraduate ? <th>تحقق التخرج</th> : null}<th>التاريخ</th>
                 </tr></thead>
                 <tbody>{pageCases.map((item: any, index: number) => {

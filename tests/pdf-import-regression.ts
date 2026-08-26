@@ -308,3 +308,19 @@ console.log(JSON.stringify({ passed: 52, checks: [
   "graduation proof reads passed units only from the labelled sheet summary",
   "a generic transcript is never accepted as the graduation sheet",
 ] }, null, 2));
+
+/* The official graduation screenshot can contain a 12-digit timestamp-like OCR
+   token before the civil number, while the civil itself may be spaced by OCR.
+   Facts must preserve every complete one-line 12-digit candidate so the server
+   can checksum-filter them and require the exact typed civil ID. */
+const spacedCivilProof = graduationSheetFacts(`
+الهيئة العامة للتعليم التطبيقي والتدريب
+الخطة الدراسية
+240820260808
+نوره غازي عبيد الرحماني 9041 0230 1536
+البرنامج اسلامية تربية خاصة
+الوحدات المطلوبة 134
+الوحدات المجتازة 114
+`);
+assert.ok(spacedCivilProof.civilCandidates.includes("904102301536"));
+assert.ok(spacedCivilProof.civilCandidates.includes("240820260808"));

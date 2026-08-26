@@ -7646,24 +7646,23 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   try{ocr=await ocrGraduationSheetDocument(bytes,mime);}
   catch(error:any){res.status(422).json({error:String(error?.message||"تعذّرت قراءة الإثبات. ارفع صورة أوضح أو ملف PDF.")});return;}
   const facts=graduationSheetFacts(ocr.text);
-  const visibleDigits=asciiDigits(ocr.text).replace(/[^0-9]/g,"");
-  const civilCandidates=Array.isArray(facts.civilCandidates)?facts.civilCandidates:[];
-  /* This proof is read as a normal document, not through the timetable-grid
-     shortcut. The substantive gate is unchanged: official study-plan identity,
-     exact civil ID, department identity and a proved passed-units value. */
-  const civilVisible=Boolean(civilCandidates.includes(civil)||(!civilCandidates.length&&visibleDigits.includes(civil)));
+  const civilCandidates=(Array.isArray(facts.civilCandidates)?facts.civilCandidates:[])
+    .map((value:any)=>asciiDigits(value).replace(/\D/g,""))
+    .filter((value:string,index:number,array:string[])=>value.length===12&&array.indexOf(value)===index);
+  /* Exact identity remains the hard gate. The student's entered civil has
+     already passed the system validator above; the proof reader therefore
+     checks that exact 12-digit value against EVERY complete document candidate
+     rather than trusting whichever 12-digit token OCR happened to return first. */
+  const civilVisible=civilCandidates.includes(civil);
   const hasPassedEvidence=Number(facts.passedUnits)>0||(Array.isArray(facts.passedUnitCandidates)&&facts.passedUnitCandidates.length>0);
-  /* Keep the original, reviewed sufficient-facts gate literally intact. The
-     candidate branch only rescues the official sheet when OCR split the value
-     away from its label; it never weakens the direct proof case. */
   const proofFactsReadable=Boolean(facts.isGraduationSheet&&civilVisible&&Number(facts.passedUnits)>0)
     ||Boolean(facts.isGraduationSheet&&civilVisible&&hasPassedEvidence);
   if(!ocr.legibility.readable&&!proofFactsReadable){res.status(422).json({error:ocr.legibility.reason});return;}
   if(!facts.isGraduationSheet){
     res.status(422).json({error:"الملف المرفوع ليس صحيفة التخرج/الخطة الدراسية المعتمدة. ارفع الصفحة الرسمية التي يظهر فيها البرنامج والوحدات المجتازة."});return;
   }
-  if(!civilCandidates.length&&!visibleDigits.includes(civil)){res.status(422).json({error:"لم أتعرف على الرقم المدني في صحيفة التخرج. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
-  if((civilCandidates.length&&!civilCandidates.includes(civil))||(!civilCandidates.length&&!visibleDigits.includes(civil))){res.status(422).json({error:"الرقم المدني في الإثبات لا يطابق الرقم المدخل."});return;}
+  if(!civilCandidates.length){res.status(422).json({error:"لم أتعرف على الرقم المدني في صحيفة التخرج. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
+  if(!civilVisible){res.status(422).json({error:"الرقم المدني في الإثبات لا يطابق الرقم المدخل."});return;}
   /* The typed name is for the department's human-facing case card, not a hard
      proof key. Students may enter first + last name while the Authority sheet
      prints the full civil name. Civil ID remains the 100% identity gate. */
