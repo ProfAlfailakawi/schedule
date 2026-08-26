@@ -1053,6 +1053,19 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .transfer-note{background:var(--surface-2);color:var(--muted)}
 .transfer-error{background:var(--danger-soft);color:var(--danger)}
 .transfer-note svg,.transfer-error svg{width:15px;height:15px;flex:none}
+.transfer-orientation-guidance{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin:14px var(--s6) 0;padding:10px 16px;min-height:46px;
+  border:1px solid color-mix(in srgb,var(--accent) 30%,var(--line));
+  border-radius:15px;background:color-mix(in srgb,var(--accent) 5%,var(--surface));
+  color:var(--ink);box-shadow:0 7px 20px color-mix(in srgb,var(--accent) 7%,transparent);
+}
+.transfer-orientation-guidance strong{font-size:var(--t-sm);font-weight:650;line-height:1.5;text-align:center}
+.transfer-orientation-icon{
+  display:grid;place-items:center;inline-size:30px;block-size:30px;flex:none;
+  border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,var(--surface));color:var(--accent);
+}
+.transfer-orientation-icon svg{inline-size:16px;block-size:16px;stroke-width:2}
 .transfer-preview{width:100%;display:grid;gap:var(--s3);justify-items:start}
 .transfer-counts{display:flex;gap:var(--s5)}
 .transfer-counts span{display:inline-flex;align-items:baseline;gap:var(--s2);color:var(--muted);font-size:var(--t-xs)}
@@ -1764,3 +1777,5 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 
 .roster-local-error{margin:0 0 10px!important}
 .roster-edit-wrap{display:grid;gap:8px;min-width:0}
+
+@media(max-width:620px){.transfer-orientation-guidance{margin-inline:16px;padding-inline:12px}.transfer-orientation-guidance strong{font-size:12px}}

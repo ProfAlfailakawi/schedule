@@ -147,7 +147,7 @@ ok('82 native text PDF building/room are physically bounded away from seat-capac
 ok('83 building identity is owned by one registry resolver rather than shape alone', 'resolveAuthorityLocation(registry' in server and 'EXACT_REGISTRY' in loc and 'known.includes(token)' in loc and 'Never send arbitrary six-digit numeric seat/capacity strings' in loc)
 ok('84 room validity is building-bound and not incorrectly rejected by main-campus context', 'a room is valid iff it exists under THAT building' in server and 'resolveRoom(registry,rawHall,building.value.id,{})' in server)
 ok('85 instructor titles d/a/a.d are stripped only as presentation and هيئة is registry-bound', 'د./ا./ا.د.' in server and 'هيئة تدريسية' in doc_ocr and 'ambiguous names stay blank' in doc_ocr)
-ok('86 fast OCR lanes have page-scoped safe fallback and do not reread clean pages', 'SAFE FALLBACK — suspicious pages only' in doc_ocr and 'const suspiciousIndexes=pages.map' in doc_ocr and 'Clean pages are never re-read' in doc_ocr)
+ok('86 suspicious-page safe fallback does not reread clean pages', 'SAFE FALLBACK — suspicious pages only' in doc_ocr and 'const suspiciousIndexes=pages.map' in doc_ocr and 'Clean pages are never re-read' in doc_ocr)
 preview_import=(ROOT/'src/components/ImportPreviewTable.tsx').read_text()
 ok('87 visiting instructor is shown as a quiet badge beside the canonical system name', 'import-visiting-badge' in preview_import and 'visitingIdSet.has' in preview_import)
 
@@ -238,5 +238,7 @@ ok('133 original Authority PDF rows survive preview deletions as immutable repor
 ok('134 graduate proof does not require literal typed-name equality', 'if(!nameMatched)' not in server and 'proof.nameMatched!==true' not in server and 'Civil ID remains the 100% identity gate' in server)
 ok('135 graduate required threshold comes from stored department academic data', 'Required graduation units come from the selected department' in server and 'graduateThreshold(rule,termName)' in server and 'sheetRequiredUnits!==Number(rule.degreeUnits)' not in server)
 ok('136 conservative generic legibility cannot override sufficient graduate proof facts', 'proofFactsReadable' in server and 'facts.isGraduationSheet&&civilVisible&&Number(facts.passedUnits)>0' in server)
+ok('137 multi-page scan reuses the proven one-page OCR pool instead of spawning a second engine', 'GOLDEN PAGE LANE' in doc_ocr and 'getFastLaneWorkerPool' not in doc_ocr and 'for(let index=0;index<images.length;index++)await processPage(index,pool)' in doc_ocr)
+ok('138 image-only multi-page landscape contract is checked from every PDF page box before table OCR', 'const portraitPages:number[]=[]' in doc_ocr and 'for(let index=1;index<=pageCount;index++)' in doc_ocr and 'requiresLandscapePages:portraitPages' in doc_ocr)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

@@ -32,6 +32,8 @@ export type AuthorityPdfHeader={
   source?:"text"|"scan";
   /** Image-only Authority timetable scans must arrive already horizontal. */
   requiresLandscapeUpload?:boolean;
+  /** Physical PDF pages that violate the landscape-only Authority contract. */
+  requiresLandscapePages?:number[];
 };
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type GraduationSheetOcrResult={text:string;pageCount:number;confidence:number;legibility:Legibility};
@@ -76,7 +78,6 @@ async function getHeaderWorker(){
 }
 type OcrWorkerPool={eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker};
 let poolPromise:Promise<OcrWorkerPool>|null=null;
-let fastLanePoolPromise:Promise<OcrWorkerPool>|null=null;
 async function getWorkerPool(){
   if(!poolPromise)poolPromise=(async()=>{
     const {createWorker}=await import("tesseract.js");
@@ -89,21 +90,6 @@ async function getWorkerPool(){
     return{eng:[e1,e2,e3,e4,e5] as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
   })();
   return poolPromise;
-}
-/* Independent page lane. It NEVER shares Tesseract workers with the primary
-   lane, so setParameters cannot bleed between pages. Four numeric workers are
-   enough because each page already batches strip/cell rescue jobs. The lane is
-   lazy: text PDFs and one-page scans never pay its memory/startup cost. */
-async function getFastLaneWorkerPool(){
-  if(!fastLanePoolPromise)fastLanePoolPromise=(async()=>{
-    const {createWorker}=await import("tesseract.js");
-    const [e1,e2,e3,e4,a1,a2]=await Promise.all([
-      createWorker("eng"),createWorker("eng"),createWorker("eng"),createWorker("eng"),
-      createWorker("ara+eng"),createWorker("ara+eng"),
-    ]);
-    return{eng:[e1,e2,e3,e4] as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
-  })();
-  return fastLanePoolPromise;
 }
 /** Run jobs over the eng workers, one in flight per worker. */
 async function runOnPool<T>(workers:PooledWorker[],jobs:Array<(worker:PooledWorker)=>Promise<T>>):Promise<T[]>{
@@ -1861,15 +1847,29 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
        before body OCR when the physical page is portrait. Do not silently turn
        a dense ruled table and risk shifting course/building/room columns. */
     const embeddedCharacters=text.replace(/\s+/g,"").length;
-    if(authorityScanRequiresLandscape(
-      Number(viewport.width||0),
-      Number(viewport.height||0),
-      embeddedCharacters,
-      headerWords.length,
-    )){
-      const rotated:AuthorityPdfHeader={...embedded,source:"scan",requiresLandscapeUpload:true};
-      headerPreflightCache.set(input,{header:rotated,orientation:0});
-      return rotated;
+    const imageOnly=embeddedCharacters<120&&headerWords.length<12;
+    if(imageOnly){
+      /* Landscape is a document contract, not an OCR guess. Check every PDF
+         page box in milliseconds before starting the heavy table workers. This
+         catches a single portrait page in a multi-page scan immediately and
+         removes the old need to discover it after minutes of OCR. */
+      const portraitPages:number[]=[];
+      const pageCount=Math.min(Number(pdf.numPages||0),MAX_PAGES);
+      for(let index=1;index<=pageCount;index++){
+        const candidate=index===1?page:await pdf.getPage(index);
+        const candidateViewport=candidate.getViewport({scale:1});
+        if(authorityScanRequiresLandscape(
+          Number(candidateViewport.width||0),
+          Number(candidateViewport.height||0),
+          0,
+          0,
+        ))portraitPages.push(index);
+      }
+      if(portraitPages.length){
+        const rotated:AuthorityPdfHeader={...embedded,source:"scan",requiresLandscapeUpload:true,requiresLandscapePages:portraitPages};
+        headerPreflightCache.set(input,{header:rotated,orientation:0});
+        return rotated;
+      }
     }
 
     /* A PARTIAL text-layer hit is not success. The regression that prompted
@@ -2120,16 +2120,21 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      welded SECTION+CRN token such as 5011894 can never impersonate 0101102. */
   const authorityGridDepartment=academicDigits(cachedPreflight?.header.department?.code);
 
-  /* FAST OCR LANES
+  /* GOLDEN PAGE LANE
      ----------------
-     Page work is parallel only across completely independent worker pools.
-     This preserves the safety property that fixed the historical parameter
-     bleed, while allowing a four-page scan to use two CPU lanes. Each lane is
-     serial internally; strip/cell jobs still fan out over that lane's workers.
-     One-page scans keep the old path and allocate no secondary workers. */
+     A one-page scan is the proven stable path. Multi-page scans now send every
+     page through that exact same worker pool, one page at a time. The previous
+     dual-lane optimisation created six extra Tesseract workers only when a PDF
+     had more than one page — the only whole-engine allocation path that differed
+     from the proven one-page case. Keep memory bounded and deterministic instead.
+     Numeric/cell jobs still fan out across
+     the five workers inside this pool, so row reading remains parallel without
+     multiplying the whole OCR engine per document. */
   let pagesDone=0;
-  const secondaryPool=images.length>1?await getFastLaneWorkerPool():null;
   const processPage=async(index:number,lanePool:OcrWorkerPool)=>{
+    /* Move the UI out of the orientation stage before the expensive grid read.
+       `page` here means completed pages, so zero is intentional on page 1. */
+    onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${index+1} من ${images.length}`});
     const pageImage=images[index];
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
@@ -2185,23 +2190,19 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
   
   };
-  const laneA=async()=>{for(let index=0;index<images.length;index+=2)await processPage(index,pool);};
-  const laneB=async()=>{if(!secondaryPool)return;for(let index=1;index<images.length;index+=2)await processPage(index,secondaryPool);};
-  await Promise.all([laneA(),laneB()]);
+  for(let index=0;index<images.length;index++)await processPage(index,pool);
 
   /* SAFE FALLBACK — suspicious pages only
      ---------------------------------------
-     The fast lanes are never allowed to trade correctness for speed. Once both
-     lanes finish, ONLY pages whose geometry/row yield is suspicious are retried
-     through the other, isolated worker pool. Clean pages are never re-read.
-     This is intentionally page-scoped (not document-scoped): a weak page 3 in a
-     four-page scan no longer makes pages 1, 2 and 4 pay the slow path again. */
+     Keep the established page-scoped rescue, but reuse the same proven worker
+     pool rather than spawning a second OCR engine. Clean pages are never re-read,
+     and a weak page cannot make the rest of the document pay a retry. */
   const suspiciousIndexes=pages.map((page,index)=>page?.diagnostic?.suspicious?index:-1).filter(index=>index>=0);
   if(suspiciousIndexes.length){
     onProgress?.({phase:"rescue",page:0,pages:suspiciousIndexes.length,message:`تدقيق ${suspiciousIndexes.length} صفحة تحتاج مراجعة دقيقة`});
     let rescuedCount=0;
     for(const index of suspiciousIndexes){
-      const rescuePool=(index%2===0&&secondaryPool)?secondaryPool:pool;
+      const rescuePool=pool;
       const pageImage=images[index];
       let bestRows=pages[index]?.gridRows||[];
       let bestFilled=bestRows.filter(row=>row.code||row.start||row.courseText.length>3).length;

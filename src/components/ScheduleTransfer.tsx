@@ -433,11 +433,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                represent completed work, not the physical page number. Reserve
                a small final slice for safe rescue/matching to avoid 100% while
                the server is still validating identities. */
-            const pct=phase==="match"?96:phase==="rescue"
-              ?Math.min(94,82+Math.round((page/total)*12))
-              :phase==="read"?Math.min(82,14+Math.round((page/total)*68))
-              :phase==="orient"?10:6;
-            const fallback=phase==="rescue"?"تدقيق دقيق للصفحات المحتاجة":phase==="match"?"مطابقة البيانات مع السجل الرسمي":"قراءة الجدول";
+            const pct=phase==="match"?97:phase==="rescue"
+              ?Math.min(95,84+Math.round((page/total)*11))
+              :phase==="read"?Math.min(84,16+Math.round((page/total)*68))
+              :phase==="orient"?15
+              :phase==="render"?Math.min(14,4+Math.round((page/total)*10)):4;
+            const fallback=phase==="rescue"?"تدقيق دقيق للصفحات المحتاجة":phase==="match"?"مطابقة البيانات مع السجل الرسمي":phase==="render"?"تجهيز صفحات PDF للقراءة":"قراءة الجدول";
             setReadProgress({pct,message:String(event.message||fallback)});
           }
           else if(event.type==="done")data=event.result;

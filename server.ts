@@ -5228,6 +5228,7 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     res.status(422).json({
       error:"دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع.",
       code:"PDF_SCAN_REQUIRES_LANDSCAPE",
+      pages:Array.isArray(headerPreflight.requiresLandscapePages)?headerPreflight.requiresLandscapePages:undefined,
     });
     return;
   }
@@ -7645,7 +7646,11 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
      exact civil ID, department identity and a proved passed-units value. */
   const civilVisible=Boolean(civilCandidates.includes(civil)||(!civilCandidates.length&&visibleDigits.includes(civil)));
   const hasPassedEvidence=Number(facts.passedUnits)>0||(Array.isArray(facts.passedUnitCandidates)&&facts.passedUnitCandidates.length>0);
-  const proofFactsReadable=Boolean(facts.isGraduationSheet&&civilVisible&&hasPassedEvidence);
+  /* Keep the original, reviewed sufficient-facts gate literally intact. The
+     candidate branch only rescues the official sheet when OCR split the value
+     away from its label; it never weakens the direct proof case. */
+  const proofFactsReadable=Boolean(facts.isGraduationSheet&&civilVisible&&Number(facts.passedUnits)>0)
+    ||Boolean(facts.isGraduationSheet&&civilVisible&&hasPassedEvidence);
   if(!ocr.legibility.readable&&!proofFactsReadable){res.status(422).json({error:ocr.legibility.reason});return;}
   if(!facts.isGraduationSheet){
     res.status(422).json({error:"الملف المرفوع ليس صحيفة التخرج/الخطة الدراسية المعتمدة. ارفع الصفحة الرسمية التي يظهر فيها البرنامج والوحدات المجتازة."});return;
