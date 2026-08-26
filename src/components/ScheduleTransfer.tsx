@@ -257,7 +257,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     });
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds, roster]);
-  const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
+  /* An Authority PDF can legitimately end with ZERO live rows: deleting every
+     imported row means “publish an empty timetable”, while the immutable
+     baseline must still generate a report with every source row marked deleted. */
+  const authorityBaselineCount = importKind === "authority-pdf" && Array.isArray(xlsxPreview?.baselineRows) ? xlsxPreview.baselineRows.length : 0;
+  const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0);
   const rotatedPdfGuidance = Boolean(error && /دوّر صفحات الجدول للوضع الأفقي/.test(error));
   const pdfReadinessSummary = useMemo(() => {
     if (importKind !== "authority-pdf" || !Array.isArray(xlsxPreview?.rows)) return null;
@@ -505,7 +509,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "تعذر حفظ المسودة");
       const id=String(data.id||"");setXlsxDraft(id||"تم");
-      if(publishNow&&id)await publishImportedDraft(id);
+      if(publishNow&&id){
+        await publishImportedDraft(id);
+        /* “تعبئة ونشر” is a completed action, not another review step. Close
+           the transfer sheet only after the server confirms publication. */
+        onClose();
+      }
     } catch (e: any) {
       setError(e.message || "تعذر حفظ المسودة");
     } finally {
@@ -723,7 +732,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                           if(!prev)return prev;
                           const normalized=assignAuthoritySections(next);
                           const documentWarnings=(Array.isArray(prev.issues)?prev.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
-                          return { ...prev, rows: normalized, count: normalized.length, issues: documentWarnings, valid: normalized.length > 0 };
+                          return { ...prev, rows: normalized, count: normalized.length, issues: documentWarnings, valid: normalized.length > 0 || (Array.isArray(prev.baselineRows) && prev.baselineRows.length > 0) };
                         })}
                       />
                     </>
@@ -744,7 +753,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       <div className="transfer-import-commit">
                         {importReady ? (
                           <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady}>
-                            {busy ? "يجهّز…" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
+                            {busy ? "يجهّز…" : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                           </PrimaryButton>
                         ) : null}
                         {importKind==="authority-pdf" && importReady ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy || !importReady}>حفظ كمسودة فقط</SecondaryButton> : null}

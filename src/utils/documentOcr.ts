@@ -1462,20 +1462,25 @@ async function readGrid(
     if(!item)return{cells:bands.map(()=>"")};
     return readStrip(surface,item.band,"","4");
   };
-  const namePromise=arabicRead(nameBand);
-  let instructorPromise:Promise<{cells:string[]}>=Promise.resolve({cells:bands.map(()=>"")});
-  if(instructorBand&&instructorBand.index!==nameBand?.index){
-    instructorPromise=(async()=>{
-      const sparse=await readStrip(surface,instructorBand.band,"","4",pool.ara2);
-      const dense=await readStrip(surface,instructorBand.band,"","6",pool.ara2);
-      return{cells:bands.map((_,row)=>{
-        const a=(sparse.cells[row]||"").trim(),b=(dense.cells[row]||"").trim();
-        return a.length>=b.length?a:b;
-      })};
-    })();
+  const readInstructor=async()=>{
+    if(!instructorBand||instructorBand.index===nameBand?.index)return{cells:bands.map(()=>"")};
+    const sparse=await readStrip(surface,instructorBand.band,"","4",pool.ara2);
+    const dense=await readStrip(surface,instructorBand.band,"","6",pool.ara2);
+    return{cells:bands.map((_,row)=>{
+      const a=(sparse.cells[row]||"").trim(),b=(dense.cells[row]||"").trim();
+      return a.length>=b.length?a:b;
+    })};
+  };
+  /* A multi-page lane may intentionally use ONE Arabic worker for both name
+     fields so two pages can run in parallel without allocating more OCR
+     engines. Never issue concurrent setParameters calls to that same worker. */
+  let nameCells:{cells:string[]},instructorCells:{cells:string[]};
+  if(pool.ara===pool.ara2){
+    nameCells=await arabicRead(nameBand);
+    instructorCells=await readInstructor();
+  }else{
+    [nameCells,instructorCells]=await Promise.all([arabicRead(nameBand),readInstructor()]);
   }
-  const nameCells=await namePromise;
-  const instructorCells=await instructorPromise;
 
   /* The claiming pass shares one alphanumeric alphabet so building and hall
      can be recognised at all — but that same freedom lets stray strokes become
@@ -2075,7 +2080,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
   /* Orientation costs pixels now, not recognitions: the three turns are scored
      on a small render in well under a second. A page with no grid signal at
      all (a photographed transcript) falls back to one small OCR probe. */
-  onProgress?.({phase:"orient",page:1,pages:images.length,message:"تحديد اتجاه الصفحة"});
+  if(cachedPreflight?.header.source==="scan")
+    onProgress?.({phase:"read",page:0,pages:images.length,message:`تم التحقق من اتجاه ${images.length} صفحة · بدء القراءة`});
+  else
+    onProgress?.({phase:"orient",page:1,pages:images.length,message:"تحديد اتجاه الصفحة"});
   let orientation:-1|0|1=cachedPreflight?.header.source==="scan"?cachedPreflight.orientation:0;
   if(!cachedPreflight||cachedPreflight.header.source!=="scan"){
     /* Pixels answer the cheap half only: WHICH AXIS. A table turned +90° and
@@ -2120,16 +2128,13 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      welded SECTION+CRN token such as 5011894 can never impersonate 0101102. */
   const authorityGridDepartment=academicDigits(cachedPreflight?.header.department?.code);
 
-  /* GOLDEN PAGE LANE
-     ----------------
-     A one-page scan is the proven stable path. Multi-page scans now send every
-     page through that exact same worker pool, one page at a time. The previous
-     dual-lane optimisation created six extra Tesseract workers only when a PDF
-     had more than one page — the only whole-engine allocation path that differed
-     from the proven one-page case. Keep memory bounded and deterministic instead.
-     Numeric/cell jobs still fan out across
-     the five workers inside this pool, so row reading remains parallel without
-     multiplying the whole OCR engine per document. */
+  /* GOLDEN PAGE LANES — SAME MEMORY, TWO PAGES AT ONCE
+     -------------------------------------------------
+     The one-page path is untouched. For a multi-page scan we partition the
+     ALREADY-CREATED seven workers into two disjoint lanes (3+2 numeric workers
+     and one Arabic worker per lane). No second OCR engine pool is allocated.
+     This restores page-level concurrency without the historical fatal-memory
+     spike, and — crucially — no worker can receive parameters from two pages. */
   let pagesDone=0;
   const processPage=async(index:number,lanePool:OcrWorkerPool)=>{
     /* Move the UI out of the orientation stage before the expensive grid read.
@@ -2190,7 +2195,22 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
   
   };
-  for(let index=0;index<images.length;index++)await processPage(index,pool);
+  if(images.length===1){
+    await processPage(0,pool);
+  }else{
+    const split=Math.max(1,Math.ceil(pool.eng.length/2));
+    const laneA:OcrWorkerPool={eng:pool.eng.slice(0,split),ara:pool.ara,ara2:pool.ara};
+    const laneB:OcrWorkerPool={eng:pool.eng.slice(split),ara:pool.ara2,ara2:pool.ara2};
+    /* Five numeric workers always leave at least two for lane B. Guard anyway
+       so this remains correct if the pool size is tuned in a later release. */
+    if(!laneB.eng.length){
+      for(let index=0;index<images.length;index++)await processPage(index,pool);
+    }else{
+      const laneEven=async()=>{for(let index=0;index<images.length;index+=2)await processPage(index,laneA);};
+      const laneOdd=async()=>{for(let index=1;index<images.length;index+=2)await processPage(index,laneB);};
+      await Promise.all([laneEven(),laneOdd()]);
+    }
+  }
 
   /* SAFE FALLBACK — suspicious pages only
      ---------------------------------------

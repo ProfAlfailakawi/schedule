@@ -96,7 +96,7 @@ export default function AuthorityPdfReport({
                     <div className={`print-comprehensive-grid-row authority-pdf-row authority-pdf-row-${entry.status}`} role="row" key={`${pageIndex}-${index}-${row.id || row.sourceOrder || index}-${entry.status}`}>
                       {statusLabel ? <span className="authority-pdf-row-marker" aria-hidden="true">{statusLabel}</span> : null}
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCode || "—"}</div>
-                      <div role="cell" className="print-ltr authority-pdf-reference-number">{entry.referenceNumber || "—"}</div>
+                      <div role="cell" className="print-ltr authority-pdf-reference-number">{entry.referenceNumber || (row as any).referenceNumber || "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "SCode"))}`}>{String(row.SCode || "").trim() || "—"}</div>
                       <div role="cell" className={`print-wrap print-course-name ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseName || row.AdCourseName || "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCredit ?? "—"}</div>

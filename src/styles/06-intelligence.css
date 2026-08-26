@@ -4043,6 +4043,7 @@ button.twin-delta{width:100%}
 .student-conflict-courses b{font-size:12px;font-weight:650;color:var(--ink)}
 .student-conflict-courses small{font-size:9.5px;font-weight:500;color:var(--muted);line-height:1.35}
 .student-conflict-courses .other small{color:var(--brass)}
+.student-graduate-request{display:grid;gap:4px;min-width:190px}.student-graduate-request strong{font-size:11.5px;color:var(--ink);font-weight:750}.student-graduate-request span{font-size:10.5px;color:var(--muted);line-height:1.65;white-space:pre-wrap;overflow-wrap:anywhere}
 
 /* Import editing deliberately mirrors Add/Edit Schedule: start/end labels,
    department room history, a quick hall popover, and warnings beside the row. */
