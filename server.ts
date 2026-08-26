@@ -5185,6 +5185,16 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
   let headerPreflight=await readAuthorityPdfHeader(bytes);
 
+  /* Restore the proven orientation safety guard. Keep the protection, but only
+     return the short instruction the user asked for — the old explanatory
+     paragraph is intentionally gone. */
+  if(headerPreflight.requiresLandscapeUpload){
+    res.status(422).json({
+      error:"دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع.",
+      code:"PDF_SCAN_REQUIRES_LANDSCAPE",
+    });
+    return;
+  }
 
   /* Scope validation is shared by the cheap page-1 preflight and the full OCR
      rescue. A partial preflight is NOT a rejection: image-only CamScanner PDFs
@@ -5324,6 +5334,20 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     department:headerPreflight.department||recognized.headerDepartment,
     source:headerPreflight.source||((recognized.headerTerm||recognized.headerBranch||recognized.headerDepartment)?"scan":undefined),
   };
+
+  /* Defence in depth for mixed scans: if a later page needed a physical ±90°
+     turn, reject before row parsing. All pages must share one stable horizontal
+     table geometry so plausible OCR can never drift into neighbouring columns. */
+  const rotatedPages=recognized.pageDiagnostics.filter((page:any)=>Number(page.orientation)!==0);
+  if(rotatedPages.length){
+    const body={
+      error:"دوّر صفحات الجدول للوضع الأفقي ثم أعد الرفع.",
+      code:"PDF_SCAN_REQUIRES_LANDSCAPE",
+      pages:rotatedPages.map((page:any)=>Number(page.page)).filter(Boolean),
+    };
+    if(streaming){emit({type:"error",...body});res.end();return;}
+    res.status(422).json(body);return;
+  }
 
   if(!headerPreflight.term||!headerPreflight.branch||!headerPreflight.department){
     const missing=[!headerPreflight.term?"الفصل والسنة":"",!headerPreflight.branch?"الكلية/الفرع":"",!headerPreflight.department?"القسم":""].filter(Boolean);

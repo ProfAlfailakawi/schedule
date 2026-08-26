@@ -25,7 +25,14 @@ export type Legibility={readable:boolean;confidence:number;charactersPerPage:num
 export type HeaderTerm={season:"first"|"second"|"summer";years:[number,number];label:string};
 export type HeaderBranch={code:string;name:string;label:string};
 export type HeaderDepartment={code:string;name:string;label:string};
-export type AuthorityPdfHeader={term?:HeaderTerm;branch?:HeaderBranch;department?:HeaderDepartment;source?:"text"|"scan"};
+export type AuthorityPdfHeader={
+  term?:HeaderTerm;
+  branch?:HeaderBranch;
+  department?:HeaderDepartment;
+  source?:"text"|"scan";
+  /** Image-only Authority timetable scans must arrive already horizontal. */
+  requiresLandscapeUpload?:boolean;
+};
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:number;pages:number;message:string})=>void;
 
@@ -1672,6 +1679,22 @@ export function parseAuthorityHeaderText(text:string):AuthorityPdfHeader{
   return{term:readHeaderTerm(text),branch:readHeaderBranch(text),department:readHeaderDepartment(text)};
 }
 
+/**
+ * Safety guard for scanned Authority timetables. Native-text PDFs are exempt:
+ * only image-only pages are required to arrive in the report's horizontal
+ * geometry, because silently rotating a dense ruled table can bind OCR text to
+ * neighbouring physical columns while still looking plausible.
+ */
+export function authorityScanRequiresLandscape(
+  width:number,
+  height:number,
+  embeddedCharacters:number,
+  embeddedItems:number,
+):boolean{
+  const imageOnly=embeddedCharacters<120&&embeddedItems<12;
+  return imageOnly&&height>width*1.05;
+}
+
 
 /**
  * Cheap first-page preflight for Authority PDFs.
@@ -1712,6 +1735,20 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
     const embedded:AuthorityPdfHeader={...embeddedParsed,source:"text"};
     if(embedded.term&&embedded.branch&&embedded.department){headerPreflightCache.set(input,{header:embedded,orientation:0});return embedded;}
 
+    /* ROOT ORIENTATION SAFETY — for image-only Authority timetable scans, stop
+       before body OCR when the physical page is portrait. Do not silently turn
+       a dense ruled table and risk shifting course/building/room columns. */
+    const embeddedCharacters=text.replace(/\s+/g,"").length;
+    if(authorityScanRequiresLandscape(
+      Number(viewport.width||0),
+      Number(viewport.height||0),
+      embeddedCharacters,
+      headerWords.length,
+    )){
+      const rotated:AuthorityPdfHeader={...embedded,source:"scan",requiresLandscapeUpload:true};
+      headerPreflightCache.set(input,{header:rotated,orientation:0});
+      return rotated;
+    }
 
     /* A PARTIAL text-layer hit is not success. The regression that prompted
        this guard returned immediately after finding only the term, then told
@@ -1769,6 +1806,14 @@ export async function readAuthorityPdfHeader(input:Buffer):Promise<AuthorityPdfH
       source:(embedded.term&&embedded.branch&&embedded.department)?"text":best?.header.source||embedded.source,
     };
 
+    /* A landscape PDF can still carry a sideways raster. If the header only
+       becomes semantically valid after a physical ±90° turn, stop before body
+       extraction instead of letting auto-rotation remap the table columns. */
+    if(best&&best.turn!==0){
+      const rotated:AuthorityPdfHeader={...merged,source:"scan",requiresLandscapeUpload:true};
+      headerPreflightCache.set(input,{header:rotated,orientation:best.turn});
+      return rotated;
+    }
 
     /* Deep header rescue: cheap 1400px preflight can still lose tiny Arabic
        dots in a phone-scanned/CamScanner page. Do NOT reject the document at

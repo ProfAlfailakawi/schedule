@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -57,6 +57,12 @@ assert.equal(authorityCourseCellLooksPlausible("0101102","0101"),true);
 assert.equal(authorityCourseCellLooksPlausible("5011894","0101"),false);
 assert.equal(authorityReferenceCourseCellLooksPlausible("189450101102","0101"),true);
 assert.equal(authorityReferenceCourseCellLooksPlausible("5011894","0101"),false);
+
+/* Image-only Authority timetables must arrive already landscape. Native-text
+   PDFs are exempt because their cells are reconstructed from PDF coordinates. */
+assert.equal(authorityScanRequiresLandscape(768,1024,0,0),true);
+assert.equal(authorityScanRequiresLandscape(1024,768,0,0),false);
+assert.equal(authorityScanRequiresLandscape(768,1024,800,60),false);
 
 
 /* The clear photographed PDF often appends a grid-rule digit to the second
