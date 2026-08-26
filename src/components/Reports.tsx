@@ -43,6 +43,19 @@ type PrintKind = Lens | "comprehensive" | null;
 const SAFARI_PRINT_ENGINE = typeof navigator !== "undefined"
   && /AppleWebKit/i.test(navigator.userAgent || "")
   && !/(Chrome|Chromium|CriOS|FxiOS|Edg|EdgiOS|OPR|Android)/i.test(navigator.userAgent || "");
+/* Desktop Chromium honours @page landscape, but computes percentage widths
+   against a slightly different printable box than Safari's proven rotated
+   sheet. Stamp Chromium only so its logical comprehensive page can be pinned to
+   the same physical A4 geometry without touching Safari by one pixel. */
+const CHROMIUM_PRINT_ENGINE = typeof navigator !== "undefined"
+  && /(Chrome|Chromium|Edg)\//i.test(navigator.userAgent || "")
+  && !/(CriOS|EdgiOS|OPR|Android)/i.test(navigator.userAgent || "");
+/* Chrome on iPhone/iPad is WebKit, not desktop Chromium. It therefore needs
+   the SAME proven rotated-page geometry as Safari, but is deliberately stamped
+   by its own UA branch so Safari's already-perfect path remains byte-for-byte
+   untouched. */
+const IOS_CHROME_PRINT_ENGINE = typeof navigator !== "undefined"
+  && /CriOS/i.test(navigator.userAgent || "");
 
 interface Props {
   mode: ReportMode;
@@ -1001,7 +1014,8 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
        landscape page through `@page`; Safari ignores that, so the sheet is
        painted rotated inside Safari's portrait page — geometry only, and
        invisible to every other engine. */
-    if (SAFARI_PRINT_ENGINE) root.dataset.printRotate = "1";
+    if (SAFARI_PRINT_ENGINE || IOS_CHROME_PRINT_ENGINE) root.dataset.printRotate = "1";
+    if (CHROMIUM_PRINT_ENGINE) root.dataset.printChromium = "1";
     let leftForPrint = false;
     let resumed = false;
     /* Two different things end here, and they must not end together.
@@ -1015,6 +1029,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const clearPrintFlags = () => {
       delete root.dataset.printKind;
       delete root.dataset.printRotate;
+      delete root.dataset.printChromium;
     };
     const resume = () => {
       if (resumed) return;
@@ -1045,7 +1060,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   useEffect(() => {
     let cancelled = false;
     const { collegeId, sectionId, termId } = filters;
-    if (!collegeId || !sectionId || !termId) { setAuthorityReportAvailable(false); return; }
+    if (!collegeId || !sectionId || !termId || all.length === 0) { setAuthorityReportAvailable(false); return; }
     const query = new URLSearchParams({ collegeId:String(collegeId), sectionId:String(sectionId), termId:String(termId), meta:"1" });
     fetch(`/api/reports/authority-pdf-diff?${query}`)
       .then(async response => response.ok ? response.json() : null)
@@ -1081,12 +1096,14 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
 
       const root = document.documentElement;
       root.dataset.printKind = "authority-pdf";
-      if (SAFARI_PRINT_ENGINE) root.dataset.printRotate = "1";
+      if (SAFARI_PRINT_ENGINE || IOS_CHROME_PRINT_ENGINE) root.dataset.printRotate = "1";
+      if (CHROMIUM_PRINT_ENGINE) root.dataset.printChromium = "1";
       let leftForPrint = false;
       let resumed = false;
       const clearPrintFlags = () => {
         delete root.dataset.printKind;
         delete root.dataset.printRotate;
+        delete root.dataset.printChromium;
       };
       const resume = () => {
         if (resumed) return;
@@ -1430,7 +1447,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
             <span>موعد</span>
             {scopeLine ? <small>{scopeLine}</small> : null}
           </div>
-          {!pending && (results.length || authorityReportAvailable) ? <div className="query-canvas-actions">
+          {!pending && (results.length || (authorityReportAvailable && all.length > 0)) ? <div className="query-canvas-actions">
             {results.length ? <>
               <button
                 type="button"
@@ -1445,7 +1462,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <Table2 aria-hidden="true" />التقرير الشامل
               </SecondaryButton>
             </> : null}
-            {!pending && authorityReportAvailable ? (
+            {!pending && authorityReportAvailable && all.length > 0 ? (
               <SecondaryButton type="button" data-guide-ignore="طباعة تقرير قراءة فقط داخل مركز الاستعلامات" onClick={() => void printAuthorityReport()} disabled={authorityReportBusy} title="يقارن النسخة الأصلية المستوردة بالجدول الحالي ويعرض ما أضيف أو حُذف أو عُدّل">
                 <ClipboardList aria-hidden="true" />{authorityReportBusy ? "يجهّز التقرير…" : "تقرير تغييرات الجدول"}
               </SecondaryButton>

@@ -852,7 +852,30 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[]){
     }
     consumed.add(index);
     const next=current[index];
-    const changedFields=AUTHORITY_PDF_COMPARE_FIELDS.filter(field=>String(source[field]??"")!==String(next[field]??""));
+    /* Compare the academic meaning of each printed cell, not incidental storage
+       representation. Imported booleans, numeric ids, clocks and location codes
+       can pass through JSON/Firestore with harmless type/spacing differences;
+       those must never turn untouched cells yellow. */
+    const comparable=(field:string,value:any)=>{
+      if(["AdCourseId","AdInstructorId"].includes(field))return Number(value||0);
+      if(["fsunday","fmonday","ftuesday","fwednesday","fthursday"].includes(field)){
+        /* Firestore/JSON history can preserve imported weekday flags as 0/1
+           strings. Boolean("0") is true in JavaScript and used to paint every
+           untouched day cell yellow. Compare the academic flag, not JS truthiness. */
+        const token=String(value??"").trim().toLowerCase();
+        return value===true||value===1||token==="1"||token==="true"||token==="y"||token==="yes";
+      }
+      if(["AdRoomCode","AdRoomHall"].includes(field))return String(value||"").replace(/\s+/g,"").toUpperCase();
+      if(["fstarttime","fendtime"].includes(field)){
+        /* 09:00, 9:00 and the Authority import's 0900 all mean the same
+           clock. Keep that storage-format noise out of the change report. */
+        const digits=String(value||"").replace(/\D/g,"");
+        if(/^\d{3,4}$/.test(digits)){const hh=digits.slice(0,-2).padStart(2,"0"),mm=digits.slice(-2);return `${hh}:${mm}`;}
+        return String(value||"").trim();
+      }
+      return String(value??"").trim();
+    };
+    const changedFields=AUTHORITY_PDF_COMPARE_FIELDS.filter(field=>comparable(field,source[field])!==comparable(field,next[field]));
     reportRows.push({status:changedFields.length?"changed":"unchanged",changedFields,referenceNumber:String(source.referenceNumber||next.referenceNumber||""),source,current:next});
   });
   current.forEach((row:any,index:number)=>{
@@ -7648,12 +7671,15 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const facts=graduationSheetFacts(ocr.text);
   const civilCandidates=(Array.isArray(facts.civilCandidates)?facts.civilCandidates:[])
     .map((value:any)=>asciiDigits(value).replace(/\D/g,""))
-    .filter((value:string,index:number,array:string[])=>value.length===12&&array.indexOf(value)===index);
-  /* Exact identity remains the hard gate. The student's entered civil has
-     already passed the system validator above; the proof reader therefore
-     checks that exact 12-digit value against EVERY complete document candidate
-     rather than trusting whichever 12-digit token OCR happened to return first. */
-  const civilVisible=civilCandidates.includes(civil);
+    .filter((value:string,index:number,array:string[])=>value.length===12&&validateCivilId(value).isValid&&array.indexOf(value)===index);
+  /* Exact identity remains the hard gate. Ignore timestamp-like 12-digit OCR
+     noise by checksum, then accept the entered civil when it appears either as
+     one token or as digit groups on ONE visual line. No digit is repaired or
+     guessed. This restores the official Authority screenshot where Tesseract
+     may emit «3041 0230 1536» instead of «304102301536». */
+  const proofAscii=asciiDigits(String(ocr.text||""));
+  const escapedCivil=civil.split("").map(d=>d.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")).join("[ \t\u00a0\u200e\u200f.-]{0,3}");
+  const civilVisible=civilCandidates.includes(civil)||new RegExp(`(?:^|[^0-9])${escapedCivil}(?:[^0-9]|$)`).test(proofAscii);
   const hasPassedEvidence=Number(facts.passedUnits)>0||(Array.isArray(facts.passedUnitCandidates)&&facts.passedUnitCandidates.length>0);
   const proofFactsReadable=Boolean(facts.isGraduationSheet&&civilVisible&&Number(facts.passedUnits)>0)
     ||Boolean(facts.isGraduationSheet&&civilVisible&&hasPassedEvidence);
@@ -7661,7 +7687,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   if(!facts.isGraduationSheet){
     res.status(422).json({error:"الملف المرفوع ليس صحيفة التخرج/الخطة الدراسية المعتمدة. ارفع الصفحة الرسمية التي يظهر فيها البرنامج والوحدات المجتازة."});return;
   }
-  if(!civilCandidates.length){res.status(422).json({error:"لم أتعرف على الرقم المدني في صحيفة التخرج. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
+  if(!civilCandidates.length&&!civilVisible){res.status(422).json({error:"لم أتعرف على الرقم المدني في صحيفة التخرج. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
   if(!civilVisible){res.status(422).json({error:"الرقم المدني في الإثبات لا يطابق الرقم المدخل."});return;}
   /* The typed name is for the department's human-facing case card, not a hard
      proof key. Students may enter first + last name while the Authority sheet

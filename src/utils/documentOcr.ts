@@ -386,6 +386,25 @@ async function graduationPdfTextLayer(input:Buffer):Promise<{text:string;pageCou
   }catch{return null;}
 }
 
+async function graduationCivilBand(page:Buffer):Promise<Buffer>{
+  const lib=await canvas(),image=await lib.loadImage(page);
+  /* The official Authority study-plan page prints the civil ID as the dark
+     12-digit run at the LEFT of the blue identity band, with the timestamp one
+     line below it. OCRing the whole blue band lets the much brighter date win
+     segmentation and can turn 24/08/2026 08:08 into the only 12-digit token.
+     Read the civil line itself first. This is geometry, not guessing: the
+     server still checksum-validates and requires exact equality with the civil
+     the student entered. */
+  const sx=0,sy=Math.max(0,Math.round(image.height*.425));
+  const sw=Math.max(1,Math.round(image.width*.25)),sh=Math.max(1,Math.round(image.height*.05));
+  const targetWidth=Math.min(2200,Math.max(sw,1800)),scale=Math.max(1,targetWidth/sw);
+  const surface=lib.createCanvas(Math.round(sw*scale),Math.round(sh*scale)),ctx=surface.getContext("2d");
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,0,surface.width,surface.height);
+  ctx.imageSmoothingEnabled=true;if("imageSmoothingQuality" in ctx)(ctx as any).imageSmoothingQuality="high";
+  ctx.drawImage(image,sx,sy,sw,sh,0,0,surface.width,surface.height);
+  return surface.toBuffer("image/png");
+}
+
 async function graduationIdentityBand(page:Buffer):Promise<Buffer>{
   const lib=await canvas(),image=await lib.loadImage(page);
   /* On the Authority page the civil number sits in the left side of the blue
@@ -444,14 +463,21 @@ export async function ocrGraduationSheetDocument(input:Buffer,mime:string):Promi
        factual extraction below still requires the official identity signals. */
     const prose=readings.map(item=>item.text).filter(Boolean).join("\n");
 
-    const identity=await graduationIdentityBand(page);
+    const [civilBand,identity]=await Promise.all([graduationCivilBand(page),graduationIdentityBand(page)]);
     const digitReadings:Array<{text:string;confidence:number}>=[];
-    for(const psm of [11,6]){
-      await digitsWorker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:String(psm) as any});
-      const result:any=await digitsWorker.recognize(identity).catch(()=>null);
-      const text=String(result?.data?.text||"").normalize("NFKC");
-      digitReadings.push({text,confidence:Number(result?.data?.confidence||0)});
-      if(/\b\d{12}\b/.test(text))break;
+    /* First read the dedicated civil line; then retain the older generous band
+       as fallback for unusual screenshot crops. A timestamp can remain in the
+       candidate union, but it cannot pass Kuwait civil checksum + exact typed-ID
+       equality on the server. */
+    for(const band of [civilBand,identity]){
+      for(const psm of [7,6,11]){
+        await digitsWorker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:String(psm) as any});
+        const result:any=await digitsWorker.recognize(band).catch(()=>null);
+        const text=String(result?.data?.text||"").normalize("NFKC");
+        digitReadings.push({text,confidence:Number(result?.data?.confidence||0)});
+        if(/\b\d{12}\b/.test(text))break;
+      }
+      if(digitReadings.some(item=>/\b\d{12}\b/.test(item.text)))break;
     }
     const digits=digitReadings.map(item=>item.text).filter(Boolean).join("\n");
     texts.push([prose,digits].filter(Boolean).join("\n"));
@@ -1049,6 +1075,30 @@ export const authorityCourseCellLooksPlausible=(raw:string,departmentCode=""):bo
   return token.length===department.length+3&&token.startsWith(department);
 };
 
+/* Column discovery is allowed one deliberately narrower tolerance than final
+   course identity. On dense photographed pages, whole-column OCR can drop the
+   final course digit (0101102 -> 010110) or absorb one row-edge digit
+   (0101102 -> 30101102). Requiring four perfect seven-digit hits then fails to
+   claim the physical course column, so the later cell-by-cell rescue never gets
+   a chance to read the exact key. These tolerant shapes are therefore useful
+   ONLY to locate the already department-anchored column. They can never leave
+   readGrid as course codes: every row is re-read in that same physical cell and
+   the normal strict seven-digit validator still owns canonical identity. */
+export const authorityCourseColumnLooksPlausible=(raw:string,departmentCode=""):boolean=>{
+  if(authorityCourseCellLooksPlausible(raw,departmentCode))return true;
+  const token=academicDigits(raw),department=academicDigits(departmentCode);
+  if(!department)return false;
+  /* Discovery only: dense photographed rows can either lose the final course
+     digit (0101102 -> 010110) or pick up ONE neighbour/row-edge digit
+     (0101102 -> 30101102). Both shapes are allowed solely to locate the
+     department-anchored physical column. Canonical course identity is still
+     accepted later only by authorityCourseCellLooksPlausible after PSM-7
+     same-cell rescue, so no shortened/contaminated code can escape readGrid. */
+  const discoveryShape=(value:string)=>value.startsWith(department)
+    &&(value.length===department.length+2||value.length===department.length+3);
+  return discoveryShape(token)||(token.length>1&&discoveryShape(token.slice(1)));
+};
+
 /** Combined CRN/reference + full course key in one OCR span. The only part
  * that carries academic identity is the seven-digit TAIL, which must satisfy
  * the same department proof as a standalone course cell. */
@@ -1276,7 +1326,13 @@ async function readGrid(
     for(let width=1;width<=maxJoin;width++){
       const from=end-width+1;if(from<keySearchFrom)continue;
       const span={from,to:end};
-      const codeHits=spanHitsBy(span,courseCellTest);
+      /* Claim the physical course strip using exact keys first, then the
+         department-anchored truncated shape used only for DISCOVERY. This
+         unlocks the existing exact cell rescue on dense scanned pages without
+         weakening course identity by a single digit. */
+      const exactCodeHits=spanHitsBy(span,courseCellTest);
+      const discoveryCodeHits=spanHitsBy(span,value=>authorityCourseColumnLooksPlausible(value,authorityDepartmentCode));
+      const codeHits=Math.max(exactCodeHits,discoveryCodeHits);
       if(codeHits>bestCodeHits||(codeHits===bestCodeHits&&codeHits>0&&codeSpan&&(span.to>codeSpan.to||(span.to===codeSpan.to&&width<(codeSpan.to-codeSpan.from+1))))){bestCodeHits=codeHits;codeSpan=span;}
       const bothHits=spanHitsBy(span,refCourseCellTest);
       if(bothHits>bestRefcodeHits||(bothHits===bestRefcodeHits&&bothHits>0&&refcodeSpan&&(span.to>refcodeSpan.to||(span.to===refcodeSpan.to&&width<(refcodeSpan.to-refcodeSpan.from+1))))){bestRefcodeHits=bothHits;refcodeSpan=span;}
@@ -2147,7 +2203,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
        quarter-turns and keep the one that produces the strongest physical
        table. This rescue is paid only for failed pages, so clean exports remain
        fast while photographed/CamScanner sheets stop collapsing into prose. */
-    if(!gridRows){
+    const scanOrientationLocked=cachedPreflight?.header.source==="scan"&&!cachedPreflight.header.requiresLandscapeUpload;
+    if(!gridRows&&!scanOrientationLocked){
       let best:{upright:Buffer;rows:GridRow[];turn:-1|0|1}|null=null;
       const tried=new Set<number>([orientation]);
       for(const turn of [-1,0,1] as const){
@@ -2219,7 +2276,9 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       /* Re-read the same page in a clean worker context, then try the remaining
          quarter-turns only if they improve the number of semantically useful
          rows. This is the conservative Safe Path behind the fast lanes. */
-      for(const turn of [bestOrientation,-1,0,1] as Array<-1|0|1>){
+      const scanOrientationLocked=cachedPreflight?.header.source==="scan"&&!cachedPreflight.header.requiresLandscapeUpload;
+      const rescueTurns=scanOrientationLocked?[bestOrientation]:[bestOrientation,-1,0,1] as Array<-1|0|1>;
+      for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
           const rows=await readGrid(upright,rescuePool,authorityGridDepartment);
@@ -3046,9 +3105,17 @@ export function graduationSheetFacts(text:string){
      unrelated lines or repair digits. The server compares these complete
      candidates only against the already-validated civil entered by the student. */
   const directCivil=[...plain.matchAll(/\b\d{12}\b/g)].map(match=>match[0]);
-  const lineCivil=plain.split(/\r?\n/).map(line=>line.replace(/\D/g,""))
+  const lines=plain.split(/\r?\n/);
+  const lineCivil=lines.map(line=>line.replace(/\D/g,""))
     .filter(value=>value.length===12);
-  const civilCandidates=[...new Set([...directCivil,...lineCivil])];
+  /* Tesseract often inserts spaces between digit groups (3041 0230 1536).
+     Recover a 12-digit run from one visual line even when unrelated text or a
+     date also exists elsewhere on that line. The server checksum-filters these
+     candidates and still requires the exact civil entered by the student. */
+  const groupedCivil=lines.flatMap(line=>[...line.matchAll(/(?:\d[ \t\u00a0\u200e\u200f.-]{0,3}){11}\d/g)]
+    .map(match=>String(match[0]||"").replace(/\D/g,""))
+    .filter(value=>value.length===12));
+  const civilCandidates=[...new Set([...directCivil,...lineCivil,...groupedCivil])];
   const civil=civilCandidates[0]||"";
   const readNumber=(patterns:RegExp[])=>{
     for(const pattern of patterns){const match=folded.match(pattern);if(match)return Number(match[1]||0)||0;}

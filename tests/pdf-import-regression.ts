@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -55,6 +55,10 @@ assert.equal(authorityCourseCodeMatches("0101102", "102", "0101"), true);
 assert.equal(authorityCourseCodeMatches("0102102", "102", "0101"), false);
 assert.equal(authorityCourseCellLooksPlausible("0101102","0101"),true);
 assert.equal(authorityCourseCellLooksPlausible("5011894","0101"),false);
+assert.equal(authorityCourseColumnLooksPlausible("010110","0101"),true);
+assert.equal(authorityCourseColumnLooksPlausible("30101102","0101"),true);
+assert.equal(authorityCourseColumnLooksPlausible("1010110","0101"),true);
+assert.equal(authorityCourseColumnLooksPlausible("501189","0101"),false);
 assert.equal(authorityReferenceCourseCellLooksPlausible("189450101102","0101"),true);
 assert.equal(authorityReferenceCourseCellLooksPlausible("5011894","0101"),false);
 
@@ -317,10 +321,10 @@ const spacedCivilProof = graduationSheetFacts(`
 الهيئة العامة للتعليم التطبيقي والتدريب
 الخطة الدراسية
 240820260808
-نوره غازي عبيد الرحماني 9041 0230 1536
+نوره غازي عبيد الرحماني 3041 0230 1536
 البرنامج اسلامية تربية خاصة
 الوحدات المطلوبة 134
 الوحدات المجتازة 114
 `);
-assert.ok(spacedCivilProof.civilCandidates.includes("904102301536"));
+assert.ok(spacedCivilProof.civilCandidates.includes("304102301536"));
 assert.ok(spacedCivilProof.civilCandidates.includes("240820260808"));

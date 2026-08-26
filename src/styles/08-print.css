@@ -1832,6 +1832,39 @@
 }
 
 /* ==========================================================================
+   CHROMIUM PRINT GEOMETRY — isolated from Safari
+   --------------------------------------------------------------------------
+   Safari is the visual golden state and is intentionally untouched. Desktop
+   Chromium honours @page landscape, but its percentage-width print box can
+   differ by a few millimetres between preview and the physical sheet. The
+   Reports component stamps data-print-chromium only in desktop Chromium, so
+   these fixed A4 content widths remove that engine-specific squeeze without
+   changing a single Safari selector or pixel.
+   ========================================================================== */
+@media print{
+  html[data-print-chromium="1"] .print-report.print-wide:not(.print-comprehensive-book),
+  html[data-print-chromium="1"] .print-report.print-wide:not(.print-comprehensive-book) .print-explicit-page{
+    box-sizing:border-box !important;
+    width:281mm !important;
+    min-width:281mm !important;
+    max-width:281mm !important;
+    margin-inline:0 !important;
+  }
+
+  /* comprehensive/Authority sheets own a zero-margin named A4 page and carry
+     their safe inset internally, so their physical box is the full 297mm. */
+  html[data-print-chromium="1"] .print-comprehensive-book,
+  html[data-print-chromium="1"] .print-comprehensive-pages,
+  html[data-print-chromium="1"] .print-comprehensive-page{
+    box-sizing:border-box !important;
+    width:297mm !important;
+    min-width:297mm !important;
+    max-width:297mm !important;
+    margin-inline:0 !important;
+  }
+}
+
+/* ==========================================================================
    SAFARI OPT-IN — «أفقي تلقائياً»
    Safari ignores `@page size`, so every wide sheet meets a portrait page
    there. When (and only when) the person switches the toggle on, the print
