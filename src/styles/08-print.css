@@ -2104,6 +2104,12 @@
   .authority-pdf-grid .authority-pdf-row-deleted>[role="cell"]{background:#fbe8e8!important;color:#7b2626!important;text-decoration-line:line-through!important;text-decoration-thickness:.35pt!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .authority-pdf-grid .authority-pdf-row-deleted>[role="cell"].authority-pdf-reference-number{text-decoration:none!important}
   .authority-pdf-grid .authority-pdf-row-changed>[role="cell"]{text-decoration:none!important}
+  /* A changed ROW is only a container/status.  Never let its marker colour or
+     a browser's row background spill into untouched cells.  The one cell whose
+     academic value changed owns the yellow highlight; everything else keeps the
+     report's normal white/zebra surface. */
+  .authority-pdf-grid .authority-pdf-row-changed>[role="cell"]:not(.authority-pdf-cell-changed){background:#fff!important;box-shadow:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .authority-pdf-grid .print-comprehensive-grid-body .authority-pdf-row-changed:nth-child(even)>[role="cell"]:not(.authority-pdf-cell-changed){background:#f8faf9!important}
   .authority-pdf-grid .authority-pdf-row-changed>[role="cell"].authority-pdf-cell-changed{background:#fff2bf!important;box-shadow:inset 0 0 0 .5pt #d4a20c!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .authority-pdf-row-marker{position:absolute!important;inset-inline-end:.7mm!important;top:50%!important;transform:translateY(-50%)!important;z-index:2!important;display:inline-flex!important;align-items:center!important;justify-content:center!important;min-width:9.5mm!important;height:4.4mm!important;padding:0 1.25mm!important;border-radius:999px!important;font-size:4.7pt!important;font-weight:850!important;line-height:1!important;white-space:nowrap!important;text-decoration:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .authority-pdf-row-added .authority-pdf-row-marker{background:#d8efe1!important;border:.5pt solid #66a47b!important;color:#155d3a!important}
