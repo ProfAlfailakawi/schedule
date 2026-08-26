@@ -5615,11 +5615,18 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
     const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
     if(occupied.length){res.status(409).json({error:"نسخ PDF مسموح إلى فصل فارغ فقط. اختر فصلاً بلا بيانات."});return;}
   }
-  /* The approved preview becomes the immutable comparison baseline. OCR fixes
-     made before the first publish are corrections to the scan, not timetable
-     changes; only edits made to the live timetable afterwards should light up
-     the colour report. */
-  const baselineRows=importLayout==="authority-pdf" ? rows.map((row:any)=>({...row})) : undefined;
+  /* Preserve the ORIGINAL Authority-PDF read as the immutable comparison
+     baseline, even when the reviewer deletes or corrects rows in the preview
+     before the first publish. The client keeps that first scan in baselineRows;
+     falling back to the approved rows protects older clients. This is what lets
+     the report later show every preview deletion in red and highlight only the
+     cells that were manually changed before publication. */
+  const suppliedBaseline=importLayout==="authority-pdf"
+    ?safeDraftRows(req.body?.baselineRows,collegeId,sectionId,termId)
+    :[];
+  const baselineRows=importLayout==="authority-pdf"
+    ?(suppliedBaseline.length?suppliedBaseline:rows.map((row:any)=>({...row})))
+    :undefined;
   const draft=await Repository.createScheduleDraft({
     SystemUserId:req.user.SystemUserId,userName:req.user.Name,
     AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,
@@ -7618,31 +7625,37 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   let ocr;
   try{ocr=await ocrDocument(bytes,mime);}
   catch(error:any){res.status(422).json({error:String(error?.message||"تعذّرت قراءة الإثبات. ارفع صورة أوضح أو ملف PDF.")});return;}
-  /* Clarity is judged before the contents are. Otherwise an unreadable photo
-     failed later as «الرقم المدني لا يطابق», which tells the student their data
-     is wrong when the real problem is the picture. */
-  if(!ocr.legibility.readable){res.status(422).json({error:ocr.legibility.reason});return;}
   const facts=graduationSheetFacts(ocr.text);
-  if(!facts.isGraduationSheet){
-    res.status(422).json({error:"الملف المرفوع ليس صحيفة التخرج/الخطة الدراسية المعتمدة. ارفع الصفحة الرسمية التي يظهر فيها البرنامج والوحدات المطلوبة والوحدات المجتازة."});return;
-  }
   const visibleDigits=asciiDigits(ocr.text).replace(/[^0-9]/g,"");
+  /* Do not reject a clear official sheet merely because the generic OCR
+     legibility score is conservative. The graduate gate has stronger factual
+     evidence of its own: official sheet identity, exact civil ID, department
+     identity, and labelled passed units. If those facts are not present, the
+     normal clarity error still explains what the student should fix. */
+  const civilVisible=Boolean((facts.civil&&facts.civil===civil)||(!facts.civil&&visibleDigits.includes(civil)));
+  const proofFactsReadable=Boolean(facts.isGraduationSheet&&civilVisible&&Number(facts.passedUnits)>0);
+  if(!ocr.legibility.readable&&!proofFactsReadable){res.status(422).json({error:ocr.legibility.reason});return;}
+  if(!facts.isGraduationSheet){
+    res.status(422).json({error:"الملف المرفوع ليس صحيفة التخرج/الخطة الدراسية المعتمدة. ارفع الصفحة الرسمية التي يظهر فيها البرنامج والوحدات المجتازة."});return;
+  }
   if(!facts.civil&&!visibleDigits.includes(civil)){res.status(422).json({error:"لم أتعرف على الرقم المدني في صحيفة التخرج. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
   if((facts.civil&&facts.civil!==civil)||(!facts.civil&&!visibleDigits.includes(civil))){res.status(422).json({error:"الرقم المدني في الإثبات لا يطابق الرقم المدخل."});return;}
+  /* The typed name is for the department's human-facing case card, not a hard
+     proof key. Students may enter first + last name while the Authority sheet
+     prints the full civil name. Civil ID remains the 100% identity gate. */
   const foldName=(value:string)=>String(value||"").replace(/[ً-ْـ]/g,"").replace(/[أإآٱ]/g,"ا").replace(/ى/g,"ي").replace(/ة/g,"ه").replace(/[^ء-يa-zA-Z ]/g," ").replace(/\s+/g," ").trim().toLowerCase();
-  const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.filter(word=>documentName.includes(word)).length>=Math.min(2,nameWords.length);
-  if(!nameMatched){res.status(422).json({error:"الاسم في الإثبات لا يطابق الاسم المدخل أو لم يظهر بوضوح."});return;}
+  const documentName=foldName(ocr.text),nameWords=foldName(name).split(" ").filter(word=>word.length>=3),nameMatched=nameWords.length>0&&nameWords.some(word=>documentName.includes(word));
   const specializationMatched=academicSectionNameMatches(facts.normalizedText,String(section.AdSectionName||""));
   if(!specializationMatched){
     res.status(422).json({error:`التخصص الظاهر في صحيفة التخرج لا يطابق القسم المحدد «${String(section.AdSectionName||"")}». اختر قسمك الصحيح وارفع صحيفتك أنت.`});return;
   }
   const rule=await storedDegreeRuleForSection(sectionId);
   if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم."});return;}
-  const passedUnits=Number(facts.passedUnits||0),sheetRequiredUnits=Number(facts.requiredUnits||0);
-  if(!sheetRequiredUnits){res.status(422).json({error:"لم أتعرف على «الوحدات المطلوبة» في صحيفة التخرج. ارفع الصفحة الرسمية كاملة وبوضوح."});return;}
-  if(sheetRequiredUnits!==Number(rule.degreeUnits)){
-    res.status(422).json({error:`الوحدات المطلوبة في الصحيفة (${sheetRequiredUnits}) لا تطابق الخطة الأكاديمية المعتمدة لتخصصك (${rule.degreeUnits}). لا يمكن قبول هذه الصحيفة.`});return;
-  }
+  /* Required graduation units come from the selected department's reviewed
+     academic rule. OCR only has to prove the student's PASSED units. This
+     avoids rejecting a valid sheet because one summary cell was read poorly,
+     while still keeping the authoritative threshold inside our own data. */
+  const passedUnits=Number(facts.passedUnits||0);
   if(!passedUnits){res.status(422).json({error:"لم أتعرف على مجموع الوحدات المجتازة في صحيفة التخرج. ارفع الصفحة الرسمية كاملة وبوضوح."});return;}
   const terms=await Repository.getTerms();
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");
@@ -7651,7 +7664,7 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   if(!eligible){res.status(422).json({error:`لم تُستوفَ وحدات الخريج/المتوقع تخرجه: الصحيفة تظهر ${passedUnits} وحدة مجتازة، والمطلوب ${required} في ${summer?"الفصل الصيفي":"الفصل العادي"}.`});return;}
   const proofToken=await issueStudentProof({fingerprint:await surveyFingerprint(civil),sectionId,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),nameMatched,specializationMatched,documentKind:"graduation-sheet"});
   res.json({eligible:true,passedUnits,requiredUnits:required,degreeUnits:Number(rule.degreeUnits),termName,summer,
-    message:`تم التحقق من صحيفة التخرج: الاسم والرقم المدني والتخصص والوحدات مطابقة. اجتزت ${passedUnits} وحدة، والمطلوب ${required}. يمكنك متابعة الطلب.`,
+    message:`تم التحقق من صحيفة التخرج: الرقم المدني والقسم والوحدات المجتازة مطابقة. اجتزت ${passedUnits} وحدة، والمطلوب ${required} حسب بيانات قسمك. يمكنك متابعة الطلب.`,
     proofToken,confidence:ocr.confidence});
 });
 
@@ -7703,15 +7716,15 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
   // accepted: the department acts on the selected courses and the approved
   // graduate reasons, not on an open comment field.
   const details="";
-  let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
+  let passedUnits:number|undefined,requiredUnits:number|undefined,degreeUnits:number|undefined,graduateNameMatched:boolean|undefined,eligibility:"eligible"|"ineligible"|"not-checked"="not-checked";
   if(requestType==="graduate"){
     const proof=await verifyStudentProof(String(body.proofToken||""));
     const currentRule=await storedDegreeRuleForSection(sectionId);
     if(!currentRule){res.status(400).json({error:"قواعد التخرج الأكاديمية لهذا القسم غير معتمدة في النظام"});return;}
-    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.nameMatched!==true||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
+    if(!proof||proof.fingerprint!==await surveyFingerprint(civil)||Number(proof.sectionId)!==sectionId||proof.documentKind!=="graduation-sheet"||proof.specializationMatched!==true||Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)){
       res.status(400).json({error:"ارفع صحيفة التخرج الرسمية وتحقق منها قبل إرسال حالة الخريج"});return;
     }
-    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=Number(currentRule.degreeUnits);eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
+    passedUnits=Number(proof.passedUnits||0);requiredUnits=Number(proof.requiredUnits||0);degreeUnits=Number(currentRule.degreeUnits);graduateNameMatched=Boolean(proof.nameMatched);eligibility=passedUnits>=requiredUnits?"eligible":"ineligible";
     if(eligibility!=="eligible"){res.status(400).json({error:`غير مجتاز للوحدات المطلوبة (${requiredUnits})`});return;}
     if(!graduateReason){res.status(400).json({error:"اختر نوع طلب الميداني"});return;}
   }
@@ -7731,7 +7744,7 @@ app.post("/api/public/survey/:token", async (req: Request, res: Response) => {
     AdTermId: resolved.link.AdTermId,
     courseIds,
     requestType,nameCipher:await sealStudentIdentity(name),civilCipher:await sealStudentIdentity(civil),details,
-    graduateReason,passedUnits,requiredUnits,degreeUnits,eligibility,proofNameMatched:requestType==="graduate"?true:undefined,
+    graduateReason,passedUnits,requiredUnits,degreeUnits,eligibility,proofNameMatched:requestType==="graduate"?graduateNameMatched:undefined,
   });
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
   res.setHeader("Cache-Control", "no-store");
@@ -8815,7 +8828,7 @@ function details(){step=3;paintProgress();var title=kind==="new-course"?"فتح 
 /* The free-text box is kept only where somebody reads it. On the two course
    requests the selected courses already say everything the department acts on,
    and an optional box invited an explanation nobody was going to open. */
-var content=kind==="graduate"?'<div class="proof"><strong>ارفع صحيفة التخرج</strong><small class="lead">PDF أو صورة واضحة للصفحة الرسمية «الخطة الدراسية / صحيفة التخرج». يجب أن يظهر فيها الاسم والرقم المدني والبرنامج والوحدات المطلوبة والوحدات المجتازة. أي مستند آخر لن يُقبل.</small><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة صحيفة التخرج والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label></div><p class="hint" style="margin:9px 2px 0">اختر الحالة المعتمدة فقط. لا توجد خانة نص حر حتى تصل الطلبات للقسم بصيغة موحدة قابلة للفرز.</p></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
+var content=kind==="graduate"?'<div class="proof"><strong>ارفع صحيفة التخرج</strong><small class="lead">PDF أو صورة واضحة للصفحة الرسمية «الخطة الدراسية / صحيفة التخرج». يجب أن يظهر الرقم المدني والبرنامج والوحدات المجتازة بوضوح. الاسم يساعد في العرض ولا يشترط تطابقه حرفياً. أي مستند آخر لن يُقبل.</small><input id="proof" type="file" accept="application/pdf,image/*,.heic,.heif"><button class="action" id="verify" type="button">قراءة صحيفة التخرج والتحقق</button><div class="upload-meter" id="uploadMeter" hidden><div class="upload-track"><i id="uploadBar"></i></div><b id="uploadPct">0%</b><small id="uploadBytes">يجهّز الملف…</small></div><div id="proofStatus" class="proof-status">لم يتم التحقق بعد.</div></div><div id="graduateOptions" hidden><div class="reasons"><label class="reason"><input type="radio" name="reason" value="field-conflict"><span>مقرر يتعارض مع وقت الميداني</span></label><label class="reason"><input type="radio" name="reason" value="field-prerequisite-conflict"><span>مقرر مسبق ميداني يتعارض مع مقرر آخر مسبق ميداني</span></label></div><p class="hint" style="margin:9px 2px 0">اختر الحالة المعتمدة فقط. لا توجد خانة نص حر حتى تصل الطلبات للقسم بصيغة موحدة قابلة للفرز.</p></div>':kind==="course-conflict"?ownCourseCards()+otherCourseCards():ownCourseCards();
 host.innerHTML='<button class="back" id="back">← نوع الطلب</button><div class="step-head"><b>3</b><div><strong>'+title+'</strong><span>'+esc(data.section||"")+'</span></div></div>'+content+'<button class="action" id="send" type="button">إرسال الطلب إلى القسم</button><div id="err"></div>';document.getElementById("back").onclick=chooseType;if(kind==="graduate")wireProof();else{wireOwnCourses();if(kind==="course-conflict")wireOtherCourse()}document.getElementById("send").onclick=submit}
 
 function compactProof(file){return new Promise(function(resolve){var type=String(file.type||"").toLowerCase(),name=String(file.name||"").toLowerCase();if(type.indexOf("image/")!==0||/heic|heif/.test(type)||/\.(heic|heif)$/.test(name)){resolve(file);return}var url=URL.createObjectURL(file),img=new Image();img.onload=function(){try{var max=2200,scale=Math.min(1,max/Math.max(img.naturalWidth||1,img.naturalHeight||1));if(scale>=.98&&file.size<1800000){URL.revokeObjectURL(url);resolve(file);return}var canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));var ctx=canvas.getContext("2d",{alpha:false});if(!ctx)throw 0;ctx.fillStyle="#fff";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height);canvas.toBlob(function(blob){URL.revokeObjectURL(url);resolve(blob&&blob.size<file.size?blob:file)},"image/jpeg",.86)}catch(e){URL.revokeObjectURL(url);resolve(file)}};img.onerror=function(){URL.revokeObjectURL(url);resolve(file)};img.src=url})}

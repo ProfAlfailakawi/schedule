@@ -2928,7 +2928,12 @@ export function graduationSheetFacts(text:string){
   const programmeOk=/البرنامج/.test(folded);
   const requiredLabelOk=/الوحدات\s*المطلوبه/.test(folded);
   const passedLabelOk=/الوحدات\s*المجتازه/.test(folded);
-  const isGraduationSheet=titleOk&&programmeOk&&requiredLabelOk&&passedLabelOk;
+  /* The student gate needs the official study-plan identity plus the PASSED
+     units. Required units are authoritative in our academic rules by section,
+     so a weak OCR read of that one header must not reject an otherwise clear
+     official sheet. Requiring the title + passed-units label + one programme
+     summary signal still fails closed for arbitrary transcripts/screenshots. */
+  const isGraduationSheet=titleOk&&passedLabelOk&&(programmeOk||requiredLabelOk);
   return{
     civil,requiredUnits,passedUnits,isGraduationSheet,
     signals:{title:titleOk,programme:programmeOk,requiredUnits:requiredLabelOk,passedUnits:passedLabelOk},

@@ -217,7 +217,7 @@ ok('119 maintenance review prompt is embedded in the project and linked from gol
 # Graduate-proof + report-availability invariants added after the Golden stage.
 reports_src=(ROOT/'src/components/Reports.tsx').read_text()
 ok('120 authority change report remains discoverable whenever a saved baseline exists', 'setAuthorityReportAvailable(Boolean(data?.draftId))' in reports_src and 'setAuthorityReportAvailable(Boolean(data?.hasChanges))' not in reports_src)
-ok('121 graduate door accepts only the official graduation sheet and checks all identity fields', 'graduationSheetFacts(ocr.text)' in server and 'ليس صحيفة التخرج/الخطة الدراسية المعتمدة' in server and 'الرقم المدني في الإثبات لا يطابق' in server and 'التخصص الظاهر في صحيفة التخرج لا يطابق' in server and 'الوحدات المطلوبة في الصحيفة' in server)
+ok('121 graduate door accepts only the official graduation sheet and checks civil, department and passed units', 'graduationSheetFacts(ocr.text)' in server and 'ليس صحيفة التخرج/الخطة الدراسية المعتمدة' in server and 'الرقم المدني في الإثبات لا يطابق' in server and 'التخصص الظاهر في صحيفة التخرج لا يطابق' in server and 'مجموع الوحدات المجتازة' in server)
 ok('122 Special Education is one canonical umbrella for its programme sub-specialties', 'academicSectionNameMatches' in server and 'sourceSpecial||targetSpecial' in server and 'sourceSpecial&&targetSpecial' in server and 'academicSectionNameMatches(facts.normalizedText' in server)
 ok('123 graduate proof cannot be bypassed with an old/generic proof token', 'proof.documentKind!=="graduation-sheet"' in server and 'proof.specializationMatched!==true' in server and 'Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)' in server)
 ok('124 public graduate UI explicitly asks for the graduation sheet, not a generic transcript', 'ارفع صحيفة التخرج' in server and 'أي مستند آخر لن يُقبل' in server and 'تحقق من صحيفة التخرج أولاً' in server)
@@ -233,5 +233,10 @@ ok('129 changed Authority rows highlight only changed cells and carry a compact 
 ok('130 Authority report can represent full deletion against an empty live timetable', 'if(!live.length){res.status(404)' not in server and 'buildAuthorityPdfDiff(draft.baselineRows||[],live)' in server and 'results.length || authorityReportAvailable' in reports_src)
 ok('131 Authority report shows visiting badge beside canonical instructor identity', 'VisitingBadge' in authority_report and 'visitingIds.has(Number(row.AdInstructorId))' in authority_report and 'visitingIds={visitingIds}' in reports_src)
 ok('132 duplicate source PDF filename is not printed under the Authority report title', '<p>{report.sourceFileName}</p>' not in authority_report)
+
+ok('133 original Authority PDF rows survive preview deletions as immutable report baseline', 'req.body?.baselineRows' in server and 'suppliedBaseline.length?suppliedBaseline' in server and 'baselineRows:scannedRows.map' in transfer)
+ok('134 graduate proof does not require literal typed-name equality', 'if(!nameMatched)' not in server and 'proof.nameMatched!==true' not in server and 'Civil ID remains the 100% identity gate' in server)
+ok('135 graduate required threshold comes from stored department academic data', 'Required graduation units come from the selected department' in server and 'graduateThreshold(rule,termName)' in server and 'sheetRequiredUnits!==Number(rule.degreeUnits)' not in server)
+ok('136 conservative generic legibility cannot override sufficient graduate proof facts', 'proofFactsReadable' in server and 'facts.isGraduationSheet&&civilVisible&&Number(facts.passedUnits)>0' in server)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
