@@ -824,26 +824,50 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
     return matches.length===1?matches[0]:-1;
   };
   const matchIndex=(source:any)=>{
-    const order=Number(source?.sourceOrder);
-    if(Number.isFinite(order)){
-      const index=uniqueIndex((row:any)=>isImportedPdfRow(row)&&Number(row?.sourceOrder)===order);
-      if(index>=0)return index;
-    }
-    /* Older published rows may pre-date sourceOrder persistence. The reference
-       number printed by the authority PDF is the safest stable fallback and
-       keeps an ordinary edit classified as “changed”, not delete + add. */
     const reference=refKey(source?.referenceNumber);
+    const order=Number(source?.sourceOrder);
+
+    /* The CRN/reference number printed by the Authority is the strongest row
+       identity we own.  Prefer it BEFORE sourceOrder.  sourceOrder is a visual
+       import trace and can drift when an old baseline was renumbered/rebuilt;
+       pairing by a stale order is exactly how one untouched row can inherit a
+       different row and make every visible cell look yellow. */
     if(reference){
-      const index=uniqueIndex((row:any)=>isImportedPdfRow(row)&&refKey(row?.referenceNumber)===reference);
-      if(index>=0)return index;
+      const byReference=uniqueIndex((row:any)=>
+        isImportedPdfRow(row)&&refKey(row?.referenceNumber)===reference
+      );
+      if(byReference>=0)return byReference;
+
+      /* Legacy live rows can occasionally lose the persisted CRN while still
+         retaining the immutable imported order.  Allow that fallback only when
+         the candidate has NO conflicting reference.  Never pair a baseline CRN
+         with another non-empty CRN merely because sourceOrder happens to match. */
+      if(Number.isFinite(order)){
+        const byOrder=uniqueIndex((row:any)=>{
+          if(!isImportedPdfRow(row)||Number(row?.sourceOrder)!==order)return false;
+          const currentReference=refKey(row?.referenceNumber);
+          return !currentReference||currentReference===reference;
+        });
+        if(byOrder>=0)return byOrder;
+      }
+
+      /* A source row with a real CRN that is no longer present is a deletion.
+         Do NOT fall through to course+section and accidentally consume another
+         imported row, which would generate a full-row false diff. */
+      return -1;
     }
-    /* Last conservative fallback for LEGACY IMPORTED rows only. A manual row
-       created after the PDF must never impersonate a deleted source row merely
-       because it happens to reuse the same course + section number. */
+
+    if(Number.isFinite(order)){
+      const byOrder=uniqueIndex((row:any)=>isImportedPdfRow(row)&&Number(row?.sourceOrder)===order);
+      if(byOrder>=0)return byOrder;
+    }
+
+    /* Last conservative fallback for legacy imported rows that truly have no
+       reference number. A manual post-PDF row can never enter this path. */
     const signature=sectionKey(source);
     if(!signature.startsWith("0|")){
-      const index=uniqueIndex((row:any)=>isImportedPdfRow(row)&&sectionKey(row)===signature);
-      if(index>=0)return index;
+      const bySection=uniqueIndex((row:any)=>isImportedPdfRow(row)&&!refKey(row?.referenceNumber)&&sectionKey(row)===signature);
+      if(bySection>=0)return bySection;
     }
     return -1;
   };
@@ -879,10 +903,11 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
         return value===true||value===1||token==="1"||token==="true"||token==="y"||token==="yes";
       }
       if(field==="AdRoomCode"){
-        const valStr = String(value || "").trim().toUpperCase();
-        const baseDigits = valStr.replace(/\D/g, "").slice(0, 3);
-        const clean = cleanBuildingCode(valStr);
-        return baseDigits || clean || normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
+        const valStr=normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
+        /* Compare the complete canonical building token.  Keeping only the first
+           three digits (012) hides real B07 -> B09 edits and makes cell-level
+           diffing semantically inconsistent with what the report prints. */
+        return cleanBuildingCode(valStr)||valStr;
       }
       if(field==="AdRoomHall"){
         const clean = cleanHallCode(String(value || ""));
