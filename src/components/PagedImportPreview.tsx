@@ -91,6 +91,7 @@ export default function PagedImportPreview({
               type="button"
               role="tab"
               aria-selected={active}
+              data-guide-ignore="تنقّل داخلي بين صفحات معاينة PDF فقط ولا ينفذ إجراءً على الجدول أو البيانات"
               className={`${active ? "active" : ""} ${suspicious ? "review" : empty ? "empty" : "ready"}`.trim()}
               onClick={() => setActivePage(page)}
             >
