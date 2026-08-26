@@ -52,7 +52,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { ocrDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
@@ -800,6 +800,17 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[]){
   const consumed=new Set<number>();
   const refKey=(value:any)=>String(value||"").replace(/[\s\u200e\u200f\u202a-\u202e]/g,"").trim();
   const sectionKey=(row:any)=>`${Number(row?.AdCourseId||0)}|${String(row?.SCode||"").trim()}`;
+  /* A row created after the Authority PDF is a new academic action forever:
+     editing it keeps it green, and deleting it removes it from the report.
+     sourceOrder >= 1,000,000 is the explicit post-PDF range. Older imported
+     rows that pre-date sourceOrder can still prove their PDF origin through
+     CRN/reference or the immutable import-evidence fields. */
+  const isImportedPdfRow=(row:any)=>{
+    const rawOrder=row?.sourceOrder;
+    if(rawOrder!==undefined&&rawOrder!==null&&Number.isFinite(Number(rawOrder)))return Number(rawOrder)<1_000_000;
+    if(refKey(row?.referenceNumber))return true;
+    return Boolean(row?.sourceCourseCode||row?.sourceCourseText||row?.sourceSectionText||row?.importEvidence);
+  };
   const uniqueIndex=(predicate:(row:any)=>boolean)=>{
     const matches:number[]=[];
     current.forEach((row:any,index:number)=>{if(!consumed.has(index)&&predicate(row))matches.push(index);});
@@ -816,14 +827,15 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[]){
        keeps an ordinary edit classified as “changed”, not delete + add. */
     const reference=refKey(source?.referenceNumber);
     if(reference){
-      const index=uniqueIndex((row:any)=>refKey(row?.referenceNumber)===reference);
+      const index=uniqueIndex((row:any)=>isImportedPdfRow(row)&&refKey(row?.referenceNumber)===reference);
       if(index>=0)return index;
     }
-    /* Last conservative fallback for legacy rows: course + section must be
-       unique inside the live table. Ambiguous matches are deliberately refused. */
+    /* Last conservative fallback for LEGACY IMPORTED rows only. A manual row
+       created after the PDF must never impersonate a deleted source row merely
+       because it happens to reuse the same course + section number. */
     const signature=sectionKey(source);
     if(!signature.startsWith("0|")){
-      const index=uniqueIndex((row:any)=>sectionKey(row)===signature);
+      const index=uniqueIndex((row:any)=>isImportedPdfRow(row)&&sectionKey(row)===signature);
       if(index>=0)return index;
     }
     return -1;
@@ -7623,23 +7635,23 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);if(!bytes.length){res.status(400).json({error:"ارفع صحيفة التخرج PDF أو صورة واضحة"});return;}
   const mime=String(req.get("x-file-type")||"application/pdf").slice(0,80);
   let ocr;
-  try{ocr=await ocrDocument(bytes,mime);}
+  try{ocr=await ocrGraduationSheetDocument(bytes,mime);}
   catch(error:any){res.status(422).json({error:String(error?.message||"تعذّرت قراءة الإثبات. ارفع صورة أوضح أو ملف PDF.")});return;}
   const facts=graduationSheetFacts(ocr.text);
   const visibleDigits=asciiDigits(ocr.text).replace(/[^0-9]/g,"");
-  /* Do not reject a clear official sheet merely because the generic OCR
-     legibility score is conservative. The graduate gate has stronger factual
-     evidence of its own: official sheet identity, exact civil ID, department
-     identity, and labelled passed units. If those facts are not present, the
-     normal clarity error still explains what the student should fix. */
-  const civilVisible=Boolean((facts.civil&&facts.civil===civil)||(!facts.civil&&visibleDigits.includes(civil)));
-  const proofFactsReadable=Boolean(facts.isGraduationSheet&&civilVisible&&Number(facts.passedUnits)>0);
+  const civilCandidates=Array.isArray(facts.civilCandidates)?facts.civilCandidates:[];
+  /* This proof is read as a normal document, not through the timetable-grid
+     shortcut. The substantive gate is unchanged: official study-plan identity,
+     exact civil ID, department identity and a proved passed-units value. */
+  const civilVisible=Boolean(civilCandidates.includes(civil)||(!civilCandidates.length&&visibleDigits.includes(civil)));
+  const hasPassedEvidence=Number(facts.passedUnits)>0||(Array.isArray(facts.passedUnitCandidates)&&facts.passedUnitCandidates.length>0);
+  const proofFactsReadable=Boolean(facts.isGraduationSheet&&civilVisible&&hasPassedEvidence);
   if(!ocr.legibility.readable&&!proofFactsReadable){res.status(422).json({error:ocr.legibility.reason});return;}
   if(!facts.isGraduationSheet){
     res.status(422).json({error:"الملف المرفوع ليس صحيفة التخرج/الخطة الدراسية المعتمدة. ارفع الصفحة الرسمية التي يظهر فيها البرنامج والوحدات المجتازة."});return;
   }
-  if(!facts.civil&&!visibleDigits.includes(civil)){res.status(422).json({error:"لم أتعرف على الرقم المدني في صحيفة التخرج. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
-  if((facts.civil&&facts.civil!==civil)||(!facts.civil&&!visibleDigits.includes(civil))){res.status(422).json({error:"الرقم المدني في الإثبات لا يطابق الرقم المدخل."});return;}
+  if(!civilCandidates.length&&!visibleDigits.includes(civil)){res.status(422).json({error:"لم أتعرف على الرقم المدني في صحيفة التخرج. ارفع نسخة أوضح يظهر فيها الرقم كاملاً."});return;}
+  if((civilCandidates.length&&!civilCandidates.includes(civil))||(!civilCandidates.length&&!visibleDigits.includes(civil))){res.status(422).json({error:"الرقم المدني في الإثبات لا يطابق الرقم المدخل."});return;}
   /* The typed name is for the department's human-facing case card, not a hard
      proof key. Students may enter first + last name while the Authority sheet
      prints the full civil name. Civil ID remains the 100% identity gate. */
@@ -7652,10 +7664,26 @@ app.post("/api/public/survey/:token/proof", express.raw({type:"application/octet
   const rule=await storedDegreeRuleForSection(sectionId);
   if(!rule){res.status(422).json({error:"لا توجد قواعد تخرج أكاديمية معتمدة لهذا القسم في النظام. لا يمكن التحقق من صحيفة التخرج قبل اعتمادها من إدارة القسم."});return;}
   /* Required graduation units come from the selected department's reviewed
-     academic rule. OCR only has to prove the student's PASSED units. This
-     avoids rejecting a valid sheet because one summary cell was read poorly,
-     while still keeping the authoritative threshold inside our own data. */
-  const passedUnits=Number(facts.passedUnits||0);
+     academic rule. OCR only has to prove the student's PASSED units. The
+     Authority screenshot lays its values in a visual row, so sparse OCR can
+     read the label and the number with programme text between them. When the
+     immediate label-value pair is missing, resolve only the bounded candidates
+     next to «الوحدات المجتازة», anchored by the department's degree total. */
+  const degreeUnits=Number(rule.degreeUnits);
+  const resolvePassedUnits=()=>{
+    const direct=Number(facts.passedUnits||0);if(direct>0)return direct;
+    const near=(Array.isArray(facts.passedUnitCandidates)?facts.passedUnitCandidates:[])
+      .map((value:any)=>Number(value)).filter((value:number)=>Number.isFinite(value)&&value>=60&&value<=degreeUnits);
+    const candidates=near.length?near:(Array.isArray(facts.unitCandidates)?facts.unitCandidates:[])
+      .map((value:any)=>Number(value)).filter((value:number)=>Number.isFinite(value)&&value>=60&&value<=degreeUnits);
+    if(!candidates.length)return 0;
+    if(candidates.length===1)return candidates[0]===degreeUnits?0:candidates[0];
+    const remaining=[...candidates];
+    const degreeIndex=remaining.indexOf(degreeUnits);
+    if(degreeIndex>=0)remaining.splice(degreeIndex,1);
+    return remaining.filter(value=>value<=degreeUnits).sort((a,b)=>b-a)[0]||0;
+  };
+  const passedUnits=resolvePassedUnits();
   if(!passedUnits){res.status(422).json({error:"لم أتعرف على مجموع الوحدات المجتازة في صحيفة التخرج. ارفع الصفحة الرسمية كاملة وبوضوح."});return;}
   const terms=await Repository.getTerms();
   const termName=String(terms.find((row:any)=>Number(row.AdTermId)===Number(resolved.link.AdTermId))?.AdTermName||"");

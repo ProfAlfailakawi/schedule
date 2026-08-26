@@ -171,7 +171,7 @@ function PdfDifferenceBody({report,courses,instructors}:{report:any;courses:AdCo
           const course=courses.find(item=>Number(item.AdCourseId)===Number(row.AdCourseId));
           const mark=(...fields:string[])=>entry.status==="changed"&&fields.some(field=>changed.has(field))?"cell-changed":"";
           return <tr key={`${entry.status}-${row.sourceOrder}-${index}`} className={entry.status}>
-            <td>{entry.status==="added"?"":entry.referenceNumber||"—"}</td>
+            <td className="pdf-report-reference-number">{entry.status==="added"?"":entry.referenceNumber||"—"}</td>
             <td>{course?.CourseCode||"—"}</td>
             <td>{row.AdCourseName||course?.CourseName||"—"}</td>
             <td className={mark("SCode")}>{row.SCode||"—"}</td>

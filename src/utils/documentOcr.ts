@@ -34,6 +34,7 @@ export type AuthorityPdfHeader={
   requiresLandscapeUpload?:boolean;
 };
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
+export type GraduationSheetOcrResult={text:string;pageCount:number;confidence:number;legibility:Legibility};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:number;pages:number;message:string})=>void;
 
 const MAX_PAGES=12;
@@ -353,6 +354,127 @@ async function imagePages(input:Buffer,mime:string,longEdge:number,onProgress?:O
   const surface=lib.createCanvas(Math.round(image.width*scale),Math.round(image.height*scale));
   surface.getContext("2d").drawImage(image,0,0,surface.width,surface.height);
   return[surface.toBuffer("image/png")];
+}
+
+/*
+ * Student graduation-sheet OCR is intentionally separate from timetable OCR.
+ *
+ * The official student page contains a small summary grid. Feeding that page
+ * through the timetable reader can legitimately detect the grid and then skip
+ * whole-page prose OCR — which hides the civil number/title above the grid and
+ * produces the misleading “not enough text” error. This reader never takes the
+ * timetable-grid fast path. It reads the page as a document, then performs one
+ * narrow digits-only pass over the identity band. No uploaded bytes are kept.
+ */
+let graduationTextWorkerPromise:Promise<PooledWorker>|null=null;
+let graduationDigitsWorkerPromise:Promise<PooledWorker>|null=null;
+async function getGraduationTextWorker(){
+  if(!graduationTextWorkerPromise)graduationTextWorkerPromise=(async()=>{
+    const {createWorker}=await import("tesseract.js");
+    return await createWorker("ara+eng") as PooledWorker;
+  })();
+  return graduationTextWorkerPromise;
+}
+async function getGraduationDigitsWorker(){
+  if(!graduationDigitsWorkerPromise)graduationDigitsWorkerPromise=(async()=>{
+    const {createWorker}=await import("tesseract.js");
+    return await createWorker("eng") as PooledWorker;
+  })();
+  return graduationDigitsWorkerPromise;
+}
+
+async function graduationPdfTextLayer(input:Buffer):Promise<{text:string;pageCount:number}|null>{
+  try{
+    const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const pdf=await pdfjs.getDocument({data:new Uint8Array(input),disableWorker:true,useSystemFonts:true}).promise;
+    const count=Math.min(Number(pdf.numPages||0),MAX_PAGES);
+    if(!count)return null;
+    const pages:string[]=[];
+    for(let index=1;index<=count;index++){
+      const page=await pdf.getPage(index),content=await page.getTextContent({includeMarkedContent:false});
+      const text=(content?.items||[]).map((item:any)=>String(item?.str||"").normalize("NFKC")).filter(Boolean).join(" ");
+      pages.push(text);
+    }
+    const text=pages.join("\n\n--- PAGE ---\n\n");
+    return(text.match(/[ء-يa-zA-Z0-9]/g)||[]).length>=80?{text,pageCount:count}:null;
+  }catch{return null;}
+}
+
+async function graduationIdentityBand(page:Buffer):Promise<Buffer>{
+  const lib=await canvas(),image=await lib.loadImage(page);
+  /* On the Authority page the civil number sits in the left side of the blue
+     identity band. The crop is deliberately generous so normal desktop widths,
+     browser zoom and screenshot margins all remain inside it. */
+  const sx=0,sy=Math.max(0,Math.round(image.height*.27));
+  const sw=Math.max(1,Math.round(image.width*.58)),sh=Math.max(1,Math.round(image.height*.38));
+  const targetWidth=Math.min(2200,Math.max(sw,1800));
+  const scale=Math.max(1,targetWidth/sw);
+  const surface=lib.createCanvas(Math.round(sw*scale),Math.round(sh*scale)),ctx=surface.getContext("2d");
+  ctx.fillStyle="#ffffff";ctx.fillRect(0,0,surface.width,surface.height);
+  ctx.imageSmoothingEnabled=true;
+  if("imageSmoothingQuality" in ctx)(ctx as any).imageSmoothingQuality="high";
+  ctx.drawImage(image,sx,sy,sw,sh,0,0,surface.width,surface.height);
+  return surface.toBuffer("image/png");
+}
+
+const graduationTextScore=(text:string)=>{
+  const facts=graduationSheetFacts(text);
+  return (facts.signals.title?180:0)+(facts.signals.authority?120:0)+(facts.signals.programme?80:0)
+    +(facts.signals.passedUnits?100:0)+(facts.signals.requiredUnits?55:0)+(facts.civilCandidates.length?110:0)
+    +Math.min(80,(text.match(/[ء-ي]/g)||[]).length);
+};
+
+/** Read the public-survey proof as a normal official document, not a timetable. */
+export async function ocrGraduationSheetDocument(input:Buffer,mime:string):Promise<GraduationSheetOcrResult>{
+  const looksLikePdf=/pdf/i.test(mime)||input.subarray(0,4).toString("latin1")==="%PDF";
+  const embedded=looksLikePdf?await graduationPdfTextLayer(input):null;
+  if(embedded){
+    const facts=graduationSheetFacts(embedded.text);
+    if(facts.signals.title&&facts.civilCandidates.length&&(facts.signals.passedUnits||facts.passedUnitCandidates.length)){
+      const confidence=99;
+      return{text:embedded.text,pageCount:embedded.pageCount,confidence,legibility:judgeLegibility(embedded.text,embedded.pageCount,confidence)};
+    }
+  }
+
+  /* Keep native screenshot pixels for Arabic labels — artificial whole-page
+     upscaling can deform the small Arabic programme name. PDF pages, however,
+     are rendered sharply at the normal high-resolution document target. */
+  const pages=await imagePages(input,mime,TARGET_LONG_EDGE);
+  if(!pages.length)throw new Error("تعذر تحويل صحيفة التخرج إلى صورة قابلة للقراءة");
+  const [textWorker,digitsWorker]=await Promise.all([getGraduationTextWorker(),getGraduationDigitsWorker()]);
+  const texts:string[]=[];const confidences:number[]=[];
+  const maxPages=Math.min(pages.length,3);
+  for(let index=0;index<maxPages;index++){
+    const page=pages[index];
+    const readings:Array<{text:string;confidence:number}>=[];
+    for(const psm of [11,6]){
+      await textWorker.setParameters({tessedit_char_whitelist:"",tessedit_pageseg_mode:String(psm) as any});
+      const result:any=await textWorker.recognize(page).catch(()=>null);
+      readings.push({text:String(result?.data?.text||"").normalize("NFKC"),confidence:Number(result?.data?.confidence||0)});
+    }
+    readings.sort((a,b)=>graduationTextScore(b.text)-graduationTextScore(a.text)||b.confidence-a.confidence);
+    /* Keep both passes: sparse mode often reads the white-on-blue labels while
+       block mode reads the programme/value row. Their union is the document;
+       factual extraction below still requires the official identity signals. */
+    const prose=readings.map(item=>item.text).filter(Boolean).join("\n");
+
+    const identity=await graduationIdentityBand(page);
+    const digitReadings:Array<{text:string;confidence:number}>=[];
+    for(const psm of [11,6]){
+      await digitsWorker.setParameters({tessedit_char_whitelist:"0123456789",tessedit_pageseg_mode:String(psm) as any});
+      const result:any=await digitsWorker.recognize(identity).catch(()=>null);
+      const text=String(result?.data?.text||"").normalize("NFKC");
+      digitReadings.push({text,confidence:Number(result?.data?.confidence||0)});
+      if(/\b\d{12}\b/.test(text))break;
+    }
+    const digits=digitReadings.map(item=>item.text).filter(Boolean).join("\n");
+    texts.push([prose,digits].filter(Boolean).join("\n"));
+    confidences.push(Math.max(...readings.map(item=>item.confidence),...digitReadings.map(item=>item.confidence)));
+  }
+  const text=[embedded?.text||"",...texts].filter(Boolean).join("\n\n--- PROOF ---\n\n");
+  const confidence=Math.round(confidences.reduce((sum,value)=>sum+value,0)/Math.max(1,confidences.length));
+  const pageCount=embedded?.pageCount||pages.length;
+  return{text,pageCount,confidence,legibility:judgeLegibility(text,Math.max(1,Math.min(pageCount,3)),confidence)};
 }
 
 async function rotateImage(input:Buffer,quarterTurns:-1|0|1):Promise<Buffer>{
@@ -2910,7 +3032,8 @@ export function transcriptFacts(text:string){
  */
 export function graduationSheetFacts(text:string){
   const plain=toAscii(text),folded=fold(text);
-  const civil=[...plain.matchAll(/\b\d{12}\b/g)].map(match=>match[0])[0]||"";
+  const civilCandidates=[...new Set([...plain.matchAll(/\b\d{12}\b/g)].map(match=>match[0]))];
+  const civil=civilCandidates[0]||"";
   const readNumber=(patterns:RegExp[])=>{
     for(const pattern of patterns){const match=folded.match(pattern);if(match)return Number(match[1]||0)||0;}
     return 0;
@@ -2924,19 +3047,36 @@ export function graduationSheetFacts(text:string){
     /الوحدات\s*(?:المكتسبه|الناجحه)\s*[:\-]?\s*(\d{2,3})/i,
     /(?:earned|passed)\s*(?:credits|hours|units)?\s*[:\-]?\s*(\d{2,3})/i,
   ]);
-  const titleOk=/الخطه\s*الدراسيه|صحيفه\s*التخرج/.test(folded);
-  const programmeOk=/البرنامج/.test(folded);
+  const titleOk=/(?:ال)?خطه\s*الدراسيه|صحيفه\s*التخرج/.test(folded);
+  const programmeOk=/(?:^|\s)ال?برنامج(?=\s|:|$)/.test(folded);
   const requiredLabelOk=/الوحدات\s*المطلوبه/.test(folded);
   const passedLabelOk=/الوحدات\s*المجتازه/.test(folded);
-  /* The student gate needs the official study-plan identity plus the PASSED
-     units. Required units are authoritative in our academic rules by section,
-     so a weak OCR read of that one header must not reject an otherwise clear
-     official sheet. Requiring the title + passed-units label + one programme
-     summary signal still fails closed for arbitrary transcripts/screenshots. */
-  const isGraduationSheet=titleOk&&passedLabelOk&&(programmeOk||requiredLabelOk);
+  const authorityOk=/الهيئه\s*العامه\s*للتعليم\s*التطبيقي\s*والتدريب/.test(folded)
+    ||/public\s+authority\s+for\s+applied\s+education/.test(folded);
+
+  const allUnitCandidates=[...folded.matchAll(/(?:^|\s)(\d{2,3})(?=\s|$)/g)]
+    .map(match=>Number(match[1]))
+    .filter(value=>Number.isFinite(value)&&value>=60&&value<=180);
+  const candidatesNear=(pattern:RegExp)=>{
+    const match=folded.match(pattern);if(!match||match.index===undefined)return[] as number[];
+    const window=folded.slice(match.index,match.index+190);
+    return[...window.matchAll(/(?:^|\s)(\d{2,3})(?=\s|$)/g)]
+      .map(item=>Number(item[1]))
+      .filter(value=>Number.isFinite(value)&&value>=60&&value<=180);
+  };
+  const passedUnitCandidates=candidatesNear(/الوحدات\s*المجتازه/);
+  const requiredUnitCandidates=candidatesNear(/الوحدات\s*المطلوبه/);
+
+  /* The Authority screenshot sometimes OCRs the blue summary header sparsely:
+     «الوحدات المجتازة» is read, while «البرنامج» or «الوحدات المطلوبة» is
+     missed. Requiring the Authority identity in that exact rescue case is
+     stricter than accepting an arbitrary transcript, while keeping the same
+     substantive gates: official study-plan title + passed-units field. */
+  const isGraduationSheet=titleOk&&passedLabelOk&&(programmeOk||requiredLabelOk||authorityOk);
   return{
-    civil,requiredUnits,passedUnits,isGraduationSheet,
-    signals:{title:titleOk,programme:programmeOk,requiredUnits:requiredLabelOk,passedUnits:passedLabelOk},
+    civil,civilCandidates,requiredUnits,passedUnits,isGraduationSheet,
+    unitCandidates:allUnitCandidates,passedUnitCandidates,requiredUnitCandidates,
+    signals:{title:titleOk,programme:programmeOk,requiredUnits:requiredLabelOk,passedUnits:passedLabelOk,authority:authorityOk},
     text:plain.slice(0,20000),normalizedText:folded.slice(0,20000),
   };
 }
