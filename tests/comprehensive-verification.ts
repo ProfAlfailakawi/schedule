@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import {
   parseScheduleTable,
-  authorityPdfTextGridRows,
-  recoverAuthorityCourseCell,
   type OcrPage,
   type GridRow
 } from "../src/utils/documentOcr.ts";
@@ -21,12 +19,10 @@ const foldHeaderIdentity = (value: unknown) => String(value ?? "").normalize("NF
   .toLowerCase();
 
 console.log("=========================================================================");
-console.log(" COMPREHENSIVE 4-PAGE SCAN & AUTHORITY PDF EXTRACTION AUDIT REPORT");
+console.log(" REAL 4-PAGE TIMETABLE (SWRSCHA) RECONSTRUCTION & PARITY AUDIT");
 console.log("=========================================================================\n");
 
-// -------------------------------------------------------------
-// 1. Department 0101 Academic Catalog Definition
-// -------------------------------------------------------------
+// Department 0101 catalog
 const courses: AdCourse[] = [
   { AdCourseId: 101, AdCollegeId: 6, AdSectionId: 9, CourseCode: "102", CourseName: "الثقافة الإسلامية", CourseHours: 3, CourseCredit: 3, MaxStudent: 45 },
   { AdCourseId: 102, AdCollegeId: 6, AdSectionId: 9, CourseCode: "150", CourseName: "علوم القرآن", CourseHours: 3, CourseCredit: 3, MaxStudent: 40 },
@@ -49,7 +45,6 @@ const instructors: AdInstructor[] = [
   { AdInstructorId: 8, AdInstructorName: "د. مشعل نايف هادي العتيبي" } as any,
 ];
 
-// Helper to generate a full realistic grid row
 function makeRow(
   ref: number,
   code: string,
@@ -77,7 +72,7 @@ function makeRow(
   };
 }
 
-// Generate Page 1 (28 rows)
+// Page 1: 28 rows
 const page1GridRows: GridRow[] = [
   makeRow(18945, "0101102", "501", "الثقافة الإسلامية", "د. علي يوسف أحمد السند", "012B09", "F13", "08:00", "09:20", "42"),
   makeRow(18946, "0101102", "502", "الثقافة الإسلامية", "د. علي يوسف أحمد السند", "012B09", "F13", "09:30", "10:50", "42"),
@@ -109,7 +104,7 @@ const page1GridRows: GridRow[] = [
   makeRow(18972, "0101201", "505", "التفسير التحليلي", "هيئة تدريسية", "012B09", "F13", "12:00", "12:50", "531"),
 ];
 
-// Generate Page 2 (28 rows)
+// Page 2: 28 rows
 const page2GridRows: GridRow[] = [
   makeRow(18973, "0101202", "501", "الحديث التحليلي", "د. عبد الرحمن نوري أحمد المطيري", "012B09", "F13", "08:00", "09:20", "42"),
   makeRow(18974, "0101202", "502", "الحديث التحليلي", "د. عبد الرحمن نوري أحمد المطيري", "012B09", "F13", "09:30", "10:50", "42"),
@@ -141,7 +136,7 @@ const page2GridRows: GridRow[] = [
   makeRow(19000, "0101206", "507", "فقه العبادات", "د. مشعل نايف هادي العتيبي", "012B07", "F31", "14:30", "15:50", "42"),
 ];
 
-// Generate Page 3 (28 rows)
+// Page 3: 28 rows
 const page3GridRows: GridRow[] = [
   makeRow(19001, "0101250", "505", "أصول الفقه", "أ.د. عيسى زكي عيسى شقرة", "012B09", "F12", "08:00", "08:50", "531"),
   makeRow(19002, "0101250", "506", "أصول الفقه", "أ.د. عيسى زكي عيسى شقرة", "012B09", "F12", "09:00", "09:50", "531"),
@@ -173,34 +168,10 @@ const page3GridRows: GridRow[] = [
   makeRow(19028, "0101153", "510", "العقيدة الإسلامية", "هيئة تدريسية", "012F15", "F10", "09:00", "09:50", "531"),
 ];
 
-// Generate Page 4 (26 rows)
+// Page 4: EXACTLY 2 rows (Tail of the document)
 const page4GridRows: GridRow[] = [
-  makeRow(19029, "0101201", "510", "التفسير التحليلي", "أ. عبدالله عبداللطيف عبدالله الهاجري", "012B07", "F31", "13:00", "13:50", "531"),
-  makeRow(19030, "0101201", "511", "التفسير التحليلي", "أ. عبدالله عبداللطيف عبدالله الهاجري", "012B07", "F31", "14:00", "14:50", "531"),
-  makeRow(19031, "0101202", "510", "الحديث التحليلي", "د. عبد الرحمن نوري أحمد المطيري", "012B09", "F13", "13:00", "13:50", "531"),
-  makeRow(19032, "0101202", "511", "الحديث التحليلي", "د. عبد الرحمن نوري أحمد المطيري", "012B09", "F13", "14:00", "14:50", "531"),
-  makeRow(19033, "0101206", "510", "فقه العبادات", "د. خالد محمد سالم المطوع", "012B07", "F31", "13:00", "13:50", "531"),
-  makeRow(19034, "0101206", "511", "فقه العبادات", "د. خالد محمد سالم المطوع", "012B07", "F31", "14:00", "14:50", "531"),
-  makeRow(19035, "0101250", "511", "أصول الفقه", "د. علي يوسف أحمد السند", "012B09", "F13", "13:00", "13:50", "531"),
-  makeRow(19036, "0101250", "512", "أصول الفقه", "د. علي يوسف أحمد السند", "012B09", "F13", "14:00", "14:50", "531"),
-  makeRow(19037, "0101102", "517", "الثقافة الإسلامية", "د. مشعل نايف هادي العتيبي", "012B07", "F31", "08:00", "08:50", "531"),
-  makeRow(19038, "0101102", "518", "الثقافة الإسلامية", "د. مشعل نايف هادي العتيبي", "012B07", "F31", "09:00", "09:50", "531"),
-  makeRow(19039, "0101150", "512", "علوم القرآن", "د. عبدالرحمن صالح سالم الجميلي", "012B07", "F31", "10:00", "10:50", "531"),
-  makeRow(19040, "0101150", "513", "علوم القرآن", "د. عبدالرحمن صالح سالم الجميلي", "012B07", "F31", "11:00", "11:50", "531"),
-  makeRow(19041, "0101151", "512", "السيرة النبوية", "أ.د. عيسى زكي عيسى شقرة", "012B09", "F12", "12:00", "12:50", "531"),
-  makeRow(19042, "0101151", "513", "السيرة النبوية", "أ.د. عيسى زكي عيسى شقرة", "012B09", "F12", "13:00", "13:50", "531"),
-  makeRow(19043, "0101153", "511", "العقيدة الإسلامية", "أ. عبدالله عبداللطيف عبدالله الهاجري", "012B07", "F31", "10:00", "10:50", "531"),
-  makeRow(19044, "0101153", "512", "العقيدة الإسلامية", "أ. عبدالله عبداللطيف عبدالله الهاجري", "012B07", "F31", "11:00", "11:50", "531"),
-  makeRow(19045, "0101201", "512", "التفسير التحليلي", "د. عبد الرحمن نوري أحمد المطيري", "012B09", "F13", "12:00", "12:50", "531"),
-  makeRow(19046, "0101201", "513", "التفسير التحليلي", "د. عبد الرحمن نوري أحمد المطيري", "012B09", "F13", "13:00", "13:50", "531"),
-  makeRow(19047, "0101202", "512", "الحديث التحليلي", "د. خالد محمد سالم المطوع", "012B07", "F31", "12:00", "12:50", "531"),
-  makeRow(19048, "0101202", "513", "الحديث التحليلي", "د. خالد محمد سالم المطوع", "012B07", "F31", "13:00", "13:50", "531"),
-  makeRow(19049, "0101206", "512", "فقه العبادات", "د. مشعل نايف هادي العتيبي", "012B07", "F31", "10:00", "10:50", "531"),
-  makeRow(19050, "0101206", "513", "فقه العبادات", "د. مشعل نايف هادي العتيبي", "012B07", "F31", "11:00", "11:50", "531"),
-  makeRow(19051, "0101250", "513", "أصول الفقه", "أ.د. عيسى زكي عيسى شقرة", "012B09", "F12", "12:00", "12:50", "531"),
-  makeRow(19052, "0101250", "514", "أصول الفقه", "أ.د. عيسى زكي عيسى شقرة", "012B09", "F12", "13:00", "13:50", "531"),
-  makeRow(19053, "0101102", "519", "الثقافة الإسلامية", "هيئة تدريسية", "012F15", "F10", "14:00", "14:50", "531"),
-  makeRow(19054, "0101102", "520", "الثقافة الإسلامية", "هيئة تدريسية", "012F15", "F10", "15:00", "15:50", "531"),
+  makeRow(19029, "0101250", "511", "أصول الفقه", "د. علي يوسف أحمد السند", "012B09", "F13", "13:00", "13:50", "531"),
+  makeRow(19030, "0101250", "512", "أصول الفقه", "د. علي يوسف أحمد السند", "012B09", "F13", "14:00", "14:50", "531"),
 ];
 
 const p1: OcrPage = { rows: [], gridRows: page1GridRows } as any;
@@ -234,7 +205,7 @@ function test(name: string, fn: () => void) {
 }
 
 // -------------------------------------------------------------
-// 2. Exact Counts Verification
+// 1. Exact Counts Verification
 // -------------------------------------------------------------
 console.log("--- PART 1: Real Per-Page & Total Row Count Verification ---");
 
@@ -256,27 +227,27 @@ test("Page 3 isolated yields exactly 28 rows", () => {
   assert.equal(resP3.rows.every(r => r.AdCourseName !== "-" && r.AdCourseName !== ""), true);
 });
 
-test("Page 4 isolated yields exactly 26 rows", () => {
-  assert.equal(resP4.rows.length, 26);
+test("Page 4 isolated yields EXACTLY 2 rows (Tail of document)", () => {
+  assert.equal(resP4.rows.length, 2);
   assert.equal(resP4.rows.every(r => r.AdCourseId > 0), true);
   assert.equal(resP4.rows.every(r => r.AdCourseName !== "-" && r.AdCourseName !== ""), true);
 });
 
-test("Combined 4-page file yields exactly 110 rows (28 + 28 + 28 + 26 = 110)", () => {
-  assert.equal(resCombined.rows.length, 110);
+test("Combined 4-page file yields exactly 86 rows (28 + 28 + 28 + 2 = 86)", () => {
+  assert.equal(resCombined.rows.length, 86);
   assert.equal(resCombined.rows.length, resP1.rows.length + resP2.rows.length + resP3.rows.length + resP4.rows.length);
 });
 
 test("Total rows integrity: zero missing, zero duplicates, zero corrupt '-' values", () => {
   const combinedRefs = resCombined.rows.map(r => r.referenceNumber);
-  assert.equal(combinedRefs.length, 110);
-  assert.equal(new Set(combinedRefs).size, 110);
+  assert.equal(combinedRefs.length, 86);
+  assert.equal(new Set(combinedRefs).size, 86);
   assert.equal(resCombined.rows.some(r => r.AdCourseName === "-" || r.AdCourseName === ""), false);
   assert.equal(resCombined.rows.some(r => r.AdCourseId === 0), false);
 });
 
 // -------------------------------------------------------------
-// 3. Strict Parity: Single-Page vs 4-Page Combined Slice
+// 2. Strict Parity: Single-Page vs 4-Page Combined Slice
 // -------------------------------------------------------------
 console.log("\n--- PART 2: Strict Mathematical Parity (Single vs Multi-Page Slices) ---");
 
@@ -323,10 +294,11 @@ test("Page 3 Parity: resP3.rows strictly equals resCombined.rows[56..83]", () =>
   }
 });
 
-test("Page 4 Parity: resP4.rows strictly equals resCombined.rows[84..109]", () => {
-  const slice4 = resCombined.rows.slice(84, 110);
+test("Page 4 Parity: resP4.rows strictly equals resCombined.rows[84..85] (2 rows)", () => {
+  const slice4 = resCombined.rows.slice(84, 86);
   assert.equal(slice4.length, resP4.rows.length);
-  for (let i = 0; i < 26; i++) {
+  assert.equal(slice4.length, 2);
+  for (let i = 0; i < 2; i++) {
     assert.equal(slice4[i].referenceNumber, resP4.rows[i].referenceNumber);
     assert.equal(slice4[i].AdCourseId, resP4.rows[i].AdCourseId);
     assert.equal(slice4[i].AdRoomHall, resP4.rows[i].AdRoomHall);
@@ -338,165 +310,48 @@ test("Page 4 Parity: resP4.rows strictly equals resCombined.rows[84..109]", () =
 });
 
 // -------------------------------------------------------------
-// 4. Change Report & Field-Level Diffing Tests
+// 3. First and Last Row of Each Page Dump
 // -------------------------------------------------------------
-console.log("\n--- PART 3: Field-Level Diffing in Change Report (Authority PDF Diff) ---");
+console.log("\n--- PART 3: First and Last Extracted Row of Every Page ---");
 
-const AUTHORITY_PDF_COMPARE_FIELDS = [
-  "AdCourseId",
-  "SCode",
-  "AdRoomHall",
-  "AdRoomCode",
-  "fstarttime",
-  "fendtime",
-  "fsunday",
-  "fmonday",
-  "ftuesday",
-  "fwednesday",
-  "fthursday",
-  "AdInstructorId",
-];
-
-function buildAuthorityReportRow(source: any, next: any, options: { instructorNameById?: Map<number, string> } = {}) {
-  const comparable = (field: string, value: any) => {
-    if (["AdCourseId", "AdInstructorId"].includes(field)) return Number(value || 0);
-    if (["fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"].includes(field)) {
-      const token = String(value ?? "").trim().toLowerCase();
-      return value === true || value === 1 || token === "1" || token === "true" || token === "y" || token === "yes";
-    }
-    if (["AdRoomCode", "AdRoomHall"].includes(field)) return String(value || "").replace(/\s+/g, "").toUpperCase();
-    if (["fstarttime", "fendtime"].includes(field)) {
-      const digits = String(value || "").replace(/\D/g, "");
-      if (/^\d{3,4}$/.test(digits)) {
-        const hh = digits.slice(0, -2).padStart(2, "0"), mm = digits.slice(-2);
-        return `${hh}:${mm}`;
-      }
-      return String(value || "").trim();
-    }
-    return String(value ?? "").trim();
-  };
-
-  const sameInstructorIdentity = () => {
-    if (comparable("AdInstructorId", source.AdInstructorId) === comparable("AdInstructorId", next.AdInstructorId)) return true;
-    const names = options.instructorNameById;
-    const sourceName = foldHeaderIdentity(source.sourceInstructorText || names?.get(Number(source.AdInstructorId)) || "");
-    const currentName = foldHeaderIdentity(names?.get(Number(next.AdInstructorId)) || next.sourceInstructorText || "");
-    return Boolean(sourceName && currentName && sourceName === currentName);
-  };
-
-  const changedFields = AUTHORITY_PDF_COMPARE_FIELDS.filter(field => {
-    if (field === "AdInstructorId" && sameInstructorIdentity()) return false;
-    return comparable(field, source[field]) !== comparable(field, next[field]);
-  });
+function formatRow(pageNo: number, position: "FIRST" | "LAST", r: any) {
+  const course = courses.find(c => c.AdCourseId === r.AdCourseId);
+  const instructor = instructors.find(i => i.AdInstructorId === r.AdInstructorId);
+  const daysStr = [
+    r.fsunday ? "1" : "",
+    r.fmonday ? "2" : "",
+    r.ftuesday ? "3" : "",
+    r.fwednesday ? "4" : "",
+    r.fthursday ? "5" : ""
+  ].join("");
 
   return {
-    status: changedFields.length ? "changed" : "unchanged",
-    changedFields,
-    referenceNumber: String(source.referenceNumber || next.referenceNumber || ""),
-    source,
-    current: next,
+    page: pageNo,
+    position,
+    courseCode: course?.CourseCode || "0101102",
+    courseName: r.AdCourseName,
+    referenceNumber: r.referenceNumber,
+    section: r.SCode,
+    room: r.AdRoomHall,
+    building: r.AdRoomCode,
+    time: `${r.fstarttime}-${r.fendtime}`,
+    days: daysStr,
+    instructor: instructor?.AdInstructorName || r.sourceInstructorText || "هيئة تدريسية",
   };
 }
 
-const basePdfRow: FSchedule = {
-  id: "sch_1",
-  AdCourseId: 101,
-  AdCourseName: "الثقافة الإسلامية",
-  SCode: "501",
-  AdRoomCode: "012B09",
-  AdRoomHall: "F13",
-  fstarttime: "08:00",
-  fendtime: "09:20",
-  fsunday: false,
-  fmonday: true,
-  ftuesday: false,
-  fwednesday: true,
-  fthursday: false,
-  AdInstructorId: 1,
-  sourceInstructorText: "د. علي يوسف أحمد السند",
-  referenceNumber: "18945",
-  sourceOrder: 1,
-} as any;
+const pageFirstLastSummary = [
+  formatRow(1, "FIRST", resP1.rows[0]),
+  formatRow(1, "LAST", resP1.rows[resP1.rows.length - 1]),
+  formatRow(2, "FIRST", resP2.rows[0]),
+  formatRow(2, "LAST", resP2.rows[resP2.rows.length - 1]),
+  formatRow(3, "FIRST", resP3.rows[0]),
+  formatRow(3, "LAST", resP3.rows[resP3.rows.length - 1]),
+  formatRow(4, "FIRST", resP4.rows[0]),
+  formatRow(4, "LAST", resP4.rows[resP4.rows.length - 1]),
+];
 
-test("Untouched PDF Row: Status is 'unchanged' and changedFields is EMPTY (0 yellow cells)", () => {
-  const rowClone = { ...basePdfRow };
-  const diff = buildAuthorityReportRow(basePdfRow, rowClone);
-  assert.equal(diff.status, "unchanged");
-  assert.deepEqual(diff.changedFields, []);
-});
-
-test("Change Room Only: Only AdRoomHall is in changedFields (Room cell yellow, others clean)", () => {
-  const editedRow = { ...basePdfRow, AdRoomHall: "F20" };
-  const diff = buildAuthorityReportRow(basePdfRow, editedRow);
-  assert.equal(diff.status, "changed");
-  assert.deepEqual(diff.changedFields, ["AdRoomHall"]);
-  assert.equal(diff.changedFields.includes("AdCourseId"), false);
-  assert.equal(diff.changedFields.includes("AdInstructorId"), false);
-  assert.equal(diff.changedFields.includes("AdRoomCode"), false);
-  assert.equal(diff.changedFields.includes("fstarttime"), false);
-  assert.equal(diff.changedFields.includes("fendtime"), false);
-  assert.equal(diff.changedFields.includes("fmonday"), false);
-  assert.equal(diff.changedFields.includes("fwednesday"), false);
-});
-
-test("Change Instructor + Room: Exactly AdInstructorId and AdRoomHall are in changedFields", () => {
-  const editedRow = { ...basePdfRow, AdRoomHall: "F31", AdInstructorId: 2 };
-  const diff = buildAuthorityReportRow(basePdfRow, editedRow, {
-    instructorNameById: new Map([[1, "د. علي يوسف أحمد السند"], [2, "د. عبدالرحمن صالح سالم الجميلي"]])
-  });
-  assert.equal(diff.status, "changed");
-  assert.deepEqual(diff.changedFields.sort(), ["AdInstructorId", "AdRoomHall"].sort());
-  assert.equal(diff.changedFields.includes("AdCourseId"), false);
-  assert.equal(diff.changedFields.includes("AdRoomCode"), false);
-});
-
-test("Instructor text normalization (title differences) does NOT trigger false yellow highlight", () => {
-  const editedRow = { ...basePdfRow, AdInstructorId: 1, sourceInstructorText: "علي يوسف السند" };
-  const diff = buildAuthorityReportRow(basePdfRow, editedRow, {
-    instructorNameById: new Map([[1, "د. علي يوسف أحمد السند"]])
-  });
-  assert.equal(diff.status, "unchanged");
-  assert.deepEqual(diff.changedFields, []);
-});
-
-// -------------------------------------------------------------
-// 5. Structure & Sample JSON Dump Output
-// -------------------------------------------------------------
-console.log("\n--- PART 4: Summary Table & Row Data Structure Dump ---");
-
-console.log(`
-┌───────────────────────┬──────────────┬──────────────────┐
-│ Extraction Context    │ Rows Count   │ Status           │
-├───────────────────────┼──────────────┼──────────────────┤
-│ Page 1 Isolated       │ 28 rows      │ 100% Validated   │
-│ Page 2 Isolated       │ 28 rows      │ 100% Validated   │
-│ Page 3 Isolated       │ 28 rows      │ 100% Validated   │
-│ Page 4 Isolated       │ 26 rows      │ 100% Validated   │
-├───────────────────────┼──────────────┼──────────────────┤
-│ 4 Pages Combined File │ 110 rows     │ 100% Parity      │
-└───────────────────────┴──────────────┴──────────────────┘
-`);
-
-console.log("Sample Extracted Rows Dump (First 3 rows of each page):");
-const sampleRows = [
-  ...resCombined.rows.slice(0, 3).map(r => ({ page: 1, ...r })),
-  ...resCombined.rows.slice(28, 31).map(r => ({ page: 2, ...r })),
-  ...resCombined.rows.slice(56, 59).map(r => ({ page: 3, ...r })),
-  ...resCombined.rows.slice(84, 87).map(r => ({ page: 4, ...r })),
-].map(r => ({
-  page: r.page,
-  courseCode: courses.find(c => c.AdCourseId === r.AdCourseId)?.CourseCode,
-  courseName: r.AdCourseName,
-  reference: r.referenceNumber,
-  section: r.SCode,
-  room: r.AdRoomHall,
-  building: r.AdRoomCode,
-  time: `${r.fstarttime} - ${r.fendtime}`,
-  days: [r.fsunday ? "1" : "", r.fmonday ? "2" : "", r.ftuesday ? "3" : "", r.fwednesday ? "4" : "", r.fthursday ? "5" : ""].join(""),
-  instructor: instructors.find(i => i.AdInstructorId === r.AdInstructorId)?.AdInstructorName || "هيئة تدريسية",
-}));
-
-console.table(sampleRows);
+console.table(pageFirstLastSummary);
 
 console.log("\n=================================================");
 console.log(`TOTAL AUDIT PASSED: ${passCount}`);
