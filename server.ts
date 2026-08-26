@@ -52,7 +52,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
@@ -858,6 +858,10 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
        those must never turn untouched cells yellow. */
     const comparable=(field:string,value:any)=>{
       if(["AdCourseId","AdInstructorId"].includes(field))return Number(value||0);
+      if(["SCode"].includes(field)){
+        const num=String(value??"").replace(/\D/g,"").replace(/^0+/,"");
+        return num || String(value??"").trim();
+      }
       if(["fsunday","fmonday","ftuesday","fwednesday","fthursday"].includes(field)){
         /* Firestore/JSON history can preserve imported weekday flags as 0/1
            strings. Boolean("0") is true in JavaScript and used to paint every
@@ -865,7 +869,14 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
         const token=String(value??"").trim().toLowerCase();
         return value===true||value===1||token==="1"||token==="true"||token==="y"||token==="yes";
       }
-      if(["AdRoomCode","AdRoomHall"].includes(field))return String(value||"").replace(/\s+/g,"").toUpperCase();
+      if(field==="AdRoomCode"){
+        const clean=cleanBuildingCode(String(value||""));
+        return clean||String(value||"").replace(/\s+/g,"").toUpperCase();
+      }
+      if(field==="AdRoomHall"){
+        const clean=cleanHallCode(String(value||""));
+        return clean||String(value||"").replace(/\s+/g,"").toUpperCase();
+      }
       if(["fstarttime","fendtime"].includes(field)){
         /* 09:00, 9:00 and the Authority import's 0900 all mean the same
            clock. Keep that storage-format noise out of the change report. */
@@ -875,16 +886,28 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       }
       return String(value??"").trim();
     };
+    const cleanInstructor=(val:unknown)=>{
+      const folded=foldHeaderIdentity(val);
+      return folded
+        .replace(/^(?:(?:ا\s*د|دكتور|الدكتور|دكتوره|الدكتوره|استاذ|الاستاذ|بروفيسور|د|ا|م)\s+)+/g,"")
+        .replace(/\b(?:منتدب|مساعد|محاضر)\b/g,"")
+        .replace(/عبد\s+/g,"عبد")
+        .replace(/\s+/g," ")
+        .trim();
+    };
     const sameInstructorIdentity=()=>{
       if(comparable("AdInstructorId",source.AdInstructorId)===comparable("AdInstructorId",next.AdInstructorId))return true;
       const names=options.instructorNameById;
-      const sourceName=foldHeaderIdentity(source.sourceInstructorText||names?.get(Number(source.AdInstructorId))||"");
-      const currentName=foldHeaderIdentity(names?.get(Number(next.AdInstructorId))||next.sourceInstructorText||"");
+      const rawSource=String(source.sourceInstructorText||names?.get(Number(source.AdInstructorId))||"").trim();
+      const rawNext=String(names?.get(Number(next.AdInstructorId))||next.sourceInstructorText||"").trim();
+      if(rawSource&&rawNext&&rawSource===rawNext)return true;
+      const sourceName=cleanInstructor(foldHeaderIdentity(source.sourceInstructorText||names?.get(Number(source.AdInstructorId))||""));
+      const currentName=cleanInstructor(foldHeaderIdentity(names?.get(Number(next.AdInstructorId))||next.sourceInstructorText||""));
       /* Import/publish may resolve the exact professor text from the PDF to its
          canonical registry id. That is not a timetable edit. A real later
          instructor swap resolves to a different normalized name and remains a
          genuine yellow cell. */
-      return Boolean(sourceName&&currentName&&sourceName===currentName);
+      return Boolean(sourceName&&currentName&&(sourceName===currentName||sourceName.includes(currentName)||currentName.includes(sourceName)));
     };
     const changedFields=AUTHORITY_PDF_COMPARE_FIELDS.filter(field=>{
       if(field==="AdInstructorId"&&sameInstructorIdentity())return false;

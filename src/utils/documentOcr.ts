@@ -2513,6 +2513,13 @@ export const cleanBuildingCode = (raw: string): string => {
       return `${prefix}${suffix}`;
     }
   }
+  /* RTL reversal check: e.g. 07B012 -> 012B07, 09B012 -> 012B09, 15F012 -> 012F15 */
+  const reversed=clean.match(/^(\d{2})([A-Z])(\d{2,3})$/);
+  if(reversed){
+    const candidatePrefix=`${reversed[3].padStart(3,"0")}${reversed[2]}`;
+    const candidate=`${candidatePrefix}${reversed[1]}`;
+    if(OFFICIAL_BUILDING_PATTERN.test(candidate))return candidate;
+  }
   /* Legacy short alpha-site evidence (B09/F15/J14) is kept only as evidence;
      the server can canonicalize it against the proven document branch + finite
      registry. It is never enough by itself to create a building identity. */
@@ -2527,7 +2534,14 @@ export const cleanHallCode = (raw: string): string => {
   /* A proven official building token can never be a room, even if it contains
      a room-looking suffix such as F15. */
   if(OFFICIAL_BUILDING_PATTERN.test(clean))return"";
-  return /^[A-Z]\d{1,3}$/.test(clean)?clean:"";
+  if(/^[A-Z]\d{1,3}$/.test(clean))return clean;
+  /* RTL reversal check: e.g. 31F -> F31, 07F -> F07, 12F -> F12 */
+  const reversed=clean.match(/^(\d{1,3})([A-Z])$/);
+  if(reversed){
+    const candidate=`${reversed[2]}${reversed[1]}`;
+    if(/^[A-Z]\d{1,3}$/.test(candidate))return candidate;
+  }
+  return"";
 };
 
 /** Extract location evidence from a REAL text-layer row without trusting cell
