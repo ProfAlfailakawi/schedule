@@ -7862,3 +7862,35 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   }
 }
 .schedule-agenda-surface,.rooms-surface{min-width:0!important;max-width:100%!important}
+
+/* Golden identity marker — seconded/visiting instructors are a status, not a
+   different person. The same quiet badge is reused on schedule cards, rooms,
+   context panels and reports so the meaning never changes by screen. */
+.visiting-badge{
+  display:inline-flex;align-items:center;justify-content:center;
+  min-height:20px;padding:1px 8px;margin-inline-start:6px;
+  border:1px solid color-mix(in srgb,var(--brass,#a8792a) 42%,var(--line));
+  border-radius:999px;
+  background:color-mix(in srgb,var(--brass,#a8792a) 10%,var(--surface));
+  color:color-mix(in srgb,var(--brass,#a8792a) 88%,var(--ink));
+  font-size:10px;font-weight:800;font-style:normal;line-height:1.15;
+  white-space:nowrap;vertical-align:middle;
+}
+.visiting-badge.compact{min-height:18px;padding-inline:6px;font-size:9px;margin-inline-start:5px}
+.schedule-instructor-with-badge,.report-instructor-with-badge{display:inline-flex;align-items:center;gap:4px;min-width:0}
+.week-who .visiting-badge{transform:translateY(-.5px)}
+.agenda-sub>span:first-child{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+.rooms-card .schedule-instructor-with-badge{max-width:100%}
+
+/* Time is one semantic value. Never let a dash become a line break that makes
+   15:30–16:50 look like two unrelated times. */
+.agenda-time,.agenda-time strong,.week-when time,.schedule-print td.print-ltr{white-space:nowrap!important}
+
+/* The day's change log is a report, not just an undo drawer. */
+.undo-log-panel>header .undo-print{
+  width:30px;height:30px;display:grid;place-items:center;flex:none;
+  border:1px solid var(--line);border-radius:10px;background:var(--surface);
+  color:var(--muted);cursor:pointer;
+}
+.undo-log-panel>header .undo-print:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
+.undo-log-panel>header .undo-print svg{width:14px;height:14px}

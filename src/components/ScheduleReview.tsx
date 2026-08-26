@@ -3,6 +3,7 @@ import { flushSync } from "react-dom";
 import { AlertTriangle, Building2, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, History, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton } from "./ui";
+import VisitingBadge from "./VisitingBadge";
 import {
   DAY_KEYS, DAY_NAMES, DECISION_1912_LABEL, isDecision1912Finding, regulationScore, reviewSchedule,
   type DayKey, type RegulationFinding
@@ -28,6 +29,7 @@ interface Props {
   rows: FSchedule[];
   courses: Map<number, AdCourse>;
   instructors: Map<number, AdInstructor>;
+  visitingIds?: Iterable<number>;
   previousRows?: FSchedule[];
   /** What each course has habitually been, learned from every term on record. */
   nature?: Map<number, CourseNature> | null;
@@ -85,10 +87,11 @@ const findingIcon = (finding: RegulationFinding) => {
  * how many times it recurs; pressing it reveals exactly which sections, so the
  * reader sees who first and the detail only when they ask for it.
  */
-function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSchedule[] }; courses: Map<number, AdCourse> }) {
+function ReviewPersonGroup({ group, courses, visitingIds }: { group: { who: string; rows: FSchedule[] }; courses: Map<number, AdCourse>; visitingIds: Set<number> }) {
   const [open, setOpen] = React.useState(false);
   const { who, rows } = group;
   const single = rows.length === 1;
+  const visiting = rows.some(row => visitingIds.has(Number(row.AdInstructorId)));
   /* The chip is labelled «شعب», so it counts sections. It used to count rows,
      and a section that meets in two separate blocks is two rows — which is how
      an instructor with a handful of sections was announced as having eleven. */
@@ -96,7 +99,7 @@ function ReviewPersonGroup({ group, courses }: { group: { who: string; rows: FSc
   return (
     <div className={`review-person ${open ? "open" : ""}`}>
       <button type="button" className="review-person-head" data-guide-ignore="طيّ شعب أستاذ داخل ملاحظة مراجعة — عرض فقط، لا يغيّر الجدول" onClick={() => !single && setOpen(v => !v)} aria-expanded={single ? undefined : open}>
-        <strong>{who}</strong>
+        <strong className="schedule-instructor-with-badge">{who}{visiting ? <VisitingBadge compact /> : null}</strong>
         {single ? (
           <small dir="ltr">{courses.get(rows[0].AdCourseId)?.CourseCode || rows[0].AdCourseName || "—"} · شعبة {rows[0].SCode}</small>
         ) : (
@@ -139,7 +142,8 @@ function HistoryInfographic({rows,courses}:{rows:FSchedule[];courses:Map<number,
   </div>;
 }
 
-export default function ScheduleReview({ rows, courses, instructors, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
+export default function ScheduleReview({ rows, courses, instructors, visitingIds, previousRows, nature, scopeLine, collegeId, sectionId, termId, meeting, onClose, onFocusRows }: Props) {
+  const visitingIdSet = useMemo(() => new Set(Array.from(visitingIds || [], Number).filter(Boolean)), [visitingIds]);
   const baseFindings = useMemo(
     () => reviewSchedule({ rows, courses, instructors, previousRows, meeting, nature }),
     [rows, courses, instructors, previousRows, meeting, nature]
@@ -330,7 +334,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
               <article key={`subject-row-${row.id}`} className="review-row-card compact">
                 <span className="rrc-code" dir="ltr">{code}</span>
                 <div className="rrc-main">
-                  {oneOwner ? null : <strong>{who}</strong>}
+                  {oneOwner ? null : <strong className="schedule-instructor-with-badge">{who}{visitingIdSet.has(Number(row.AdInstructorId)) ? <VisitingBadge compact /> : null}</strong>}
                   <small>شعبة {row.SCode} · {days || "بلا أيام"}</small>
                 </div>
                 <time className="rrc-time" dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
@@ -467,7 +471,7 @@ export default function ScheduleReview({ rows, courses, instructors, previousRow
                           }
                           return [...groups.values()].slice(0, 12).map((group, index) => (
                             <React.Fragment key={`${group.who}-${index}`}>
-                              <ReviewPersonGroup group={group} courses={courses} />
+                              <ReviewPersonGroup group={group} courses={courses} visitingIds={visitingIdSet} />
                             </React.Fragment>
                           ));
                         })()

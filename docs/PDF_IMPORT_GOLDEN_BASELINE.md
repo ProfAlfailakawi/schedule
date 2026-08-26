@@ -29,3 +29,6 @@ Before changing any Authority parser/resolver:
 5. Prefer a narrow repair in the responsible layer over a new parallel parser rule.
 
 The machine-readable fixture is `tests/fixtures/authority-import-golden.json` and its guard is `tests/pdf-import-golden.ts`.
+
+
+> الحالة الحالية الأوسع وقواعد عدم العبث موثقة أيضًا في `docs/CURRENT_GOLDEN_STATE.md`.

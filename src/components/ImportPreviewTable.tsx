@@ -127,14 +127,30 @@ export default function ImportPreviewTable({
     time: (row: ImportRow) => !row.fstarttime || !row.fendtime || minutes(row.fendtime) <= minutes(row.fstarttime),
     building: (row: ImportRow) => !row.buildingId,
     room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
-    instructor: (row: ImportRow) => !Number(row.AdInstructorId) || !instructorById.has(Number(row.AdInstructorId)) || (departmentIds.length>0&&!departmentIds.includes(Number(row.AdInstructorId))),
+    instructor: (row: ImportRow) => {
+      const id=Number(row.AdInstructorId)||0;
+      return !id || !instructorById.has(id) || (departmentIds.length>0&&!departmentIds.includes(id)&&!visitingIdSet.has(id));
+    },
   };
   type EvidenceKey="course"|"section"|"days"|"time"|"instructor"|"building"|"room";
+  const patchManual = (index:number,key:EvidenceKey,values:Partial<ImportRow>) => onRows(rows.map((row,at)=>{
+    if(at!==index)return row;
+    const prior=row.importEvidence?.[key]||{};
+    return {
+      ...row,
+      ...values,
+      importEvidence:{
+        ...(row.importEvidence||{}),
+        [key]:{...prior,confidence:"CONFIRMED",score:100,source:"MANUAL",method:"USER_EDIT",derived:false,reason:"ثُبّتت هذه القيمة يدويًا في المعاينة."},
+      },
+    };
+  }));
   const evidenceClass = (row:ImportRow,key:EvidenceKey,bad:boolean) => {
     if(bad)return "import-cell-missing";
     const proof=row.importEvidence?.[key];
     if(proof?.confidence==="REVIEW_REQUIRED")return "import-cell-review";
     if(proof?.confidence==="UNRESOLVED")return "import-cell-missing";
+    if(proof?.source==="MANUAL")return "import-cell-manual";
     return proof?.confidence==="CONFIRMED"&&proof.derived?"import-cell-derived":"";
   };
   const evidenceTitle = (row:ImportRow,key:EvidenceKey) => {
@@ -238,57 +254,19 @@ export default function ImportPreviewTable({
                 <tr className={open ? "is-editing" : ""}>
                   <td className="num">{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
                   <td className={`import-cell-course ${evidenceClass(row,"course",missing.course(row))}`} title={evidenceTitle(row,"course")}>
-                    {open ? (
-                      <div className="import-course-editor">
-                        <select
-                          value={Number(row.AdCourseId) || ""}
-                          onChange={e => {
-                            const cid = Number(e.target.value) || 0;
-                            const sel = courseById.get(cid);
-                            patch(index, {
-                              AdCourseId: cid,
-                              /* Course title is always system-owned. Clearing
-                                 the selection must not resurrect raw OCR text. */
-                              AdCourseName: sel?.CourseName || "",
-                              CourseHours: sel?.CourseHours || row.CourseHours,
-                              CourseCredit: sel?.CourseCredit || row.CourseCredit,
-                              fcontacthours: sel?.CourseHours || row.fcontacthours,
-                              fcredithours: sel?.CourseCredit || row.fcredithours,
-                            });
-                          }}
-                        >
-                          <option value="">-- اختر المقرر من كتالوج القسم --</option>
-                          {courses.map(c => (
-                            <option key={c.AdCourseId} value={c.AdCourseId}>
-                              {c.CourseName} ({c.CourseCode || "بلا رمز"})
-                            </option>
-                          ))}
-                        </select>
-                        {!course && readableCourseEvidence(row.sourceCourseText) ? (
-                          <small className="muted">قرأ الملف: {readableCourseEvidence(row.sourceCourseText)}</small>
-                        ) : null}
-                        {row.courseSiteLabel ? (
-                          <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span>
-                        ) : null}
-                        {row.scopeMismatchType === "CROSS_BRANCH" ? (
-                          <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="import-locked-course">
-                        <span className="import-course-title-line"><strong>{course?.CourseName || "—"}</strong>{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
-                        {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
-                      </div>
-                    )}
+                    <div className="import-locked-course" aria-label="المقرر مثبت من النظام ولا يتغير من معاينة الاستيراد">
+                      <span className="import-course-title-line"><strong>{course?.CourseName || "—"}</strong>{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
+                      {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
+                    </div>
                   </td>
                   <td className={evidenceClass(row,"section",missing.scode(row))} title={evidenceTitle(row,"section")}>
-                    {open ? <div className="import-section-editor"><input inputMode="numeric" pattern="[0-9]{3}" maxLength={3} value={String(row.SCode || "")} onChange={event=>patch(index,{SCode:event.target.value.replace(/\D/g,"").slice(0,3)})} /><small>كما هو مطبوع في المصدر</small></div> : (String(row.SCode || "").trim() || "—")}
+                    <span className="import-locked-section" title="رقم الشعبة مثبت من المصدر ولا يتغير هنا">{String(row.SCode || "").trim() || "—"}</span>
                   </td>
                   <td className={evidenceClass(row,"days",missing.days(row))} title={evidenceTitle(row,"days")}>
-                    <span className="import-day-chips">{DAY_CHIPS.map(day => <button key={day.key} type="button" disabled={!open} data-guide-ignore="تبديل يوم داخل معاينة الاستيراد قبل أي حفظ" className={row[day.key] ? "on" : ""} onClick={() => patch(index, { [day.key]: !row[day.key] } as Partial<ImportRow>)}>{day.label}</button>)}</span>
+                    <span className="import-day-chips">{DAY_CHIPS.map(day => <button key={day.key} type="button" disabled={!open} data-guide-ignore="تبديل يوم داخل معاينة الاستيراد قبل أي حفظ" className={row[day.key] ? "on" : ""} onClick={() => patchManual(index, "days", { [day.key]: !row[day.key] } as Partial<ImportRow>)}>{day.label}</button>)}</span>
                   </td>
                   <td className={evidenceClass(row,"time",missing.time(row))} title={evidenceTitle(row,"time")} dir="ltr">
-                    {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patch(index, { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patch(index, { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
+                    {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patchManual(index, "time", { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patchManual(index, "time", { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
                   <td className={evidenceClass(row,"building",missing.building(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"building")}>
                     {open ? (
@@ -297,7 +275,7 @@ export default function ImportPreviewTable({
                         sectionId={sectionId}
                         termId={termId}
                         value={row.buildingId || ""}
-                        onChange={b => patch(index, {
+                        onChange={b => patchManual(index, "building", {
                           buildingId: b?.id,
                           roomId: undefined,
                           AdRoomCode: b?.officialCode || "",
@@ -325,7 +303,7 @@ export default function ImportPreviewTable({
                         buildingId={row.buildingId}
                         roomId={row.roomId}
                         locationStatus={row.locationStatus}
-                        onChange={({ roomId, canonicalCode, locationStatus }) => patch(index, {
+                        onChange={({ roomId, canonicalCode, locationStatus }) => patchManual(index, "room", {
                           roomId,
                           AdRoomHall: canonicalCode,
                           locationStatus,
@@ -336,7 +314,7 @@ export default function ImportPreviewTable({
                     )}
                   </td>
                   <td className={evidenceClass(row,"instructor",missing.instructor(row))} title={evidenceTitle(row,"instructor")}>
-                    {open ? <span className="import-instructor-editor">{String(row.sourceInstructorText || "").trim() ? <small>قرأ الملف: {String(row.sourceInstructorText).trim()}</small> : null}<InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patch(index, { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : "—")}
+                    {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : "—")}
                   </td>
                   <td className="import-row-tools">
                     <button type="button" data-guide-ignore="تحرير صف داخل معاينة الاستيراد قبل أي حفظ" className={open ? "confirm" : ""} title={open ? "تم" : "تعديل سريع"} onClick={() => open ? setEditing(null) : beginEdit(index)}>{open ? <Check /> : <Pencil />}</button>

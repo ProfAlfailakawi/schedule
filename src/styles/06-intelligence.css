@@ -4183,3 +4183,22 @@ button.twin-delta{width:100%}
   .transfer-orientation-icon{width:34px;height:34px;border-radius:11px}
   .import-color-key span{font-size:9px;padding-inline:8px}
 }
+
+/* Manual confirmation is a fifth internal provenance state but not a warning:
+   the reviewer chose a canonical option from the system, so stale OCR colour
+   must disappear immediately. */
+.import-preview-table td.import-cell-manual{
+  background:color-mix(in srgb,#2f6f78 7%,var(--surface))!important;
+  box-shadow:inset 3px 0 0 color-mix(in srgb,#2f6f78 52%,transparent)!important;
+}
+.import-locked-section{
+  display:inline-flex;align-items:center;justify-content:center;min-width:46px;
+  min-height:30px;padding:0 9px;border:1px solid var(--line);border-radius:9px;
+  background:var(--surface-2);color:var(--ink);font-weight:800;
+  font-variant-numeric:tabular-nums;direction:ltr;unicode-bidi:isolate;
+}
+.import-locked-course{min-width:150px}
+.import-preview-table td[dir="ltr"],.import-preview-table td[dir="ltr"] *{white-space:nowrap}
+.lens-list>article>time,.query-detail-panel time,.time-slot-card time{white-space:nowrap!important}
+.report-instructor-with-badge .visiting-badge{flex:none}
+.lens-week article time{display:block!important;white-space:nowrap!important}

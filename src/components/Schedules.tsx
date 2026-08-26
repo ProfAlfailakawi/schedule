@@ -29,6 +29,7 @@ import {
   Hourglass,
   Layers,
   Palette,
+  Printer,
   Undo2,
   Upload,
   CornerUpRight,
@@ -125,6 +126,7 @@ import {
   type ScheduleViewDraft,
 } from "../utils/scheduleViews";
 import ScheduleTransfer from "./ScheduleTransfer";
+import VisitingBadge from "./VisitingBadge";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
 import { historicalLocationNeedsReview, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
@@ -1456,6 +1458,27 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     return () => window.clearTimeout(timer);
   }, [undoBarId]);
   const pendingUndo = useMemo(() => undoLog.filter(item => !item.usedAt), [undoLog]);
+  const undoEntryMeta = (entry: UndoEntry) => {
+    const step = entry.steps[0] as any;
+    const idMatch = String(step?.url || "").match(/\/api\/schedules\/(\d+)/);
+    const affected = idMatch ? rows.find(r => r.id === Number(idMatch[1])) : null;
+    const courseId = Number(step?.body?.AdCourseId || affected?.AdCourseId || 0);
+    const instrId = Number(step?.body?.AdInstructorId || affected?.AdInstructorId || 0);
+    return {
+      courseName: courseById.get(courseId)?.CourseName || affected?.AdCourseName || "",
+      whoName: instructorById.get(instrId)?.AdInstructorName || "",
+      visiting: Boolean(instrId && visitingIds.has(instrId)),
+    };
+  };
+  const printUndoReport = () => {
+    if (typeof window === "undefined") return;
+    const root=document.documentElement;
+    root.dataset.printKind="change-log";
+    const clear=()=>{delete root.dataset.printKind;window.removeEventListener("afterprint",clear);};
+    window.addEventListener("afterprint",clear,{once:true});
+    window.print();
+    window.setTimeout(clear,2500);
+  };
   /**
    * The day's log introduces itself once, then gets out of the way.
    *
@@ -5877,13 +5900,13 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             data-terminal-stack={denseIdentityMode === "double" && mins(r.fstarttime) >= 19 * 60 ? "true" : undefined}
           >
             <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
-            <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
+            <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
             <em className="week-code" dir="ltr">{code}</em>
           </div>
         ) : (
           <>
             <strong className="week-title" data-short={label.shortened ? "true" : undefined}>{label.text}</strong>
-            <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <i className="week-visiting" title="أستاذ منتدب">م</i> : null}</span>
+            <span className="week-who" title={who}>{who}{visitingIds.has(r.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
             <small className="week-when"><time dir="ltr">{formatScheduleTimeRange(r.fstarttime, r.fendtime)}</time>{place ? <i>{place}</i> : null}</small>
             <em className="week-code" dir="ltr">{code}</em>
           </>
@@ -7612,7 +7635,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                             {c?.CourseCode || "—"} ·{" "}
                             {r.AdCourseName || c?.CourseName || "مقرر"}
                           </strong>
-                          <span>{i?.AdInstructorName || "بدون أستاذ"}</span>
+                          <span>{i?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(r.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                           <small>
                             شعبة {r.SCode} · {r.AdRoomCode || "—"}/
                             {r.AdRoomHall || "—"}
@@ -9365,6 +9388,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         <span>
                           <UsersRound />
                           {i?.AdInstructorName || "بدون أستاذ"}
+                          {visitingIds.has(s.AdInstructorId) ? <VisitingBadge compact /> : null}
                         </span>
                         <span>
                           <CalendarDays />
@@ -9590,7 +9614,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     <b>{courseLabel(title, 0.82).text}</b>
                     <em dir="ltr">{code}</em>
                   </div>
-                  <span title={instructor?.AdInstructorName || "بدون أستاذ"}>{who}</span>
+                  <span className="schedule-instructor-with-badge" title={instructor?.AdInstructorName || "بدون أستاذ"}>{who}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                   {undoEntry ? (
                     <button
                       type="button"
@@ -10315,7 +10339,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                         onKeyDown={(e) => { if (e.key === "Enter") void openContext(r); }}
                       >
                         <strong>{r.AdCourseName || c?.CourseName || code}</strong>
-                        <span>{i?.AdInstructorName || "بدون أستاذ"}</span>
+                        <span>{i?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(r.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                         <em dir="ltr">{code} · {r.SCode}</em>
                         <i>{!days.some(day => Boolean((r as any)[day.key])) ? "بلا يوم" : "بلا وقت"}</i>
                       </article>
@@ -11222,6 +11246,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             <header>
               <History aria-hidden="true" />
               <strong>سجل تغييرات اليوم</strong>
+              {undoLog.length ? <button type="button" className="undo-print" onClick={printUndoReport} aria-label="طباعة تقرير التعديلات" title="طباعة تقرير التعديلات"><Printer /></button> : null}
               <button type="button" className="undo-dismiss" onClick={() => setUndoLogOpen(false)} aria-label="إغلاق"><X /></button>
             </header>
             {undoLog.length ? (
@@ -11230,13 +11255,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   // The course and the teacher behind the change, pulled from the
                   // affected row (or the step's own body for a re-create), and
                   // set in a whisper-light line beneath the action.
-                  const step = entry.steps[0] as any;
-                  const idMatch = String(step?.url || "").match(/\/api\/schedules\/(\d+)/);
-                  const affected = idMatch ? rows.find(r => r.id === Number(idMatch[1])) : null;
-                  const courseId = Number(step?.body?.AdCourseId || affected?.AdCourseId || 0);
-                  const instrId = Number(step?.body?.AdInstructorId || affected?.AdInstructorId || 0);
-                  const courseName = courseById.get(courseId)?.CourseName || affected?.AdCourseName || "";
-                  const whoName = instructorById.get(instrId)?.AdInstructorName || "";
+                  const { whoName, visiting } = undoEntryMeta(entry);
                   return (
                   <li key={entry.id} className={entry.usedAt ? "used" : ""}>
                     {/* One column of words, one column of action. The teacher's
@@ -11255,7 +11274,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     */}
                       <span className="undo-log-when">
                         <time dateTime={new Date(entry.at).toISOString()}>{undoClock(entry.at)}</time>
-                        {whoName ? <em>{whoName}</em> : null}
+                        {whoName ? <em className="schedule-instructor-with-badge">{whoName}{visiting ? <VisitingBadge compact /> : null}</em> : null}
                       </span>
                     </div>
                     {entry.usedAt ? (
@@ -11312,6 +11331,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           rows={rows}
           courses={courseById}
           instructors={instructorById}
+          visitingIds={visitingIds}
           previousRows={previousTermRows}
           nature={nature}
           scopeLine={[
@@ -11332,6 +11352,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           }}
         />
       ) : null}
+      <PrintPortal className="change-log-print-host">
+        <div className="print-report print-wide print-change-log-report">
+          <PrintLetterhead
+            title="تقرير التعديلات"
+            scope={[
+              terms.find((t) => t.AdTermId === filterTerm)?.AdTermName,
+              colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName,
+              sections.find((x) => x.AdSectionId === filterSection)?.AdSectionName,
+            ].filter(Boolean).join(" · ")}
+          />
+          <div className="print-change-log-summary"><strong>{undoLog.length.toLocaleString("ar-KW-u-nu-latn")} تعديل</strong><span>سجل تغييرات اليوم · الأحدث أولاً</span></div>
+          <table>
+            <thead><tr><th>الوقت</th><th>التعديل</th><th>الأستاذ</th><th>الحالة</th></tr></thead>
+            <tbody>{undoLog.map(entry=>{const meta=undoEntryMeta(entry);return <tr key={`print-change-${entry.id}`}><td className="print-ltr">{undoClock(entry.at)}</td><td className="print-wrap">{entry.label}</td><td className="print-wrap">{meta.whoName || "—"}{meta.visiting ? " · منتدب" : ""}</td><td>{entry.usedAt ? `تم التراجع ${undoClock(entry.usedAt)}` : "قائم"}</td></tr>;})}</tbody>
+          </table>
+        </div>
+      </PrintPortal>
       {/* The week is a wide document; it is printed on a wide page, in the same
           hand as every other sheet the program produces. */}
       {!reviewOpen ? (
@@ -11377,7 +11414,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 </td>
                 <td className="print-ltr">{s.SCode}</td>
                 <td className="print-wrap">
-                  {instructorById.get(s.AdInstructorId)?.AdInstructorName}
+                  {instructorById.get(s.AdInstructorId)?.AdInstructorName}{visitingIds.has(s.AdInstructorId) ? " · منتدب" : ""}
                 </td>
                 <td className="print-days">
                   {days.filter(d => Boolean((s as any)[d.key])).map((d, index) => (
@@ -11470,7 +11507,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   {context.selected.SCode}
                 </h2>
                 <p>
-                  {context.instructor?.AdInstructorName} ·{" "}
+                  <span className="schedule-instructor-with-badge">{context.instructor?.AdInstructorName}{visitingIds.has(context.selected.AdInstructorId) ? <VisitingBadge compact /> : null}</span> ·{" "}
                   {roomDisplay(context.selected) || "—"}{historicalLocationNeedsReview(context.selected)?" · بيانات مكان تاريخية غير موثقة":""}
                 </p>
               </div>

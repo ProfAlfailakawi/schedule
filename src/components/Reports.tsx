@@ -17,6 +17,7 @@ import { AR, countOf } from "../utils/arabicCount";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
 import AuthorityPdfReport, { AuthorityReport } from "./AuthorityPdfReport";
+import VisitingBadge from "./VisitingBadge";
 import { roomIdentityKey, roomDisplay, resolveBuilding, resolveRoom } from "../utils/locationRegistry";
 
 /**
@@ -296,6 +297,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   const [sections, setSections] = useState<AdSection[]>([]);
   const [terms, setTerms] = useState<AdTerm[]>([]);
   const [instructors, setInstructors] = useState<AdInstructor[]>([]);
+  const [visitingIds, setVisitingIds] = useState<Set<number>>(new Set());
   const [courses, setCourses] = useState<AdCourse[]>([]);
   const [all, setAll] = useState<FSchedule[]>([]);
   const [locationRegistry, setLocationRegistry] = useState<{buildings:MasterBuilding[];rooms:MasterRoom[]}>({buildings:[],rooms:[]});
@@ -365,6 +367,17 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
       .catch(error=>{if(error?.name!=="AbortError")setError(String(error?.message||error));});
     return()=>controller.abort();
   },[filters.collegeId,filters.sectionId]);
+
+  useEffect(() => {
+    if(!filters.collegeId||!filters.sectionId||!filters.termId){setVisitingIds(new Set());return;}
+    const controller=new AbortController();
+    const qs=new URLSearchParams({collegeId:String(filters.collegeId),sectionId:String(filters.sectionId),termId:String(filters.termId)});
+    fetch(`/api/visiting-roster?${qs}`,{signal:controller.signal})
+      .then(response=>response.ok?response.json():{instructorIds:[]})
+      .then(data=>setVisitingIds(new Set((Array.isArray(data?.instructorIds)?data.instructorIds:[]).map(Number).filter(Boolean))))
+      .catch(error=>{if(error?.name!=="AbortError")setVisitingIds(new Set());});
+    return()=>controller.abort();
+  },[filters.collegeId,filters.sectionId,filters.termId]);
 
   useEffect(() => {
     (async () => {
@@ -1120,7 +1133,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
         </header>
         <div className="occupancy-pick-rows">
           <article>
-            <strong>{pickedInstructor?.AdInstructorName || "بدون أستاذ"}</strong>
+            <strong className="report-instructor-with-badge">{pickedInstructor?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(selectedResult.AdInstructorId) ? <VisitingBadge compact /> : null}</strong>
             <span>{sectionById.get(selectedResult.AdSectionId)?.AdSectionName || "بدون قسم"}</span>
             <em>{dayText(selectedResult) || "بلا أيام"}</em>
             <time dir="ltr">{formatScheduleTimeRange(selectedResult.fstarttime, selectedResult.fendtime)}</time>
@@ -1290,6 +1303,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 onChange={(id) => setFilters(prev => ({ ...prev, instructorId: id, instructorQuery: "", civil: "" }))}
                 instructors={instructorOptions}
                 departmentIds={departmentInstructorIds}
+                visitingIds={visitingIds}
                 collegeId={filters.collegeId}
                 sectionId={filters.sectionId}
                 termId={filters.termId}
@@ -1470,7 +1484,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                     <div className="lens-tags">
                       <span className="code-chip">{course?.CourseCode || "—"}</span>
                       <span>{row.SCode}</span>
-                      <span><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}</span>
+                      <span className="report-instructor-with-badge"><UserRound aria-hidden="true" />{instructor?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                     </div>
                   </div>
                   <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
@@ -1503,10 +1517,10 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                 <div>
                   {day.rows.length ? day.rows.map(row => (
                     <article key={`${day.key}-${row.id}`}>
-                      <time dir="ltr">{scheduleClockForDisplay(row.fstarttime)}<i>{scheduleClockForDisplay(row.fendtime)}</i></time>
+                      <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                       <div>
                         <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
-                        <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
+                        <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                       </div>
                       <small>
                         <b>{courseById.get(row.AdCourseId)?.CourseCode || "—"}</b>
@@ -1562,7 +1576,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                             {cell.rows.map(row => (
                               <span key={row.id} className="matrix-slot">
                                 <b>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</b>
-                                <em>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "—"}</em>
+                                <em className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "—"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</em>
                                 <i dir="ltr">{courseById.get(row.AdCourseId)?.CourseCode || "—"} · {row.SCode}</i>
                               </span>
                             ))}
@@ -1670,7 +1684,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                       {picked.map(row => (
                         <article key={row.id}>
                           <strong>{row.AdCourseName || courseById.get(row.AdCourseId)?.CourseName || "—"}</strong>
-                          <span>{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}</span>
+                          <span className="report-instructor-with-badge">{instructorById.get(row.AdInstructorId)?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</span>
                           <em>{dayText(row)}</em>
                           <time dir="ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                         </article>
@@ -1736,7 +1750,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                   onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}
                 >
                   <span className="group-avatar"><UserRound /></span>
-                  <strong>{group.name}</strong>
+                  <strong className="report-instructor-with-badge">{group.name}{visitingIds.has(Number(group.id)) ? <VisitingBadge compact /> : null}</strong>
                   <span className="group-bar"><i style={{ width: share(group.load, maxLoad) }} /></span>
                   <b>{num(group.count)}</b>
                   <em>{num(Math.round(group.load / 60))}س</em>
@@ -1810,7 +1824,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
                                 <span className="code-chip">{course?.CourseCode || "—"}</span>
                                 <span>شعبة {row.SCode || "—"}</span>
                               </div>
-                              <small>{instructor?.AdInstructorName || "بدون أستاذ"}</small>
+                              <small className="report-instructor-with-badge">{instructor?.AdInstructorName || "بدون أستاذ"}{visitingIds.has(row.AdInstructorId) ? <VisitingBadge compact /> : null}</small>
                               <em>{[row.AdRoomCode, row.AdRoomHall].filter(Boolean).join("/") || "بدون قاعة"}</em>
                               <i>{dayText(row) || "بلا أيام"}</i>
                             </button>
@@ -1872,6 +1886,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
           sectionCode={sectionCode}
           courseById={courseById}
           instructorById={instructorById}
+          visitingIds={visitingIds}
         />
       </PrintPortal>
       <PrintPortal className="authority-pdf-print-host">
@@ -2052,7 +2067,7 @@ function PrintPageMeta({ page, total, college, date }: { page: number; total: nu
   );
 }
 
-function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById }: {
+function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, scopeLine, collegeName, termName, sectionName, sectionCode, courseById, instructorById, visitingIds }: {
   kind: PrintKind;
   rows: FSchedule[];
   fairness: any;
@@ -2067,6 +2082,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   sectionCode: string;
   courseById: Map<number, AdCourse>;
   instructorById: Map<number, AdInstructor>;
+  visitingIds: Set<number>;
 }) {
   if (!kind) return null;
 
@@ -2085,6 +2101,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   };
   const courseOf = (row: FSchedule) => courseById.get(row.AdCourseId);
   const instructorOf = (row: FSchedule) => instructorById.get(row.AdInstructorId);
+  const instructorPrintName = (row: FSchedule) => `${instructorOf(row)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(row.AdInstructorId) ? " · منتدب" : ""}`;
   const issued = new Date();
   const issueDate = `${String(issued.getDate()).padStart(2, "0")}/${String(issued.getMonth() + 1).padStart(2, "0")}/${issued.getFullYear()}`;
   const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).join(",") || "—";
@@ -2160,7 +2177,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                           <div role="cell" className="print-ltr">{dayCodeCell(row)}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</div>
-                          <div role="cell" className="print-wrap print-instructor-name">{instructor?.AdInstructorName || "بدون أستاذ"}</div>
+                          <div role="cell" className="print-wrap print-instructor-name">{instructorPrintName(row)}</div>
                           <div role="cell" className="print-ltr print-civil">{instructor?.AdInstructorCivil || "—"}</div>
                         </div>
                       );
@@ -2210,7 +2227,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                     <span className="print-list-index">{String(serial).padStart(2, "0")}</span>
                     <div className="print-list-core">
                       <strong>{course?.CourseName || row.AdCourseName || "—"}</strong>
-                      <span><bdi className="print-ltr">{course?.CourseCode || "—"}</bdi><i>شعبة {row.SCode || "—"}</i><em>{instructor?.AdInstructorName || "بدون أستاذ"}</em></span>
+                      <span><bdi className="print-ltr">{course?.CourseCode || "—"}</bdi><i>شعبة {row.SCode || "—"}</i><em>{instructorPrintName(row)}</em></span>
                     </div>
                     <time className="print-ltr">{formatScheduleTimeRange(row.fstarttime, row.fendtime)}</time>
                     <span className="print-ltr print-list-room">{placeOfRow(row)}</span>
@@ -2247,7 +2264,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                       {dayRows.length ? dayRows.map(row => (
                         <article key={`${day.key}-${row.id}`}>
                           <time className="print-ltr"><b>{scheduleClockForDisplay(row.fstarttime)}</b><span>{scheduleClockForDisplay(row.fendtime)}</span></time>
-                          <div><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span>{instructorOf(row)?.AdInstructorName || "بدون أستاذ"}</span></div>
+                          <div><strong>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</strong><span>{instructorPrintName(row)}</span></div>
                           <small><bdi className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</bdi><bdi className="print-ltr">{placeOfRow(row)}</bdi></small>
                         </article>
                       )) : <p>—</p>}
@@ -2419,7 +2436,7 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
               <tbody>{pageLines.map((line: any) => <tr key={line.id}>
                 <th><strong>{line.room.hall || "—"}</strong><small>{line.room.building}</small></th>
                 <td>{line.group.label}</td>
-                {line.cells.map((cell: any) => <td key={cell.point} className={cell.rows.length ? "taken" : ""}>{cell.rows.map((row: FSchedule) => <span className="print-matrix-slot" key={row.id}><b>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</b><em>{instructorOf(row)?.AdInstructorName || "—"}</em><i className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</i></span>)}</td>)}
+                {line.cells.map((cell: any) => <td key={cell.point} className={cell.rows.length ? "taken" : ""}>{cell.rows.map((row: FSchedule) => <span className="print-matrix-slot" key={row.id}><b>{courseOf(row)?.CourseName || row.AdCourseName || "—"}</b><em>{instructorPrintName(row)}</em><i className="print-ltr">{courseOf(row)?.CourseCode || "—"} · {row.SCode || "—"}</i></span>)}</td>)}
               </tr>)}</tbody>
             </table>
             <PrintPageMeta page={pageIndex + 1} total={pages.length} college={collegeName} date={issueDate} />
