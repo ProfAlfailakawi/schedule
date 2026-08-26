@@ -38,6 +38,7 @@ export type AuthorityPdfHeader={
 export type OcrResult={pages:OcrPage[];text:string;pageCount:number;confidence:number;orientation:-1|0|1;legibility:Legibility;headerTerm?:HeaderTerm;headerBranch?:HeaderBranch;headerDepartment?:HeaderDepartment;pageDiagnostics:OcrPageDiagnostic[];suspiciousExtraction:boolean};
 export type GraduationSheetOcrResult={text:string;pageCount:number;confidence:number;legibility:Legibility};
 export type OcrProgress=(stage:{phase:"render"|"orient"|"read"|"rescue";page:number;pages:number;message:string})=>void;
+export type OcrDocumentOptions={authorityCourseKeys?:string[]};
 
 const MAX_PAGES=12;
 /** A4 at ~300dpi. The old 157dpi render was the single largest cause of
@@ -1099,6 +1100,46 @@ export const authorityCourseColumnLooksPlausible=(raw:string,departmentCode=""):
   return discoveryShape(token)||(token.length>1&&discoveryShape(token.slice(1)));
 };
 
+/**
+ * Golden rescue for a photographed course-key cell.
+ *
+ * This is intentionally catalogue-constrained: OCR is allowed to be one digit
+ * short/long/wrong only when the SAME physical cell points to exactly one
+ * canonical seven-digit key that already exists in the selected department.
+ * Ambiguity returns an empty string. Nothing here creates a course identity
+ * from prose, a neighbouring row, or sequence position.
+ */
+export const recoverAuthorityCourseCell=(raw:string,departmentCode="",canonicalKeys:string[]=[]):string=>{
+  const token=academicDigits(raw),department=academicDigits(departmentCode);
+  const catalogue=[...new Set(canonicalKeys.map(academicDigits).filter(key=>/^\d{7}$/.test(key)&&(!department||key.startsWith(department))))];
+  if(authorityCourseCellLooksPlausible(token,department)&&(!catalogue.length||catalogue.includes(token)))return token;
+  if(!token||!catalogue.length)return"";
+  const distance=(a:string,b:string)=>{
+    const previous=Array.from({length:b.length+1},(_,i)=>i);
+    for(let i=1;i<=a.length;i++){let diagonal=previous[0];previous[0]=i;for(let j=1;j<=b.length;j++){const above=previous[j],cost=a[i-1]===b[j-1]?0:1;previous[j]=Math.min(previous[j]+1,previous[j-1]+1,diagonal+cost);diagonal=above;}}
+    return previous[b.length];
+  };
+  /* Prefer the photographed-grid failure modes we have actually observed
+     before allowing generic edit distance. This matters for a six-digit cell:
+     010110 is an exact dropped-final-digit prefix of 0101102, while plain
+     Levenshtein also considers 0101150 one insertion away and would make an
+     otherwise deterministic repair ambiguous. */
+  const structural=catalogue.filter(key=>{
+    if(token.length===3)return key.endsWith(token);
+    if(token.length===key.length-1)return key.startsWith(token);
+    if(token.length===key.length+1)return token.slice(1)===key||token.slice(0,-1)===key;
+    return false;
+  });
+  if(structural.length===1)return structural[0];
+  if(structural.length>1)return"";
+  const candidates=catalogue.filter(key=>{
+    if(Math.abs(token.length-key.length)>1)return false;
+    if(token.length>=6&&token.length<=8&&distance(token,key)<=1)return true;
+    return false;
+  });
+  return candidates.length===1?candidates[0]:"";
+};
+
 /** Combined CRN/reference + full course key in one OCR span. The only part
  * that carries academic identity is the seven-digit TAIL, which must satisfy
  * the same department proof as a standalone course cell. */
@@ -1140,6 +1181,7 @@ async function readGrid(
   upright:Buffer,
   pool:{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker},
   authorityDepartmentCode="",
+  authorityCourseKeys:string[]=[],
 ):Promise<GridRow[]|null>{
   const lib=await canvas();
   const image=await lib.loadImage(upright);
@@ -1322,6 +1364,57 @@ async function readGrid(
   const lastBand=columnBands.length-1,maxJoin=Math.min(3,columnBands.length);
   const keySearchFrom=Math.max(0,columnBands.length-7);
   let codeSpan:Span|null=null,refcodeSpan:Span|null=null,bestCodeHits=0,bestRefcodeHits=0;
+
+  /* MULTI-PAGE RIGHT-EDGE IDENTITY ANCHOR
+     -------------------------------------
+     The photographed SWRSCHA family has a much stronger geometric fact than
+     fuzzy OCR: at the right table edge the three identity fields are adjacent
+     in this fixed order:
+
+       section (501...) | reference (18945...) | 7-digit course key
+
+     On the owner's four-page scan, the course strip itself can be weak while
+     section + reference remain beautifully legible. The older code made course
+     OCR prove its own physical column first; when that proof failed, every
+     downstream row lost the canonical course name even though we were looking
+     at the correct table. For MULTI-PAGE scans only, let the adjacent section +
+     reference pair prove where the course cell must physically begin. We still
+     accept course identity only from the SAME cell and the finite selected-
+     department catalogue. Single-page OCR is intentionally untouched. */
+  let rightEdgeCourseSpan:Span|null=null;
+  if(authorityCourseKeys.length){
+    let anchor=-1,anchorScore=-1;
+    for(let index=keySearchFrom;index<=lastBand-2;index++){
+      const sectionHits=Math.max(validatorHits(numericGrey[index].cells,stripPatterns.scode),validatorHits(numericBin[index].cells,stripPatterns.scode));
+      const referenceHits=Math.max(validatorHits(numericGrey[index+1].cells,stripPatterns.reference),validatorHits(numericBin[index+1].cells,stripPatterns.reference));
+      if(sectionHits<minimumRows||referenceHits<minimumRows)continue;
+      const score=sectionHits+referenceHits;
+      if(score>anchorScore||(score===anchorScore&&index>anchor)){anchor=index;anchorScore=score;}
+    }
+    if(anchor>=0){
+      const start=anchor+2,referenceWidth=columnBands[anchor+1].right-columnBands[anchor+1].left;
+      let best:Span|null=null,bestRecover=-1;
+      for(let width=1;width<=3&&start+width-1<=lastBand;width++){
+        const span={from:start,to:start+width-1};
+        const combinedWidth=columnBands[span.to].right-columnBands[span.from].left;
+        /* The seven-digit key is not a hairline. This width guard prevents a
+           CamScanner/page-margin artefact from being joined merely because it
+           happens to sit after the real table border. */
+        if(combinedWidth<referenceWidth*.72)continue;
+        if(combinedWidth>referenceWidth*2.65)break;
+        const greyJoined=joinedCells(numericGrey,span),binJoined=joinedCells(numericBin,span);
+        const recoverHits=bands.reduce((count,_,row)=>{
+          const evidence=[greyJoined[row],binJoined[row]];
+          return count+(evidence.some(value=>Boolean(recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)))?1:0);
+        },0);
+        if(recoverHits>bestRecover){bestRecover=recoverHits;best=span;}
+        /* Once one physical band is already wide enough for a seven-digit key
+           and yields catalogue evidence, do not drift into the page margin. */
+        if(width===1&&recoverHits>=minimumRows&&combinedWidth>=referenceWidth*.95)break;
+      }
+      if(best)rightEdgeCourseSpan=best;
+    }
+  }
   for(let end=lastBand;end>=keySearchFrom;end--){
     for(let width=1;width<=maxJoin;width++){
       const from=end-width+1;if(from<keySearchFrom)continue;
@@ -1338,7 +1431,10 @@ async function readGrid(
       if(bothHits>bestRefcodeHits||(bothHits===bestRefcodeHits&&bothHits>0&&refcodeSpan&&(span.to>refcodeSpan.to||(span.to===refcodeSpan.to&&width<(refcodeSpan.to-refcodeSpan.from+1))))){bestRefcodeHits=bothHits;refcodeSpan=span;}
     }
   }
-  if(bestCodeHits<minimumRows)codeSpan=null;
+  if(rightEdgeCourseSpan){
+    codeSpan=rightEdgeCourseSpan;
+    bestCodeHits=Math.max(bestCodeHits,minimumRows);
+  }else if(bestCodeHits<minimumRows)codeSpan=null;
   /* Prefer a proven 7-digit code span over a wider reference+code span: false
      vertical strokes inside the code are common; a genuinely missing separator
      still falls through to refcode below. */
@@ -1386,18 +1482,18 @@ async function readGrid(
      correctly. On a 27-row page that meant 27 extra OCR calls per page. Now
      only cells that fail the time validator are re-read, preserving the fast
      strip result for the majority of rows. */
-  const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string,worker:PooledWorker=pool.ara):Promise<string>=>{
+  const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string,worker:PooledWorker=pool.ara,psm="7",scale=stripScale):Promise<string>=>{
     const rawWidth=band.right-band.left,rawHeight=rowBand.bottom-rowBand.top;
     if(rawWidth<6||rawHeight<6)return"";
     const insetX=Math.max(1,Math.min(4,Math.round(rawWidth*.05)));
     const insetY=Math.max(1,Math.min(3,Math.round(rawHeight*.08)));
     const left=band.left+insetX,topCell=rowBand.top+insetY;
     const width=Math.max(1,rawWidth-insetX*2),height=Math.max(1,rawHeight-insetY*2);
-    const cell=lib.createCanvas(Math.max(1,Math.round(width*stripScale)),Math.max(1,Math.round(height*stripScale)));
+    const cell=lib.createCanvas(Math.max(1,Math.round(width*scale)),Math.max(1,Math.round(height*scale)));
     const ctx=cell.getContext("2d");
     ctx.imageSmoothingEnabled=true;
     ctx.drawImage(source,left,topCell,width,height,0,0,cell.width,cell.height);
-    await worker.setParameters({tessedit_char_whitelist:alphabet,tessedit_pageseg_mode:"7" as any});
+    await worker.setParameters({tessedit_char_whitelist:alphabet,tessedit_pageseg_mode:psm as any});
     try{
       const result:any=await worker.recognize(cell.toBuffer("image/png"));
       return String(result?.data?.text||"").replace(/\s+/g," ").trim();
@@ -1454,6 +1550,42 @@ async function readGrid(
   else if(refcodeSpan)await rescueSpan(refcodeSpan,stripPatterns.refcode,KEY_DIGITS);
   else if(refcodeIndex>=0)await rescueIndex(refcodeIndex,stripPatterns.refcode,KEY_DIGITS);
   else await rescueIndex(codeIndex,stripPatterns.code,KEY_DIGITS);
+
+  /* MULTI-PAGE COURSE-KEY GOLDEN RESCUE
+     -----------------------------------
+     A page uploaded by itself already had enough OCR budget to recover its
+     seven-digit academic key. In a dense multi-page scan the whole-column pass
+     can lose exactly one tiny digit on many rows (0101102 -> 010110). Re-read
+     ONLY those same proven course cells at 3.2x from grey + binarized pixels,
+     then accept a repair only when the selected department catalogue has one
+     and only one canonical key consistent with the observed cell. No course
+     name, neighbour, row sequence or fuzzy prose can create identity. */
+  if(authorityCourseKeys.length&&(codeSpan||codeIndex>=0)){
+    const span=codeSpan||{from:codeIndex,to:codeIndex};
+    const rawAt=(reads:StripRead[],row:number)=>{let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");return value;};
+    const unresolved=bands.map((_,row)=>{
+      const recovered=[rawAt(numericGrey,row),rawAt(numericBin,row)].map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean);
+      return recovered.length? -1:row;
+    }).filter(row=>row>=0);
+    if(unresolved.length){
+      const band={left:columnBands[span.from].left,right:columnBands[span.to].right};
+      const passes=await runOnPool(pool.eng,unresolved.flatMap(row=>[
+        (worker:PooledWorker)=>readCell(surface,band,bands[row],KEY_DIGITS,worker,"7",3.2),
+        (worker:PooledWorker)=>readCell(bin,band,bands[row],KEY_DIGITS,worker,"7",3.2),
+        (worker:PooledWorker)=>readCell(surface,band,bands[row],KEY_DIGITS,worker,"8",3.2),
+      ]));
+      const first=[...numericGrey[span.from].cells];
+      unresolved.forEach((row,at)=>{
+        const evidence=[rawAt(numericGrey,row),rawAt(numericBin,row),passes[at*3]||"",passes[at*3+1]||"",passes[at*3+2]||""];
+        const canonical=[...new Set(evidence.map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean))];
+        if(canonical.length===1)first[row]=canonical[0];
+      });
+      numericGrey[span.from]={cells:first};
+      for(let index=span.from+1;index<=span.to;index++){
+        const rest=[...numericGrey[index].cells];unresolved.forEach(row=>{if(authorityCourseCellLooksPlausible(first[row]||"",authorityDepartmentCode))rest[row]="";});numericGrey[index]={cells:rest};
+      }
+    }
+  }
   await rescueIndex(scodeIndex,stripPatterns.scode,KEY_DIGITS);
   await rescueIndex(daysIndex,stripPatterns.days,"12345 ");
   await rescueIndex(buildingIndex,stripPatterns.building,LOCATION_ALNUM);
@@ -2108,8 +2240,9 @@ function rememberOcr(key:string,value:OcrResult){
  * one implementation. Uploaded bytes are never retained; only a short-lived
  * parsed-result cache is kept to make repeat review of the same scan instant.
  */
-export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgress):Promise<OcrResult>{
-  const fingerprint=await documentFingerprint(input);
+export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgress,options?:OcrDocumentOptions):Promise<OcrResult>{
+  const optionKeys=[...new Set((options?.authorityCourseKeys||[]).map(academicDigits).filter(Boolean))].sort();
+  const fingerprint=(await documentFingerprint(input))+(optionKeys.length?`:courses:${optionKeys.join(",")}`:"");
   const cacheHit=cachedOcr(fingerprint);
   if(cacheHit){onProgress?.({phase:"read",page:cacheHit.pageCount,pages:cacheHit.pageCount,message:"تم استرجاع القراءة المحفوظة"});return cacheHit;}
   const looksLikePdf=/pdf/i.test(mime)||input.subarray(0,4).toString("latin1")==="%PDF";
@@ -2121,6 +2254,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      when a probe is only a downscale of the full page it already had. */
   const images=await imagePages(input,mime,TARGET_LONG_EDGE,onProgress);
   if(!images.length)throw new Error("تعذر تحويل صفحات الملف إلى صور قابلة للقراءة");
+  /* Single-page image OCR is the owner's proven reference and remains byte-for-byte
+     on its established readGrid path. Catalogue-constrained key rescue is enabled
+     only when the upload actually contains multiple scanned pages. */
+  const multiPageCourseKeys=images.length>1?optionKeys:[];
   const pool=await getWorkerPool();
   const lib0=await canvas();
   const probeOf=async(buffer:Buffer)=>{
@@ -2196,7 +2333,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
-    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment);}catch{/* an unreadable grid falls back */}
+    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment,multiPageCourseKeys);}catch{/* an unreadable grid falls back */}
     /* Scanned PDFs are often saved with a wrong orientation flag or a camera
        rotation that the first-page probe cannot infer reliably. Do not give up
        after one guess: only when the chosen turn fails, try the two remaining
@@ -2211,7 +2348,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         if(tried.has(turn))continue;
         try{
           const candidate=await deskew(await rotateImage(pageImage,turn));
-          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment);
+          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,multiPageCourseKeys);
           const strength=(candidateRows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           const bestStrength=(best?.rows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows,turn};
@@ -2281,7 +2418,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
-          const rows=await readGrid(upright,rescuePool,authorityGridDepartment);
+          const rows=await readGrid(upright,rescuePool,authorityGridDepartment,multiPageCourseKeys);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
           if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}

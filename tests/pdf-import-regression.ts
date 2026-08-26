@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -61,6 +61,18 @@ assert.equal(authorityCourseColumnLooksPlausible("1010110","0101"),true);
 assert.equal(authorityCourseColumnLooksPlausible("501189","0101"),false);
 assert.equal(authorityReferenceCourseCellLooksPlausible("189450101102","0101"),true);
 assert.equal(authorityReferenceCourseCellLooksPlausible("5011894","0101"),false);
+
+/* Dense multi-page photographs may lose or absorb ONE course-key digit. The
+   repair is legal only inside the selected department catalogue and only when
+   the same cell resolves to one unique canonical key. */
+const canonicalCourseKeys=["0101102","0101150","0101151","0101153","0101201","0101202"];
+assert.equal(recoverAuthorityCourseCell("0101102","0101",canonicalCourseKeys),"0101102");
+assert.equal(recoverAuthorityCourseCell("010110","0101",canonicalCourseKeys),"0101102");
+assert.equal(recoverAuthorityCourseCell("30101102","0101",canonicalCourseKeys),"0101102");
+assert.equal(recoverAuthorityCourseCell("10101150","0101",canonicalCourseKeys),"0101150");
+assert.equal(recoverAuthorityCourseCell("102","0101",canonicalCourseKeys),"0101102");
+assert.equal(recoverAuthorityCourseCell("010115","0101",["0101150","0101151","0101153"]),"");
+assert.equal(recoverAuthorityCourseCell("010110","0102",canonicalCourseKeys),"");
 
 /* Image-only Authority timetables must arrive already landscape. Native-text
    PDFs are exempt because their cells are reconstructed from PDF coordinates. */
