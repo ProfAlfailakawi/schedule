@@ -214,4 +214,13 @@ ok('118 current golden stage is documented for future maintainers', 'اسم ال
 ai_review_prompt=(ROOT/'docs/AI_REVIEW_PROMPT.md').read_text()
 ok('119 maintenance review prompt is embedded in the project and linked from golden state', 'لا تعِد البناء' in ai_review_prompt and 'عدم التخمين' in ai_review_prompt and 'docs/AI_REVIEW_PROMPT.md' in golden_state)
 
+# Graduate-proof + report-availability invariants added after the Golden stage.
+reports_src=(ROOT/'src/components/Reports.tsx').read_text()
+ok('120 authority change report remains discoverable whenever a saved baseline exists', 'setAuthorityReportAvailable(Boolean(data?.draftId))' in reports_src and 'setAuthorityReportAvailable(Boolean(data?.hasChanges))' not in reports_src)
+ok('121 graduate door accepts only the official graduation sheet and checks all identity fields', 'graduationSheetFacts(ocr.text)' in server and 'ليس صحيفة التخرج/الخطة الدراسية المعتمدة' in server and 'الرقم المدني في الإثبات لا يطابق' in server and 'التخصص الظاهر في صحيفة التخرج لا يطابق' in server and 'الوحدات المطلوبة في الصحيفة' in server)
+ok('122 Special Education is one canonical umbrella for its programme sub-specialties', 'academicSectionNameMatches' in server and 'sourceSpecial||targetSpecial' in server and 'sourceSpecial&&targetSpecial' in server and 'academicSectionNameMatches(facts.normalizedText' in server)
+ok('123 graduate proof cannot be bypassed with an old/generic proof token', 'proof.documentKind!=="graduation-sheet"' in server and 'proof.specializationMatched!==true' in server and 'Number(proof.degreeUnits)!==Number(currentRule.degreeUnits)' in server)
+ok('124 public graduate UI explicitly asks for the graduation sheet, not a generic transcript', 'ارفع صحيفة التخرج' in server and 'أي مستند آخر لن يُقبل' in server and 'تحقق من صحيفة التخرج أولاً' in server)
+ok('125 graduate eligibility uses only stored academic degree rules, never name-derived defaults', 'storedDegreeRuleForSection' in server and 'Graduate proof is a hard data gate' in server and 'لا توجد قواعد تخرج أكاديمية معتمدة' in server)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

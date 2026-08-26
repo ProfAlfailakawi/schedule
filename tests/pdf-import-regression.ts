@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -239,7 +239,26 @@ assert.equal(weldedCourse.rows[0].AdCourseName,"");
 assert.equal(weldedCourse.rows[0].sourceCourseText,"5011894");
 assert.equal(weldedCourse.rows[0].SCode,"");
 
-console.log(JSON.stringify({ passed: 47, checks: [
+/* Graduate proof is not a generic transcript upload. It must be the official
+   study-plan / graduation-sheet summary and expose both unit totals. */
+const graduationSheet=graduationSheetFacts(`
+الخطة الدراسية
+الاسم: نوره غازي عبيد الرميحاني 904102301536
+عرض الخطة الدراسية بناءً على
+البرنامج: اسلامية - تربية خاصة - تفوق عقلي
+الوحدات المطلوبة: 134
+الوحدات المجتازة: 114
+المقررات المطلوبة: 39
+المقررات المجتازة: 24
+`);
+assert.equal(graduationSheet.isGraduationSheet,true);
+assert.equal(graduationSheet.civil,"904102301536");
+assert.equal(graduationSheet.requiredUnits,134);
+assert.equal(graduationSheet.passedUnits,114);
+const genericTranscript=graduationSheetFacts(`كشف درجات\n904102301536\nالوحدات المجتازة: 114`);
+assert.equal(genericTranscript.isGraduationSheet,false);
+
+console.log(JSON.stringify({ passed: 52, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -283,4 +302,9 @@ console.log(JSON.stringify({ passed: 47, checks: [
   "an ambiguous room can never invent a building",
   "عبد الله/عبدالله compound-name spelling is canonicalized before instructor matching",
   "two/three department name tokens still return only a system instructor identity",
+  "graduation proof requires the official study-plan/graduation-sheet signature",
+  "graduation proof reads the civil ID from the official sheet",
+  "graduation proof reads required units only from the labelled sheet summary",
+  "graduation proof reads passed units only from the labelled sheet summary",
+  "a generic transcript is never accepted as the graduation sheet",
 ] }, null, 2));

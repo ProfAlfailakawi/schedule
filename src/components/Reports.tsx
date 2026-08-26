@@ -1049,7 +1049,12 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     const query = new URLSearchParams({ collegeId:String(collegeId), sectionId:String(sectionId), termId:String(termId), meta:"1" });
     fetch(`/api/reports/authority-pdf-diff?${query}`)
       .then(async response => response.ok ? response.json() : null)
-      .then(data => { if (!cancelled) setAuthorityReportAvailable(Boolean(data?.hasChanges)); })
+      /* The report is a comparison document, not merely a red "changes exist"
+         alarm. If a saved Authority-PDF baseline exists, keep the report button
+         visible even when the current comparison happens to have zero changes;
+         the report itself can then state that cleanly. Hiding it behind
+         `hasChanges` made a valid report disappear from Query Center. */
+      .then(data => { if (!cancelled) setAuthorityReportAvailable(Boolean(data?.draftId)); })
       .catch(() => { if (!cancelled) setAuthorityReportAvailable(false); });
     return () => { cancelled = true; };
   }, [filters.collegeId, filters.sectionId, filters.termId, all.length]);

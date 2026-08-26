@@ -2897,3 +2897,41 @@ export function transcriptFacts(text:string){
   // must fail closed and be reviewed instead of falsely approving a student.
   return{civil,passedUnits,text:plain.slice(0,16000)};
 }
+
+/**
+ * Facts that are safe to use from the Authority student «graduation sheet».
+ *
+ * The graduate door is intentionally stricter than generic transcript OCR. A
+ * readable document is NOT enough: it must identify itself as the study-plan /
+ * graduation-sheet view and expose the programme summary fields the Authority
+ * page shows (programme, required units, passed units). Anything weaker fails
+ * closed so another academic document can never be accepted merely because it
+ * happens to contain a civil ID and a number of credits.
+ */
+export function graduationSheetFacts(text:string){
+  const plain=toAscii(text),folded=fold(text);
+  const civil=[...plain.matchAll(/\b\d{12}\b/g)].map(match=>match[0])[0]||"";
+  const readNumber=(patterns:RegExp[])=>{
+    for(const pattern of patterns){const match=folded.match(pattern);if(match)return Number(match[1]||0)||0;}
+    return 0;
+  };
+  const requiredUnits=readNumber([
+    /الوحدات\s*المطلوبه\s*[:\-]?\s*(\d{2,3})/i,
+    /(?:required)\s*(?:credits|hours|units)?\s*[:\-]?\s*(\d{2,3})/i,
+  ]);
+  const passedUnits=readNumber([
+    /الوحدات\s*المجتازه\s*[:\-]?\s*(\d{2,3})/i,
+    /الوحدات\s*(?:المكتسبه|الناجحه)\s*[:\-]?\s*(\d{2,3})/i,
+    /(?:earned|passed)\s*(?:credits|hours|units)?\s*[:\-]?\s*(\d{2,3})/i,
+  ]);
+  const titleOk=/الخطه\s*الدراسيه|صحيفه\s*التخرج/.test(folded);
+  const programmeOk=/البرنامج/.test(folded);
+  const requiredLabelOk=/الوحدات\s*المطلوبه/.test(folded);
+  const passedLabelOk=/الوحدات\s*المجتازه/.test(folded);
+  const isGraduationSheet=titleOk&&programmeOk&&requiredLabelOk&&passedLabelOk;
+  return{
+    civil,requiredUnits,passedUnits,isGraduationSheet,
+    signals:{title:titleOk,programme:programmeOk,requiredUnits:requiredLabelOk,passedUnits:passedLabelOk},
+    text:plain.slice(0,20000),normalizedText:folded.slice(0,20000),
+  };
+}
