@@ -875,12 +875,15 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
         return value===true||value===1||token==="1"||token==="true"||token==="y"||token==="yes";
       }
       if(field==="AdRoomCode"){
-        const clean=cleanBuildingCode(String(value||""));
-        return clean||normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
+        const valStr = String(value || "").trim().toUpperCase();
+        const baseDigits = valStr.replace(/\D/g, "").slice(0, 3);
+        const clean = cleanBuildingCode(valStr);
+        return baseDigits || clean || normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
       }
       if(field==="AdRoomHall"){
         const clean=cleanHallCode(String(value||""));
-        return clean||normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
+        const norm = normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
+        return clean || norm;
       }
       if(["fstarttime","fendtime"].includes(field)){
         /* 09:00, 9:00 and the Authority import's 0900 all mean the same
