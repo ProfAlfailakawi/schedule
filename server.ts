@@ -881,7 +881,7 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
         return baseDigits || clean || normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
       }
       if(field==="AdRoomHall"){
-        const clean=cleanHallCode(String(value||""));
+        const clean = cleanHallCode(String(value || ""));
         const norm = normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
         return clean || norm;
       }
