@@ -856,6 +856,11 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
        representation. Imported booleans, numeric ids, clocks and location codes
        can pass through JSON/Firestore with harmless type/spacing differences;
        those must never turn untouched cells yellow. */
+    const normalizeEmpty = (val: any) => {
+      const s = String(val ?? "").trim();
+      if (!s || s === "—" || s === "-" || s === "ـ" || s === "N/A" || s === "غير متوفر" || s === "غير محدد" || s === "غير موجود" || s === "---") return "";
+      return s;
+    };
     const comparable=(field:string,value:any)=>{
       if(["AdCourseId","AdInstructorId"].includes(field))return Number(value||0);
       if(["SCode"].includes(field)){
@@ -871,20 +876,20 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       }
       if(field==="AdRoomCode"){
         const clean=cleanBuildingCode(String(value||""));
-        return clean||String(value||"").replace(/\s+/g,"").toUpperCase();
+        return clean||normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
       }
       if(field==="AdRoomHall"){
         const clean=cleanHallCode(String(value||""));
-        return clean||String(value||"").replace(/\s+/g,"").toUpperCase();
+        return clean||normalizeEmpty(value).replace(/\s+/g,"").toUpperCase();
       }
       if(["fstarttime","fendtime"].includes(field)){
         /* 09:00, 9:00 and the Authority import's 0900 all mean the same
            clock. Keep that storage-format noise out of the change report. */
         const digits=String(value||"").replace(/\D/g,"");
         if(/^\d{3,4}$/.test(digits)){const hh=digits.slice(0,-2).padStart(2,"0"),mm=digits.slice(-2);return `${hh}:${mm}`;}
-        return String(value||"").trim();
+        return normalizeEmpty(value);
       }
-      return String(value??"").trim();
+      return normalizeEmpty(value);
     };
     const cleanInstructor=(val:unknown)=>{
       const folded=foldHeaderIdentity(val);
