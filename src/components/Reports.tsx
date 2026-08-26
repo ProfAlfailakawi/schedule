@@ -1745,6 +1745,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               <article key={group.id} className={openGroup === group.id ? "open" : ""}>
                 <button
                   type="button"
+                  data-guide-ignore="فتح مجموعة الأستاذ داخل التقرير فقط؛ لا ينفذ إجراءً على البيانات"
                   aria-expanded={openGroup === group.id}
                   aria-controls={`query-instructor-group-${group.id}`}
                   onClick={() => setOpenGroup(openGroup === group.id ? null : group.id)}

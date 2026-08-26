@@ -11246,7 +11246,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             <header>
               <History aria-hidden="true" />
               <strong>سجل تغييرات اليوم</strong>
-              {undoLog.length ? <button type="button" className="undo-print" onClick={printUndoReport} aria-label="طباعة تقرير التعديلات" title="طباعة تقرير التعديلات"><Printer /></button> : null}
+              {undoLog.length ? <button type="button" className="undo-print" data-guide-ignore="طباعة محلية لتقرير التعديلات فقط؛ لا تغيّر بيانات الجدول" onClick={printUndoReport} aria-label="طباعة تقرير التعديلات" title="طباعة تقرير التعديلات"><Printer /></button> : null}
               <button type="button" className="undo-dismiss" onClick={() => setUndoLogOpen(false)} aria-label="إغلاق"><X /></button>
             </header>
             {undoLog.length ? (

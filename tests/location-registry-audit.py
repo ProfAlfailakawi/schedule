@@ -188,8 +188,8 @@ ok('103 golden Authority fixture and regression guard are wired into npm test', 
 ok('104 golden baseline documents no-regression change protocol', 'Existing golden fixtures must remain unchanged' in (ROOT/'docs/PDF_IMPORT_GOLDEN_BASELINE.md').read_text() and 'Never weaken a validator' in (ROOT/'docs/PDF_IMPORT_GOLDEN_BASELINE.md').read_text())
 ok('105 instructor resolver uses course history before department before global proof', doc_ocr.index('const courseHit=') < doc_ocr.index('const preferredHit=') < doc_ocr.index('const globalHit='))
 ok('106 seat/capacity numerics cannot enter contextual building shorthand', 'Never send arbitrary six-digit numeric seat/capacity strings' in location_registry and '/^(?:0*\\d{1,3}|[A-Z]0*\\d{1,3})$/' in location_registry)
-ok('107 sideways image-only Authority PDF is refused before body OCR', 'authorityScanRequiresLandscape' in doc_ocr and 'ROOT SAFETY GUARD' in doc_ocr and 'PDF_SCAN_REQUIRES_LANDSCAPE' in server and server.index('PDF_SCAN_REQUIRES_LANDSCAPE') < server.index('ocrDocument(bytes,"application/pdf"'))
-ok('108 rotated later scan page cannot reach schedule parsing', 'const rotatedPages=recognized.pageDiagnostics.filter' in server and server.index('const rotatedPages=recognized.pageDiagnostics.filter') < server.index('parseScheduleTable(recognized.pages'))
+ok('107 scanned Authority PDF may auto-orient but cannot bypass semantic course proof', 'const turns:Array<-1|0|1>=probeImage.height>probeImage.width?[-1,1,0]:[0,-1,1]' in doc_ocr and 'authorityCourseCellLooksPlausible' in doc_ocr and 'PDF_SCAN_REQUIRES_LANDSCAPE' not in server)
+ok('108 rotated scan pages are allowed to continue through the safe OCR pipeline', 'pageDiagnostics' in doc_ocr and 'const rotatedPages=recognized.pageDiagnostics.filter' not in server and 'parseScheduleTable(recognized.pages' in server)
 css=(ROOT/'src/styles/06-intelligence.css').read_text()
 ok('109 import confidence legend uses four visually distinct named states', 'أبيض · مؤكد مباشر' in transfer and 'أخضر · مستنتج ومثبت' in transfer and 'ذهبي · يحتاج مراجعة' in transfer and 'أحمر · ناقص' in transfer and 'import-cell-review' in css)
 ok('110 scan course-column proof rejects welded section+CRN as a course key', 'authorityCourseCellLooksPlausible' in doc_ocr and '5011894' in doc_ocr and 'authorityGridDepartment' in doc_ocr and 'readGrid(upright,lanePool,authorityGridDepartment)' in doc_ocr)
@@ -211,5 +211,7 @@ ok('115 visiting badge is present in import, schedule, reports and final schedul
 ok('116 schedule and report time ranges are kept as one visual value', 'formatScheduleTimeRange(row.fstarttime, row.fendtime)' in reports and 'white-space:nowrap' in (ROOT/'src/styles/05-schedule.css').read_text() and 'white-space:nowrap' in (ROOT/'src/styles/06-intelligence.css').read_text())
 ok('117 change log has a dedicated print action and print sheet', 'طباعة تقرير التعديلات' in schedules_src and 'change-log-print-host' in schedules_src and 'تقرير التعديلات' in schedules_src and 'data-print-kind="change-log"' not in schedules_src and 'root.dataset.printKind="change-log"' in schedules_src)
 ok('118 current golden stage is documented for future maintainers', 'اسم المقرر ورقم الشعبة في معاينة الاستيراد **هويتان مقفلتان**' in golden_state and 'Badge صغيرة `منتدب`' in golden_state and 'تقرير تعديلات قابل للطباعة' in golden_state)
+ai_review_prompt=(ROOT/'docs/AI_REVIEW_PROMPT.md').read_text()
+ok('119 maintenance review prompt is embedded in the project and linked from golden state', 'لا تعِد البناء' in ai_review_prompt and 'عدم التخمين' in ai_review_prompt and 'docs/AI_REVIEW_PROMPT.md' in golden_state)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

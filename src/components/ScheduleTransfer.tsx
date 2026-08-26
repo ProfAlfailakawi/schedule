@@ -258,7 +258,6 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds, roster]);
   const importReady = Boolean(xlsxPreview?.rows?.length && importBlockingIssues.length === 0);
-  const rotatedPdfGuidance = Boolean(error && /اتجاه المستند|الوضع الأفقي|اتجاه .*الصفحة|اتجاه .*الصفحات/.test(error));
   const pdfReadinessSummary = useMemo(() => {
     if (importKind !== "authority-pdf" || !Array.isArray(xlsxPreview?.rows)) return null;
     const rows = xlsxPreview.rows as ImportRow[];
@@ -630,12 +629,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         {!scopeReady ? (
           <p className="transfer-note"><AlertTriangle />اختر الكلية والقسم والفصل أولاً.</p>
         ) : null}
-        {error && tab !== "visiting" ? rotatedPdfGuidance ? (
-          <div className="transfer-orientation-guidance" role="alert">
-            <span className="transfer-orientation-icon"><RotateCcw aria-hidden="true" /></span>
-            <div><strong>دوّر الجدول للوضع الأفقي ثم أعد الرفع</strong><p>{error}</p></div>
-          </div>
-        ) : <p className="transfer-error"><AlertTriangle />{error}</p> : null}
+        {error && tab !== "visiting" ? <p className="transfer-error"><AlertTriangle />{error}</p> : null}
 
         <div className="transfer-body">
           {tab === "export" ? (

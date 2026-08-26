@@ -5185,17 +5185,6 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
   const targetSitePrefix=officialCollegeSitePrefix(targetCollegeName);
   let headerPreflight=await readAuthorityPdfHeader(bytes);
 
-  /* A sideways image-only timetable is rejected before any body OCR. Automatic
-     rotation looked convenient, but on dense ruled tables a visually plausible
-     result can still bind values to neighbouring columns. Native text PDFs are
-     exempt because their cells are reconstructed from embedded coordinates. */
-  if(headerPreflight.requiresLandscapeUpload){
-    res.status(422).json({
-      error:"اتجاه المستند غير مناسب للقراءة الدقيقة. يرجى تدوير جميع صفحات الجدول إلى الوضع الأفقي بحيث يظهر الجدول مستقيمًا، ثم إعادة الرفع. أوقفنا الاستيراد قبل قراءة الصفوف حتى لا تختلط بيانات المقرر أو المبنى أو القاعة.",
-      code:"PDF_SCAN_REQUIRES_LANDSCAPE",
-    });
-    return;
-  }
 
   /* Scope validation is shared by the cheap page-1 preflight and the full OCR
      rescue. A partial preflight is NOT a rejection: image-only CamScanner PDFs
@@ -5336,21 +5325,6 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     source:headerPreflight.source||((recognized.headerTerm||recognized.headerBranch||recognized.headerDepartment)?"scan":undefined),
   };
 
-  /* Defence in depth for mixed scans: if a later page required a physical
-     ±90° turn, do not parse its now-upright pixels into schedule rows. The
-     document must be corrected at source so every page shares one stable
-     landscape geometry. */
-  const rotatedPages=recognized.pageDiagnostics.filter((page:any)=>Number(page.orientation)!==0);
-  if(rotatedPages.length){
-    const pageList=rotatedPages.map((page:any)=>Number(page.page)).filter(Boolean).join("، ");
-    const body={
-      error:`اتجاه ${rotatedPages.length===1?`الصفحة ${pageList}`:`الصفحات ${pageList}`} غير مناسب للقراءة الدقيقة. يرجى تدوير صفحات الجدول إلى الوضع الأفقي ثم إعادة الرفع. لم يتم استيراد أي صف.`,
-      code:"PDF_SCAN_REQUIRES_LANDSCAPE",
-      pages:rotatedPages.map((page:any)=>Number(page.page)).filter(Boolean),
-    };
-    if(streaming){emit({type:"error",...body});res.end();return;}
-    res.status(422).json(body);return;
-  }
   if(!headerPreflight.term||!headerPreflight.branch||!headerPreflight.department){
     const missing=[!headerPreflight.term?"الفصل والسنة":"",!headerPreflight.branch?"الكلية/الفرع":"",!headerPreflight.department?"القسم":""].filter(Boolean);
     const body={

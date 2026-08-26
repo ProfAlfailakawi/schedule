@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, authorityTimeCellLooksPlausible, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -74,12 +74,6 @@ assert.equal(authorityBuildingCellLooksPlausible("052007"),true);
 assert.equal(authorityBuildingCellLooksPlausible("345045"),false);
 assert.equal(authorityBuildingCellLooksPlausible("520020"),false);
 
-/* Image-only Authority timetables must arrive already landscape. This is a
-   safety rule, not a generic PDF orientation rule: native text PDFs retain
-   coordinate extraction even when their page box is portrait. */
-assert.equal(authorityScanRequiresLandscape(768,1024,0,0),true);
-assert.equal(authorityScanRequiresLandscape(1024,768,0,0),false);
-assert.equal(authorityScanRequiresLandscape(768,1024,800,60),false);
 
 /* Owner-supplied location grammar: branch 012 + site B + building 09 is the
    official code 012B09. Camera loss of the leading zero/grid stroke is repaired
