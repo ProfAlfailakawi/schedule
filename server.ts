@@ -783,6 +783,9 @@ function safeDraftRows(input: unknown, collegeId: number, sectionId: number, ter
     sourceOrder: raw?.sourceOrder !== undefined && raw?.sourceOrder !== null && Number.isFinite(Number(raw.sourceOrder))
       ? Number(raw.sourceOrder)
       : 1_000_000 + index,
+    sourcePage: Number.isFinite(Number(raw?.sourcePage)) && Number(raw?.sourcePage) > 0
+      ? Math.floor(Number(raw.sourcePage))
+      : undefined,
   }));
 }
 
@@ -5728,8 +5731,23 @@ app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ typ
     if(rowReady)readyRows++;
   }
   const verificationSummary={confirmedCells,derivedCells,reviewCells,readyRows,reviewRows:Math.max(0,rows.length-readyRows),historyRecoveredRows:scanHistoryRecovery.recoveredRows,historyRecoveredCells:scanHistoryRecovery.recoveredCells};
+  /* Keep physical page identity all the way to the reviewer. This is not merely
+     cosmetic: it makes the multi-page contract observable — page N can be
+     reviewed independently and its rows can be compared with a standalone
+     upload of page N without guessing boundaries from array slices. */
+  const pageSummaries=Array.from({length:recognized.pageCount},(_,offset)=>{
+    const page=offset+1;
+    const pageRows=(rows as any[]).filter(row=>Number(row.sourcePage||1)===page);
+    let pageReady=0;
+    for(const row of pageRows){
+      const proofs=evidenceFields.map(key=>row.importEvidence?.[key]);
+      if(proofs.every((proof:any)=>proof?.confidence==="CONFIRMED"))pageReady++;
+    }
+    const diagnostic=recognized.pageDiagnostics.find((item:any)=>Number(item.page)===page);
+    return{page,rows:pageRows.length,ready:pageReady,review:Math.max(0,pageRows.length-pageReady),suspicious:Boolean(diagnostic?.suspicious),diagnostic};
+  });
   const result={
-    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,
+    rows,issues,blockingIssues:blocking,ready:rows.length>0&&blocking.length===0,verificationSummary,pageSummaries,
     fileName:fileName.slice(0,180),
     pages:recognized.pageCount,confidence:recognized.confidence,
     legibility:recognized.legibility,

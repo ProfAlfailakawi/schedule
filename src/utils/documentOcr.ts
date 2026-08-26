@@ -2733,6 +2733,9 @@ export type ParsedScheduleRow={
   sourceCourseCode?:string;sourceCourseText?:string;sourceSectionText?:string;sourceBuildingText?:string;sourceRoomText?:string;
   sourceDaysText?:string;sourceTimeText?:string;sourceReadMode?:"pdf-text"|"ocr-grid"|"ocr-fallback";
   instructorMatchMethod?:string;instructorMatchScore?:number;instructorMatchedTokens?:number;
+  /** Physical PDF/image page that produced this row. Kept through preview so
+   * multi-page review can be page-scoped without changing academic identity. */
+  sourcePage?:number;
 };
 
 /** Match an instructor printed on the Authority sheet to the registry.
@@ -3070,10 +3073,15 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
   const rows:ParsedScheduleRow[]=[];const issues:string[]=[];let order=0,scanned=0;
 
-  for(const page of pages){
+  /* Parse each physical page in its own page-local pass, then merge only the
+     resulting rows. The parser does not carry geometry/column assumptions from
+     one page to the next; sourcePage is retained for a page-by-page preview. */
+  for(let pageIndex=0;pageIndex<pages.length;pageIndex++){
+    const page=pages[pageIndex];
     if(page.gridRows?.length){
       const parsed=parseGridRows(page.gridRows,activeCourses,instructors,order,preferredInstructorIds,academicDigits(options?.authorityDepartmentCode),options?.courseInstructorIds);
-      rows.push(...parsed.rows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
+      const pageRows=parsed.rows.map(row=>({...row,sourcePage:pageIndex+1}));
+      rows.push(...pageRows);issues.push(...parsed.issues);order=parsed.order;scanned+=page.gridRows.length;
     }
   }
   const assignSequentialSections=()=>{
@@ -3091,7 +3099,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
 
   const activityTokens=["محاضرة","مختبر","تمارين","كلينيكي","عملي","نظري","ورشة","تدريب","بحث"];
 
-  for(const page of pages)for(const row of page.rows){
+  for(let pageIndex=0;pageIndex<pages.length;pageIndex++)for(const row of pages[pageIndex].rows){
     scanned++;
     const cells=row.cells,line=row.line;
     if(line.replace(/[^ء-يa-zA-Z0-9]/g,"").length<6)continue;
@@ -3135,7 +3143,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
       const instructorHit=matchInstructorName(line,instructors,preferredInstructorIds);
 
       rows.push({
-        sourceOrder:order++,referenceNumber:reference,
+        sourceOrder:order++,sourcePage:pageIndex+1,referenceNumber:reference,
         /* Raw prose belongs to sourceCourseText only. Canonical course display
            remains empty until a real catalogue ID is proven. */
         AdCourseId:0,AdCourseName:"",SCode:section,
@@ -3239,7 +3247,7 @@ export function parseScheduleTable(pages:OcrPage[],courses:AdCourse[],instructor
     const instructorHit=instructorIdentity?.person;
 
     rows.push({
-      sourceOrder:order++,referenceNumber:reference,
+      sourceOrder:order++,sourcePage:pageIndex+1,referenceNumber:reference,
       AdCourseId:matchedCourse.AdCourseId,AdCourseName:courseName,SCode:section,
       AdInstructorId:instructorHit?.AdInstructorId||0,
       TotalHours:matchedCourse.CourseHours,TotalUnits:matchedCourse.CourseCredit,

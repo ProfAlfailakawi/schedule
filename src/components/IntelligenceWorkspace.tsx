@@ -75,7 +75,8 @@ import { AR, countOf, nounFor } from "../utils/arabicCount";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { sortByName, byRoom } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
-import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
+import { type ImportRow } from "./ImportPreviewTable";
+import PagedImportPreview from "./PagedImportPreview";
 import LocationPicker, { BuildingPicker } from "./LocationPicker";
 import { roomIdentityKey } from "../utils/locationRegistry";
 import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
@@ -5061,8 +5062,11 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 </Notice>
               )) : null}
               {importPreview.importLayout === "authority-pdf" && importPreview.rows?.length ? (
-                <ImportPreviewTable
+                <PagedImportPreview
                   rows={importPreview.rows as ImportRow[]}
+                  pageCount={Number(importPreview.pages||0)}
+                  pageDiagnostics={Array.isArray(importPreview.pageDiagnostics)?importPreview.pageDiagnostics:[]}
+                  pageSummaries={Array.isArray(importPreview.pageSummaries)?importPreview.pageSummaries:[]}
                   courses={courses as any}
                   instructors={instructors as any}
                   departmentIds={importInstructorIds}

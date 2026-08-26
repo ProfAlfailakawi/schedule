@@ -3,7 +3,8 @@ import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2
 import { PrimaryButton, SecondaryButton } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
-import ImportPreviewTable, { type ImportRow } from "./ImportPreviewTable";
+import { type ImportRow } from "./ImportPreviewTable";
+import PagedImportPreview from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
 import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
@@ -718,8 +719,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <>
                       {/* The whole table, red on what the scan could not read,
                           and a quick edit + delete beside EVERY row. */}
-                      <ImportPreviewTable
+                      <PagedImportPreview
                         rows={xlsxPreview.rows as ImportRow[]}
+                        pageCount={Number(xlsxPreview.pages||0)}
+                        pageDiagnostics={Array.isArray(xlsxPreview.pageDiagnostics)?xlsxPreview.pageDiagnostics:[]}
+                        pageSummaries={Array.isArray(xlsxPreview.pageSummaries)?xlsxPreview.pageSummaries:[]}
                         courses={deptCourses as any}
                         instructors={instructors as any}
                         departmentIds={departmentIds}
