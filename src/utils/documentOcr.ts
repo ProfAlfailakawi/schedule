@@ -96,7 +96,12 @@ async function getWorkerPool(){
     const cores=(os as any).availableParallelism?.()??(os.cpus()?.length||4);
     const engCount=Math.min(5,Math.max(2,cores-1));
     const engWorkers=await Promise.all(Array.from({length:engCount},()=>createWorker("eng")));
-    const [a1,a2]=await Promise.all([getHeaderWorker(),createWorker("ara+eng")]);
+    /* On a small instance the second Arabic worker is pure memory pressure:
+       readGrid already serialises the two Arabic strips whenever ara===ara2,
+       so sharing one worker is a supported, slower-but-safe mode — and an
+       instance that stays alive beats one the platform kills mid-request. */
+    const a1=await getHeaderWorker();
+    const a2=cores<=2?a1:await createWorker("ara+eng");
     return{eng:engWorkers as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
   })();
   return poolPromise;
