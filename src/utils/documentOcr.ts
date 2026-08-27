@@ -85,10 +85,19 @@ async function getWorkerPool(){
     /* The page-1 preflight worker is reused as the first Arabic table worker.
        A wrong scanned PDF therefore initializes ONE OCR worker and stops;
        a valid PDF does not pay that cold-start twice. */
-    const [e1,e2,e3,e4,e5,a1,a2]=await Promise.all([
-      createWorker("eng"),createWorker("eng"),createWorker("eng"),createWorker("eng"),createWorker("eng"),getHeaderWorker(),createWorker("ara+eng"),
-    ]);
-    return{eng:[e1,e2,e3,e4,e5] as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
+    /* Five digit workers are right for a developer machine, but a small cloud
+       instance (1–2 vCPU) running SEVEN WASM workers starves its own event
+       loop and memory: the platform then answers every request with 429 while
+       a scan is read, and late rescue recognitions can die silently — which is
+       precisely a page-1 quality loss, because page 1 leans hardest on the
+       rescue lanes. Size the digit pool to the machine instead; large machines
+       keep the proven five-worker behaviour byte-for-byte. */
+    const os=await import("node:os");
+    const cores=(os as any).availableParallelism?.()??(os.cpus()?.length||4);
+    const engCount=Math.min(5,Math.max(2,cores-1));
+    const engWorkers=await Promise.all(Array.from({length:engCount},()=>createWorker("eng")));
+    const [a1,a2]=await Promise.all([getHeaderWorker(),createWorker("ara+eng")]);
+    return{eng:engWorkers as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
   })();
   return poolPromise;
 }
@@ -1628,6 +1637,11 @@ async function readGrid(
      fast strip result here; failed time cells are handled once by the unified
      field-specific escalation lane below instead of paying a preliminary OCR
      call and then escalating the same cell a second time. */
+  /* Rescue recognitions must never fail SILENTLY again: a memory-starved
+     instance that drops readCell calls produces exactly the «course = —» rows
+     the fast strips cannot explain. The count is reported once per page so the
+     platform logs show the truth. */
+  let recognitionFailures=0;
   const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string,worker:PooledWorker=pool.ara,psm="7",scale=stripScale):Promise<string>=>{
     const rawWidth=band.right-band.left,rawHeight=rowBand.bottom-rowBand.top;
     if(rawWidth<6||rawHeight<6)return"";
@@ -1643,7 +1657,7 @@ async function readGrid(
     try{
       const result:any=await worker.recognize(cell.toBuffer("image/png"));
       return String(result?.data?.text||"").replace(/\s+/g," ").trim();
-    }catch{return"";}
+    }catch{recognitionFailures++;return"";}
   };
   /* A physically EMPTY cell (no hall on many real Authority rows, no building
      on some, a blank tail row) can never validate, yet every rescue lane would
@@ -1746,6 +1760,51 @@ async function readGrid(
       }
     }
     const band={left:columnBands[span.from].left,right:columnBands[span.to].right};
+    const normalKeys=[...new Set(authorityCourseKeys.map(academicDigits).filter(key=>/^\d{7}$/.test(key)))];
+    /* CATALOGUE-ADJACENCY CONFIRMATION
+       A dense department prints many keys one digit apart (0101150 beside
+       0101154, the whole 020x block…). A single strip read that lands on the
+       WRONG sibling is shape-valid, catalogue-valid, and previously final.
+       For exactly those rows — an accepted key with a distance-1 sibling in
+       the catalogue — re-read the SAME cell twice at high resolution and flip
+       only when BOTH independent re-reads agree on one different canonical
+       key. Anything less keeps the original value, so a clean page can only
+       gain corrections, never churn. */
+    const hasAdjacentSibling=(key:string)=>normalKeys.some(other=>{
+      if(other===key||other.length!==key.length)return false;
+      let diff=0;for(let i=0;i<key.length;i++)if(key[i]!==other[i]&&++diff>1)return false;
+      return diff===1;
+    });
+    const acceptedKeyAt=(row:number)=>{
+      const value=academicDigits(directCanonical[row]||rawAt(numericGrey,row));
+      return /^\d{7}$/.test(value)&&normalKeys.includes(value)?value:"";
+    };
+    const confirmRows=bands.map((_,row)=>{
+      if(unresolved.includes(row))return -1;
+      const key=acceptedKeyAt(row);
+      return key&&hasAdjacentSibling(key)&&cellHasInk(band,bands[row])?row:-1;
+    }).filter(row=>row>=0);
+    if(confirmRows.length){
+      const rereads=await runOnPool(pool.eng,confirmRows.flatMap(row=>[
+        (worker:PooledWorker)=>readCell(surface,band,bands[row],KEY_DIGITS,worker,"7",3.2),
+        (worker:PooledWorker)=>readCell(bin,band,bands[row],KEY_DIGITS,worker,"7",3.2),
+      ]));
+      let confirmFlips=0;
+      confirmRows.forEach((row,at)=>{
+        const current=acceptedKeyAt(row);
+        const votes=[rereads[at*2]||"",rereads[at*2+1]||""]
+          .map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean);
+        if(votes.length===2&&votes[0]===votes[1]&&votes[0]!==current){directCanonical[row]=votes[0];confirmFlips++;}
+      });
+      if(confirmFlips){
+        numericGrey[span.from]={cells:[...directCanonical]};
+        for(let index=span.from+1;index<=span.to;index++){
+          const rest=[...numericGrey[index].cells];
+          confirmRows.forEach(row=>{if(authorityCourseCellLooksPlausible(directCanonical[row]||"",authorityDepartmentCode))rest[row]="";});
+          numericGrey[index]={cells:rest};
+        }
+      }
+    }
     const inkedUnresolved=unresolved.filter(row=>cellHasInk(band,bands[row]));
     if(inkedUnresolved.length){
       const passes=await runOnPool(pool.eng,inkedUnresolved.flatMap(row=>[
@@ -1759,6 +1818,11 @@ async function readGrid(
         const canonical=[...new Set(evidence.map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean))];
         if(canonical.length===1)first[row]=canonical[0];
       });
+      /* A right-half "read the missing final digit" synthesis was tried here
+         and REVERTED: at high magnification the crop systematically catches
+         the second-to-last digit and flips healthy 0101151 rows to 0101155.
+         An ambiguous truncated key therefore deliberately stays raw for
+         manual review — an empty course is recoverable, a wrong one is not. */
       numericGrey[span.from]={cells:first};
       for(let index=span.from+1;index<=span.to;index++){
         const rest=[...numericGrey[index].cells];unresolved.forEach(row=>{if(authorityCourseCellLooksPlausible(first[row]||"",authorityDepartmentCode))rest[row]="";});numericGrey[index]={cells:rest};
@@ -2013,7 +2077,7 @@ async function readGrid(
       try {
         const result: any = await worker.recognize(recognitionCell.toBuffer("image/png"));
         value = String(result?.data?.text || "").replace(/\s+/g, " ").trim();
-      } catch { }
+      } catch { recognitionFailures++; }
       
       if (value && validator(value)) {
         return { value, confidence: 0.89 - (i * 0.05) };
@@ -2224,6 +2288,7 @@ async function readGrid(
       sourceMode:"ocr-grid",
     });
   }
+  if(recognitionFailures>0)console.warn(`[ocr] ${recognitionFailures} rescue recognitions failed on this page — likely memory/CPU pressure; affected cells stayed empty for manual review`);
   const meaningful=rowsOut.filter(row=>row.code||row.start||row.courseText.length>3);
   /* The final physical page may contain only one or two legitimate rows. The
      adaptive grid/header proof above is what makes this safe. */
