@@ -944,20 +944,77 @@ function adaptiveGridGeometry(lib:any,src:any):{cols:number[];bands:{top:number;
   const pitch=pitchSamples[Math.floor(pitchSamples.length/2)];
   if(!pitch||pitch<10)return null;
 
+  /* MISSED-RULE SPLICE
+     ------------------
+     On a phone photo the lowest horizontal rules fade with the perspective and
+     can drop below the hard 18% ink threshold. The old walk simply STOPPED at
+     the first double-height gap, silently discarding every row below it — on
+     the owner's real single-page upload that cost five whole courses. A gap of
+     roughly two row pitches is therefore re-examined at a lower threshold, but
+     ONLY in its central window and ONLY when a genuinely darker horizontal
+     trace exists there: a footer/whitespace gap has no internal trace and still
+     terminates the body exactly as before. Nothing is invented — the splice
+     point is a measured weak rule, never an assumed midpoint. */
+  const weakRuleBetween=(topRule:number,bottomRule:number)=>{
+    const from=topRule+Math.round((bottomRule-topRule)*0.36),to=topRule+Math.round((bottomRule-topRule)*0.64);
+    let bestY=-1,bestInk=0;
+    for(let y=from;y<=to;y++)if(rowInk[y]>bestInk){bestInk=rowInk[y];bestY=y;}
+    return bestInk>=W*0.05?bestY:-1;
+  };
   let best:{header:number;end:number;count:number}|null=null;
   for(let index=0;index<allGaps.length;index++){
     const headerGap=allGaps[index];
     if(headerGap<pitch*1.35||headerGap>pitch*2.6)continue;
     let cursor=index+1,count=0;
-    while(cursor<allGaps.length&&allGaps[cursor]>=pitch*0.65&&allGaps[cursor]<=pitch*1.5){count++;cursor++;}
+    while(cursor<allGaps.length){
+      const gap=allGaps[cursor];
+      if(gap>=pitch*0.65&&gap<=pitch*1.5){count++;cursor++;continue;}
+      /* A blurred/thick rule near the photographed page bottom clusters as TWO
+         rules a few pixels apart. That is the same physical rule, not a row:
+         absorb it and keep walking instead of amputating the rest of the table
+         (this exact break cost five whole courses on the owner's upload). */
+      if(gap<=Math.max(6,Math.round(pitch*0.45))){cursor++;continue;}
+      if(gap>=pitch*1.7&&gap<=pitch*2.4&&weakRuleBetween(rowRules[cursor],rowRules[cursor+1])>=0){count+=2;cursor++;continue;}
+      break;
+    }
     /* A final page may legitimately contain only ONE timetable row. Geometry
        is still strong evidence when the header band and columns are present. */
     if(count>=1&&(!best||count>best.count))best={header:index,end:cursor,count};
   }
   if(!best)return null;
   const headerTop=rowRules[best.header],headerBottom=rowRules[best.header+1];
-  const bodyBounds=rowRules.slice(best.header+1,best.end+1);
-  if(bodyBounds.length<2)return null;
+  const rawWalkedBounds=rowRules.slice(best.header+1,best.end+1);
+  if(rawWalkedBounds.length<2)return null;
+  /* Collapse the double-edge clusters the walk absorbed: two bounds closer
+     than half a row pitch are one physical rule — keep the first edge. */
+  const walkedBounds:number[]=[rawWalkedBounds[0]];
+  for(let index=1;index<rawWalkedBounds.length;index++)
+    if(rawWalkedBounds[index]-walkedBounds[walkedBounds.length-1]>Math.max(6,Math.round(pitch*0.45)))walkedBounds.push(rawWalkedBounds[index]);
+  if(walkedBounds.length<2)return null;
+  /* Perspective makes the LOWEST rows of a phone photo physically shorter than
+     the top rows, so a two-row weld near the bottom can still sit inside the
+     page-wide pitch tolerance. Judge each gap against its LOCAL neighbours
+     instead: a gap nearly twice its surrounding gaps, with a measured weak rule
+     in its central window, is one missed rule — split exactly there. */
+  const walkedGaps=walkedBounds.slice(1).map((value,index)=>value-walkedBounds[index]);
+  const localPitchAt=(gapIndex:number)=>{
+    const neighbours:number[]=[];
+    for(let at=Math.max(0,gapIndex-3);at<=Math.min(walkedGaps.length-1,gapIndex+3);at++)
+      if(at!==gapIndex)neighbours.push(walkedGaps[at]);
+    if(!neighbours.length)return pitch;
+    neighbours.sort((a,b)=>a-b);
+    return neighbours[Math.floor(neighbours.length/2)];
+  };
+  const bodyBounds:number[]=[walkedBounds[0]];
+  for(let index=1;index<walkedBounds.length;index++){
+    const previous=walkedBounds[index-1],current=walkedBounds[index],gap=current-previous;
+    const local=Math.min(pitch,localPitchAt(index-1));
+    if(gap>=local*1.7&&gap<=local*2.6){
+      const weak=weakRuleBetween(previous,current);
+      if(weak>=0)bodyBounds.push(weak);
+    }
+    bodyBounds.push(current);
+  }
 
   /* Vertical rules are measured INSIDE the tall header band. Over this short
      distance a phone-camera slant is only a pixel or two, so real borders stay
@@ -1588,6 +1645,27 @@ async function readGrid(
       return String(result?.data?.text||"").replace(/\s+/g," ").trim();
     }catch{return"";}
   };
+  /* A physically EMPTY cell (no hall on many real Authority rows, no building
+     on some, a blank tail row) can never validate, yet every rescue lane would
+     still pay full OCR for it — and PSM 8 on a blank crop occasionally
+     hallucinates a lone digit. Measure ink on the already-binarized page first:
+     below the floor the cell is genuinely blank, every rescue skips it, and it
+     stays empty for manual review. Nothing is ever guessed into it. The inset
+     is wider than the OCR inset so a grid rule can never count as ink. */
+  const binInkCtx=bin.getContext("2d");
+  const cellHasInk=(band:{left:number;right:number},rowBand:{top:number;bottom:number})=>{
+    const rawWidth=band.right-band.left,rawHeight=rowBand.bottom-rowBand.top;
+    if(rawWidth<6||rawHeight<6)return false;
+    const insetX=Math.max(2,Math.min(7,Math.round(rawWidth*.09)));
+    const insetY=Math.max(2,Math.min(5,Math.round(rawHeight*.14)));
+    const width=Math.max(1,rawWidth-insetX*2),height=Math.max(1,rawHeight-insetY*2);
+    try{
+      const {data}=binInkCtx.getImageData(band.left+insetX,rowBand.top+insetY,width,height);
+      let dark=0;const total=width*height;
+      for(let i=0;i<total;i++)if(data[i*4]<128)dark++;
+      return dark>=Math.max(6,total*0.0035);
+    }catch{return true;/* fail open: an unreadable probe must not silence OCR */}
+  };
   /* A weak/shadowed page may prove the whole strip but drop isolated row keys.
      Rescue only the SAME already-proven physical cell; never search a neighbour
      and never trim a value. The catalogue/registry still canonicalize later. */
@@ -1597,7 +1675,7 @@ async function readGrid(
       const grey=normalizeCell(numericGrey[index].cells[row]||"");
       const binary=normalizeCell(numericBin[index].cells[row]||"");
       return !validator(grey)&&!validator(binary)?row:-1;
-    }).filter(row=>row>=0);
+    }).filter(row=>row>=0&&cellHasInk(columnBands[index],bands[row]));
     if(!missing.length)return;
     const rescued=await runOnPool(pool.eng,missing.map(row=>(worker:PooledWorker)=>readCell(surface,columnBands[index],bands[row],alphabet,worker)));
     const next=[...numericGrey[index].cells];
@@ -1611,9 +1689,9 @@ async function readGrid(
   const rescueSpan=async(span:Span|null,pattern:RegExp,alphabet:string)=>{
     if(!span)return;
     const current=(reads:StripRead[],row:number)=>{let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");return value;};
-    const missing=bands.map((_,row)=>!pattern.test(current(numericGrey,row))&&!pattern.test(current(numericBin,row))?row:-1).filter(row=>row>=0);
-    if(!missing.length)return;
     const band={left:columnBands[span.from].left,right:columnBands[span.to].right};
+    const missing=bands.map((_,row)=>!pattern.test(current(numericGrey,row))&&!pattern.test(current(numericBin,row))?row:-1).filter(row=>row>=0&&cellHasInk(band,bands[row]));
+    if(!missing.length)return;
     const rescued=await runOnPool(pool.eng,missing.map(row=>(worker:PooledWorker)=>readCell(surface,band,bands[row],alphabet,worker)));
     const first=[...numericGrey[span.from].cells];
     missing.forEach((row,at)=>{
@@ -1646,19 +1724,37 @@ async function readGrid(
   if(authorityCourseKeys.length&&(codeSpan||codeIndex>=0) || (authorityCourseKeys.length && hasCourseAnchor)){
     const span=codeSpan||(codeIndex>=0?{from:codeIndex,to:codeIndex}:(refcodeSpan||{from:refcodeIndex,to:refcodeIndex}));
     const rawAt=(reads:StripRead[],row:number)=>{let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");return value;};
+    /* Two outcomes per row, both deterministic:
+       — the raw cell already recovers to exactly ONE canonical key: WRITE that
+         canonical key back (a plausible-looking 0101105 must become the real
+         0101102, not survive because it merely looked like a course key);
+       — nothing recovers: queue the row for the high-resolution same-cell
+         re-read below. Ambiguity keeps the raw cell for manual review. */
+    const directCanonical=[...numericGrey[span.from].cells];
+    let directRepairs=0;
     const unresolved=bands.map((_,row)=>{
-      const recovered=[rawAt(numericGrey,row),rawAt(numericBin,row)].map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean);
+      const recovered=[...new Set([rawAt(numericGrey,row),rawAt(numericBin,row)].map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean))];
+      if(recovered.length===1&&recovered[0]!==rawAt(numericGrey,row)){directCanonical[row]=recovered[0];directRepairs++;}
       return recovered.length? -1:row;
     }).filter(row=>row>=0);
-    if(unresolved.length){
-      const band={left:columnBands[span.from].left,right:columnBands[span.to].right};
-      const passes=await runOnPool(pool.eng,unresolved.flatMap(row=>[
+    if(directRepairs){
+      numericGrey[span.from]={cells:directCanonical};
+      for(let index=span.from+1;index<=span.to;index++){
+        const rest=[...numericGrey[index].cells];
+        bands.forEach((_,row)=>{if(authorityCourseCellLooksPlausible(directCanonical[row]||"",authorityDepartmentCode))rest[row]="";});
+        numericGrey[index]={cells:rest};
+      }
+    }
+    const band={left:columnBands[span.from].left,right:columnBands[span.to].right};
+    const inkedUnresolved=unresolved.filter(row=>cellHasInk(band,bands[row]));
+    if(inkedUnresolved.length){
+      const passes=await runOnPool(pool.eng,inkedUnresolved.flatMap(row=>[
         (worker:PooledWorker)=>readCell(surface,band,bands[row],KEY_DIGITS,worker,"7",3.2),
         (worker:PooledWorker)=>readCell(bin,band,bands[row],KEY_DIGITS,worker,"7",3.2),
         (worker:PooledWorker)=>readCell(surface,band,bands[row],KEY_DIGITS,worker,"8",3.2),
       ]));
       const first=[...numericGrey[span.from].cells];
-      unresolved.forEach((row,at)=>{
+      inkedUnresolved.forEach((row,at)=>{
         const evidence=[rawAt(numericGrey,row),rawAt(numericBin,row),passes[at*3]||"",passes[at*3+1]||"",passes[at*3+2]||""];
         const canonical=[...new Set(evidence.map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean))];
         if(canonical.length===1)first[row]=canonical[0];
@@ -1681,9 +1777,14 @@ async function readGrid(
      The five-worker pool keeps this bounded, and no neighbouring column is ever
      consulted or used as evidence. */
   if(hallIndex>=0){
-    const isolated=await runOnPool(pool.eng,bands.map(row=>(worker:PooledWorker)=>readCell(surface,columnBands[hallIndex],row,LOCATION_ALNUM,worker)));
+    /* Many legitimate rows print NO hall at all. The ink gate keeps this
+       precision pass exactly as strong on printed cells while no longer paying
+       one OCR call per blank cell — and a blank cell can no longer be
+       hallucinated into a plausible-looking room. */
+    const inkedHallRows=bands.map((row,at)=>cellHasInk(columnBands[hallIndex],row)?at:-1).filter(at=>at>=0);
+    const isolated=await runOnPool(pool.eng,inkedHallRows.map(at=>(worker:PooledWorker)=>readCell(surface,columnBands[hallIndex],bands[at],LOCATION_ALNUM,worker)));
     const next=[...numericGrey[hallIndex].cells];
-    isolated.forEach((raw,row)=>{const value=normalizeCell(raw||"").replace(/\s+/g,"").toUpperCase();if(stripPatterns.hall.test(value))next[row]=value;});
+    isolated.forEach((raw,pos)=>{const row=inkedHallRows[pos];const value=normalizeCell(raw||"").replace(/\s+/g,"").toUpperCase();if(stripPatterns.hall.test(value))next[row]=value;});
     numericGrey[hallIndex]={cells:next};
   }
 
@@ -1765,7 +1866,7 @@ async function readGrid(
       const words=value.split(/\s+/).filter(Boolean).length;
       const weak=!/هيئ[هة]/.test(value)&&(arabicLetters(value)<8||words<2);
       return weak?row:-1;
-    }).filter(row=>row>=0);
+    }).filter(row=>row>=0&&cellHasInk(instructorBand.band,bands[row]));
     if(weakInstructorRows.length){
       const recovered=await runOnPool([pool.ara2],weakInstructorRows.map(row=>(worker:PooledWorker)=>readCell(surface,instructorBand.band,bands[row],"",worker,"7",2.6)));
       const next=[...instructorCells.cells];
@@ -1784,7 +1885,7 @@ async function readGrid(
      canonical matching below still depends exclusively on the numeric key. */
   if(nameBand){
     const arabicLetters=(value:string)=>(String(value||"").match(/[ء-ي]/g)||[]).length;
-    const weakNameRows=bands.map((_,row)=>arabicLetters(normalizeCell(nameCells.cells[row]||""))<5?row:-1).filter(row=>row>=0);
+    const weakNameRows=bands.map((_,row)=>arabicLetters(normalizeCell(nameCells.cells[row]||""))<5?row:-1).filter(row=>row>=0&&cellHasInk(nameBand.band,bands[row]));
     if(weakNameRows.length){
       const recovered=await runOnPool([pool.ara],weakNameRows.map(row=>(worker:PooledWorker)=>readCell(surface,nameBand.band,bands[row],"",worker,"7",2.8)));
       const next=[...nameCells.cells];
@@ -1867,6 +1968,12 @@ async function readGrid(
       { source: bin,     scale: 3.6, psm: "7",  xPadding: 4, yPadding: 3 },
       { source: surface, scale: 4.0, psm: "8",  xPadding: 5, yPadding: 3, localOtsu: true },
       { source: surface, scale: 4.0, psm: "13", xPadding: 2, yPadding: 2, localOtsu: true },
+      /* Last resort for a course key whose FINAL digit hugs the outer table
+         border in the shadowed bottom corner: one wider crop, still the same
+         proven cell, still digits-only, still gated by the exact 7-digit
+         department validator (and the catalogue when present), so margin noise
+         cannot pass — it can only recover the clipped digit. */
+      { source: surface, scale: 4.2, psm: "7",  xPadding: 9, yPadding: 4, localOtsu: true },
     ] : field === "hall" ? [
       { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
@@ -1923,6 +2030,10 @@ async function readGrid(
     const grey = span ? (() => { let v=""; for(let i=span.from; i<=span.to; i++) v+=normalizeCell(numericGrey[i]?.cells[row]||"").replace(/\s+/g,""); return v; })() : normalizeCell(numericGrey[index]?.cells[row]||"");
     const binary = span ? (() => { let v=""; for(let i=span.from; i<=span.to; i++) v+=normalizeCell(numericBin[i]?.cells[row]||"").replace(/\s+/g,""); return v; })() : normalizeCell(numericBin[index]?.cells[row]||"");
     if (!test(grey) && !test(binary)) {
+      /* Escalation is for cells that FAILED, not cells that are EMPTY. A blank
+         cell pays zero strategies and stays empty for manual review. */
+      const physicalBand = span ? { left: columnBands[span.from].left, right: columnBands[span.to].right } : columnBands[index];
+      if (!cellHasInk(physicalBand, bands[row])) return;
       recoveryTasks.push({ row, index: span ? span.from : index, field, validator: test, alphabet, span });
     }
   };
@@ -2529,15 +2640,17 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      when a probe is only a downscale of the full page it already had. */
   const images=await imagePages(input,mime,TARGET_LONG_EDGE,onProgress);
   if(!images.length)throw new Error("تعذر تحويل صفحات الملف إلى صور قابلة للقراءة");
-  /* Single-page image OCR is the owner's proven reference and remains byte-for-byte
-     on its established readGrid path. Catalogue-constrained key rescue is enabled
-     only when the upload actually contains multiple scanned pages. */
-  const multiPageCourseKeys=images.length>1?optionKeys:[];
-  /* Page 1 is the owner's proven one-page golden case. In a multi-page upload
-     it receives NO catalogue-assisted key budget at all; pages 2+ retain the
-     bounded same-cell rescue. This makes the first page byte-for-byte equivalent
-     to uploading that scan alone instead of merely disabling one sub-branch. */
-  const courseKeysForPage=(index:number)=>images.length>1&&index===0?[]:multiPageCourseKeys;
+  /* OWNER MANDATE 2026-08-27: the catalogue-EXACT course-key rescue now runs on
+     EVERY scanned page, including a one-page upload and page 1 of a multi-page
+     scan. The rescue is still the same bounded, fail-closed lane: it re-reads
+     ONLY the already-proven physical course cell at high resolution and accepts
+     a repair only when exactly ONE canonical key of the selected department is
+     consistent with that same cell (O↔0-class typos). Ambiguity returns the raw
+     cell for manual review — no name, neighbour or sequence can create identity.
+     A page whose codes already read perfectly is untouched: the rescue list is
+     empty there, so the proven golden pages keep their byte-identical output. */
+  const multiPageCourseKeys=optionKeys;
+  const courseKeysForPage=(_index:number)=>multiPageCourseKeys;
   const pool=await getWorkerPool();
   const lib0=await canvas();
   const probeOf=async(buffer:Buffer)=>{
