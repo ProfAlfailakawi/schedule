@@ -1184,6 +1184,7 @@ async function readGrid(
   pool:{eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker},
   authorityDepartmentCode="",
   authorityCourseKeys:string[]=[],
+  allowRightEdgeCourseSpan:boolean=true
 ):Promise<GridRow[]|null>{
   const lib=await canvas();
   const image=await lib.loadImage(upright);
@@ -1384,7 +1385,7 @@ async function readGrid(
      accept course identity only from the SAME cell and the finite selected-
      department catalogue. Single-page OCR is intentionally untouched. */
   let rightEdgeCourseSpan:Span|null=null;
-  if(authorityCourseKeys.length){
+  if(authorityCourseKeys.length && allowRightEdgeCourseSpan){
     let anchor=-1,anchorScore=-1;
     for(let index=keySearchFrom;index<=lastBand-2;index++){
       const sectionHits=Math.max(validatorHits(numericGrey[index].cells,stripPatterns.scode),validatorHits(numericBin[index].cells,stripPatterns.scode));
@@ -2395,7 +2396,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      page it can over-claim a weak right-edge span and leave only one course row
      resolved. Give page 1 the exact same course-key budget as when that page is
      uploaded alone; pages 2+ keep the successful multi-page rescue. */
-  const courseKeysForPage=(index:number)=>images.length>1&&index===0?[]:multiPageCourseKeys;
+  const allowRightEdgeCourseSpan=(index:number)=>!(images.length>1&&index===0);
   const pool=await getWorkerPool();
   const lib0=await canvas();
   const probeOf=async(buffer:Buffer)=>{
@@ -2471,8 +2472,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
-    const pageCourseKeys=courseKeysForPage(index);
-    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment,pageCourseKeys);}catch{/* an unreadable grid falls back */}
+    const rightEdgeSpanAllowed=allowRightEdgeCourseSpan(index);
+    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment,multiPageCourseKeys,rightEdgeSpanAllowed);}catch{/* an unreadable grid falls back */}
     /* Scanned PDFs are often saved with a wrong orientation flag or a camera
        rotation that the first-page probe cannot infer reliably. Do not give up
        after one guess: only when the chosen turn fails, try the two remaining
@@ -2487,7 +2488,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         if(tried.has(turn))continue;
         try{
           const candidate=await deskew(await rotateImage(pageImage,turn));
-          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,pageCourseKeys);
+          const rightEdgeSpanAllowed=allowRightEdgeCourseSpan(index);
+          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,multiPageCourseKeys,rightEdgeSpanAllowed);
           const strength=(candidateRows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           const bestStrength=(best?.rows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows,turn};
@@ -2557,7 +2559,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
-          const rows=await readGrid(upright,rescuePool,authorityGridDepartment,courseKeysForPage(index));
+          const rightEdgeSpanAllowed=allowRightEdgeCourseSpan(index);
+          const rows=await readGrid(upright,rescuePool,authorityGridDepartment,multiPageCourseKeys,rightEdgeSpanAllowed);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
           if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
