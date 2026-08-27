@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
+import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
@@ -87,6 +87,15 @@ assert.equal(authorityScanRequiresLandscape(768,1024,800,60),false);
 assert.equal(authorityTimeCellLooksPlausible("1050 - 10040"),true);
 assert.equal(authorityTimeCellLooksPlausible("1650 - 15340"),true);
 assert.equal(authorityTimeCellLooksPlausible("012B09"),false);
+
+/* Authority day runs are ordered. A grid stroke may turn 531 into a still-
+   numeric 534; that must be treated as damaged same-cell evidence, not valid
+   days, so the cell-level recovery lane gets a chance to reread it. */
+assert.equal(authorityDaysCellLooksPlausible("5 3 1"),true);
+assert.equal(authorityDaysCellLooksPlausible("531"),true);
+assert.equal(authorityDaysCellLooksPlausible("1 3 5"),true);
+assert.equal(authorityDaysCellLooksPlausible("534"),false);
+assert.equal(authorityDaysCellLooksPlausible("5 3 3"),false);
 
 /* Building-column proof is anchored to the owner's official site prefixes.
    Concatenated seat/capacity values must never be allowed to claim BUILDING. */

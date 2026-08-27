@@ -275,6 +275,6 @@ ok('168 Authority instructor comparison uses the visible canonical identity so i
 ok('169 graduate-sheet example asset is bundled locally with the public survey', (ROOT/'public/graduation-sheet-example.jpg').exists())
 ok('170 section-only Authority canonicalization is audit-visible but cannot create a modified badge', 'const visibleChangedFields=changedFields.filter(field=>field!=="SCode")' in server and 'status:visibleChangedFields.length?"changed":"unchanged"' in server)
 ok('171 Authority section cell is explicitly exempt from yellow field highlighting', 'fieldChanged(entry, "SCode")' not in authority_report and 'className="print-ltr">{String(row.SCode' in authority_report)
-ok('172 first page of a multi-page scan retains the frozen single-page course identity path', 'allowRightEdgeCourseSpan=(index:number)=>!(images.length>1&&index===0)' in doc_ocr and 'readGrid(upright,lanePool,authorityGridDepartment,multiPageCourseKeys,rightEdgeSpanAllowed)' in doc_ocr)
+ok('172 first page of a multi-page scan retains the frozen single-page course identity path', 'const courseKeysForPage=(index:number)=>images.length>1&&index===0?[]:multiPageCourseKeys' in doc_ocr and 'const pageCourseKeys=courseKeysForPage(index)' in doc_ocr and 'readGrid(upright,lanePool,authorityGridDepartment,pageCourseKeys)' in doc_ocr)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

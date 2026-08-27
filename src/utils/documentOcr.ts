@@ -1053,6 +1053,27 @@ const stripPatterns={
 };
 
 /**
+ * Day cells are ordered runs, not arbitrary 1–5 digit soup. A photographed
+ * «5 3 1» can become «5 3 4» while still passing the old shape-only regex;
+ * requiring a unique monotonic run turns that plausible-but-wrong OCR into a
+ * recoverable cell instead of silently dropping the schedule days later.
+ */
+export const authorityDaysCellLooksPlausible=(raw:string):boolean=>{
+  const value=toAscii(String(raw||"")).replace(/\s+/g," ").trim();
+  if(!stripPatterns.days.test(value))return false;
+  const digits=value.replace(/[^1-5]/g,"");
+  if(!digits||new Set(digits).size!==digits.length)return false;
+  if(digits.length<=2)return true;
+  let ascending=true,descending=true;
+  for(let index=1;index<digits.length;index++){
+    const previous=Number(digits[index-1]),current=Number(digits[index]);
+    if(current<=previous)ascending=false;
+    if(current>=previous)descending=false;
+  }
+  return ascending||descending;
+};
+
+/**
  * A seven-digit token is not automatically an Authority course key.
  *
  * On photographed SWRSCHA pages the SECTION + CRN columns can weld into a
@@ -1346,7 +1367,11 @@ async function readGrid(
   if(hallIndex>=0)taken.add(hallIndex);
 
   const geometricDays=timeIndex>=2?timeIndex-2:-1;
-  const daysIndex=geometryHits(geometricDays,stripPatterns.days)>=minimumRows?geometricDays:claim(stripPatterns.days,minimumRows,taken);
+  const geometricDaysHits=geometricDays>=0?Math.max(
+    validatorHitsBy(numericGrey[geometricDays].cells,authorityDaysCellLooksPlausible),
+    validatorHitsBy(numericBin[geometricDays].cells,authorityDaysCellLooksPlausible),
+  ):0;
+  const daysIndex=geometricDaysHits>=minimumRows?geometricDays:claimBy(authorityDaysCellLooksPlausible,minimumRows,taken);
   if(daysIndex>=0)taken.add(daysIndex);
 
   /* The academic key lives near the RIGHT edge, but the photographed PDF also
@@ -1480,11 +1505,10 @@ async function readGrid(
   ]));
   refineIndices.forEach((index,at)=>{numericGrey[index]=refined[at*2];numericBin[index]=refined[at*2+1];});
 
-  /* Cell-by-cell is the expensive rescue path, not the default path. The old
-     reader re-ran EVERY time cell even when the strip had already read it
-     correctly. On a 27-row page that meant 27 extra OCR calls per page. Now
-     only cells that fail the time validator are re-read, preserving the fast
-     strip result for the majority of rows. */
+  /* Cell-by-cell is the expensive rescue path, not the default path. Keep the
+     fast strip result here; failed time cells are handled once by the unified
+     field-specific escalation lane below instead of paying a preliminary OCR
+     call and then escalating the same cell a second time. */
   const readCell=async(source:any,band:{left:number;right:number},rowBand:{top:number;bottom:number},alphabet:string,worker:PooledWorker=pool.ara,psm="7",scale=stripScale):Promise<string>=>{
     const rawWidth=band.right-band.left,rawHeight=rowBand.bottom-rowBand.top;
     if(rawWidth<6||rawHeight<6)return"";
@@ -1502,37 +1526,22 @@ async function readGrid(
       return String(result?.data?.text||"").replace(/\s+/g," ").trim();
     }catch{return"";}
   };
-  if(timeIndex>=0){
-    const needsTimeCell=bands.map((_,row)=>{
-      const grey=normalizeCell(numericGrey[timeIndex].cells[row]||"");
-      const binary=normalizeCell(numericBin[timeIndex].cells[row]||"");
-      return !stripPatterns.time.test(grey)&&!stripPatterns.time.test(binary);
-    });
-    const missingRows=needsTimeCell.map((missing,row)=>missing?row:-1).filter(row=>row>=0);
-    if(missingRows.length){
-      const rescued=await runOnPool(pool.eng,missingRows.map(row=>(worker:PooledWorker)=>readCell(surface,columnBands[timeIndex],bands[row],DIGITS,worker)));
-      const next=[...numericGrey[timeIndex].cells];
-      missingRows.forEach((row,at)=>{if(rescued[at])next[row]=rescued[at];});
-      numericGrey[timeIndex]={cells:next};
-    }
-  }
-
   /* A weak/shadowed page may prove the whole strip but drop isolated row keys.
      Rescue only the SAME already-proven physical cell; never search a neighbour
      and never trim a value. The catalogue/registry still canonicalize later. */
-  const rescueIndex=async(index:number,pattern:RegExp,alphabet:string)=>{
+  const rescueIndex=async(index:number,pattern:RegExp,alphabet:string,validator:(value:string)=>boolean=(value=>pattern.test(value)))=>{
     if(index<0)return;
     const missing=bands.map((_,row)=>{
       const grey=normalizeCell(numericGrey[index].cells[row]||"");
       const binary=normalizeCell(numericBin[index].cells[row]||"");
-      return !pattern.test(grey)&&!pattern.test(binary)?row:-1;
+      return !validator(grey)&&!validator(binary)?row:-1;
     }).filter(row=>row>=0);
     if(!missing.length)return;
     const rescued=await runOnPool(pool.eng,missing.map(row=>(worker:PooledWorker)=>readCell(surface,columnBands[index],bands[row],alphabet,worker)));
     const next=[...numericGrey[index].cells];
     missing.forEach((row,at)=>{
       const value=normalizeCell(rescued[at]||"");
-      if(pattern.test(value))next[row]=value;
+      if(validator(value))next[row]=value;
       else if(pattern===stripPatterns.code&&recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys))next[row]=value;
     });
     numericGrey[index]={cells:next};
@@ -1599,7 +1608,7 @@ async function readGrid(
     }
   }
   await rescueIndex(scodeIndex,stripPatterns.scode,KEY_DIGITS);
-  await rescueIndex(daysIndex,stripPatterns.days,"12345 ");
+  await rescueIndex(daysIndex,stripPatterns.days,"12345 ",authorityDaysCellLooksPlausible);
   await rescueIndex(buildingIndex,stripPatterns.building,LOCATION_ALNUM);
 
   /* Rooms are the narrowest identity cells in SWRSCHA. Whole-column OCR can
@@ -1682,6 +1691,30 @@ async function readGrid(
     [nameCells,instructorCells]=await Promise.all([arabicRead(nameBand),readInstructor()]);
   }
 
+  /* Sparse Arabic strip OCR is fast, but a shadow or an internal false rule can
+     leave one instructor cell with only a surname fragment. Escalate ONLY those
+     weak same-cell reads (never a neighbouring row/column) at PSM 7. Clean rows
+     pay no extra OCR, so multi-page speed is preserved while the human-name
+     evidence gets the same cell-level safety already used by numeric fields. */
+  if(instructorBand){
+    const arabicLetters=(value:string)=>(String(value||"").match(/[ء-ي]/g)||[]).length;
+    const weakInstructorRows=bands.map((_,row)=>{
+      const value=normalizeCell(instructorCells.cells[row]||"");
+      const words=value.split(/\s+/).filter(Boolean).length;
+      const weak=!/هيئ[هة]/.test(value)&&(arabicLetters(value)<8||words<2);
+      return weak?row:-1;
+    }).filter(row=>row>=0);
+    if(weakInstructorRows.length){
+      const recovered=await runOnPool([pool.ara2],weakInstructorRows.map(row=>(worker:PooledWorker)=>readCell(surface,instructorBand.band,bands[row],"",worker,"7",2.6)));
+      const next=[...instructorCells.cells];
+      weakInstructorRows.forEach((row,at)=>{
+        const current=normalizeCell(next[row]||""),candidate=normalizeCell(recovered[at]||"");
+        if(arabicLetters(candidate)>=Math.max(8,arabicLetters(current)+2)&&candidate.split(/\s+/).filter(Boolean).length>=2)next[row]=candidate;
+      });
+      instructorCells={cells:next};
+    }
+  }
+
   /* The claiming pass shares one alphanumeric alphabet so building and hall
      can be recognised at all — but that same freedom lets stray strokes become
      letters inside the time and days columns and break their patterns. Once a
@@ -1732,14 +1765,32 @@ async function readGrid(
     const rawWidth = band.right - band.left, rawHeight = rowBand.bottom - rowBand.top;
     if (rawWidth < 6 || rawHeight < 6) return null;
     
-    const strategies = [
+    /* Strategy order is field-specific. On the supplied SWRSCHA scan the time
+       tail sits against a ruled border, so a +4px same-cell expansion recovers
+       0800/1000 on the FIRST attempt; rooms are the opposite and must stay tight
+       to avoid importing a neighbouring building digit. Rooms cap at three
+       high-yield passes and the remaining fields at five instead of seven. */
+    const strategies = field === "time" ? [
+      { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
+      { source: bin,     scale: 3.2, psm: "7", xPadding: 6, yPadding: 4 },
       { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
-      { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 }, // Expanded crop
+      { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 },
+    ] : field === "hall" ? [
+      { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
+      { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
+      { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 },
+    ] : field === "days" ? [
+      { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
+      { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
       { source: bin,     scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
-      { source: surface, scale: 3.5, psm: "7", xPadding: 6, yPadding: 4 }, // Wider crop
-      { source: bin,     scale: 3.5, psm: "7", xPadding: 6, yPadding: 4 },
-      { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 }, // Different PSM for single block
+      { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 },
+    ] : [
+      { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
+      { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
+      { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
+      { source: bin,     scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
+      { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 },
     ];
 
     for (let i = 0; i < strategies.length; i++) {
@@ -1788,7 +1839,7 @@ async function readGrid(
     checkAndAddTask(row, timeIndex, 'time', v => stripPatterns.time.test(v), DIGITS);
     checkAndAddTask(row, buildingIndex, 'building', v => Boolean(safeBuilding(v)), LOCATION_ALNUM);
     checkAndAddTask(row, hallIndex, 'hall', v => Boolean(safeHall(v)), LOCATION_ALNUM);
-    checkAndAddTask(row, daysIndex, 'days', v => stripPatterns.days.test(v), "12345 ");
+    checkAndAddTask(row, daysIndex, 'days', authorityDaysCellLooksPlausible, "12345 ");
     checkAndAddTask(row, scodeIndex, 'scode', v => stripPatterns.scode.test(v), KEY_DIGITS);
     
     if (codeSpan) checkAndAddTask(row, -1, 'code', courseCellTest, KEY_DIGITS, codeSpan);
@@ -1845,7 +1896,7 @@ async function readGrid(
   const timeAt=pickValidated(timeIndex,stripPatterns.time);
   const buildingAt=pickValidated(buildingIndex,stripPatterns.building);
   const hallAt=pickValidated(hallIndex,stripPatterns.hall);
-  const daysAt=pickValidated(daysIndex,stripPatterns.days);
+  const daysAt=pickValidatedBy(daysIndex,authorityDaysCellLooksPlausible);
   const pickSpanValidated=(span:Span|null,pattern:RegExp)=>(row:number)=>{
     if(!span)return"";
     const joined=(reads:StripRead[])=>{let value="";for(let index=span.from;index<=span.to;index++)value+=normalizeCell(reads[index]?.cells[row]||"").replace(/\s+/g,"");return value;};
@@ -2391,12 +2442,10 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      only when the upload actually contains multiple scanned pages. */
   const multiPageCourseKeys=images.length>1?optionKeys:[];
   /* Page 1 is the owner's proven one-page golden case. In a multi-page upload
-     it must not suddenly enter the extra catalogue-anchored discovery branch:
-     that branch is useful on later dense pages, but on the first photographed
-     page it can over-claim a weak right-edge span and leave only one course row
-     resolved. Give page 1 the exact same course-key budget as when that page is
-     uploaded alone; pages 2+ keep the successful multi-page rescue. */
-  const allowRightEdgeCourseSpan=(index:number)=>!(images.length>1&&index===0);
+     it receives NO catalogue-assisted key budget at all; pages 2+ retain the
+     bounded same-cell rescue. This makes the first page byte-for-byte equivalent
+     to uploading that scan alone instead of merely disabling one sub-branch. */
+  const courseKeysForPage=(index:number)=>images.length>1&&index===0?[]:multiPageCourseKeys;
   const pool=await getWorkerPool();
   const lib0=await canvas();
   const probeOf=async(buffer:Buffer)=>{
@@ -2472,8 +2521,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
-    const rightEdgeSpanAllowed=allowRightEdgeCourseSpan(index);
-    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment,multiPageCourseKeys,rightEdgeSpanAllowed);}catch{/* an unreadable grid falls back */}
+    const pageCourseKeys=courseKeysForPage(index);
+    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment,pageCourseKeys);}catch{/* an unreadable grid falls back */}
     /* Scanned PDFs are often saved with a wrong orientation flag or a camera
        rotation that the first-page probe cannot infer reliably. Do not give up
        after one guess: only when the chosen turn fails, try the two remaining
@@ -2488,8 +2537,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         if(tried.has(turn))continue;
         try{
           const candidate=await deskew(await rotateImage(pageImage,turn));
-          const rightEdgeSpanAllowed=allowRightEdgeCourseSpan(index);
-          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,multiPageCourseKeys,rightEdgeSpanAllowed);
+          const pageCourseKeys=courseKeysForPage(index);
+          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,pageCourseKeys);
           const strength=(candidateRows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           const bestStrength=(best?.rows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows,turn};
@@ -2559,8 +2608,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
-          const rightEdgeSpanAllowed=allowRightEdgeCourseSpan(index);
-          const rows=await readGrid(upright,rescuePool,authorityGridDepartment,multiPageCourseKeys,rightEdgeSpanAllowed);
+          const pageCourseKeys=courseKeysForPage(index);
+          const rows=await readGrid(upright,rescuePool,authorityGridDepartment,pageCourseKeys);
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
           if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}
