@@ -168,6 +168,24 @@ export function resolveRoom(registry: LocationRegistry, raw: unknown, buildingId
     }
   }
 
+  /* PHANTOM-DIGIT REPAIR, registry-exact. A photographed grid rule beside the
+     narrow room cell is read as an extra digit: F11 -> F111, F33 -> F331/F133.
+     Official rooms in this family are letter + two digits, so a three-digit
+     token that matched nothing is offered exactly two candidates — drop the
+     LAST digit or drop the FIRST digit — and is accepted only when precisely
+     ONE of them is a CONFIRMED room of THIS building. Two live candidates go
+     to review; nothing is ever invented. */
+  const phantom=token.match(/^([A-Z])(\d{3})$/);
+  if(phantom){
+    const candidates=[...new Set([`${phantom[1]}${phantom[2].slice(0,2)}`,`${phantom[1]}${phantom[2].slice(1)}`])];
+    const hits=candidates
+      .map(code=>base.filter(r=>canonicalRoomShape(r.canonicalCode)===canonicalRoomShape(code)))
+      .filter(list=>list.length===1).map(list=>list[0]);
+    const unique=[...new Set(hits)];
+    if(unique.length===1){const r=unique[0];return {status:"CONFIRMED",value:r,evidence:[`رقم شبح من حد الجدول: ${token} ← ${r.canonicalCode} (قاعة مؤكدة وحيدة داخل ${r.buildingCode}).`]};}
+    if(unique.length>1)return {status:"REVIEW_REQUIRED",evidence:[`القراءة ${token} تحتمل ${unique.map(r=>r.canonicalCode).join(" أو ")} داخل المبنى؛ تحتاج تأكيدًا يدويًا.`]};
+  }
+
   // F6/f06/F 06 -> F06, but never invent a letter for a bare number.
   const shaped=canonicalRoomShape(raw);
   if(shaped){

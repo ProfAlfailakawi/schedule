@@ -1984,10 +1984,24 @@ mark('hallIsolated');
     if(weakInstructorRows.length){
       const recovered=await runOnPool([pool.ara2],weakInstructorRows.map(row=>(worker:PooledWorker)=>readCell(surface,instructorBand.band,bands[row],"",worker,"7",2.6)));
       const next=[...instructorCells.cells];
+      const stillWeak:number[]=[];
       weakInstructorRows.forEach((row,at)=>{
         const current=normalizeCell(next[row]||""),candidate=normalizeCell(recovered[at]||"");
         if(arabicLetters(candidate)>=Math.max(8,arabicLetters(current)+2)&&candidate.split(/\s+/).filter(Boolean).length>=2)next[row]=candidate;
+        else if(arabicLetters(normalizeCell(next[row]||""))<8)stillWeak.push(row);
       });
+      /* The instructor is the field the reviewer needs most. A row that stayed
+         weak after the first same-cell pass gets ONE deeper attempt from the
+         binarized pixels at a denser segmentation — shadows over the doctor's
+         name binarize away more often than they grey away. Longest legible
+         Arabic wins; nothing shorter ever replaces something longer. */
+      if(stillWeak.length){
+        const deeper=await runOnPool([pool.ara2],stillWeak.map(row=>(worker:PooledWorker)=>readCell(bin,instructorBand.band,bands[row],"",worker,"6",3.0)));
+        stillWeak.forEach((row,at)=>{
+          const current=normalizeCell(next[row]||""),candidate=normalizeCell(deeper[at]||"");
+          if(arabicLetters(candidate)>=Math.max(8,arabicLetters(current)+2)&&candidate.split(/\s+/).filter(Boolean).length>=2)next[row]=candidate;
+        });
+      }
       instructorCells={cells:next};
     }
   }
@@ -3310,7 +3324,25 @@ function matchInstructorIdentity(raw:string,instructors:AdInstructor[],preferred
   if(preferredExact.length===1)return{person:preferredExact[0].person,method:"EXACT_FULL",score:100,matchedTokens:Math.min(rawTokens.length,preferredExact[0].tokens.length)};
 
   const tokenEqual=(a:string,b:string)=>a===b;
-  const stemEqual=(a:string,b:string)=>a===b||(Math.min(a.length,b.length)>=3&&(a.startsWith(b)||b.startsWith(a)));
+  /* One OCR-noised character inside a LONG name token (نورى -> تورى,
+     العازمي -> العارمي) may count as SUPPORTING evidence only. It can never
+     become one of the two exact tokens the two-name proofs require, so no
+     identity is ever created from noise alone — it only lets a three-token
+     ordered proof survive a single damaged glyph. */
+  const oneEditApart=(a:string,b:string)=>{
+    if(a===b)return true;
+    if(Math.abs(a.length-b.length)>1||Math.min(a.length,b.length)<4)return false;
+    if(a.length===b.length){let diff=0;for(let i=0;i<a.length;i++)if(a[i]!==b[i]&&++diff>1)return false;return diff===1;}
+    const [short,long]=a.length<b.length?[a,b]:[b,a];
+    let i=0,j=0,skips=0;
+    while(i<short.length&&j<long.length){
+      if(short[i]===long[j]){i++;j++;continue;}
+      if(++skips>1)return false;
+      j++;
+    }
+    return true;
+  };
+  const stemEqual=(a:string,b:string)=>a===b||(Math.min(a.length,b.length)>=3&&(a.startsWith(b)||b.startsWith(a)))||oneEditApart(a,b);
   const orderedEvidence=(candidate:string[],observed:string[])=>{
     let at=0,exactCount=0,stemCount=0,total=0;
     for(const token of candidate){
