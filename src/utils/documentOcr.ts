@@ -2957,14 +2957,30 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     onProgress?.({phase:"read",page:pagesDone,pages:images.length,message:`قراءة الصفحة ${pagesDone} من ${images.length}`});
   
   };
-  /* MULTI-PAGE GOLDEN PATH
-     ----------------------
-     Read every scanned page through the exact same warm worker pool used by a
-     one-page upload. This deliberately trades page-level concurrency for the
-     behaviour the owner already verified as correct: no worker partitioning,
-     no second OCR engine, no parameter bleed, and no memory spike. Workers stay
-     hot between pages, so only recognition work repeats. */
-  for(let index=0;index<images.length;index++)await processPage(index,pool);
+  /* MULTI-PAGE GOLDEN PATH — now with ISOLATED PAGE LANES
+     ------------------------------------------------------
+     The original rule stands: no second OCR engine, no parameter bleed, and
+     small machines still read strictly sequentially through the one warm pool.
+     What changed (owner-mandated speed round, 2026-08-27): on a machine with
+     enough workers, the SAME warm pool is split into two fully DISJOINT lanes
+     — separate digit workers, one dedicated Arabic worker each (the supported
+     ara===ara2 serialised mode) — and two pages proceed concurrently. No lane
+     ever touches the other lane's workers, so per-page behaviour and results
+     remain exactly those of the sequential path; only the wall-clock halves. */
+  const lanes:OcrWorkerPool[]=(images.length>=2&&pool.eng.length>=4&&pool.ara!==pool.ara2)
+    ? (()=>{const half=Math.ceil(pool.eng.length/2);return [
+        {eng:pool.eng.slice(0,half),ara:pool.ara,ara2:pool.ara},
+        {eng:pool.eng.slice(half),ara:pool.ara2,ara2:pool.ara2},
+      ];})()
+    : [pool];
+  let nextPageIndex=0;
+  await Promise.all(lanes.map(async lane=>{
+    for(;;){
+      const index=nextPageIndex++;
+      if(index>=images.length)break;
+      await processPage(index,lane);
+    }
+  }));
 
   /* SAFE FALLBACK — suspicious pages only
      ---------------------------------------
