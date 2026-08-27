@@ -97,7 +97,9 @@ export default function AuthorityPdfReport({
                       {statusLabel ? <span className="authority-pdf-row-marker" aria-hidden="true">{statusLabel}</span> : null}
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCode || "—"}</div>
                       <div role="cell" className="print-ltr authority-pdf-reference-number">{entry.referenceNumber || row.referenceNumber || "—"}</div>
-                      <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "SCode"))}`}>{String(row.SCode || "").trim() || "—"}</div>
+                      {/* Section numbering is a system-canonical import convention, not
+                          a user edit. Keep the value visible but never paint it yellow. */}
+                      <div role="cell" className="print-ltr">{String(row.SCode || "").trim() || "—"}</div>
                       <div role="cell" className={`print-wrap print-course-name ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseName || row.AdCourseName || "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCredit ?? "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseHours ?? "—"}</div>

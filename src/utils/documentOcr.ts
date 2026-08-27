@@ -2279,6 +2279,13 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
      on its established readGrid path. Catalogue-constrained key rescue is enabled
      only when the upload actually contains multiple scanned pages. */
   const multiPageCourseKeys=images.length>1?optionKeys:[];
+  /* Page 1 is the owner's proven one-page golden case. In a multi-page upload
+     it must not suddenly enter the extra catalogue-anchored discovery branch:
+     that branch is useful on later dense pages, but on the first photographed
+     page it can over-claim a weak right-edge span and leave only one course row
+     resolved. Give page 1 the exact same course-key budget as when that page is
+     uploaded alone; pages 2+ keep the successful multi-page rescue. */
+  const courseKeysForPage=(index:number)=>images.length>1&&index===0?[]:multiPageCourseKeys;
   const pool=await getWorkerPool();
   const lib0=await canvas();
   const probeOf=async(buffer:Buffer)=>{
@@ -2354,7 +2361,8 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
     let pageOrientation=orientation;
     let upright=await deskew(await rotateImage(pageImage,orientation));
     let gridRows:GridRow[]|null=null;
-    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment,multiPageCourseKeys);}catch{/* an unreadable grid falls back */}
+    const pageCourseKeys=courseKeysForPage(index);
+    try{gridRows=await readGrid(upright,lanePool,authorityGridDepartment,pageCourseKeys);}catch{/* an unreadable grid falls back */}
     /* Scanned PDFs are often saved with a wrong orientation flag or a camera
        rotation that the first-page probe cannot infer reliably. Do not give up
        after one guess: only when the chosen turn fails, try the two remaining
@@ -2369,7 +2377,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
         if(tried.has(turn))continue;
         try{
           const candidate=await deskew(await rotateImage(pageImage,turn));
-          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,multiPageCourseKeys);
+          const candidateRows=await readGrid(candidate,lanePool,authorityGridDepartment,pageCourseKeys);
           const strength=(candidateRows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           const bestStrength=(best?.rows||[]).filter(row=>row.code||row.reference||row.start||row.days).length;
           if(candidateRows&&strength>bestStrength)best={upright:candidate,rows:candidateRows,turn};
@@ -2439,7 +2447,7 @@ export async function ocrDocument(input:Buffer,mime:string,onProgress?:OcrProgre
       for(const turn of rescueTurns){
         try{
           const upright=turn===bestOrientation?bestUpright:await deskew(await rotateImage(pageImage,turn));
-          const rows=await readGrid(upright,rescuePool,authorityGridDepartment,multiPageCourseKeys);
+          const rows=await readGrid(upright,rescuePool,authorityGridDepartment,courseKeysForPage(index));
           const filled=(rows||[]).filter(row=>row.code||row.start||row.courseText.length>3).length;
           if(rows&&filled>bestFilled){bestRows=rows;bestFilled=filled;bestOrientation=turn;bestUpright=upright;}
         }catch{/* retain the fast-lane result when rescue cannot improve it */}

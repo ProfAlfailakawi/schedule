@@ -968,7 +968,14 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       if(field==="AdInstructorId"&&sameInstructorIdentity())return false;
       return comparable(field,source[field])!==comparable(field,next[field]);
     });
-    reportRows.push({status:changedFields.length?"changed":"unchanged",changedFields,referenceNumber:String(source.referenceNumber||next.referenceNumber||""),source,current:next});
+    /* The Authority section number is system-canonicalized after import (501,
+       502, 503...). It remains in changedFields for audit truth, but it is not a
+       USER edit. A section-only canonical difference must therefore neither
+       create a «معدّل» badge nor make an untouched PDF row look edited. If a
+       real field changes as well, the row is still changed and only that real
+       field is highlighted by the report. */
+    const visibleChangedFields=changedFields.filter(field=>field!=="SCode");
+    reportRows.push({status:visibleChangedFields.length?"changed":"unchanged",changedFields,referenceNumber:String(source.referenceNumber||next.referenceNumber||""),source,current:next});
   });
   current.forEach((row:any,index:number)=>{
     if(consumed.has(index))return;
