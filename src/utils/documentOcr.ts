@@ -2021,7 +2021,7 @@ async function readGrid(
        0800/1000 on the FIRST attempt; rooms are the opposite and must stay tight
        to avoid importing a neighbouring building digit. Rooms cap at three
        high-yield passes and the remaining fields at five instead of seven. */
-    type CellStrategy={source:any;scale:number;psm:string;xPadding:number;yPadding:number;localOtsu?:boolean};
+    type CellStrategy={source:any;scale:number;psm:string;xPadding:number;yPadding:number;localOtsu?:boolean;xShift?:number};
     const strategies:CellStrategy[] = field === "time" ? [
       { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
       { source: bin,     scale: 3.2, psm: "7", xPadding: 6, yPadding: 4 },
@@ -2035,6 +2035,18 @@ async function readGrid(
          the same proven course/ref+course span and use a digits-only whitelist. */
       { source: surface, scale: 3.6, psm: "7",  xPadding: 4, yPadding: 3 },
       { source: bin,     scale: 3.6, psm: "7",  xPadding: 4, yPadding: 3 },
+      /* MEASURED PRODUCTION FAILURE MODE (2026-08-27, taken from the live
+         server's own raw evidence): on the deployment platform the code-cell
+         crop lands one digit to the LEFT of where the same code sits on the
+         development machine — the cell border becomes a leading phantom digit
+         (3010115) while the true FINAL digit falls outside the crop. Native
+         canvas rasterisation differs by a pixel or two per platform, so fix
+         the CROP, not the digits: retry the same proven cell shifted right.
+         These run only after the unshifted passes fail, and the strict
+         department 7-digit validator still owns acceptance. */
+      { source: surface, scale: 3.6, psm: "7",  xPadding: 2, yPadding: 3, xShift: 0.10 },
+      { source: bin,     scale: 3.6, psm: "7",  xPadding: 2, yPadding: 3, xShift: 0.10 },
+      { source: surface, scale: 3.6, psm: "7",  xPadding: 2, yPadding: 3, xShift: 0.16 },
       { source: surface, scale: 4.0, psm: "8",  xPadding: 5, yPadding: 3, localOtsu: true },
       { source: surface, scale: 4.0, psm: "13", xPadding: 2, yPadding: 2, localOtsu: true },
       /* Last resort for a course key whose FINAL digit hugs the outer table
@@ -2058,15 +2070,20 @@ async function readGrid(
       { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
       { source: bin,     scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
       { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 },
+      /* Platform crop drift affects section/reference cells the same way as
+         the course key (see the shifted passes above). One shifted retry,
+         still validator-gated. */
+      { source: surface, scale: 3.2, psm: "7", xPadding: 2, yPadding: 2, xShift: 0.10 },
     ];
 
     for (let i = 0; i < strategies.length; i++) {
       const s = strategies[i];
       const insetX = Math.max(1, Math.min(4, Math.round(rawWidth * .05)));
       const insetY = Math.max(1, Math.min(3, Math.round(rawHeight * .08)));
-      const left = Math.max(0, band.left + insetX - s.xPadding);
+      const shift = Math.round(rawWidth * (s.xShift || 0));
+      const left = Math.max(0, band.left + insetX - s.xPadding + shift);
       const topCell = Math.max(0, rowBand.top + insetY - s.yPadding);
-      const right = Math.min(image.width, band.right - insetX + s.xPadding);
+      const right = Math.min(image.width, band.right - insetX + s.xPadding + shift);
       const bottomCell = Math.min(image.height, rowBand.bottom - insetY + s.yPadding);
       const width = Math.max(1, right - left);
       const height = Math.max(1, bottomCell - topCell);
