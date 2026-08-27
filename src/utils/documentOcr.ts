@@ -1689,7 +1689,143 @@ async function readGrid(
      majority of the time column. */
 
 
+  /* «الفرع: 012» in the header is the building prefix for every row, so the
+     rows themselves vote it in: the majority prefix among the cells that
+     validated. A cell that failed then only needs its letter and two digits
+     recovered — and the letter, when the scan turned it into a digit, morphs
+     back at a KNOWN position, anchored by the prefix. This is what the free-
+     floating letter repair reverted earlier could never promise. */
+  // Rooms are identifiers, not prose. Never reconstruct a plausible room from
+  // ambiguous OCR. A wrong room is more dangerous than an empty one because it
+  // can be published unnoticed; only validator-clean values survive.
+  const safeBuilding=(raw:string)=>{
+    const value=toAscii(raw).replace(/[^A-Z0-9]/gi,"").trim().toUpperCase();
+    if(!value)return"";
+    if(stripPatterns.building.test(value)||cleanBuildingCode(value))return cleanBuildingCode(value);
+    /* Preserve one very specific extraction artefact as RAW evidence:
+       012B09 + a neighbouring room digit can become 012B091. The server only
+       repairs this when the six-character prefix resolves to one CONFIRMED
+       canonical building, so we neither invent nor silently shorten a code. */
+    if(/^\d{3}[A-Z]\d{3}$/.test(value))return value;
+    return"";
+  };
+  const safeHall=(raw:string)=>{
+    const value=toAscii(raw).replace(/[^A-Z0-9]/gi,"").trim().toUpperCase();
+    if(!value)return"";
+    return cleanHallCode(value);
+  };
+
+  /* MULTI-PAGE CELL RECOVERY ESCALATION
+     Identify cells that failed the normal fast lane, and apply a targeted,
+     isolated recovery pipeline with upscaling, expanded cropping, and PSM shifts.
+     This fulfills the "Page OCR -> Row OCR -> Cell Recovery" mandate. */
+  const cellEscalationPipeline = async (
+    row: number,
+    band: { left: number; right: number },
+    rowBand: { top: number; bottom: number },
+    alphabet: string,
+    validator: (v: string) => boolean,
+    worker: PooledWorker,
+    field: string
+  ): Promise<{ value: string, confidence: number } | null> => {
+    const rawWidth = band.right - band.left, rawHeight = rowBand.bottom - rowBand.top;
+    if (rawWidth < 6 || rawHeight < 6) return null;
+    
+    const strategies = [
+      { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
+      { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
+      { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 }, // Expanded crop
+      { source: bin,     scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
+      { source: surface, scale: 3.5, psm: "7", xPadding: 6, yPadding: 4 }, // Wider crop
+      { source: bin,     scale: 3.5, psm: "7", xPadding: 6, yPadding: 4 },
+      { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 }, // Different PSM for single block
+    ];
+
+    for (let i = 0; i < strategies.length; i++) {
+      const s = strategies[i];
+      const insetX = Math.max(1, Math.min(4, Math.round(rawWidth * .05)));
+      const insetY = Math.max(1, Math.min(3, Math.round(rawHeight * .08)));
+      const left = Math.max(0, band.left + insetX - s.xPadding);
+      const topCell = Math.max(0, rowBand.top + insetY - s.yPadding);
+      const right = Math.min(image.width, band.right - insetX + s.xPadding);
+      const bottomCell = Math.min(image.height, rowBand.bottom - insetY + s.yPadding);
+      const width = Math.max(1, right - left);
+      const height = Math.max(1, bottomCell - topCell);
+      
+      const cell = lib.createCanvas(Math.max(1, Math.round(width * s.scale)), Math.max(1, Math.round(height * s.scale)));
+      const ctx = cell.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(s.source, left, topCell, width, height, 0, 0, cell.width, cell.height);
+      
+      await worker.setParameters({ tessedit_char_whitelist: alphabet, tessedit_pageseg_mode: s.psm as any });
+      let value = "";
+      try {
+        const result: any = await worker.recognize(cell.toBuffer("image/png"));
+        value = String(result?.data?.text || "").replace(/\s+/g, " ").trim();
+      } catch { }
+      
+      if (value && validator(value)) {
+        return { value, confidence: 0.89 - (i * 0.05) };
+      }
+    }
+    return null;
+  };
+
+  type RecoveryTask = { row: number, index: number, field: string, validator: (v: string) => boolean, alphabet: string, span?: Span };
+  const recoveryTasks: RecoveryTask[] = [];
+  
+  const checkAndAddTask = (row: number, index: number, field: string, test: (v: string) => boolean, alphabet: string, span?: Span) => {
+    if (index < 0 && !span) return;
+    const grey = span ? (() => { let v=""; for(let i=span.from; i<=span.to; i++) v+=normalizeCell(numericGrey[i]?.cells[row]||"").replace(/\s+/g,""); return v; })() : normalizeCell(numericGrey[index]?.cells[row]||"");
+    const binary = span ? (() => { let v=""; for(let i=span.from; i<=span.to; i++) v+=normalizeCell(numericBin[i]?.cells[row]||"").replace(/\s+/g,""); return v; })() : normalizeCell(numericBin[index]?.cells[row]||"");
+    if (!test(grey) && !test(binary)) {
+      recoveryTasks.push({ row, index: span ? span.from : index, field, validator: test, alphabet, span });
+    }
+  };
+
+  for (let row = 0; row < bands.length; row++) {
+    checkAndAddTask(row, timeIndex, 'time', v => stripPatterns.time.test(v), DIGITS);
+    checkAndAddTask(row, buildingIndex, 'building', v => Boolean(safeBuilding(v)), LOCATION_ALNUM);
+    checkAndAddTask(row, hallIndex, 'hall', v => Boolean(safeHall(v)), LOCATION_ALNUM);
+    checkAndAddTask(row, daysIndex, 'days', v => stripPatterns.days.test(v), "12345 ");
+    checkAndAddTask(row, scodeIndex, 'scode', v => stripPatterns.scode.test(v), KEY_DIGITS);
+    
+    if (codeSpan) checkAndAddTask(row, -1, 'code', courseCellTest, KEY_DIGITS, codeSpan);
+    else checkAndAddTask(row, codeIndex, 'code', courseCellTest, KEY_DIGITS);
+    
+    if (refcodeSpan) checkAndAddTask(row, -1, 'refcode', refCourseCellTest, KEY_DIGITS, refcodeSpan);
+    else checkAndAddTask(row, refcodeIndex, 'refcode', refCourseCellTest, KEY_DIGITS);
+    
+    checkAndAddTask(row, referenceIndex, 'reference', v => stripPatterns.reference.test(v), KEY_DIGITS);
+  }
+
+  if (recoveryTasks.length > 0) {
+    await runOnPool(pool.eng, recoveryTasks.map(task => async (worker: PooledWorker) => {
+      let band = columnBands[task.index];
+      if (task.span) band = { left: columnBands[task.span.from].left, right: columnBands[task.span.to].right };
+      
+      const res = await cellEscalationPipeline(task.row, band, bands[task.row], task.alphabet, task.validator, worker, task.field);
+      if (res) {
+        if (task.span) {
+          const first = [...numericGrey[task.span.from].cells];
+          first[task.row] = res.value;
+          numericGrey[task.span.from] = { cells: first };
+          for (let i = task.span.from + 1; i <= task.span.to; i++) {
+            const rest = [...numericGrey[i].cells];
+            rest[task.row] = "";
+            numericGrey[i] = { cells: rest };
+          }
+        } else {
+          const next = [...numericGrey[task.index].cells];
+          next[task.row] = res.value;
+          numericGrey[task.index] = { cells: next };
+        }
+      }
+    }));
+  }
+
   const pickValidated=(index:number,pattern:RegExp)=>(row:number)=>{
+
     if(index<0)return"";
     const grey=normalizeCell(numericGrey[index].cells[row]||"");
     const binary=normalizeCell(numericBin[index].cells[row]||"");
@@ -1729,32 +1865,6 @@ async function readGrid(
   const codeAt=codeSpan?pickSpanValidatedBy(codeSpan,courseCellTest):pickValidatedBy(codeIndex,courseCellTest);
   const referenceAt=pickValidated(referenceIndex,stripPatterns.reference);
   const scodeAt=pickValidated(scodeIndex,stripPatterns.scode);
-
-  /* «الفرع: 012» in the header is the building prefix for every row, so the
-     rows themselves vote it in: the majority prefix among the cells that
-     validated. A cell that failed then only needs its letter and two digits
-     recovered — and the letter, when the scan turned it into a digit, morphs
-     back at a KNOWN position, anchored by the prefix. This is what the free-
-     floating letter repair reverted earlier could never promise. */
-  // Rooms are identifiers, not prose. Never reconstruct a plausible room from
-  // ambiguous OCR. A wrong room is more dangerous than an empty one because it
-  // can be published unnoticed; only validator-clean values survive.
-  const safeBuilding=(raw:string)=>{
-    const value=toAscii(raw).replace(/[^A-Z0-9]/gi,"").trim().toUpperCase();
-    if(!value)return"";
-    if(stripPatterns.building.test(value)||cleanBuildingCode(value))return cleanBuildingCode(value);
-    /* Preserve one very specific extraction artefact as RAW evidence:
-       012B09 + a neighbouring room digit can become 012B091. The server only
-       repairs this when the six-character prefix resolves to one CONFIRMED
-       canonical building, so we neither invent nor silently shorten a code. */
-    if(/^\d{3}[A-Z]\d{3}$/.test(value))return value;
-    return"";
-  };
-  const safeHall=(raw:string)=>{
-    const value=toAscii(raw).replace(/[^A-Z0-9]/gi,"").trim().toUpperCase();
-    if(!value)return"";
-    return cleanHallCode(value);
-  };
 
   /* The printed Authority clocks on one page share a stable one-minute
      lattice. A ruled right border is sometimes OCR'd as the last digit (0800 →
