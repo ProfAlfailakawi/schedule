@@ -101,7 +101,11 @@ async function getWorkerPool(){
        so sharing one worker is a supported, slower-but-safe mode — and an
        instance that stays alive beats one the platform kills mid-request. */
     const a1=await getHeaderWorker();
-    const a2=cores<=2?a1:await createWorker("ara+eng");
+    /* Share the Arabic worker only when BOTH cpu and memory are scarce. On an
+       instance with raised memory the second Arabic worker restores real
+       name/instructor parallelism — the largest per-page cost block. */
+    const lowMemory=(os.totalmem?.()||0)<3*1024*1024*1024;
+    const a2=cores<=2&&lowMemory?a1:await createWorker("ara+eng");
     return{eng:engWorkers as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
   })();
   return poolPromise;
@@ -1297,13 +1301,18 @@ async function readGrid(
   authorityCourseKeys:string[]=[],
   allowRightEdgeCourseSpan:boolean=true
 ):Promise<GridRow[]|null>{
+  const profile=process.env.OCR_PROFILE==="1";
+  let profT=Date.now();
+  const mark=(label:string)=>{if(profile){const now=Date.now();console.error(`[prof] ${label} ${(now-profT)}ms`);profT=now;}};
   const lib=await canvas();
   const image=await lib.loadImage(upright);
   const surface=lib.createCanvas(image.width,image.height);
   surface.getContext("2d").drawImage(image,0,0);
   const bin=otsuBinarize(lib,surface);
+  mark('load+binarize');
   const geometry=adaptiveGridGeometry(lib,surface);
   if(!geometry)return null;
+  mark('geometry');
   const {cols,bands}=geometry;
 
   /* The adaptive detector includes the OUTER table borders, therefore every
@@ -1373,10 +1382,12 @@ async function readGrid(
   const edgeIndices=[...Array.from({length:Math.min(6,Math.max(0,columnBands.length-1))},(_,index)=>index+1),
     ...Array.from({length:Math.min(8,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]
     .filter((index,pos,list)=>index>=0&&list.indexOf(index)===pos).sort((a,b)=>a-b);
+mark('setup');
   const greyReads=await runOnPool(pool.eng,edgeIndices.map(index=>(worker:PooledWorker)=>readStrip(surface,columnBands[index],claimAlphabet(index),"6",worker)));
   const numericGrey:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
   edgeIndices.forEach((columnIndex,at)=>{numericGrey[columnIndex]=greyReads[at];});
   const anyPattern=Object.values(stripPatterns);
+  mark('greyStrips');
   const bestPatternHits=(read:StripRead)=>Math.max(...anyPattern.map(pattern=>read.cells.filter(cell=>pattern.test(cell.replace(/\s+/g," ").trim())).length));
   const likelyStructural=new Set<number>([1,3,4,5,...Array.from({length:Math.min(8,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]);
   const binIndices=edgeIndices.filter(index=>{
@@ -1388,6 +1399,7 @@ async function readGrid(
   const numericBin:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
   binIndices.forEach((columnIndex,at)=>{numericBin[columnIndex]=binReads[at];});
 
+  mark('binStrips');
   const normalizeCell=(value:string)=>value.replace(/\s+/g," ").trim();
   const validatorHits=(cells:string[],pattern:RegExp)=>cells.filter(cell=>pattern.test(normalizeCell(cell))).length;
   const validatorHitsBy=(cells:string[],test:(value:string)=>boolean)=>cells.filter(cell=>test(normalizeCell(cell))).length;
@@ -1443,6 +1455,7 @@ async function readGrid(
     ]));
     locationProbeIndices.forEach((index,at)=>{numericGrey[index]=locationReads[at*2];numericBin[index]=locationReads[at*2+1];});
   }
+  mark('locationProbe');
   const bestBy=(indices:number[],test:(value:string)=>boolean,minimum:number)=>{
     let bestIndex=-1,bestHits=0;
     for(const index of indices){
@@ -1637,6 +1650,7 @@ async function readGrid(
     (worker:PooledWorker)=>readStrip(bin,columnBands[index],DIGITS,"6",worker),
   ]));
   refineIndices.forEach((index,at)=>{numericGrey[index]=refined[at*2];numericBin[index]=refined[at*2+1];});
+  mark('refine');
 
   /* Cell-by-cell is the expensive rescue path, not the default path. Keep the
      fast strip result here; failed time cells are handled once by the unified
@@ -1725,10 +1739,17 @@ async function readGrid(
   };
   const KEY_DIGITS="0123456789";
   const LOCATION_ALNUM="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  if(codeSpan)await rescueSpan(codeSpan,stripPatterns.code,KEY_DIGITS);
-  else if(refcodeSpan)await rescueSpan(refcodeSpan,stripPatterns.refcode,KEY_DIGITS);
-  else if(refcodeIndex>=0)await rescueIndex(refcodeIndex,stripPatterns.refcode,KEY_DIGITS);
-  else await rescueIndex(codeIndex,stripPatterns.code,KEY_DIGITS);
+  /* With a department catalogue present, the GOLDEN rescue below re-reads the
+     same failed course cells at higher resolution with catalogue-exact voting,
+     and the escalation lane covers whatever remains — this earlier pattern-only
+     pass then only duplicated those reads. It stays as the sole rescue for the
+     catalogue-free path. */
+  if(!authorityCourseKeys.length){
+    if(codeSpan)await rescueSpan(codeSpan,stripPatterns.code,KEY_DIGITS);
+    else if(refcodeSpan)await rescueSpan(refcodeSpan,stripPatterns.refcode,KEY_DIGITS);
+    else if(refcodeIndex>=0)await rescueIndex(refcodeIndex,stripPatterns.refcode,KEY_DIGITS);
+    else await rescueIndex(codeIndex,stripPatterns.code,KEY_DIGITS);
+  }
 
   /* MULTI-PAGE COURSE-KEY GOLDEN RESCUE
      -----------------------------------
@@ -1787,7 +1808,15 @@ async function readGrid(
     const confirmRows=bands.map((_,row)=>{
       if(unresolved.includes(row))return -1;
       const key=acceptedKeyAt(row);
-      return key&&hasAdjacentSibling(key)&&cellHasInk(band,bands[row])?row:-1;
+      if(!key||!hasAdjacentSibling(key)||!cellHasInk(band,bands[row]))return -1;
+      /* Two INDEPENDENT sources (grey strip and binarized strip) that already
+         recover to the same canonical key ARE the two-vote agreement this
+         guard exists to obtain — re-reading them again is pure latency. Only a
+         single-source acceptance still pays the confirmation reads. */
+      const greyKey=recoverAuthorityCourseCell(rawAt(numericGrey,row),authorityDepartmentCode,authorityCourseKeys);
+      const binKey=recoverAuthorityCourseCell(rawAt(numericBin,row),authorityDepartmentCode,authorityCourseKeys);
+      if(greyKey&&binKey&&greyKey===binKey)return -1;
+      return row;
     }).filter(row=>row>=0);
     if(confirmRows.length){
       const rereads=await runOnPool(pool.eng,confirmRows.flatMap(row=>[
@@ -1812,14 +1841,16 @@ async function readGrid(
     }
     const inkedUnresolved=unresolved.filter(row=>cellHasInk(band,bands[row]));
     if(inkedUnresolved.length){
+      /* Two high-resolution passes, not three: the PSM-8 pass duplicated what
+         the field-specific escalation lane below already tries (including the
+         platform-shifted crops), so unresolved cells paid the same read twice. */
       const passes=await runOnPool(pool.eng,inkedUnresolved.flatMap(row=>[
         (worker:PooledWorker)=>readCell(surface,band,bands[row],KEY_DIGITS,worker,"7",3.2),
         (worker:PooledWorker)=>readCell(bin,band,bands[row],KEY_DIGITS,worker,"7",3.2),
-        (worker:PooledWorker)=>readCell(surface,band,bands[row],KEY_DIGITS,worker,"8",3.2),
       ]));
       const first=[...numericGrey[span.from].cells];
       inkedUnresolved.forEach((row,at)=>{
-        const evidence=[rawAt(numericGrey,row),rawAt(numericBin,row),passes[at*3]||"",passes[at*3+1]||"",passes[at*3+2]||""];
+        const evidence=[rawAt(numericGrey,row),rawAt(numericBin,row),passes[at*2]||"",passes[at*2+1]||""];
         const canonical=[...new Set(evidence.map(value=>recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)).filter(Boolean))];
         if(canonical.length===1)first[row]=canonical[0];
       });
@@ -1834,9 +1865,11 @@ async function readGrid(
       }
     }
   }
+mark('goldenRescue');
   await rescueIndex(scodeIndex,stripPatterns.scode,KEY_DIGITS);
   await rescueIndex(daysIndex,stripPatterns.days,"12345 ",authorityDaysCellLooksPlausible);
   await rescueIndex(buildingIndex,stripPatterns.building,LOCATION_ALNUM);
+  mark('smallRescues');
 
   /* Rooms are the narrowest identity cells in SWRSCHA. Whole-column OCR can
      legitimately turn F32 into 32 while still producing a syntactically valid
@@ -1850,13 +1883,25 @@ async function readGrid(
        precision pass exactly as strong on printed cells while no longer paying
        one OCR call per blank cell — and a blank cell can no longer be
        hallucinated into a plausible-looking room. */
-    const inkedHallRows=bands.map((row,at)=>cellHasInk(columnBands[hallIndex],row)?at:-1).filter(at=>at>=0);
+    /* When the grey and binarized strips independently agree on the same
+       validator-clean hall token, that is already two votes for the same
+       evidence — the isolated re-read exists for the cases where whole-column
+       OCR could have truncated the token (F32→32), and two agreeing sources
+       make that failure mode vanishingly unlikely. Skipping them converts the
+       most expensive per-row pass into a targeted one. */
+    const hallAgreed=(row:number)=>{
+      const grey=normalizeCell(numericGrey[hallIndex].cells[row]||"").replace(/\s+/g,"").toUpperCase();
+      const binary=normalizeCell(numericBin[hallIndex].cells[row]||"").replace(/\s+/g,"").toUpperCase();
+      return Boolean(grey)&&grey===binary&&stripPatterns.hall.test(grey);
+    };
+    const inkedHallRows=bands.map((row,at)=>cellHasInk(columnBands[hallIndex],row)&&!hallAgreed(at)?at:-1).filter(at=>at>=0);
     const isolated=await runOnPool(pool.eng,inkedHallRows.map(at=>(worker:PooledWorker)=>readCell(surface,columnBands[hallIndex],bands[at],LOCATION_ALNUM,worker)));
     const next=[...numericGrey[hallIndex].cells];
     isolated.forEach((raw,pos)=>{const row=inkedHallRows[pos];const value=normalizeCell(raw||"").replace(/\s+/g,"").toUpperCase();if(stripPatterns.hall.test(value))next[row]=value;});
     numericGrey[hallIndex]={cells:next};
   }
 
+mark('hallIsolated');
   /* Pass 2 — Arabic. Instructor names are mandatory because the system must
      display every doctor after upload. Course names are only an OCR fallback:
      once the numeric course key is readable on most rows, the authoritative
@@ -1905,12 +1950,12 @@ async function readGrid(
   };
   const readInstructor=async()=>{
     if(!instructorBand||instructorBand.index===nameBand?.index)return{cells:bands.map(()=>"")};
-    const sparse=await readStrip(surface,instructorBand.band,"","4",pool.ara2);
-    const dense=await readStrip(surface,instructorBand.band,"","6",pool.ara2);
-    return{cells:bands.map((_,row)=>{
-      const a=(sparse.cells[row]||"").trim(),b=(dense.cells[row]||"").trim();
-      return a.length>=b.length?a:b;
-    })};
+    /* One sparse strip only. The second whole-strip DENSE pass used to re-pay
+       the full column for a handful of weak rows; those same weak rows are
+       already re-read individually below at PSM 7 and higher scale, which is
+       strictly stronger evidence than a dense strip. Measured: the Arabic
+       block was the single largest per-page cost, and this halves it. */
+    return readStrip(surface,instructorBand.band,"","4",pool.ara2);
   };
   /* A multi-page lane may intentionally use ONE Arabic worker for both name
      fields so two pages can run in parallel without allocating more OCR
@@ -1966,6 +2011,7 @@ async function readGrid(
     }
   }
 
+mark('arabic');
   /* The claiming pass shares one alphanumeric alphabet so building and hall
      can be recognised at all — but that same freedom lets stray strokes become
      letters inside the time and days columns and break their patterns. Once a
@@ -2059,6 +2105,9 @@ async function readGrid(
       { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 },
+      /* Same platform crop-drift retry as the course key: a hall crop that
+         drifted absorbs a border stroke as a phantom digit (F11 -> F111). */
+      { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0, xShift: 0.10 },
     ] : field === "days" ? [
       { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
@@ -2165,6 +2214,7 @@ async function readGrid(
     }));
   }
 
+mark('escalation');
   const pickValidated=(index:number,pattern:RegExp)=>(row:number)=>{
 
     if(index<0)return"";
