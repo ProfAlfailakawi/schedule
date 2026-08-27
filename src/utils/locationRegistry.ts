@@ -175,6 +175,16 @@ export function resolveRoom(registry: LocationRegistry, raw: unknown, buildingId
      LAST digit or drop the FIRST digit — and is accepted only when precisely
      ONE of them is a CONFIRMED room of THIS building. Two live candidates go
      to review; nothing is ever invented. */
+  /* The phantom can also PRECEDE the letter (1F07 -> F07) and may carry the
+     usual O/I/L glyph confusion in its numeric tail; normalize the tail the
+     same way the ocrRoom repair above does before offering candidates. */
+  const leadPhantom=token.match(/^\d([A-Z])([0-9OIL]{2})$/);
+  if(leadPhantom){
+    const candidate=`${leadPhantom[1]}${leadPhantom[2].replace(/O/g,"0").replace(/[IL]/g,"1")}`;
+    const hits=base.filter(r=>canonicalRoomShape(r.canonicalCode)===canonicalRoomShape(candidate));
+    if(hits.length===1){const r=hits[0];return {status:"CONFIRMED",value:r,evidence:[`رقم شبح قبل حرف القاعة: ${token} ← ${r.canonicalCode} (قاعة مؤكدة وحيدة داخل ${r.buildingCode}).`]};}
+    if(hits.length>1)return {status:"REVIEW_REQUIRED",evidence:[`إصلاح ${token} يطابق أكثر من قاعة داخل المبنى.`]};
+  }
   const phantom=token.match(/^([A-Z])(\d{3})$/);
   if(phantom){
     const candidates=[...new Set([`${phantom[1]}${phantom[2].slice(0,2)}`,`${phantom[1]}${phantom[2].slice(1)}`])];
