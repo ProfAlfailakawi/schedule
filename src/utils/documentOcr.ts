@@ -1898,6 +1898,32 @@ mark('goldenRescue');
     const isolated=await runOnPool(pool.eng,inkedHallRows.map(at=>(worker:PooledWorker)=>readCell(surface,columnBands[hallIndex],bands[at],LOCATION_ALNUM,worker)));
     const next=[...numericGrey[hallIndex].cells];
     isolated.forEach((raw,pos)=>{const row=inkedHallRows[pos];const value=normalizeCell(raw||"").replace(/\s+/g,"").toUpperCase();if(stripPatterns.hall.test(value))next[row]=value;});
+    /* A THREE-digit hall (F112, F332) is the room-cell twin of the course-key
+       border phantom: shape-valid, so no rescue ever fired, and the registry
+       alone cannot arbitrate F11-vs-F12 when both exist. The image can: read
+       the SAME cell again with the crop shifted a tenth of the cell to each
+       side — the shift that drops the border stroke reveals the true two-digit
+       room. Accept only a two-digit result CONSISTENT with the observed three
+       digits (its prefix or its suffix); two conflicting consistent answers
+       leave the cell for manual review exactly as before. */
+    const tripleRows=bands.map((_,row)=>/^[A-Z]\d{3}$/.test(next[row]||"")?row:-1).filter(row=>row>=0);
+    if(tripleRows.length){
+      const hallBand=columnBands[hallIndex],hallWidth=hallBand.right-hallBand.left;
+      const shifted=(offset:number)=>({left:hallBand.left+Math.round(hallWidth*offset),right:hallBand.right+Math.round(hallWidth*offset)});
+      const rereads=await runOnPool(pool.eng,tripleRows.flatMap(row=>[
+        (worker:PooledWorker)=>readCell(surface,shifted(0.12),bands[row],LOCATION_ALNUM,worker),
+        (worker:PooledWorker)=>readCell(surface,shifted(-0.12),bands[row],LOCATION_ALNUM,worker),
+      ]));
+      tripleRows.forEach((row,at)=>{
+        const triple=next[row]||"";
+        const votes=[rereads[at*2]||"",rereads[at*2+1]||""]
+          .map(value=>normalizeCell(value).replace(/\s+/g,"").toUpperCase())
+          .filter(value=>/^[A-Z]\d{2}$/.test(value)&&value[0]===triple[0]
+            &&(value.slice(1)===triple.slice(1,3)||value.slice(1)===triple.slice(2)));
+        const unique=[...new Set(votes)];
+        if(unique.length===1)next[row]=unique[0];
+      });
+    }
     numericGrey[hallIndex]={cells:next};
   }
 
