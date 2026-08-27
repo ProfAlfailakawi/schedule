@@ -1089,8 +1089,16 @@ export const authorityDaysCellLooksPlausible=(raw:string):boolean=>{
  * later at catalogue matching; with a proven department this function is the
  * semantic proof used to CLAIM the physical course column.
  */
+const authorityCourseDigits=(raw:unknown):string=>academicDigits(
+  toAscii(String(raw||"")).replace(/[Oo]/g,"0")
+);
+
 export const authorityCourseCellLooksPlausible=(raw:string,departmentCode=""):boolean=>{
-  const token=academicDigits(raw);
+  /* Course keys are digits-only by definition. Tesseract's most common right-
+     edge mistake is O↔0; normalizing that glyph here is a character correction,
+     not a catalogue guess. Canonical course identity is still resolved later
+     against the selected department catalogue and ambiguity still fails closed. */
+  const token=authorityCourseDigits(raw);
   if(!/^\d{7}$/.test(token))return false;
   const department=academicDigits(departmentCode);
   if(!department)return true;
@@ -1108,7 +1116,7 @@ export const authorityCourseCellLooksPlausible=(raw:string,departmentCode=""):bo
    the normal strict seven-digit validator still owns canonical identity. */
 export const authorityCourseColumnLooksPlausible=(raw:string,departmentCode=""):boolean=>{
   if(authorityCourseCellLooksPlausible(raw,departmentCode))return true;
-  const token=academicDigits(raw),department=academicDigits(departmentCode);
+  const token=authorityCourseDigits(raw),department=academicDigits(departmentCode);
   if(!department)return false;
   /* Discovery only: dense photographed rows can either lose the final course
      digit (0101102 -> 010110) or pick up ONE neighbour/row-edge digit
@@ -1118,7 +1126,17 @@ export const authorityCourseColumnLooksPlausible=(raw:string,departmentCode=""):
      same-cell rescue, so no shortened/contaminated code can escape readGrid. */
   const discoveryShape=(value:string)=>value.startsWith(department)
     &&(value.length===department.length+2||value.length===department.length+3);
-  return discoveryShape(token)||(token.length>1&&discoveryShape(token.slice(1)));
+  const exactLength=department.length+3;
+  /* On the older phone/CamScanner PDF, the outer course-cell rule is sometimes
+     painted as TWO leading 1-like strokes (0101201 -> 110101201). This is still
+     discovery-only: accept the exact department-shaped 7-digit TAIL behind at
+     most two leading rule glyphs so the physical column can be claimed, then
+     reread the same cell before canonical identity is decided. */
+  const boundedLeadingRuleTail=token.length>exactLength&&token.length<=exactLength+2
+    ? token.slice(-exactLength)
+    : "";
+  return discoveryShape(token)||(token.length>1&&discoveryShape(token.slice(1)))
+    ||Boolean(boundedLeadingRuleTail&&authorityCourseCellLooksPlausible(boundedLeadingRuleTail,department));
 };
 
 /**
@@ -1131,7 +1149,7 @@ export const authorityCourseColumnLooksPlausible=(raw:string,departmentCode=""):
  * from prose, a neighbouring row, or sequence position.
  */
 export const recoverAuthorityCourseCell=(raw:string,departmentCode="",canonicalKeys:string[]=[]):string=>{
-  const token=academicDigits(raw),department=academicDigits(departmentCode);
+  const token=authorityCourseDigits(raw),department=academicDigits(departmentCode);
   const catalogue=[...new Set(canonicalKeys.map(academicDigits).filter(key=>/^\d{7}$/.test(key)&&(!department||key.startsWith(department))))];
   if(authorityCourseCellLooksPlausible(token,department)&&(!catalogue.length||catalogue.includes(token)))return token;
   if(!token||!catalogue.length)return"";
@@ -1149,7 +1167,8 @@ export const recoverAuthorityCourseCell=(raw:string,departmentCode="",canonicalK
     if(token.length===3)return key.endsWith(token);
     if(token.length>=3&&token.length<=6&&key.endsWith(token))return true;
     if(token.length===key.length-1)return key.startsWith(token)||key.endsWith(token);
-    if(token.length===key.length+1)return token.slice(1)===key||token.slice(0,-1)===key;
+    if(token.length>key.length&&token.length<=key.length+2)
+      return token.endsWith(key)||token.startsWith(key);
     if(token.length===key.length&&token.slice(1)===key.slice(1))return true;
     return false;
   });
@@ -1167,7 +1186,7 @@ export const recoverAuthorityCourseCell=(raw:string,departmentCode="",canonicalK
  * that carries academic identity is the seven-digit TAIL, which must satisfy
  * the same department proof as a standalone course cell. */
 export const authorityReferenceCourseCellLooksPlausible=(raw:string,departmentCode=""):boolean=>{
-  const token=academicDigits(raw);
+  const token=authorityCourseDigits(raw);
   if(!/^\d{11,13}$/.test(token))return false;
   return authorityCourseCellLooksPlausible(token.slice(-7),departmentCode);
 };
@@ -1263,6 +1282,15 @@ async function readGrid(
   /* Pass 1 — numerics, from grey AND binarized. The two fail on different
      rows; per cell, the value the validator accepts wins. */
   const NUMERIC="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ -";
+  const IDENTITY_DIGITS="0123456789 -";
+  /* The right edge is identity-heavy (section/reference/course key). Reading
+     those discovery strips with an A–Z whitelist made clean zeroes become O's
+     before the course column had even been claimed. Keep the flexible alphabet
+     on the scheduling/location side, but make the bounded right-edge discovery
+     lane digits-only. This is both faster and more accurate, and it does not
+     change any validator or canonical matching rule. */
+  const rightIdentityStart=columnBands.length>=12?Math.max(0,columnBands.length-7):columnBands.length;
+  const claimAlphabet=(index:number)=>index>=rightIdentityStart?IDENTITY_DIGITS:NUMERIC;
   /* Grey strips fan out over the pool. The binarized pass — an equal second
      bill — is paid only for the columns the grey pass left weak: on the real
      scan most columns validate from grey alone, so most of that bill vanishes. */
@@ -1274,7 +1302,7 @@ async function readGrid(
   const edgeIndices=[...Array.from({length:Math.min(6,Math.max(0,columnBands.length-1))},(_,index)=>index+1),
     ...Array.from({length:Math.min(8,columnBands.length)},(_,offset)=>columnBands.length-1-offset)]
     .filter((index,pos,list)=>index>=0&&list.indexOf(index)===pos).sort((a,b)=>a-b);
-  const greyReads=await runOnPool(pool.eng,edgeIndices.map(index=>(worker:PooledWorker)=>readStrip(surface,columnBands[index],NUMERIC,"6",worker)));
+  const greyReads=await runOnPool(pool.eng,edgeIndices.map(index=>(worker:PooledWorker)=>readStrip(surface,columnBands[index],claimAlphabet(index),"6",worker)));
   const numericGrey:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
   edgeIndices.forEach((columnIndex,at)=>{numericGrey[columnIndex]=greyReads[at];});
   const anyPattern=Object.values(stripPatterns);
@@ -1285,7 +1313,7 @@ async function readGrid(
     return best<bands.length*0.5&&(best>0||likelyStructural.has(index));
   });
   const binReads=await runOnPool(pool.eng,
-    binIndices.map(index=>(worker:PooledWorker)=>readStrip(bin,columnBands[index],NUMERIC,"6",worker)));
+    binIndices.map(index=>(worker:PooledWorker)=>readStrip(bin,columnBands[index],claimAlphabet(index),"6",worker)));
   const numericBin:StripRead[]=columnBands.map(()=>({cells:bands.map(()=>"")}));
   binIndices.forEach((columnIndex,at)=>{numericBin[columnIndex]=binReads[at];});
 
@@ -1408,40 +1436,68 @@ async function readGrid(
      at the correct table. For MULTI-PAGE scans only, let the adjacent section +
      reference pair prove where the course cell must physically begin. We still
      accept course identity only from the SAME cell and the finite selected-
-     department catalogue. Single-page OCR is intentionally untouched. */
+     department catalogue. Single-page OCR receives no catalogue-assisted key
+     rescue; the strict geometry-only fallback below remains catalogue-free. */
+  /* Discover the structural SECTION | REFERENCE anchor once. This geometry is
+     useful even when catalogue-assisted rescue is intentionally disabled (the
+     one-page golden path): if the normal course-strip vote is just below its
+     page-wide threshold, one exact department-shaped key beside a strongly
+     proven section/reference pair is enough to locate the physical COURSE CELL.
+     Every row is still reread/validated from that same cell; no neighbour value
+     and no course name is used to manufacture identity. */
+  let identityAnchor=-1,identityAnchorScore=-1;
+  for(let index=keySearchFrom;index<=lastBand-2;index++){
+    const sectionHits=Math.max(validatorHits(numericGrey[index].cells,stripPatterns.scode),validatorHits(numericBin[index].cells,stripPatterns.scode));
+    const referenceHits=Math.max(validatorHits(numericGrey[index+1].cells,stripPatterns.reference),validatorHits(numericBin[index+1].cells,stripPatterns.reference));
+    if(sectionHits<minimumRows||referenceHits<minimumRows)continue;
+    const score=sectionHits+referenceHits;
+    if(score>identityAnchorScore||(score===identityAnchorScore&&index>identityAnchor)){identityAnchor=index;identityAnchorScore=score;}
+  }
+
+  let strictRightEdgeCourseSpan:Span|null=null;
+  if(identityAnchor>=0){
+    const start=identityAnchor+2,referenceWidth=columnBands[identityAnchor+1].right-columnBands[identityAnchor+1].left;
+    let best:Span|null=null,bestExact=0,bestDiscovery=0;
+    for(let width=1;width<=3&&start+width-1<=lastBand;width++){
+      const span={from:start,to:start+width-1};
+      const combinedWidth=columnBands[span.to].right-columnBands[span.from].left;
+      if(combinedWidth<referenceWidth*.72)continue;
+      if(combinedWidth>referenceWidth*2.65)break;
+      const exactHits=spanHitsBy(span,courseCellTest);
+      const discoveryHits=spanHitsBy(span,value=>authorityCourseColumnLooksPlausible(value,authorityDepartmentCode));
+      if(exactHits>bestExact||(exactHits===bestExact&&discoveryHits>bestDiscovery)){best=span;bestExact=exactHits;bestDiscovery=discoveryHits;}
+      if(width===1&&exactHits>=minimumRows&&combinedWidth>=referenceWidth*.95)break;
+    }
+    /* Do not weaken the course validator. This fallback only lowers the COLUMN
+       claiming burden when two adjacent identity columns already prove the
+       geometry and at least one exact 7-digit department key proves the cell. */
+    if(best&&bestExact>=1)strictRightEdgeCourseSpan=best;
+  }
+
   let rightEdgeCourseSpan:Span|null=null;
-  if(authorityCourseKeys.length && allowRightEdgeCourseSpan){
-    let anchor=-1,anchorScore=-1;
-    for(let index=keySearchFrom;index<=lastBand-2;index++){
-      const sectionHits=Math.max(validatorHits(numericGrey[index].cells,stripPatterns.scode),validatorHits(numericBin[index].cells,stripPatterns.scode));
-      const referenceHits=Math.max(validatorHits(numericGrey[index+1].cells,stripPatterns.reference),validatorHits(numericBin[index+1].cells,stripPatterns.reference));
-      if(sectionHits<minimumRows||referenceHits<minimumRows)continue;
-      const score=sectionHits+referenceHits;
-      if(score>anchorScore||(score===anchorScore&&index>anchor)){anchor=index;anchorScore=score;}
+  if(authorityCourseKeys.length && allowRightEdgeCourseSpan && identityAnchor>=0){
+    const anchor=identityAnchor;
+    const start=anchor+2,referenceWidth=columnBands[anchor+1].right-columnBands[anchor+1].left;
+    let best:Span|null=null,bestRecover=-1;
+    for(let width=1;width<=3&&start+width-1<=lastBand;width++){
+      const span={from:start,to:start+width-1};
+      const combinedWidth=columnBands[span.to].right-columnBands[span.from].left;
+      /* The seven-digit key is not a hairline. This width guard prevents a
+         CamScanner/page-margin artefact from being joined merely because it
+         happens to sit after the real table border. */
+      if(combinedWidth<referenceWidth*.72)continue;
+      if(combinedWidth>referenceWidth*2.65)break;
+      const greyJoined=joinedCells(numericGrey,span),binJoined=joinedCells(numericBin,span);
+      const recoverHits=bands.reduce((count,_,row)=>{
+        const evidence=[greyJoined[row],binJoined[row]];
+        return count+(evidence.some(value=>Boolean(recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)))?1:0);
+      },0);
+      if(recoverHits>bestRecover){bestRecover=recoverHits;best=span;}
+      /* Once one physical band is already wide enough for a seven-digit key
+         and yields catalogue evidence, do not drift into the page margin. */
+      if(width===1&&recoverHits>=minimumRows&&combinedWidth>=referenceWidth*.95)break;
     }
-    if(anchor>=0){
-      const start=anchor+2,referenceWidth=columnBands[anchor+1].right-columnBands[anchor+1].left;
-      let best:Span|null=null,bestRecover=-1;
-      for(let width=1;width<=3&&start+width-1<=lastBand;width++){
-        const span={from:start,to:start+width-1};
-        const combinedWidth=columnBands[span.to].right-columnBands[span.from].left;
-        /* The seven-digit key is not a hairline. This width guard prevents a
-           CamScanner/page-margin artefact from being joined merely because it
-           happens to sit after the real table border. */
-        if(combinedWidth<referenceWidth*.72)continue;
-        if(combinedWidth>referenceWidth*2.65)break;
-        const greyJoined=joinedCells(numericGrey,span),binJoined=joinedCells(numericBin,span);
-        const recoverHits=bands.reduce((count,_,row)=>{
-          const evidence=[greyJoined[row],binJoined[row]];
-          return count+(evidence.some(value=>Boolean(recoverAuthorityCourseCell(value,authorityDepartmentCode,authorityCourseKeys)))?1:0);
-        },0);
-        if(recoverHits>bestRecover){bestRecover=recoverHits;best=span;}
-        /* Once one physical band is already wide enough for a seven-digit key
-           and yields catalogue evidence, do not drift into the page margin. */
-        if(width===1&&recoverHits>=minimumRows&&combinedWidth>=referenceWidth*.95)break;
-      }
-      if(best)rightEdgeCourseSpan=best;
-    }
+    if(best)rightEdgeCourseSpan=best;
   }
   for(let end=lastBand;end>=keySearchFrom;end--){
     for(let width=1;width<=maxJoin;width++){
@@ -1462,6 +1518,12 @@ async function readGrid(
   if(rightEdgeCourseSpan){
     codeSpan=rightEdgeCourseSpan;
     bestCodeHits=Math.max(bestCodeHits,minimumRows);
+  }else if(bestCodeHits<minimumRows&&strictRightEdgeCourseSpan){
+    /* Same-cell, catalogue-free fallback for a weak ONE-PAGE or page-1 strip.
+       It activates only when the established vote would otherwise discard the
+       course column, so already-good golden pages stay on their old path. */
+    codeSpan=strictRightEdgeCourseSpan;
+    bestCodeHits=minimumRows;
   }else if(bestCodeHits<minimumRows)codeSpan=null;
   /* Prefer a proven 7-digit code span over a wider reference+code span: false
      vertical strokes inside the code are common; a genuinely missing separator
@@ -1715,6 +1777,25 @@ async function readGrid(
     }
   }
 
+  /* Keep unresolved rows useful for manual review without ever using Arabic
+     course prose as identity. Whole-strip Arabic OCR can occasionally return a
+     blank/tiny fragment in one shadowed row even when the physical cell is
+     clear. Re-read only those weak COURSE-NAME cells once at high resolution;
+     canonical matching below still depends exclusively on the numeric key. */
+  if(nameBand){
+    const arabicLetters=(value:string)=>(String(value||"").match(/[ء-ي]/g)||[]).length;
+    const weakNameRows=bands.map((_,row)=>arabicLetters(normalizeCell(nameCells.cells[row]||""))<5?row:-1).filter(row=>row>=0);
+    if(weakNameRows.length){
+      const recovered=await runOnPool([pool.ara],weakNameRows.map(row=>(worker:PooledWorker)=>readCell(surface,nameBand.band,bands[row],"",worker,"7",2.8)));
+      const next=[...nameCells.cells];
+      weakNameRows.forEach((row,at)=>{
+        const current=normalizeCell(next[row]||""),candidate=normalizeCell(recovered[at]||"");
+        if(arabicLetters(candidate)>=Math.max(5,arabicLetters(current)+2))next[row]=candidate;
+      });
+      nameCells={cells:next};
+    }
+  }
+
   /* The claiming pass shares one alphanumeric alphabet so building and hall
      can be recognised at all — but that same freedom lets stray strokes become
      letters inside the time and days columns and break their patterns. Once a
@@ -1770,12 +1851,22 @@ async function readGrid(
        0800/1000 on the FIRST attempt; rooms are the opposite and must stay tight
        to avoid importing a neighbouring building digit. Rooms cap at three
        high-yield passes and the remaining fields at five instead of seven. */
-    const strategies = field === "time" ? [
+    type CellStrategy={source:any;scale:number;psm:string;xPadding:number;yPadding:number;localOtsu?:boolean};
+    const strategies:CellStrategy[] = field === "time" ? [
       { source: surface, scale: 3.0, psm: "7", xPadding: 4, yPadding: 3 },
       { source: bin,     scale: 3.2, psm: "7", xPadding: 6, yPadding: 4 },
       { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: surface, scale: 2.8, psm: "8", xPadding: 2, yPadding: 2 },
+    ] : (field === "code" || field === "refcode") ? [
+      /* Course identity cells sit at the photographed page edge and fail mostly
+         through border clipping + local shadows. A tiny expanded crop comes
+         first; local Otsu is paid only after that fails. All passes stay inside
+         the same proven course/ref+course span and use a digits-only whitelist. */
+      { source: surface, scale: 3.6, psm: "7",  xPadding: 4, yPadding: 3 },
+      { source: bin,     scale: 3.6, psm: "7",  xPadding: 4, yPadding: 3 },
+      { source: surface, scale: 4.0, psm: "8",  xPadding: 5, yPadding: 3, localOtsu: true },
+      { source: surface, scale: 4.0, psm: "13", xPadding: 2, yPadding: 2, localOtsu: true },
     ] : field === "hall" ? [
       { source: surface, scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
       { source: bin,     scale: 3.2, psm: "7", xPadding: 0, yPadding: 0 },
@@ -1809,10 +1900,11 @@ async function readGrid(
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(s.source, left, topCell, width, height, 0, 0, cell.width, cell.height);
       
+      const recognitionCell=s.localOtsu?otsuBinarize(lib,cell):cell;
       await worker.setParameters({ tessedit_char_whitelist: alphabet, tessedit_pageseg_mode: s.psm as any });
       let value = "";
       try {
-        const result: any = await worker.recognize(cell.toBuffer("image/png"));
+        const result: any = await worker.recognize(recognitionCell.toBuffer("image/png"));
         value = String(result?.data?.text || "").replace(/\s+/g, " ").trim();
       } catch { }
       

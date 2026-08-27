@@ -57,18 +57,28 @@ assert.equal(authorityCourseCellLooksPlausible("0101102","0101"),true);
 assert.equal(authorityCourseCellLooksPlausible("5011894","0101"),false);
 assert.equal(authorityCourseColumnLooksPlausible("010110","0101"),true);
 assert.equal(authorityCourseColumnLooksPlausible("30101102","0101"),true);
+assert.equal(authorityCourseColumnLooksPlausible("710101202","0101"),true);
 assert.equal(authorityCourseColumnLooksPlausible("1010110","0101"),true);
 assert.equal(authorityCourseColumnLooksPlausible("501189","0101"),false);
 assert.equal(authorityReferenceCourseCellLooksPlausible("189450101102","0101"),true);
 assert.equal(authorityReferenceCourseCellLooksPlausible("5011894","0101"),false);
+/* Course keys are digits-only. O↔0 is a measured OCR glyph error at the
+   photographed right edge and may be normalized without consulting prose or
+   neighbouring cells; canonical catalogue matching still owns identity. */
+assert.equal(authorityCourseCellLooksPlausible("O1O11O2","0101"),true);
+assert.equal(authorityCourseColumnLooksPlausible("O1O11O","0101"),true);
+assert.equal(authorityReferenceCourseCellLooksPlausible("18945O1O11O2","0101"),true);
 
 /* Dense multi-page photographs may lose or absorb ONE course-key digit. The
    repair is legal only inside the selected department catalogue and only when
    the same cell resolves to one unique canonical key. */
 const canonicalCourseKeys=["0101102","0101150","0101151","0101153","0101201","0101202"];
 assert.equal(recoverAuthorityCourseCell("0101102","0101",canonicalCourseKeys),"0101102");
+assert.equal(recoverAuthorityCourseCell("O1O11O2","0101",canonicalCourseKeys),"0101102");
 assert.equal(recoverAuthorityCourseCell("010110","0101",canonicalCourseKeys),"0101102");
 assert.equal(recoverAuthorityCourseCell("30101102","0101",canonicalCourseKeys),"0101102");
+assert.equal(recoverAuthorityCourseCell("710101202","0101",canonicalCourseKeys),"0101202");
+assert.equal(recoverAuthorityCourseCell("110101201","0101",canonicalCourseKeys),"0101201");
 assert.equal(recoverAuthorityCourseCell("10101150","0101",canonicalCourseKeys),"0101150");
 assert.equal(recoverAuthorityCourseCell("102","0101",canonicalCourseKeys),"0101102");
 assert.equal(recoverAuthorityCourseCell("010115","0101",["0101150","0101151","0101153"]),"");
@@ -283,7 +293,7 @@ assert.equal(graduationSheet.passedUnits,114);
 const genericTranscript=graduationSheetFacts(`كشف درجات\n904102301536\nالوحدات المجتازة: 114`);
 assert.equal(genericTranscript.isGraduationSheet,false);
 
-console.log(JSON.stringify({ passed: 52, checks: [
+console.log(JSON.stringify({ passed: 59, checks: [
   "generated RTL text layer keeps 012 branch and 0101 department separate",
   "CamScanner OCR recovers branch/department independently",
   "numeric college spill is not treated as department name",
@@ -294,6 +304,13 @@ console.log(JSON.stringify({ passed: 52, checks: [
   "full course number 0101102 maps to catalogue course 102 only in department 0101",
   "catalogue course name overrides OCR text",
   "course-column claiming uses the proven scientific-department prefix",
+  "course-key OCR normalizes Latin O to numeric 0 only inside digit-only course identity",
+  "course-column discovery tolerates the same O-to-0 glyph correction",
+  "course-column discovery tolerates at most two leading grid-rule glyphs before an exact department-shaped tail",
+  "catalogue-constrained recovery may strip two leading rule glyphs only when the remaining full key is exact",
+  "older CamScanner 110101201 evidence resolves only to canonical 0101201 from the same course cell",
+  "merged reference+course validation tolerates O-to-0 without weakening department proof",
+  "catalogue-constrained same-cell recovery accepts the O-to-0 course glyph correction",
   "welded section+CRN values such as 5011894 are rejected as course keys",
   "unresolved OCR course evidence never becomes the canonical display title",
   "sections are generated 501, 502... independently for each course",
