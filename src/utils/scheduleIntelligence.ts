@@ -286,6 +286,57 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
   return [...byPair.values()];
 }
 
+export interface OutsideScopeClash {
+  conflict:ConflictInsight;
+  /** The appointment inside the caller's scope. */
+  ownId:number;
+  /** The one it collides with, which the scoped board never loaded. */
+  otherId:number;
+  other:FSchedule;
+}
+
+/**
+ * ── التعارض الذي لا تستطيع اللوحة أن تراه بنفسها ───────────────────────────
+ *
+ * A board is loaded by scope — a college, a department, a term — and that is
+ * what keeps it fast. The cost was that its live clash marker could only mark
+ * a collision against a row already on screen: a lecture of another department
+ * standing in the same hall at the same hour produced no mark at all.
+ *
+ * Detection was never the scoped half; the *board* was. This is the reading a
+ * server can do on its behalf, and it lives here beside the sweep rather than
+ * inside a route, so the rule is one rule and a test can hold it.
+ *
+ * Two filters, and the reason for each:
+ *
+ *   • Only what blocks. A tight turnaround or a cohort note never refuses a
+ *     save, and a ring that does not correspond to a refusal teaches people to
+ *     stop reading rings.
+ *
+ *   • Only pairs with exactly one foot inside the scope. A collision between
+ *     two rows of the same board is already found in the browser, instantly
+ *     and for free; sending it again would double every number on screen.
+ *
+ * `other` is resolved here so the caller can name the collision without a
+ * second lookup, and pairs whose other side is missing from `allRows` are
+ * dropped — there is nothing truthful to say about them.
+ */
+export function outsideScopeClashes(scopeRows:FSchedule[], allRows:FSchedule[], options?:ConflictOptions):OutsideScopeClash[] {
+  const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
+  const byId=new Map(allRows.map(row=>[Number(row.id),row] as const));
+  return findConflicts(scopeRows,allRows,options)
+    .filter(item=>item.severity==="high"||item.type==="duplicate")
+    .map(item=>{
+      /* findConflicts names a pair from the target's side, but the target list
+         is the scope itself — so read which end is ours rather than assume. */
+      const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
+      const otherId=Number(item.rowId)===ownId?Number(item.otherId):Number(item.rowId);
+      return {conflict:item,ownId,otherId,other:byId.get(otherId)};
+    })
+    .filter((entry):entry is OutsideScopeClash =>
+      ownIds.has(entry.ownId) && !ownIds.has(entry.otherId) && Boolean(entry.other));
+}
+
 /** The original exhaustive sweep. Kept as the reference the parity test proves against. */
 export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedule[], options?:ConflictOptions):ConflictInsight[] {
   const doorway=Math.max(0,Number(options?.doorwayMinutes||0));

@@ -10,7 +10,7 @@ import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/refe
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
 import { byRoom } from "./src/utils/sorting";
-import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
+import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
 import { describeRollover, readTermRollover } from "./src/utils/termRollover";
 import { buildConflictTopology, buildDecisionMemoryInsight, buildFairnessEngine, buildFragilityMap, buildOneMinuteBrief, buildRoomResilience, buildScheduleHealth2, buildSchedulePulse, createEmergencyPlans, explainScheduleDecision } from "./src/utils/livingSchedule";
@@ -3293,23 +3293,13 @@ app.get("/api/schedules/outside-clashes", requirePermission(7), async (req: Auth
      under an old alias cannot hide a collision from the board either. */
   const scopeRows=scopeRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
   const termRows=termRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
-  const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
-  const byId=new Map(termRows.map(row=>[Number(row.id),row] as const));
-
-  const outside=findConflicts(scopeRows as any,termRows as any)
-    .filter((item:any)=>item.severity==="high"||item.type==="duplicate")
-    .map((item:any)=>{
-      const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
-      const otherId=Number(item.rowId)===ownId?Number(item.otherId):Number(item.rowId);
-      return {item,ownId,otherId};
-    })
-    /* Mine on one side, not-mine on the other. Everything else the browser
-       already found without asking. */
-    .filter(({ownId,otherId}:any)=>ownIds.has(ownId)&&!ownIds.has(otherId)&&byId.has(otherId));
+  /* The rule itself lives beside the conflict sweep in scheduleIntelligence,
+     so this route holds no copy of it and `tests/run-tests.ts` can hold it. */
+  const outside=outsideScopeClashes(scopeRows as any,termRows as any);
 
   const scopeKey=(row:any)=>`${Number(row?.AdCollegeId||0)}:${Number(row?.AdSectionId||0)}`;
   const scopeNames=new Map<string,string>();
-  await Promise.all([...new Set(outside.map(({otherId}:any)=>scopeKey(byId.get(otherId))))]
+  await Promise.all([...new Set(outside.map(({other})=>scopeKey(other)))]
     .map(async (key:string)=>{
       const [college,section]=key.split(":").map(Number);
       const [sectionRow,collegeRow]=await Promise.all([
@@ -3323,12 +3313,11 @@ app.get("/api/schedules/outside-clashes", requirePermission(7), async (req: Auth
   const notes:Record<number,string>={};
   const ids=new Set<number>();
   const pairs=new Set<string>();
-  for(const {item,ownId,otherId} of outside as any[]){
-    const other=byId.get(otherId)!;
+  for(const {conflict,ownId,otherId,other} of outside){
     pairs.add([ownId,otherId].sort((a,b)=>a-b).join(":"));
     ids.add(ownId);
-    const what=item.type==="instructor"?"الأستاذ محجوز"
-      :item.type==="room"?`القاعة ${String(other.AdRoomCode||"").trim()}/${String(other.AdRoomHall||"").trim()} مشغولة`
+    const what=conflict.type==="instructor"?"الأستاذ محجوز"
+      :conflict.type==="room"?`القاعة ${String(other.AdRoomCode||"").trim()}/${String(other.AdRoomHall||"").trim()} مشغولة`
         :"موعد مطابق";
     /* Same disclosure rule as the editor card: the department, the day and the
        hour — never the other course, its section, or its lecturer. */

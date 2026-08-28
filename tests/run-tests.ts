@@ -5,7 +5,7 @@ import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
 import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../src/utils/weekVisual";
-import { findConflicts } from "../src/utils/scheduleIntelligence";
+import { findConflicts, outsideScopeClashes } from "../src/utils/scheduleIntelligence";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
 import { describeRollover, readTermRollover } from "../src/utils/termRollover";
@@ -1221,6 +1221,67 @@ async function runTests() {
       kind: "apology", fromDate: "2026-11-08",
     } as any);
     assert(dated.fromDate === "2026-11-08", "a date that IS given is kept");
+  }
+
+  /* --- 27. التعارض مع خارج نطاق اللوحة -------------------------------------- */
+  originalLog("\n--- 27. Clashes the scoped board cannot see ---");
+  {
+    /* The board is loaded by scope, so its live marker can only ever mark a
+       collision against a row already on screen. `outsideScopeClashes` is the
+       reading the server does on its behalf, and these are the four decisions
+       it makes — each one a way the marker could go silently wrong. */
+    let seed = 0;
+    const row = (over: Partial<any> = {}): any => ({
+      id: ++seed, AdTermId: 1, AdCollegeId: 1, AdSectionId: 10,
+      AdCourseId: 100, SCode: "501", AdInstructorId: 7,
+      fsunday: true, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false,
+      fstarttime: "11:00", fendtime: "11:50", AdRoomCode: "012B08", AdRoomHall: "G20",
+      ...over,
+    });
+
+    // Both feet inside the scope: the browser finds this one itself, instantly
+    // and for free. Sending it again would double every number on the board.
+    const mineA = row(), mineB = row({ SCode: "502" });
+    assert(outsideScopeClashes([mineA, mineB], [mineA, mineB]).length === 0,
+      "a collision between two rows of the same board is not sent back to it");
+
+    // The hall is mine, the lecture standing in it belongs to another
+    // department — the case that used to produce no mark at all.
+    const mineRoom = row();
+    const foreignRoom = row({ AdSectionId: 20, AdCourseId: 900, AdInstructorId: 99, SCode: "701" });
+    const roomClash = outsideScopeClashes([mineRoom], [mineRoom, foreignRoom]);
+    assert(roomClash.length === 1, "a hall taken by another department is reported to the board");
+    assert(roomClash[0].ownId === mineRoom.id && roomClash[0].otherId === foreignRoom.id,
+      "…named from the board's own side, so the ring lands on the right row");
+    assert(roomClash[0].other?.AdSectionId === 20,
+      "…and carries the other appointment, so the row can say with whom");
+
+    // The same lecturer, teaching elsewhere at the same hour.
+    const mineTeacher = row({ AdRoomHall: "G77" });
+    const foreignTeacher = row({ AdSectionId: 20, AdCourseId: 900, AdRoomHall: "G88", SCode: "702" });
+    assert(outsideScopeClashes([mineTeacher], [mineTeacher, foreignTeacher]).length === 1,
+      "a lecturer booked in another department is reported to the board");
+
+    // Advice is not a refusal. A ring that matches no refusal teaches people to
+    // stop reading rings, so only blockers travel.
+    const mineGap = row();
+    const foreignGap = row({ AdSectionId: 20, AdCourseId: 900, AdInstructorId: 99, SCode: "703", fstarttime: "11:55", fendtime: "12:45" });
+    assert(outsideScopeClashes([mineGap], [mineGap, foreignGap], { doorwayMinutes: 10 }).length === 0,
+      "a tight turnaround never earns a ring — it never refused a save");
+
+    // The exact twin refuses the save like any double booking, and it can cross
+    // a department boundary too.
+    const bare = { AdInstructorId: 0, AdRoomCode: "", AdRoomHall: "" };
+    const mineTwin = row(bare);
+    const foreignTwin = row({ ...bare, AdSectionId: 20, AdCourseId: 100, SCode: "501" });
+    const twinClash = outsideScopeClashes([mineTwin], [mineTwin, foreignTwin]);
+    assert(twinClash.length === 1 && twinClash[0].conflict.type === "duplicate",
+      "an identical appointment in another department is reported as a duplicate");
+
+    // A pair whose other side is not in the universe has nothing truthful to
+    // say about it, so it is dropped rather than half-reported.
+    assert(outsideScopeClashes([mineRoom], [mineRoom]).length === 0,
+      "a pair with no other side to name is dropped, not half-reported");
   }
 
   if (!originalDb) {
