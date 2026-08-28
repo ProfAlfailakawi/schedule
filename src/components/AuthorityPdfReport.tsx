@@ -58,8 +58,21 @@ export default function AuthorityPdfReport({
   const branch = [report.sourceBranchCode, report.sourceBranchName].filter(Boolean).join(" ") || "—";
   const fieldChanged = (entry: AuthorityReportEntry, ...fields: string[]) =>
     entry.status === "changed" && fields.some(field => entry.changedFields.includes(field));
+  /**
+   * The day numbers of a lecture, written so an Arabic reader reads them in
+   * order.
+   *
+   * The cell is `print-ltr` — the digits are a latin sequence and must stay
+   * one unbroken run. Written ascending, «1 3 5» puts Sunday on the LEFT, so a
+   * reader coming from the right meets Thursday first and the week reads
+   * backwards. The sequence is therefore emitted in reverse — «5 3 1» — which
+   * an ltr cell paints with 1 on the right: the first day of the week where
+   * the eye starts. Exactly the same convention the time cell already follows
+   * by writing `fendtime - fstarttime`.
+   */
   const dayNumbers = (row: FSchedule) =>
-    [row.fsunday && "1", row.fmonday && "2", row.ftuesday && "3", row.fwednesday && "4", row.fthursday && "5"].filter(Boolean).join(" ") || "—";
+    [row.fsunday && "1", row.fmonday && "2", row.ftuesday && "3", row.fwednesday && "4", row.fthursday && "5"]
+      .filter(Boolean).reverse().join(" ") || "—";
 
   return (
     <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-book authority-pdf-report">

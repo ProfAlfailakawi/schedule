@@ -108,22 +108,28 @@ const samePlacement=(a:FSchedule,b:FSchedule)=>
   SCHEDULE_DAYS.every(day=>Boolean(a[day.key])===Boolean(b[day.key]));
 
 /**
- * One lecturer can teach two registered sections as one combined class.
+ * ── لا استثناء للشعبتين المدمجتين ──────────────────────────────────────────
  *
- * In the legacy timetable that class is stored as one row per section, even
- * though both rows describe the same teaching event: same course, lecturer,
- * days, time and room. Counting the pair as both a lecturer clash and a room
- * clash is what produced the alarming "40 critical conflicts" reading on a
- * timetable that had already been built and approved without collisions.
- * Different sections at different placements are still independent rows;
- * only the exact shared delivery is exempt.
+ * There used to be one exemption here, and it was the only hole in the whole
+ * principle: when two rows shared a course, a lecturer, a hall and an exact
+ * placement — differing only in section code — the pair was skipped outright,
+ * on the assumption that a department storing a combined class writes it as one
+ * row per registered section. The assumption was silent, and it swallowed the
+ * three findings a coordinator most needs to see at once: the lecturer is in
+ * two places, the hall is booked twice, and two appointments occupy the same
+ * hour. A department looking at «شعبة 501» and «شعبة 502» — same doctor, same
+ * hall, same 11:00 — was told the timetable was clean.
+ *
+ * An engine cannot know which of those two readings is true, and the safe
+ * default is the one that shows the collision. A combined class is a decision a
+ * human makes and can see; a double booking that is never reported is a
+ * decision nobody made. So the pair is now examined like every other pair: if
+ * the lecturer is the same it is a lecturer clash, if the hall is the same it
+ * is a room clash, and the shared hour is what makes both true.
+ *
+ * `samePlacement` above is kept — the exact twin (same course AND same section
+ * at the same placement) still has its own, distinct finding.
  */
-const isCombinedDelivery=(a:FSchedule,b:FSchedule)=>
-  a.AdCourseId===b.AdCourseId &&
-  String(a.SCode)!==String(b.SCode) &&
-  Boolean(a.AdInstructorId) && a.AdInstructorId===b.AdInstructorId &&
-  Boolean(roomKey(a)) && roomKey(a)===roomKey(b) &&
-  samePlacement(a,b);
 
 /**
  * ── لماذا لا يُقارَن كل موعد بكل موعد ───────────────────────────────────────
@@ -217,7 +223,6 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
     for(const at of [...candidates].sort((a,b)=>a-b)){
       const other=allRows[at];
       if(row.id===other.id || row.AdTermId!==other.AdTermId) continue;
-      if(isCombinedDelivery(row,other)) continue;
       const clashing=overlaps(row,other);
       const sameRoom=Boolean(roomKey(row)) && roomKey(row)===roomKey(other);
       /* A turnaround too short to empty the hall. Only meaningful when the two
@@ -288,7 +293,6 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
   for(const row of targetRows){
     for(const other of allRows){
       if(row.id===other.id || row.AdTermId!==other.AdTermId) continue;
-      if(isCombinedDelivery(row,other)) continue;
       const clashing=overlaps(row,other);
       const sameRoom=Boolean(roomKey(row)) && roomKey(row)===roomKey(other);
       /* A turnaround too short to empty the hall. Only meaningful when the two
@@ -369,8 +373,8 @@ export interface LiveClashScan {
  * about everything at once. The board needs the everything answer on every
  * change, so this buckets the rows per weekday, sorts each bucket once, and
  * only compares appointments that actually overlap in time — the same
- * instructor/room/duplicate reading and the same combined-delivery exemption,
- * at a cost that stays flat while the term grows.
+ * instructor/room/duplicate reading, with no pair exempted, at a cost that
+ * stays flat while the term grows.
  */
 export function fastConflictScan(rows:FSchedule[]):LiveClashScan {
   const ids=new Set<number>();
@@ -396,7 +400,6 @@ export function fastConflictScan(rows:FSchedule[]):LiveClashScan {
         const sameInstructor=Boolean(a.AdInstructorId)&&a.AdInstructorId===b.AdInstructorId;
         const sameRoom=Boolean(meta.room)&&meta.room===other.room;
         if(!sameInstructor&&!sameRoom) continue;
-        if(isCombinedDelivery(a,b)) continue;
         const key=a.id<b.id?`${a.id}:${b.id}`:`${b.id}:${a.id}`;
         if(seen.has(key)) continue;
         seen.add(key);

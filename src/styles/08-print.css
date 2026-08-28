@@ -1280,7 +1280,18 @@
     align-items:center !important;
     justify-content:center !important;
     padding:1.15mm .72mm !important;
-    border-inline-start:.4pt solid #cbd4d0 !important;
+    /* A PHYSICAL side, deliberately — not `border-inline-start`.
+       The head cells are Arabic and inherit the row's rtl, but almost every
+       body cell carries `.print-ltr`/`.num`, which set `direction:ltr` on the
+       cell itself. `border-inline-start` is resolved against the cell's own
+       direction, so those cells drew their rule on the LEFT edge while the
+       head drew it on the RIGHT edge of the same track: every column rule in
+       the body sat one border-width beside the head's, one rule vanished on
+       each side of a direction change, and the long vertical lines stopped
+       reading as single straight lines down the sheet. `border-left` is the
+       same rule on the same track boundary for every cell, whatever the cell's
+       direction. Widths, tracks, colours and content are untouched. */
+    border-left:.4pt solid #cbd4d0 !important;
     border-block-end:.4pt solid #cbd4d0 !important;
     color:#111 !important;
     font-size:6.15pt !important;
@@ -1289,7 +1300,7 @@
     overflow:hidden !important;
   }
   .print-comprehensive-grid-row>[role="cell"]:last-child,
-  .print-comprehensive-grid-row>[role="columnheader"]:last-child{border-inline-start:0 !important}
+  .print-comprehensive-grid-row>[role="columnheader"]:last-child{border-left:0 !important}
   .print-comprehensive-grid-head>[role="columnheader"]{
     min-height:9.5mm !important;
     background:#eef4f1 !important;
@@ -2073,7 +2084,13 @@
   .student-cases-print .print-explicit-page{page:wide!important}
   .student-cases-print table{width:100%!important;table-layout:fixed!important;border-collapse:separate!important;border-spacing:0!important;border:1px solid #b8c7c1!important;border-radius:3mm!important;overflow:hidden!important;font-size:8.7pt!important}
   .student-cases-print thead th{background:#e8f1ed!important;color:#173b31!important;border-bottom:1px solid #9fb5ad!important;padding:2.5mm 2mm!important;font-weight:750!important}
-  .student-cases-print tbody td{padding:2.35mm 2mm!important;border-bottom:1px solid #d5dfdb!important;border-inline-start:1px solid #e0e7e4!important;vertical-align:top!important;line-height:1.55!important}
+  /* Same reason as the comprehensive grid: `td.num` and `td[dir="ltr"]` carry
+     their own ltr direction, so `border-inline-start` drew their rule on the
+     opposite edge to the Arabic cells beside them — a doubled rule on one
+     boundary and none on the next. A physical side keeps one straight rule per
+     column boundary; the last cell's rule would fall on the table frame. */
+  .student-cases-print tbody td{padding:2.35mm 2mm!important;border-bottom:1px solid #d5dfdb!important;border-left:1px solid #e0e7e4!important;vertical-align:top!important;line-height:1.55!important}
+  .student-cases-print tbody td:last-child{border-left:0!important}
   .student-cases-print tbody tr:nth-child(even) td{background:#f8faf9!important}
   .student-cases-print tbody tr:last-child td{border-bottom:0!important}
   .student-cases-print td.num{text-align:center!important;font-variant-numeric:tabular-nums!important}

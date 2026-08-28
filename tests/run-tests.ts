@@ -161,16 +161,22 @@ async function runTests() {
     assert(!withinScheduleDay(19 * 60 + 30, 20 * 60 + 30), "20:30 end is rejected");
     assert(!withinScheduleDay(10 * 60, 10 * 60), "zero-duration appointment is rejected");
 
-    // A combined class is represented by one row per registered section. It
-    // consumes one lecturer and one room once, so those sibling rows must not
-    // manufacture a conflict merely because their section codes differ.
+    // Two sections of one course placed on the same doctor, in the same hall,
+    // at the same hour are a double booking and are reported as one. The engine
+    // cannot know whether a department meant to combine them; a collision it
+    // never shows is a decision nobody made.
     const shared = {
       AdTermId: 1, AdCourseId: 10, AdInstructorId: 20,
       fsunday: true, fmonday: false, ftuesday: true, fwednesday: false, fthursday: false,
       fstarttime: "09:00", fendtime: "10:00", AdRoomCode: "7", AdRoomHall: "F12",
     };
     const combined = [{ ...shared, id: 101, SCode: "1" }, { ...shared, id: 102, SCode: "2" }] as any;
-    assert(findConflicts(combined, combined).length === 0, "combined sections sharing one delivery are not conflicts");
+    const combinedFound = findConflicts(combined, combined);
+    assert(combinedFound.length === 1, "two sections on one doctor in one hall at one hour are one conflict, not none");
+    assert(combinedFound[0].severity === "high", "that double booking is a blocking finding");
+    assert(combinedFound[0].reasons?.includes("instructor") && combinedFound[0].reasons?.includes("room"),
+      "it names the lecturer clash and the room clash together");
+    assert(!combinedFound[0].reasons?.includes("duplicate"), "different section codes are not the exact twin finding");
     const occupied = { ...shared, id: 103, AdCourseId: 11, SCode: "1" } as any;
     assert(findConflicts([combined[0]], [combined[0], occupied]).length === 1, "a different course still conflicts in the occupied lecturer/room slot");
 
