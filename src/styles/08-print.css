@@ -575,11 +575,6 @@
   .print-query-summaryline b{font-size:9.4pt !important;color:#0f4239 !important}
 
   .print-comprehensive-overview{display:grid !important;grid-template-columns:minmax(0,1.1fr) minmax(0,1.4fr) !important;gap:5mm !important;margin-bottom:4mm !important;break-inside:avoid !important}
-  .print-document-metrics{display:grid !important;grid-template-columns:repeat(5,minmax(0,1fr)) !important;border:.55pt solid #cbd4d0 !important;border-radius:2.2mm !important;overflow:hidden !important;background:#f7faf9 !important}
-  .print-document-metrics>div{min-width:0 !important;padding:2.2mm 1.4mm !important;text-align:center !important;border-inline-start:.4pt solid #d8dfdc !important}
-  .print-document-metrics>div:first-child{border-inline-start:0 !important}
-  .print-document-metrics strong{display:block !important;font-size:14pt !important;line-height:1 !important;font-weight:680 !important;color:#0f4239 !important;font-variant-numeric:tabular-nums !important}
-  .print-document-metrics span{display:block !important;margin-top:.9mm !important;color:#66716d !important;font-size:6.9pt !important}
   .print-week-pulse{display:grid !important;gap:1.2mm !important;padding:2.4mm 3mm !important;border:.55pt solid #cbd4d0 !important;border-radius:2.2mm !important;background:#fff !important}
   .print-week-pulse>div{display:grid !important;grid-template-columns:18mm minmax(0,1fr) 24mm !important;align-items:center !important;gap:2mm !important}
   .print-week-pulse span{font-size:7.4pt !important;font-weight:650 !important}

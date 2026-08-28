@@ -43,7 +43,9 @@ import {
   simulatePolicy,
 } from "./src/utils/advancedIntelligence";
 import {
+  clockRangesOverlap,
   formatScheduleTimeRange,
+  normalizeClock,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
   SCHEDULE_DAY_START,
@@ -55,7 +57,7 @@ import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseS
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
-import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, roomIdentityKey, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
+import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 
@@ -758,7 +760,10 @@ function safeDraftRows(input: unknown, collegeId: number, sectionId: number, ter
     AdCourseId: Number(raw?.AdCourseId || 0), AdCourseName: String(raw?.AdCourseName || ""), SCode: String(raw?.SCode || ""),
     AdInstructorId: Number(raw?.AdInstructorId || 0),
     fsunday: Boolean(raw?.fsunday), fmonday: Boolean(raw?.fmonday), ftuesday: Boolean(raw?.ftuesday), fwednesday: Boolean(raw?.fwednesday), fthursday: Boolean(raw?.fthursday),
-    fstarttime: String(raw?.fstarttime || ""), fendtime: String(raw?.fendtime || ""),
+    /* One stored shape. A typed form already sends "HH:MM"; a spreadsheet
+       sends whatever the sheet holds, and an unpadded "9:00" used to reach
+       every string comparison downstream. */
+    fstarttime: normalizeClock(raw?.fstarttime), fendtime: normalizeClock(raw?.fendtime),
     AdRoomCode: String(raw?.AdRoomCode || ""), AdRoomHall: String(raw?.AdRoomHall || ""),
     buildingId: String(raw?.buildingId || "") || undefined, roomId: String(raw?.roomId || "") || undefined,
     locationStatus: raw?.locationStatus, sourceBuildingText: String(raw?.sourceBuildingText || raw?.AdRoomCode || "").slice(0,80) || undefined,
@@ -1865,10 +1870,27 @@ app.get("/api/instructors", requireAnyPermission([3, 7, 8, 9, 10, 14, 16, 17]), 
       .replace(/[ً-ْـ]/g, "").replace(/[أإآٱ]/g, "ا").replace(/ى/g, "ي").replace(/ة/g, "ه")
       .replace(/[^ء-ي0-9a-zA-Z ]/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
     const needle = fold(query);
+    /* ── الرقم المدني يُطابَق كاملاً أو لا يُطابَق ──────────────────────────
+     *
+     * The name is matched by substring, as a search should be. The civil id
+     * was matched the same way, across the WHOLE university and with no scope
+     * filter — which turned this search into an oracle: type six digits, read
+     * back the person and the remaining six. Anyone holding a schedule
+     * permission could complete a partially known national id for any
+     * employee of the university.
+     *
+     * A full exact match is kept, because it is a real workflow: a coordinator
+     * adding a lecturer from another college has the whole number on paper,
+     * and finding them is what prevents a duplicate record being created for
+     * somebody who already exists. Knowing the whole number is not a search;
+     * it is already knowing the answer. */
+    const digits = needle.replace(/\D/g, "");
     const allInstructors = await Repository.getInstructors();
     const filtered = allInstructors.filter(person => {
       const name = fold(person.AdInstructorName);
-      return name.includes(needle) || String(person.AdInstructorCivil || "").includes(needle);
+      if (name.includes(needle)) return true;
+      const civil = String(person.AdInstructorCivil || "").trim();
+      return Boolean(digits) && digits.length === civil.length && digits === civil;
     });
     res.json(sortArabicNamed(filtered, row => row.AdInstructorName).slice(0, limit));
     return;
@@ -2095,7 +2117,24 @@ app.delete("/api/courses/:id", requirePermission(6), async (req: AuthenticatedRe
 // --- SCHEDULES (FSchedule) API ---
 
 const SCHEDULE_DAY_KEYS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"] as const;
-const scheduleOverlap=(aStart:string,aEnd:string,bStart:string,bEnd:string)=>aStart<bEnd&&aEnd>bStart;
+/**
+ * ── الوقت يُقارَن بالدقائق، لا بالحروف ──────────────────────────────────────
+ *
+ * This compared the four values as STRINGS. On zero-padded "HH:MM" that is
+ * accidentally the same answer as arithmetic, which is why it survived — but
+ * the write path never padded (`fstarttime: String(raw?.fstarttime || "")`)
+ * and the spreadsheet import takes whatever the sheet holds, so a single
+ * "9:00" was enough to make it lie: "9:00" sorts AFTER "10:00", so two truly
+ * overlapping lectures read as not overlapping. The conflict engine has always
+ * compared minutes, so the two disagreed silently — and this one is what the
+ * hall-barter reservation, the room-freedom check, the swap-safety test and
+ * the approval reading all run on.
+ *
+ * Minutes, like the engine. `normalizeClock` below closes the other half by
+ * making an unpadded time impossible to store in the first place.
+ */
+const scheduleOverlap=(aStart:string,aEnd:string,bStart:string,bEnd:string)=>
+  clockRangesOverlap(aStart,aEnd,bStart,bEnd);
 function schedulePayloadIssues(row:any){const issues:string[]=[];if(!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))issues.push("يجب اختيار يوم واحد على الأقل للمحاضرة");if(row?.fstarttime&&row?.fendtime){const start=timeToMinutes(String(row.fstarttime)),end=timeToMinutes(String(row.fendtime));if(end<=start)issues.push("وقت النهاية يجب أن يكون بعد وقت البداية");else if(!withinScheduleDay(start,end))issues.push(`وقت المحاضرة يجب أن يكون بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`);}return issues;}
 /**
  * Who does this hall belong to?
@@ -2193,10 +2232,30 @@ function dominantHistoricalHallOwner(history:FSchedule[]){
 function rowOccupiesWindow(row:any,day:string,start:string,end:string){
   return Boolean(row?.[day])&&scheduleOverlap(String(row.fstarttime||""),String(row.fendtime||""),start,end);
 }
-function barterRequestRoomKey(request:Partial<HallBarterRequest>){return request.roomId?`id:${request.roomId}`:`legacy:${String(request.roomCode||"").trim().toLocaleLowerCase()}|${String(request.roomHall||"").trim().toLocaleLowerCase()}`;}
+/**
+ * ── مفتاح واحد للقاعة، وإلا فالحجز لا يُطابَق أبداً ─────────────────────────
+ *
+ * A hall barter reservation is matched against a schedule row by comparing
+ * this key with `roomIdentityKey`. The two were built by different rules: the
+ * registry uppercases and unifies Arabic/Persian digits through NFKC, this one
+ * lowercased and did nothing else. On the legacy branch — any room or request
+ * without a registry `roomId` — `legacy:012B08|G20` was compared against
+ * `legacy:012b08|g20`, so the two could never be equal for ANY room.
+ *
+ * The consequence was silent and it was a blocker: «القاعة محجوزة رقمياً عبر
+ * استعارة القاعات» never fired for those rooms, and neither did «الموعد يتجاوز
+ * نافذة الاستعارة المعتمدة». The modern `id:` branch always worked, which is
+ * why nobody saw it.
+ *
+ * Both sides now spell the room the one way the registry spells it.
+ */
+function barterRequestRoomKey(request:Partial<HallBarterRequest>){
+  return roomKeyOf(request.roomId,request.roomCode,request.roomHall);
+}
 function barterRequestMatchesRow(request:Partial<HallBarterRequest>,row:Partial<FSchedule>){const rowKey=roomIdentityKey(row);return Boolean(rowKey)&&barterRequestRoomKey(request)===rowKey;}
 function barterRequestOverlaps(request:HallBarterRequest,roomCode:string,roomHall:string,day:string,start:string,end:string,roomId?:string){
-  const target=roomId?`id:${roomId}`:`legacy:${roomCode.trim().toLocaleLowerCase()}|${roomHall.trim().toLocaleLowerCase()}`;
+  const target=roomKeyOf(roomId,roomCode,roomHall);
+  if(!target) return false;
   return request.status==="approved"&&barterRequestRoomKey(request)===target&&request.day===day&&scheduleOverlap(request.startTime,request.endTime,start,end);
 }
 async function hallBarterAllowsRoomUse(row:Partial<FSchedule>,collegeId:number,sectionId:number){
@@ -2277,7 +2336,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
         if(duration>=SCHEDULE_SLOT_MINUTES){
           const start=minutesToTime(runStart),end=minutesToTime(runEnd);
           const pendingSame=requests.some(request=>request.status==="pending"&&request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId&&
-            barterRequestRoomKey(request)===(roomId?`id:${roomId}`:`legacy:${roomCode.toLocaleLowerCase()}|${roomHall.toLocaleLowerCase()}`)&&
+            barterRequestRoomKey(request)===roomKeyOf(roomId,roomCode,roomHall)&&
             request.day===day&&scheduleOverlap(request.startTime,request.endTime,start,end));
           if(!pendingSame){
             const rawId=`${roomCode}|${roomHall}|${day}|${start}|${end}|${owner.sectionId}`;
@@ -3112,7 +3171,7 @@ app.post("/api/hall-barter/requests", requirePermission(7), async (req: Authenti
   if(Number(opportunity.ownerCollegeId)===collegeId&&Number(opportunity.ownerSectionId)===sectionId){res.status(409).json({error:"لا يمكن للقسم استعارة قاعة من نفسه."});return;}
   const request=await Repository.createHallBarterRequest({
     AdTermId:termId,buildingId:opportunity.buildingId,roomId:opportunity.roomId,roomCode:opportunity.roomCode,roomHall:opportunity.roomHall,day:opportunity.day,
-    startTime:opportunity.startTime,endTime:opportunity.endTime,
+    startTime:normalizeClock(opportunity.startTime),endTime:normalizeClock(opportunity.endTime),
     requesterCollegeId:collegeId,requesterSectionId:sectionId,requesterUserId:Number(req.user.SystemUserId||0),requesterName:String(req.user.Name||""),
     ownerCollegeId:Number(opportunity.ownerCollegeId),ownerSectionId:Number(opportunity.ownerSectionId),
     confidence:Number(opportunity.confidence||0),historyTerms:Number(opportunity.historyTerms||0),
@@ -3638,8 +3697,8 @@ app.post("/api/schedules/import", requirePermission(7), async (req: Authenticate
       AdInstructorId: instructor.AdInstructorId,
       AdRoomCode: String(entry?.building || "").trim(),
       AdRoomHall: String(entry?.hall || "").trim(),
-      fstarttime: String(entry?.start || "").trim(),
-      fendtime: String(entry?.end || "").trim(),
+      fstarttime: normalizeClock(entry?.start),
+      fendtime: normalizeClock(entry?.end),
       ...Object.fromEntries(DAY_FLAGS.map((flag, index) => [flag, dayNames.includes(DAY_LABELS[index])]))
     };
     const building=resolveBuilding(registry,candidate.AdRoomCode,{collegeId,sectionId});
@@ -4049,6 +4108,14 @@ app.get("/api/schedules/replace-instructor/history", requirePermission(7), async
 app.get("/api/courses/nature", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const sectionId = Number(req.query.sectionId || 0);
   if (!sectionId) { res.json({ nature: {} }); return; }
+  /* The section id arrives from the query, so it has to be checked against the
+     caller's own scopes — otherwise any holder of the schedule permission could
+     read another department's ten-year teaching patterns by changing a number
+     in the address bar. The same check the instructor roster already makes. */
+  if (!req.user?.IsAdminUser && !req.scopes?.some(scope => Number(scope.AdSectionId) === sectionId)) {
+    res.status(403).json({ error: "القسم خارج نطاق صلاحيتك" });
+    return;
+  }
   const courses = await Repository.getCoursesBySection(sectionId);
   const history = await Repository.getScheduleHistoryForCourses(courses.map(course => course.AdCourseId));
   const learned = learnAll(history);
@@ -6172,7 +6239,7 @@ app.get("/api/intelligence/compare-terms", requirePermission(7), async (req: Aut
 
 app.post("/api/intelligence/import-preview", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} const raw=Array.isArray(req.body?.rows)?req.body.rows:[]; if(!raw.length){res.status(400).json({error:"الملف لا يحتوي صفوفاً قابلة للقراءة"});return;} if(raw.length>450){res.status(400).json({error:"الملف أكبر من الحد الآمن للاستيراد"});return;} const [courses,instructors]=await Promise.all([Repository.getCourses(),Repository.getInstructors()]); const sectionCourses=courses.filter(c=>c.AdCollegeId===collegeId&&c.AdSectionId===sectionId); const byCode=new Map(sectionCourses.map(c=>[String(c.CourseCode).trim().toLowerCase(),c])); const byCivil=new Map(instructors.map(i=>[String(i.AdInstructorCivil).trim(),i])); const byName=new Map(instructors.map(i=>[String(i.AdInstructorName).trim().toLowerCase(),i])); const issues:string[]=[]; const rows:any[]=[];
-  raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5),end=String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5);const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId,{resolveHistorical:true}); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
+  raw.forEach((item:any,index:number)=>{const code=String(item["رمز المقرر"]??item.CourseCode??item.courseCode??"").trim();const course=byCode.get(code.toLowerCase());const civil=String(item["الرقم المدني"]??item.AdInstructorCivil??item.civil??"").trim();const iname=String(item["أستاذ المقرر"]??item.AdInstructorName??item.instructor??"").trim();const instructor=byCivil.get(civil)||byName.get(iname.toLowerCase());const sectionCode=String(item["الشعبة"]??item.SCode??item.section??"").trim();const time=String(item["الوقت"]??item.time??"").trim();const parts=time.split(/\s*[-–—]\s*/);const start=normalizeClock(String(item.fstarttime??item.startTime??parts[1]??parts[0]??"").trim().slice(0,5)),end=normalizeClock(String(item.fendtime??item.endTime??parts[0]??parts[1]??"").trim().slice(0,5));const dayText=String(item["الأيام"]??item.days??"");const row:any={id:-(index+1),AdCollegeId:collegeId,AdSectionId:sectionId,AdTermId:termId,AdCourseId:course?.AdCourseId||0,AdCourseName:course?.CourseName||String(item["المقرر الدراسي"]??""),SCode:sectionCode,AdInstructorId:instructor?.AdInstructorId||0,fsunday:dayText.includes("الأحد")||Boolean(item.fsunday),fmonday:dayText.includes("الاثنين")||Boolean(item.fmonday),ftuesday:dayText.includes("الثلاثاء")||Boolean(item.ftuesday),fwednesday:dayText.includes("الأربعاء")||Boolean(item.fwednesday),fthursday:dayText.includes("الخميس")||Boolean(item.fthursday),fstarttime:start,fendtime:end,AdRoomCode:String(item["المبنى"]??item.AdRoomCode??"").trim(),AdRoomHall:String(item["القاعة"]??item.AdRoomHall??"").trim(),fdetail:""}; row.fdetail=legacyFDetail(row); if(!course)issues.push(`السطر ${index+1}: لم أجد رمز المقرر ${code||"(فارغ)"} في هذا القسم`);if(!instructor)issues.push(`السطر ${index+1}: لم أتعرف على أستاذ المقرر`);rows.push(row);}); const validation=await validateSmartRows(rows,collegeId,sectionId,{resolveHistorical:true}); issues.push(...validation); const duplicateKeys=new Set<string>(),duplicates:string[]=[]; rows.forEach((r:any,i:number)=>{const key=`${r.AdCourseId}:${r.SCode}`;if(duplicateKeys.has(key))duplicates.push(`السطر ${i+1}: مقرر/شعبة مكرر`);duplicateKeys.add(key)});issues.push(...duplicates); res.json({rows,issues:[...new Set(issues)].slice(0,40),valid:issues.length===0,count:rows.length,preview:rows.slice(0,20)});
 });
 
 function rowSignatureServer(row:any){return `${row.AdCourseId||0}:${row.SCode||""}:${row.AdInstructorId||0}:${activeDays(row).join(",")}:${row.fstarttime||""}:${row.fendtime||""}:${row.AdRoomCode||""}|${row.AdRoomHall||""}`}

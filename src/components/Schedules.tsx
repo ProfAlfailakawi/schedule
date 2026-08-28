@@ -130,7 +130,7 @@ import ScheduleTransfer from "./ScheduleTransfer";
 import VisitingBadge from "./VisitingBadge";
 import { adviseDayPattern, DECISION_1912_LABEL, expectedMinutesForDay, isDecision1912Finding, patternsForHours, patternsForHoursOnDay, reviewSchedule, type DayKey as RegDayKey, type WeeklyPattern } from "../utils/scheduleRegulations";
 import { fastConflictScan, findConflicts } from "../utils/scheduleIntelligence";
-import { historicalLocationNeedsReview, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
+import { historicalLocationNeedsReview, normalizeLocationToken, roomDisplay, roomIdentityKey } from "../utils/locationRegistry";
 import { findRepairChain, type RepairChain } from "../utils/repairChain";
 import type { CourseNature } from "../utils/courseNature";
 import { courseLabel, instructorLabel } from "../utils/courseLabel";
@@ -374,12 +374,19 @@ const SLOT_H = 56;
 const normalizeArabicIndicDigits = (value: string) =>
   value.replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
 
+/**
+ * ── اسم القاعة يُهجّى مرة واحدة في البرنامج كله ─────────────────────────────
+ *
+ * There were three spellings of the same room: the registry's, the server's
+ * hall-barter key, and this one. Two of them disagreeing was enough to make an
+ * approved barter reservation impossible to match. This one now strips the two
+ * things a typed or pasted hall carries and the registry does not — the bidi
+ * marks a right-to-left paste leaves behind, and the slash of «B9/F12» — and
+ * then hands the rest to the registry's own normaliser, so NFKC and the two
+ * Arabic digit sets are folded by the same code everywhere.
+ */
 const normalizeRoomToken = (value: unknown) =>
-  normalizeArabicIndicDigits(String(value || ""))
-    .replace(/[‎‏؜]/g, "")
-    .replace(/\s+/g, "")
-    .replace(/[\/]/g, "")
-    .toUpperCase();
+  normalizeLocationToken(String(value || "").replace(/[‎‏؜]/g, "").replace(/[\/]/g, ""));
 
 const compactRoomLabel = (value: unknown) =>
   normalizeArabicIndicDigits(String(value || ""))

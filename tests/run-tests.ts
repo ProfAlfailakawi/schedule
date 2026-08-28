@@ -17,7 +17,8 @@ import { reachAboutCard, unreachable, whatsappNumber } from "../src/utils/reachI
 import { learnRhythm, offRhythm, describeRhythm } from "../src/utils/departmentRhythm";
 import { AR, countOf, nounFor } from "../src/utils/arabicCount";
 import { readDepartmentMemory } from "../src/utils/departmentMemory";
-import { SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
+import { clockRangesOverlap, normalizeClock, SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
+import { roomIdentityKey, roomKeyOf } from "../src/utils/locationRegistry";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
 const originalLog = console.log;
@@ -1282,6 +1283,75 @@ async function runTests() {
     // say about it, so it is dropped rather than half-reported.
     assert(outsideScopeClashes([mineRoom], [mineRoom]).length === 0,
       "a pair with no other side to name is dropped, not half-reported");
+  }
+
+  /* --- 28. هوية القاعة تُهجّى مرة واحدة ------------------------------------- */
+  originalLog("\n--- 28. One spelling of a room, everywhere ---");
+  {
+    /* A hall-barter reservation is matched to a schedule row by comparing two
+       keys. They used to be built by different rules — the registry uppercased
+       and folded Arabic digits, the server's key lowercased and did nothing —
+       so on the legacy branch they could never be equal for ANY room, and the
+       two blockers that comparison guards never fired. Silently: a key that
+       never matches produces no error, only an absence. */
+    const sameRoom: Array<[string, any, [unknown, unknown, unknown]]> = [
+      ["نفس الكتابة", { AdRoomCode: "012B08", AdRoomHall: "G20" }, [undefined, "012B08", "G20"]],
+      ["حالة أحرف مختلفة", { AdRoomCode: "012B08", AdRoomHall: "G20" }, [undefined, "012b08", "g20"]],
+      ["أرقام عربية", { AdRoomCode: "٠١٢B08", AdRoomHall: "G20" }, [undefined, "012B08", "G20"]],
+      ["أرقام فارسية", { AdRoomCode: "۰۱۲B08", AdRoomHall: "G20" }, [undefined, "012B08", "G20"]],
+      ["مسافة داخلية", { AdRoomCode: "012 B08", AdRoomHall: "G20" }, [undefined, "012B08", " G20 "]],
+      ["معرّف السجل", { roomId: "r_77", AdRoomCode: "X", AdRoomHall: "Y" }, ["r_77", "anything", "else"]],
+    ];
+    for (const [label, row, [id, code, hall]] of sameRoom) {
+      assert(roomIdentityKey(row as any) === roomKeyOf(id, code, hall) && roomIdentityKey(row as any) !== "",
+        `الصف وطلب الاستعارة يعطيان نفس المفتاح — ${label}`);
+    }
+    // A room nobody can name is not "the same room" as another nameless one.
+    assert(roomKeyOf(undefined, "", "") === "" && roomKeyOf(undefined, "012B08", "") === "",
+      "قاعة بلا مبنى أو بلا رقم لا تُنتج مفتاحاً يطابق أي شيء");
+    assert(roomIdentityKey({ locationStatus: "PENDING_ROOM", roomId: "r_9" } as any) === "",
+      "قاعة بانتظار التثبيت لا هوية لها مهما حملت من حقول");
+
+    /* The checks above only prove the two callers AGREE — and they would agree
+       just as happily on a wrong spelling, because both now call one function.
+       So the spelling itself is pinned. */
+    assert(roomKeyOf(undefined, "٠١٢b08", " g20 ") === "legacy:012B08|G20",
+      "الهجاء نفسه مثبَّت: أرقام لاتينية وحروف كبيرة وبلا مسافات");
+    assert(roomKeyOf("r_77", "", "") === "id:r_77", "معرّف السجل يسبق أي كتابة نصية");
+
+    /* And the real regression risk is not this function changing — it is
+       somebody building a second key beside it, which is exactly how the two
+       spellings came to exist. A legacy key may be composed in one place only. */
+    const serverSource = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+    const inlineLegacyKeys = (serverSource.match(/`legacy:\$\{/g) || []).length;
+    assert(inlineLegacyKeys === 0,
+      "لا يُبنى مفتاح قاعة قديم داخل server.ts — الهجاء في locationRegistry وحده");
+    const registrySource = fs.readFileSync(path.join(process.cwd(), "src/utils/locationRegistry.ts"), "utf8");
+    assert((registrySource.match(/`legacy:\$\{/g) || []).length === 1,
+      "وموضع واحد فقط يبنيه في السجل نفسه");
+  }
+
+  /* --- 29. الوقت يُقارَن بالدقائق ------------------------------------------- */
+  originalLog("\n--- 29. Clock ranges compared as time, not as words ---");
+  {
+    /* "9:00" sorts AFTER "10:00" as a string, so an unpadded time made two
+       genuinely overlapping lectures read as not overlapping — in the hall
+       barter reservation, the room-freedom check and the swap-safety test.
+       Both halves are closed: the comparison is arithmetic, and the shape is
+       settled where rows enter. */
+    assert(clockRangesOverlap("09:00", "09:50", "09:30", "10:20"), "متداخلان مبطّنان");
+    assert(clockRangesOverlap("9:00", "9:50", "9:30", "10:20"),
+      "متداخلان فعلاً حتى لو وصل الوقت بلا تبطين — وهذه هي الحالة التي كانت تُقرأ خطأً");
+    assert(!clockRangesOverlap("9:00", "9:50", "10:00", "10:50"), "غير متداخلين بلا تبطين");
+    assert(!clockRangesOverlap("09:00", "09:50", "09:50", "10:40"), "التلامس ليس تداخلاً");
+
+    assert(normalizeClock("9:00") === "09:00" && normalizeClock("09:00") === "09:00",
+      "الوقت يُخزَّن بصيغة HH:MM سواء وصل مبطّناً أو لا");
+    assert(normalizeClock("9:00:00") === "09:00", "الثواني تُطرح من الصيغة المخزَّنة");
+    assert(normalizeClock("") === "" && normalizeClock(null) === "" && normalizeClock(undefined) === "",
+      "الفراغ يبقى فراغاً ولا يصير 00:00");
+    assert(normalizeClock("مساءً") === "مساءً" && normalizeClock("25:00") === "25:00",
+      "ما ليس وقتاً يُترك كما هو ليُرفض في التحقق، لا يُزوَّر إلى وقت صالح");
   }
 
   if (!originalDb) {

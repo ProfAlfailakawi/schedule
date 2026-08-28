@@ -45,6 +45,42 @@ export function formatScheduleTimeRange(
   return `⁦${to} - ${from}⁩`;
 }
 
+/**
+ * ── صيغة واحدة للوقت المخزَّن ───────────────────────────────────────────────
+ *
+ * "HH:MM", zero-padded, or "" when the value is not a clock at all. A typed
+ * form already sends this shape; a spreadsheet sends whatever the sheet holds,
+ * and the write path used to store it verbatim. One "9:00" was enough to make
+ * every string comparison downstream answer wrongly, so the shape is settled
+ * where rows enter rather than trusted at every place that reads them.
+ */
+export function normalizeClock(value: unknown): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return raw;
+  const hour = Number(match[1]);
+  if (!Number.isFinite(hour) || hour < 0 || hour > 23) return raw;
+  return `${String(hour).padStart(2, "0")}:${match[2]}`;
+}
+
+/**
+ * Do two clock ranges share a minute?
+ *
+ * The one arithmetic answer, so nothing has to compare "9:00" and "10:00" as
+ * words — where the first sorts after the second and two overlapping lectures
+ * read as not overlapping. `findConflicts` has always compared minutes; the
+ * hall-barter reservation, the room-freedom check and the swap-safety test
+ * compared strings, and the two disagreed without saying so.
+ */
+export function clockRangesOverlap(aStart: unknown, aEnd: unknown, bStart: unknown, bEnd: unknown): boolean {
+  const toMinutes = (value: unknown) => {
+    const [hour, minute] = String(value ?? "").split(":").map(Number);
+    return (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0);
+  };
+  return toMinutes(aStart) < toMinutes(bEnd) && toMinutes(aEnd) > toMinutes(bStart);
+}
+
 
 /** Arabic UI duration token. Keeps each number attached to its unit so RTL
  * layout can never split/reorder `10س 7د` into a corrupt visual sequence. */

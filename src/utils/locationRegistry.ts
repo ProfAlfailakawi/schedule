@@ -324,11 +324,31 @@ export function resolveAuthorityLocation(
   return{building,room,buildingMethod,buildingScore,roomScore,recoveredBuildingCode:recoveredBuildingCode||undefined};
 }
 
+/**
+ * ── هوية القاعة تُكتب مرة واحدة ─────────────────────────────────────────────
+ *
+ * Two things in this product ask "is this the same room?" — a schedule row and
+ * an approved hall-barter reservation — and each used to spell the answer
+ * itself. The registry uppercased and folded Arabic and Persian digits through
+ * NFKC; the server's barter key lowercased and did nothing else. On the legacy
+ * branch, `legacy:012B08|G20` was compared against `legacy:012b08|g20`, so for
+ * any room without a registry id the two could never be equal — and the two
+ * findings that comparison guards, «القاعة محجوزة رقمياً عبر استعارة القاعات»
+ * and «الموعد يتجاوز نافذة الاستعارة المعتمدة», simply never fired. Silently,
+ * because a key that never matches produces no error, only an absence.
+ *
+ * The spelling lives here now, and both callers spell it by calling this.
+ */
+export const roomKeyOf = (roomId: unknown, roomCode: unknown, roomHall: unknown): string => {
+  const id = String(roomId ?? "").trim();
+  if (id) return `id:${id}`;
+  const building = normalizeLocationToken(roomCode), room = normalizeLocationToken(roomHall);
+  return building && room ? `legacy:${building}|${room}` : "";
+};
+
 export const roomIdentityKey = (row: Partial<FSchedule>): string => {
   if(row.locationStatus==="PENDING_ROOM") return "";
-  if(row.roomId) return `id:${row.roomId}`;
-  const b=normalizeLocationToken(row.AdRoomCode), r=normalizeLocationToken(row.AdRoomHall);
-  return b&&r?`legacy:${b}|${r}`:"";
+  return roomKeyOf(row.roomId, row.AdRoomCode, row.AdRoomHall);
 };
 
 export const buildingIdentityKey = (row: Partial<FSchedule>): string => row.buildingId ? `id:${row.buildingId}` : normalizeLocationToken(row.AdRoomCode);

@@ -12,7 +12,7 @@ import { runVisualTransition } from "../utils/visualTransition";
 import { coerceScopeValues, resolveScopeSelection } from "../utils/scopeContext";
 import { byArabic, sortByName, sortKey } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
-import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
+import { clockRangesOverlap, formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_END_TIME, SCHEDULE_DAY_START, SCHEDULE_DAY_START_TIME, SCHEDULE_SLOT_MINUTES } from "../utils/scheduleTime";
 import { AR, countOf } from "../utils/arabicCount";
 import { byRoom, byRoomLabel, byRoomPart } from "../utils/sorting";
 import InstructorPicker from "./InstructorPicker";
@@ -608,7 +608,9 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     if(omit!=="course"&&filters.courseCode.trim())rows=rows.filter(r=>(courseById.get(r.AdCourseId)?.CourseCode||"")===filters.courseCode.trim());
     if(omit!=="building"&&filters.building)rows=rows.filter(r=>rowMatchesBuilding(r,filters.building));
     if(omit!=="room"&&filters.hall)rows=rows.filter(r=>rowMatchesRoom(r,filters.hall));
-    if(filters.startTime&&filters.endTime)rows=rows.filter(r=>r.fstarttime<filters.endTime&&r.fendtime>filters.startTime);
+    /* Arithmetic, not alphabetical: an unpadded «9:00» stored years ago sorts
+       after «10:00» as a word, and used to fall out of its own filter. */
+    if(filters.startTime&&filters.endTime)rows=rows.filter(r=>clockRangesOverlap(r.fstarttime,r.fendtime,filters.startTime,filters.endTime));
     const chosenDays=DAYS.filter(day=>filters[day.key]);
     if(chosenDays.length)rows=rows.filter(r=>chosenDays.some(day=>Boolean((r as any)[day.flag])));
     return rows;
@@ -679,7 +681,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
          only matched appointments straddling an endpoint — was the one shape
          that missed it. This is the same overlap rule the conflict detector
          uses: any shared minute counts, and touching edges do not. */
-      rows = rows.filter(s => s.fstarttime < filters.endTime && s.fendtime > filters.startTime);
+      rows = rows.filter(s => clockRangesOverlap(s.fstarttime, s.fendtime, filters.startTime, filters.endTime));
     }
     if (filters.courseId) {
       const chosen = courseById.get(filters.courseId);
