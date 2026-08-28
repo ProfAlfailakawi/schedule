@@ -116,12 +116,12 @@ export default function AuthorityPdfReport({
                           is the same mark it prints for a row whose number is
                           merely unknown — so the reader met a dash and had to
                           work out which of the two it meant.
-                          «جديد» says it, and only on rows the report has already
+                          «مقرر جديد» says it, and only on rows the report has already
                           decided are added; a missing number on any other row is
                           still an unknown, and still a dash. It is Arabic, so it
                           drops the latin/ltr treatment the numbers carry. */}
                       {entry.status === "added" && !String(entry.referenceNumber || row.referenceNumber || "").trim()
-                        ? <div role="cell" className="authority-pdf-reference-number authority-pdf-reference-new">جديد</div>
+                        ? <div role="cell" className="authority-pdf-reference-number authority-pdf-reference-new">مقرر جديد</div>
                         : <div role="cell" className="print-ltr authority-pdf-reference-number">{entry.referenceNumber || row.referenceNumber || "—"}</div>}
                       {/* Section numbering is a system-canonical import convention, not
                           a user edit. Keep the value visible but never paint it yellow. */}

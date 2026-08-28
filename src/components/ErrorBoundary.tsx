@@ -15,10 +15,19 @@ interface Props {
  * Global render recovery.
  *
  * Product policy: a transient render failure must never navigate the user away
- * from the current screen, reload the application, clear runtime caches, or
- * replace the product with a visible rescue/error panel. Recovery is therefore
- * performed in-place by remounting the React subtree. Persistent failures are
- * kept visually quiet rather than forcing a navigation loop.
+ * from the current screen, reload the application, or clear runtime caches.
+ * Recovery is performed in-place by remounting the React subtree, silently —
+ * the three automatic attempts are invisible because they resolve in
+ * milliseconds and a flash of error text for a hiccup that healed itself is
+ * noise.
+ *
+ * What changed (2026-08-28, product decision): a failure that survives all
+ * automatic attempts is no longer allowed to be silent. The old behaviour kept
+ * an invisible cover over the screen, so a person whose subtree had genuinely
+ * stopped rendering sat in front of a blank page with no way to know and
+ * nothing to press. Now the stuck state — and only the stuck state — shows one
+ * quiet line and one button: «إعادة المحاولة», which restarts the same
+ * in-place remount cycle. Still no navigation, no reload, no crash card.
  */
 export default class ErrorBoundary extends React.Component<Props, State> {
   declare props: Props;
@@ -97,11 +106,35 @@ export default class ErrorBoundary extends React.Component<Props, State> {
     if (this.retryTimer) window.clearTimeout(this.retryTimer);
   }
 
+  private manualRetry = () => {
+    try { telemetryError("ui.render.manual-retry", this.state.error || new Error("manual retry")); } catch { /* never block the retry */ }
+    // Reset the streak too: the person asking again deserves the full set of
+    // automatic attempts, not a boundary that gives up on the first failure.
+    this.setState(state => ({ error: null, recoveryNonce: state.recoveryNonce + 1, attempts: 0 }));
+  };
+
   render() {
     if (this.state.error) {
-      // Intentionally invisible. Never show a global error card and never
-      // navigate/reload the user out of the screen they were working in.
-      return <div className="render-recovery-quiet" aria-hidden="true" />;
+      // Automatic recovery still pending: stay quiet. This cover exists for
+      // 0–120ms at a time; showing text here would flash on every hiccup.
+      if (this.state.attempts < this.maxImmediateAttempts) {
+        return <div className="render-recovery-quiet" aria-hidden="true" />;
+      }
+      // Every automatic attempt failed. The person is stuck; say so, small,
+      // and hand them the retry the boundary was doing on their behalf.
+      return (
+        <div className="render-recovery-shell" role="alert">
+          <div className="render-recovery-bar">
+            <div>
+              <strong>تعذّر عرض هذا الجزء</strong>
+              <span>حدث خلل مؤقت في العرض. بياناتك محفوظة ولم تتأثر.</span>
+            </div>
+            <div className="render-recovery-actions">
+              <button type="button" className="primary" data-guide-ignore="زر طوارئ يظهر فقط حين يتعطل العرض نفسه — المرشد لا يعمل في هذه الحالة أصلاً" onClick={this.manualRetry}>إعادة المحاولة</button>
+            </div>
+          </div>
+        </div>
+      );
     }
 
     return <React.Fragment key={this.state.recoveryNonce}>{this.props.children}</React.Fragment>;

@@ -1583,6 +1583,31 @@ async function runTests() {
       "لا نسخة كاملة للنظام داخل مسارات سجل المباني والقاعات");
   }
 
+  /* --- 35. العالق لم يعد صامتاً ------------------------------------------- */
+  originalLog("\n--- 35. A stuck screen now says so ---");
+  {
+    /* Product decision 2026-08-28: transient render failures keep healing
+       silently, but a failure that survives every automatic attempt must show
+       one line and one retry button instead of an invisible cover over a blank
+       screen. These pins keep both halves of that decision. */
+    const boundary = fs.readFileSync(path.join(process.cwd(), "src/components/ErrorBoundary.tsx"), "utf8");
+    assert(/attempts\s*<\s*this\.maxImmediateAttempts/.test(boundary)
+      && boundary.includes('className="render-recovery-quiet"'),
+      "المحاولات التلقائية تبقى صامتة — الغطاء الهادئ مشروط بأنها لم تُستنفد");
+    assert(boundary.includes("تعذّر عرض هذا الجزء") && boundary.includes("إعادة المحاولة")
+      && boundary.includes('role="alert"'),
+      "والعالق يقول ذلك: سطر واحد وزر «إعادة المحاولة» بإعلان وصولي");
+    assert(/attempts:\s*0\s*\}\)/.test(boundary),
+      "وزر الإعادة يصفّر عدّاد المحاولات — دورة تعافٍ كاملة لا محاولة يتيمة");
+    assert(!/window\.location\.(reload|assign|href)/.test(boundary),
+      "ولا يزال ممنوعاً أن يعيد التحميل أو ينقل المستخدم من شاشته");
+
+    /* And the authority report's word for a course the Authority has not
+       numbered yet — the user asked for the full phrase. */
+    const authority = fs.readFileSync(path.join(process.cwd(), "src/components/AuthorityPdfReport.tsx"), "utf8");
+    assert(authority.includes(">مقرر جديد</div>"), "الرقم المرجعي الفارغ للمقرر المضاف يقول «مقرر جديد»");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");

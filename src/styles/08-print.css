@@ -2115,7 +2115,7 @@
   .authority-pdf-grid .authority-pdf-row-added>[role="cell"]{background:#e8f6ed!important;color:#174f38!important;text-decoration:none!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .authority-pdf-grid .authority-pdf-row-deleted>[role="cell"]{background:#fbe8e8!important;color:#7b2626!important;text-decoration-line:line-through!important;text-decoration-thickness:.35pt!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .authority-pdf-grid .authority-pdf-row-deleted>[role="cell"].authority-pdf-reference-number{text-decoration:none!important}
-  /* «جديد» in the CRN column is a word, not a number: it takes the sheet's
+  /* «مقرر جديد» in the CRN column is a phrase, not a number: it takes the sheet's
      Arabic face and its own direction, never the latin monospace the reference
      numbers beside it are set in. Quiet weight — the «مضاف» badge on the row
      is what carries the emphasis. */
@@ -2123,6 +2123,7 @@
     direction:rtl!important;unicode-bidi:isolate!important;
     font-family:inherit!important;font-variant-numeric:normal!important;
     font-weight:800!important;color:#155d3a!important;
+    white-space:nowrap!important;
     -webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;
   }
   .authority-pdf-grid .authority-pdf-row-changed>[role="cell"]{text-decoration:none!important}
