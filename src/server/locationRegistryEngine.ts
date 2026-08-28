@@ -134,7 +134,8 @@ export function rollbackPatch(log: LocationMigrationLog): Partial<FSchedule> {
  *     waiting for a person to say yes or no, and nothing on the screen said
  *     there was a queue.
  *   • 10 buildings hold no active confirmed room, so they appear in the master
- *     list and can never produce a hall.
+ *     list and can never produce a hall — but they are two different things,
+ *     and the split is the whole point (see below).
  * A third candidate was dropped on purpose: nine rooms carry a stored `shared`
  * flag that contradicts their own section list, but `mergeRegistryWithSeed`
  * recomputes that flag on every read — so a counter here would be fed the
@@ -156,8 +157,24 @@ export function registryHealth(registry: LocationRegistry, rows: readonly Partia
     openReviewCases:reviewCases.filter(x=>x.status==="open").length,
     /** Rooms hidden from every picker until somebody confirms or retires them. */
     awaitingConfirmation:registry.rooms.filter(room=>!usable(room)).length,
-    /** Buildings that can never offer a hall. */
-    emptyBuildings:activeBuildings.filter(building=>!registry.rooms.some(room=>usable(room)&&room.buildingId===building.id)).length,
+    /* ── مبنى بلا قاعة ليس نوعاً واحداً ────────────────────────────────────
+     * Ten buildings hold no usable hall, and treating them as one list would
+     * invite exactly the wrong action. Four of them carry real history — one
+     * has thirty-six appointments behind it — and their halls are merely
+     * unconfirmed; retiring the building would orphan the rows that point at
+     * it and break the canonicalisation of ten years of schedules. The other
+     * six have never been used at all: no hall, no row, no term.
+     *
+     * So the number is split. One is a queue of halls to confirm; the other is
+     * a list safe to retire. Counting only — nothing here retires anything. */
+    emptyBuildingsWithHistory:activeBuildings.filter(building=>
+      !registry.rooms.some(room=>usable(room)&&room.buildingId===building.id) &&
+      (Number(building.historicalUsageCount||0)+registry.rooms.filter(room=>room.buildingId===building.id)
+        .reduce((sum,room)=>sum+Number(room.historicalUsageCount||0),0))>0).length,
+    emptyBuildingsUnused:activeBuildings.filter(building=>
+      !registry.rooms.some(room=>usable(room)&&room.buildingId===building.id) &&
+      (Number(building.historicalUsageCount||0)+registry.rooms.filter(room=>room.buildingId===building.id)
+        .reduce((sum,room)=>sum+Number(room.historicalUsageCount||0),0))===0).length,
   };
 }
 

@@ -124,7 +124,8 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
           back, and what it is carrying that can never be used. Both are
           actionable from this same screen. */}
       <Surface><CircleAlert/><b>{data.health.awaitingConfirmation||0}</b><span>قاعة تنتظر التأكيد ولا تظهر لأحد</span></Surface>
-      <Surface><Building2/><b>{data.health.emptyBuildings||0}</b><span>مبنى بلا قاعة فعّالة</span></Surface>
+      <Surface><Building2/><b>{data.health.emptyBuildingsWithHistory||0}</b><span>مبنى بلا قاعة فعّالة لكنه يحمل سجلاً — قاعاته تنتظر التأكيد</span></Surface>
+      <Surface><Building2/><b>{data.health.emptyBuildingsUnused||0}</b><span>مبنى بلا قاعة وبلا أي استخدام — آمن للتعطيل</span></Surface>
     </div>
 
     <nav className="location-admin-tabs" aria-label="أقسام إدارة المباني والقاعات">
