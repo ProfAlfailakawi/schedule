@@ -27,6 +27,7 @@ import {
   Inbox,
   Timer,
   Hourglass,
+  CopyPlus,
   Layers,
   Palette,
   Printer,
@@ -3112,16 +3113,33 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       : null;
     const otherCourse = other?.AdCourseName || (other ? courseById.get(Number(other.AdCourseId || 0))?.CourseName : "") || "";
     const roomLabel = currentRoomLabel || (other?.AdRoomCode && other?.AdRoomHall ? `${other.AdRoomCode}/${other.AdRoomHall}` : "");
+    /* Who else is standing here. A room card that says only «القاعة مشغولة»
+       states the verdict and withholds the reason — the reader still has to go
+       hunting for what is occupying it. This is the booking on the other side
+       of the clash, named the way a person would name it: the course, its
+       section, whose lecture it is, and the hour. When the other appointment
+       belongs to a department outside this reader's scope there is no row to
+       name, and the server's own sentence — «يوجد حجز متداخل خارج نطاق العرض
+       الحالي» — is already the honest answer, so it is left to speak. */
+    const otherBooking = other
+      ? [
+          otherCourse || "موعد آخر",
+          other.SCode ? `شعبة ${other.SCode}` : "",
+          instructorById.get(Number(other.AdInstructorId || 0))?.AdInstructorName || "",
+          formatScheduleTimeRange(other.fstarttime, other.fendtime),
+        ].filter(Boolean).join(" · ")
+      : "";
     let title = conflict.message || (blocks ? "يوجد مانع للحفظ" : "ملاحظة تستحق الانتباه");
     let titleSecondary = "";
     let summary = detail;
     if (isInstructor) {
       title = `الأستاذ: ${currentInstructorName || other?.AdInstructorName || title.replace(/^الأستاذ\s*/, "").replace(/\s*لديه.*$/, "") || "—"}`;
       titleSecondary = "لديه محاضرة متداخلة";
-      summary = otherCourse || detail;
+      summary = otherBooking || detail;
     } else if (conflict.type === "room") {
-      title = `القاعة ${roomLabel || "—"} مشغولة`;
-      summary = otherCourse || detail;
+      title = `القاعة ${roomLabel || "—"} محجوزة`;
+      titleSecondary = "لموعد آخر في نفس الوقت";
+      summary = otherBooking || detail;
     } else if (isScope) {
       title = conflict.message || `القاعة ${roomLabel || "—"} خارج النطاق`;
       summary = detail || "القاعة تخص نطاقاً آخر؛ المتابعة ممكنة بعد المراجعة.";
@@ -3160,6 +3178,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       toneClass: isScope ? "decision-card--scope"
         : blocks && conflict.type !== "duplicate" ? "decision-card--danger"
           : "decision-card--warning",
+      /* Carried out of here so the group above the card can be coloured and
+         opened by what it actually holds, instead of guessing from its title. */
+      blocks,
       typeLabel,
       statusLabel,
       icon: isRoom ? "room" : isInstructor ? "teacher" : "stack",
@@ -3236,8 +3257,28 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   }, [editorSupplementalReview, editorTimingReviewCard]);
   const editorRoomConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض قاعة" || card.typeLabel === "نطاق القاعة"), [editorConflictCards]);
   const editorInstructorConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تعارض أستاذ"), [editorConflictCards]);
-  const editorGenericConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel !== "تعارض قاعة" && card.typeLabel !== "نطاق القاعة" && card.typeLabel !== "تعارض أستاذ"), [editorConflictCards]);
-  const hasEditorDecisionAccordions = Boolean(editorRoomConflictCards.length || editorInstructorConflictCards.length || editorRegulation.length || editorSupplementalCards.length || editorGenericConflictCards.length);
+  /* An exact duplicate refuses the save exactly as a double booking does, and
+     it used to be filed under a group called «ملاحظة» — a blocker wearing the
+     word for advice. It gets the name of what it is. */
+  const editorDuplicateConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel === "تكرار"), [editorConflictCards]);
+  const editorGenericConflictCards = useMemo(() => editorConflictCards.filter(card => card.typeLabel !== "تعارض قاعة" && card.typeLabel !== "نطاق القاعة" && card.typeLabel !== "تعارض أستاذ" && card.typeLabel !== "تكرار"), [editorConflictCards]);
+  const hasEditorDecisionAccordions = Boolean(editorRoomConflictCards.length || editorInstructorConflictCards.length || editorDuplicateConflictCards.length || editorRegulation.length || editorSupplementalCards.length || editorGenericConflictCards.length);
+  /**
+   * ── المجموعة تقول ما بداخلها قبل أن تُفتح ──────────────────────────────
+   *
+   * A row reading «تعارض أستاذ · ملاحظة واحدة», closed, in the same grey as
+   * every other row, is the one thing standing between a person and the reason
+   * their save was refused — and it asks for a click first. A group now wears
+   * the colour of the worst thing inside it, and a group that holds a blocker
+   * opens itself: what stops the work is never one interaction away.
+   *
+   * `open` here is the initial state, not a lock — collapsing it by hand
+   * stays collapsed, because React only re-applies the attribute when the
+   * value itself changes.
+   */
+  const accordionTone = (cards: any[]) =>
+    cards.some(card => card.blocks) ? "decision-accordion--blocking"
+      : cards.length ? "decision-accordion--warning" : "";
   const renderEditorConflictCard = (card: any) => (
     <article key={card.id} className={`decision-card ${card.toneClass}`}>
       <div className="decision-card-topline">
@@ -8378,7 +8419,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             {hasEditorDecisionAccordions ? (
               <div className="decision-accordion-list" aria-label="تفاصيل المراجعة">
                 {editorRoomConflictCards.length ? (
-                  <details className="decision-accordion">
+                  <details className={`decision-accordion ${accordionTone(editorRoomConflictCards)}`} open={editorRoomConflictCards.some(card => card.blocks)}>
                     <summary className="decision-accordion-summary">
                       <span className="decision-accordion-title"><Building2 /> تعارض قاعة</span>
                       <em>{countOf(editorRoomConflictCards.length, AR.note)}</em>
@@ -8391,7 +8432,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   </details>
                 ) : null}
                 {editorInstructorConflictCards.length ? (
-                  <details className="decision-accordion">
+                  <details className={`decision-accordion ${accordionTone(editorInstructorConflictCards)}`} open={editorInstructorConflictCards.some(card => card.blocks)}>
                     <summary className="decision-accordion-summary">
                       <span className="decision-accordion-title"><UsersRound /> تعارض أستاذ</span>
                       <em>{countOf(editorInstructorConflictCards.length, AR.note)}</em>
@@ -8403,8 +8444,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                     </div>
                   </details>
                 ) : null}
+                {editorDuplicateConflictCards.length ? (
+                  <details className={`decision-accordion ${accordionTone(editorDuplicateConflictCards)}`} open={editorDuplicateConflictCards.some(card => card.blocks)}>
+                    <summary className="decision-accordion-summary">
+                      <span className="decision-accordion-title"><CopyPlus /> موعد مكرر</span>
+                      <em>{countOf(editorDuplicateConflictCards.length, AR.note)}</em>
+                    </summary>
+                    <div className="decision-accordion-body">
+                      <div className="decision-stack" aria-label="موعد مكرر">
+                        {editorDuplicateConflictCards.map(renderEditorConflictCard)}
+                      </div>
+                    </div>
+                  </details>
+                ) : null}
                 {editorRegulation.length ? (
-                  <details className="decision-accordion">
+                  <details className="decision-accordion decision-accordion--regulation">
                     <summary className="decision-accordion-summary">
                       <span className="decision-accordion-title"><ClipboardCheck /> ملاحظات اللائحة · {DECISION_1912_LABEL}</span>
                       <em>{countOf(editorRegulation.length, AR.note)}</em>
@@ -8448,9 +8502,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   </details>
                 ) : null}
                 {editorGenericConflictCards.length || editorSupplementalCards.length ? (
-                  <details className="decision-accordion">
+                  <details className={`decision-accordion ${accordionTone(editorGenericConflictCards)}`} open={editorGenericConflictCards.some(card => card.blocks)}>
                     <summary className="decision-accordion-summary">
-                      <span className="decision-accordion-title"><Layers /> ملاحظة</span>
+                      <span className="decision-accordion-title"><Layers /> تنبيهات</span>
                       <em>{countOf(editorGenericConflictCards.length + editorSupplementalCards.length, AR.note)}</em>
                     </summary>
                     <div className="decision-accordion-body">

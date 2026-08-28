@@ -4900,6 +4900,40 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
   transition:transform .18s ease,color .18s ease;
 }
 .decision-accordion[open] .decision-accordion-summary::before{transform:rotate(225deg) translate(-1px,-1px)}
+
+/* ── المجموعة تُعلن ما بداخلها وهي مغلقة ──────────────────────────────────
+ * Every group used to be the same grey, so the row that was refusing the save
+ * looked exactly like the row carrying a historical footnote — and the reason
+ * only existed behind a click. A group now carries the colour of the worst
+ * thing inside it, closed or open, and the blocking one opens itself.
+ * Colour is the only thing added: the geometry, spacing and radii are shared. */
+.decision-accordion--blocking{
+  border-color:color-mix(in srgb,var(--danger) 40%,var(--line));
+  background:linear-gradient(180deg,color-mix(in srgb,var(--danger) 8%,var(--surface)),var(--surface));
+  box-shadow:0 14px 28px color-mix(in srgb,var(--danger) 12%,transparent);
+}
+.decision-accordion--blocking>.decision-accordion-summary{color:var(--danger)}
+.decision-accordion--blocking>.decision-accordion-summary>.decision-accordion-title svg{color:var(--danger)}
+.decision-accordion--blocking>.decision-accordion-summary::before{border-color:var(--danger)}
+.decision-accordion--blocking>.decision-accordion-summary em{
+  border-color:color-mix(in srgb,var(--danger) 34%,transparent);
+  background:color-mix(in srgb,var(--danger) 12%,var(--surface));
+  color:var(--danger);
+}
+.decision-accordion--warning{
+  border-color:color-mix(in srgb,var(--warning) 40%,var(--line));
+  background:linear-gradient(180deg,color-mix(in srgb,var(--warning) 8%,var(--surface)),var(--surface));
+}
+.decision-accordion--warning>.decision-accordion-summary{color:var(--warning)}
+.decision-accordion--warning>.decision-accordion-summary>.decision-accordion-title svg{color:var(--warning)}
+.decision-accordion--warning>.decision-accordion-summary::before{border-color:var(--warning)}
+.decision-accordion--warning>.decision-accordion-summary em{
+  border-color:color-mix(in srgb,var(--warning) 32%,transparent);
+  background:color-mix(in srgb,var(--warning) 12%,var(--surface));
+  color:var(--warning);
+}
+.decision-accordion--regulation{border-color:color-mix(in srgb,var(--brass) 30%,var(--line))}
+.decision-accordion--regulation>.decision-accordion-summary>.decision-accordion-title svg{color:var(--brass)}
 .decision-accordion-body{padding:0 12px 12px}
 .decision-accordion-body .decision-stack,
 .decision-accordion-body .decision-section{padding:0;background:none}
