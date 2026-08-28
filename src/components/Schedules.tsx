@@ -6027,7 +6027,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
            of. */
         data-guide-description="بطاقة موعد داخل الجدول: اضغطها لقراءة الموعد وتحليله، أو اسحبها إلى يوم أو ساعة أو قاعة أخرى لنقلها بعد فحص التعارض."
         data-code-row={classicCodeSecondary ? "secondary" : undefined}
-        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
+        className={`week-event ${lensClass(r)} ${xrayClass(r)} ${physicsRelationClass(r)} ${draggingId === r.id ? "ripple-source" : ""} ${physicsActive && physicsOrigin?.id === r.id ? "physics-source-lift" : ""} ${justChangedId === r.id ? "just-changed" : ""} ${reviewFocus.has(r.id) ? "review-flagged" : ""} ${multiSelect.has(r.id) ? "week-picked" : ""} ${liveClash.ids.has(r.id) ? "live-clash" : ""} ${outsideClash.notes[r.id] ? "live-clash-outside" : ""} ${keyMove?.rowId === r.id ? "week-keymove-source" : ""} ${hueFocusClass(r)}`}
         style={{ ...style, ["--hue" as any]: cardHue, ...textureFor(cardHue) }}
         onPointerEnter={(e) => { if (!physicsActive) openPeek(r, e.currentTarget); }}
         onPointerLeave={() => closePeek(r.id)}
@@ -7174,7 +7174,51 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    * the same review the approval sheet prints, run quietly on the open scope.
    * The colliding cards themselves wear the ring in every view.
    */
-  const liveClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+  const localClash = useMemo(() => fastConflictScan(filteredRows), [filteredRows]);
+  /**
+   * ── التعارض مع خارج النطاق، على اللوحة نفسها ────────────────────────────
+   *
+   * The scan above is instant because it reads what the browser already holds
+   * — and the browser holds one scope. A lecture of another department in the
+   * same hall at the same hour therefore produced no ring at all, and the
+   * refusal only surfaced later, when someone opened that appointment to save
+   * it. The engine was never scope-blind; the board was.
+   *
+   * The server answers the half the board cannot see — the ids of rows here
+   * that collide with something elsewhere, and one sentence per row saying
+   * with whom. It is asked once per scope and re-asked when the rows change,
+   * never per keystroke, and a failure is silent: the board falls back to what
+   * it can prove by itself rather than claiming a clean schedule.
+   */
+  const [outsideClash, setOutsideClash] = useState<{ ids: number[]; pairs: number; notes: Record<number, string> }>({ ids: [], pairs: 0, notes: {} });
+  useEffect(() => {
+    if (!filterCollege || !filterTerm) { setOutsideClash({ ids: [], pairs: 0, notes: {} }); return; }
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const query = new URLSearchParams({ collegeId: String(filterCollege), termId: String(filterTerm) });
+        if (filterSection) query.set("sectionId", String(filterSection));
+        const data = await fetchJson(`/api/schedules/outside-clashes?${query.toString()}`, { signal: controller.signal });
+        setOutsideClash({
+          ids: Array.isArray(data?.ids) ? data.ids.map(Number).filter(Boolean) : [],
+          pairs: Number(data?.pairs || 0),
+          notes: data?.notes && typeof data.notes === "object" ? data.notes : {},
+        });
+      } catch (issue: any) {
+        if (issue?.name !== "AbortError") setOutsideClash({ ids: [], pairs: 0, notes: {} });
+      }
+    }, 400);
+    return () => { controller.abort(); window.clearTimeout(timer); };
+  }, [filterCollege, filterSection, filterTerm, rows]);
+  /* One reading for every view: the week, the halls board, the list, the
+     radar count and the command palette all read `liveClash`, so the two
+     halves are joined here once instead of at each of them. */
+  const liveClash = useMemo(() => {
+    if (!outsideClash.ids.length) return localClash;
+    const ids = new Set(localClash.ids);
+    outsideClash.ids.forEach(id => ids.add(id));
+    return { ...localClash, ids, pairs: localClash.pairs + outsideClash.pairs };
+  }, [localClash, outsideClash]);
   /**
    * What changed under the settled schedule while nobody was looking.
    *
@@ -9514,8 +9558,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                 return (
                   <article
                     data-row-id={s.id}
-                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""} ${hueFocusClass(s)}`}
+                    className={`agenda-card ${xrayClass(s)} ${justChangedId === s.id ? "just-changed" : ""} ${liveClash.ids.has(s.id) ? "live-clash" : ""} ${outsideClash.notes[s.id] ? "live-clash-outside" : ""} ${liveNow.running.has(s.id) ? "agenda-running" : liveNow.next === s.id ? "agenda-next" : ""} ${hueFocusClass(s)}`}
                     key={s.id}
+                    /* A ring the reader cannot explain by looking at the board
+                       is worse than none: this row collides with something that
+                       is not on this screen, so the row itself says with whom. */
+                    title={outsideClash.notes[s.id] ? `تعارض مع خارج نطاق العرض · ${outsideClash.notes[s.id]}` : undefined}
                     /* The course's own colour, carried into the list so a lecture
                        looks the same here as it does in the grid, the fan and the
                        hover card. A variable only — every state colour the card
@@ -9732,7 +9780,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   key={row.id}
                   data-row-id={row.id}
                   data-guide-description="بطاقة موعد داخل الجدول: اضغطها لقراءة الموعد وتحليله، أو اسحبها إلى يوم أو ساعة أو قاعة أخرى لنقلها بعد فحص التعارض."
-                  className={`rooms-card ${lensClass(row)} ${xrayClass(row)} ${physicsRelationClass(row)} ${draggingId === row.id ? "ripple-source" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${keyMove?.rowId === row.id ? "week-keymove-source" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
+                  className={`rooms-card ${lensClass(row)} ${xrayClass(row)} ${physicsRelationClass(row)} ${draggingId === row.id ? "ripple-source" : ""} ${justChangedId === row.id ? "just-changed" : ""} ${liveClash.ids.has(row.id) ? "live-clash" : ""} ${outsideClash.notes[row.id] ? "live-clash-outside" : ""} ${physicsActive && physicsOrigin?.id === row.id ? "physics-source-lift" : ""} ${keyMove?.rowId === row.id ? "week-keymove-source" : ""} ${rowPending ? "schedule-row-pending" : ""} ${hueFocusClass(row)}`}
                   style={cardStyle}
                   draggable={!physics.supported && !rowPending}
                   onDragStart={(e) => {

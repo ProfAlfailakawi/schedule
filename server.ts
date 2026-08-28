@@ -2557,6 +2557,61 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
   const style=await departmentStyle(candidate);
   const raw=findConflicts([candidateCanonical],all,{doorwayMinutes:style.doorway,
     cohortPairs:style.cohort,cohortSize:style.cohortSize});
+
+  /* ── مَن يقف في المكان الآخر ────────────────────────────────────────────
+   *
+   * A refusal that will not say why is worse than no refusal. When the other
+   * appointment belongs to another department the coordinator was told only
+   * «يوجد حجز متداخل خارج نطاق العرض الحالي» — no day, no hour, no owner — and
+   * the board never loads that row either, so there was nowhere left to look.
+   * The room card carried the least of all: the instructor card at least gave
+   * the hour.
+   *
+   * The department is named. Not as an exception: the hall-scope notice beside
+   * it already prints «مرتبطة تاريخياً بـ قسم اللغة العربية — كلية التربية
+   * الأساسية», and hiding the same fact one card away was a contradiction
+   * inside one screen. It is also the actionable half — it says whom to call,
+   * and «استعارة القاعات» exists in this product for exactly that conversation.
+   *
+   * What stays private stays private: the other course, its section, and the
+   * name of the other lecturer are never revealed by these lines. What is
+   * revealed is organisational — a department holds this hall at this hour —
+   * and it is the minimum a person needs to move their own appointment.
+   *
+   * Resolved once, before the mapping, for every department other than the
+   * candidate's own; the repository reads are cached and the set is tiny.
+   */
+  const otherScopeKey=(row:any)=>`${Number(row?.AdCollegeId||0)}:${Number(row?.AdSectionId||0)}`;
+  const ownScopeKey=otherScopeKey(candidate);
+  const scopeNames=new Map<string,string>();
+  await Promise.all([...new Set(raw
+    .map((conflict:any)=>all.find(item=>item.id===conflict.otherId))
+    .filter((other:any)=>other&&otherScopeKey(other)!==ownScopeKey)
+    .map((other:any)=>otherScopeKey(other)))]
+    .map(async (key:string)=>{
+      const [collegeId,sectionId]=key.split(":").map(Number);
+      const [section,college]=await Promise.all([
+        sectionId?Repository.getSectionById(sectionId):Promise.resolve(null),
+        collegeId?Repository.getCollegeById(collegeId):Promise.resolve(null),
+      ]);
+      scopeNames.set(key,[section?.AdSectionName,college?.AdCollegeName].filter(Boolean).join(" — ")||"قسم آخر");
+    }));
+  const otherDaysLabel=(row:any)=>SCHEDULE_DAY_KEYS.map((key,index)=>row?.[key]?DAY_LABELS[index]:null).filter(Boolean).join(" و");
+  /** «قسم اللغة العربية — كلية التربية الأساسية · الأحد والثلاثاء · 11:50 - 11:00» */
+  const elsewhereLine=(other:any)=>[
+    scopeNames.get(otherScopeKey(other))||"قسم آخر",
+    otherDaysLabel(other),
+    formatScheduleTimeRange(String(other?.fstarttime||""),String(other?.fendtime||"")),
+  ].filter(Boolean).join(" · ");
+  /** The same line, kept behind the course name when the reader may see it. */
+  const detailFor=(other:any,visible:boolean)=>{
+    const elsewhere=otherScopeKey(other)!==ownScopeKey;
+    if(!elsewhere) return `${other.AdCourseName||"مقرر"} — ${formatScheduleTimeRange(other.fstarttime,other.fendtime)}`;
+    return visible
+      ? `${other.AdCourseName||"مقرر"} · ${elsewhereLine(other)}`
+      : elsewhereLine(other);
+  };
+
   const conflicts=raw.map((conflict:any)=>{
     /* The turnaround rule is advice, not a refusal. `soft` is what keeps it out
        of the blocked list in move-batch and out of the 409 on save — a
@@ -2581,12 +2636,17 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
     }
     const other=all.find(item=>item.id===conflict.otherId);
     const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
-    if(conflict.type==="instructor"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`الأستاذ ${instructor?.AdInstructorName||""} لديه محاضرة متداخلة`,detail:visible?`${other.AdCourseName||"مقرر"} — ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`:`يوجد له موعد متداخل خارج نطاق القسم — ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`};
-    if(conflict.type==="room"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`القاعة ${other.AdRoomCode}/${other.AdRoomHall} مشغولة في نفس الوقت`,detail:visible?`${other.AdCourseName||"مقرر"} — ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`:`يوجد حجز متداخل خارج نطاق العرض الحالي`};
+    if(conflict.type==="instructor"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`الأستاذ ${instructor?.AdInstructorName||""} لديه محاضرة متداخلة`,detail:detailFor(other,visible)};
+    if(conflict.type==="room"&&other)return{...conflict,severity:"high",rowId:visible?other.id:0,message:`القاعة ${other.AdRoomCode}/${other.AdRoomHall} مشغولة في نفس الوقت`,detail:detailFor(other,visible)};
     // A repeated course and section is only a duplicate when it is the very same
     // placement; a lecture on Sunday and its laboratory on Tuesday share a
     // section number by design and must not be refused.
-    return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",detail:visible&&other?`نفس الأيام ونفس الوقت ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`:"يوجد سجل مطابق خارج نطاق العرض الحالي"};
+    /* Same department: the twin row is on the reader's own board, so its own
+       phrasing stays. Another department: name it, with the day and the hour. */
+    return{...conflict,severity:"high",rowId:visible&&other?other.id:0,message:"يوجد موعد مطابق تماماً لنفس المقرر والشعبة",
+      detail:!other?"يوجد سجل مطابق خارج نطاق العرض الحالي"
+        :otherScopeKey(other)===ownScopeKey?`نفس الأيام ونفس الوقت ${formatScheduleTimeRange(other.fstarttime, other.fendtime)}`
+          :detailFor(other,visible)};
   });
   const sameBarterRoom=(request:any)=>barterRequestMatchesRow(request,candidate);
   const barterReservation = hallBarterRequests.find((request:any) => {
@@ -3194,6 +3254,89 @@ app.get("/api/schedules/review-readiness", requirePermission(7), async (req: Aut
     }
   }
   res.json({blockers,checkedRows:scopeRows.length,termRows:termRows.length});
+});
+
+/**
+ * ── النقطة الحمراء لما لا تحمله اللوحة ──────────────────────────────────────
+ *
+ * The board is loaded by scope — a college, a department, a term — which is
+ * what keeps it fast. The consequence was that the live clash marker could
+ * only ever mark a collision against a row already on screen. A lecture of
+ * another department sitting in the same hall at the same hour produced no
+ * mark at all: not a hidden reason, nothing. The refusal arrived later, when
+ * somebody opened that appointment to save it.
+ *
+ * Conflict detection itself was never scope-blind — the editor, the review and
+ * the publish gate all read the whole term on this server. This endpoint gives
+ * the *board* the same reading without giving the browser the whole term:
+ * it returns the ids of rows in the caller's scope that collide with something
+ * outside it, and one sentence per row saying with whom.
+ *
+ * Only the pairs the board cannot see itself: a collision between two rows of
+ * the same scope is already found in the browser, instantly, and counting it
+ * twice would double the radar.
+ *
+ * `sectionId` is optional — the board is often opened on a whole college — and
+ * the scope of the read is exactly the scope of the board, so "outside" always
+ * means "not on your screen".
+ */
+app.get("/api/schedules/outside-clashes", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
+  if(!collegeId||!termId){res.status(400).json({error:"حدد الكلية والفصل."});return;}
+  if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const [scopeRaw,termRaw,registry]=await Promise.all([
+    Repository.getSchedulesByScope(sectionId?{collegeId,sectionId,termId}:{collegeId,termId}),
+    Repository.getSchedulesByScope({termId}),
+    readLocationRegistry(),
+  ]);
+  /* The same canonicalisation the editor's check performs, so a hall recorded
+     under an old alias cannot hide a collision from the board either. */
+  const scopeRows=scopeRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
+  const termRows=termRaw.map(row=>canonicalizeHistoricalLocationForRuntime(row,registry));
+  const ownIds=new Set(scopeRows.map(row=>Number(row.id)));
+  const byId=new Map(termRows.map(row=>[Number(row.id),row] as const));
+
+  const outside=findConflicts(scopeRows as any,termRows as any)
+    .filter((item:any)=>item.severity==="high"||item.type==="duplicate")
+    .map((item:any)=>{
+      const ownId=ownIds.has(Number(item.rowId))?Number(item.rowId):Number(item.otherId);
+      const otherId=Number(item.rowId)===ownId?Number(item.otherId):Number(item.rowId);
+      return {item,ownId,otherId};
+    })
+    /* Mine on one side, not-mine on the other. Everything else the browser
+       already found without asking. */
+    .filter(({ownId,otherId}:any)=>ownIds.has(ownId)&&!ownIds.has(otherId)&&byId.has(otherId));
+
+  const scopeKey=(row:any)=>`${Number(row?.AdCollegeId||0)}:${Number(row?.AdSectionId||0)}`;
+  const scopeNames=new Map<string,string>();
+  await Promise.all([...new Set(outside.map(({otherId}:any)=>scopeKey(byId.get(otherId))))]
+    .map(async (key:string)=>{
+      const [college,section]=key.split(":").map(Number);
+      const [sectionRow,collegeRow]=await Promise.all([
+        section?Repository.getSectionById(section):Promise.resolve(null),
+        college?Repository.getCollegeById(college):Promise.resolve(null),
+      ]);
+      scopeNames.set(key,[sectionRow?.AdSectionName,collegeRow?.AdCollegeName].filter(Boolean).join(" — ")||"قسم آخر");
+    }));
+
+  const daysOf=(row:any)=>SCHEDULE_DAY_KEYS.map((key,index)=>row?.[key]?DAY_LABELS[index]:null).filter(Boolean).join(" و");
+  const notes:Record<number,string>={};
+  const ids=new Set<number>();
+  const pairs=new Set<string>();
+  for(const {item,ownId,otherId} of outside as any[]){
+    const other=byId.get(otherId)!;
+    pairs.add([ownId,otherId].sort((a,b)=>a-b).join(":"));
+    ids.add(ownId);
+    const what=item.type==="instructor"?"الأستاذ محجوز"
+      :item.type==="room"?`القاعة ${String(other.AdRoomCode||"").trim()}/${String(other.AdRoomHall||"").trim()} مشغولة`
+        :"موعد مطابق";
+    /* Same disclosure rule as the editor card: the department, the day and the
+       hour — never the other course, its section, or its lecturer. */
+    const line=[scopeNames.get(scopeKey(other))||"قسم آخر",daysOf(other),
+      formatScheduleTimeRange(String(other.fstarttime||""),String(other.fendtime||""))].filter(Boolean).join(" · ");
+    if(!notes[ownId]) notes[ownId]=`${what} · ${line}`;
+  }
+  res.json({ids:[...ids],pairs:pairs.size,notes,checkedRows:scopeRows.length});
 });
 
 /**

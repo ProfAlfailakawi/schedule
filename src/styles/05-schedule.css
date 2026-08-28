@@ -75,6 +75,24 @@ button.schedule-radar:hover{filter:brightness(.96)}
 }
 .week-event.live-clash{box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 20%,transparent)}
 .agenda-card.live-clash{background:color-mix(in srgb,var(--danger-soft) 40%,var(--surface))}
+/* ── حلقة لموعد ليس على هذه الشاشة ─────────────────────────────────────────
+ * The same ring, because it is the same severity — this row will be refused
+ * exactly like any other collision. What differs is where the answer lives:
+ * the other appointment belongs to a department the board does not load, so
+ * looking for it here would send the reader hunting for something that is not
+ * there. A dashed ring says "the other half is elsewhere" without inventing a
+ * second colour for the same fact, and the row carries the sentence naming the
+ * department, the day and the hour. */
+.agenda-card.live-clash-outside,
+.week-event.live-clash-outside,
+.rooms-card.live-clash-outside{outline-style:dashed}
+.agenda-card.live-clash-outside::after{
+  content:"خارج النطاق";position:absolute;inset-block-start:6px;inset-inline-start:8px;
+  padding:2px 7px;border-radius:var(--r-full);
+  background:color-mix(in srgb,var(--danger) 12%,var(--surface));
+  color:var(--danger);font-size:10px;font-weight:800;line-height:1.6;
+  pointer-events:none;
+}
 
 /* The live-feed pulse: green while the board hears its colleagues. */
 .schedule-live-dot{
