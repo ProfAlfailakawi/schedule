@@ -20,6 +20,8 @@ const reviewKindLabel=(kind:string)=>({BUILDING:"مبنى",ROOM:"قاعة",PAIR:
 
 export default function LocationRegistryAdmin({header,demoReadOnly=false}:{header?:React.ReactNode;demoReadOnly?:boolean}){
   const [data,setData]=useState<Payload>(empty),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null),[message,setMessage]=useState<string|null>(null);
+  /* A long write says so while it runs, instead of looking idle. */
+  const [pendingNote,setPendingNote]=useState<string|null>(null);
   const [query,setQuery]=useState(""),[selectedBuilding,setSelectedBuilding]=useState<string>("");
   const [statusFilter,setStatusFilter]=useState("all"),[collegeFilter,setCollegeFilter]=useState("all"),[sectionFilter,setSectionFilter]=useState(0);
   const [editEntity,setEditEntity]=useState<any>(null),[aliasEditor,setAliasEditor]=useState<AliasEditor>(null);
@@ -31,7 +33,31 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   const [migrationPreview,setMigrationPreview]=useState<any>(null);
   const [workspaceTab,setWorkspaceTab]=useState<"registry"|"migration">("registry");
 
-  const load=async()=>{setBusy(true);setError(null);try{setData(await json("/api/admin/location-registry"));}catch(e:any){setError(e.message);}finally{setBusy(false);}};
+  /**
+   * ── إعادة التحميل عند عودة التركيز يجب ألا تمسح عملية جارية ────────────────
+   *
+   * This screen refreshes whenever the window regains focus. A native
+   * `window.confirm` takes focus away and GIVES IT BACK the instant the person
+   * presses OK — so every confirmed admin action here fired a background
+   * reload of its own, and that reload cleared `error` on the way in and
+   * `busy` on the way out.
+   *
+   * The visible result was a screen that did nothing at all: press the button,
+   * confirm, and the panel returns to its resting state — button live again,
+   * no message, no error — while the POST it started is still running. The
+   * initialisation of the location registry reads fifteen thousand rows, so
+   * that window is long, and to the reader the command simply vanished.
+   *
+   * A refresh that arrives while a mutation is in flight now updates the data
+   * and touches nothing else. The mutation owns `busy`, `error` and `message`
+   * from the moment it starts until it finishes.
+   */
+  const mutating = React.useRef(0);
+  const load=async()=>{
+    if(mutating.current>0){try{setData(await json("/api/admin/location-registry"));}catch{/* the mutation reports its own failure */}return;}
+    setBusy(true);setError(null);
+    try{setData(await json("/api/admin/location-registry"));}catch(e:any){setError(e.message);}finally{setBusy(false);}
+  };
   useEffect(()=>{void load();const onFocus=()=>void load();const onVisibility=()=>{if(document.visibilityState==="visible")void load();};window.addEventListener("focus",onFocus);document.addEventListener("visibilitychange",onVisibility);return()=>{window.removeEventListener("focus",onFocus);document.removeEventListener("visibilitychange",onVisibility);};},[]);
 
   const collegeGroups=useMemo<CollegeGroup[]>(()=>{
@@ -98,16 +124,23 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   const selectedNewBuildingPrefix=officialCollegeSitePrefix(selectedNewBuildingCollege?.AdCollegeName);
   const filterActive=Boolean(q||statusFilter!=="all"||collegeFilter!=="all"||sectionFilter);
 
-  const mutate=async(url:string,init:RequestInit,ok:string)=>{if(demoReadOnly)return false;setBusy(true);setError(null);setMessage(null);try{await json(url,init);setMessage(ok);await load();return true;}catch(e:any){setError(e.message);return false;}finally{setBusy(false);}};
+  const mutate=async(url:string,init:RequestInit,ok:string,pending?:string)=>{
+    if(demoReadOnly)return false;
+    mutating.current+=1;
+    setBusy(true);setError(null);setMessage(null);setPendingNote(pending||null);
+    try{await json(url,init);setMessage(ok);await load();return true;}
+    catch(e:any){setError(e.message);return false;}
+    finally{mutating.current-=1;setBusy(false);setPendingNote(null);}
+  };
   const selectedIds=(e:React.ChangeEvent<HTMLSelectElement>)=>Array.from(e.target.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((o:HTMLOptionElement)=>Number(o.value)).filter(Boolean);
   const saveAlias=async()=>{if(!aliasEditor?.value.trim())return;const value=aliasEditor.value.trim();const next=[...aliasEditor.currentAliases,{value,normalized:value.toUpperCase().replace(/\s+/g,""),confidence:"CONFIRMED",source:"ADMIN",evidence:["اعتماد يدوي من مدير النظام"]}];const ok=await mutate(`/api/admin/location-registry/${aliasEditor.kind==="building"?"buildings":"rooms"}/${encodeURIComponent(aliasEditor.id)}`,{method:"PUT",body:JSON.stringify({aliases:next})},"تمت إضافة الصيغة التاريخية");if(ok)setAliasEditor(null);};
   const previewMigration=async()=>{setBusy(true);setError(null);try{setMigrationPreview(await json("/api/admin/location-registry/migration/preview"));}catch(e:any){setError(e.message);}finally{setBusy(false);}};
-  const applyMigration=async()=>{if(!migrationPreview||demoReadOnly)return;if(!window.confirm("سيُنشئ النظام نقطة أمان أولاً، ثم يطبق التوحيد عالي الثقة فقط. متابعة؟"))return;const ok=await mutate("/api/admin/location-registry/migration/apply",{method:"POST",headers:{"X-Schedule-Confirm":"initialize-location-registry"}},"اكتملت تهيئة سجل المباني والقاعات");if(ok)setMigrationPreview(null);};
+  const applyMigration=async()=>{if(!migrationPreview||demoReadOnly)return;if(!window.confirm("سيُنشئ النظام نقطة أمان أولاً، ثم يطبق التوحيد عالي الثقة فقط. متابعة؟"))return;const ok=await mutate("/api/admin/location-registry/migration/apply",{method:"POST",headers:{"X-Schedule-Confirm":"initialize-location-registry"}},"اكتملت تهيئة سجل المباني والقاعات","جارٍ تهيئة سجل المباني والقاعات… تُنشأ نقطة أمان ثم تُفحص كل صفوف الجدول، وقد يستغرق ذلك دقائق. لا تغلق الصفحة.");if(ok)setMigrationPreview(null);};
   const rollback=async(run:LocationMigrationRun)=>{if(demoReadOnly||!window.confirm("إرجاع قيم المواقع التي غيّرتها هذه المهاجرة؟"))return;await mutate(`/api/admin/location-registry/migration/${encodeURIComponent(run.id)}/rollback`,{method:"POST",headers:{"X-Schedule-Confirm":"rollback-location-registry"}},"تم التراجع عن المهاجرة");};
   const resetFilters=()=>{setQuery("");setStatusFilter("all");setCollegeFilter("all");setSectionFilter(0);};
 
   return <div className="location-admin-page">
-    {header}{error?<Notice>{error}</Notice>:null}{message?<Notice type="success">{message}</Notice>:null}
+    {header}{error?<Notice>{error}</Notice>:null}{pendingNote?<Notice type="info">{pendingNote}</Notice>:null}{message?<Notice type="success">{message}</Notice>:null}
 
     <details className="location-admin-guide">
       <summary><ShieldCheck/><strong>كيف تعمل إدارة المباني والقاعات؟</strong><span>شرح مختصر</span></summary>
