@@ -18,7 +18,7 @@ import { learnRhythm, offRhythm, describeRhythm } from "../src/utils/departmentR
 import { AR, countOf, nounFor } from "../src/utils/arabicCount";
 import { readDepartmentMemory } from "../src/utils/departmentMemory";
 import { clockRangesOverlap, normalizeClock, SCHEDULE_DAY_END, SCHEDULE_DAY_START, withinScheduleDay } from "../src/utils/scheduleTime";
-import { roomIdentityKey, roomKeyOf } from "../src/utils/locationRegistry";
+import { isSharedRoom, roomIdentityKey, roomKeyOf } from "../src/utils/locationRegistry";
 import { Repository, initDatabase, ScheduleRevisionConflict } from "../src/db/repository";
 
 const originalLog = console.log;
@@ -1418,6 +1418,44 @@ async function runTests() {
     assert(Boolean(printed) && /دقيقة واحدة/.test(String(printed?.detail)),
       "الفارق المكتوب هو بين الطرفين المتجاورين فعلاً — دقيقة واحدة، لا 101");
     assert(!/101/.test(String(printed?.detail)), "…ولا يظهر فيه طول المحاضرتين مجموعاً");
+  }
+
+  /* --- 31. معنى «قاعة مشتركة» واحد في البرنامج كله ------------------------- */
+  originalLog("\n--- 31. One meaning of a shared hall ---");
+  {
+    /* A room is shared when more than one department uses it. The stored flag
+       is meant to say that, and every write path recomputes it — but a flag is
+       a copy, and copies drift: eight rooms in the live registry carry a flag
+       that contradicts their own section list. Both read endpoints already
+       recompute it; `roomOwnership` read the stored value, and it is the
+       function behind the hall-scope notice and the barter gate. */
+    assert(isSharedRoom({ sectionIds: [7, 42] }), "قاعة يستعملها قسمان مشتركة");
+    assert(!isSharedRoom({ sectionIds: [7] }), "قاعة قسم واحد ليست مشتركة");
+    assert(!isSharedRoom({ sectionIds: [] }) && !isSharedRoom(null) && !isSharedRoom(undefined),
+      "قاعة بلا أقسام ليست مشتركة، ولا شيء يتحطم على قاعة غائبة");
+
+    /* The exact eight shapes found in the registry, and the answer that must
+       come from the section list rather than from the flag beside it. */
+    const drifted = [
+      { code: "F06", sectionIds: [33, 97], shared: false },
+      { code: "G29", sectionIds: [25, 41], shared: false },
+      { code: "G06", sectionIds: [90, 94], shared: false },
+      { code: "G14", sectionIds: [14, 16], shared: false },
+      { code: "G16A", sectionIds: [28, 42], shared: false },
+      { code: "F20", sectionIds: [28], shared: true },
+    ];
+    for (const room of drifted) {
+      assert(isSharedRoom(room) === (room.sectionIds.length > 1),
+        `«مشتركة» تُقرأ من قائمة الأقسام لا من العلم المخزَّن — ${room.code}`);
+      assert(isSharedRoom(room) !== room.shared,
+        `…وهذه بالذات كان العلم فيها مخالفاً — ${room.code}`);
+    }
+
+    /* The structural half: nothing may decide this question for itself again. */
+    const serverText = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+    const ownership = serverText.slice(serverText.indexOf("async function roomOwnership"), serverText.indexOf("async function roomScopeNotice"));
+    assert(ownership.includes("isSharedRoom(") && !/\broom\.value\.shared\b/.test(ownership),
+      "roomOwnership يسأل القاعدة المشتركة ولا يقرأ العلم المخزَّن");
   }
 
   if (!originalDb) {

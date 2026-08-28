@@ -339,6 +339,30 @@ export function resolveAuthorityLocation(
  *
  * The spelling lives here now, and both callers spell it by calling this.
  */
+/**
+ * ── معنى «مشتركة» يُقرَّر في مكان واحد ──────────────────────────────────────
+ *
+ * A room is shared when more than one department uses it. The stored `shared`
+ * flag is meant to say exactly that, and every write path recomputes it from
+ * `sectionIds.length > 1` — but the flag is also DATA, and data drifts: eight
+ * rooms in the live registry carry a flag that contradicts their own section
+ * list. Seven are used by two departments while stored as `shared:false`, and
+ * one belongs to a single department while stored as `shared:true`.
+ *
+ * Both read endpoints already recompute the flag on the way out, so the lists
+ * are right. `roomOwnership` did not — it read the stored flag — and it is the
+ * function behind «تنبيه نطاق القاعة» and the hall-barter gate. The result was
+ * backwards on both counts: seven genuinely shared rooms were treated as one
+ * department's property (a warning and a barter gate nobody needed), and the
+ * one genuinely owned room was treated as shared, so its owner had no
+ * protection at all.
+ *
+ * The question "is this room shared?" is answered here now, from the section
+ * list, which is the fact — not from a flag beside it, which is a copy.
+ */
+export const isSharedRoom = (room: { sectionIds?: readonly number[] } | null | undefined): boolean =>
+  (room?.sectionIds?.length ?? 0) > 1;
+
 export const roomKeyOf = (roomId: unknown, roomCode: unknown, roomHall: unknown): string => {
   const id = String(roomId ?? "").trim();
   if (id) return `id:${id}`;

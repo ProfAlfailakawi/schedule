@@ -57,7 +57,7 @@ import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseS
 import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
-import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
+import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 
@@ -2154,7 +2154,11 @@ async function roomOwnership(roomCodeRaw:unknown,roomHallRaw:unknown,collegeId:n
   if(building.status!=="CONFIRMED"||!building.value)return null;
   const room=resolveRoom(registry,roomHall,building.value.id,{collegeId});
   if(room.status!=="CONFIRMED"||!room.value)return null;
-  if(room.value.shared||room.value.sectionIds.length===0||room.value.sectionIds.includes(sectionId))return null;
+  /* The section list is the fact; the stored flag is a copy that has drifted
+     on eight rooms. `isSharedRoom` reads the fact, like both read endpoints
+     already do — so ownership, the scope notice and the barter gate finally
+     agree with the lists the user sees. */
+  if(isSharedRoom(room.value)||room.value.sectionIds.length===0||room.value.sectionIds.includes(sectionId))return null;
   const ownerSectionId=Number(room.value.primarySectionIds?.[0]||room.value.sectionIds[0]||0);
   if(!ownerSectionId)return null;
   const [section,college]=await Promise.all([Repository.getSectionById(ownerSectionId),Repository.getCollegeById(Number(room.value.collegeIds?.[0]||collegeId))]);
@@ -3929,10 +3933,21 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
     (borrowedBuildingIds.has(building.id)||!collegeId||!building.collegeIds.length||building.collegeIds.includes(collegeId))
   );
   const ids=new Set(buildings.map(building=>building.id));
+  /* ── القاعة المشتركة تقول مع مَن ────────────────────────────────────────
+   * The picker listed a shared hall exactly like a hall the department owns
+   * alone, so nothing on the screen said that booking it means sharing it
+   * with someone — the reader had to already know. The room already carries
+   * the section ids; only the names were missing, and sending the whole
+   * section table to the browser to resolve two of them would be the wrong
+   * trade. The names of the OTHER departments are resolved here, per room. */
+  const sectionNameById=new Map((await Repository.getSections()).map(item=>[Number(item.AdSectionId),String(item.AdSectionName||"")]));
   const rooms=eligibleRooms.filter(room=>ids.has(room.buildingId)).map(room=>({
     ...room,
-    shared:room.sectionIds.length>1,
-    sharedConfidence:room.sectionIds.length>1?"CONFIRMED":room.sharedConfidence,
+    shared:isSharedRoom(room),
+    sharedConfidence:isSharedRoom(room)?"CONFIRMED":room.sharedConfidence,
+    sharedWith:isSharedRoom(room)
+      ? room.sectionIds.filter(id=>!sectionId||Number(id)!==sectionId).map(id=>sectionNameById.get(Number(id))||"").filter(Boolean)
+      : [],
   }));
   res.json({version:LOCATION_MIGRATION_VERSION,buildings,rooms,borrowedRoomIds,pendingRoomCode:PENDING_ROOM});
 });
