@@ -23,7 +23,13 @@ type RegistryPayload={buildings:MasterBuilding[];rooms:PickerRoom[];borrowedRoom
  */
 const sharedRoomLabel=(room:PickerRoom)=>{
   const partners=(room.sharedWith||[]).filter(Boolean);
-  return partners.length?`${room.canonicalCode} — ${partners.join(" · ")}`:room.canonicalCode;
+  /* The word «مشتركة» belongs on the option itself, not only on the group
+     heading above it: once a hall is chosen the list closes, the heading goes
+     with it, and all that remains on screen is this one line. A person who
+     comes back to the form tomorrow has to be able to read it there. */
+  return partners.length
+    ? `${room.canonicalCode} · قاعة مشتركة مع ${partners.join(" و")}`
+    : `${room.canonicalCode} · قاعة مشتركة`;
 };
 
 function useRegistry(collegeId:number,sectionId:number,termId?:number){

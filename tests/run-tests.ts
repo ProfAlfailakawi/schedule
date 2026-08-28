@@ -6,6 +6,7 @@ import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
 import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../src/utils/weekVisual";
 import { findConflicts, outsideScopeClashes } from "../src/utils/scheduleIntelligence";
+import { retryOnFailure } from "../src/utils/documentOcr";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
 import { describeRollover, readTermRollover } from "../src/utils/termRollover";
@@ -1456,6 +1457,31 @@ async function runTests() {
     const ownership = serverText.slice(serverText.indexOf("async function roomOwnership"), serverText.indexOf("async function roomScopeNotice"));
     assert(ownership.includes("isSharedRoom(") && !/\broom\.value\.shared\b/.test(ownership),
       "roomOwnership يسأل القاعدة المشتركة ولا يقرأ العلم المخزَّن");
+  }
+
+  /* --- 32. الفشل العابر في مجمّع OCR لا يصير دائماً ------------------------- */
+  originalLog("\n--- 32. A transient OCR pool failure does not become permanent ---");
+  {
+    /* The four worker getters memoise a PROMISE so the pool survives across
+       requests — right, and the reason there is no `terminate`. But a memoised
+       promise that REJECTS stays memoised: the `if (!slot)` guard sees a filled
+       variable and never retries, so one failed creation on a small instance
+       turned every later import into the same failure until a restart. */
+    let slot: Promise<string> | null = null;
+    let attempts = 0;
+    const make = (succeed: boolean) => {
+      if (!slot) slot = retryOnFailure(
+        (async () => { attempts += 1; if (!succeed) throw new Error("out of memory"); return "pool"; })(),
+        () => { slot = null; });
+      return slot;
+    };
+    await make(false).then(() => undefined, () => undefined);
+    assert(attempts === 1 && slot === null, "الفشل يفرّغ الخانة بدل أن يحتلها إلى الأبد");
+    const recovered = await make(true);
+    assert(recovered === "pool" && attempts === 2, "المحاولة التالية تبدأ من جديد وتنجح");
+    /* And the success path is untouched: one creation, reused. */
+    const again = await make(true);
+    assert(again === "pool" && attempts === 2, "النجاح يُخزَّن ويُعاد استعماله كما كان — بلا إنشاء ثانٍ");
   }
 
   if (!originalDb) {

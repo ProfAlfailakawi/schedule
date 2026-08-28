@@ -120,6 +120,11 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
       <Surface><UsersRound/><b>{data.health.sharedRooms||0}</b><span>قاعة مشتركة</span></Surface>
       <Surface><CircleAlert/><b>{data.health.pendingRooms||0}</b><span>بانتظار قاعة</span></Surface>
       <Surface><ShieldCheck/><b>{data.health.historicalReview||0}</b><span>تاريخية تحتاج توثيق</span></Surface>
+      {/* The two readings the panel never had: what the registry is holding
+          back, and what it is carrying that can never be used. Both are
+          actionable from this same screen. */}
+      <Surface><CircleAlert/><b>{data.health.awaitingConfirmation||0}</b><span>قاعة تنتظر التأكيد ولا تظهر لأحد</span></Surface>
+      <Surface><Building2/><b>{data.health.emptyBuildings||0}</b><span>مبنى بلا قاعة فعّالة</span></Surface>
     </div>
 
     <nav className="location-admin-tabs" aria-label="أقسام إدارة المباني والقاعات">

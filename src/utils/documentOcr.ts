@@ -70,17 +70,34 @@ async function canvas(){
  */
 type PooledWorker={recognize:Function;setParameters:Function;terminate:Function};
 let headerWorkerPromise:Promise<PooledWorker>|null=null;
+/**
+ * ── الفشل العابر لا يصير دائماً ─────────────────────────────────────────────
+ *
+ * These four getters memoise a PROMISE, not a result — which is what makes the
+ * pool live across requests and is exactly right. But a memoised promise that
+ * REJECTS stays memoised: `if(!poolPromise)` sees a filled variable and never
+ * tries again, so one failed creation — a small instance out of memory, a
+ * language file that did not arrive — turned every later import into the same
+ * failure until somebody restarted the server.
+ *
+ * Clearing the slot on rejection is the whole change. The success path is
+ * untouched: the promise resolves, the catch never runs, and the same pool is
+ * returned and reused exactly as before. Nothing about recognition, geometry,
+ * cells, ink or rescue is involved.
+ */
+export const retryOnFailure=<T,>(promise:Promise<T>,clear:()=>void):Promise<T>=>
+  promise.catch(error=>{clear();throw error;});
 async function getHeaderWorker(){
-  if(!headerWorkerPromise)headerWorkerPromise=(async()=>{
+  if(!headerWorkerPromise)headerWorkerPromise=retryOnFailure((async()=>{
     const {createWorker}=await import("tesseract.js");
     return await createWorker("ara+eng") as PooledWorker;
-  })();
+  })(),()=>{headerWorkerPromise=null;});
   return headerWorkerPromise;
 }
 type OcrWorkerPool={eng:PooledWorker[];ara:PooledWorker;ara2:PooledWorker};
 let poolPromise:Promise<OcrWorkerPool>|null=null;
 async function getWorkerPool(){
-  if(!poolPromise)poolPromise=(async()=>{
+  if(!poolPromise)poolPromise=retryOnFailure((async()=>{
     const {createWorker}=await import("tesseract.js");
     /* The page-1 preflight worker is reused as the first Arabic table worker.
        A wrong scanned PDF therefore initializes ONE OCR worker and stops;
@@ -107,7 +124,7 @@ async function getWorkerPool(){
     const lowMemory=(os.totalmem?.()||0)<3*1024*1024*1024;
     const a2=cores<=2&&lowMemory?a1:await createWorker("ara+eng");
     return{eng:engWorkers as PooledWorker[],ara:a1 as PooledWorker,ara2:a2 as PooledWorker};
-  })();
+  })(),()=>{poolPromise=null;});
   return poolPromise;
 }
 /** Run jobs over the eng workers, one in flight per worker. */
@@ -374,17 +391,17 @@ async function imagePages(input:Buffer,mime:string,longEdge:number,onProgress?:O
 let graduationTextWorkerPromise:Promise<PooledWorker>|null=null;
 let graduationDigitsWorkerPromise:Promise<PooledWorker>|null=null;
 async function getGraduationTextWorker(){
-  if(!graduationTextWorkerPromise)graduationTextWorkerPromise=(async()=>{
+  if(!graduationTextWorkerPromise)graduationTextWorkerPromise=retryOnFailure((async()=>{
     const {createWorker}=await import("tesseract.js");
     return await createWorker("ara+eng") as PooledWorker;
-  })();
+  })(),()=>{graduationTextWorkerPromise=null;});
   return graduationTextWorkerPromise;
 }
 async function getGraduationDigitsWorker(){
-  if(!graduationDigitsWorkerPromise)graduationDigitsWorkerPromise=(async()=>{
+  if(!graduationDigitsWorkerPromise)graduationDigitsWorkerPromise=retryOnFailure((async()=>{
     const {createWorker}=await import("tesseract.js");
     return await createWorker("eng") as PooledWorker;
-  })();
+  })(),()=>{graduationDigitsWorkerPromise=null;});
   return graduationDigitsWorkerPromise;
 }
 

@@ -123,8 +123,42 @@ export function rollbackPatch(log: LocationMigrationLog): Partial<FSchedule> {
   return {AdRoomCode:log.oldBuilding,AdRoomHall:log.oldRoom,buildingId:log.oldBuildingId,roomId:log.oldRoomId,locationStatus:log.oldStatus,locationMigrationId:undefined,locationMigrationVersion:log.oldMigrationVersion,locationResolvedAt:undefined};
 }
 
+/**
+ * ── ما يحمله السجل ولا يراه أحد ─────────────────────────────────────────────
+ *
+ * The six numbers here counted what the registry HAS. What it is carrying and
+ * nobody can see had no number at all, and that is the half a steward needs:
+ *
+ *   • 90 rooms — a quarter of the registry — sit at PROBABLE confidence, so
+ *     every picker filters them out. They are not lost and not wrong; they are
+ *     waiting for a person to say yes or no, and nothing on the screen said
+ *     there was a queue.
+ *   • 10 buildings hold no active confirmed room, so they appear in the master
+ *     list and can never produce a hall.
+ * A third candidate was dropped on purpose: nine rooms carry a stored `shared`
+ * flag that contradicts their own section list, but `mergeRegistryWithSeed`
+ * recomputes that flag on every read — so a counter here would be fed the
+ * corrected value and could only ever report zero. A number that cannot move
+ * is worse than no number: it reads as an all-clear. The drift is harmless for
+ * the same reason, and it is recorded in the round\'s note instead.
+ *
+ * Counting only. Nothing here changes a record; the steward decides.
+ */
 export function registryHealth(registry: LocationRegistry, rows: readonly Partial<FSchedule>[], reviewCases:readonly LocationReviewCase[]) {
-  return {officialBuildings:registry.buildings.filter(x=>x.active&&x.confidence==="CONFIRMED").length,officialRooms:registry.rooms.filter(x=>x.active&&x.confidence==="CONFIRMED").length,sharedRooms:registry.rooms.filter(x=>x.active&&x.shared&&x.confidence==="CONFIRMED").length,pendingRooms:rows.filter(x=>x.locationStatus==="PENDING_ROOM").length,historicalReview:rows.filter(x=>x.locationStatus==="LOCATION_REVIEW_REQUIRED"||x.locationStatus==="INVALID_HISTORICAL").length,openReviewCases:reviewCases.filter(x=>x.status==="open").length};
+  const usable=(room:LocationRegistry["rooms"][number])=>room.active&&room.confidence==="CONFIRMED";
+  const activeBuildings=registry.buildings.filter(x=>x.active&&x.confidence==="CONFIRMED");
+  return {
+    officialBuildings:activeBuildings.length,
+    officialRooms:registry.rooms.filter(usable).length,
+    sharedRooms:registry.rooms.filter(room=>usable(room)&&room.sectionIds.length>1).length,
+    pendingRooms:rows.filter(x=>x.locationStatus==="PENDING_ROOM").length,
+    historicalReview:rows.filter(x=>x.locationStatus==="LOCATION_REVIEW_REQUIRED"||x.locationStatus==="INVALID_HISTORICAL").length,
+    openReviewCases:reviewCases.filter(x=>x.status==="open").length,
+    /** Rooms hidden from every picker until somebody confirms or retires them. */
+    awaitingConfirmation:registry.rooms.filter(room=>!usable(room)).length,
+    /** Buildings that can never offer a hall. */
+    emptyBuildings:activeBuildings.filter(building=>!registry.rooms.some(room=>usable(room)&&room.buildingId===building.id)).length,
+  };
 }
 
 export function newMigrationRun(byUserId:number,stats:Record<string,number>,restorePointId?:string):LocationMigrationRun{return {id:`migration_${Date.now()}`,version:LOCATION_MIGRATION_VERSION,createdAt:new Date().toISOString(),byUserId,status:"running",restorePointId,stats};}
