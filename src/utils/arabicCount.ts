@@ -106,6 +106,7 @@ export const AR = {
   decision:    { one: "قرار", two: "قراران", few: "قرارات", many: "قراراً" },
   record:      { one: "سجل", two: "سجلان", few: "سجلات", many: "سجلاً" },
   move:        { one: "حركة", two: "حركتان", few: "حركات", many: "حركة" },
+  change:      { one: "تغيير", two: "تغييران", few: "تغييرات", many: "تغييراً" },
   point:       { one: "نقطة", two: "نقطتان", few: "نقاط", many: "نقطة" },
   layer:       { one: "طبقة", two: "طبقتان", few: "طبقات", many: "طبقة" },
   meeting:     { one: "لقاء", two: "لقاءان", few: "لقاءات", many: "لقاءً" },

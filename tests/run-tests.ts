@@ -6,6 +6,7 @@ import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
 import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../src/utils/weekVisual";
 import { findConflicts, outsideScopeClashes } from "../src/utils/scheduleIntelligence";
+import { discardParkedMutation, parkedCount, parkedMutations, retryParkedMutation } from "../src/utils/offlineScheduleQueue";
 import { retryOnFailure } from "../src/utils/documentOcr";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
@@ -1482,6 +1483,47 @@ async function runTests() {
     /* And the success path is untouched: one creation, reused. */
     const again = await make(true);
     assert(again === "pool" && attempts === 2, "النجاح يُخزَّن ويُعاد استعماله كما كان — بلا إنشاء ثانٍ");
+  }
+
+  /* --- 33. رفّ التغييرات التي رفضها الخادم ---------------------------------- */
+  originalLog("\n--- 33. The shelf of changes the server refused ---");
+  {
+    /* A change made offline that the server later refuses is taken out of the
+       sync queue on purpose — a doomed write must not pin the counter forever.
+       Until now that was the end of it: written to a key in browser storage
+       that no screen in the product opened. These are the three operations the
+       shelf never had, so a reader can exist at all. */
+    const store: Record<string, string> = {};
+    (globalThis as any).localStorage = {
+      getItem: (key: string) => (key in store ? store[key] : null),
+      setItem: (key: string, value: string) => { store[key] = String(value); },
+      removeItem: (key: string) => { delete store[key]; },
+    };
+    const key = "schedule-offline-review-v1:anonymous";
+    const park = (id: string, reason: string) => ({
+      id, at: new Date(2026, 7, 28).toISOString(), method: "PUT" as const,
+      url: `/api/schedules/${id}`, body: { fstarttime: "09:00" },
+      reviewReason: reason, reviewAt: new Date(2026, 7, 28).toISOString(),
+    });
+    store[key] = JSON.stringify([park("41", "حجز مزدوج للقاعة"), park("42", "الموعد لم يعد موجوداً")]);
+
+    assert(parkedCount() === 2, "الرفّ يُقرأ — وهو ما لم يكن ممكناً من قبل");
+    const shelf = parkedMutations();
+    assert(shelf[0].reviewReason === "حجز مزدوج للقاعة" && shelf[1].id === "42",
+      "كل عنصر يحمل سببه كما ردّه الخادم، لا وصفاً عاماً");
+
+    discardParkedMutation("41");
+    assert(parkedCount() === 1 && parkedMutations()[0].id === "42",
+      "«تجاهل» يزيل ذلك العنصر وحده");
+
+    /* Retrying something the shelf no longer holds must say so rather than
+       pretend it worked. */
+    const gone = await retryParkedMutation("41");
+    assert(!gone.ok && Boolean(gone.error), "إعادة إرسال عنصر غير موجود تُرجع سبباً لا نجاحاً");
+
+    discardParkedMutation("42");
+    assert(parkedCount() === 0, "الرفّ يفرغ حين يُعالَج آخر عنصر فيه");
+    delete (globalThis as any).localStorage;
   }
 
   if (!originalDb) {

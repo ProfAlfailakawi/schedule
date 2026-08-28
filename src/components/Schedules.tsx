@@ -139,7 +139,7 @@ import { createPresenceClient, createPresencePainter, presenceHue, type Presence
 import { claimWarmStart } from "../utils/warmStart";
 import { pickHistoricalDayModel, type HistoricalTimeModel } from "../utils/advancedIntelligence";
 import { setTelemetryScope, telemetryApi, telemetryBreadcrumb, telemetryError, telemetryGuide, telemetryOffline, telemetryTiming } from "../utils/clientTelemetry";
-import { canQueueScheduleMutation, enqueueScheduleMutation, flushOfflineScheduleQueue, offlineQueueCount, queuedPseudoResponse, setOfflineQueueOwner, subscribeOfflineQueue } from "../utils/offlineScheduleQueue";
+import { canQueueScheduleMutation, discardParkedMutation, enqueueScheduleMutation, flushOfflineScheduleQueue, offlineQueueCount, parkedMutations, queuedPseudoResponse, retryParkedMutation, setOfflineQueueOwner, subscribeOfflineQueue, subscribeParkedMutations, type ParkedMutation } from "../utils/offlineScheduleQueue";
 import { GUIDE_ACTIONS, allAllowedGuideFeatures, canRunGuideAction, featureById, loadGuideProfile, masteryScore, recordFeatureEvent, evaluateGuideFriction, classifyGuideReason, ensureGuideJourney, advanceGuideJourney, completeGuideJourney, failGuideJourney, type GuideCommand } from "../guide/smartGuide";
 /* The same six hues the stylesheet paints from, so a chip and the ring it
    refers to are the same colour. Red is absent on purpose: it belongs to
@@ -1138,6 +1138,19 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [offlinePending, setOfflinePending] = useState(() => offlineQueueCount());
+  /**
+   * ── التغييرات التي رفضها الخادم بعد عودة الاتصال ───────────────────────────
+   *
+   * They are taken out of the sync queue on purpose — a doomed write must not
+   * pin the counter forever — and until now that was the end of them: written
+   * to a shelf in browser storage that no screen in the product opened. The
+   * person was told sync had finished while their change quietly ceased to
+   * exist. This is the reader that shelf never had.
+   */
+  const [parked, setParked] = useState<ParkedMutation[]>(() => parkedMutations());
+  const [parkedOpen, setParkedOpen] = useState(false);
+  const [parkedBusy, setParkedBusy] = useState<string | null>(null);
+  useEffect(() => subscribeParkedMutations(() => setParked(parkedMutations())), []);
   const syncFlushBusy = useRef(false);
   const [networkOnline, setNetworkOnline] = useState(() => navigator.onLine);
     /* The dock's search button has nothing of its own to search with — it brings
@@ -9193,8 +9206,64 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           {pendingOwnRows.length?<button type="button" data-guide-ignore="فلتر القاعات المعلقة" className={`schedule-ops-pill warn ${pendingOnly?"on":""}`} onClick={()=>setPendingOnly(value=>!value)}><CircleAlert aria-hidden="true"/><b>{pendingOwnRows.length.toLocaleString("ar-KW-u-nu-latn")} بانتظار قاعة</b></button>:null}
           {!networkOnline ? <span className="schedule-ops-pill warn"><Radio aria-hidden="true"/><b>دون اتصال · التغييرات الآمنة محلية</b></span> : null}
           {offlinePending ? <span className="schedule-ops-pill warn"><Upload aria-hidden="true"/><b>{offlinePending.toLocaleString("ar-KW-u-nu-latn")} بانتظار المزامنة</b></span> : null}
+          {/* A refusal is not a pending sync: it needs a person, so it gets its
+              own pill that does not clear until the shelf is empty. */}
+          {parked.length ? <button type="button" data-guide-ignore="فتح قائمة التغييرات التي رفضها الخادم بعد انقطاع الاتصال" className={`schedule-ops-pill warn ${parkedOpen?"on":""}`} onClick={()=>setParkedOpen(value=>!value)}><ShieldAlert aria-hidden="true"/><b>{countOf(parked.length, AR.change)} رفضها الخادم</b></button> : null}
           {liveCollaborators ? <span className="schedule-ops-pill"><UsersRound aria-hidden="true"/><b>{liveCollaborators.toLocaleString("ar-KW-u-nu-latn")} يعمل الآن</b></span> : null}
           {liveEditors + liveHolders ? <span className="schedule-ops-pill"><Bookmark aria-hidden="true"/><b>{(liveEditors + liveHolders).toLocaleString("ar-KW-u-nu-latn")} بطاقة تحت التحرير</b></span> : null}
+        </div>
+      ) : null}
+      {/* ── ما رفضه الخادم، معروضاً أخيراً ────────────────────────────────────
+          One line per refusal: what it was trying to do, when, and the server's
+          own sentence for why. Two ways out, and no third: send it again now,
+          or let it go. Nothing here decides on the person's behalf, because
+          the reason it is on this shelf at all is that the software could not. */}
+      {parkedOpen && parked.length ? (
+        <div className="parked-review no-print" role="region" aria-label="تغييرات رفضها الخادم">
+          <header>
+            <ShieldAlert aria-hidden="true" />
+            <div>
+              <strong>تغييرات رفضها الخادم بعد عودة الاتصال</strong>
+              <small>حُفظت كما هي ولم تُطبَّق. أعد إرسال ما تريده، وتجاهل ما لم يعد صالحاً.</small>
+            </div>
+            <button type="button" data-guide-ignore="إغلاق قائمة التغييرات المرفوضة" onClick={() => setParkedOpen(false)} aria-label="إغلاق"><X aria-hidden="true" /></button>
+          </header>
+          <ul>
+            {[...parked].reverse().map(item => {
+              const target = rows.find(row => Number(row.id) === Number(String(item.url).match(/\/api\/schedules\/(\d+)/)?.[1] || 0));
+              const what = item.method === "DELETE" ? "حذف موعد"
+                : String(item.url).includes("move-batch") ? "نقل مجموعة مواعيد"
+                  : "تعديل موعد";
+              const name = target ? `${target.AdCourseName || courseById.get(Number(target.AdCourseId))?.CourseName || "مقرر"} · شعبة ${target.SCode || "—"}` : "";
+              return (
+                <li key={item.id}>
+                  <div className="parked-review-what">
+                    <strong>{what}{name ? ` — ${name}` : ""}</strong>
+                    <small>{item.reviewReason}</small>
+                    <time dir="ltr">{new Date(item.reviewAt).toLocaleString("ar-KW-u-nu-latn", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}</time>
+                  </div>
+                  <div className="parked-review-actions">
+                    <SecondaryButton type="button" data-guide-ignore="إعادة إرسال تغيير رفضه الخادم" disabled={parkedBusy === item.id}
+                      onClick={async () => {
+                        setParkedBusy(item.id);
+                        const result = await retryParkedMutation(item.id);
+                        setParkedBusy(null);
+                        setParked(parkedMutations());
+                        if (result.ok) { setMessage("أُرسل التغيير ونُفِّذ."); void loadRows({ silent: true }); }
+                        else setError(result.error || "تعذر الإرسال");
+                      }}>{parkedBusy === item.id ? "جارٍ الإرسال…" : "أعد الإرسال"}</SecondaryButton>
+                    <SecondaryButton type="button" className="danger" data-guide-ignore="تجاهل تغيير رفضه الخادم"
+                      onClick={async () => {
+                        const sure = await visualConfirm({ title: "تجاهل هذا التغيير؟", message: "سيُحذف من القائمة ولن يُطبَّق. لا يمكن استرجاعه.", confirmLabel: "تجاهل", tone: "danger", compact: true });
+                        if (!sure) return;
+                        discardParkedMutation(item.id);
+                        setParked(parkedMutations());
+                      }}>تجاهل</SecondaryButton>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
       {/* Silent intelligence: routine timing/physics feedback no longer owns

@@ -4892,6 +4892,37 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .conflict-head--clear>span{border-color:color-mix(in srgb,var(--success) 16%,var(--line));background:linear-gradient(180deg,color-mix(in srgb,var(--success-soft) 58%,var(--surface)),var(--surface));color:var(--success)}
 .conflict-head--alert>span{color:var(--warning)}
 .decision-stack{padding:16px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 98%,transparent),transparent)}
+/* ── رفّ التغييرات التي رفضها الخادم ─────────────────────────────────────────
+ * It sits under the status strip that announced it, and it is a list, not a
+ * dialog: nothing here is urgent enough to take the screen, and the person
+ * needs the board behind it to judge each line. */
+.parked-review{
+  margin:var(--s3) 0;border:1px solid color-mix(in srgb,var(--warning) 38%,var(--line));
+  border-radius:var(--r-xl);background:color-mix(in srgb,var(--warning) 6%,var(--surface));
+  overflow:hidden;
+}
+.parked-review>header{
+  display:flex;align-items:flex-start;gap:var(--s3);padding:var(--s4) var(--s5);
+  border-bottom:1px solid color-mix(in srgb,var(--warning) 24%,transparent);
+}
+.parked-review>header>svg{inline-size:20px;block-size:20px;color:var(--warning);flex:none;margin-block-start:2px}
+.parked-review>header>div{flex:1;min-width:0;display:grid;gap:3px}
+.parked-review>header strong{font-size:.95rem}
+.parked-review>header small{color:var(--muted);font-size:var(--t-xs);line-height:1.6}
+.parked-review>header>button{border:0;background:none;padding:var(--s1);border-radius:var(--r-xs);color:var(--muted);flex:none}
+.parked-review>header>button svg{inline-size:16px;block-size:16px}
+.parked-review ul{list-style:none;margin:0;padding:0}
+.parked-review li{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--s4);flex-wrap:wrap;
+  padding:var(--s3) var(--s5);border-block-start:1px solid color-mix(in srgb,var(--line) 70%,transparent);
+}
+.parked-review li:first-child{border-block-start:0}
+.parked-review-what{display:grid;gap:2px;min-width:min(320px,100%);flex:1}
+.parked-review-what strong{font-size:.9rem;font-weight:700}
+.parked-review-what small{color:var(--danger);font-size:var(--t-xs);line-height:1.55}
+.parked-review-what time{color:var(--muted-2);font-size:10.5px;font-variant-numeric:tabular-nums}
+.parked-review-actions{display:flex;align-items:center;gap:var(--s2);flex:none}
+
 .decision-accordion-list{display:grid;gap:12px;padding:16px;background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 98%,transparent),transparent)}
 .decision-accordion{
   border:1px solid color-mix(in srgb,var(--line) 82%,transparent);border-radius:22px;
