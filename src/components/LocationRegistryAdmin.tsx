@@ -135,7 +135,15 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   const selectedIds=(e:React.ChangeEvent<HTMLSelectElement>)=>Array.from(e.target.selectedOptions as HTMLCollectionOf<HTMLOptionElement>).map((o:HTMLOptionElement)=>Number(o.value)).filter(Boolean);
   const saveAlias=async()=>{if(!aliasEditor?.value.trim())return;const value=aliasEditor.value.trim();const next=[...aliasEditor.currentAliases,{value,normalized:value.toUpperCase().replace(/\s+/g,""),confidence:"CONFIRMED",source:"ADMIN",evidence:["اعتماد يدوي من مدير النظام"]}];const ok=await mutate(`/api/admin/location-registry/${aliasEditor.kind==="building"?"buildings":"rooms"}/${encodeURIComponent(aliasEditor.id)}`,{method:"PUT",body:JSON.stringify({aliases:next})},"تمت إضافة الصيغة التاريخية");if(ok)setAliasEditor(null);};
   const previewMigration=async()=>{setBusy(true);setError(null);try{setMigrationPreview(await json("/api/admin/location-registry/migration/preview"));}catch(e:any){setError(e.message);}finally{setBusy(false);}};
-  const applyMigration=async()=>{if(!migrationPreview||demoReadOnly)return;if(!window.confirm("سيُنشئ النظام نقطة أمان أولاً، ثم يطبق التوحيد عالي الثقة فقط. متابعة؟"))return;const ok=await mutate("/api/admin/location-registry/migration/apply",{method:"POST",headers:{"X-Schedule-Confirm":"initialize-location-registry"}},"اكتملت تهيئة سجل المباني والقاعات","جارٍ تهيئة سجل المباني والقاعات… تُنشأ نقطة أمان ثم تُفحص كل صفوف الجدول، وقد يستغرق ذلك دقائق. لا تغلق الصفحة.");if(ok)setMigrationPreview(null);};
+  /* ما يَعِد به هذان النصّان هو ما يفعله الخادم بالضبط — لا أكثر.
+   * The confirm and the progress line both used to promise a safety point
+   * ("سيُنشئ النظام نقطة أمان أولاً"). The server no longer takes one here,
+   * because taking one meant copying 36,879 documents before the migration's
+   * first line and being cut by the platform every time — so the promise was
+   * describing a snapshot that never once existed. What it says now is the
+   * guarantee that is real and always was: a per-row journal, and one button
+   * that replays it. */
+  const applyMigration=async()=>{if(!migrationPreview||demoReadOnly)return;if(!window.confirm("سيُوحَّد رمز المبنى والقاعة على السجل الرسمي، ويُحفظ لكل صف قيمُه السابقة ليمكن التراجع عن التشغيل كاملاً بزر واحد. متابعة؟"))return;const ok=await mutate("/api/admin/location-registry/migration/apply",{method:"POST",headers:{"X-Schedule-Confirm":"initialize-location-registry"}},"اكتملت تهيئة سجل المباني والقاعات","جارٍ تهيئة سجل المباني والقاعات… تُفحص كل صفوف الجدول ويُكتب لكل صف سجل تراجعه. لا تغلق الصفحة.");if(ok)setMigrationPreview(null);};
   const rollback=async(run:LocationMigrationRun)=>{if(demoReadOnly||!window.confirm("إرجاع قيم المواقع التي غيّرتها هذه المهاجرة؟"))return;await mutate(`/api/admin/location-registry/migration/${encodeURIComponent(run.id)}/rollback`,{method:"POST",headers:{"X-Schedule-Confirm":"rollback-location-registry"}},"تم التراجع عن المهاجرة");};
   const resetFilters=()=>{setQuery("");setStatusFilter("all");setCollegeFilter("all");setSectionFilter(0);};
 
