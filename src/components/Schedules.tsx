@@ -2744,6 +2744,74 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       setForm(blank());
       setCourseName("");
     };
+  /**
+   * ── إدخال متتابع ───────────────────────────────────────────────────────────
+   *
+   * A term is entered a hundred appointments at a time, and they arrive in
+   * runs: one course, sections 501, 502, 503 — same college, same department,
+   * same term, usually the same lecturer and the same hall, at a different
+   * hour each. The old flow closed the editor on every save, so the person
+   * re-opened it and re-chose the same five things a hundred times over.
+   *
+   * A successful creation now leaves the editor standing with that run already
+   * filled in and the next section number chosen, so only what genuinely
+   * differs is left to type.
+   *
+   * The hour is deliberately the one field cleared. Two sections on the same
+   * lecturer in the same hall at the same hour is a double booking, so keeping
+   * the time would open every new appointment already in conflict — and the
+   * hour is the thing the person is reading off the sheet anyway. Everything
+   * kept here is safe to keep: neither a lecturer nor a hall nor a set of days
+   * can collide until an hour is given.
+   *
+   * The section number is taken from the row that was just saved, not from
+   * `rows` — the board has only just been told about it.
+   */
+  const continueCreating = (justSaved: any) => {
+    const courseId = Number(justSaved?.AdCourseId || 0);
+    const termId = Number(justSaved?.AdTermId || 0);
+    const savedCode = Number(String(justSaved?.SCode || "").trim());
+    const suggested = Number(nextSectionCode(courseId, termId, null));
+    const nextCode = Number.isFinite(savedCode) && savedCode >= 501
+      ? String(Math.max(Number.isFinite(suggested) ? suggested : 0, savedCode + 1))
+      : nextSectionCode(courseId, termId, null);
+    setForm({
+      ...blank(),
+      AdCollegeId: Number(justSaved?.AdCollegeId || 0),
+      AdSectionId: Number(justSaved?.AdSectionId || 0),
+      AdTermId: termId,
+      AdCourseId: courseId,
+      SCode: nextCode,
+      AdInstructorId: Number(justSaved?.AdInstructorId || 0),
+      buildingId: justSaved?.buildingId,
+      roomId: justSaved?.roomId,
+      AdRoomCode: justSaved?.AdRoomCode || "",
+      AdRoomHall: justSaved?.AdRoomHall || "",
+      locationStatus: justSaved?.locationStatus,
+      fsunday: Boolean(justSaved?.fsunday),
+      fmonday: Boolean(justSaved?.fmonday),
+      ftuesday: Boolean(justSaved?.ftuesday),
+      fwednesday: Boolean(justSaved?.fwednesday),
+      fthursday: Boolean(justSaved?.fthursday),
+      fstarttime: "",
+      fendtime: "",
+    });
+    setCourseName(courseById.get(courseId)?.CourseName || "");
+    setEditId(null);
+    setError(null);
+    setConflicts([]);
+    setSolutions([]);
+    setScheduleTouched(false);
+    /* The number was offered, not typed — so changing the course still moves it. */
+    sectionAutofilled.current = true;
+    setEditor("create");
+    /* The hour is the only empty field left, so that is where the cursor
+       belongs — the next appointment starts with a keystroke, not a hunt. */
+    requestAnimationFrame(() => {
+      const hour = document.querySelector<HTMLInputElement>('[data-guide-editor-field="time"]');
+      hour?.focus();
+    });
+  };
   /* The Escape listener is registered once; these keep it from asking an old
      render whether an editor is open. */
   const editorRef = useRef(editor);
@@ -4056,7 +4124,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       // A save filed under another scope: the filters just moved, and the
       // scope effect reloads that workspace on its own — nothing to do here.
       const queuedOffline = Boolean((saved as any)?.queuedOffline);
-      setMessage(queuedOffline ? "حُفظ التعديل محلياً وسيُزامن عند عودة الاتصال." : (editor === "edit" ? "تم حفظ التعديل" : "تم حفظ الموعد"));
+      const keepCreating = editor !== "edit" && !queuedOffline;
+      setMessage(
+        queuedOffline ? "حُفظ التعديل محلياً وسيُزامن عند عودة الاتصال."
+          : editor === "edit" ? "تم حفظ التعديل"
+            : "تم إنشاء الموعد · الشعبة التالية جاهزة",
+      );
       setPhysicsNotice([queuedOffline ? "بانتظار المزامنة" : "", editorTimingNote || ""].filter(Boolean).join(" · "));
       const guideOp = guideOperationRef.current;
       trackedSaveFeatures.forEach(featureId => {
@@ -4095,6 +4168,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         requestAnimationFrame(() => setMessage("تمت معالجة جميع المواعيد المرتبطة بهذه المشكلة."));
         return;
       }
+      /* A hundred appointments are entered in one sitting: the editor stays
+         open on the same run, with the next section number already chosen. */
+      if (keepCreating) { continueCreating(savedRow || form); return; }
       back();
     } catch (e: any) {
       const guideOp = guideOperationRef.current;
@@ -7868,6 +7944,10 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           {editor === "create" ? "إضافة موعد دراسي" : "تعديل موعد دراسي"}
         </PageTitle>
         {error ? <Notice>{error}</Notice> : null}
+        {/* The editor no longer closes after a creation, so the confirmation has
+            to be readable where the person is still standing. It clears itself
+            on the shared 5-second timer, like every other success line. */}
+        {message ? <Notice type="success">{message}</Notice> : null}
         <div className="schedule-editor-grid">
           <Surface className="form-card smart-form">
             <div className="form-intro">

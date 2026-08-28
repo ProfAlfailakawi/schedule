@@ -5241,19 +5241,27 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .visual-minimal .spread-keys span.seg-clean svg{color:var(--success)}
 
 /* ── Floating utilities: never occupy the guide launcher's pixels ---------
- * The screenshot that exposed this had the day's undo count sitting directly
- * under the guide's unread badge. Desktop keeps the history button one row
- * above the guide; phone keeps it below, because the guide itself moves upward
- * over the bottom navigation. The week and building boards are untouched. */
-@media(min-width:901px){
-  .schedule-page .undo-log-open{
-    left:18px!important;right:auto!important;bottom:82px!important;
-  }
+ * The day's undo count and the guide launcher share the bottom-left corner.
+ * Each used to name its own `bottom` in its own file, and the two numbers
+ * disagreed: on a phone both resolved to 18px and the history pill was drawn
+ * straight over the launcher, while on desktop six pixels separated them, so
+ * they read as one collided cluster and any growth in the launcher's copy
+ * closed even that.
+ *
+ * They now stand on the one ladder declared in 01-foundation. The launcher
+ * takes the floor; the history button takes the rung above it — at every
+ * width, and above the phone dock, without either file knowing the other's
+ * numbers. The week and building boards are untouched. */
+/* Physical sides on purpose: the launcher beneath it is pinned with `left`,
+   and a logical side would send this one to the opposite corner in RTL. */
+.schedule-page .undo-log-open{
+  left:18px;right:auto;
+  bottom:calc(var(--fab-floor) + var(--fab-step));
 }
+/* The launcher tucks 6px closer to the edge on a phone; the rung above it
+   follows, so the two never read as two different left margins. */
 @media(max-width:900px){
-  .schedule-page .undo-log-open{
-    left:12px!important;right:auto!important;bottom:18px!important;
-  }
+  .schedule-page .undo-log-open{ left:12px; }
 }
 .undo-log-open b{direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums}
 

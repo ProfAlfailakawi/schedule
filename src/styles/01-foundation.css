@@ -339,6 +339,24 @@ time,.num,.code-chip{
   --radius-card:var(--r-xl);
   --radius-sheet:var(--r-2xl);
   --card-pad:clamp(14px,1.4vw,20px);
+
+  /* ── The bottom-left floating ladder ────────────────────────────────────
+   * Two independent things live in that corner — the live guide launcher and
+   * the day's undo-log button — and each used to name its own `bottom` in its
+   * own file. On a phone both landed on 18px and drew straight over each
+   * other, and neither knew the phone dock was under them, so the launcher sat
+   * on top of the navigation. One ladder, declared once: the floor, the height
+   * of the rung below, and the air between rungs. Anything added to that
+   * corner starts from `--floor` and steps up by `--fab-step`.
+   */
+  --dock-h:0px;                                   /* phone navigation; 0 on desktop */
+  --fab-gap:12px;
+  --guide-fab-h:60px;                             /* .smart-guide-fab: 42px mark + 16px padding + 2px border */
+  --fab-floor:calc(18px + var(--dock-h) + env(safe-area-inset-bottom));
+  --fab-step:calc(var(--guide-fab-h) + var(--fab-gap));
+}
+@media(max-width:900px){
+  :root{ --dock-h:62px; }
 }
 
 /* Latin numbers and time ranges must keep their visual order when they sit in

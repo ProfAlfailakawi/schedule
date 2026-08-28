@@ -1011,8 +1011,11 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
 /* ── Smart Guide ───────────────────────────────────────────────────────── */
 /* ── Smart Guide ───────────────────────────────────────────────────────── */
 .smart-guide-fab{
-  position:fixed;left:18px;bottom:18px;z-index:86;display:flex;align-items:center;gap:11px;
-  min-width:150px;min-height:58px;padding:8px 12px 8px 9px;border-radius:22px;
+  /* The ground rung of the bottom-left ladder (see --fab-floor in
+     01-foundation): on a phone this lifts the launcher clear of the dock it
+     used to sit on top of. */
+  position:fixed;left:18px;bottom:var(--fab-floor);z-index:86;display:flex;align-items:center;gap:11px;
+  min-width:150px;min-height:var(--guide-fab-h);padding:8px 12px 8px 9px;border-radius:22px;
   border:1px solid color-mix(in srgb,var(--accent) 18%,var(--line));
   background:color-mix(in srgb,var(--surface) 91%,transparent);color:var(--ink);
   box-shadow:0 16px 38px rgba(17,24,39,.16);backdrop-filter:blur(18px) saturate(1.1);
@@ -1100,7 +1103,7 @@ body.guide-point-mode [data-guide-target],body.guide-point-mode button,body.guid
 
 .guide-preview-backdrop{position:fixed;inset:0;z-index:155;display:grid;place-items:center;padding:18px;background:rgba(8,13,25,.28);backdrop-filter:blur(6px)}.guide-preview{width:min(390px,100%);padding:20px;border:1px solid color-mix(in srgb,var(--accent) 20%,var(--line));border-radius:24px;background:var(--surface);box-shadow:0 28px 80px rgba(15,23,42,.3);text-align:center}.guide-preview>span{width:52px;height:52px;margin:0 auto 10px;display:grid;place-items:center;border-radius:18px;background:var(--accent-soft);color:var(--accent)}.guide-preview>span svg{width:22px}.guide-preview h3{margin:0 0 7px;font-size:17px}.guide-preview p{margin:0;color:var(--muted);font-size:11px;line-height:1.7}.guide-preview>div{display:flex;justify-content:center;gap:7px;margin-top:15px}.guide-preview button{height:38px;padding:0 13px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink);font-size:10px}.guide-preview button.primary{display:flex;align-items:center;gap:5px;background:var(--accent);border-color:var(--accent);color:var(--accent-contrast)}.guide-preview button svg{width:14px}
 
-@media (max-width:900px){.smart-guide{left:0;right:0;top:auto;bottom:0;width:100%;height:min(86dvh,760px);border-radius:26px 26px 0 0;border-bottom:0;padding-bottom:calc(18px + env(safe-area-inset-bottom));animation-name:smartGuideUp}@keyframes smartGuideUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}.smart-guide-fab{left:12px;bottom:82px}.smart-guide-onboarding>div{grid-template-columns:1fr}.guide-ghost-card{left:15px!important;right:15px!important;width:auto!important}}
+@media (max-width:900px){.smart-guide{left:0;right:0;top:auto;bottom:0;width:100%;height:min(86dvh,760px);border-radius:26px 26px 0 0;border-bottom:0;padding-bottom:calc(18px + env(safe-area-inset-bottom));animation-name:smartGuideUp}@keyframes smartGuideUp{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}.smart-guide-fab{left:12px}/* bottom comes from --fab-floor, which already clears the phone dock */.smart-guide-onboarding>div{grid-template-columns:1fr}.guide-ghost-card{left:15px!important;right:15px!important;width:auto!important}}
 @media (max-width:560px){.smart-guide{padding:15px;gap:12px}.smart-guide-hero h2{font-size:27px}.smart-guide-actions{grid-template-columns:1fr}.smart-guide-workflows article{grid-template-columns:1fr}.smart-guide-workflows article>div:last-child{justify-content:flex-start}.smart-guide-routines article{grid-template-columns:auto 1fr auto}.smart-guide-routines article>.danger{grid-column:3}.smart-guide-routine-editor{grid-template-columns:auto 1fr}.smart-guide-routine-editor button{grid-row:2}.smart-guide-fab{min-width:136px}.smart-guide-fab-copy strong{font-size:16px}}
 @media (prefers-reduced-motion:reduce){.smart-guide,.smart-guide-fab,.guide-ghost-hand,.guide-ghost-ring,[data-guide-hot="true"]{animation:none!important;transition:none!important}.smart-guide-fab-pulse{animation:none}}
 

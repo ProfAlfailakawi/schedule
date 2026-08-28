@@ -2130,7 +2130,18 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
   const instructorPrintName = (row: FSchedule) => `${instructorOf(row)?.AdInstructorName || "بدون أستاذ"}${visitingIds.has(row.AdInstructorId) ? " · منتدب" : ""}`;
   const issued = new Date();
   const issueDate = `${String(issued.getDate()).padStart(2, "0")}/${String(issued.getMonth() + 1).padStart(2, "0")}/${issued.getFullYear()}`;
-  const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).join(",") || "—";
+  /**
+   * The official sheet's day column, written so an Arabic reader reads it in
+   * order.
+   *
+   * The cell is `print-ltr` — the codes are a latin sequence and must stay one
+   * unbroken run. Written ascending, «1,3,5» puts Sunday on the LEFT, so a
+   * reader coming from the right meets Thursday first and the week reads
+   * backwards. The sequence is emitted in reverse — «5,3,1» — which an ltr cell
+   * paints with 1 on the right: the day the week starts on, where the eye
+   * starts. The same convention the time column beside it already follows.
+   */
+  const dayCodeCell = (row: FSchedule) => dayFlags(row).map(day => String(DAYS.findIndex(candidate => candidate.flag === day.flag) + 1)).reverse().join(",") || "—";
 
   if (kind === "comprehensive") {
     const comprehensiveRows = [...rows].sort((a, b) =>
