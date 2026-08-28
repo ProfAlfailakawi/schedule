@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { AlertTriangle, Building2, CalendarDays, CheckCircle2, ChevronDown, ClipboardCheck, Clock3, History, Info, Printer, X } from "lucide-react";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
-import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton } from "./ui";
+import { PrintLetterhead, PrintPortal, PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
 import VisitingBadge from "./VisitingBadge";
 import {
   DAY_KEYS, DAY_NAMES, DECISION_1912_LABEL, isDecision1912Finding, regulationScore, reviewSchedule,
@@ -155,6 +155,7 @@ export default function ScheduleReview({ rows, courses, instructors, visitingIds
   const [readinessError, setReadinessError] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [quietOpen, setQuietOpen] = useState(false);
+  useDialogDismiss(true, onClose);
 
   useEffect(() => {
     if (!collegeId || !sectionId || !termId) { setServerBlockers([]); setReadinessChecked(true); setReadinessError(true); return; }

@@ -52,15 +52,25 @@
      and 3.95 on --surface-3, which is where most of it sits: cards, chips,
      badges. Checking a colour against the one background it is rarely on is
      how forty elements across five screens ended up under the floor at once.
-     Now: 5.22 / 4.86 / 4.51. */
-  --muted:#646f69;
+     2026-08-28: re-measured against the page background too — `--canvas`, the
+     surface most of this text actually sits on — which the earlier pass never
+     checked. It read 4.69 there: a pass, but with no room above the floor for
+     a second, quieter level to exist beneath it. Darkened by 3.5% lightness,
+     hue untouched, so `--muted-2` has somewhere to stand.
+     Now: canvas 5.36 / surface 5.98 / surface-2 5.55 / surface-3 5.16. */
+  --muted:#5b6660;
   /* The note that used to sit here claimed 4.6:1 on white for #77837e. It is
      3.94 — recomputed by hand and in the browser, both agreeing. The old
      #98a29d it replaced really was 2.6, so the direction was right and the
      arithmetic was not. This carries the quietest text there is: placeholders,
      command-palette group titles, the review overflow line.
-     Now: 4.86 / 4.51 / 4.19. */
-  --muted-2:#69746e;
+     And this one shipped at 4.19 on `--surface-3` — the note above recorded
+     the failing number and passed it anyway — while never being measured on
+     `--canvas` at all, where it read 4.36. Both are below the floor for normal
+     text, and this token carries the quietest text there is, which is exactly
+     the text that can least afford it.
+     Now: canvas 4.74 / surface 5.28 / surface-2 4.91 / surface-3 4.56. */
+  --muted-2:#646e69;
   --line:#e3e6e0;
   --line-strong:#ccd2cb;
 

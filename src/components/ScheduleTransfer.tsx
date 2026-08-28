@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2, Clock, Copy, Download, History, Link2, Pencil, Plus, RotateCcw, Search, ShieldAlert, Sparkles, Trash2, Upload, UserMinus, UserPlus, UsersRound, X } from "lucide-react";
-import { PrimaryButton, SecondaryButton } from "./ui";
+import { PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
 import { type ImportRow } from "./ImportPreviewTable";
@@ -43,6 +43,7 @@ interface Props {
 type Tab = "export" | "import" | "publish" | "retire" | "visiting";
 
 export default function ScheduleTransfer({ collegeId, sectionId, termId, instructors, departmentIds, terms, onChanged, onClose }: Props) {
+  useDialogDismiss(true, onClose);
   const [tab, setTab] = useState<Tab>("export");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

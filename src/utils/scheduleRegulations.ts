@@ -87,6 +87,34 @@ export function expectedMinutesForDay(day: DayKey): number {
   return LONG_LECTURE_DAYS.includes(day) ? LONG_LECTURE_MINUTES : SHORT_LECTURE_MINUTES;
 }
 
+/** الفاصل المقرَّر بين محاضرتين متتاليتين في القاعة الواحدة، بالدقائق. */
+export const SHORT_DAY_GAP_MINUTES = 10;
+export const LONG_DAY_GAP_MINUTES = 15;
+
+/**
+ * ── الفاصل بين محاضرتين، وهو ليس رقماً واحداً ───────────────────────────────
+ *
+ * The college's rule is stated per day family, exactly like the lecture length
+ * beside it: ten minutes between two lectures on Sun/Tue/Thu, a quarter of an
+ * hour on Mon/Wed — the longer meetings need the longer changeover.
+ *
+ * The engine used to carry ONE number for this, learned from history or
+ * declared as a single setting, so a department could not express the rule it
+ * actually follows: whichever number it chose was wrong on one of the two
+ * families. The requirement now comes from the day, like the duration does.
+ *
+ * A department that declares its own number still overrides this — a rule
+ * somebody states out loud outranks an institutional default.
+ */
+export function requiredGapForDay(day: DayKey): number {
+  return LONG_LECTURE_DAYS.includes(day) ? LONG_DAY_GAP_MINUTES : SHORT_DAY_GAP_MINUTES;
+}
+
+/** The strictest requirement among the days two appointments share. */
+export function requiredGapForDays(days: readonly DayKey[]): number {
+  return days.reduce((most, day) => Math.max(most, requiredGapForDay(day)), 0);
+}
+
 export interface DayPatternAdvice {
   family: "hour" | "hourAndHalf" | "mixed";
   expectedMinutes: number;

@@ -3098,7 +3098,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       : isInstructor ? "تعارض أستاذ"
         : conflict.type === "duplicate" ? "تكرار"
           : conflict.type === "travel" ? "انتقال بين المواقع"
-            : conflict.type === "doorway" ? "مهلة الباب"
+            : conflict.type === "doorway" ? "الفاصل بين المحاضرتين"
               : conflict.type === "cohort" ? "تعارض على الطلاب"
                 : conflict.type === "rhythm" ? "إيقاع القسم"
                   : conflict.type === "memory" ? "ذاكرة القسم"

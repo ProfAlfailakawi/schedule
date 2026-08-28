@@ -15,6 +15,7 @@ import {
   Surface,
   CatalogFormDrawer,
   visualConfirm,
+  useDialogDismiss,
 } from "./ui";
 import {
   AdCollege,
@@ -191,6 +192,7 @@ export default function AdminUsers({
     [resetPhrase, setResetPhrase] = useState(""),
     [backupMessage, setBackupMessage] = useState<string | null>(null),
     [backupConfirm, setBackupConfirm] = useState<"import" | "reset" | "undo" | null>(null);
+  useDialogDismiss(Boolean(backupConfirm) && !backupBusy, () => setBackupConfirm(null));
   useEffect(() => {
     if (!demoReadOnly) return;
     document.documentElement.dataset.demoAdminReadonly = "true";

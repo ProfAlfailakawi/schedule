@@ -2577,7 +2577,19 @@ async function departmentStyle(row:any):Promise<DepartmentStyle>{
        the SMALLEST habit across patterns. Flagging at the tighter of the two
        cannot invent a finding on the looser one. */
     const learned=Math.min(...reading.patterns.map(p=>p.breakMinutes||Infinity));
-    const doorway=Math.max(0,Math.min(60,declared||(Number.isFinite(learned)?learned:0)));
+    /* ── القاعدة المقرَّرة أولاً، ثم ما يعلنه القسم ───────────────────────────
+     * The college states this per day family — ten minutes on Sun/Tue/Thu,
+     * fifteen on Mon/Wed — and one learned number cannot say that: whichever
+     * value history produced was wrong on one of the two families. Zero here
+     * means "no declared override", and the engine then reads the requirement
+     * from the days each pair actually shares.
+     *
+     * A department that declares its own figure still wins, exactly as before:
+     * a rule somebody states out loud outranks both the institutional default
+     * and a pattern the software inferred. `learned` is kept for the rhythm
+     * reading that still uses it elsewhere. */
+    void learned;
+    const doorway=Math.max(0,Math.min(60,declared));
     /* What the students said, read on the same pass and cached against the
        same beacon. A department that has never run a survey pays nothing and
        sees exactly what it saw before. */
@@ -2690,8 +2702,8 @@ async function scheduleConflicts(req:AuthenticatedRequest,row:any,excludeId=0){
       const other=all.find(item=>item.id===conflict.otherId);
       const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;
       return{...conflict,soft:true,severity:"low",rowId:visible&&other?other.id:0,
-        message:"مهلة الباب غير كافية",
-        detail:visible?conflict.detail:"القاعة تُخلى وتُملأ مباشرة، والموعد الآخر خارج نطاق العرض الحالي."};
+        message:"الفاصل بين المحاضرتين غير كافٍ",
+        detail:visible?conflict.detail:"الفاصل قصير عن المطلوب، والموعد الآخر خارج نطاق العرض الحالي."};
     }
     const other=all.find(item=>item.id===conflict.otherId);
     const visible=other?Boolean(req.user?.IsAdminUser||isScopeAllowed(req,other.AdCollegeId,other.AdSectionId)):true;

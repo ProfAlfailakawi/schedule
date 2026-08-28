@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import type { AdCourse, AdInstructor, AdTerm, FSchedule } from "../types";
 import { livingScopeKey, sharedLiving } from "../utils/livingCache";
-import { Notice } from "./ui";
+import { Notice, useDialogDismiss } from "./ui";
 import { AR, countOf } from "../utils/arabicCount";
 import { telemetryApi, telemetryBreadcrumb, telemetryError } from "../utils/clientTelemetry";
 import { sortTermsNewest } from "../utils/termSequence";
@@ -404,6 +404,10 @@ export default function ScheduleExperienceLayer({
   headless?: boolean;
 }) {
   const e = experience;
+  /* Both sheets already close on a backdrop click and on their own ✕; Escape
+     is the key a person reaches for first, and it was the one thing missing. */
+  useDialogDismiss(Boolean(e.decisionOpen), () => e.setDecisionOpen(false));
+  useDialogDismiss(Boolean(e.signatureOpen) && !e.decisionOpen, () => e.setSignatureOpen(false));
   // Every authenticated schedule user with form 7 access receives the same
   // scoped decision experience; the server still enforces college/section scope.
   const health = e.living?.health,

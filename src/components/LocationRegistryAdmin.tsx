@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Building2, CheckCircle2, CircleAlert, Database, DoorOpen, Info, Plus, RotateCcw, Search, ShieldCheck, UsersRound, X } from "lucide-react";
 import type { AdCollege, AdSection, LocationMigrationRun, LocationReviewCase, MasterBuilding, MasterRoom } from "../types";
-import { Badge, Field, Notice, PrimaryButton, SecondaryButton, Surface } from "./ui";
+import { Badge, Field, Notice, PrimaryButton, SecondaryButton, Surface, useDialogDismiss } from "./ui";
 import { buildingNumberLabel, normalizeCollegeName, officialCollegeSitePrefix, officialSiteLabel } from "../utils/locationCollegePrefixes";
 import { compareLocationCodes } from "../utils/locationRegistry";
 import { byArabic, sortByName } from "../utils/sorting";
@@ -23,6 +23,8 @@ export default function LocationRegistryAdmin({header,demoReadOnly=false}:{heade
   const [query,setQuery]=useState(""),[selectedBuilding,setSelectedBuilding]=useState<string>("");
   const [statusFilter,setStatusFilter]=useState("all"),[collegeFilter,setCollegeFilter]=useState("all"),[sectionFilter,setSectionFilter]=useState(0);
   const [editEntity,setEditEntity]=useState<any>(null),[aliasEditor,setAliasEditor]=useState<AliasEditor>(null);
+  useDialogDismiss(Boolean(aliasEditor), () => setAliasEditor(null));
+  useDialogDismiss(Boolean(editEntity) && !aliasEditor, () => setEditEntity(null));
   const [newBuilding,setNewBuilding]=useState({collegeId:0,buildingNumber:"",siteName:"",branchName:""});
   const [newRoom,setNewRoom]=useState({buildingId:"",canonicalCode:""});
   const [showBuildingCreate,setShowBuildingCreate]=useState(false),[showRoomCreate,setShowRoomCreate]=useState(false);

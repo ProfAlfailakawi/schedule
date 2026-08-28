@@ -20,6 +20,43 @@ function getToastHost() {
   return toastHost;
 }
 
+/**
+ * ── الخروج من أي حوار بمفتاح واحد ───────────────────────────────────────────
+ *
+ * Twelve components already closed their dialogs on Escape and five did not,
+ * which is worse than none doing it: a person learns the key works, then meets
+ * a sheet where it does nothing and has to hunt for the ✕. Every one of those
+ * five already had a close callback and a visible close control — the key was
+ * simply never wired to it.
+ *
+ * It also gives focus back to whatever opened the dialog. Without that, closing
+ * a sheet drops the caret at the top of the document and a keyboard user walks
+ * the whole page again to get back to where they were.
+ *
+ * Deliberately NOT a focus trap: trapping Tab inside a sheet is a larger change
+ * in behaviour than this pass is willing to make silently, and the honest state
+ * of it is written in the audit note instead.
+ */
+export function useDialogDismiss(open: boolean, onDismiss: () => void) {
+  const dismiss = React.useRef(onDismiss);
+  dismiss.current = onDismiss;
+  React.useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      dismiss.current();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      /* Only if the page has not already moved focus somewhere deliberate. */
+      if (opener?.isConnected && document.activeElement === document.body) opener.focus();
+    };
+  }, [open]);
+}
+
 export function PageTitle({ children, action, subtitle, eyebrow }: { children: React.ReactNode; action?: React.ReactNode; subtitle?: React.ReactNode; eyebrow?: React.ReactNode }) {
   return <div className="page-heading"><div className="page-heading-copy">{eyebrow ? <div className="page-eyebrow">{eyebrow}</div> : null}<h1>{children}</h1>{subtitle ? <p>{subtitle}</p> : null}</div>{action ? <div className="page-heading-action">{action}</div> : null}</div>;
 }

@@ -1,4 +1,6 @@
 import { roomIdentityKey } from "./locationRegistry";
+import { requiredGapForDays } from "./scheduleRegulations";
+import { AR, countOf } from "./arabicCount";
 import type { AdCourse, AdInstructor, FSchedule } from "../types";
 import { formatScheduleTimeRange, scheduleClockForDisplay, SCHEDULE_DAY_END, SCHEDULE_DAY_SPAN, SCHEDULE_DAY_START, SCHEDULE_SLOT_MINUTES } from "./scheduleTime";
 
@@ -22,28 +24,43 @@ export function overlaps(a:Partial<FSchedule>,b:Partial<FSchedule>):boolean {
 }
 
 /**
- * ── مهلة الباب ─────────────────────────────────────────────────────────────
+ * ── الفاصل بين محاضرتين في قاعة واحدة ───────────────────────────────────────
  *
  * Two lectures in the same hall, one ending at ten and the next beginning at
  * ten, do not overlap by a single minute — and are impossible anyway. Thirty
- * people have to leave through one door while thirty more come in through it,
- * and the second lecture starts late every week for the whole term.
+ * people have to leave the room while thirty more come in, and the second
+ * lecture starts late every week for the whole term.
  *
- * The department knows how many minutes its doors need. Once that number is
- * declared it is added to the end of every room occupancy HERE, in the one
- * sweep every conflict in this product passes through, so the drag verdict,
- * the radar, the repair chain and the review all inherit it at once without a
- * single one of them learning a new rule.
+ * It was called «مهلة الباب» here, which named the doorway rather than the
+ * thing: what is short is the GAP between the two meetings, and a reader
+ * looking for it in the schedule looks for a gap. The wording follows the
+ * concept now, in the finding as well as in the card above it.
+ *
+ * The number is not one number. The college's rule is stated per day family —
+ * ten minutes on Sun/Tue/Thu, fifteen on Mon/Wed — because the longer meetings
+ * need the longer changeover, and `requiredGapForDays` reads it from the days
+ * the pair actually shares. A department that declares its own figure still
+ * overrides it.
+ *
+ * Applied HERE, in the one sweep every conflict in this product passes
+ * through, so the drag verdict, the radar, the repair chain and the review all
+ * inherit it at once without a single one of them learning a new rule.
  *
  * It is deliberately a quieter kind of finding. A double booking is an error;
  * a tight turnaround may be exactly what someone intended, and the two must
  * never wear the same colour.
  */
-const roomsTouch=(a:Partial<FSchedule>,b:Partial<FSchedule>,doorway:number):boolean=>{
+const roomsTouch=(a:Partial<FSchedule>,b:Partial<FSchedule>,gap:number):boolean=>{
   if(!sharesDay(a,b)) return false;
   const aStart=timeToMinutes(String(a.fstarttime||"")),aEnd=timeToMinutes(String(a.fendtime||""));
   const bStart=timeToMinutes(String(b.fstarttime||"")),bEnd=timeToMinutes(String(b.fendtime||""));
-  return aStart < bEnd + doorway && bStart < aEnd + doorway;
+  return aStart < bEnd + gap && bStart < aEnd + gap;
+};
+/** The gap this pair must have, from the days it shares — unless one is declared. */
+const requiredGap=(a:Partial<FSchedule>,b:Partial<FSchedule>,declared:number):number=>{
+  if(declared>0) return declared;
+  const shared=SCHEDULE_DAYS.filter(day=>Boolean(a[day.key])&&Boolean(b[day.key])).map(day=>day.key);
+  return requiredGapForDays(shared as any);
 };
 const roomKey=(row:Partial<FSchedule>)=>roomIdentityKey(row);
 const duration=(row:Partial<FSchedule>)=>Math.max(0,timeToMinutes(String(row.fendtime||""))-timeToMinutes(String(row.fstarttime||"")));
@@ -149,7 +166,7 @@ const samePlacement=(a:FSchedule,b:FSchedule)=>
  *
  *     أستاذ محجوز مرتين   نفس اليوم + نفس الأستاذ
  *     قاعة محجوزة مرتين   نفس اليوم + نفس القاعة
- *     مهلة الباب          نفس اليوم + نفس القاعة
+ *     الفاصل بين محاضرتين  نفس اليوم + نفس القاعة
  *     موعد مكرر           نفس المقرر + نفس الشعبة   (ونفس الموضع، فنفس اليوم)
  *     تعارض أفواج         نفس اليوم + مقرر مقترن
  *
@@ -228,7 +245,11 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
       /* A turnaround too short to empty the hall. Only meaningful when the two
          do not already overlap — an overlap is the louder problem, and naming
          one pair twice would double every count in the product. */
-      const tight=doorway>0 && sameRoom && !clashing && roomsTouch(row,other,doorway);
+      /* The requirement comes from the days this pair shares, unless the
+         department declared its own — so a rule stated per day family is no
+         longer flattened into one number that is wrong on one of them. */
+      const needGap=sameRoom?requiredGap(row,other,doorway):0;
+      const tight=needGap>0 && sameRoom && !clashing && roomsTouch(row,other,needGap);
       const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
       /* Two overlapping lectures whose COURSES share students. Only meaningful
          when they actually overlap — a survey says nothing about a gap. */
@@ -254,13 +275,30 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
          resolve the other. */
       const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room"
         :reasons.includes("duplicate")?"duplicate":reasons.includes("cohort")?"cohort":"doorway";
-      const gap=Math.abs(timeToMinutes(String(other.fstarttime||""))-timeToMinutes(String(row.fendtime||"")));
+      /* ── الفارق يُقاس بين الطرفين المتجاورين فعلاً ────────────────────────
+       * This read `other.start - row.end` whichever way round the two sat, so
+       * whenever the other lecture came FIRST it measured from its start to
+       * this one's end — the span of both lectures plus everything between —
+       * and printed it as the gap. A one-minute turnaround (11:50 → 11:51)
+       * was reported to the reader as «101 دقيقة»: a number that says the hall
+       * is comfortably free while the finding says it is not, which teaches a
+       * person to distrust the finding rather than the number.
+       *
+       * The gap is between the one that ends first and the one that starts
+       * next. Overlapping rows never reach here — an overlap is its own,
+       * louder finding — so a negative result cannot occur; it is floored at
+       * zero for safety rather than trusted. */
+      const gap=(()=>{
+        const rowStart=timeToMinutes(String(row.fstarttime||"")),rowEnd=timeToMinutes(String(row.fendtime||""));
+        const otherStart=timeToMinutes(String(other.fstarttime||"")),otherEnd=timeToMinutes(String(other.fendtime||""));
+        return Math.max(0,rowStart>=otherEnd?rowStart-otherEnd:otherStart-rowEnd);
+      })();
       const shared=cohort?(options?.cohortSize?.(row.AdCourseId,other.AdCourseId)||0):0;
       const message=type==="instructor"?"حجز مزدوج لأستاذ المقرر"
         :type==="room"?"حجز مزدوج للقاعة"
         :type==="duplicate"?"موعدان متطابقان لنفس الشعبة"
         :type==="cohort"?"تعارض على الطلاب"
-        :"مهلة الباب غير كافية";
+        :"الفاصل بين المحاضرتين غير كافٍ";
       const detail=type==="instructor"
         ? `الموعدان ${formatScheduleTimeRange(row.fstarttime, row.fendtime)} و ${formatScheduleTimeRange(other.fstarttime, other.fendtime)} يتقاطعان في يوم مشترك.`
         : type==="room"
@@ -269,7 +307,7 @@ export function findConflicts(targetRows:FSchedule[], allRows:FSchedule[], optio
             ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت."
             : type==="cohort"
               ? `${shared} من الطلاب الذين أجابوا يحتاجون المقررين معاً، والموعدان متقاطعان.`
-              : `القاعة ${row.AdRoomCode}/${row.AdRoomHall} تُخلى وتُملأ خلال ${gap} دقيقة، والقسم يحتاج ${doorway}.`;
+              : `الفاصل بين المحاضرتين ${countOf(gap, AR.minute)} في القاعة ${row.AdRoomCode}/${row.AdRoomHall}، والمطلوب ${countOf(needGap, AR.minute)}.`;
       byPair.set(pair,{
         type,
         /* Never a save-blocker. A tight turnaround can be deliberate, and
@@ -349,7 +387,11 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
       /* A turnaround too short to empty the hall. Only meaningful when the two
          do not already overlap — an overlap is the louder problem, and naming
          one pair twice would double every count in the product. */
-      const tight=doorway>0 && sameRoom && !clashing && roomsTouch(row,other,doorway);
+      /* The requirement comes from the days this pair shares, unless the
+         department declared its own — so a rule stated per day family is no
+         longer flattened into one number that is wrong on one of them. */
+      const needGap=sameRoom?requiredGap(row,other,doorway):0;
+      const tight=needGap>0 && sameRoom && !clashing && roomsTouch(row,other,needGap);
       const twin=row.AdCourseId===other.AdCourseId && String(row.SCode)===String(other.SCode) && samePlacement(row,other);
       /* Two overlapping lectures whose COURSES share students. Only meaningful
          when they actually overlap — a survey says nothing about a gap. */
@@ -375,13 +417,30 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
          resolve the other. */
       const type=reasons.includes("instructor")?"instructor":reasons.includes("room")?"room"
         :reasons.includes("duplicate")?"duplicate":reasons.includes("cohort")?"cohort":"doorway";
-      const gap=Math.abs(timeToMinutes(String(other.fstarttime||""))-timeToMinutes(String(row.fendtime||"")));
+      /* ── الفارق يُقاس بين الطرفين المتجاورين فعلاً ────────────────────────
+       * This read `other.start - row.end` whichever way round the two sat, so
+       * whenever the other lecture came FIRST it measured from its start to
+       * this one's end — the span of both lectures plus everything between —
+       * and printed it as the gap. A one-minute turnaround (11:50 → 11:51)
+       * was reported to the reader as «101 دقيقة»: a number that says the hall
+       * is comfortably free while the finding says it is not, which teaches a
+       * person to distrust the finding rather than the number.
+       *
+       * The gap is between the one that ends first and the one that starts
+       * next. Overlapping rows never reach here — an overlap is its own,
+       * louder finding — so a negative result cannot occur; it is floored at
+       * zero for safety rather than trusted. */
+      const gap=(()=>{
+        const rowStart=timeToMinutes(String(row.fstarttime||"")),rowEnd=timeToMinutes(String(row.fendtime||""));
+        const otherStart=timeToMinutes(String(other.fstarttime||"")),otherEnd=timeToMinutes(String(other.fendtime||""));
+        return Math.max(0,rowStart>=otherEnd?rowStart-otherEnd:otherStart-rowEnd);
+      })();
       const shared=cohort?(options?.cohortSize?.(row.AdCourseId,other.AdCourseId)||0):0;
       const message=type==="instructor"?"حجز مزدوج لأستاذ المقرر"
         :type==="room"?"حجز مزدوج للقاعة"
         :type==="duplicate"?"موعدان متطابقان لنفس الشعبة"
         :type==="cohort"?"تعارض على الطلاب"
-        :"مهلة الباب غير كافية";
+        :"الفاصل بين المحاضرتين غير كافٍ";
       const detail=type==="instructor"
         ? `الموعدان ${formatScheduleTimeRange(row.fstarttime, row.fendtime)} و ${formatScheduleTimeRange(other.fstarttime, other.fendtime)} يتقاطعان في يوم مشترك.`
         : type==="room"
@@ -390,7 +449,7 @@ export function findConflictsExhaustive(targetRows:FSchedule[], allRows:FSchedul
             ? "نفس المقرر ونفس الشعبة بنفس الأيام ونفس الوقت."
             : type==="cohort"
               ? `${shared} من الطلاب الذين أجابوا يحتاجون المقررين معاً، والموعدان متقاطعان.`
-              : `القاعة ${row.AdRoomCode}/${row.AdRoomHall} تُخلى وتُملأ خلال ${gap} دقيقة، والقسم يحتاج ${doorway}.`;
+              : `الفاصل بين المحاضرتين ${countOf(gap, AR.minute)} في القاعة ${row.AdRoomCode}/${row.AdRoomHall}، والمطلوب ${countOf(needGap, AR.minute)}.`;
       byPair.set(pair,{
         type,
         /* Never a save-blocker. A tight turnaround can be deliberate, and
