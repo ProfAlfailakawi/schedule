@@ -3072,8 +3072,30 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     const isScope = conflict.type === "roomScope";
     const isRoom = conflict.type === "room" || isScope || conflict.type === "hallBarter" || conflict.type === "hallBarterWindow";
     const isInstructor = conflict.type === "instructor";
-    const typeLabel = isRoom ? (isScope ? "نطاق القاعة" : "تعارض قاعة") : isInstructor ? "تعارض أستاذ" : conflict.type === "duplicate" ? "تكرار" : "ملاحظة";
-    const statusLabel = isScope ? "تنبيه" : "مانع";
+    /* ── مانع أم تنبيه ────────────────────────────────────────────────────
+     * One truth, and it is the same one the save button already obeys: a card
+     * is a blocker when it is a high-severity clash or an exact duplicate.
+     * Everything else — a hall that belongs to another department, a tight
+     * transfer between campuses, a turnaround too short for the door, a
+     * cohort note, the department's own rhythm, a line from its memory — is
+     * advice, and the timetable is saved with it on screen.
+     *
+     * The card used to say «مانع» on every one of them except the hall-scope
+     * note, and paint it in the blocking red. So a soft warning that never
+     * stopped anything — «انتقال ضيّق بين الحرم الرئيسي والجهراء» — read as a
+     * refusal, which is how people learn to stop reading the colour entirely.
+     */
+    const blocks = conflict?.severity === "high" || conflict?.type === "duplicate";
+    const typeLabel = isRoom ? (isScope ? "نطاق القاعة" : "تعارض قاعة")
+      : isInstructor ? "تعارض أستاذ"
+        : conflict.type === "duplicate" ? "تكرار"
+          : conflict.type === "travel" ? "انتقال بين المواقع"
+            : conflict.type === "doorway" ? "مهلة الباب"
+              : conflict.type === "cohort" ? "تعارض على الطلاب"
+                : conflict.type === "rhythm" ? "إيقاع القسم"
+                  : conflict.type === "memory" ? "ذاكرة القسم"
+                    : "ملاحظة";
+    const statusLabel = blocks ? "مانع" : "تنبيه";
     const currentStart = form.fstarttime ? mins(form.fstarttime) : null;
     const currentEnd = form.fendtime ? mins(form.fendtime) : null;
     const otherStart = other?.fstarttime ? mins(other.fstarttime) : null;
@@ -3090,7 +3112,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       : null;
     const otherCourse = other?.AdCourseName || (other ? courseById.get(Number(other.AdCourseId || 0))?.CourseName : "") || "";
     const roomLabel = currentRoomLabel || (other?.AdRoomCode && other?.AdRoomHall ? `${other.AdRoomCode}/${other.AdRoomHall}` : "");
-    let title = conflict.message || "يوجد مانع للحفظ";
+    let title = conflict.message || (blocks ? "يوجد مانع للحفظ" : "ملاحظة تستحق الانتباه");
     let titleSecondary = "";
     let summary = detail;
     if (isInstructor) {
@@ -3133,7 +3155,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     ] : [];
     return {
       id: `${conflict.type}-${conflict.rowId || conflict.otherId || index}`,
-      toneClass: isScope ? "decision-card--scope" : conflict.type === "duplicate" ? "decision-card--warning" : "decision-card--danger",
+      /* The blocking red is reserved for what actually blocks. A hall-scope
+         note keeps its brass; every other advisory takes the warning tone. */
+      toneClass: isScope ? "decision-card--scope"
+        : blocks && conflict.type !== "duplicate" ? "decision-card--danger"
+          : "decision-card--warning",
       typeLabel,
       statusLabel,
       icon: isRoom ? "room" : isInstructor ? "teacher" : "stack",
