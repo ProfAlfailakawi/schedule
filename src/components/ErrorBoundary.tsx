@@ -1,4 +1,5 @@
 import React from "react";
+import { telemetryError } from "../utils/clientTelemetry";
 
 interface State {
   error: Error | null;
@@ -44,6 +45,27 @@ export default class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error) {
     try { (window as any).__scheduleBooted?.(); } catch { /* optional boot hook */ }
+    /* ── العطل الصامت يجب أن يُعرَف، لا أن يُرى ────────────────────────────
+     *
+     * The product policy above is deliberate and unchanged: a render failure
+     * never navigates, never reloads, and never puts an error card in front of
+     * the person working. What it never said is that nobody should KNOW.
+     *
+     * This was the one place in the product that catches a real render crash
+     * at a real user, and it reported to `console.error` in DEV only — so in
+     * production the failure was invisible twice over: the person saw a quiet
+     * screen and no telemetry ever left the browser. It could recur for a
+     * month across ten people and never reach anyone who could fix it.
+     *
+     * The reader still sees nothing. `attempt` distinguishes the first failure
+     * from a subtree that has stopped recovering, which is the difference
+     * between a transient hiccup and a screen a person is now stuck on. */
+    try {
+      telemetryError(
+        this.state.attempts + 1 > this.maxImmediateAttempts ? "ui.render.unrecovered" : "ui.render.recovery",
+        error,
+      );
+    } catch { /* telemetry must never be the thing that breaks a recovery */ }
     if (import.meta.env?.DEV) console.error("Schedule render recovery:", error);
 
     if (this.retryTimer) window.clearTimeout(this.retryTimer);

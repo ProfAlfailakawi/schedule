@@ -109,7 +109,20 @@ export default function AuthorityPdfReport({
                     <div className={`print-comprehensive-grid-row authority-pdf-row authority-pdf-row-${entry.status}`} role="row" key={`${pageIndex}-${index}-${row.id || row.sourceOrder || index}-${entry.status}`}>
                       {statusLabel ? <span className="authority-pdf-row-marker" aria-hidden="true">{statusLabel}</span> : null}
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCode || "—"}</div>
-                      <div role="cell" className="print-ltr authority-pdf-reference-number">{entry.referenceNumber || row.referenceNumber || "—"}</div>
+                      {/* ── الرقم المرجعي لمقرر لم تُصدره الهيئة بعد ──────────────────
+                          A course added after the import has no CRN, because a
+                          CRN is the Authority's number and it has not issued one
+                          for this row yet. The column printed «—» for it, which
+                          is the same mark it prints for a row whose number is
+                          merely unknown — so the reader met a dash and had to
+                          work out which of the two it meant.
+                          «جديد» says it, and only on rows the report has already
+                          decided are added; a missing number on any other row is
+                          still an unknown, and still a dash. It is Arabic, so it
+                          drops the latin/ltr treatment the numbers carry. */}
+                      {entry.status === "added" && !String(entry.referenceNumber || row.referenceNumber || "").trim()
+                        ? <div role="cell" className="authority-pdf-reference-number authority-pdf-reference-new">جديد</div>
+                        : <div role="cell" className="print-ltr authority-pdf-reference-number">{entry.referenceNumber || row.referenceNumber || "—"}</div>}
                       {/* Section numbering is a system-canonical import convention, not
                           a user edit. Keep the value visible but never paint it yellow. */}
                       <div role="cell" className="print-ltr">{String(row.SCode || "").trim() || "—"}</div>

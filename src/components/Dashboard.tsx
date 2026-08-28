@@ -73,15 +73,42 @@ function Spark({series,label}:{series:number[];label:string}){
 
 export default function Dashboard({user,scopes,canManageSchedule=false,onNavigate,searchView,reportView}:DashboardProps){
  const[data,setData]=useState<DashboardData|null>(null),[overview,setOverview]=useState<any>(null),[living,setLiving]=useState<any>(null),[error,setError]=useState<string|null>(null),[attentionOpen,setAttentionOpen]=useState(false),[detailsOpen,setDetailsOpen]=useState(false);
- useEffect(()=>{(async()=>{try{
-  const jobs:Promise<Response>[]=[fetch("/api/dashboard")];
-  if(canManageSchedule){jobs.push(fetch("/api/intelligence/overview"));jobs.push(fetch("/api/intelligence/living"))}
-  const results=await Promise.all(jobs),r=results[0],d=await r.json();
-  if(!r.ok)throw new Error(d.error||"تعذر تحميل اللوحة");
-  setData(d);
-  if(results[1]){const pd=await results[1].json();if(results[1].ok)setOverview(pd)}
-  if(results[2]){const ld=await results[2].json();if(results[2].ok)setLiving(ld)}
- }catch(e:any){setError(e.message)}})()},[canManageSchedule]);
+ /**
+  * ── لوحة البداية لا تُفرَّغ بسبب لوحة جانبية ────────────────────────────────
+  *
+  * Three requests: the dashboard itself, and two intelligence readings that
+  * only enrich it. The code already treated the last two as optional — it
+  * checked `results[1].ok` before using them — but `Promise.all` rejects the
+  * moment ANY of the three fails at the network level, and the catch below
+  * sets an error and returns nothing. So a hiccup on an enrichment panel
+  * emptied the entire home screen: every figure zero, every list blank, an
+  * error banner over the top — while `/api/dashboard` had answered perfectly.
+  *
+  * Each optional request now carries its own failure, which is the pattern
+  * `Sections.tsx` already uses for `/api/degree-rules`. Only the request the
+  * screen genuinely cannot render without can produce the error.
+  *
+  * The `alive` guard is the second half: three requests in flight while the
+  * reader navigates away used to land on an unmounted screen.
+  */
+ useEffect(()=>{let alive=true;(async()=>{
+  const optional=async(url:string)=>{
+   try{const response=await fetch(url);if(!response.ok)return null;return await response.json();}
+   catch{return null;}
+  };
+  try{
+   const main=await fetch("/api/dashboard");
+   const d=await main.json();
+   if(!main.ok)throw new Error(d.error||"تعذر تحميل اللوحة");
+   if(!alive)return;
+   setData(d);
+   if(!canManageSchedule)return;
+   const [pd,ld]=await Promise.all([optional("/api/intelligence/overview"),optional("/api/intelligence/living")]);
+   if(!alive)return;
+   if(pd)setOverview(pd);
+   if(ld)setLiving(ld);
+  }catch(e:any){if(alive)setError(e.message)}
+ })();return()=>{alive=false;};},[canManageSchedule]);
 
  const power=Boolean(user?.IsAdminUser||user?.SystemUserId===1),ws=data?.workspace;
  const maxDay=useMemo(()=>Math.max(1,...(ws?.weekdayLoad||[]).map(x=>x.count)),[ws]);
