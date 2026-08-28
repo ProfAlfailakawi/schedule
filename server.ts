@@ -4028,14 +4028,30 @@ app.put("/api/admin/location-registry/rooms/:id", requirePermission(7), requireP
   const roomCollegeIds=targetBuilding.collegeIds.length?[...targetBuilding.collegeIds]:requestedRoomCollegeIds;
   const now=new Date().toISOString();const shared=sectionIds.length>1;const next={active:typeof req.body?.active==="boolean"?req.body.active:current.active,shared,collegeIds:roomCollegeIds,sectionIds,primarySectionIds,aliases:req.body?.aliases===undefined?current.aliases:locationAliases(req.body.aliases),buildingId:targetBuilding.id,buildingCode:targetBuilding.officialCode};
   const row:MasterRoom={...current,...next,id:current.id,canonicalCode:current.canonicalCode,confidence:"CONFIRMED",sharedConfidence:"CONFIRMED",adminVerified:true,updatedAt:now,lastVerifiedAt:now,auditHistory:[...(current.auditHistory||[]),{at:now,byUserId:req.user.SystemUserId,action:targetBuildingId===current.buildingId?"UPDATE":"MOVE_BUILDING",before:{buildingId:current.buildingId,buildingCode:current.buildingCode,active:current.active,shared:current.shared,collegeIds:current.collegeIds,sectionIds:current.sectionIds,primarySectionIds:current.primarySectionIds},after:next}]};
-  let restorePointId:string|undefined;
+  /* ── لا نسخة كاملة للنظام قبل نقل قاعة ──────────────────────────────────
+   * Moving a room between buildings used to copy the ENTIRE database first:
+   * `createSystemRestorePoint` → `makeSystemBackup` → `collectSystemDocuments`
+   * walks every Firestore collection and writes it all back in batches of 300.
+   * On this data that is minutes of work, and the platform cuts the request
+   * long before the move begins — so the admin saw «تعذر تنفيذ العملية» and
+   * nothing moved. The safety copy never completed either.
+   *
+   * The undo for this operation is the `catch` immediately below: it restores
+   * the room document and reverts every schedule patch, row by row, from the
+   * values read a line earlier. That is the real safety net, it is precise,
+   * and it costs nothing. The full-database copy was a second net stretched
+   * over the first — and it was the one that made the fall.
+   *
+   * (The codebase already reached this conclusion once: the full Firestore
+   * walk for exports was moved into a resumable job precisely because "a
+   * browser download is the wrong lifetime for a full Firestore walk". The
+   * restore point kept doing it inline.) */
   if(targetBuildingId!==current.buildingId){
-    const restore=await Repository.createSystemRestorePoint(`قبل نقل القاعة ${current.canonicalCode} إلى ${targetBuilding.officialCode}`,req.user.SystemUserId,ROOT_ADMIN_USER_ID);restorePointId=restore.id;
     const affected=(await Repository.getSchedules()).filter(schedule=>schedule.roomId===current.id);
     try{await Repository.upsertLocationRooms([row]);await Repository.applyLocationSchedulePatches(affected.map(schedule=>({id:schedule.id,fields:{buildingId:targetBuilding.id,AdRoomCode:targetBuilding.officialCode,locationStatus:"VERIFIED",locationResolvedAt:now}})));}
     catch(error){await Repository.upsertLocationRooms([current]);await Repository.applyLocationSchedulePatches(affected.map(schedule=>({id:schedule.id,fields:{buildingId:current.buildingId,AdRoomCode:current.buildingCode,locationStatus:schedule.locationStatus,locationResolvedAt:schedule.locationResolvedAt}})));throw error;}
   }else await Repository.upsertLocationRooms([row]);
-  invalidateLocationRegistry();res.json({...row,restorePointId});
+  invalidateLocationRegistry();res.json(row);
 });
 app.put("/api/admin/location-registry/review/:id", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   const cases=await Repository.getLocationReviewCases();const current=cases.find(x=>x.id===req.params.id);if(!current){res.status(404).json({error:"حالة المراجعة غير موجودة"});return;}
@@ -4048,8 +4064,20 @@ app.get("/api/admin/location-registry/migration/preview", requirePermission(7), 
 app.post("/api/admin/location-registry/migration/apply", requirePermission(7), requirePowerAdmin, async (req:AuthenticatedRequest,res:Response)=>{
   if(req.get("x-schedule-confirm")!=="initialize-location-registry"){res.status(409).json({error:"يتطلب التهيئة تأكيداً صريحاً"});return;}
   const runs=await Repository.getLocationMigrationRuns();const done=runs.find(x=>x.version===LOCATION_MIGRATION_VERSION&&x.status==="completed");if(done){res.json({success:true,alreadyInitialized:true,run:done});return;}
-  const restore=await Repository.createSystemRestorePoint("قبل تهيئة سجل المباني والقاعات",req.user.SystemUserId,ROOT_ADMIN_USER_ID);const seed=seedRegistry();await Promise.all([Repository.upsertLocationBuildings(seed.buildings),Repository.upsertLocationRooms(seed.rooms),Repository.upsertLocationReviewCases(seed.reviewCases)]);invalidateLocationRegistry();
-  const registry=await readLocationRegistry(true);const rows=await Repository.getSchedules();const run=newMigrationRun(req.user.SystemUserId,{},restore.id);const plan=buildMigrationPlan(rows,registry,run.id);run.stats=plan.stats;await Repository.saveLocationMigrationRun(run);
+  /* ── ولا نسخة كاملة قبل التهيئة ─────────────────────────────────────────
+   * Same defect, and this is where it was first seen: the initialise button
+   * appeared to do nothing. It was not doing nothing — it was copying the
+   * whole database before reaching its own first line of work, and dying
+   * there. That is why `locationMigrationLogs` was empty and the run list
+   * read `[]`: the server never got as far as writing the run record.
+   *
+   * This migration carries its own rollback and always did: every patched row
+   * is journalled with its previous values in `appendLocationMigrationLogs`,
+   * the `catch` below replays those in reverse, and
+   * POST /migration/:id/rollback replays them on demand afterwards. Removing
+   * the snapshot removes a duplicate guarantee, not the guarantee. */
+  const seed=seedRegistry();await Promise.all([Repository.upsertLocationBuildings(seed.buildings),Repository.upsertLocationRooms(seed.rooms),Repository.upsertLocationReviewCases(seed.reviewCases)]);invalidateLocationRegistry();
+  const registry=await readLocationRegistry(true);const rows=await Repository.getSchedules();const run=newMigrationRun(req.user.SystemUserId,{});const plan=buildMigrationPlan(rows,registry,run.id);run.stats=plan.stats;await Repository.saveLocationMigrationRun(run);
   try{await Repository.applyLocationSchedulePatches(plan.patches);await Repository.appendLocationMigrationLogs(plan.logs);run.status="completed";run.completedAt=new Date().toISOString();await Repository.saveLocationMigrationRun(run);res.json({success:true,run});}
   catch(error:any){
     try{await Repository.applyLocationSchedulePatches(plan.logs.map(log=>({id:log.scheduleId,fields:rollbackPatch(log)})));}catch(rollbackError){console.error("Location migration emergency rollback failed",rollbackError);}

@@ -7,6 +7,7 @@ import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId"
 import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../src/utils/weekVisual";
 import { findConflicts, outsideScopeClashes } from "../src/utils/scheduleIntelligence";
 import { discardParkedMutation, parkedCount, parkedMutations, retryParkedMutation } from "../src/utils/offlineScheduleQueue";
+import { rollbackPatch } from "../src/server/locationRegistryEngine";
 import { retryOnFailure } from "../src/utils/documentOcr";
 import { findRepairChain, planDisruption } from "../src/utils/repairChain";
 import { readCampusFlow } from "../src/utils/campusFlow";
@@ -1524,6 +1525,62 @@ async function runTests() {
     discardParkedMutation("42");
     assert(parkedCount() === 0, "الرفّ يفرغ حين يُعالَج آخر عنصر فيه");
     delete (globalThis as any).localStorage;
+  }
+
+  /* --- 34. شبكة الأمان الباقية بعد حذف النسخة الكاملة ---------------------- */
+  originalLog("\n--- 34. The net that remains after the full-database copy was removed ---");
+  {
+    /* Two admin operations — initialising the registry, and moving a room to
+       another building — copied the ENTIRE database before doing any work.
+       That copy never finished: the platform cut the request first, so the
+       operation died before its first line and the admin was told
+       «تعذر تنفيذ العملية». The snapshot protected nothing because it never
+       existed.
+
+       Both operations already carry a precise, per-row undo. Removing the
+       snapshot is only defensible if that undo is real, so this asserts it
+       rather than assuming it. */
+    const before = {
+      AdRoomCode: "012", AdRoomHall: "B08",
+      buildingId: "b_old", roomId: "r_old",
+      locationStatus: "PENDING_ROOM" as const,
+      locationMigrationVersion: undefined,
+    };
+    const log = {
+      id: "log_1", migrationId: "m_1", scheduleId: 41, timestamp: "2026-08-28T00:00:00.000Z",
+      oldBuilding: before.AdRoomCode, newBuilding: "041",
+      oldRoom: before.AdRoomHall, newRoom: "G20",
+      oldBuildingId: before.buildingId, newBuildingId: "b_new",
+      oldRoomId: before.roomId, newRoomId: "r_new",
+      oldStatus: before.locationStatus, newStatus: "VERIFIED" as const,
+      oldMigrationVersion: before.locationMigrationVersion, newMigrationVersion: "v2",
+      confidence: "CONFIRMED" as const, rule: "TEST",
+    };
+    const undo = rollbackPatch(log);
+    assert(undo.AdRoomCode === "012" && undo.AdRoomHall === "B08",
+      "سجل التراجع يعيد المبنى والقاعة كما كانا");
+    assert(undo.buildingId === "b_old" && undo.roomId === "r_old",
+      "ويعيد معرّفَي المبنى والقاعة، لا النصّ وحده");
+    assert(undo.locationStatus === "PENDING_ROOM" && undo.locationMigrationVersion === undefined,
+      "ويعيد حالة الموقع ونسخة المهاجرة — فالصف يعود إلى ما قبل اللمس تماماً");
+
+    /* Every field the forward patch writes must appear in the reverse patch.
+       A field written going forward and forgotten coming back is exactly the
+       kind of silent hole the full snapshot was masking. */
+    const forwardFields = ["AdRoomCode", "AdRoomHall", "buildingId", "roomId", "locationStatus", "locationMigrationVersion", "locationMigrationId", "locationResolvedAt"];
+    assert(forwardFields.every(field => field in undo),
+      "كل حقل يكتبه التعديل له مقابل في التراجع — لا حقل يُكتب ولا يُعاد");
+
+    /* And the guard: the two handlers must not reach for the whole-database
+       copy again. It is one grep, and it is the only thing standing between
+       this fix and the next person who adds "just to be safe". */
+    const serverSource = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+    const registryBlock = serverSource.slice(
+      serverSource.indexOf('app.put("/api/admin/location-registry/rooms/:id"'),
+      serverSource.indexOf('app.post("/api/admin/location-registry/migration/:id/rollback"'));
+    assert(registryBlock.length > 500, "كتلة مسارات السجل عُثر عليها");
+    assert(!/await\s+Repository\.createSystemRestorePoint/.test(registryBlock),
+      "لا نسخة كاملة للنظام داخل مسارات سجل المباني والقاعات");
   }
 
   if (!originalDb) {
