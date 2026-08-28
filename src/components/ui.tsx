@@ -278,7 +278,51 @@ export function SecondaryButton({ children, className = "", ...props }: React.Bu
 export function GhostButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) { return <button {...props} className={`btn btn-ghost ${className}`.trim()}>{children}</button>; }
 export function AddButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) { return <PrimaryButton onClick={onClick}><Plus aria-hidden="true" />{children}</PrimaryButton>; }
 export function IconAction({ label, kind, onClick }: { label: string; kind: "edit" | "delete"; onClick: () => void }) { return <button className={`icon-action icon-action-${kind}`} type="button" title={label} aria-label={label} data-guide-ignore="إجراء سجل محلي واضح؛ التعديل يفتح محرره والحذف يستخدم تأكيد الشاشة نفسه" onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onClick={(event) => { event.preventDefault(); event.stopPropagation(); onClick(); }}>{kind === "edit" ? <Edit2 aria-hidden="true" /> : <Trash2 aria-hidden="true" />}</button>; }
-export function Field({ label, required, children, hint }: { label: React.ReactNode; required?: boolean; children: React.ReactNode; hint?: React.ReactNode }) { return <div className="field"><label>{label}{required ? <span className="required">*</span> : null}</label>{children}{hint ? <span className="field-help">{hint}</span> : null}</div>; }
+/**
+ * ── التسمية موصولة بالحقل، لا مجاورة له ─────────────────────────────────────
+ *
+ * This drew the label as a SIBLING of the control, with no `htmlFor` and no id
+ * on either side — so nothing connected the two. Visually it read as a label;
+ * programmatically the control had no name at all. A screen reader announced
+ * «حقل نص» and nothing more, and clicking the word did not focus the field.
+ * `Field` is the block every form in this product is built from, so that was
+ * true of all seventy-one of them at once.
+ *
+ * The fix stays out of the DOM's shape on purpose: the label remains a direct
+ * child (`.field>label` styles it), the control keeps its place (`.field input`
+ * styles it), and the only thing added is the id that joins them — put on the
+ * first real control found among the children, and only when it has none of
+ * its own. A field wrapping its input in a div is handled by looking inside;
+ * a field with no control at all is left exactly as it was.
+ */
+const CONTROL_TAGS = new Set(["input", "select", "textarea"]);
+function withControlId(node: React.ReactNode, id: string, taken: { done: boolean; id: string }): React.ReactNode {
+  if (taken.done || !React.isValidElement(node)) return node;
+  const element = node as React.ReactElement<any>;
+  if (typeof element.type === "string" && CONTROL_TAGS.has(element.type)) {
+    taken.done = true;
+    /* A control that already carries an id keeps it, and the label points at
+       THAT one — pointing at a generated id nothing wears would leave the
+       field just as unlabelled as before, only harder to notice. */
+    if (element.props.id) { taken.id = String(element.props.id); return element; }
+    return React.cloneElement(element, { id });
+  }
+  /* Not a control: look inside it. A custom component's children are opaque
+     here, so it is returned untouched rather than guessed at. */
+  const inner = element.props?.children;
+  if (typeof element.type === "string" && inner !== undefined && inner !== null) {
+    const mapped = React.Children.map(inner, child => withControlId(child, id, taken));
+    return taken.done ? React.cloneElement(element, undefined, mapped) : element;
+  }
+  return element;
+}
+
+export function Field({ label, required, children, hint }: { label: React.ReactNode; required?: boolean; children: React.ReactNode; hint?: React.ReactNode }) {
+  const id = React.useId();
+  const taken = { done: false, id };
+  const bound = React.Children.map(children, child => withControlId(child, id, taken));
+  return <div className="field"><label htmlFor={taken.done ? taken.id : undefined}>{label}{required ? <span className="required">*</span> : null}</label>{taken.done ? bound : children}{hint ? <span className="field-help">{hint}</span> : null}</div>;
+}
 /**
  * The way out is never disabled.
  *
