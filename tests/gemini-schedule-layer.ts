@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   buildSmartImportCatalogue,
+  fillMissingCellsFromSmartRead,
   deterministicSchedulingCalls,
   extractJsonObject,
   normalizeGeminiScheduleRows,
@@ -68,8 +69,51 @@ assert.equal(Object.hasOwn(catalogue.instructors[0], "civil"), false);
 assert.equal(catalogue.instructors[0].name, "د. نورة");
 assert.equal(catalogue.instructors[0].id, 10);
 
+/* The sharper reading fills blanks and nothing else. These four assertions are
+   the ones that matter: a page read cleanly is untouched, a filled cell is
+   never overwritten, invented placeholders are refused, and a missing page list
+   fills nothing rather than replacing a correct table. */
+const approved = [
+  { sourcePage: 1, sourceOrder: 1, SCode: "501", AdCourseId: 7, AdCourseName: "الثقافة الإسلامية", AdInstructorId: 4, AdRoomCode: "012B09", AdRoomHall: "F13", fstarttime: "08:00", fendtime: "09:20", fsunday: true, referenceNumber: "18945" },
+  { sourcePage: 1, sourceOrder: 2, SCode: "502", AdCourseId: 0, AdCourseName: "", AdInstructorId: 0, AdRoomCode: "012B07", AdRoomHall: "", fstarttime: "", fendtime: "", referenceNumber: "18946" },
+  { sourcePage: 2, sourceOrder: 1, SCode: "601", AdCourseId: 9, AdCourseName: "مقرر سليم", AdInstructorId: 5, AdRoomCode: "012B10", AdRoomHall: "F20", fstarttime: "10:00", fendtime: "10:50", fmonday: true, referenceNumber: "18950" },
+];
+const smart = [
+  { sourcePage: 1, SCode: "501", AdCourseName: "اسم مختلف تماماً", AdRoomHall: "Z99", fstarttime: "23:00", referenceNumber: "18945" },
+  { sourcePage: 1, SCode: "502", AdCourseName: "مبادئ الإدارة", AdRoomHall: "F31", fstarttime: "11:00", fendtime: "11:50", ftuesday: true, referenceNumber: "18946" },
+  { sourcePage: 2, SCode: "601", AdCourseName: "هيئة تدريسية", AdRoomHall: "زائف", referenceNumber: "18950" },
+];
+const outcome = fillMissingCellsFromSmartRead(approved, smart, [1]);
+// The clean cells of row 1 survive untouched — no overwrite, ever.
+assert.equal(outcome.rows[0].AdCourseName, "الثقافة الإسلامية");
+assert.equal(outcome.rows[0].AdRoomHall, "F13");
+assert.equal(outcome.rows[0].fstarttime, "08:00");
+// The blank cells of row 2 are filled from the sharper reading.
+assert.equal(outcome.rows[1].AdCourseName, "مبادئ الإدارة");
+assert.equal(outcome.rows[1].AdRoomHall, "F31");
+assert.equal(outcome.rows[1].fstarttime, "11:00");
+assert.equal(outcome.rows[1].ftuesday, true);
+// Page 2 was not re-read, so it is identical to what the approved engine wrote.
+assert.deepEqual(outcome.rows[2], approved[2]);
+assert.equal(outcome.rows.length, approved.length);
+
+// A generic placeholder is a refusal to read, not a value.
+const placeheld = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "701", AdCourseName: "", AdRoomHall: "" }],
+  [{ sourcePage: 1, SCode: "701", AdCourseName: "هيئة تدريسية", AdRoomHall: "—" }],
+  [1],
+);
+assert.equal(placeheld.rows[0].AdCourseName, "");
+assert.equal(placeheld.rows[0].AdRoomHall, "");
+assert.equal(placeheld.filled, 0);
+
+// Without a page list nothing is filled — the correct table is never replaced.
+const noPages = fillMissingCellsFromSmartRead(approved, smart, []);
+assert.deepEqual(noPages.rows, approved);
+assert.equal(noPages.filled, 0);
+
 console.log(JSON.stringify({
-  passed: 6,
+  passed: 9,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -77,5 +121,8 @@ console.log(JSON.stringify({
     "Arabic natural-language move falls back to deterministic function calls",
     "multimodal import rows normalize into schedule-shaped draft JSON before validators",
     "civil/national IDs are stripped from the catalogue sent to Gemini",
+    "a sharper reading fills blank cells only and never overwrites a read one",
+    "a page that was not re-read stays byte-identical to the approved reading",
+    "invented placeholders («هيئة تدريسية», «—») are refused, and no page list fills nothing",
   ],
 }, null, 2));

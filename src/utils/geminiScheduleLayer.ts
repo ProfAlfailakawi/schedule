@@ -153,6 +153,108 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
   });
 }
 
+/* Filling gaps, never rewriting a reading.
+ *
+ * The approved engine's output is the record. A sharper second reading may only
+ * supply a cell that came back EMPTY: no row is added, removed, reordered, or
+ * overwritten, so a page with one blank cell can never lose the twenty-seven
+ * rows it read correctly. If the two readings disagree on a filled cell, the
+ * approved engine wins and the disagreement is reported, not applied.
+ */
+const FILLABLE_TEXT = ["AdRoomCode","AdRoomHall","fstarttime","fendtime","SCode","AdCourseName","referenceNumber"] as const;
+const FILLABLE_ID = ["AdCourseId","AdInstructorId"] as const;
+const FILLABLE_REF = ["buildingId","roomId"] as const;
+
+/* Placeholders a model reaches for when it cannot read a cell. Treating them as
+   values is how a blank turned into «هيئة تدريسية» across a whole page, so they
+   are stripped before anything is filled. */
+const PLACEHOLDER = /^(?:—|-|–|_+|\.+|n\/?a|tba|tbd|unknown|none|null|undefined|غير\s*محدد|غير\s*معروف|غير\s*متاح|لا\s*يوجد|هيئة\s*تدريسية|أستاذ\s*المقرر|بدون)$/i;
+
+const blankText = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  return !text || PLACEHOLDER.test(text);
+};
+const blankId = (value: unknown) => !Number(value);
+const hasNoDays = (row: any) => !DAY_FLAGS.some(flag => Boolean(row?.[flag]));
+
+function smartCandidate(row: any, pool: any[], usedIndexes: Set<number>, ordinal: number) {
+  const reference = String(row?.referenceNumber ?? "").trim();
+  if (reference) {
+    const byReference = pool.findIndex((item, index) => !usedIndexes.has(index) && String(item?.referenceNumber ?? "").trim() === reference);
+    if (byReference >= 0) return byReference;
+  }
+  const section = String(row?.SCode ?? "").trim();
+  if (section) {
+    const bySection = pool.findIndex((item, index) => !usedIndexes.has(index) && String(item?.SCode ?? "").trim() === section);
+    if (bySection >= 0) return bySection;
+  }
+  // Same position on the same page, only if that slot is still unclaimed.
+  return !usedIndexes.has(ordinal) && pool[ordinal] ? ordinal : -1;
+}
+
+export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[], readPages: number[]) {
+  const pages = new Set(readPages.map(page => Number(page)).filter(Boolean));
+  if (!pages.size || !Array.isArray(baseRows) || !baseRows.length) {
+    return { rows: baseRows, filled: 0, conflicts: [] as string[] };
+  }
+  const byPage = new Map<number, any[]>();
+  for (const row of Array.isArray(smartRows) ? smartRows : []) {
+    const page = Number(row?.sourcePage) || 1;
+    if (!byPage.has(page)) byPage.set(page, []);
+    byPage.get(page)!.push(row);
+  }
+  const used = new Map<number, Set<number>>();
+  const ordinals = new Map<number, number>();
+  const conflicts: string[] = [];
+  let filled = 0;
+
+  const rows = baseRows.map(row => {
+    const page = Number(row?.sourcePage) || 1;
+    if (!pages.has(page)) return row;                 // page was read cleanly — untouched
+    const pool = byPage.get(page) || [];
+    if (!pool.length) return row;
+    if (!used.has(page)) used.set(page, new Set());
+    const ordinal = ordinals.get(page) ?? 0;
+    ordinals.set(page, ordinal + 1);
+    const index = smartCandidate(row, pool, used.get(page)!, ordinal);
+    if (index < 0) return row;
+    used.get(page)!.add(index);
+    const candidate = pool[index];
+    const next: any = { ...row };
+
+    for (const field of FILLABLE_TEXT) {
+      if (!blankText(next[field])) continue;
+      const value = String(candidate?.[field] ?? "").trim();
+      // blankText also rejects the model's placeholders, so a guess never lands.
+      if (value && !blankText(value)) { next[field] = value; filled += 1; }
+    }
+    for (const field of FILLABLE_ID) {
+      if (!blankId(next[field])) continue;
+      const value = Number(candidate?.[field]);
+      if (Number.isFinite(value) && value > 0) { next[field] = value; filled += 1; }
+    }
+    for (const field of FILLABLE_REF) {
+      if (!blankText(next[field])) continue;
+      const value = String(candidate?.[field] ?? "").trim();
+      if (value) { next[field] = value; filled += 1; }
+    }
+    // Days move as one unit: a half-filled week is worse than an empty one.
+    if (hasNoDays(next) && !hasNoDays(candidate)) {
+      for (const flag of DAY_FLAGS) next[flag] = Boolean(candidate?.[flag]);
+      next.fdetail = DAY_FLAGS.map((flag, day) => next[flag] ? String(day + 1) : "").filter(Boolean).join(",");
+      filled += 1;
+    }
+    // Disagreements on cells that were already read are reported, never applied.
+    const section = String(row?.SCode ?? "").trim();
+    if (section && String(candidate?.SCode ?? "").trim() && String(candidate.SCode).trim() !== section) {
+      conflicts.push(`الشعبة ${section} (صفحة ${page}): القراءة الأدق تقترح ${String(candidate.SCode).trim()} — أُبقيت قراءة المحرك المعتمد.`);
+    }
+    return next;
+  });
+
+  return { rows, filled, conflicts: conflicts.slice(0, 20) };
+}
+
 export function sanitizeGeminiScheduleCalls(input: unknown): GeminiScheduleCall[] {
   const root: any = Array.isArray(input) ? { calls: input } : input;
   const rawCalls = Array.isArray(root?.functionCalls) ? root.functionCalls

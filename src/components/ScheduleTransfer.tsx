@@ -10,6 +10,7 @@ import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
+import { fillMissingCellsFromSmartRead } from "../utils/geminiScheduleLayer";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -289,9 +290,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     const ready = rows.filter(rowReady).length;
     const review = Math.max(0, rows.length - ready);
     const derived = rows.reduce((sum, row) => sum + Object.values(row.importEvidence || {}).filter((proof: any) => proof?.confidence === "CONFIRMED" && proof?.derived).length, 0);
-    /* A page that produced no unresolved row was read correctly, so it is not
-       worth re-reading and — more importantly — is never uploaded anywhere. */
-    const troubledPages = [...new Set(rows.filter(row => !rowReady(row)).map(row => Number((row as any).sourcePage || 1)))]
+    /* Only cells the SCAN could not read justify a second pass. A room left
+       deliberately unassigned is a decision, not a failure — the page is
+       correct as it stands, so it is neither re-read nor uploaded anywhere.
+       importEvidence is what separates the two: it records what the reader
+       could not resolve, independent of what the department chose to leave
+       blank. */
+    const scanFailed = (row: ImportRow) => Object.values((row as any).importEvidence || {})
+      .some((proof: any) => proof?.confidence === "UNRESOLVED" || proof?.confidence === "REVIEW_REQUIRED");
+    const troubledPages = [...new Set(rows.filter(scanFailed).map(row => Number((row as any).sourcePage || 1)))]
       .filter(page => page > 0).sort((a, b) => a - b);
     return { ready, review, derived, troubledPages };
   }, [importKind, xlsxPreview?.rows, departmentIds, roster]);
@@ -447,25 +454,28 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       if(!response.ok)throw new Error(data.error||"تعذرت القراءة الأدق");
       const fresh=(Array.isArray(data.rows)?data.rows:[]) as ImportRow[];
       if(!fresh.length)throw new Error("لم تُستخرج صفوف من الصفحات المطلوبة في القراءة الأدق.");
-      /* Only the pages Gemini actually read are replaced. Every clean page keeps
-         the approved engine's rows exactly as they were — a sharper second look
-         must never overwrite a reading that already had nothing wrong with it. */
-      const replaced=new Set<number>((Array.isArray(data.pagesRead)?data.pagesRead:[]).map((page:any)=>Number(page)).filter(Boolean));
-      const merged=replaced.size
-        ? [...keptRows.filter(row=>!replaced.has(Number((row as any).sourcePage||1))),...fresh]
-        : fresh;
-      merged.sort((a:any,b:any)=>(Number(a.sourcePage||1)-Number(b.sourcePage||1))||(Number(a.sourceOrder||0)-Number(b.sourceOrder||0)));
-      const scannedRows=assignAuthoritySections(merged);
+      /* The approved engine's reading is the record. The sharper pass may only
+         FILL cells that came back empty — it never replaces a row, a page, or a
+         cell that was already read. Without a page list we fill nothing rather
+         than risk overwriting a good table. */
+      const readPages=(Array.isArray(data.pagesRead)?data.pagesRead:[]).map((page:any)=>Number(page)).filter(Boolean);
+      const outcome=fillMissingCellsFromSmartRead(keptRows,fresh,readPages.length?readPages:troubledPages);
+      if(!outcome.filled){
+        setError(outcome.conflicts.length
+          ? `لم تضف القراءة الأدق أي خلية ناقصة. ${outcome.conflicts[0]}`
+          : "لم تجد القراءة الأدق أي خلية ناقصة تستطيع تعبئتها. الجدول باقٍ كما هو.");
+      }
+      const scannedRows=assignAuthoritySections(outcome.rows as ImportRow[]);
       setXlsxPreview((prev:any)=>({
-        ...(prev||{}),...data,
+        ...(prev||{}),
         rows:scannedRows,
         baselineRows:scannedRows.map((row:any)=>({...row})),
-        pages:Number(prev?.pages||data.pageCount||0),
+        issues:[...new Set([...(Array.isArray(prev?.issues)?prev.issues:[]),...outcome.conflicts])],
         count:scannedRows.length,fileName:file.name,importLayout:"authority-pdf",
-        smartRead:true,
+        smartRead:true,smartFilled:outcome.filled,
         // Pages already re-read are never offered again: a second pass on the
         // same page spends another read without new information.
-        smartPages:[...new Set([...(Array.isArray(prev?.smartPages)?prev.smartPages:[]),...replaced,...troubledPages])],
+        smartPages:[...new Set([...(Array.isArray(prev?.smartPages)?prev.smartPages:[]),...readPages,...troubledPages])],
       }));
     } catch (e:any) {
       setError(e.message||"تعذرت القراءة الأدق");
