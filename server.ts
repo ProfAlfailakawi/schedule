@@ -60,6 +60,7 @@ import { academicDigits, assignAuthoritySections, authorityDepartmentCode, autho
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
+import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
 
 // Resolve environment/private paths before database initialization.
 configureRuntimeEnvironment();
@@ -3453,6 +3454,130 @@ app.post("/api/intelligence/nl-move", requirePermission(7), async (req: Authenti
   });
 });
 
+async function previewNaturalLanguageMove(req: AuthenticatedRequest, q: string, context: { collegeId: number; sectionId: number; termId: number }, hint?: any) {
+  const parsed=parseNaturalQuery(q);
+  const code=String(hint?.code || parsed.code || "").trim();
+  if(!code)return{ok:false,hint:"حدد رمز المقرر المراد تحريكه."};
+  const [scheduleData,courses,instructors,constraints]=await Promise.all([
+    scopedScheduleUniverse(context.collegeId,context.sectionId,context.termId),
+    Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(context.collegeId,context.sectionId,context.termId),
+  ]);
+  const rows=scheduleData.rows;
+  const courseById=new Map(courses.map(c=>[c.AdCourseId,c]));
+  const dayLabelsOf=(r:any)=>SCHEDULE_DAY_KEYS.map((k,i)=>r[k]?DAY_LABELS[i]:null).filter(Boolean).join("، ")||"—";
+  const matches=rows.filter(r=>String(courseById.get(r.AdCourseId)?.CourseCode||"").trim()===code);
+  if(!matches.length)return{ok:false,hint:`لم أجد مقرراً برمز ${code} في هذا القسم والفصل.`};
+  let target=matches[0];
+  const requestedDay=Number.isFinite(Number(hint?.dayIndex))?Number(hint.dayIndex):parsed.day;
+  if(matches.length>1){
+    const byDay=requestedDay!==null&&requestedDay>=0?matches.filter(r=>Boolean((r as any)[SCHEDULE_DAY_KEYS[requestedDay]])):matches;
+    if(byDay.length===1)target=byDay[0];
+    else return{ok:false,ambiguous:true,hint:`للمقرر ${code} أكثر من موعد — حدّد الشعبة أو اليوم.`,options:matches.slice(0,6).map(r=>({id:r.id,section:r.SCode,days:dayLabelsOf(r),start:r.fstarttime,end:r.fendtime}))};
+  }
+  const dur=Math.max(30,timeToMinutes(target.fendtime)-timeToMinutes(target.fstarttime));
+  const newStart=normalizeClock(String(hint?.time || parsed.time || target.fstarttime));
+  const newEnd=(hint?.time||parsed.time)?minutesToTime(timeToMinutes(newStart)+dur):target.fendtime;
+  const fields:any={fstarttime:newStart,fendtime:newEnd};
+  SCHEDULE_DAY_KEYS.forEach((k,i)=>{fields[k]=requestedDay!==null&&requestedDay>=0?i===requestedDay:Boolean((target as any)[k]);});
+  const after={...target,...fields};
+  const issues=schedulePayloadIssues(after);
+  if(issues.length)return{ok:false,hint:issues[0]};
+  const conflicts=await scheduleConflicts(req,{...after,AdTermId:context.termId},target.id);
+  const blocking=conflicts.filter((c:any)=>!c.soft&&(c.severity==="high"||c.type==="duplicate"));
+  const external=scheduleData.universe.filter(row=>!(row.AdCollegeId===context.collegeId&&row.AdSectionId===context.sectionId));
+  const beforeAnalysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
+  const scenario=rows.map(row=>Number(row.id)===Number(target.id)?after:row);
+  const afterAnalysis=analyzeSchedule(scenario,[...external,...scenario],courses,instructors);
+  return{
+    ok:true,kind:"move-preview",commitRequired:true,
+    move:{id:target.id,fields,rev:target.rev},
+    preview:{
+      course:courseById.get(target.AdCourseId)?.CourseName||target.AdCourseName||"",
+      code,section:target.SCode||"",
+      instructor:instructors.find(i=>i.AdInstructorId===target.AdInstructorId)?.AdInstructorName||"",
+      room:`${target.AdRoomCode||""}/${target.AdRoomHall||""}`.replace(/^\/$/,"—"),
+      changedFields:scheduleDelta(target,after),
+      before:{days:dayLabelsOf(target),start:target.fstarttime,end:target.fendtime,score:beforeAnalysis.score,regulations:evaluateScheduleConstraints(rows,constraints)},
+      after:{days:dayLabelsOf(after),start:newStart,end:newEnd,score:afterAnalysis.score,regulations:evaluateScheduleConstraints(scenario,constraints)},
+    },
+    reasons:[
+      "Gemini/النص الطبيعي يحدد النية فقط.",
+      "المحاكاة والصراعات واللوائح حُسبت بمحركات SCHEDULE deterministic.",
+      blocking.length?"يوجد مانع حفظ قبل التأكيد.":"لا يوجد مانع hard في المعاينة، والتنفيذ يحتاج تأكيدًا منفصلًا.",
+    ],
+    conflicts,canApply:blocking.length===0,blockedReason:blocking.length?blocking[0].message:"",
+  };
+}
+
+async function executeGeminiScheduleCalls(req: AuthenticatedRequest, calls: GeminiScheduleCall[], q: string, context: { collegeId: number; sectionId: number; termId: number }) {
+  const [scheduleData,courses,instructors,constraints,registry]=await Promise.all([
+    scopedScheduleUniverse(context.collegeId,context.sectionId,context.termId),
+    Repository.getCourses(),Repository.getInstructors(),Repository.getScheduleConstraints(context.collegeId,context.sectionId,context.termId),
+    readLocationRegistry(),
+  ]);
+  const rows=scheduleData.rows;
+  const results:any[]=[];
+  for(const call of calls){
+    if(call.name==="simulate_schedule"){
+      const move=await previewNaturalLanguageMove(req,q,context,call.args);
+      results.push({call,result:move});
+    }else if(call.name==="check_conflicts"){
+      const analysis=analyzeSchedule(rows,scheduleData.universe,courses,instructors);
+      results.push({call,result:{criticalConflicts:analysis.metrics?.criticalConflicts||0,alerts:(analysis.alerts||[]).slice(0,6)}});
+    }else if(call.name==="find_rooms"){
+      const termRows=scheduleData.universe;
+      const dayIndex=Number(call.args.dayIndex);
+      const time=normalizeClock(String(call.args.time||""));
+      const rooms=registry.rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&room.sectionIds.includes(context.sectionId)).slice(0,80);
+      const buildings=new Map(registry.buildings.map(item=>[item.id,item]));
+      const available=rooms.map(room=>({room,building:buildings.get(room.buildingId)})).filter(item=>item.building).filter(item=>{
+        if(!Number.isFinite(dayIndex)||dayIndex<0||dayIndex>4||!time)return true;
+        const end=minutesToTime(timeToMinutes(time)+SCHEDULE_SLOT_MINUTES);
+        return !termRows.some(row=>String(row.roomId||"")===item.room.id&&Boolean((row as any)[SCHEDULE_DAY_KEYS[dayIndex]])&&scheduleOverlap(row.fstarttime,row.fendtime,time,end));
+      }).slice(0,12).map(item=>({building:item.building!.officialCode,hall:item.room.canonicalCode,roomId:item.room.id,buildingId:item.building!.id}));
+      results.push({call,result:{available,count:available.length}});
+    }else if(call.name==="check_instructors"){
+      const needle=String(call.args.name||"").trim().toLowerCase();
+      const people=(needle?instructors.filter(i=>String(i.AdInstructorName||"").toLowerCase().includes(needle)):instructors).slice(0,12).map(person=>({
+        id:person.AdInstructorId,name:person.AdInstructorName,
+        load:rows.filter(row=>Number(row.AdInstructorId)===Number(person.AdInstructorId)).length,
+      }));
+      results.push({call,result:{instructors:people}});
+    }else if(call.name==="check_regulations"){
+      results.push({call,result:evaluateScheduleConstraints(rows,constraints)});
+    }
+  }
+  return results;
+}
+
+app.post("/api/intelligence/nl-schedule", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const q=String(req.body?.q||req.body?.prompt||"").trim().slice(0,800);
+  if(q.length<2){res.status(400).json({error:"اكتب طلب الجدولة أولاً"});return;}
+  const gemini=await requestGeminiScheduleLayer([
+    {text:JSON.stringify({
+      task:"Convert this Arabic/Kuwaiti scheduling request into safe function calls only. Do not execute and do not request a write.",
+      query:q,scope:{collegeId,sectionId,termId},allowedFunctions:GEMINI_SCHEDULE_FUNCTION_NAMES,
+    })},
+  ],{tools:true});
+  const calls=sanitizeGeminiScheduleCalls((gemini as any)?.calls || (gemini as any)?.json || []);
+  const planned=calls.length?calls:deterministicSchedulingCalls(q);
+  if(!planned.length){res.json({ok:false,hint:"فهمت النص كشرح عام، لكن لم أستطع تحويله إلى فحص جدولة قابل للمحاكاة. اذكر المقرر/اليوم/الوقت أو القاعة."});return;}
+  const results=await executeGeminiScheduleCalls(req,planned,q,{collegeId,sectionId,termId});
+  const move=results.find(item=>item.result?.kind==="move-preview")?.result;
+  res.json({
+    ok:true,source:calls.length?"gemini-function-calls":"deterministic-parser",
+    calls:planned,results,
+    preview:move?.preview||null,
+    move:move?.move||null,
+    canApply:Boolean(move?.canApply),
+    commitRequired:true,
+    guardrail:"معاينة فقط: لا يكتب هذا المسار أي تعديل. التنفيذ يبقى عبر /api/schedules/move-batch بعد تأكيد المستخدم.",
+    reasons:move?.reasons||["تم تحويل الطلب إلى Function Calls آمنة ثم تنفيذها ضد محركات SCHEDULE deterministic."],
+  });
+});
+
 /**
  * One request, one verdict, one write.
  *
@@ -4973,6 +5098,71 @@ async function requestGuideAIIntent(payload:{question:string;context:any;allowed
   }
 }
 
+type GeminiPart = { text: string } | { inlineData: { mimeType: string; data: string } };
+
+function geminiOutputText(data: any) {
+  return String((data?.candidates || [])
+    .flatMap((candidate: any) => candidate?.content?.parts || [])
+    .map((part: any) => part?.text || "")
+    .filter(Boolean)
+    .join("\n") || "").trim();
+}
+
+function geminiFunctionCalls(data: any) {
+  return (data?.candidates || [])
+    .flatMap((candidate: any) => candidate?.content?.parts || [])
+    .map((part: any) => part?.functionCall)
+    .filter(Boolean)
+    .map((call: any) => ({ name: call.name, args: call.args || {} }));
+}
+
+async function requestGeminiScheduleLayer(parts: GeminiPart[], options: { json?: boolean; tools?: boolean } = {}) {
+  const key = String(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || "").trim();
+  if (!key) return null;
+  const model = String(process.env.GEMINI_SCHEDULE_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 18_000);
+  try {
+    const functionDeclarations = GEMINI_SCHEDULE_FUNCTION_NAMES.map(name => ({
+      name,
+      description: {
+        check_conflicts: "Check whether a proposed timetable change collides with rooms, instructors, duplicate sections, hall-barter windows, or student cohorts.",
+        find_rooms: "Find eligible rooms or room availability for a day/time request.",
+        check_instructors: "Resolve instructor availability or instructor-specific scheduling questions.",
+        check_regulations: "Evaluate institutional and department scheduling regulations for a proposed scenario.",
+        simulate_schedule: "Preview a schedule scenario and return before/after effects without writing anything.",
+      }[name],
+      parameters: { type: "OBJECT", properties: { query: { type: "STRING" }, code: { type: "STRING" }, dayIndex: { type: "NUMBER" }, time: { type: "STRING" }, rowId: { type: "NUMBER" }, room: { type: "STRING" } } },
+    }));
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: [
+          "You are only a comprehension layer for an academic timetable system.",
+          "Never decide the final schedule and never ask to save, publish, apply, update, delete, or commit.",
+          "Return structured JSON or safe function calls only. The deterministic server validators are the sole authority before anything can be stored.",
+        ].join("\n") }] },
+        contents: [{ role: "user", parts }],
+        ...(options.tools ? { tools: [{ functionDeclarations }], toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: GEMINI_SCHEDULE_FUNCTION_NAMES } } } : {}),
+        ...(options.json ? { generationConfig: { responseMimeType: "application/json", temperature: 0.1 } } : { generationConfig: { temperature: 0.1 } }),
+      }),
+    });
+    if (!response.ok) return null;
+    const data = await response.json().catch(() => null);
+    if (!data) return null;
+    const calls = sanitizeGeminiScheduleCalls(geminiFunctionCalls(data));
+    if (calls.length) return { calls, raw: data };
+    const text = geminiOutputText(data);
+    return { json: extractJsonObject(text), text, raw: data };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 app.post("/api/guide/intent", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const question = String(req.body?.question || "").trim().slice(0, 420);
   if (!question) { res.status(400).json({ error: "اكتب ما تريد إنجازه أولًا." }); return; }
@@ -5584,6 +5774,65 @@ app.put("/api/intelligence/comments/:scheduleId/:commentId", requirePermission(7
 
 app.get("/api/intelligence/drafts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} res.json(await Repository.getScheduleDrafts(collegeId,sectionId,termId));
+});
+
+app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ type: ["application/octet-stream","application/pdf","image/*"], limit: "24mb" }), async (req: AuthenticatedRequest, res: Response) => {
+  const {collegeId,sectionId,termId}=smartContextFrom(req);
+  if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
+  if(!bytes.length){res.status(400).json({error:"لم يصل ملف للاستيراد الذكي"});return;}
+  const mime=String(req.get("content-type")||req.query.mime||"application/octet-stream").split(";")[0].trim().toLowerCase();
+  const encodedFileName=String(req.get("x-file-name")||"smart-import").slice(0,600);
+  let fileName=encodedFileName;try{fileName=decodeURIComponent(encodedFileName);}catch{/* literal filename */}
+  const [coursesAll,instructorsAll,terms,sections,colleges]=await Promise.all([
+    Repository.getCourses(),Repository.getInstructors(),Repository.getTerms(),Repository.getSections(),Repository.getColleges(),
+  ]);
+  const sectionCourses=coursesAll.filter((course:any)=>Number(course.AdCollegeId)===collegeId&&Number(course.AdSectionId)===sectionId);
+  const scopedInstructors=await Repository.getInstructorsByScope(sectionId,termId).catch(()=>[]);
+  const instructorList=scopedInstructors.length?scopedInstructors:instructorsAll;
+  const contextLabel={
+    term:terms.find((term:any)=>Number(term.AdTermId)===termId)?.AdTermName||"",
+    college:colleges.find((college:any)=>Number(college.AdCollegeId)===collegeId)?.AdCollegeName||"",
+    section:sections.find((section:any)=>Number(section.AdSectionId)===sectionId)?.AdSectionName||"",
+  };
+  // Civil IDs are personal data and must never leave the server to Google.
+  // buildSmartImportCatalogue is the single redaction point; the server re-binds
+  // to real instructor IDs locally (against the full registry that still holds
+  // civil numbers) after Gemini returns, matching by name/code.
+  const catalogue=buildSmartImportCatalogue(sectionCourses,instructorList);
+  const gemini=await requestGeminiScheduleLayer([
+    {text:[
+      "Extract an academic schedule from this PDF/scan/image into JSON only.",
+      "Use this schema: { rows:[{courseCode,courseName,section,days,time,startTime,endTime,instructorName,building,room,referenceNumber,sourcePage,confidence,notes}], issues:[string] }.",
+      "Never output civil IDs, national IDs, or any personal identification numbers, even if they appear in the document. Identify instructors by name only.",
+      "Do not invent missing course, instructor, room, or time values. Leave uncertain fields blank and explain in issues.",
+      "The server will map values to IDs and reject anything that fails deterministic validators.",
+      JSON.stringify({scope:{collegeId,sectionId,termId,...contextLabel},catalogue}),
+    ].join("\n")},
+    {inlineData:{mimeType:mime||"application/octet-stream",data:bytes.toString("base64")}},
+  ],{json:true});
+  const parsed=(gemini as any)?.json;
+  if(!parsed){
+    res.status(503).json({error:"Gemini غير مهيأ أو لم يرجع JSON صالحاً. مسار PDF المعتمد الحالي لا يزال متاحاً ولا يستبدله هذا المسار.",code:"GEMINI_SMART_IMPORT_UNAVAILABLE"});
+    return;
+  }
+  const normalized=normalizeGeminiScheduleRows(parsed,{collegeId,sectionId,termId});
+  const bound=bindGeminiRowsToCatalogue(normalized,sectionCourses,instructorList);
+  const rows=safeDraftRows(bound,collegeId,sectionId,termId);
+  const validation=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,resolveHistorical:true}):["لم يخرج Gemini أي صف قابل للمراجعة"];
+  const parserIssues=Array.isArray(parsed?.issues)?parsed.issues.map((item:any)=>String(item||"").trim()).filter(Boolean).slice(0,80):[];
+  const issues=[...new Set([...validation,...parserIssues])];
+  res.json({
+    source:"gemini-smart-import",
+    importLayout:"worksheet",
+    fileName:fileName.slice(0,180),
+    rows,preview:rows.slice(0,20),count:rows.length,
+    issues,blockingIssues:validation,
+    valid:rows.length>0&&validation.length===0,
+    ready:rows.length>0&&validation.length===0,
+    guardrail:"Gemini يقرأ ويفسر فقط؛ كل صف يمر عبر validators الحالية قبل حفظ أي مسودة أو نشرها.",
+    message:rows.length?`قرأ Gemini ${rows.length} صفاً للمراجعة.`:"لم أتمكن من استخراج صفوف من الملف.",
+  });
 });
 
 app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ type: "application/octet-stream", limit: "24mb" }), async (req: AuthenticatedRequest, res: Response) => {

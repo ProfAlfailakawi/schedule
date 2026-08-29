@@ -1,0 +1,198 @@
+import type { FSchedule } from "../types";
+import { normalizeClock } from "./scheduleTime";
+import { DAY_FLAGS, DAY_LABELS, parseNaturalQuery } from "./naturalQuery";
+
+export type GeminiScheduleFunctionName =
+  | "check_conflicts"
+  | "find_rooms"
+  | "check_instructors"
+  | "check_regulations"
+  | "simulate_schedule";
+
+export const GEMINI_SCHEDULE_FUNCTION_NAMES: GeminiScheduleFunctionName[] = [
+  "check_conflicts",
+  "find_rooms",
+  "check_instructors",
+  "check_regulations",
+  "simulate_schedule",
+];
+
+const allowedFunctionNames = new Set<string>(GEMINI_SCHEDULE_FUNCTION_NAMES);
+const mutationWords = /(create|update|delete|replace|publish|commit|save|apply|execute|write|drop|truncate|اعتمد|انشر|احفظ|نفذ|طبّق|طبق|احذف)/i;
+
+export interface SmartImportContext {
+  collegeId: number;
+  sectionId: number;
+  termId: number;
+}
+
+export interface GeminiScheduleCall {
+  name: GeminiScheduleFunctionName;
+  args: Record<string, unknown>;
+}
+
+export function extractJsonObject(text: unknown): any | null {
+  const raw = String(text ?? "").trim();
+  if (!raw) return null;
+  const clean = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+  try { return JSON.parse(clean); } catch { /* fall through */ }
+  const first = clean.search(/[\[{]/);
+  if (first < 0) return null;
+  for (let end = clean.length; end > first; end -= 1) {
+    const candidate = clean.slice(first, end).trim();
+    if (!candidate.endsWith("}") && !candidate.endsWith("]")) continue;
+    try { return JSON.parse(candidate); } catch { /* keep shrinking */ }
+  }
+  return null;
+}
+
+const asciiDigits = (value: unknown) => String(value ?? "")
+  .normalize("NFKC")
+  .replace(/[٠-٩]/g, d => String("٠١٢٣٤٥٦٧٨٩".indexOf(d)))
+  .replace(/[۰-۹]/g, d => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)));
+
+function boolDay(raw: any, key: typeof DAY_FLAGS[number], label: string) {
+  const value = raw?.[key];
+  if (value === true || value === 1 || String(value).toLowerCase() === "true") return true;
+  const text = asciiDigits([raw?.days, raw?.day, raw?.["الأيام"], raw?.weekday].filter(Boolean).join(" "));
+  return text.includes(label) || new RegExp(`\\b${DAY_FLAGS.indexOf(key) + 1}\\b`).test(text);
+}
+
+function readTimePair(raw: any) {
+  const directStart = raw?.fstarttime ?? raw?.startTime ?? raw?.start ?? raw?.from;
+  const directEnd = raw?.fendtime ?? raw?.endTime ?? raw?.end ?? raw?.to;
+  if (directStart || directEnd) return { start: normalizeClock(String(directStart || "")), end: normalizeClock(String(directEnd || "")) };
+  const time = asciiDigits(raw?.time ?? raw?.["الوقت"] ?? "");
+  const pair = time.match(/(\d{1,2})\s*:?\s*(\d{2})\s*[-–—]\s*(\d{1,2})\s*:?\s*(\d{2})/);
+  if (!pair) return { start: "", end: "" };
+  return { start: normalizeClock(`${pair[1]}:${pair[2]}`), end: normalizeClock(`${pair[3]}:${pair[4]}`) };
+}
+
+export function normalizeGeminiScheduleRows(input: unknown, context: SmartImportContext): any[] {
+  const root: any = Array.isArray(input) ? { rows: input } : input;
+  const rows = Array.isArray(root?.rows) ? root.rows : Array.isArray(root?.schedule) ? root.schedule : [];
+  return rows.slice(0, 450).map((raw: any, index: number) => {
+    const time = readTimePair(raw);
+    const row: any = {
+      id: Number.isFinite(Number(raw?.id)) ? Number(raw.id) : -(index + 1),
+      AdCollegeId: context.collegeId,
+      AdSectionId: context.sectionId,
+      AdTermId: context.termId,
+      AdCourseId: Number(raw?.AdCourseId ?? raw?.courseId ?? 0),
+      AdCourseName: String(raw?.AdCourseName ?? raw?.courseName ?? raw?.["المقرر الدراسي"] ?? "").trim(),
+      SCode: asciiDigits(raw?.SCode ?? raw?.section ?? raw?.sectionCode ?? raw?.["الشعبة"] ?? "").replace(/\D/g, "").slice(0, 4),
+      AdInstructorId: Number(raw?.AdInstructorId ?? raw?.instructorId ?? 0),
+      fsunday: boolDay(raw, "fsunday", DAY_LABELS[0]),
+      fmonday: boolDay(raw, "fmonday", DAY_LABELS[1]),
+      ftuesday: boolDay(raw, "ftuesday", DAY_LABELS[2]),
+      fwednesday: boolDay(raw, "fwednesday", DAY_LABELS[3]),
+      fthursday: boolDay(raw, "fthursday", DAY_LABELS[4]),
+      fstarttime: time.start,
+      fendtime: time.end,
+      AdRoomCode: String(raw?.AdRoomCode ?? raw?.building ?? raw?.buildingCode ?? raw?.["المبنى"] ?? "").trim().slice(0, 40),
+      AdRoomHall: String(raw?.AdRoomHall ?? raw?.room ?? raw?.hall ?? raw?.["القاعة"] ?? "").trim().slice(0, 40),
+      buildingId: String(raw?.buildingId || "").trim() || undefined,
+      roomId: String(raw?.roomId || "").trim() || undefined,
+      locationStatus: raw?.locationStatus,
+      sourceCourseCode: String(raw?.sourceCourseCode ?? raw?.courseCode ?? raw?.["رمز المقرر"] ?? "").trim().slice(0, 40) || undefined,
+      sourceCourseText: String(raw?.sourceCourseText ?? raw?.courseText ?? raw?.["المقرر الدراسي"] ?? "").trim().slice(0, 220) || undefined,
+      sourceSectionText: String(raw?.sourceSectionText ?? raw?.sectionText ?? raw?.["الشعبة"] ?? "").trim().slice(0, 40) || undefined,
+      sourceInstructorText: String(raw?.sourceInstructorText ?? raw?.instructorName ?? raw?.["أستاذ المقرر"] ?? "").trim().slice(0, 180) || undefined,
+      sourceBuildingText: String(raw?.sourceBuildingText ?? raw?.building ?? raw?.["المبنى"] ?? "").trim().slice(0, 80) || undefined,
+      sourceRoomText: String(raw?.sourceRoomText ?? raw?.room ?? raw?.hall ?? raw?.["القاعة"] ?? "").trim().slice(0, 80) || undefined,
+      referenceNumber: String(raw?.referenceNumber ?? raw?.crn ?? raw?.reference ?? "").trim().slice(0, 30),
+      sourceOrder: Number.isFinite(Number(raw?.sourceOrder)) ? Number(raw.sourceOrder) : index + 1,
+      sourcePage: Number.isFinite(Number(raw?.sourcePage)) ? Math.max(1, Math.floor(Number(raw.sourcePage))) : undefined,
+      importEvidence: raw?.importEvidence && typeof raw.importEvidence === "object" ? raw.importEvidence : undefined,
+    };
+    row.fdetail = DAY_FLAGS.map((key, dayIndex) => row[key] ? String(dayIndex + 1) : "").filter(Boolean).join(",");
+    return row;
+  });
+}
+
+// Personal identifiers (civil/national IDs) must never leave the server to
+// Google. This is the single place that builds the catalogue we send to Gemini,
+// so the redaction cannot drift: instructors are exposed by id + name only, and
+// any civil-shaped key is defensively stripped.
+const CIVIL_KEY = /civil|nationalid|national_id|ssn|الرقم.?المدني|مدني/i;
+
+export function buildSmartImportCatalogue(
+  courses: any[],
+  instructors: any[],
+  limits: { courses?: number; instructors?: number } = {},
+) {
+  const scrub = (entry: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(entry).filter(([key]) => !CIVIL_KEY.test(key)));
+  return {
+    courses: courses.slice(0, limits.courses ?? 260).map((course: any) => scrub({
+      id: course.AdCourseId, code: course.CourseCode, name: course.CourseName, hours: course.CourseHours,
+    })),
+    instructors: instructors.slice(0, limits.instructors ?? 360).map((person: any) => scrub({
+      id: person.AdInstructorId, name: person.AdInstructorName,
+    })),
+  };
+}
+
+export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructors: any[]) {
+  const courseById = new Map(courses.map((course: any) => [Number(course.AdCourseId), course]));
+  const courseByCode = new Map(courses.map((course: any) => [asciiDigits(course.CourseCode).trim().toLowerCase(), course]));
+  const instructorById = new Map(instructors.map((person: any) => [Number(person.AdInstructorId), person]));
+  const instructorByCivil = new Map(instructors.map((person: any) => [asciiDigits(person.AdInstructorCivil).trim(), person]));
+  const instructorByName = new Map(instructors.map((person: any) => [String(person.AdInstructorName || "").trim().toLowerCase(), person]));
+  return rows.map(row => {
+    const course = courseById.get(Number(row.AdCourseId)) || courseByCode.get(asciiDigits(row.sourceCourseCode || row.courseCode || "").trim().toLowerCase());
+    const instructor = instructorById.get(Number(row.AdInstructorId))
+      || instructorByCivil.get(asciiDigits(row.instructorCivil || row.sourceInstructorCivil || ""))
+      || instructorByName.get(String(row.sourceInstructorText || row.instructorName || "").trim().toLowerCase());
+    return {
+      ...row,
+      AdCourseId: Number(course?.AdCourseId || row.AdCourseId || 0),
+      AdCourseName: course?.CourseName || row.AdCourseName || "",
+      AdInstructorId: Number(instructor?.AdInstructorId || row.AdInstructorId || 0),
+    };
+  });
+}
+
+export function sanitizeGeminiScheduleCalls(input: unknown): GeminiScheduleCall[] {
+  const root: any = Array.isArray(input) ? { calls: input } : input;
+  const rawCalls = Array.isArray(root?.functionCalls) ? root.functionCalls
+    : Array.isArray(root?.calls) ? root.calls
+      : Array.isArray(root?.toolCalls) ? root.toolCalls
+        : [];
+  const safe: GeminiScheduleCall[] = [];
+  for (const raw of rawCalls.slice(0, 8)) {
+    const name = String(raw?.name ?? raw?.functionName ?? raw?.toolName ?? "").trim();
+    if (!allowedFunctionNames.has(name) || mutationWords.test(name)) continue;
+    const args = raw?.args && typeof raw.args === "object" ? raw.args : raw?.arguments && typeof raw.arguments === "object" ? raw.arguments : {};
+    const cleanArgs: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(args).slice(0, 24)) {
+      if (mutationWords.test(key) || key === "commit" || key === "confirmed") continue;
+      if (typeof value === "string") cleanArgs[key] = value.slice(0, 240);
+      else if (typeof value === "number" || typeof value === "boolean" || value == null) cleanArgs[key] = value;
+      else if (Array.isArray(value)) cleanArgs[key] = value.slice(0, 20);
+      else if (typeof value === "object") cleanArgs[key] = JSON.parse(JSON.stringify(value).slice(0, 2000));
+    }
+    safe.push({ name: name as GeminiScheduleFunctionName, args: cleanArgs });
+  }
+  return safe;
+}
+
+export function deterministicSchedulingCalls(text: string): GeminiScheduleCall[] {
+  const parsed = parseNaturalQuery(text);
+  const calls: GeminiScheduleCall[] = [];
+  if (parsed.intent === "move" && parsed.code) {
+    calls.push({ name: "simulate_schedule", args: { action: "move", code: parsed.code, dayIndex: parsed.day, time: parsed.time } });
+    calls.push({ name: "check_conflicts", args: { code: parsed.code, dayIndex: parsed.day, time: parsed.time } });
+    calls.push({ name: "check_regulations", args: { code: parsed.code, dayIndex: parsed.day, time: parsed.time } });
+  } else if (parsed.intent === "freeRooms") {
+    calls.push({ name: "find_rooms", args: { dayIndex: parsed.day, time: parsed.time } });
+  } else if (parsed.intent === "instructor" || parsed.intent === "gaps") {
+    calls.push({ name: "check_instructors", args: { name: parsed.name, dayIndex: parsed.day, time: parsed.time } });
+  }
+  return calls;
+}
+
+export function scheduleDelta(before: Partial<FSchedule>, after: Partial<FSchedule>) {
+  const fields = ["fsunday","fmonday","ftuesday","fwednesday","fthursday","fstarttime","fendtime","AdRoomCode","AdRoomHall","AdInstructorId","SCode"] as const;
+  return fields.filter(field => String((before as any)?.[field] ?? "") !== String((after as any)?.[field] ?? ""));
+}

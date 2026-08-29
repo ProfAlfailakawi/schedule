@@ -526,6 +526,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
     [importVisitingIds, setImportVisitingIds] = useState<Set<number>>(new Set()),
     [importDepartmentRooms, setImportDepartmentRooms] = useState<Array<{ building:string; hall:string }>>([]),
     [importErrorModal, setImportErrorModal] = useState<string | null>(null),
+    // A failed Authority-PDF read never routes to Gemini on its own. We stash the
+    // file so the person can consciously choose Smart Import — nothing leaves the
+    // server to Google without that deliberate click.
+    [smartRetry, setSmartRetry] = useState<{ file: File; reason: string } | null>(null),
     [online, setOnline] = useState(navigator.onLine);
   // Help never opens on its own; one deliberate question mark owns it.
   const [decisionCompose, setDecisionCompose] = useState(false);
@@ -1051,7 +1055,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
       // Idea 3: an imperative like "انقل 101 إلى 11:00" becomes a previewed move,
       // not just an answer. Everything else stays a normal read-only question.
       if (parseNaturalQuery(q).intent === "move") {
-        const move = await fetchJson("/api/intelligence/nl-move", {
+        const move = await fetchJson("/api/intelligence/nl-schedule", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ collegeId, sectionId, termId, q }),
@@ -1573,9 +1577,36 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   /** A PDF is the Authority's scanned timetable and takes the same reviewed
    *  route as the one in Data Tools: read to a preview, published only after a
    *  person approves, and only into an empty term. */
+  const importSmartFile = async (file: File, fallbackReason = "") => {
+    setImportFile(file.name);
+    setImportPreview(null);
+    setSmartRetry(null);
+    setBusy(true);
+    setError(null);
+    setImportProgress({ phase: "read", page: 0, pages: 0, message: "يفهم الملف عبر Smart Import" });
+    try {
+      const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId), mime: file.type || "application/octet-stream" });
+      const data = await fetchJson(`/api/intelligence/smart-import?${query}`, {
+        method: "POST",
+        headers: { "Content-Type": file.type || "application/octet-stream", "x-file-name": encodeURIComponent(file.name) },
+        body: await file.arrayBuffer(),
+      });
+      const normalizedRows=normalizeImportSectionSeries((Array.isArray(data.rows)?data.rows:[]) as ImportRow[]);
+      const localIssues=validateImportRowsLocally(normalizedRows);
+      const issues=[...(Array.isArray(data.issues)?data.issues:[]),...localIssues];
+      setImportPreview({ ...data, rows:normalizedRows, preview:normalizedRows, count:normalizedRows.length, issues, valid:normalizedRows.length>0&&issues.length===0, importLayout:"worksheet", smartFallbackReason:fallbackReason });
+    } catch (e: any) {
+      setError(smartMessage(e));
+    } finally {
+      setBusy(false);
+      setImportProgress(null);
+    }
+  };
+
   const importPdf = async (file: File) => {
     setImportFile(file.name);
     setImportPreview(null);
+    setSmartRetry(null);
     setBusy(true);
     setError(null);
     setImportProgress({ phase: "render", page: 0, pages: 0, message: "يجهّز الملف للقراءة" });
@@ -1623,7 +1654,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         setImportPreview({ ...data, rows:normalizedRows, count: normalizedRows.length, preview: normalizedRows, valid: normalizedRows.length>0&&issues.length===0, issues, importLayout: "authority-pdf" });
       }
     } catch (e: any) {
+      // The Authority PDF stays local. We surface the failure and offer Smart
+      // Import as a deliberate, opt-in retry — never an automatic hop to Google.
       setError(smartMessage(e));
+      setSmartRetry({ file, reason: smartMessage(e) });
     } finally {
       setBusy(false);
       setImportProgress(null);
@@ -1642,6 +1676,8 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         isPdf = String.fromCharCode(...head) === "%PDF-";
       } catch { /* Fall through to spreadsheet parsing. */ }
     }
+    const isImage = /^image\//i.test(mime) || /\.(png|jpe?g|webp|heic|heif)$/i.test(name);
+    if (isImage) return void importSmartFile(file);
     if (isPdf) return void importPdf(file);
     return void importExcel(file);
   };
@@ -1649,6 +1685,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
   const importExcel = async (file: File) => {
     setImportFile(file.name);
     setImportPreview(null);
+    setSmartRetry(null);
     setBusy(true);
     setError(null);
     try {
@@ -2423,7 +2460,18 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           </button>
         </nav>
       ) : null}
-      {error && collegeId && sectionId && termId ? <Notice>{error}</Notice> : null}
+      {error && collegeId && sectionId && termId ? (
+        <Notice>
+          {error}
+          {smartRetry ? (
+            <div style={{ marginTop: 8 }}>
+              <button type="button" className="nl-move-apply" disabled={busy} onClick={() => { const f = smartRetry.file; setSmartRetry(null); void importSmartFile(f, smartRetry.reason); }}>
+                جرّب Smart Import (يقرأ الملف عبر Gemini — بدون الأرقام المدنية)
+              </button>
+            </div>
+          ) : null}
+        </Notice>
+      ) : null}
       {message ? <Notice type="success">{message}</Notice> : null}
       {loading && !overview ? (
         <div className="intel-loading" role="status" aria-live="polite">
