@@ -141,9 +141,13 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
   const instructorByName = new Map(instructors.map((person: any) => [String(person.AdInstructorName || "").trim().toLowerCase(), person]));
   return rows.map(row => {
     const course = courseById.get(Number(row.AdCourseId)) || courseByCode.get(asciiDigits(row.sourceCourseCode || row.courseCode || "").trim().toLowerCase());
+    /* «هيئة تدريسية» and its cousins are how a model says "somebody" — never a
+       person. Even when the registry happens to hold a row by that name, binding
+       it would put a real id behind a guess, so placeholders bind to no one. */
+    const writtenName = String(row.sourceInstructorText || row.instructorName || "").trim();
     const instructor = instructorById.get(Number(row.AdInstructorId))
       || instructorByCivil.get(asciiDigits(row.instructorCivil || row.sourceInstructorCivil || ""))
-      || instructorByName.get(String(row.sourceInstructorText || row.instructorName || "").trim().toLowerCase());
+      || (writtenName && !PLACEHOLDER.test(writtenName) ? instructorByName.get(writtenName.toLowerCase()) : undefined);
     return {
       ...row,
       AdCourseId: Number(course?.AdCourseId || row.AdCourseId || 0),
@@ -225,7 +229,7 @@ export const SMART_FIELD_LABELS: Record<string, string> = {
   AdCourseName: "المقرر", SCode: "الشعبة", AdRoomCode: "المبنى", AdRoomHall: "القاعة",
   fstarttime: "بداية الوقت", fendtime: "نهاية الوقت", referenceNumber: "الرقم المرجعي",
   AdCourseId: "ربط المقرر", AdInstructorId: "أستاذ المقرر", buildingId: "معرّف المبنى",
-  roomId: "معرّف القاعة", days: "الأيام",
+  roomId: "معرّف القاعة", days: "الأيام", sourceCourseCode: "رمز المقرر",
 };
 
 export interface SmartFill {
@@ -287,6 +291,31 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
   const conflicts: string[] = [];
   const fills: SmartFill[] = [];
 
+  /* Corroboration before contribution. A candidate may only fill blanks when
+     everything BOTH readings saw agrees, on at least two cells — one shared
+     identifier is how section 505's building landed on section 503. And one
+     contradiction on any readable cell voids the whole candidate: a reading
+     that got the start time wrong has no business supplying the instructor. */
+  const CORROBORATION_FIELDS = ["referenceNumber","SCode","fstarttime","fendtime","AdRoomCode","AdRoomHall","sourceCourseCode"] as const;
+  const corroborates = (row: any, candidate: any) => {
+    let agreements = 0;
+    for (const field of CORROBORATION_FIELDS) {
+      const ours = String(row?.[field] ?? "").trim(), theirs = String(candidate?.[field] ?? "").trim();
+      if (blankText(ours) || blankText(theirs)) continue;
+      if (ours !== theirs) return { ok: false, field };
+      agreements += 1;
+    }
+    // Days count too: if both readings have days and they differ, the candidate
+    // is describing a different meeting — or inventing one.
+    if (!hasNoDays(row) && !hasNoDays(candidate)) {
+      for (const flag of DAY_FLAGS) {
+        if (Boolean(row?.[flag]) !== Boolean(candidate?.[flag])) return { ok: false, field: "days" };
+      }
+      agreements += 1;
+    }
+    return { ok: agreements >= 2, field: "" };
+  };
+
   const rows = baseRows.map((row, rowIndex) => {
     const page = Number(row?.sourcePage) || 1;
     if (!pages.has(page)) return row;                 // page was read cleanly — untouched
@@ -297,6 +326,14 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     if (index < 0) return row;
     used.get(page)!.add(index);
     const candidate = pool[index];
+    const witness = corroborates(row, candidate);
+    if (!witness.ok) {
+      if (witness.field) {
+        const where = String(row?.SCode ?? "").trim() || String(row?.AdCourseName ?? "").trim() || `صف ${rowIndex + 1}`;
+        conflicts.push(`${where} (صفحة ${page}): القراءتان اختلفتا في ${SMART_FIELD_LABELS[witness.field] || witness.field} — أُهمل اقتراح هذا الصف كاملاً.`);
+      }
+      return row;                                     // not certain ⇒ not offered
+    }
     const next: any = { ...row };
     const describe = (field: string, value: string, days?: Record<string, boolean>) => {
       fills.push({

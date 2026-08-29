@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   applySmartFills,
+  bindGeminiRowsToCatalogue,
   buildSmartImportCatalogue,
   fillMissingCellsFromSmartRead,
   proposeSmartFills,
@@ -150,8 +151,36 @@ const byPlacement = fillMissingCellsFromSmartRead(
 assert.equal(byPlacement.rows[0].AdCourseName, "الإحصاء");
 assert.equal(byPlacement.rows[0].SCode, "705");
 
+/* Certainty means corroboration. A candidate that contradicts ANY cell the
+   approved engine read — a start time, a room — is a different or invented
+   meeting, and contributes nothing at all. */
+const contradicted = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "506", AdRoomCode: "012B09", fstarttime: "08:00", fendtime: "09:20", AdInstructorId: 0, sourceInstructorText: "" }],
+  [{ sourcePage: 1, SCode: "506", AdRoomCode: "012B09", fstarttime: "10:00", fendtime: "10:50", instructorName: "د. مؤلّف" }],
+  [1],
+);
+assert.equal(contradicted.filled, 0);
+assert.ok(contradicted.conflicts.some(note => note.includes("اختلفتا")));
+
+// One shared identifier is not certainty: two agreements or nothing.
+const thinMatch = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "701", AdCourseName: "", AdRoomCode: "", fstarttime: "", fendtime: "" }],
+  [{ sourcePage: 1, SCode: "701", AdCourseName: "مقرر مقترح" }],
+  [1],
+);
+assert.equal(thinMatch.filled, 0);
+
+// A placeholder name binds to no one, even if the registry holds such a row.
+const bound = bindGeminiRowsToCatalogue(
+  [{ AdCourseId: 0, AdInstructorId: 0, sourceInstructorText: "هيئة تدريسية", sourceCourseCode: "101" }],
+  [{ AdCourseId: 1, CourseCode: "101", CourseName: "مدخل" }],
+  [{ AdInstructorId: 26, AdInstructorName: "هيئة تدريسية", AdInstructorCivil: "0" }],
+);
+assert.equal(bound[0].AdInstructorId, 0);
+assert.equal(bound[0].AdCourseId, 1);   // the real course code still binds
+
 console.log(JSON.stringify({
-  passed: 13,
+  passed: 16,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -166,5 +195,8 @@ console.log(JSON.stringify({
     "applying writes exactly the approved cells, and a subset writes only that subset",
     "a row in the same position but a different section is never treated as a match",
     "a row with an unreadable section is still matched by its time and place",
+    "a candidate contradicting any read cell contributes nothing at all",
+    "one shared identifier is not certainty — two corroborations or nothing",
+    "«هيئة تدريسية» binds to no instructor even when the registry holds that name",
   ],
 }, null, 2));

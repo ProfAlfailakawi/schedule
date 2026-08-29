@@ -5876,7 +5876,14 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     rows:readPages.flatMap(item=>{
       const body=(item.result as any).json;
       const list=Array.isArray(body)?body:Array.isArray(body?.rows)?body.rows:Array.isArray(body?.schedule)?body.schedule:[];
-      return list.map((row:any)=>({...row,sourcePage:Number(row?.sourcePage)||item.page}));
+      /* The catalogue is sent so the model can SPELL names correctly — its ids
+         are bait for fabrication (a confident "instructorId: 26" that matches a
+         real person who was never on this page). Identity is established here,
+         from the printed name and code, never from a number the model chose. */
+      return list.map((row:any)=>{
+        const {AdInstructorId,instructorId,AdCourseId,courseId,id,...printed}=row&&typeof row==="object"?row:{};
+        return {...printed,sourcePage:Number(row?.sourcePage)||item.page};
+      });
     }),
     issues:[
       ...readPages.flatMap(item=>Array.isArray((item.result as any).json?.issues)?(item.result as any).json.issues:[]),
