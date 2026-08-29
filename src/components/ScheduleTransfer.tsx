@@ -48,6 +48,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<any>(null);
+  // Kept so a reviewer can ask for a sharper second reading of the same file.
+  const [smartFile, setSmartFile] = useState<File | null>(null);
   const [payload, setPayload] = useState<any>(null);
   const [xlsxPreview, setXlsxPreview] = useState<any>(null);
   const [xlsxDraft, setXlsxDraft] = useState("");
@@ -407,8 +409,39 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       setBusy(false);
     }
   };
+  /* The deterministic reader above stays the default and runs first. A second,
+     sharper reading is available only on request: nothing reaches Gemini
+     without this call, and civil IDs are stripped server-side before it. */
+  const readSmart = async (file: File) => {
+    setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
+    setReadProgress({ pct: 20, message: "قراءة أدق عبر Smart Import" });
+    try {
+      const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId),mime:file.type||"application/octet-stream"});
+      const response=await fetch(`/api/intelligence/smart-import?${query}`,{
+        method:"POST",
+        headers:{"Content-Type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},
+        body:await file.arrayBuffer(),
+      });
+      const data=await response.json();
+      if(!response.ok)throw new Error(data.error||"تعذرت القراءة الأدق");
+      const scannedRows=assignAuthoritySections(Array.isArray(data.rows)?data.rows:[]);
+      if(!scannedRows.length)throw new Error("لم تُستخرج صفوف من الملف في القراءة الأدق.");
+      setXlsxPreview({
+        ...data,
+        rows:scannedRows,
+        baselineRows:scannedRows.map((row:any)=>({...row})),
+        valid:Boolean(data.ready),count:scannedRows.length,fileName:file.name,importLayout:"authority-pdf",
+        smartRead:true,
+      });
+    } catch (e:any) {
+      setError(e.message||"تعذرت القراءة الأدق");
+    } finally {
+      setBusy(false); setReadProgress(null);
+    }
+  };
   const readPdf = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
+    setSmartFile(file);
     setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId)});
@@ -715,6 +748,27 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?.review?<span className="warn"><b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b><small>للمراجعة</small></span>:null}
                   </div>
+                  {/* The reading above is the approved engine's. Asking for a
+                      sharper one is a deliberate click, never automatic. */}
+                  {importKind === "authority-pdf" && smartFile && !xlsxPreview.smartRead ? (
+                    <div className="import-smart-retry" style={{ margin: "8px 0" }}>
+                      <button
+                        type="button"
+                        className="ghost"
+                        data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة قراءة الملف عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
+                        disabled={busy}
+                        onClick={() => { const f = smartFile; if (f) void readSmart(f); }}
+                        title="يعيد فهم نفس الملف عبر Smart Import ثم يمر على التحقق نفسه"
+                      >
+                        قراءة أدق عبر Smart Import (بدون الأرقام المدنية)
+                      </button>
+                    </div>
+                  ) : null}
+                  {xlsxPreview.smartRead ? (
+                    <div className="import-smart-retry" style={{ margin: "8px 0" }}>
+                      <small>هذه نتيجة القراءة الأدق عبر Smart Import — راجعها قبل النشر.</small>
+                    </div>
+                  ) : null}
                   {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="confirmed"><i/>أبيض · مؤكد مباشر</span><span className="derived"><i/>أخضر · مستنتج ومثبت</span><span className="review"><i/>ذهبي · يحتاج مراجعة</span><span className="missing"><i/>أحمر · ناقص</span></div> : null}
                   {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
                     <>
