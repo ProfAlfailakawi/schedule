@@ -10,7 +10,7 @@ import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
-import { fillMissingCellsFromSmartRead } from "../utils/geminiScheduleLayer";
+import { applySmartFills, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -54,6 +54,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   // True only while the sharper reading is in flight, so the chip can say so
   // and refuse a second click that would spend another read for nothing.
   const [smartBusy, setSmartBusy] = useState(false);
+  // Proposed cells wait here until a person approves them. Nothing is written
+  // to the preview while this is set.
+  const [smartProposal, setSmartProposal] = useState<{ fills: SmartFill[]; pages: number[]; conflicts: string[] } | null>(null);
   const [payload, setPayload] = useState<any>(null);
   const [xlsxPreview, setXlsxPreview] = useState<any>(null);
   const [xlsxDraft, setXlsxDraft] = useState("");
@@ -445,6 +448,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId),mime:file.type||"application/octet-stream"});
       if(troubledPages.length)query.set("pages",troubledPages.join(","));
+      /* Naming the rows that still have blanks makes the answer small, and a
+         small answer is a fast one — the model transcribes a few cells instead
+         of re-emitting rows nobody asked it to touch. */
+      const need=keptRows
+        .filter(row=>troubledPages.includes(Number((row as any).sourcePage||1)))
+        .filter(row=>Object.values((row as any).importEvidence||{}).some((proof:any)=>proof?.confidence==="UNRESOLVED"||proof?.confidence==="REVIEW_REQUIRED"))
+        .map(row=>`ص${Number((row as any).sourcePage||1)}:${String(row.SCode||"").trim()||String((row as any).referenceNumber||"").trim()}`)
+        .filter(item=>!/:$/.test(item));
+      if(need.length&&need.length<=40)query.set("need",[...new Set(need)].join("، "));
       const response=await fetch(`/api/intelligence/smart-import?${query}`,{
         method:"POST",
         headers:{"Content-Type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},
@@ -459,29 +471,49 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
          cell that was already read. Without a page list we fill nothing rather
          than risk overwriting a good table. */
       const readPages=(Array.isArray(data.pagesRead)?data.pagesRead:[]).map((page:any)=>Number(page)).filter(Boolean);
-      const outcome=fillMissingCellsFromSmartRead(keptRows,fresh,readPages.length?readPages:troubledPages);
-      if(!outcome.filled){
-        setError(outcome.conflicts.length
-          ? `لم تضف القراءة الأدق أي خلية ناقصة. ${outcome.conflicts[0]}`
+      const pages=readPages.length?readPages:troubledPages;
+      const proposal=proposeSmartFills(keptRows,fresh,pages);
+      if(!proposal.fills.length){
+        setError(proposal.conflicts.length
+          ? `لم تضف القراءة الأدق أي خلية ناقصة. ${proposal.conflicts[0]}`
           : "لم تجد القراءة الأدق أي خلية ناقصة تستطيع تعبئتها. الجدول باقٍ كما هو.");
+        // The page was looked at, so it is not offered again for nothing.
+        setXlsxPreview((prev:any)=>prev?{...prev,smartPages:[...new Set([...(Array.isArray(prev?.smartPages)?prev.smartPages:[]),...pages])]}:prev);
+        return;
       }
-      const scannedRows=assignAuthoritySections(outcome.rows as ImportRow[]);
-      setXlsxPreview((prev:any)=>({
-        ...(prev||{}),
-        rows:scannedRows,
-        baselineRows:scannedRows.map((row:any)=>({...row})),
-        issues:[...new Set([...(Array.isArray(prev?.issues)?prev.issues:[]),...outcome.conflicts])],
-        count:scannedRows.length,fileName:file.name,importLayout:"authority-pdf",
-        smartRead:true,smartFilled:outcome.filled,
-        // Pages already re-read are never offered again: a second pass on the
-        // same page spends another read without new information.
-        smartPages:[...new Set([...(Array.isArray(prev?.smartPages)?prev.smartPages:[]),...readPages,...troubledPages])],
-      }));
+      // Nothing is written yet: the reviewer sees every proposed cell first.
+      setSmartProposal({fills:proposal.fills,pages,conflicts:proposal.conflicts});
     } catch (e:any) {
       setError(e.message||"تعذرت القراءة الأدق");
     } finally {
       setBusy(false); setSmartBusy(false); setReadProgress(null);
     }
+  };
+  /** Approving writes exactly the listed cells and nothing else. */
+  const applySmartProposal = () => {
+    if (!smartProposal) return;
+    setXlsxPreview((prev: any) => {
+      if (!prev) return prev;
+      const rows = assignAuthoritySections(applySmartFills(prev.rows || [], smartProposal.fills) as ImportRow[]);
+      return {
+        ...prev,
+        rows,
+        baselineRows: rows.map((row: any) => ({ ...row })),
+        issues: [...new Set([...(Array.isArray(prev.issues) ? prev.issues : []), ...smartProposal.conflicts])],
+        count: rows.length,
+        smartRead: true,
+        smartFilled: Number(prev.smartFilled || 0) + smartProposal.fills.length,
+        smartPages: [...new Set([...(Array.isArray(prev.smartPages) ? prev.smartPages : []), ...smartProposal.pages])],
+      };
+    });
+    setSmartProposal(null);
+  };
+  /** Declining leaves the approved reading exactly as it was. */
+  const dismissSmartProposal = () => {
+    setXlsxPreview((prev: any) => prev
+      ? { ...prev, smartPages: [...new Set([...(Array.isArray(prev.smartPages) ? prev.smartPages : []), ...(smartProposal?.pages || [])])] }
+      : prev);
+    setSmartProposal(null);
   };
   const readPdf = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
@@ -816,7 +848,42 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       </button>
                     </div>
                   ) : null}
-                  {!smartBusy && Array.isArray(xlsxPreview.smartPages) && xlsxPreview.smartPages.length ? (
+                  {/* Every proposed cell, grouped by page, before one changes. */}
+                  {smartProposal ? (
+                    <div className="smart-proposal" role="group" aria-label="مقترح القراءة الأدق">
+                      <div className="smart-proposal-head">
+                        <Sparkles aria-hidden="true" />
+                        <b>{countOf(smartProposal.fills.length, AR.cell)} ناقصة يمكن تعبئتها</b>
+                        <small>لن يتغيّر شيء قبل موافقتك · الخلايا المقروءة تبقى كما هي</small>
+                      </div>
+                      {[...new Set<number>(smartProposal.fills.map(fill => Number(fill.page)))].sort((a, b) => a - b).map((page: number) => (
+                        <div className="smart-proposal-page" key={page}>
+                          <span className="smart-proposal-page-title">صفحة {page.toLocaleString("ar-KW-u-nu-latn")}</span>
+                          <ul>
+                            {smartProposal.fills.filter(fill => fill.page === page).slice(0, 40).map((fill, index) => (
+                              <li key={`${page}-${fill.rowIndex}-${fill.field}-${index}`}>
+                                <span className="smart-proposal-where">{fill.section ? `شعبة ${fill.section}` : fill.course || `صف ${fill.rowIndex + 1}`}</span>
+                                <span className="smart-proposal-field">{fill.label}</span>
+                                <span className="smart-proposal-value">{fill.value}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ))}
+                      {smartProposal.conflicts.length ? (
+                        <p className="smart-proposal-note">{smartProposal.conflicts[0]}</p>
+                      ) : null}
+                      <div className="smart-proposal-actions">
+                        <button type="button" className="smart-proposal-apply" data-guide-ignore="يطبق الخلايا المعروضة داخل المعاينة فقط ولا ينشر شيئًا" onClick={applySmartProposal} disabled={busy}>
+                          تطبيق {countOf(smartProposal.fills.length, AR.cell)}
+                        </button>
+                        <button type="button" className="smart-proposal-cancel" data-guide-ignore="يتجاهل مقترح القراءة الأدق ويُبقي المعاينة كما هي" onClick={dismissSmartProposal} disabled={busy}>
+                          إلغاء
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  {!smartBusy && !smartProposal && Array.isArray(xlsxPreview.smartPages) && xlsxPreview.smartPages.length ? (
                     <div className="import-smart-retry">
                       <span className="import-smart-chip is-done" aria-live="polite">
                         <Sparkles aria-hidden="true" />

@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import {
+  applySmartFills,
   buildSmartImportCatalogue,
   fillMissingCellsFromSmartRead,
+  proposeSmartFills,
   deterministicSchedulingCalls,
   extractJsonObject,
   normalizeGeminiScheduleRows,
@@ -112,8 +114,24 @@ const noPages = fillMissingCellsFromSmartRead(approved, smart, []);
 assert.deepEqual(noPages.rows, approved);
 assert.equal(noPages.filled, 0);
 
+/* Proposing describes the change without making it; applying writes exactly the
+   approved cells. A reviewer who declines must be left with the original. */
+const proposal = proposeSmartFills(approved, smart, [1]);
+assert.ok(proposal.fills.length > 0);
+assert.deepEqual(approved[1].AdCourseName, "");            // proposing mutated nothing
+assert.ok(proposal.fills.every(fill => fill.page === 1));  // page 2 was never offered
+assert.ok(proposal.fills.some(fill => fill.field === "AdRoomHall" && fill.value === "F31"));
+const applied = applySmartFills(approved, proposal.fills);
+assert.equal(applied[1].AdRoomHall, "F31");
+assert.equal(applied[0].AdRoomHall, "F13");                // a read cell stays read
+assert.deepEqual(applied[2], approved[2]);                 // untouched page is identical
+// Approving a subset writes that subset only.
+const oneOnly = applySmartFills(approved, proposal.fills.filter(fill => fill.field === "AdRoomHall"));
+assert.equal(oneOnly[1].AdRoomHall, "F31");
+assert.equal(oneOnly[1].fstarttime, "");
+
 console.log(JSON.stringify({
-  passed: 9,
+  passed: 11,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -124,5 +142,7 @@ console.log(JSON.stringify({
     "a sharper reading fills blank cells only and never overwrites a read one",
     "a page that was not re-read stays byte-identical to the approved reading",
     "invented placeholders («هيئة تدريسية», «—») are refused, and no page list fills nothing",
+    "proposing describes the fills without applying any of them",
+    "applying writes exactly the approved cells, and a subset writes only that subset",
   ],
 }, null, 2));

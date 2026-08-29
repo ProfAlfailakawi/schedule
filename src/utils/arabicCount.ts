@@ -98,6 +98,7 @@ export const AR = {
   hour:        { one: "ساعة", two: "ساعتان", few: "ساعات", many: "ساعة" },
   section:     { one: "شعبة", two: "شعبتان", few: "شعب", many: "شعبة" },
   page:        { one: "صفحة", two: "صفحتان", few: "صفحات", many: "صفحة" },
+  cell:        { one: "خلية", two: "خليتان", few: "خلايا", many: "خلية" },
   note:        { one: "ملاحظة", two: "ملاحظتان", few: "ملاحظات", many: "ملاحظة" },
   message:     { one: "رسالة", two: "رسالتان", few: "رسائل", many: "رسالة" },
   clash:       { one: "تداخل", two: "تداخلان", few: "تداخلات", many: "تداخلاً" },

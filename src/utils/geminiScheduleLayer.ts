@@ -192,10 +192,61 @@ function smartCandidate(row: any, pool: any[], usedIndexes: Set<number>, ordinal
   return !usedIndexes.has(ordinal) && pool[ordinal] ? ordinal : -1;
 }
 
-export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[], readPages: number[]) {
+export const SMART_FIELD_LABELS: Record<string, string> = {
+  AdCourseName: "المقرر", SCode: "الشعبة", AdRoomCode: "المبنى", AdRoomHall: "القاعة",
+  fstarttime: "بداية الوقت", fendtime: "نهاية الوقت", referenceNumber: "الرقم المرجعي",
+  AdCourseId: "ربط المقرر", AdInstructorId: "أستاذ المقرر", buildingId: "معرّف المبنى",
+  roomId: "معرّف القاعة", days: "الأيام",
+};
+
+export interface SmartFill {
+  rowIndex: number;
+  page: number;
+  section: string;
+  course: string;
+  field: string;
+  label: string;
+  value: string;
+  days?: Record<string, boolean>;
+}
+
+/** What the sharper reading WANTS to fill, described but not yet applied, so a
+ *  person can see every proposed cell before a single one changes. */
+export function proposeSmartFills(baseRows: any[], smartRows: any[], readPages: number[]) {
+  const outcome = fillMissingCellsFromSmartRead(baseRows, smartRows, readPages, true);
+  return { fills: outcome.fills, conflicts: outcome.conflicts };
+}
+
+/** Apply exactly the fills a person approved — nothing else is touched. */
+export function applySmartFills(baseRows: any[], fills: SmartFill[]) {
+  if (!Array.isArray(fills) || !fills.length) return baseRows;
+  const byRow = new Map<number, SmartFill[]>();
+  for (const fill of fills) {
+    if (!byRow.has(fill.rowIndex)) byRow.set(fill.rowIndex, []);
+    byRow.get(fill.rowIndex)!.push(fill);
+  }
+  return baseRows.map((row, index) => {
+    const list = byRow.get(index);
+    if (!list?.length) return row;
+    const next: any = { ...row };
+    for (const fill of list) {
+      if (fill.field === "days" && fill.days) {
+        for (const flag of DAY_FLAGS) next[flag] = Boolean(fill.days[flag]);
+        next.fdetail = DAY_FLAGS.map((flag, day) => next[flag] ? String(day + 1) : "").filter(Boolean).join(",");
+      } else if ((FILLABLE_ID as readonly string[]).includes(fill.field)) {
+        next[fill.field] = Number(fill.value);
+      } else {
+        next[fill.field] = fill.value;
+      }
+    }
+    return next;
+  });
+}
+
+export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[], readPages: number[], proposeOnly = false) {
   const pages = new Set(readPages.map(page => Number(page)).filter(Boolean));
   if (!pages.size || !Array.isArray(baseRows) || !baseRows.length) {
-    return { rows: baseRows, filled: 0, conflicts: [] as string[] };
+    return { rows: baseRows, filled: 0, conflicts: [] as string[], fills: [] as SmartFill[] };
   }
   const byPage = new Map<number, any[]>();
   for (const row of Array.isArray(smartRows) ? smartRows : []) {
@@ -206,9 +257,9 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
   const used = new Map<number, Set<number>>();
   const ordinals = new Map<number, number>();
   const conflicts: string[] = [];
-  let filled = 0;
+  const fills: SmartFill[] = [];
 
-  const rows = baseRows.map(row => {
+  const rows = baseRows.map((row, rowIndex) => {
     const page = Number(row?.sourcePage) || 1;
     if (!pages.has(page)) return row;                 // page was read cleanly — untouched
     const pool = byPage.get(page) || [];
@@ -221,28 +272,39 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     used.get(page)!.add(index);
     const candidate = pool[index];
     const next: any = { ...row };
+    const describe = (field: string, value: string, days?: Record<string, boolean>) => {
+      fills.push({
+        rowIndex, page,
+        section: String(row?.SCode ?? "").trim(),
+        course: String(row?.AdCourseName ?? "").trim(),
+        field, label: SMART_FIELD_LABELS[field] || field, value, days,
+      });
+    };
 
     for (const field of FILLABLE_TEXT) {
       if (!blankText(next[field])) continue;
       const value = String(candidate?.[field] ?? "").trim();
       // blankText also rejects the model's placeholders, so a guess never lands.
-      if (value && !blankText(value)) { next[field] = value; filled += 1; }
+      if (value && !blankText(value)) { describe(field, value); if (!proposeOnly) next[field] = value; }
     }
     for (const field of FILLABLE_ID) {
       if (!blankId(next[field])) continue;
       const value = Number(candidate?.[field]);
-      if (Number.isFinite(value) && value > 0) { next[field] = value; filled += 1; }
+      if (Number.isFinite(value) && value > 0) { describe(field, String(value)); if (!proposeOnly) next[field] = value; }
     }
     for (const field of FILLABLE_REF) {
       if (!blankText(next[field])) continue;
       const value = String(candidate?.[field] ?? "").trim();
-      if (value) { next[field] = value; filled += 1; }
+      if (value) { describe(field, value); if (!proposeOnly) next[field] = value; }
     }
     // Days move as one unit: a half-filled week is worse than an empty one.
     if (hasNoDays(next) && !hasNoDays(candidate)) {
-      for (const flag of DAY_FLAGS) next[flag] = Boolean(candidate?.[flag]);
-      next.fdetail = DAY_FLAGS.map((flag, day) => next[flag] ? String(day + 1) : "").filter(Boolean).join(",");
-      filled += 1;
+      const days = Object.fromEntries(DAY_FLAGS.map(flag => [flag, Boolean(candidate?.[flag])]));
+      describe("days", DAY_FLAGS.map((flag, day) => days[flag] ? DAY_LABELS[day] : "").filter(Boolean).join("، "), days);
+      if (!proposeOnly) {
+        for (const flag of DAY_FLAGS) next[flag] = days[flag];
+        next.fdetail = DAY_FLAGS.map((flag, day) => next[flag] ? String(day + 1) : "").filter(Boolean).join(",");
+      }
     }
     // Disagreements on cells that were already read are reported, never applied.
     const section = String(row?.SCode ?? "").trim();
@@ -252,7 +314,7 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     return next;
   });
 
-  return { rows, filled, conflicts: conflicts.slice(0, 20) };
+  return { rows, filled: fills.length, conflicts: conflicts.slice(0, 20), fills };
 }
 
 export function sanitizeGeminiScheduleCalls(input: unknown): GeminiScheduleCall[] {

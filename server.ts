@@ -5815,6 +5815,10 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
   // to real instructor IDs locally (against the full registry that still holds
   // civil numbers) after Gemini returns, matching by name/code.
   const catalogue=buildSmartImportCatalogue(sectionCourses,instructorList);
+  /* Naming the rows that still have blanks keeps the answer small: the model
+     transcribes a handful of cells instead of re-emitting a whole page it was
+     never asked to change, which is most of the wait. */
+  const wanted=String(req.query.need||"").trim().slice(0,600).replace(/[^\w\s,:;؀-ۿ-]/g,"");
   const instructions=(pageLabel:string)=>[
     "Extract an academic schedule from this document image into JSON only.",
     "Use this schema: { rows:[{courseCode,courseName,section,days,time,startTime,endTime,instructorName,building,room,referenceNumber,sourcePage,confidence,notes}], issues:[string] }.",
@@ -5822,6 +5826,10 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     "TRANSCRIBE ONLY. Every value must be visibly printed on this page. If a cell is empty, unreadable, or cut off, return an empty string for it — never guess, never infer from neighbouring rows, never complete a pattern, and never copy a value from another row.",
     "Do not output a generic placeholder such as «هيئة تدريسية», «غير محدد», «TBA», or a dash in place of a value you cannot read: return an empty string instead.",
     "Returning fewer, certain rows is correct. A blank cell is a useful answer; an invented one corrupts the record.",
+    ...(wanted?[
+      `Only these rows still have unreadable cells: ${wanted}.`,
+      "Return ONLY those rows. Skip every other row on the page — they were already read correctly and are not needed.",
+    ]:[]),
     "The server will map values to IDs and reject anything that fails deterministic validators.",
     pageLabel,
     JSON.stringify({scope:{collegeId,sectionId,termId,...contextLabel},catalogue}),

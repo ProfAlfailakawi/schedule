@@ -4156,6 +4156,37 @@ button.twin-delta{width:100%}
 .transfer-preview.is-smart-locked button,
 .transfer-preview.is-smart-locked input,
 .transfer-preview.is-smart-locked select{cursor:not-allowed}
+/* The proposal reads as a quiet receipt, not an alert: it lists what WOULD
+   change, page by page, and stays inert until a person says yes. */
+.smart-proposal{margin:2px 2px 14px;padding:14px 16px;border-radius:14px;
+  border:1px solid color-mix(in srgb,var(--brand,#2f6b57) 22%,var(--line));
+  background:color-mix(in srgb,var(--brand,#2f6b57) 4%,var(--surface))}
+.smart-proposal-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.smart-proposal-head svg{width:15px;height:15px;flex:none;color:var(--brand,#2f6b57)}
+.smart-proposal-head b{font-size:13px;color:var(--ink)}
+.smart-proposal-head small{flex:1 1 100%;font-size:10.5px;color:var(--muted);line-height:1.6}
+.smart-proposal-page+.smart-proposal-page{margin-top:10px;padding-top:10px;border-top:1px dashed color-mix(in srgb,var(--brand,#2f6b57) 16%,var(--line))}
+.smart-proposal-page-title{display:inline-block;margin-bottom:6px;font-size:10.5px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.smart-proposal ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:5px}
+.smart-proposal li{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:6px 10px;border-radius:9px;background:var(--surface,#fff);
+  border:1px solid color-mix(in srgb,var(--line) 70%,transparent);font-size:11.5px}
+.smart-proposal-where{font-weight:600;color:var(--ink);min-width:82px}
+.smart-proposal-field{color:var(--muted)}
+.smart-proposal-field::after{content:"←";margin-inline-start:6px;opacity:.55}
+.smart-proposal-value{font-weight:700;color:color-mix(in srgb,var(--brand,#2f6b57) 86%,var(--ink));
+  padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--brand,#2f6b57) 9%,transparent)}
+.smart-proposal-note{margin:10px 0 0;font-size:10.5px;color:color-mix(in srgb,var(--warning,#a8792a) 88%,var(--ink))}
+.smart-proposal-actions{display:flex;gap:8px;margin-top:12px}
+.smart-proposal-apply,.smart-proposal-cancel{padding:7px 16px;border-radius:999px;font-size:12px;font-weight:700;cursor:pointer;
+  transition:background .15s ease,border-color .15s ease}
+.smart-proposal-apply{border:1px solid transparent;background:var(--brand,#2f6b57);color:#fff}
+.smart-proposal-apply:hover:not(:disabled){background:color-mix(in srgb,var(--brand,#2f6b57) 88%,#000)}
+.smart-proposal-cancel{border:1px solid var(--line);background:var(--surface,#fff);color:var(--muted)}
+.smart-proposal-cancel:hover:not(:disabled){border-color:color-mix(in srgb,var(--ink) 26%,var(--line));color:var(--ink)}
+.smart-proposal-apply:disabled,.smart-proposal-cancel:disabled{opacity:.5;cursor:not-allowed}
+@media(max-width:720px){.smart-proposal li{gap:6px}.smart-proposal-where{min-width:100%}}
+@media(prefers-reduced-motion:reduce){.smart-proposal-apply,.smart-proposal-cancel{transition:none}}
 .import-smart-chip.is-busy{opacity:1;cursor:progress}
 .import-smart-spinner{width:13px;height:13px;flex:none;border-radius:50%;
   border:2px solid color-mix(in srgb,var(--brand,#2f6b57) 22%,transparent);
