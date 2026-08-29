@@ -4179,13 +4179,16 @@ button.twin-delta{width:100%}
 .smart-proposal li{border-radius:9px;background:var(--surface,#fff);
   border:1px solid color-mix(in srgb,var(--line) 70%,transparent);font-size:11.5px;
   transition:opacity .15s ease,border-color .15s ease}
-.smart-proposal li label{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 10px;cursor:pointer}
+.smart-proposal li label{display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;min-width:0}
 .smart-proposal li input[type=checkbox]{flex:none;width:14px;height:14px;accent-color:var(--brand,#2f6b57);cursor:pointer}
 .smart-proposal li.is-off{opacity:.42;border-style:dashed}
 .smart-proposal li.is-off .smart-proposal-value{background:transparent;text-decoration:line-through}
-.smart-proposal-where{display:flex;align-items:baseline;gap:6px;min-width:170px}
-.smart-proposal-where b{font-weight:700;color:var(--ink)}
+.smart-proposal-where{display:flex;align-items:baseline;gap:6px;min-width:0;flex:1 1 auto}
+.smart-proposal-where b{font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .smart-proposal-where small{font-size:10px;color:var(--muted);white-space:nowrap}
+/* The question and its answer travel together: «القاعة ← F31» never splits
+   across two lines, which is what made the list read as noise. */
+.smart-proposal-change{display:inline-flex;align-items:center;gap:6px;flex:none;white-space:nowrap}
 .smart-proposal-field{color:var(--muted)}
 .smart-proposal-field::after{content:"←";margin-inline-start:6px;opacity:.55}
 .smart-proposal-value{font-weight:700;color:color-mix(in srgb,var(--brand,#2f6b57) 86%,var(--ink));
@@ -4201,8 +4204,11 @@ button.twin-delta{width:100%}
 .smart-proposal-apply:disabled,.smart-proposal-cancel:disabled{opacity:.5;cursor:not-allowed}
 @media(max-width:720px){
   .smart-proposal-grid{grid-template-columns:1fr}
-  .smart-proposal li label{gap:6px}
-  .smart-proposal-where{min-width:calc(100% - 22px)}
+  /* Too narrow for one line: the answer moves under its question, still
+     attached to it, rather than being pushed away by the course name. */
+  .smart-proposal li label{gap:6px;flex-wrap:wrap}
+  .smart-proposal-where{flex:1 1 100%}
+  .smart-proposal-change{margin-inline-start:22px}
   .smart-proposal-toggle{flex:1 1 100%;margin-inline-start:0;margin-top:2px}
 }
 @media(prefers-reduced-motion:reduce){.smart-proposal-apply,.smart-proposal-cancel,.smart-proposal li{transition:none}}

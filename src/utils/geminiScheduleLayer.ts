@@ -182,6 +182,10 @@ const blankText = (value: unknown) => {
   const text = String(value ?? "").trim();
   return !text || PLACEHOLDER.test(text);
 };
+
+/** A value that only says "somebody" or "something". Exported so the screen can
+ *  refuse to offer one even if it ever reaches that far. */
+export const isPlaceholderValue = (value: unknown) => blankText(value);
 const blankId = (value: unknown) => !Number(value);
 const hasNoDays = (row: any) => !DAY_FLAGS.some(flag => Boolean(row?.[flag]));
 

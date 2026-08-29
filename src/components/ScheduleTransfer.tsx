@@ -10,7 +10,7 @@ import { sortByName } from "../utils/sorting";
 import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
-import { applySmartFills, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
+import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -478,7 +478,17 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
          than risk overwriting a good table. */
       const readPages=(Array.isArray(data.pagesRead)?data.pagesRead:[]).map((page:any)=>Number(page)).filter(Boolean);
       const pages=readPages.length?readPages:troubledPages;
-      const proposal=proposeSmartFills(keptRows,fresh,pages);
+      const raw=proposeSmartFills(keptRows,fresh,pages);
+      /* Last line of defence. Binding a placeholder is blocked server-side, but
+         a stale deployment or a registry row literally named «هيئة تدريسية»
+         would still surface one here — and a generic label must never be
+         offered as if it were a person or a place. */
+      const named=(fill:SmartFill)=>{
+        if(fill.field==="AdInstructorId")return instructors.find((person:any)=>Number(person.AdInstructorId)===Number(fill.value))?.AdInstructorName||"";
+        if(fill.field==="AdCourseId")return deptCourses.find((course:any)=>Number(course.AdCourseId)===Number(fill.value))?.CourseName||"";
+        return fill.value;
+      };
+      const proposal={...raw,fills:raw.fills.filter(fill=>!isPlaceholderValue(named(fill)))};
       if(!proposal.fills.length){
         setError(proposal.conflicts.length
           ? `لم تضف القراءة الأدق أي خلية ناقصة. ${proposal.conflicts[0]}`
@@ -913,10 +923,14 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                                     <b>{fill.course || "مقرر بلا اسم"}</b>
                                     {fill.section ? <small>شعبة {fill.section}</small> : null}
                                   </span>
-                                  <span className="smart-proposal-field">{fill.label}</span>
-                                  {/* An identifier is not an answer: show the name
-                                      the reviewer would recognise on the page. */}
-                                  <span className="smart-proposal-value">{shown}</span>
+                                  {/* Field, arrow and value are one unit so the
+                                      answer never wraps away from its question.
+                                      An identifier is not an answer either: the
+                                      name the reviewer would recognise is shown. */}
+                                  <span className="smart-proposal-change">
+                                    <span className="smart-proposal-field">{fill.label}</span>
+                                    <span className="smart-proposal-value">{shown}</span>
+                                  </span>
                                 </label>
                               </li>
                             );})}
