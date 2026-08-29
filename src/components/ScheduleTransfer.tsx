@@ -57,6 +57,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   // Proposed cells wait here until a person approves them. Nothing is written
   // to the preview while this is set.
   const [smartProposal, setSmartProposal] = useState<{ fills: SmartFill[]; pages: number[]; conflicts: string[] } | null>(null);
+  /* Which proposed cells the reviewer still wants. Keyed by row+field so the
+     choice survives re-renders; everything starts chosen, and unticking is how
+     a reading that looks wrong is refused without discarding the rest. */
+  const [smartPicked, setSmartPicked] = useState<Set<string>>(new Set());
+  const fillKey = (fill: SmartFill) => `${fill.rowIndex}:${fill.field}`;
   const [payload, setPayload] = useState<any>(null);
   const [xlsxPreview, setXlsxPreview] = useState<any>(null);
   const [xlsxDraft, setXlsxDraft] = useState("");
@@ -484,18 +489,21 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       }
       // Nothing is written yet: the reviewer sees every proposed cell first.
       setSmartProposal({fills:proposal.fills,pages,conflicts:proposal.conflicts});
+      setSmartPicked(new Set(proposal.fills.map(fill=>`${fill.rowIndex}:${fill.field}`)));
     } catch (e:any) {
       setError(e.message||"تعذرت القراءة الأدق");
     } finally {
       setBusy(false); setSmartBusy(false); setReadProgress(null);
     }
   };
-  /** Approving writes exactly the listed cells and nothing else. */
+  /** Approving writes exactly the ticked cells and nothing else. */
   const applySmartProposal = () => {
     if (!smartProposal) return;
+    const chosen = smartProposal.fills.filter(fill => smartPicked.has(fillKey(fill)));
+    if (!chosen.length) return;
     setXlsxPreview((prev: any) => {
       if (!prev) return prev;
-      const rows = assignAuthoritySections(applySmartFills(prev.rows || [], smartProposal.fills) as ImportRow[]);
+      const rows = assignAuthoritySections(applySmartFills(prev.rows || [], chosen) as ImportRow[]);
       return {
         ...prev,
         rows,
@@ -503,11 +511,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         issues: [...new Set([...(Array.isArray(prev.issues) ? prev.issues : []), ...smartProposal.conflicts])],
         count: rows.length,
         smartRead: true,
-        smartFilled: Number(prev.smartFilled || 0) + smartProposal.fills.length,
+        smartFilled: Number(prev.smartFilled || 0) + chosen.length,
         smartPages: [...new Set([...(Array.isArray(prev.smartPages) ? prev.smartPages : []), ...smartProposal.pages])],
       };
     });
     setSmartProposal(null);
+    setSmartPicked(new Set());
   };
   /** Declining leaves the approved reading exactly as it was. */
   const dismissSmartProposal = () => {
@@ -515,6 +524,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       ? { ...prev, smartPages: [...new Set([...(Array.isArray(prev.smartPages) ? prev.smartPages : []), ...(smartProposal?.pages || [])])] }
       : prev);
     setSmartProposal(null);
+    setSmartPicked(new Set());
   };
   const readPdf = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
@@ -859,39 +869,67 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       <div className="smart-proposal-head">
                         <Sparkles aria-hidden="true" />
                         <b>{countOf(smartProposal.fills.length, AR.cell)} ناقصة يمكن تعبئتها</b>
-                        <small>لن يتغيّر شيء قبل موافقتك · الخلايا المقروءة تبقى كما هي</small>
+                        <small>لن يتغيّر شيء قبل موافقتك · اختر ما تثق به فقط · الخلايا المقروءة تبقى كما هي</small>
+                        <span className="smart-proposal-toggle">
+                          <button type="button" data-guide-ignore="تحديد كل الخلايا المقترحة داخل المعاينة" onClick={() => setSmartPicked(new Set(smartProposal.fills.map(fillKey)))} disabled={smartPicked.size === smartProposal.fills.length}>تحديد الكل</button>
+                          <button type="button" data-guide-ignore="إلغاء تحديد الخلايا المقترحة داخل المعاينة" onClick={() => setSmartPicked(new Set())} disabled={!smartPicked.size}>إلغاء التحديد</button>
+                        </span>
                       </div>
-                      {[...new Set<number>(smartProposal.fills.map(fill => Number(fill.page)))].sort((a, b) => a - b).map((page: number) => (
+                      {/* Pages sit side by side so a long list reads as a few
+                          short ones — the eye compares within a page, not down
+                          a single column of thirty unrelated rows. */}
+                      <div className="smart-proposal-grid">
+                      {[...new Set<number>(smartProposal.fills.map(fill => Number(fill.page)))].sort((a, b) => a - b).map((page: number) => {
+                        const pageFills = smartProposal.fills.filter(fill => fill.page === page);
+                        const pagePicked = pageFills.filter(fill => smartPicked.has(fillKey(fill))).length;
+                        return (
                         <div className="smart-proposal-page" key={page}>
-                          <span className="smart-proposal-page-title">صفحة {page.toLocaleString("ar-KW-u-nu-latn")}</span>
+                          <span className="smart-proposal-page-title">
+                            صفحة {page.toLocaleString("ar-KW-u-nu-latn")}
+                            <small>{pagePicked.toLocaleString("ar-KW-u-nu-latn")}/{pageFills.length.toLocaleString("ar-KW-u-nu-latn")}</small>
+                          </span>
                           <ul>
-                            {smartProposal.fills.filter(fill => fill.page === page).slice(0, 40).map((fill, index) => (
-                              <li key={`${page}-${fill.rowIndex}-${fill.field}-${index}`}>
-                                <span className="smart-proposal-where">
-                                  <b>{fill.course || "مقرر بلا اسم"}</b>
-                                  {fill.section ? <small>شعبة {fill.section}</small> : null}
-                                </span>
-                                <span className="smart-proposal-field">{fill.label}</span>
-                                {/* An identifier is not an answer: show the name
-                                    the reviewer would recognise on the page. */}
-                                <span className="smart-proposal-value">{
-                                  fill.field === "AdInstructorId"
-                                    ? (instructors.find((person: any) => Number(person.AdInstructorId) === Number(fill.value))?.AdInstructorName || `أستاذ #${fill.value}`)
-                                    : fill.field === "AdCourseId"
-                                      ? (deptCourses.find((course: any) => Number(course.AdCourseId) === Number(fill.value))?.CourseName || `مقرر #${fill.value}`)
-                                      : fill.value
-                                }</span>
+                            {pageFills.slice(0, 40).map((fill, index) => {
+                              const key = fillKey(fill);
+                              const picked = smartPicked.has(key);
+                              const shown = fill.field === "AdInstructorId"
+                                ? (instructors.find((person: any) => Number(person.AdInstructorId) === Number(fill.value))?.AdInstructorName || `أستاذ #${fill.value}`)
+                                : fill.field === "AdCourseId"
+                                  ? (deptCourses.find((course: any) => Number(course.AdCourseId) === Number(fill.value))?.CourseName || `مقرر #${fill.value}`)
+                                  : fill.value;
+                              return (
+                              <li key={`${page}-${key}-${index}`} className={picked ? "" : "is-off"}>
+                                <label>
+                                  <input
+                                    type="checkbox"
+                                    checked={picked}
+                                    onChange={() => setSmartPicked(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(key)) next.delete(key); else next.add(key);
+                                      return next;
+                                    })}
+                                  />
+                                  <span className="smart-proposal-where">
+                                    <b>{fill.course || "مقرر بلا اسم"}</b>
+                                    {fill.section ? <small>شعبة {fill.section}</small> : null}
+                                  </span>
+                                  <span className="smart-proposal-field">{fill.label}</span>
+                                  {/* An identifier is not an answer: show the name
+                                      the reviewer would recognise on the page. */}
+                                  <span className="smart-proposal-value">{shown}</span>
+                                </label>
                               </li>
-                            ))}
+                            );})}
                           </ul>
                         </div>
-                      ))}
+                      );})}
+                      </div>
                       {smartProposal.conflicts.length ? (
                         <p className="smart-proposal-note">{smartProposal.conflicts[0]}</p>
                       ) : null}
                       <div className="smart-proposal-actions">
-                        <button type="button" className="smart-proposal-apply" data-guide-ignore="يطبق الخلايا المعروضة داخل المعاينة فقط ولا ينشر شيئًا" onClick={applySmartProposal} disabled={busy}>
-                          تطبيق {countOf(smartProposal.fills.length, AR.cell)}
+                        <button type="button" className="smart-proposal-apply" data-guide-ignore="يطبق الخلايا المحددة داخل المعاينة فقط ولا ينشر شيئًا" onClick={applySmartProposal} disabled={busy || !smartPicked.size}>
+                          {smartPicked.size ? `تطبيق ${countOf(smartPicked.size, AR.cell)}` : "لم تحدد شيئاً"}
                         </button>
                         <button type="button" className="smart-proposal-cancel" data-guide-ignore="يتجاهل مقترح القراءة الأدق ويُبقي المعاينة كما هي" onClick={dismissSmartProposal} disabled={busy}>
                           إلغاء
