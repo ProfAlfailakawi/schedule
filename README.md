@@ -1,24 +1,25 @@
-السبب الجذري باختصار
-- عرض المباني والقاعات كان يستخدم مساراً بصرياً وتفاعلياً مختلفاً عن عرض الأسبوع، لذلك ظهرت الفروقات في السحب، الإحساس الحركي، وكثافة العناصر.
-- بعض الأزرار/البطاقات المساعدة كانت ظاهرة في الواجهة الأمامية رغم أنها مخصصة للإدارة أو كانت مكررة بصرياً.
-- بعض تفاصيل القائمة والتشريح كانت بحاجة ضبط محاذاة ومساحة قراءة.
-- 
-الملفات المعدلة فقط
-- src/components/Schedules.tsx
-  - توحيد فتح «أشعة الجدول» مباشرة من القائمة مع تمرير تلقائي إلى البطاقة.
-  - إخفاء بطاقة «علاقة تحتاج انتباه» من الواجهة الأمامية.
-  - إزالة تكرار شارة «ملاحظات» والإبقاء على مسار مراجعة الاعتماد.
-  - توحيد عرض المباني والقاعات ليعمل بنفس منطق الأسبوع صفاً/يوماً/مساراً.
-- src/styles/05-schedule.css
-  - نقل أزرار الإغلاق اليسارية في المواضع المتأثرة.
-  - تحسين وضوح الوقت الكامل في القائمة.
-  - ضبط محاذاة دائرة/خط «تشريح القرار».
-  - تهدئة وتنظيف لوحة المباني والقاعات وتقوية حدود المسارات.
-- src/styles/07-responsive.css
-  - تصحيح مواضع الإغلاق والاستجابة في «أشعة الجدول» وعلى الشاشات الصغيرة.
-- src/styles/09-details.css
-  - نقل زر الإغلاق اليساري في شاشة الرحلة/التفاصيل التي كانت متأثرة.
+# Schedule Academic Workspace
 
-ملاحظة تحقق
-- تم التحقق من سلامة صياغة ملف Schedules.tsx عبر transpile محلي.
-- أمر lint الكامل في هذه البيئة لم يكتمل بسبب نقص حزم type definitions الأصلية في المشروع، وليس بسبب التعديلات نفسها.
+This is an operational/admin system for deterministic academic timetabling. Reliability, authentication, authorization, and order integrity are more important than refactoring aesthetics.
+
+## Architecture
+
+- **Core Engine:** A deterministic scheduling engine with comprehensive tests verifying schedule conflict correctness, location/building/room integrity, and legacy migration parity.
+- **Comprehension Layer:** A Google Gemini-powered comprehension layer that *reads and explains* only. It never writes directly to the database without passing the deterministic validators and obtaining explicit user confirmation.
+- **Frontend UI:** Designed for stability and accessibility, preserving legacy-data compatibility and business rules.
+
+## Setup and Testing
+
+- Ensure you use \`npm ci\` for dependency resolution instead of \`npm install\` to preserve Docker reproducibility.
+- **Typecheck:** \`npm run lint\`
+- **Unit and Regression Tests:** \`npm test\`
+- **Gemini Comprehension Layer Tests:** \`npm run test:gemini-layer\`
+
+## Deployment and CI
+
+- **Production Build:** \`npm run build\`
+- The project is configured with a strict CI pipeline that ensures all tests, typechecks, and builds pass before any merge. No automated deployments are configured; all deployments must be manual and verified.
+
+## Recovery Documentation
+
+Always use branches and PRs for changes, and maintain a clear rollback plan. Do not redesign the UI or rewrite working scheduling logic unless addressing a defect supported by tests.

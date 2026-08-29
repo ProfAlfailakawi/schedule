@@ -79,7 +79,7 @@ export function normalizeGeminiScheduleRows(input: unknown, context: SmartImport
       AdSectionId: context.sectionId,
       AdTermId: context.termId,
       AdCourseId: Number(raw?.AdCourseId ?? raw?.courseId ?? 0),
-      AdCourseName: String(raw?.AdCourseName ?? raw?.courseName ?? raw?.["المقرر الدراسي"] ?? "").trim(),
+      AdCourseName: String(raw?.AdCourseName ?? raw?.courseName ?? raw?.["المقرر الدراسي"] ?? "").trim().slice(0, 220),
       SCode: asciiDigits(raw?.SCode ?? raw?.section ?? raw?.sectionCode ?? raw?.["الشعبة"] ?? "").replace(/\D/g, "").slice(0, 4),
       AdInstructorId: Number(raw?.AdInstructorId ?? raw?.instructorId ?? 0),
       fsunday: boolDay(raw, "fsunday", DAY_LABELS[0]),
@@ -411,7 +411,14 @@ export function sanitizeGeminiScheduleCalls(input: unknown): GeminiScheduleCall[
       if (typeof value === "string") cleanArgs[key] = value.slice(0, 240);
       else if (typeof value === "number" || typeof value === "boolean" || value == null) cleanArgs[key] = value;
       else if (Array.isArray(value)) cleanArgs[key] = value.slice(0, 20);
-      else if (typeof value === "object") cleanArgs[key] = JSON.parse(JSON.stringify(value).slice(0, 2000));
+      else if (typeof value === "object") {
+        try {
+          const str = JSON.stringify(value);
+          cleanArgs[key] = str.length <= 2000 ? JSON.parse(str) : {};
+        } catch {
+          cleanArgs[key] = {};
+        }
+      }
     }
     safe.push({ name: name as GeminiScheduleFunctionName, args: cleanArgs });
   }
