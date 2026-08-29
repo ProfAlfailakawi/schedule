@@ -5829,13 +5829,23 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
      budget we could justify — the model had to read every page and emit every
      row before the first byte came back. Pages are independent, so they are
      read side by side and merged here. */
+  /* A page the approved engine read cleanly needs no second opinion — and must
+     not leave to Google at all. The reviewer's screen knows which pages carry
+     unresolved rows and names them here; anything else is never uploaded. */
+  const requestedPages=new Set(String(req.query.pages||"").split(",")
+    .map(value=>Math.floor(Number(String(value).trim())))
+    .filter(value=>Number.isFinite(value)&&value>0));
+
   let pageImages:Buffer[]=[];
   if(mime.includes("pdf")||bytes.subarray(0,5).toString("latin1")==="%PDF-"){
     try{ pageImages=await renderPdfPagesForSmartRead(bytes); }
     catch(error:any){ console.error("تعذّر تحويل صفحات PDF للقراءة الأدق:",error?.message||error); }
   }
-  const attempts=pageImages.length
-    ? pageImages.map((page,index)=>({mimeType:"image/png",data:page.toString("base64"),label:`This is page ${index+1} of ${pageImages.length}. Set sourcePage=${index+1} on every row you read here.`,page:index+1}))
+  const selected=pageImages
+    .map((buffer,index)=>({buffer,page:index+1}))
+    .filter(item=>!requestedPages.size||requestedPages.has(item.page));
+  const attempts=selected.length
+    ? selected.map(item=>({mimeType:"image/png",data:item.buffer.toString("base64"),label:`This is page ${item.page} of ${pageImages.length}. Set sourcePage=${item.page} on every row you read here.`,page:item.page}))
     : [{mimeType:mime||"application/octet-stream",data:bytes.toString("base64"),label:"This is the whole document.",page:1}];
   const answers=await Promise.all(attempts.map(attempt=>requestGeminiScheduleLayer([
     {text:instructions(attempt.label)},
@@ -5877,6 +5887,10 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     issues,blockingIssues:validation,
     valid:rows.length>0&&validation.length===0,
     ready:rows.length>0&&validation.length===0,
+    // The caller keeps its own rows for every page absent from this list.
+    pagesRead:readPages.map(item=>item.page),
+    pagesRequested:[...requestedPages],
+    pageCount:pageImages.length,
     guardrail:"Gemini يقرأ ويفسر فقط؛ كل صف يمر عبر validators الحالية قبل حفظ أي مسودة أو نشرها.",
     message:rows.length?`قرأ Gemini ${rows.length} صفاً للمراجعة.`:"لم أتمكن من استخراج صفوف من الملف.",
   });

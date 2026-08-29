@@ -97,6 +97,7 @@ export const AR = {
   minute:      { one: "دقيقة", two: "دقيقتان", few: "دقائق", many: "دقيقة" },
   hour:        { one: "ساعة", two: "ساعتان", few: "ساعات", many: "ساعة" },
   section:     { one: "شعبة", two: "شعبتان", few: "شعب", many: "شعبة" },
+  page:        { one: "صفحة", two: "صفحتان", few: "صفحات", many: "صفحة" },
   note:        { one: "ملاحظة", two: "ملاحظتان", few: "ملاحظات", many: "ملاحظة" },
   message:     { one: "رسالة", two: "رسالتان", few: "رسائل", many: "رسالة" },
   clash:       { one: "تداخل", two: "تداخلان", few: "تداخلات", many: "تداخلاً" },

@@ -286,7 +286,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     const ready = rows.filter(rowReady).length;
     const review = Math.max(0, rows.length - ready);
     const derived = rows.reduce((sum, row) => sum + Object.values(row.importEvidence || {}).filter((proof: any) => proof?.confidence === "CONFIRMED" && proof?.derived).length, 0);
-    return { ready, review, derived };
+    /* A page that produced no unresolved row was read correctly, so it is not
+       worth re-reading and — more importantly — is never uploaded anywhere. */
+    const troubledPages = [...new Set(rows.filter(row => !rowReady(row)).map(row => Number((row as any).sourcePage || 1)))]
+      .filter(page => page > 0).sort((a, b) => a - b);
+    return { ready, review, derived, troubledPages };
   }, [importKind, xlsxPreview?.rows, departmentIds, roster]);
 
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
@@ -412,11 +416,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   /* The deterministic reader above stays the default and runs first. A second,
      sharper reading is available only on request: nothing reaches Gemini
      without this call, and civil IDs are stripped server-side before it. */
-  const readSmart = async (file: File) => {
-    setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
-    setReadProgress({ pct: 20, message: "قراءة أدق عبر Smart Import" });
+  const readSmart = async (file: File, troubledPages: number[] = []) => {
+    setError(null); setBusy(true);
+    const keptRows=(Array.isArray(xlsxPreview?.rows)?xlsxPreview.rows:[]) as ImportRow[];
+    setReadProgress({ pct: 20, message: troubledPages.length
+      ? `قراءة أدق للصفحات ${troubledPages.join("، ")}`
+      : "قراءة أدق عبر Smart Import" });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId),mime:file.type||"application/octet-stream"});
+      if(troubledPages.length)query.set("pages",troubledPages.join(","));
       const response=await fetch(`/api/intelligence/smart-import?${query}`,{
         method:"POST",
         headers:{"Content-Type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},
@@ -424,15 +432,25 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       });
       const data=await response.json();
       if(!response.ok)throw new Error(data.error||"تعذرت القراءة الأدق");
-      const scannedRows=assignAuthoritySections(Array.isArray(data.rows)?data.rows:[]);
-      if(!scannedRows.length)throw new Error("لم تُستخرج صفوف من الملف في القراءة الأدق.");
-      setXlsxPreview({
-        ...data,
+      const fresh=(Array.isArray(data.rows)?data.rows:[]) as ImportRow[];
+      if(!fresh.length)throw new Error("لم تُستخرج صفوف من الصفحات المطلوبة في القراءة الأدق.");
+      /* Only the pages Gemini actually read are replaced. Every clean page keeps
+         the approved engine's rows exactly as they were — a sharper second look
+         must never overwrite a reading that already had nothing wrong with it. */
+      const replaced=new Set<number>((Array.isArray(data.pagesRead)?data.pagesRead:[]).map((page:any)=>Number(page)).filter(Boolean));
+      const merged=replaced.size
+        ? [...keptRows.filter(row=>!replaced.has(Number((row as any).sourcePage||1))),...fresh]
+        : fresh;
+      merged.sort((a:any,b:any)=>(Number(a.sourcePage||1)-Number(b.sourcePage||1))||(Number(a.sourceOrder||0)-Number(b.sourceOrder||0)));
+      const scannedRows=assignAuthoritySections(merged);
+      setXlsxPreview((prev:any)=>({
+        ...(prev||{}),...data,
         rows:scannedRows,
         baselineRows:scannedRows.map((row:any)=>({...row})),
-        valid:Boolean(data.ready),count:scannedRows.length,fileName:file.name,importLayout:"authority-pdf",
-        smartRead:true,
-      });
+        pages:Number(prev?.pages||data.pageCount||0),
+        count:scannedRows.length,fileName:file.name,importLayout:"authority-pdf",
+        smartRead:true,smartPages:[...replaced],
+      }));
     } catch (e:any) {
       setError(e.message||"تعذرت القراءة الأدق");
     } finally {
@@ -750,26 +768,26 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   </div>
                   {/* The reading above is the approved engine's. Asking for a
                       sharper one is a deliberate click, never automatic. */}
-                  {importKind === "authority-pdf" && smartFile && !xlsxPreview.smartRead ? (
+                  {importKind === "authority-pdf" && smartFile && pdfReadinessSummary?.troubledPages?.length ? (
                     <div className="import-smart-retry">
                       <button
                         type="button"
                         className="import-smart-chip"
-                        data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة قراءة الملف عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
+                        data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة قراءة الصفحات المتعثرة عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
                         disabled={busy}
-                        onClick={() => { const f = smartFile; if (f) void readSmart(f); }}
-                        title="قراءة أدق عبر Smart Import — يعيد فهم نفس الملف ثم يمر على التحقق نفسه. لا تُرسل الأرقام المدنية."
+                        onClick={() => { const f = smartFile; if (f) void readSmart(f, pdfReadinessSummary.troubledPages); }}
+                        title={`قراءة أدق للصفحات ${pdfReadinessSummary.troubledPages.join("، ")} فقط — الصفحات التي قُرئت بلا أخطاء تبقى كما هي ولا تُرسل. لا تُرسل الأرقام المدنية.`}
                       >
                         <Sparkles aria-hidden="true" />
-                        <span>قراءة أدق</span>
+                        <span>قراءة أدق · {countOf(pdfReadinessSummary.troubledPages.length, AR.page)}</span>
                       </button>
                     </div>
                   ) : null}
-                  {xlsxPreview.smartRead ? (
+                  {xlsxPreview.smartRead && Array.isArray(xlsxPreview.smartPages) && xlsxPreview.smartPages.length ? (
                     <div className="import-smart-retry">
                       <span className="import-smart-chip is-done" aria-live="polite">
                         <Sparkles aria-hidden="true" />
-                        <span>قراءة أدق</span>
+                        <span>أُعيدت قراءة {xlsxPreview.smartPages.join("، ")}</span>
                       </span>
                     </div>
                   ) : null}
