@@ -184,6 +184,13 @@ async function renderPdf(input:Buffer,longEdge:number,onProgress?:OcrProgress):P
 
 /** Render page 1 only. Header preflight must never rasterize all timetable
  * pages: a wrong semester/college should be rejected before body work starts. */
+/** Page images for the optional sharper reading. Sending a whole multi-page
+ *  scan as one request made the model exceed any sane budget; one page per
+ *  request keeps each call small and lets them run side by side. */
+export async function renderPdfPagesForSmartRead(input:Buffer,longEdge=1700):Promise<Buffer[]>{
+  return renderPdf(input,longEdge);
+}
+
 async function renderPdfFirstPage(input:Buffer,longEdge:number):Promise<Buffer|null>{
   const lib=await canvas();
   const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");

@@ -54,7 +54,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
@@ -5815,26 +5815,54 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
   // to real instructor IDs locally (against the full registry that still holds
   // civil numbers) after Gemini returns, matching by name/code.
   const catalogue=buildSmartImportCatalogue(sectionCourses,instructorList);
-  const gemini=await requestGeminiScheduleLayer([
-    {text:[
-      "Extract an academic schedule from this PDF/scan/image into JSON only.",
-      "Use this schema: { rows:[{courseCode,courseName,section,days,time,startTime,endTime,instructorName,building,room,referenceNumber,sourcePage,confidence,notes}], issues:[string] }.",
-      "Never output civil IDs, national IDs, or any personal identification numbers, even if they appear in the document. Identify instructors by name only.",
-      "Do not invent missing course, instructor, room, or time values. Leave uncertain fields blank and explain in issues.",
-      "The server will map values to IDs and reject anything that fails deterministic validators.",
-      JSON.stringify({scope:{collegeId,sectionId,termId,...contextLabel},catalogue}),
-    ].join("\n")},
-    {inlineData:{mimeType:mime||"application/octet-stream",data:bytes.toString("base64")}},
-  ],{json:true});
-  const parsed=(gemini as any)?.json;
-  if(!parsed){
-    const failure=(gemini as any)?.failed?String((gemini as any).reason||""):"";
-    const detail=!gemini?"لم يُضبط مفتاح Gemini على الخادم."
-      :failure?`تعذّرت القراءة الأدق: ${failure}`
+  const instructions=(pageLabel:string)=>[
+    "Extract an academic schedule from this document image into JSON only.",
+    "Use this schema: { rows:[{courseCode,courseName,section,days,time,startTime,endTime,instructorName,building,room,referenceNumber,sourcePage,confidence,notes}], issues:[string] }.",
+    "Never output civil IDs, national IDs, or any personal identification numbers, even if they appear in the document. Identify instructors by name only.",
+    "Do not invent missing course, instructor, room, or time values. Leave uncertain fields blank and explain in issues.",
+    "The server will map values to IDs and reject anything that fails deterministic validators.",
+    pageLabel,
+    JSON.stringify({scope:{collegeId,sectionId,termId,...contextLabel},catalogue}),
+  ].join("\n");
+
+  /* One request per page. A whole multi-page scan in a single call exceeded any
+     budget we could justify — the model had to read every page and emit every
+     row before the first byte came back. Pages are independent, so they are
+     read side by side and merged here. */
+  let pageImages:Buffer[]=[];
+  if(mime.includes("pdf")||bytes.subarray(0,5).toString("latin1")==="%PDF-"){
+    try{ pageImages=await renderPdfPagesForSmartRead(bytes); }
+    catch(error:any){ console.error("تعذّر تحويل صفحات PDF للقراءة الأدق:",error?.message||error); }
+  }
+  const attempts=pageImages.length
+    ? pageImages.map((page,index)=>({mimeType:"image/png",data:page.toString("base64"),label:`This is page ${index+1} of ${pageImages.length}. Set sourcePage=${index+1} on every row you read here.`,page:index+1}))
+    : [{mimeType:mime||"application/octet-stream",data:bytes.toString("base64"),label:"This is the whole document.",page:1}];
+  const answers=await Promise.all(attempts.map(attempt=>requestGeminiScheduleLayer([
+    {text:instructions(attempt.label)},
+    {inlineData:{mimeType:attempt.mimeType,data:attempt.data}},
+  ],{json:true}).then(result=>({...attempt,result}))));
+
+  const readPages=answers.filter(item=>(item.result as any)?.json);
+  if(!readPages.length){
+    const firstFailure=answers.map(item=>item.result as any).find(item=>item?.failed);
+    const detail=!answers.some(item=>item.result)?"لم يُضبط مفتاح Gemini على الخادم."
+      :firstFailure?`تعذّرت القراءة الأدق: ${firstFailure.reason||""}`
       :"لم يُرجع Gemini بياناتٍ صالحة لهذا الملف.";
     res.status(503).json({error:`${detail} مسار PDF المعتمد الحالي لا يزال متاحاً ولا يستبدله هذا المسار.`,code:"GEMINI_SMART_IMPORT_UNAVAILABLE"});
     return;
   }
+  const missedPages=answers.filter(item=>!(item.result as any)?.json).map(item=>item.page);
+  const parsed={
+    rows:readPages.flatMap(item=>{
+      const body=(item.result as any).json;
+      const list=Array.isArray(body)?body:Array.isArray(body?.rows)?body.rows:Array.isArray(body?.schedule)?body.schedule:[];
+      return list.map((row:any)=>({...row,sourcePage:Number(row?.sourcePage)||item.page}));
+    }),
+    issues:[
+      ...readPages.flatMap(item=>Array.isArray((item.result as any).json?.issues)?(item.result as any).json.issues:[]),
+      ...(missedPages.length?[`تعذّرت القراءة الأدق للصفحات: ${missedPages.join("، ")}`]:[]),
+    ],
+  };
   const normalized=normalizeGeminiScheduleRows(parsed,{collegeId,sectionId,termId});
   const bound=bindGeminiRowsToCatalogue(normalized,sectionCourses,instructorList);
   const rows=safeDraftRows(bound,collegeId,sectionId,termId);
