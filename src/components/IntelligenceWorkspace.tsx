@@ -1652,6 +1652,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         const globalIssues=(Array.isArray(data.issues)?data.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
         const issues=[...globalIssues,...localIssues];
         setImportPreview({ ...data, rows:normalizedRows, count: normalizedRows.length, preview: normalizedRows, valid: normalizedRows.length>0&&issues.length===0, issues, importLayout: "authority-pdf" });
+        /* A successful read is not always the best read. Keep the file so the
+           reviewer can ask for a second, sharper reading — the deterministic
+           parser stays the default, and nothing reaches Gemini without a click. */
+        setSmartRetry({ file, reason: "" });
       }
     } catch (e: any) {
       // The Authority PDF stays local. We surface the failure and offer Smart
@@ -5091,6 +5095,25 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
                 <Notice>
                   جودة الصورة منخفضة ({Number(importPreview.legibility.confidence).toLocaleString("ar-KW-u-nu-latn")}٪).
                   قرأتُ ما استطعت، لكن نسخة أوضح ستقلّل الملاحظات كثيراً.
+                </Notice>
+              ) : null}
+              {/* The deterministic reader ran first and its result stands above.
+                  A second, sharper reading is available on request — never
+                  automatic, so no file reaches Gemini without this click. */}
+              {smartRetry && importPreview.importLayout === "authority-pdf" ? (
+                <Notice>
+                  هذه قراءة المحرك المعتمد. إن كانت الصفوف ناقصة أو غير دقيقة، اطلب قراءة أدق تعيد فهم الملف عبر Smart Import.
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      className="nl-move-apply"
+                      data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة القراءة عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
+                      disabled={busy}
+                      onClick={() => { const f = smartRetry.file; setSmartRetry(null); void importSmartFile(f, "قراءة أدق بطلب من المراجع"); }}
+                    >
+                      قراءة أدق عبر Smart Import (بدون الأرقام المدنية)
+                    </button>
+                  </div>
                 </Notice>
               ) : null}
               {importPreview.importLayout !== "authority-pdf" ? (importPreview.issues.length ? (
