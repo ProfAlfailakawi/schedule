@@ -14,3 +14,4 @@ database/legacy-password-vault.key
 database/*.firestore-verification.json
 __pycache__/
 *.pyc
+src/generated/buildStamp.ts
