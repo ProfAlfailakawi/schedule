@@ -251,7 +251,7 @@ export interface SmartFill {
  *  person can see every proposed cell before a single one changes. */
 export function proposeSmartFills(baseRows: any[], smartRows: any[], readPages: number[]) {
   const outcome = fillMissingCellsFromSmartRead(baseRows, smartRows, readPages, true);
-  return { fills: outcome.fills, conflicts: outcome.conflicts };
+  return { fills: outcome.fills, conflicts: outcome.conflicts, notes: outcome.notes };
 }
 
 /** Apply exactly the fills a person approved — nothing else is touched. */
@@ -283,7 +283,7 @@ export function applySmartFills(baseRows: any[], fills: SmartFill[]) {
 export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[], readPages: number[], proposeOnly = false) {
   const pages = new Set(readPages.map(page => Number(page)).filter(Boolean));
   if (!pages.size || !Array.isArray(baseRows) || !baseRows.length) {
-    return { rows: baseRows, filled: 0, conflicts: [] as string[], fills: [] as SmartFill[] };
+    return { rows: baseRows, filled: 0, conflicts: [] as string[], notes: [] as string[], fills: [] as SmartFill[] };
   }
   const byPage = new Map<number, any[]>();
   for (const row of Array.isArray(smartRows) ? smartRows : []) {
@@ -293,6 +293,7 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
   }
   const used = new Map<number, Set<number>>();
   const conflicts: string[] = [];
+  const notes: string[] = [];
   const fills: SmartFill[] = [];
 
   /* Corroboration before contribution. A candidate may only fill blanks when
@@ -354,6 +355,15 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
       // blankText also rejects the model's placeholders, so a guess never lands.
       if (value && !blankText(value)) { describe(field, value); if (!proposeOnly) next[field] = value; }
     }
+    /* «هيئة تدريسية» may be exactly what the page prints — a correct reading of
+       "not assigned yet", not an invention. Either way it names no one, so it
+       fills nothing; but saying so is more useful than dropping it in silence,
+       because the reviewer then knows to assign the row by hand. */
+    const writtenTeacher = String(candidate?.sourceInstructorText ?? candidate?.instructorName ?? "").trim();
+    if (blankId(next.AdInstructorId) && writtenTeacher && PLACEHOLDER.test(writtenTeacher)) {
+      const where = String(row?.SCode ?? "").trim() || String(row?.AdCourseName ?? "").trim() || `صف ${rowIndex + 1}`;
+      notes.push(`${where} (صفحة ${page}): المطبوع في الورقة «${writtenTeacher}» — لا يُربط بأستاذ، يحتاج إسناداً يدوياً.`);
+    }
     for (const field of FILLABLE_ID) {
       if (!blankId(next[field])) continue;
       const value = Number(candidate?.[field]);
@@ -381,7 +391,7 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     return next;
   });
 
-  return { rows, filled: fills.length, conflicts: conflicts.slice(0, 20), fills };
+  return { rows, filled: fills.length, conflicts: conflicts.slice(0, 20), notes: [...new Set(notes)].slice(0, 20), fills };
 }
 
 export function sanitizeGeminiScheduleCalls(input: unknown): GeminiScheduleCall[] {

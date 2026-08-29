@@ -179,8 +179,20 @@ const bound = bindGeminiRowsToCatalogue(
 assert.equal(bound[0].AdInstructorId, 0);
 assert.equal(bound[0].AdCourseId, 1);   // the real course code still binds
 
+/* «هيئة تدريسية» may be exactly what the Authority page prints — a correct
+   reading of "not assigned yet". It still names nobody, so it fills nothing;
+   but it is reported, because silence would leave the row unexplained. */
+const printedPlaceholder = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "501", AdInstructorId: 0, AdRoomCode: "012B09", fstarttime: "08:00" }],
+  [{ sourcePage: 1, SCode: "501", AdInstructorId: 0, sourceInstructorText: "هيئة تدريسية", AdRoomCode: "012B09", fstarttime: "08:00" }],
+  [1],
+);
+assert.equal(printedPlaceholder.rows[0].AdInstructorId, 0);
+assert.equal(printedPlaceholder.filled, 0);
+assert.ok(printedPlaceholder.notes.some(note => note.includes("هيئة تدريسية") && note.includes("501")));
+
 console.log(JSON.stringify({
-  passed: 16,
+  passed: 17,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -198,5 +210,6 @@ console.log(JSON.stringify({
     "a candidate contradicting any read cell contributes nothing at all",
     "one shared identifier is not certainty — two corroborations or nothing",
     "«هيئة تدريسية» binds to no instructor even when the registry holds that name",
+    "a placeholder printed on the page fills nothing but is reported as a note",
   ],
 }, null, 2));
