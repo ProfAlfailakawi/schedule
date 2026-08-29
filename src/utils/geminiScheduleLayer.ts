@@ -163,7 +163,11 @@ export function bindGeminiRowsToCatalogue(rows: any[], courses: any[], instructo
  */
 const FILLABLE_TEXT = ["AdRoomCode","AdRoomHall","fstarttime","fendtime","SCode","AdCourseName","referenceNumber"] as const;
 const FILLABLE_ID = ["AdCourseId","AdInstructorId"] as const;
-const FILLABLE_REF = ["buildingId","roomId"] as const;
+/* Registry identifiers are resolved from the visible codes by the location
+   registry, not read off the page. Proposing them would ask a reviewer to
+   approve an opaque string they cannot check against the document, so the
+   sharper reading offers only what is printed there. */
+const FILLABLE_REF = [] as const;
 
 /* Placeholders a model reaches for when it cannot read a cell. Treating them as
    values is how a blank turned into «هيئة تدريسية» across a whole page, so they

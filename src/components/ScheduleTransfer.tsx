@@ -415,6 +415,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   const readExcel = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
+    setSmartProposal(null); setSmartFile(null);
     setBusy(true);
     try {
       const XLSX = await import("xlsx");
@@ -517,7 +518,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
   const readPdf = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
-    setSmartFile(file);
+    setSmartProposal(null); setSmartFile(file);
     setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId)});
@@ -634,6 +635,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const readFile = async (file: File) => {
+    /* A new file starts a new review. Anything the sharper reading proposed for
+       the previous file would otherwise still be on screen, offering cells that
+       belong to a table that is no longer here. */
+    setSmartProposal(null); setSmartFile(null);
     if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") { await readPdf(file); return; }
     if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
     setError(null); setPreview(null); setPayload(null);
@@ -867,7 +872,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                                   {fill.section ? <small>شعبة {fill.section}</small> : null}
                                 </span>
                                 <span className="smart-proposal-field">{fill.label}</span>
-                                <span className="smart-proposal-value">{fill.value}</span>
+                                {/* An identifier is not an answer: show the name
+                                    the reviewer would recognise on the page. */}
+                                <span className="smart-proposal-value">{
+                                  fill.field === "AdInstructorId"
+                                    ? (instructors.find((person: any) => Number(person.AdInstructorId) === Number(fill.value))?.AdInstructorName || `أستاذ #${fill.value}`)
+                                    : fill.field === "AdCourseId"
+                                      ? (deptCourses.find((course: any) => Number(course.AdCourseId) === Number(fill.value))?.CourseName || `مقرر #${fill.value}`)
+                                      : fill.value
+                                }</span>
                               </li>
                             ))}
                           </ul>
