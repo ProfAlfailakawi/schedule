@@ -751,22 +751,26 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   {/* The reading above is the approved engine's. Asking for a
                       sharper one is a deliberate click, never automatic. */}
                   {importKind === "authority-pdf" && smartFile && !xlsxPreview.smartRead ? (
-                    <div className="import-smart-retry" style={{ margin: "8px 0" }}>
+                    <div className="import-smart-retry">
                       <button
                         type="button"
-                        className="ghost"
+                        className="import-smart-chip"
                         data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة قراءة الملف عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
                         disabled={busy}
                         onClick={() => { const f = smartFile; if (f) void readSmart(f); }}
-                        title="يعيد فهم نفس الملف عبر Smart Import ثم يمر على التحقق نفسه"
+                        title="قراءة أدق عبر Smart Import — يعيد فهم نفس الملف ثم يمر على التحقق نفسه. لا تُرسل الأرقام المدنية."
                       >
-                        قراءة أدق عبر Smart Import (بدون الأرقام المدنية)
+                        <Sparkles aria-hidden="true" />
+                        <span>قراءة أدق</span>
                       </button>
                     </div>
                   ) : null}
                   {xlsxPreview.smartRead ? (
-                    <div className="import-smart-retry" style={{ margin: "8px 0" }}>
-                      <small>هذه نتيجة القراءة الأدق عبر Smart Import — راجعها قبل النشر.</small>
+                    <div className="import-smart-retry">
+                      <span className="import-smart-chip is-done" aria-live="polite">
+                        <Sparkles aria-hidden="true" />
+                        <span>قراءة أدق</span>
+                      </span>
                     </div>
                   ) : null}
                   {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="confirmed"><i/>أبيض · مؤكد مباشر</span><span className="derived"><i/>أخضر · مستنتج ومثبت</span><span className="review"><i/>ذهبي · يحتاج مراجعة</span><span className="missing"><i/>أحمر · ناقص</span></div> : null}

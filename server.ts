@@ -5119,9 +5119,13 @@ function geminiFunctionCalls(data: any) {
 async function requestGeminiScheduleLayer(parts: GeminiPart[], options: { json?: boolean; tools?: boolean } = {}) {
   const key = String(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || "").trim();
   if (!key) return null;
-  const model = String(process.env.GEMINI_SCHEDULE_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash").trim();
+  const model = String(process.env.GEMINI_SCHEDULE_MODEL || process.env.GEMINI_MODEL || "gemini-3.6-flash").trim();
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 18_000);
+  /* Reading a multi-page scan is not a chat turn: even a one-line prompt costs
+     ~20s on this model, so an 18s budget aborted every real import. Function
+     calls stay short; a document read is given the time a document needs. */
+  const budgetMs = options.tools ? 45_000 : 180_000;
+  const timer = setTimeout(() => controller.abort(), budgetMs);
   try {
     const functionDeclarations = GEMINI_SCHEDULE_FUNCTION_NAMES.map(name => ({
       name,
@@ -5149,15 +5153,26 @@ async function requestGeminiScheduleLayer(parts: GeminiPart[], options: { json?:
         ...(options.json ? { generationConfig: { responseMimeType: "application/json", temperature: 0.1 } } : { generationConfig: { temperature: 0.1 } }),
       }),
     });
-    if (!response.ok) return null;
+    /* A silent null told the reviewer only "Gemini غير مهيأ", which hid a wrong
+       model name, an expired key, and a timeout behind one sentence. The reason
+       is logged for the operator and returned so the screen can name it. */
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      let message = detail;
+      try { message = JSON.parse(detail)?.error?.message || detail; } catch { /* plain text */ }
+      console.error(`Gemini ${model} رفض الطلب: HTTP ${response.status} — ${String(message).slice(0, 300)}`);
+      return { failed: true, status: response.status, reason: String(message).slice(0, 300) };
+    }
     const data = await response.json().catch(() => null);
     if (!data) return null;
     const calls = sanitizeGeminiScheduleCalls(geminiFunctionCalls(data));
     if (calls.length) return { calls, raw: data };
     const text = geminiOutputText(data);
     return { json: extractJsonObject(text), text, raw: data };
-  } catch {
-    return null;
+  } catch (error: any) {
+    const aborted = error?.name === "AbortError";
+    console.error(`Gemini ${model} فشل: ${aborted ? `تجاوز المهلة ${budgetMs}ms` : String(error?.message || error).slice(0, 200)}`);
+    return { failed: true, status: 0, reason: aborted ? `تجاوز المهلة (${Math.round(budgetMs / 1000)} ثانية) أثناء قراءة الملف` : String(error?.message || "تعذر الاتصال بـGemini").slice(0, 200) };
   } finally {
     clearTimeout(timer);
   }
@@ -5813,7 +5828,11 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
   ],{json:true});
   const parsed=(gemini as any)?.json;
   if(!parsed){
-    res.status(503).json({error:"Gemini غير مهيأ أو لم يرجع JSON صالحاً. مسار PDF المعتمد الحالي لا يزال متاحاً ولا يستبدله هذا المسار.",code:"GEMINI_SMART_IMPORT_UNAVAILABLE"});
+    const failure=(gemini as any)?.failed?String((gemini as any).reason||""):"";
+    const detail=!gemini?"لم يُضبط مفتاح Gemini على الخادم."
+      :failure?`تعذّرت القراءة الأدق: ${failure}`
+      :"لم يُرجع Gemini بياناتٍ صالحة لهذا الملف.";
+    res.status(503).json({error:`${detail} مسار PDF المعتمد الحالي لا يزال متاحاً ولا يستبدله هذا المسار.`,code:"GEMINI_SMART_IMPORT_UNAVAILABLE"});
     return;
   }
   const normalized=normalizeGeminiScheduleRows(parsed,{collegeId,sectionId,termId});

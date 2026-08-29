@@ -4128,6 +4128,23 @@ button.twin-delta{width:100%}
 .import-color-key .derived i{background:color-mix(in srgb,var(--success,#3f7f67) 34%,white)}
 .import-color-key .review i{background:color-mix(in srgb,var(--warning,#a8792a) 38%,white)}
 .import-color-key .missing i{background:color-mix(in srgb,var(--danger,#a2402f) 36%,white)}
+/* A quiet second opinion on the same file. It sits beside the colour key as a
+   small chip, not a call to action: the approved reading above is the default,
+   and this is only offered when the reviewer wants a sharper pass. */
+.import-smart-retry{display:flex;justify-content:flex-end;margin:0 2px 10px}
+.import-smart-chip{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:999px;
+  border:1px solid color-mix(in srgb,var(--brand,#2f6b57) 26%,var(--line));
+  background:color-mix(in srgb,var(--brand,#2f6b57) 6%,var(--surface));
+  color:color-mix(in srgb,var(--brand,#2f6b57) 82%,var(--ink));
+  font-size:11px;font-weight:600;line-height:1;cursor:pointer;
+  transition:background .15s ease,border-color .15s ease}
+.import-smart-chip svg{width:13px;height:13px;flex:none}
+.import-smart-chip:hover:not(:disabled){background:color-mix(in srgb,var(--brand,#2f6b57) 12%,var(--surface));border-color:color-mix(in srgb,var(--brand,#2f6b57) 40%,var(--line))}
+.import-smart-chip:disabled{opacity:.5;cursor:not-allowed}
+.import-smart-chip.is-done{cursor:default;background:color-mix(in srgb,var(--success,#3f7f67) 9%,var(--surface));
+  border-color:color-mix(in srgb,var(--success,#3f7f67) 32%,var(--line));
+  color:color-mix(in srgb,var(--success,#3f7f67) 84%,var(--ink))}
+@media(prefers-reduced-motion:reduce){.import-smart-chip{transition:none}}
 .import-visiting-badge{padding-inline:7px!important;background:color-mix(in srgb,var(--brass,#a8792a) 10%,var(--surface))!important;border-color:color-mix(in srgb,var(--brass,#a8792a) 32%,var(--line))!important;letter-spacing:0!important}
 @media(max-width:720px){.import-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.import-summary-cards>span{min-height:56px}.import-summary-cards>span b{font-size:24px!important}}
 
