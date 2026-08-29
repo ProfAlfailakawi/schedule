@@ -417,8 +417,10 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         "schedule-intelligence-tab",
       ) as Tab | null;
       sessionStorage.removeItem("schedule-intelligence-tab");
+      /* "import" no longer has an entry point here — a tab restored from an
+         older session would strand the reader on a screen with no way back. */
       return v &&
-        ["command", "copilot", "twin", "history", "import"].includes(v)
+        ["command", "copilot", "twin", "history"].includes(v)
         ? v
         : "command";
     });
@@ -2011,7 +2013,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
         if (featureId) intelligenceGuideOperationRef.current={ featureId, transactionId:detail.transactionId ? String(detail.transactionId) : undefined, startedAt:Date.now(), expected:value === "understand" ? "intelligence.scene.understand" : value === "try" ? "intelligence.scene.try" : "intelligence.scene.approve" };
         changeScene(value);
       }
-      if (detail.type === "tab" && detail.value && ["command","copilot","twin","history","import"].includes(String(detail.value))) {
+      if (detail.type === "tab" && detail.value && ["command","copilot","twin","history"].includes(String(detail.value))) {
         const value=String(detail.value);
         if (featureId) intelligenceGuideOperationRef.current={ featureId, transactionId:detail.transactionId ? String(detail.transactionId) : undefined, startedAt:Date.now(), expected:value === "copilot" ? "intelligence.ask-table" : featureId };
         setTab(value as Tab);
@@ -2453,15 +2455,9 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           >
             <Network /> النسخة التجريبية
           </button>
-          <button
-            type="button"
-            data-guide-ignore="تبويب فرعي داخل مساحة جرّب وتغطيه ميزة مركز الذكاء"
-            className={tab === "import" ? "active" : ""}
-            aria-pressed={tab === "import"}
-            onClick={() => setTab("import")}
-          >
-            <FileSpreadsheet /> استيراد آمن
-          </button>
+          {/* Importing a timetable lives in Data Tools only. Two doors to the
+              same reviewed route split attention and let one screen fall behind
+              the other; the guide points at «أدوات البيانات» for this. */}
         </nav>
       ) : null}
       {error && collegeId && sectionId && termId ? (

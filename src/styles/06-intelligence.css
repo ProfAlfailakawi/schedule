@@ -4144,7 +4144,13 @@ button.twin-delta{width:100%}
 .import-smart-chip.is-done{cursor:default;background:color-mix(in srgb,var(--success,#3f7f67) 9%,var(--surface));
   border-color:color-mix(in srgb,var(--success,#3f7f67) 32%,var(--line));
   color:color-mix(in srgb,var(--success,#3f7f67) 84%,var(--ink))}
-@media(prefers-reduced-motion:reduce){.import-smart-chip{transition:none}}
+.import-smart-chip.is-busy{opacity:1;cursor:progress}
+.import-smart-spinner{width:13px;height:13px;flex:none;border-radius:50%;
+  border:2px solid color-mix(in srgb,var(--brand,#2f6b57) 22%,transparent);
+  border-top-color:color-mix(in srgb,var(--brand,#2f6b57) 78%,var(--ink));
+  animation:import-smart-spin .7s linear infinite}
+@keyframes import-smart-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.import-smart-chip{transition:none}.import-smart-spinner{animation-duration:2.4s}}
 .import-visiting-badge{padding-inline:7px!important;background:color-mix(in srgb,var(--brass,#a8792a) 10%,var(--surface))!important;border-color:color-mix(in srgb,var(--brass,#a8792a) 32%,var(--line))!important;letter-spacing:0!important}
 @media(max-width:720px){.import-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.import-summary-cards>span{min-height:56px}.import-summary-cards>span b{font-size:24px!important}}
 

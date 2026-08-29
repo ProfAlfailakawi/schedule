@@ -50,6 +50,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [preview, setPreview] = useState<any>(null);
   // Kept so a reviewer can ask for a sharper second reading of the same file.
   const [smartFile, setSmartFile] = useState<File | null>(null);
+  // True only while the sharper reading is in flight, so the chip can say so
+  // and refuse a second click that would spend another read for nothing.
+  const [smartBusy, setSmartBusy] = useState(false);
   const [payload, setPayload] = useState<any>(null);
   const [xlsxPreview, setXlsxPreview] = useState<any>(null);
   const [xlsxDraft, setXlsxDraft] = useState("");
@@ -293,6 +296,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     return { ready, review, derived, troubledPages };
   }, [importKind, xlsxPreview?.rows, departmentIds, roster]);
 
+  /* What a sharper reading could still fix: pages that carry an unresolved row
+     AND have not already been re-read. When the approved engine left nothing
+     open, this is empty and the offer never appears — a clean import must not
+     invite an extra read, and a page is never sent twice. */
+  const smartPendingPages = useMemo(() => {
+    const done = new Set<number>((Array.isArray(xlsxPreview?.smartPages) ? xlsxPreview.smartPages : []).map((page: any) => Number(page)));
+    return (pdfReadinessSummary?.troubledPages || []).filter(page => !done.has(page));
+  }, [pdfReadinessSummary?.troubledPages, xlsxPreview?.smartPages]);
+
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();
     if (collegeId) query.set("collegeId", String(collegeId));
@@ -417,7 +429,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
      sharper reading is available only on request: nothing reaches Gemini
      without this call, and civil IDs are stripped server-side before it. */
   const readSmart = async (file: File, troubledPages: number[] = []) => {
-    setError(null); setBusy(true);
+    if (smartBusy) return;
+    setError(null); setBusy(true); setSmartBusy(true);
     const keptRows=(Array.isArray(xlsxPreview?.rows)?xlsxPreview.rows:[]) as ImportRow[];
     setReadProgress({ pct: 20, message: troubledPages.length
       ? `قراءة أدق للصفحات ${troubledPages.join("، ")}`
@@ -449,12 +462,15 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         baselineRows:scannedRows.map((row:any)=>({...row})),
         pages:Number(prev?.pages||data.pageCount||0),
         count:scannedRows.length,fileName:file.name,importLayout:"authority-pdf",
-        smartRead:true,smartPages:[...replaced],
+        smartRead:true,
+        // Pages already re-read are never offered again: a second pass on the
+        // same page spends another read without new information.
+        smartPages:[...new Set([...(Array.isArray(prev?.smartPages)?prev.smartPages:[]),...replaced,...troubledPages])],
       }));
     } catch (e:any) {
       setError(e.message||"تعذرت القراءة الأدق");
     } finally {
-      setBusy(false); setReadProgress(null);
+      setBusy(false); setSmartBusy(false); setReadProgress(null);
     }
   };
   const readPdf = async (file: File) => {
@@ -768,26 +784,30 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   </div>
                   {/* The reading above is the approved engine's. Asking for a
                       sharper one is a deliberate click, never automatic. */}
-                  {importKind === "authority-pdf" && smartFile && pdfReadinessSummary?.troubledPages?.length ? (
+                  {/* Offered only while it can still add something: pages that
+                      read cleanly are never sent, and a page already re-read is
+                      not offered twice. Nothing to gain ⇒ no chip at all. */}
+                  {importKind === "authority-pdf" && smartFile && (smartBusy || smartPendingPages.length) ? (
                     <div className="import-smart-retry">
                       <button
                         type="button"
-                        className="import-smart-chip"
+                        className={`import-smart-chip${smartBusy ? " is-busy" : ""}`}
                         data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة قراءة الصفحات المتعثرة عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
-                        disabled={busy}
-                        onClick={() => { const f = smartFile; if (f) void readSmart(f, pdfReadinessSummary.troubledPages); }}
-                        title={`قراءة أدق للصفحات ${pdfReadinessSummary.troubledPages.join("، ")} فقط — الصفحات التي قُرئت بلا أخطاء تبقى كما هي ولا تُرسل. لا تُرسل الأرقام المدنية.`}
+                        disabled={busy || smartBusy}
+                        aria-busy={smartBusy}
+                        onClick={() => { const f = smartFile; if (f && !smartBusy) void readSmart(f, smartPendingPages); }}
+                        title={smartBusy ? "جارٍ إعادة القراءة" : `قراءة أدق للصفحات ${smartPendingPages.join("، ")} فقط — الصفحات التي قُرئت بلا أخطاء تبقى كما هي ولا تُرسل. لا تُرسل الأرقام المدنية.`}
                       >
-                        <Sparkles aria-hidden="true" />
-                        <span>قراءة أدق · {countOf(pdfReadinessSummary.troubledPages.length, AR.page)}</span>
+                        {smartBusy ? <i className="import-smart-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
+                        <span>{smartBusy ? "يقرأ الصفحات…" : `قراءة أدق · ${countOf(smartPendingPages.length, AR.page)}`}</span>
                       </button>
                     </div>
                   ) : null}
-                  {xlsxPreview.smartRead && Array.isArray(xlsxPreview.smartPages) && xlsxPreview.smartPages.length ? (
+                  {!smartBusy && Array.isArray(xlsxPreview.smartPages) && xlsxPreview.smartPages.length ? (
                     <div className="import-smart-retry">
                       <span className="import-smart-chip is-done" aria-live="polite">
                         <Sparkles aria-hidden="true" />
-                        <span>أُعيدت قراءة {xlsxPreview.smartPages.join("، ")}</span>
+                        <span>أُعيدت قراءة {[...xlsxPreview.smartPages].sort((a:number,b:number)=>a-b).join("، ")}</span>
                       </span>
                     </div>
                   ) : null}
