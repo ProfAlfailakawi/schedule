@@ -773,8 +773,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                 </div>
               ) : null}
 
+              {/* While a sharper reading is in flight the table is frozen. The
+                  rows to keep were captured when the request left, so an edit
+                  made meanwhile would be silently overwritten by the merge. */}
               {xlsxPreview ? (
-                <div className="transfer-preview">
+                <div className={`transfer-preview${smartBusy ? " is-smart-locked" : ""}`} aria-busy={smartBusy}>
                   <div className="transfer-counts import-summary-cards">
                     <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفاً فُهم</small></span>
                     {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>:null}
@@ -831,6 +834,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         termId={termId}
                         onRows={next => setXlsxPreview((prev: any) => {
                           if(!prev)return prev;
+                          // The visual lock is the first guard; this is the one
+                          // that actually protects the data if anything slips past it.
+                          if(smartBusy)return prev;
                           const normalized=assignAuthoritySections(next);
                           const documentWarnings=(Array.isArray(prev.issues)?prev.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
                           return { ...prev, rows: normalized, count: normalized.length, issues: documentWarnings, valid: normalized.length > 0 || (Array.isArray(prev.baselineRows) && prev.baselineRows.length > 0) };

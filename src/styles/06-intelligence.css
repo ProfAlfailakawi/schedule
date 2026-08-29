@@ -4144,6 +4144,18 @@ button.twin-delta{width:100%}
 .import-smart-chip.is-done{cursor:default;background:color-mix(in srgb,var(--success,#3f7f67) 9%,var(--surface));
   border-color:color-mix(in srgb,var(--success,#3f7f67) 32%,var(--line));
   color:color-mix(in srgb,var(--success,#3f7f67) 84%,var(--ink))}
+/* Frozen while the sharper reading runs: the merge replaces whole pages, so an
+   edit made in this window would be thrown away without telling anyone. The
+   table stays readable — only interaction is withheld. */
+.transfer-preview.is-smart-locked{position:relative}
+/* Everything in the preview is inert except the chip that reports progress. */
+.transfer-preview.is-smart-locked>*:not(.import-smart-retry){pointer-events:none;opacity:.5;filter:saturate(.85)}
+.transfer-preview.is-smart-locked .import-page-tabs,
+.transfer-preview.is-smart-locked .import-preview-table,
+.transfer-preview.is-smart-locked .import-preview-table-wrap{pointer-events:none}
+.transfer-preview.is-smart-locked button,
+.transfer-preview.is-smart-locked input,
+.transfer-preview.is-smart-locked select{cursor:not-allowed}
 .import-smart-chip.is-busy{opacity:1;cursor:progress}
 .import-smart-spinner{width:13px;height:13px;flex:none;border-radius:50%;
   border:2px solid color-mix(in srgb,var(--brand,#2f6b57) 22%,transparent);
