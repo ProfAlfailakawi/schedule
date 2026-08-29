@@ -2465,7 +2465,7 @@ export default function IntelligenceWorkspace({ user, scopes }: Props) {
           {error}
           {smartRetry ? (
             <div style={{ marginTop: 8 }}>
-              <button type="button" className="nl-move-apply" disabled={busy} onClick={() => { const f = smartRetry.file; setSmartRetry(null); void importSmartFile(f, smartRetry.reason); }}>
+              <button type="button" className="nl-move-apply" data-guide-ignore="زر تعافٍ سياقي يظهر فقط بعد فشل قراءة PDF المعتمد؛ إجراء اختياري لإعادة المحاولة عبر Smart Import، ليس ميزة إرشاد مستقلة" disabled={busy} onClick={() => { const f = smartRetry.file; setSmartRetry(null); void importSmartFile(f, smartRetry.reason); }}>
                 جرّب Smart Import (يقرأ الملف عبر Gemini — بدون الأرقام المدنية)
               </button>
             </div>
