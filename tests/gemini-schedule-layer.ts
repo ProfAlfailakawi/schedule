@@ -130,8 +130,28 @@ const oneOnly = applySmartFills(approved, proposal.fills.filter(fill => fill.fie
 assert.equal(oneOnly[1].AdRoomHall, "F31");
 assert.equal(oneOnly[1].fstarttime, "");
 
+/* Position is not identity. Pairing "the third row here" with "the third row
+   there" once copied a building from section 503 onto section 501; a row that
+   cannot be proven to be the same row must be left alone. */
+const shifted = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 2, SCode: "501", AdRoomCode: "", fstarttime: "08:00", AdRoomHall: "F13" }],
+  [{ sourcePage: 2, SCode: "503", AdRoomCode: "012F15", fstarttime: "13:00", AdRoomHall: "F40" }],
+  [2],
+);
+assert.equal(shifted.rows[0].AdRoomCode, "");     // nothing borrowed from a different section
+assert.equal(shifted.filled, 0);
+
+// A row whose own section is unreadable is still matched by time + place.
+const byPlacement = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 3, SCode: "", AdRoomCode: "012B07", fstarttime: "10:00", AdCourseName: "" }],
+  [{ sourcePage: 3, SCode: "705", AdRoomCode: "012B07", fstarttime: "10:00", AdCourseName: "الإحصاء" }],
+  [3],
+);
+assert.equal(byPlacement.rows[0].AdCourseName, "الإحصاء");
+assert.equal(byPlacement.rows[0].SCode, "705");
+
 console.log(JSON.stringify({
-  passed: 11,
+  passed: 13,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -144,5 +164,7 @@ console.log(JSON.stringify({
     "invented placeholders («هيئة تدريسية», «—») are refused, and no page list fills nothing",
     "proposing describes the fills without applying any of them",
     "applying writes exactly the approved cells, and a subset writes only that subset",
+    "a row in the same position but a different section is never treated as a match",
+    "a row with an unreadable section is still matched by its time and place",
   ],
 }, null, 2));

@@ -177,19 +177,44 @@ const blankText = (value: unknown) => {
 const blankId = (value: unknown) => !Number(value);
 const hasNoDays = (row: any) => !DAY_FLAGS.some(flag => Boolean(row?.[flag]));
 
-function smartCandidate(row: any, pool: any[], usedIndexes: Set<number>, ordinal: number) {
+/* A candidate must be provably the SAME row, never merely the row in the same
+ * position. Position matching paired section 501 with section 503 and copied a
+ * building across unrelated rows, so it is gone: when no identifier matches, the
+ * row is left exactly as the approved engine read it.
+ */
+function smartCandidate(row: any, pool: any[], usedIndexes: Set<number>) {
+  const free = (index: number) => !usedIndexes.has(index);
+  const same = (a: unknown, b: unknown) => {
+    const left = String(a ?? "").trim(), right = String(b ?? "").trim();
+    return Boolean(left) && left === right;
+  };
+
   const reference = String(row?.referenceNumber ?? "").trim();
   if (reference) {
-    const byReference = pool.findIndex((item, index) => !usedIndexes.has(index) && String(item?.referenceNumber ?? "").trim() === reference);
+    const byReference = pool.findIndex((item, index) => free(index) && same(item?.referenceNumber, reference));
     if (byReference >= 0) return byReference;
   }
   const section = String(row?.SCode ?? "").trim();
   if (section) {
-    const bySection = pool.findIndex((item, index) => !usedIndexes.has(index) && String(item?.SCode ?? "").trim() === section);
+    const bySection = pool.findIndex((item, index) => free(index) && same(item?.SCode, section));
     if (bySection >= 0) return bySection;
   }
-  // Same position on the same page, only if that slot is still unclaimed.
-  return !usedIndexes.has(ordinal) && pool[ordinal] ? ordinal : -1;
+  /* A row whose own section is unreadable is still identifiable by where and
+     when it meets — two lectures cannot share a start time and a room. */
+  const start = String(row?.fstarttime ?? "").trim();
+  if (start) {
+    const byPlacement = pool.findIndex((item, index) => free(index)
+      && same(item?.fstarttime, start)
+      && (same(item?.AdRoomCode, row?.AdRoomCode) || same(item?.AdRoomHall, row?.AdRoomHall)));
+    if (byPlacement >= 0) return byPlacement;
+  }
+  const courseCode = String(row?.sourceCourseCode ?? "").trim();
+  if (courseCode && start) {
+    const byCourse = pool.findIndex((item, index) => free(index)
+      && same(item?.sourceCourseCode, courseCode) && same(item?.fstarttime, start));
+    if (byCourse >= 0) return byCourse;
+  }
+  return -1;   // not provably the same row — leave it untouched
 }
 
 export const SMART_FIELD_LABELS: Record<string, string> = {
@@ -255,7 +280,6 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     byPage.get(page)!.push(row);
   }
   const used = new Map<number, Set<number>>();
-  const ordinals = new Map<number, number>();
   const conflicts: string[] = [];
   const fills: SmartFill[] = [];
 
@@ -265,9 +289,7 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     const pool = byPage.get(page) || [];
     if (!pool.length) return row;
     if (!used.has(page)) used.set(page, new Set());
-    const ordinal = ordinals.get(page) ?? 0;
-    ordinals.set(page, ordinal + 1);
-    const index = smartCandidate(row, pool, used.get(page)!, ordinal);
+    const index = smartCandidate(row, pool, used.get(page)!);
     if (index < 0) return row;
     used.get(page)!.add(index);
     const candidate = pool[index];

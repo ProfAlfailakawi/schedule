@@ -862,7 +862,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                           <ul>
                             {smartProposal.fills.filter(fill => fill.page === page).slice(0, 40).map((fill, index) => (
                               <li key={`${page}-${fill.rowIndex}-${fill.field}-${index}`}>
-                                <span className="smart-proposal-where">{fill.section ? `شعبة ${fill.section}` : fill.course || `صف ${fill.rowIndex + 1}`}</span>
+                                <span className="smart-proposal-where">
+                                  <b>{fill.course || "مقرر بلا اسم"}</b>
+                                  {fill.section ? <small>شعبة {fill.section}</small> : null}
+                                </span>
                                 <span className="smart-proposal-field">{fill.label}</span>
                                 <span className="smart-proposal-value">{fill.value}</span>
                               </li>
