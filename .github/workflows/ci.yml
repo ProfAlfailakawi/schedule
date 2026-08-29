@@ -1,4 +1,4 @@
-name: CI
+name: Comprehensive CI
 
 on:
   push:
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   verify:
-    name: Verify project
+    name: Verify Project
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -30,6 +30,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "20"
+          cache: "npm"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -37,13 +38,13 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
-      - name: TypeScript check
+      - name: TypeScript check (noEmit)
         run: npm run lint
 
-      - name: Run tests
+      - name: Run all tests
         run: npm test
 
-      - name: Build project
+      - name: Production Build
         run: npm run build
