@@ -5830,12 +5830,12 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     "Never output civil IDs, national IDs, or any personal identification numbers, even if they appear in the document. Identify instructors by name only.",
     "TRANSCRIBE ONLY. Every value must be visibly printed on this page. If a cell is empty, unreadable, or cut off, return an empty string for it — never guess, never infer from neighbouring rows, never complete a pattern, and never copy a value from another row.",
     "Do not output a generic placeholder such as «هيئة تدريسية», «غير محدد», «TBA», or a dash in place of a value you cannot read: return an empty string instead.",
-    "Returning fewer, certain rows is correct. A blank cell is a useful answer; an invented one corrupts the record.",
-    ...(wanted?[
-      `These rows still have unreadable cells and matter most: ${wanted}.`,
-      "Return those rows FIRST and COMPLETELY — every cell you can see for them, including the ones that are already legible (section, time, room, building, reference number). Those legible cells are how the server proves it is looking at the same row, so omitting them makes the whole row unusable.",
-      "You may include other rows of the page as well; completeness per row matters more than the number of rows.",
-    ]:[]),
+    "Transcribe EVERY row you can see on the page, complete with every legible cell. A single unreadable cell is returned empty — never drop the whole row for it, and never invent the cell.",
+    /* The professional-era prompt steered nothing: the model read the whole
+       page freely and OUR layer chose what to use. Naming "the rows that
+       matter" steered it with section numbers the approved reader had already
+       misread on exactly those rows — the model then hunted for rows that do
+       not exist as named, and quality collapsed. The page is the instruction. */
     "The server will map values to IDs and reject anything that fails deterministic validators.",
     pageLabel,
     JSON.stringify({scope:{collegeId,sectionId,termId,...contextLabel},catalogue}),

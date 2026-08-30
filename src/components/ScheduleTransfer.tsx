@@ -478,24 +478,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       /* Naming the rows that still have blanks makes the answer small, and a
          small answer is a fast one — the model transcribes a few cells instead
          of re-emitting rows nobody asked it to touch. */
-      const scanFailedRow=(row:any)=>Object.values(row.importEvidence||{}).some((proof:any)=>proof?.confidence==="UNRESOLVED"||proof?.confidence==="REVIEW_REQUIRED");
-      const troubled=keptRows.filter(row=>troubledPages.includes(Number((row as any).sourcePage||1))&&scanFailedRow(row));
-      const need=troubled
-        .map(row=>`ص${Number((row as any).sourcePage||1)}:${String(row.SCode||"").trim()||String((row as any).referenceNumber||"").trim()}`)
-        .filter(item=>!/:$/.test(item));
-      if(need.length&&need.length<=40)query.set("need",[...new Set(need)].join("، "));
-      /* Row targeting for the strip cutter: each troubled row's POSITION among
-         its page's rows (1-based, in reading order). The server then ships only
-         those bands — the clean rows of the page never travel at all. */
-      const ordinalByPage=new Map<number,number>();
-      const rowSlots:string[]=[];
-      for(const row of keptRows){
-        const page=Number((row as any).sourcePage||1);
-        const ordinal=(ordinalByPage.get(page)||0)+1;
-        ordinalByPage.set(page,ordinal);
-        if(troubledPages.includes(page)&&scanFailedRow(row))rowSlots.push(`${page}:${ordinal}`);
-      }
-      if(rowSlots.length&&rowSlots.length<=60)query.set("rows",rowSlots.join(","));
+      /* No steering hints travel with the request. Naming "the rows that
+         matter" used section numbers the approved reader had misread on exactly
+         those rows, and reading quality collapsed chasing them. The model reads
+         each troubled page whole, exactly as in its best runs; choosing what to
+         use is OUR layer's job. */
       const response=await fetch(`/api/intelligence/smart-import?${query}`,{
         method:"POST",
         headers:{"Content-Type":file.type||"application/octet-stream","x-file-name":encodeURIComponent(file.name)},
