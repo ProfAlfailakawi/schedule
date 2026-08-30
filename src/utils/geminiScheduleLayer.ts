@@ -335,10 +335,22 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
   const corroborates = (row: any, candidate: any) => {
     let agreements = 0;
     const distrusted: string[] = [];
+    /* Proven identity outranks a garbled clock. A CRN is unique by construction;
+       CRN + section agreeing means this IS the same row, and a start time one of
+       the two readers misread should cost that reader its clock — not cost the
+       row its rescue. Without that double proof, the old strictness stands. */
+    const same = (field: string) => {
+      const ours = String(row?.[field] ?? "").trim(), theirs = String(candidate?.[field] ?? "").trim();
+      return !blankText(ours) && !blankText(theirs) && ours === theirs;
+    };
+    const identityProven = same("referenceNumber") && same("SCode");
     for (const field of STRONG_FIELDS) {
       const ours = String(row?.[field] ?? "").trim(), theirs = String(candidate?.[field] ?? "").trim();
       if (blankText(ours) || blankText(theirs)) continue;
-      if (ours !== theirs) return { ok: false, field, distrusted };
+      if (ours !== theirs) {
+        if (identityProven) { distrusted.push(field); continue; }
+        return { ok: false, field, distrusted };
+      }
       agreements += 1;
     }
     for (const field of SOFT_FIELDS) {
@@ -350,10 +362,16 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     // Days count too: if both readings have days and they differ, the candidate
     // is describing a different meeting — or inventing one.
     if (!hasNoDays(row) && !hasNoDays(candidate)) {
+      let daysAgree = true;
       for (const flag of DAY_FLAGS) {
-        if (Boolean(row?.[flag]) !== Boolean(candidate?.[flag])) return { ok: false, field: "days", distrusted };
+        if (Boolean(row?.[flag]) !== Boolean(candidate?.[flag])) { daysAgree = false; break; }
       }
-      agreements += 1;
+      if (!daysAgree) {
+        if (!identityProven) return { ok: false, field: "days", distrusted };
+        distrusted.push("days");
+      } else {
+        agreements += 1;
+      }
     }
     return { ok: agreements >= 2, field: "", distrusted };
   };

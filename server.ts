@@ -54,7 +54,7 @@ import {
   withinScheduleDay,
 } from "./src/utils/scheduleTime";
 import { canAccessGuideFeature, featureById, featureIdForGuideIntentGoal, parseStructuredGuideIntent } from "./src/guide/smartGuide";
-import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead } from "./src/utils/documentOcr";
+import { ocrDocument, ocrGraduationSheetDocument, parseScheduleTable, graduationSheetFacts, cleanBuildingCode, cleanHallCode, readAuthorityPdfHeader, renderPdfPagesForSmartRead, cropRowStripsForSmartRead } from "./src/utils/documentOcr";
 import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRecovery";
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
@@ -5857,11 +5857,38 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     try{ pageImages=await renderPdfPagesForSmartRead(bytes); }
     catch(error:any){ console.error("تعذّر تحويل صفحات PDF للقراءة الأدق:",error?.message||error); }
   }
+  /* Optional row targeting: "rows=1:3,1:7,2:5" names the (page, row-position)
+     of each still-unreadable row. When the same grid geometry the approved
+     reader trusts can isolate those bands, only THOSE strips travel — the
+     header band riding along so columns keep their names, one row of context
+     around each strip absorbing any off-by-one. Any doubt falls back to the
+     full page: cropping is a saving, never a new way to lose data. */
+  const requestedRows=new Map<number,number[]>();
+  for(const pair of String(req.query.rows||"").split(",")){
+    const match=String(pair).trim().match(/^(\d+):(\d+)$/);
+    if(!match)continue;
+    const page=Number(match[1]),ordinal=Number(match[2]);
+    if(!requestedRows.has(page))requestedRows.set(page,[]);
+    requestedRows.get(page)!.push(ordinal);
+  }
+
   const selected=pageImages
     .map((buffer,index)=>({buffer,page:index+1}))
     .filter(item=>!requestedPages.size||requestedPages.has(item.page));
-  const attempts=selected.length
-    ? selected.map(item=>({mimeType:"image/png",data:item.buffer.toString("base64"),label:`This is page ${item.page} of ${pageImages.length}. Set sourcePage=${item.page} on every row you read here.`,page:item.page}))
+  const prepared=await Promise.all(selected.map(async item=>{
+    const ordinals=requestedRows.get(item.page)||[];
+    if(ordinals.length){
+      try{
+        const strip=await cropRowStripsForSmartRead(item.buffer,ordinals);
+        if(strip)return {...item,buffer:strip,cropped:true};
+      }catch(error:any){ console.error(`تعذّر قصّ شرائط صفحة ${item.page}:`,error?.message||error); }
+    }
+    return {...item,cropped:false};
+  }));
+  const attempts=prepared.length
+    ? prepared.map(item=>({mimeType:"image/png",data:item.buffer.toString("base64"),label:item.cropped
+        ?`These are row strips cut from page ${item.page} of ${pageImages.length}: the table's column-header row first, then each requested row with its neighbours. Set sourcePage=${item.page} on every row. Transcribe only rows you can see here.`
+        :`This is page ${item.page} of ${pageImages.length}. Set sourcePage=${item.page} on every row you read here.`,page:item.page}))
     : [{mimeType:mime||"application/octet-stream",data:bytes.toString("base64"),label:"This is the whole document.",page:1}];
   const answers=await Promise.all(attempts.map(attempt=>requestGeminiScheduleLayer([
     {text:instructions(attempt.label)},

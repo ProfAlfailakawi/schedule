@@ -233,8 +233,28 @@ const strongClash = fillMissingCellsFromSmartRead(
 assert.equal(strongClash.rows[0].AdRoomHall, "");
 assert.equal(strongClash.filled, 0);
 
+/* Proven identity outranks a garbled clock: CRN + section agreeing means it IS
+   the same row, so a start-time mismatch costs that clock its trust — never the
+   row its rescue. Without the double proof, the old strictness stands. */
+const provenIdentity = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "" }],
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:30", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "F13" }],
+  [1],
+);
+assert.equal(provenIdentity.rows[0].AdRoomHall, "F13");        // rescued despite the clock
+assert.equal(provenIdentity.rows[0].fstarttime, "08:00");      // our clock untouched
+assert.ok(provenIdentity.notes.some(note => note.includes("بداية الوقت")));
+// Same clock mismatch WITHOUT the reference proof → still voided.
+const unproven = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "501", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "" }],
+  [{ sourcePage: 1, SCode: "501", fstarttime: "08:30", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "F13" }],
+  [1],
+);
+assert.equal(unproven.rows[0].AdRoomHall, "");
+assert.equal(unproven.filled, 0);
+
 console.log(JSON.stringify({
-  passed: 21,
+  passed: 23,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -257,5 +277,6 @@ console.log(JSON.stringify({
     "an approved fill flips its evidence so counters and red cells drain",
     "a garbled reference/course code disqualifies itself, never the whole row",
     "a strong-field contradiction still voids the row entirely",
+    "CRN+section proof rescues a row from a garbled clock; without proof it stays void",
   ],
 }, null, 2));

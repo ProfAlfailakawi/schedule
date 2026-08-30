@@ -191,6 +191,68 @@ export async function renderPdfPagesForSmartRead(input:Buffer,longEdge=1700):Pro
   return renderPdf(input,longEdge);
 }
 
+/**
+ * Row strips for the sharper (Gemini) reading ONLY — the approved reader keeps
+ * whole pages and is not touched by this.
+ *
+ * A page with three unreadable rows does not need its twenty-five clean rows
+ * shipped to Google again. We reuse the same grid geometry the approved reader
+ * trusts to find the row bands, then compose ONE small image: the table's
+ * header band (so every column keeps its name) followed by each requested row
+ * with one band of context above and below — enough that an off-by-one in band
+ * detection still shows the wanted row, while the corroboration gate discards
+ * any neighbour that sneaks in. Anything uncertain (no grid, tiny page, odd
+ * ordinals) returns null and the caller falls back to the full page: cropping
+ * is an optimisation, never a new way to lose data.
+ */
+export async function cropRowStripsForSmartRead(pagePng:Buffer,ordinals:number[]):Promise<Buffer|null>{
+  try{
+    const wanted=[...new Set(ordinals.map(v=>Math.floor(Number(v))).filter(v=>Number.isFinite(v)&&v>0))].sort((a,b)=>a-b);
+    if(!wanted.length)return null;
+    const lib=await canvas();
+    const image=await lib.loadImage(pagePng);
+    const geometry=adaptiveGridGeometry(lib,image);
+    if(!geometry||geometry.bands.length<3)return null;
+    const probeScale=Math.min(1,PROBE_LONG_EDGE/Math.max(image.width,image.height));
+    const toFull=(v:number)=>Math.round(v/probeScale);
+    const bands=geometry.bands.map(b=>({top:toFull(b.top),bottom:toFull(b.bottom)}));
+    /* Band 0 is the header row of the Authority grid; data row k sits at band k.
+       If the caller asks for more rows than the grid holds, or for most of the
+       page, a strip buys nothing — send the page. */
+    const dataBands=bands.length-1;
+    if(wanted[wanted.length-1]>dataBands)return null;
+    if(wanted.length>=Math.ceil(dataBands*0.6))return null;
+    const pad=Math.max(2,Math.round((bands[1].bottom-bands[1].top)*0.18));
+    const pick=new Set<number>([0]);                       // header always rides along
+    for(const k of wanted){pick.add(k);if(k>1)pick.add(k-1);if(k<dataBands)pick.add(k+1);}
+    /* Merge adjacent picks into continuous slices so shared borders are not
+       drawn twice and the model sees natural table fragments. */
+    const order=[...pick].sort((a,b)=>a-b);
+    const slices:{top:number;bottom:number}[]=[];
+    for(const k of order){
+      const top=Math.max(0,bands[k].top-pad),bottom=Math.min(image.height,bands[k].bottom+pad);
+      const last=slices[slices.length-1];
+      if(last&&top<=last.bottom+pad)last.bottom=Math.max(last.bottom,bottom);
+      else slices.push({top,bottom});
+    }
+    const gap=14;
+    const totalHeight=slices.reduce((sum,slice)=>sum+(slice.bottom-slice.top),0)+gap*(slices.length-1);
+    if(totalHeight<=0||totalHeight>=image.height*0.85)return null;   // no real saving
+    const surface=lib.createCanvas(image.width,totalHeight);
+    const ctx=surface.getContext("2d");
+    ctx.fillStyle="#e8e8e8";ctx.fillRect(0,0,surface.width,surface.height);
+    let y=0;
+    for(const slice of slices){
+      const height=slice.bottom-slice.top;
+      ctx.drawImage(image,0,slice.top,image.width,height,0,y,image.width,height);
+      y+=height+gap;
+    }
+    return surface.toBuffer("image/png");
+  }catch{
+    return null;   // any surprise → whole page, never a broken crop
+  }
+}
+
 async function renderPdfFirstPage(input:Buffer,longEdge:number):Promise<Buffer|null>{
   const lib=await canvas();
   const pdfjs:any=await import("pdfjs-dist/legacy/build/pdf.mjs");
