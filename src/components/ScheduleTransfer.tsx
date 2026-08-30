@@ -1014,7 +1014,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       all: a badge that still looks like the button invites the
                       click it is meant to prevent. Its result is already on the
                       table, and the «خلية عُبّئت» card records what it did. */}
-                  {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="confirmed"><i/>أبيض · مؤكد مباشر</span><span className="derived"><i/>أخضر · مستنتج ومثبت</span><span className="review"><i/>ذهبي · يحتاج مراجعة</span><span className="missing"><i/>أحمر · ناقص</span></div> : null}
+                  {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="derived"><i/>أخضر · مكتمل</span><span className="review"><i/>ذهبي · يحتاج مراجعة</span><span className="missing"><i/>أحمر · ناقص</span></div> : null}
                   {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
                     <>
                       {/* The whole table, red on what the scan could not read,

@@ -191,7 +191,11 @@ ok('106 seat/capacity numerics cannot enter contextual building shorthand', 'Nev
 ok('107 sideways image-only Authority PDF is refused before body OCR without weakening semantic course proof', 'authorityScanRequiresLandscape' in doc_ocr and 'ROOT ORIENTATION SAFETY' in doc_ocr and 'authorityCourseCellLooksPlausible' in doc_ocr and 'PDF_SCAN_REQUIRES_LANDSCAPE' in server and server.index('PDF_SCAN_REQUIRES_LANDSCAPE') < server.index('ocrDocument(bytes,"application/pdf"'))
 ok('108 any later scan page that required a physical turn is refused before row parsing', 'pageDiagnostics' in doc_ocr and 'const rotatedPages=recognized.pageDiagnostics.filter' in server and server.index('const rotatedPages=recognized.pageDiagnostics.filter') < server.index('parseScheduleTable(recognized.pages'))
 css=(ROOT/'src/styles/06-intelligence.css').read_text()
-ok('109 import confidence legend uses four visually distinct named states', 'أبيض · مؤكد مباشر' in transfer and 'أخضر · مستنتج ومثبت' in transfer and 'ذهبي · يحتاج مراجعة' in transfer and 'أحمر · ناقص' in transfer and 'import-cell-review' in css)
+# Read-vs-derived was engine bookkeeping, not a reviewer's decision: both mean
+# «settled», so they share one green. The legend now names the three states a
+# person actually acts on, and each must still be visually distinct.
+ok('109 import confidence legend uses three visually distinct named states', 'أخضر · مكتمل' in transfer and 'ذهبي · يحتاج مراجعة' in transfer and 'أحمر · ناقص' in transfer and 'أبيض · مؤكد مباشر' not in transfer and 'import-cell-review' in css)
+ok('109b settled cells share one green regardless of read-or-derived provenance', 'proof?.confidence==="CONFIRMED"?"import-cell-derived"' in preview and 'proof.derived' not in preview.split('evidenceClass')[1].split('};')[0])
 ok('110 scan course-column proof rejects welded section+CRN as a course key', 'authorityCourseCellLooksPlausible' in doc_ocr and '5011894' in doc_ocr and 'authorityGridDepartment' in doc_ocr and 'readGrid(upright,lanePool,authorityGridDepartment' in doc_ocr)
 ok('111 unresolved OCR course evidence can never become the user-facing course title', 'AdCourseId:0,AdCourseName:""' in doc_ocr and 'course?.CourseName || "—"' in preview and 'row.AdCourseName=canonicalCourse?String(canonicalCourse.CourseName||""):""' in server)
 

@@ -151,7 +151,11 @@ export default function ImportPreviewTable({
     if(proof?.confidence==="REVIEW_REQUIRED")return "import-cell-review";
     if(proof?.confidence==="UNRESOLVED")return "import-cell-missing";
     if(proof?.source==="MANUAL")return "import-cell-manual";
-    return proof?.confidence==="CONFIRMED"&&proof.derived?"import-cell-derived":"";
+    /* Whether the engine READ a value or DERIVED it is our bookkeeping, not the
+       reviewer's decision. Both mean the same thing to them — this cell is
+       settled — so both wear one colour. Two greens for one meaning only made
+       the table look like it was saying something it was not. */
+    return proof?.confidence==="CONFIRMED"?"import-cell-derived":"";
   };
   const evidenceTitle = (row:ImportRow,key:EvidenceKey) => {
     const proof=row.importEvidence?.[key];
