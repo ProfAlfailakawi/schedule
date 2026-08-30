@@ -5150,7 +5150,12 @@ async function requestGeminiScheduleLayer(parts: GeminiPart[], options: { json?:
         ].join("\n") }] },
         contents: [{ role: "user", parts }],
         ...(options.tools ? { tools: [{ functionDeclarations }], toolConfig: { functionCallingConfig: { mode: "ANY", allowedFunctionNames: GEMINI_SCHEDULE_FUNCTION_NAMES } } } : {}),
-        ...(options.json ? { generationConfig: { responseMimeType: "application/json", temperature: 0.1 } } : { generationConfig: { temperature: 0.1 } }),
+        /* Transcription is not a reasoning problem. Left to think at length the
+           model spent 11.8s on a single row where 1.8s produced the same JSON,
+           which is what turned a page read into a three-minute wait. */
+        ...(options.json
+          ? { generationConfig: { responseMimeType: "application/json", temperature: 0.1, thinkingConfig: { thinkingLevel: "low" } } }
+          : { generationConfig: { temperature: 0.1, thinkingConfig: { thinkingLevel: "low" } } }),
       }),
     });
     /* A silent null told the reviewer only "Gemini غير مهيأ", which hid a wrong
@@ -5827,8 +5832,9 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     "Do not output a generic placeholder such as «هيئة تدريسية», «غير محدد», «TBA», or a dash in place of a value you cannot read: return an empty string instead.",
     "Returning fewer, certain rows is correct. A blank cell is a useful answer; an invented one corrupts the record.",
     ...(wanted?[
-      `Only these rows still have unreadable cells: ${wanted}.`,
-      "Return ONLY those rows. Skip every other row on the page — they were already read correctly and are not needed.",
+      `These rows still have unreadable cells and matter most: ${wanted}.`,
+      "Return those rows FIRST and COMPLETELY — every cell you can see for them, including the ones that are already legible (section, time, room, building, reference number). Those legible cells are how the server proves it is looking at the same row, so omitting them makes the whole row unusable.",
+      "You may include other rows of the page as well; completeness per row matters more than the number of rows.",
     ]:[]),
     "The server will map values to IDs and reject anything that fails deterministic validators.",
     pageLabel,

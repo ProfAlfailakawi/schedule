@@ -13,7 +13,7 @@
     "test:credentials": "tsx tests/credential-audit.ts",
     "test:parity": "python3 tests/parity_audit.py",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit",
+    "lint": "node scripts/stamp-build.mjs --ensure && tsc --noEmit",
     "protect:data": "node scripts/protect-private-state.mjs",
     "extract:legacy": "python3 scripts/extract-legacy-bak.py",
     "migrate:firestore": "tsx scripts/import-legacy-json.ts database/db.json.gz",

@@ -1,21 +1,25 @@
 // Writes the build stamp every build. One identity, three carriers: the client
 // bundle, the server bundle, and the service worker — so "which version is
 // this?" always has one answer.
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from "fs";
-let stamp = new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 8);
+//
+// With --ensure the file is only created when it is missing, and an existing
+// stamp is left alone. Typechecking imports this module, but it is a build
+// artifact that does not survive every checkout: CI failed on a tree where the
+// file had never been generated, before the build that would have written it.
+// A typecheck must not depend on a build having already run.
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 
-// Make generation deterministic during CI to avoid timestamp-only churn.
-if (process.env.CI) {
-  if (existsSync("src/generated/buildStamp.ts")) {
-    const existing = readFileSync("src/generated/buildStamp.ts", "utf8");
-    const match = /BUILD_STAMP = "([^"]+)"/.exec(existing);
-    if (match) {
-      stamp = match[1];
-    }
-  }
+const ensureOnly = process.argv.includes("--ensure");
+const target = "src/generated/buildStamp.ts";
+
+if (ensureOnly && existsSync(target)) {
+  console.log("build stamp: موجود مسبقًا، لم يُلمس.");
+} else {
+  const stamp = ensureOnly
+    ? "00000000000000-devenv"
+    : new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14) + "-" + Math.random().toString(36).slice(2, 8);
+  mkdirSync("src/generated", { recursive: true });
+  writeFileSync(target,
+    `/** Generated each build by scripts/stamp-build.mjs — do not edit. */\nexport const BUILD_STAMP = ${JSON.stringify(stamp)};\n`);
+  console.log("build stamp:", stamp);
 }
-
-mkdirSync("src/generated", { recursive: true });
-writeFileSync("src/generated/buildStamp.ts",
-  `/** Generated each build by scripts/stamp-build.mjs — do not edit. */\nexport const BUILD_STAMP = ${JSON.stringify(stamp)};\n`);
-console.log("build stamp:", stamp);
