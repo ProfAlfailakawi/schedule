@@ -245,6 +245,10 @@ export interface SmartFill {
   label: string;
   value: string;
   days?: Record<string, boolean>;
+  /** Registry ids that travel WITH a visible fill (a room's verified id rides
+   *  with its printed code). Never shown — the reviewer approves what the page
+   *  says; the registry linkage is bookkeeping that comes along. */
+  carry?: Record<string, unknown>;
 }
 
 /** What the sharper reading WANTS to fill, described but not yet applied, so a
@@ -289,6 +293,7 @@ export function applySmartFills(baseRows: any[], fills: SmartFill[]) {
       /* An approved fill IS a resolution: the reviewer saw the value and said
          yes. Evidence flips with the cell, so the red drains, the counters
          move, and the page stops being counted as troubled. */
+      if (fill.carry) Object.assign(next, fill.carry);
       const evidenceKey = EVIDENCE_KEY_BY_FIELD[fill.field];
       if (evidenceKey) {
         next.importEvidence[evidenceKey] = {
@@ -354,8 +359,19 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
       agreements += 1;
     }
     for (const field of SOFT_FIELDS) {
-      const ours = String(row?.[field] ?? "").trim(), theirs = String(candidate?.[field] ?? "").trim();
+      let ours = String(row?.[field] ?? "").trim(), theirs = String(candidate?.[field] ?? "").trim();
       if (blankText(ours) || blankText(theirs)) continue;
+      if (field === "sourceCourseCode") {
+        /* The approved reader stores the 7-digit authority code; the page often
+           prints a short department code. Different shapes are different
+           dialects, not a disagreement — compare digits, and accept a suffix
+           match. Only a same-shape clash earns distrust. */
+        const oursDigits = ours.replace(/\D/g, ""), theirsDigits = theirs.replace(/\D/g, "");
+        if (!oursDigits || !theirsDigits) continue;
+        if (oursDigits === theirsDigits || oursDigits.endsWith(theirsDigits) || theirsDigits.endsWith(oursDigits)) { agreements += 1; continue; }
+        if (oursDigits.length !== theirsDigits.length) continue;   // structurally different — silence, not noise
+        distrusted.push(field); continue;
+      }
       if (ours !== theirs) { distrusted.push(field); continue; }
       agreements += field === "referenceNumber" ? 2 : 1;
     }
@@ -401,11 +417,18 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     }
     const next: any = { ...row };
     const describe = (field: string, value: string, days?: Record<string, boolean>) => {
+      let carry: Record<string, unknown> | undefined;
+      if (field === "AdRoomCode" && candidate?.buildingId) carry = { buildingId: candidate.buildingId };
+      if (field === "AdRoomHall" && candidate?.roomId) {
+        carry = { roomId: candidate.roomId };
+        if (candidate?.buildingId) carry.buildingId = candidate.buildingId;
+        if (candidate?.locationStatus === "VERIFIED") carry.locationStatus = "VERIFIED";
+      }
       fills.push({
         rowIndex, page,
         section: String(row?.SCode ?? "").trim(),
         course: String(row?.AdCourseName ?? "").trim(),
-        field, label: SMART_FIELD_LABELS[field] || field, value, days,
+        field, label: SMART_FIELD_LABELS[field] || field, value, days, carry,
       });
     };
 

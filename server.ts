@@ -5925,7 +5925,12 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
   };
   const normalized=normalizeGeminiScheduleRows(parsed,{collegeId,sectionId,termId});
   const bound=bindGeminiRowsToCatalogue(normalized,sectionCourses,instructorList);
-  const rows=safeDraftRows(bound,collegeId,sectionId,termId);
+  /* The sharper rows leave here carrying the same verified registry ids the
+     approved reader would attach: a room filled as text but never linked to
+     the registry kept its row counted «للمراجعة» forever — the frozen 51. */
+  const smartRegistry=await readLocationRegistry();
+  const rows=safeDraftRows(bound,collegeId,sectionId,termId)
+    .map(row=>canonicalizeHistoricalLocationForRuntime(row as any,smartRegistry) as any);
   const validation=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,resolveHistorical:true}):["لم يخرج Gemini أي صف قابل للمراجعة"];
   const parserIssues=Array.isArray(parsed?.issues)?parsed.issues.map((item:any)=>String(item||"").trim()).filter(Boolean).slice(0,80):[];
   const issues=[...new Set([...validation,...parserIssues])];

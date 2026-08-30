@@ -253,8 +253,35 @@ const unproven = fillMissingCellsFromSmartRead(
 assert.equal(unproven.rows[0].AdRoomHall, "");
 assert.equal(unproven.filled, 0);
 
+/* A filled room must carry its verified registry id, or the row stays
+   «للمراجعة» forever no matter how many cells are filled. */
+const carried = proposeSmartFills(
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", AdRoomCode: "012B09", AdRoomHall: "" }],
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", AdRoomCode: "012B09", AdRoomHall: "F13", roomId: "room-77", buildingId: "b-9", locationStatus: "VERIFIED" }],
+  [1],
+);
+const hallFill = carried.fills.find(fill => fill.field === "AdRoomHall");
+assert.ok(hallFill && hallFill.carry && hallFill.carry.roomId === "room-77");
+const linked = applySmartFills(
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", AdRoomCode: "012B09", AdRoomHall: "" }],
+  carried.fills,
+);
+assert.equal(linked[0].AdRoomHall, "F13");
+assert.equal(linked[0].roomId, "room-77");
+assert.equal(linked[0].locationStatus, "VERIFIED");
+
+/* The 7-digit authority code vs the page's short code are dialects of the same
+   fact — a suffix match agrees, a different shape is silence, never noise. */
+const dialects = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", sourceCourseCode: "1023101", AdRoomHall: "" }],
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", sourceCourseCode: "101", AdRoomHall: "F13" }],
+  [1],
+);
+assert.equal(dialects.rows[0].AdRoomHall, "F13");
+assert.equal(dialects.notes.filter(note => note.includes("رمز المقرر")).length, 0);
+
 console.log(JSON.stringify({
-  passed: 23,
+  passed: 25,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -278,5 +305,7 @@ console.log(JSON.stringify({
     "a garbled reference/course code disqualifies itself, never the whole row",
     "a strong-field contradiction still voids the row entirely",
     "CRN+section proof rescues a row from a garbled clock; without proof it stays void",
+    "a filled room carries its verified registry id so the row can actually turn ready",
+    "authority 7-digit vs printed short course codes are dialects — suffix agrees, different shapes stay silent",
   ],
 }, null, 2));

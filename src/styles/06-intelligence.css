@@ -4195,6 +4195,10 @@ button.twin-delta{width:100%}
   padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--brand,#2f6b57) 9%,transparent)}
 .smart-proposal-note{margin:10px 0 0;font-size:10.5px;color:color-mix(in srgb,var(--warning,#a8792a) 88%,var(--ink))}
 /* Facts about the page, not proposals: what it printed where a name should be. */
+.smart-proposal-notes-fold{margin:10px 0 0}
+.smart-proposal-notes-fold summary{cursor:pointer;font-size:10.5px;color:var(--muted);font-weight:600;list-style:none}
+.smart-proposal-notes-fold summary::before{content:"◂ ";opacity:.6}
+.smart-proposal-notes-fold[open] summary::before{content:"▾ "}
 .smart-proposal-notes{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:4px}
 .smart-proposal-notes li{font-size:10.5px;color:var(--muted);padding-inline-start:14px;position:relative;line-height:1.65}
 .smart-proposal-notes li::before{content:"•";position:absolute;inset-inline-start:2px;opacity:.6}

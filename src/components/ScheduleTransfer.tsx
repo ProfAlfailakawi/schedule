@@ -878,6 +878,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفحات PDF</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?.review?<span className="warn"><b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b><small>للمراجعة</small></span>:null}
+                    {/* «للمراجعة» counts rows, so filling one cell of a row that
+                        still lacks its instructor rightly leaves it — this card
+                        shows the work that DID land, so an apply is never
+                        mistaken for a no-op. */}
+                    {importKind==="authority-pdf"&&Number(xlsxPreview.smartFilled||0)>0?<span className="ready"><b>{Number(xlsxPreview.smartFilled).toLocaleString("ar-KW-u-nu-latn")}</b><small>خلية عُبّئت بالقراءة الأدق</small></span>:null}
                   </div>
                   {/* The reading above is the approved engine's. Asking for a
                       sharper one is a deliberate click, never automatic. */}
@@ -973,9 +978,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                           yet». Reported so the row is assigned by hand rather
                           than left looking unexplained. */}
                       {smartProposal.notes.length ? (
-                        <ul className="smart-proposal-notes">
-                          {smartProposal.notes.slice(0, 8).map((note, index) => <li key={index}>{note}</li>)}
-                        </ul>
+                        smartProposal.notes.length <= 4 ? (
+                          <ul className="smart-proposal-notes">
+                            {smartProposal.notes.map((note, index) => <li key={index}>{note}</li>)}
+                          </ul>
+                        ) : (
+                          <details className="smart-proposal-notes-fold">
+                            <summary>{countOf(smartProposal.notes.length, AR.note)} عن اختلاف القراءتين وما طُبع في الورقة</summary>
+                            <ul className="smart-proposal-notes">
+                              {smartProposal.notes.map((note, index) => <li key={index}>{note}</li>)}
+                            </ul>
+                          </details>
+                        )
                       ) : null}
                       {smartProposal.conflicts.length ? (
                         <p className="smart-proposal-note">{smartProposal.conflicts[0]}</p>
