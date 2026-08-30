@@ -56,7 +56,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [smartBusy, setSmartBusy] = useState(false);
   // Proposed cells wait here until a person approves them. Nothing is written
   // to the preview while this is set.
-  const [smartProposal, setSmartProposal] = useState<{ fills: SmartFill[]; pages: number[]; conflicts: string[]; notes: string[] } | null>(null);
+  const [smartProposal, setSmartProposal] = useState<{ fills: SmartFill[]; pages: number[]; conflicts: string[]; notes: string[]; token: string } | null>(null);
+  /* A proposal belongs to ONE file. Carrying its own token — and being rendered
+     only while that token is the file on screen — makes a stale card structurally
+     impossible, instead of relying on every new-import path to remember to clear
+     it. A second upload showed the first file's cells because one path forgot. */
+  const smartToken = (file: File | null) => file ? `${file.name}|${file.size}|${file.lastModified}` : "";
   /* Which proposed cells the reviewer still wants. Keyed by row+field so the
      choice survives re-renders; everything starts chosen, and unticking is how
      a reading that looks wrong is refused without discarding the rest. */
@@ -420,7 +425,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   const readExcel = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
-    setSmartProposal(null); setSmartFile(null);
+    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null);
     setBusy(true);
     try {
       const XLSX = await import("xlsx");
@@ -491,7 +496,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       const proposal={...raw,fills:raw.fills.filter(fill=>!isPlaceholderValue(named(fill)))};
       if(!proposal.fills.length&&proposal.notes.length){
         // Nothing to fill, but the reason is worth saying out loud.
-        setSmartProposal({fills:[],pages,conflicts:proposal.conflicts,notes:proposal.notes});
+        setSmartProposal({fills:[],pages,conflicts:proposal.conflicts,notes:proposal.notes,token:smartToken(file)});
         setSmartPicked(new Set());
         return;
       }
@@ -504,7 +509,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         return;
       }
       // Nothing is written yet: the reviewer sees every proposed cell first.
-      setSmartProposal({fills:proposal.fills,pages,conflicts:proposal.conflicts,notes:proposal.notes});
+      setSmartProposal({fills:proposal.fills,pages,conflicts:proposal.conflicts,notes:proposal.notes,token:smartToken(file)});
       setSmartPicked(new Set(proposal.fills.map(fill=>`${fill.rowIndex}:${fill.field}`)));
     } catch (e:any) {
       setError(e.message||"تعذرت القراءة الأدق");
@@ -515,6 +520,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   /** Approving writes exactly the ticked cells and nothing else. */
   const applySmartProposal = () => {
     if (!smartProposal) return;
+    // Never write cells read from a file that is no longer the one on screen.
+    if (smartProposal.token !== smartToken(smartFile)) { setSmartProposal(null); setSmartPicked(new Set()); return; }
     const chosen = smartProposal.fills.filter(fill => smartPicked.has(fillKey(fill)));
     if (!chosen.length) return;
     setXlsxPreview((prev: any) => {
@@ -544,7 +551,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
   const readPdf = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("authority-pdf"); setBusy(true);
-    setSmartProposal(null); setSmartFile(file);
+    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(file);
     setReadProgress({ pct: 4, message: "يجهّز الملف للقراءة" });
     try {
       const query=new URLSearchParams({collegeId:String(collegeId),sectionId:String(sectionId),termId:String(termId)});
@@ -664,7 +671,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     /* A new file starts a new review. Anything the sharper reading proposed for
        the previous file would otherwise still be on screen, offering cells that
        belong to a table that is no longer here. */
-    setSmartProposal(null); setSmartFile(null);
+    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null);
     if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") { await readPdf(file); return; }
     if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
     setError(null); setPreview(null); setPayload(null);
@@ -879,8 +886,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       </button>
                     </div>
                   ) : null}
-                  {/* Every proposed cell, grouped by page, before one changes. */}
-                  {smartProposal ? (
+                  {/* Every proposed cell, grouped by page, before one changes.
+                      The token gate is what guarantees these cells belong to the
+                      file currently on screen and not to the one before it. */}
+                  {smartProposal && smartProposal.token === smartToken(smartFile) ? (
                     <div className="smart-proposal" role="group" aria-label="مقترح القراءة الأدق">
                       <div className="smart-proposal-head">
                         <Sparkles aria-hidden="true" />
