@@ -523,7 +523,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       };
       const proposal={...raw,fills:raw.fills.filter(fill=>!isPlaceholderValue(named(fill)))};
       if(!proposal.fills.length){
-        setError("لم تجد القراءة الأدق خانة ناقصة تستطيع تعبئتها بثقة. الجدول باقٍ كما هو.");
+        setError("القراءة الأدق لم تضف جديداً هذه المرة — ما تبقّى من خانات يحتاج تعبئة يدوية. جدولك لم يتغيّر.");
         // The page was looked at, so it is not offered again for nothing.
         // The entitlement is spent by USE, not by outcome: a pass that found
         // nothing still consumed its read.
@@ -883,10 +883,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
               {xlsxPreview ? (
                 <div className={`transfer-preview${smartBusy ? " is-smart-locked" : ""}`} aria-busy={smartBusy}>
                   <div className="transfer-counts import-summary-cards">
-                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفاً فُهم</small></span>
+                    <span className="understood"><b>{Number(xlsxPreview.count || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفاً</small></span>
                     {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>:null}
-                    {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفحات PDF</small></span>:null}
-                    {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز</small></span>:null}
+                    {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفحات</small></span>:null}
+                    {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز للنشر</small></span>:null}
                     {/* One card, two units: the rows still waiting and the exact
                         number of blanks inside them — so filling two cells of a
                         three-blank row visibly moves the smaller number even
@@ -895,7 +895,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     {importKind==="authority-pdf"&&pdfReadinessSummary?.review?(
                       <span className="warn review-breakdown">
                         <b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b>
-                        <small>للمراجعة</small>
+                        <small>مقرراً للمراجعة</small>
                         <small className="review-units">
                           {pdfReadinessSummary.reviewCells?<em>{pdfReadinessSummary.reviewCells.toLocaleString("ar-KW-u-nu-latn")} خانة ناقصة</em>:null}
                           {Number(xlsxPreview.smartFilled||0)>0?<em className="filled">عُبّئت {Number(xlsxPreview.smartFilled).toLocaleString("ar-KW-u-nu-latn")} بالقراءة الأدق</em>:null}

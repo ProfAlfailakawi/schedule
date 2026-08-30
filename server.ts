@@ -5902,10 +5902,19 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
   const readPages=answers.filter(item=>(item.result as any)?.json);
   if(!readPages.length){
     const firstFailure=answers.map(item=>item.result as any).find(item=>item?.failed);
-    const detail=!answers.some(item=>item.result)?"لم يُضبط مفتاح Gemini على الخادم."
-      :firstFailure?`تعذّرت القراءة الأدق: ${firstFailure.reason||""}`
-      :"لم يُرجع Gemini بياناتٍ صالحة لهذا الملف.";
-    res.status(503).json({error:`${detail} مسار PDF المعتمد الحالي لا يزال متاحاً ولا يستبدله هذا المسار.`,code:"GEMINI_SMART_IMPORT_UNAVAILABLE"});
+    /* Raw provider errors are for the log, not the reviewer: "high demand.
+       Please try again later" in English inside an Arabic sentence reads as a
+       fault in OUR system. The screen gets one calm sentence per situation. */
+    const busySignal=/high demand|overloaded|try again|resource.?exhausted|quota|rate limit|503|429/i;
+    const detail=!answers.some(item=>item.result)
+      ?"القراءة الأدق غير مهيأة على الخادم."
+      :firstFailure&&busySignal.test(String(firstFailure.reason||""))
+        ?"خوادم القراءة الأدق مزدحمة في هذه اللحظة. انتظر دقيقة ثم أعد فتح الملف وحاول مجدداً."
+        :firstFailure&&/تجاوز المهلة/.test(String(firstFailure.reason||""))
+          ?"استغرقت القراءة الأدق أطول من المسموح فتوقفت. حاول مرة أخرى — الملفات الكبيرة قد تحتاج محاولة ثانية."
+          :"تعذّرت القراءة الأدق لهذا الملف.";
+    if(firstFailure)console.error("smart-import provider failure:",String(firstFailure.reason||"").slice(0,300));
+    res.status(503).json({error:`${detail} جدولك لم يتغيّر.`,code:"GEMINI_SMART_IMPORT_UNAVAILABLE"});
     return;
   }
   const missedPages=answers.filter(item=>!(item.result as any)?.json).map(item=>item.page);
@@ -5933,20 +5942,14 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
      approved reader would attach: a room filled as text but never linked to
      the registry kept its row counted «للمراجعة» forever — the frozen 51. */
   const smartRegistry=await readLocationRegistry();
+  /* Linking attaches ids where the registry resolves; where it cannot, the TEXT
+     is kept and the decision belongs to the proposal layer, which fills a
+     location only when it carries an id OR a confirmed twin already uses the
+     same code in this very import. Wiping unresolved text here looked safer but
+     starved that layer of every value — the sharper reading suddenly "found
+     nothing" on documents it had read professionally minutes earlier. */
   const rows=safeDraftRows(bound,collegeId,sectionId,termId)
-    .map(row=>canonicalizeHistoricalLocationForRuntime(row as any,smartRegistry) as any)
-    /* The approved reader never displays a location it could not link to the
-       registry — it blanks the cell rather than show an unverified code as if
-       it were canonical. The sharper reading must obey the same contract, or it
-       proposes a building like «12F15» that fills the cell with text, carries no
-       id, and therefore lands RED: a value that looks answered and counts as
-       missing. Unlinked locations are dropped here, so they are never offered. */
-    .map((row:any)=>{
-      const next={...row};
-      if(!next.buildingId){next.AdRoomCode="";next.AdRoomHall="";next.roomId=undefined;}
-      else if(!next.roomId&&next.locationStatus!=="PENDING_ROOM"){next.AdRoomHall="";}
-      return next;
-    });
+    .map(row=>canonicalizeHistoricalLocationForRuntime(row as any,smartRegistry) as any);
   const validation=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,resolveHistorical:true}):["لم يخرج Gemini أي صف قابل للمراجعة"];
   const parserIssues=Array.isArray(parsed?.issues)?parsed.issues.map((item:any)=>String(item||"").trim()).filter(Boolean).slice(0,80):[];
   const issues=[...new Set([...validation,...parserIssues])];

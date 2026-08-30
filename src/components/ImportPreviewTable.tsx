@@ -272,7 +272,11 @@ export default function ImportPreviewTable({
                   <td className={evidenceClass(row,"time",missing.time(row))} title={evidenceTitle(row,"time")} dir="ltr">
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patchManual(index, "time", { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patchManual(index, "time", { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
-                  <td className={evidenceClass(row,"building",missing.building(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"building")}>
+                  {/* A hall that failed to link marks the HALL, not its building:
+                      012B07 confirmed by the registry was turning red because a
+                      neighbouring cell had the problem. Each column carries its
+                      own trouble only. */}
+                  <td className={evidenceClass(row,"building",missing.building(row) || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"building")}>
                     {open ? (
                       <BuildingPicker
                         collegeId={collegeId}
