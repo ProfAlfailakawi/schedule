@@ -83,7 +83,7 @@ const approved = [
 ];
 const smart = [
   { sourcePage: 1, SCode: "501", AdCourseName: "اسم مختلف تماماً", AdRoomHall: "Z99", fstarttime: "23:00", referenceNumber: "18945" },
-  { sourcePage: 1, SCode: "502", AdCourseName: "مبادئ الإدارة", AdRoomHall: "F31", fstarttime: "11:00", fendtime: "11:50", ftuesday: true, referenceNumber: "18946" },
+  { sourcePage: 1, SCode: "502", AdCourseName: "مبادئ الإدارة", AdRoomHall: "F31", roomId: "room-31", buildingId: "b-7", fstarttime: "11:00", fendtime: "11:50", ftuesday: true, referenceNumber: "18946" },
   { sourcePage: 2, SCode: "601", AdCourseName: "هيئة تدريسية", AdRoomHall: "زائف", referenceNumber: "18950" },
 ];
 const outcome = fillMissingCellsFromSmartRead(approved, smart, [1]);
@@ -174,7 +174,7 @@ assert.equal(thinMatch.filled, 0);
    its own. Demanding a second witness discarded rows we had already proven. */
 const byReference = fillMissingCellsFromSmartRead(
   [{ sourcePage: 1, referenceNumber: "18945", SCode: "", AdCourseName: "", AdRoomHall: "" }],
-  [{ sourcePage: 1, referenceNumber: "18945", SCode: "801", AdCourseName: "أصول الفقه", AdRoomHall: "F22" }],
+  [{ sourcePage: 1, referenceNumber: "18945", SCode: "801", AdCourseName: "أصول الفقه", AdRoomHall: "F22", roomId: "room-22" }],
   [1],
 );
 assert.equal(byReference.rows[0].AdCourseName, "أصول الفقه");
@@ -217,7 +217,7 @@ assert.equal(evidenced[0].importEvidence.time.confidence, "CONFIRMED"); // untou
    time and room all agree — it only disqualifies itself, and is reported. */
 const softClash = fillMissingCellsFromSmartRead(
   [{ sourcePage: 1, SCode: "501", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "", referenceNumber: "18945", sourceCourseCode: "1023101" }],
-  [{ sourcePage: 1, SCode: "501", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "F13", referenceNumber: "18948", sourceCourseCode: "1023102" }],
+  [{ sourcePage: 1, SCode: "501", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "F13", roomId: "room-13", referenceNumber: "18948", sourceCourseCode: "1023102" }],
   [1],
 );
 assert.equal(softClash.rows[0].AdRoomHall, "F13");                 // the row survived and filled
@@ -238,7 +238,7 @@ assert.equal(strongClash.filled, 0);
    row its rescue. Without the double proof, the old strictness stands. */
 const provenIdentity = fillMissingCellsFromSmartRead(
   [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "" }],
-  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:30", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "F13" }],
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:30", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "F13", roomId: "room-13" }],
   [1],
 );
 assert.equal(provenIdentity.rows[0].AdRoomHall, "F13");        // rescued despite the clock
@@ -274,14 +274,27 @@ assert.equal(linked[0].locationStatus, "VERIFIED");
    fact — a suffix match agrees, a different shape is silence, never noise. */
 const dialects = fillMissingCellsFromSmartRead(
   [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", sourceCourseCode: "1023101", AdRoomHall: "" }],
-  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", sourceCourseCode: "101", AdRoomHall: "F13" }],
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", sourceCourseCode: "101", AdRoomHall: "F13", roomId: "room-13" }],
   [1],
 );
 assert.equal(dialects.rows[0].AdRoomHall, "F13");
 assert.equal(dialects.notes.filter(note => note.includes("رمز المقرر")).length, 0);
 
+/* A proposal must never fill a cell it cannot also link. Filling «12F15» as
+   text without a registry id produces a cell that looks answered and still
+   counts as missing — red with a value inside it. */
+const unlinked = proposeSmartFills(
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", AdRoomCode: "", AdRoomHall: "" }],
+  [{ sourcePage: 1, SCode: "501", referenceNumber: "18945", fstarttime: "08:00", AdRoomCode: "12F15", AdRoomHall: "F15" }],
+  [1],
+);
+for (const fill of unlinked.fills.filter(f => f.field === "AdRoomCode" || f.field === "AdRoomHall")) {
+  assert.ok(fill.carry && (fill.carry.buildingId || fill.carry.roomId),
+    `location fill «${fill.value}» must carry a registry id`);
+}
+
 console.log(JSON.stringify({
-  passed: 25,
+  passed: 26,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -307,5 +320,6 @@ console.log(JSON.stringify({
     "CRN+section proof rescues a row from a garbled clock; without proof it stays void",
     "a filled room carries its verified registry id so the row can actually turn ready",
     "authority 7-digit vs printed short course codes are dialects — suffix agrees, different shapes stay silent",
+    "a location fill always carries a registry id — an unlinked code is never offered",
   ],
 }, null, 2));

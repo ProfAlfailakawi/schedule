@@ -5934,7 +5934,19 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
      the registry kept its row counted «للمراجعة» forever — the frozen 51. */
   const smartRegistry=await readLocationRegistry();
   const rows=safeDraftRows(bound,collegeId,sectionId,termId)
-    .map(row=>canonicalizeHistoricalLocationForRuntime(row as any,smartRegistry) as any);
+    .map(row=>canonicalizeHistoricalLocationForRuntime(row as any,smartRegistry) as any)
+    /* The approved reader never displays a location it could not link to the
+       registry — it blanks the cell rather than show an unverified code as if
+       it were canonical. The sharper reading must obey the same contract, or it
+       proposes a building like «12F15» that fills the cell with text, carries no
+       id, and therefore lands RED: a value that looks answered and counts as
+       missing. Unlinked locations are dropped here, so they are never offered. */
+    .map((row:any)=>{
+      const next={...row};
+      if(!next.buildingId){next.AdRoomCode="";next.AdRoomHall="";next.roomId=undefined;}
+      else if(!next.roomId&&next.locationStatus!=="PENDING_ROOM"){next.AdRoomHall="";}
+      return next;
+    });
   const validation=rows.length?await validateSmartRows(rows,collegeId,sectionId,{checkConflicts:true,resolveHistorical:true}):["لم يخرج Gemini أي صف قابل للمراجعة"];
   const parserIssues=Array.isArray(parsed?.issues)?parsed.issues.map((item:any)=>String(item||"").trim()).filter(Boolean).slice(0,80):[];
   const issues=[...new Set([...validation,...parserIssues])];

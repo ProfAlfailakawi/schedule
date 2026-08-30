@@ -434,6 +434,13 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
 
     for (const field of FILLABLE_TEXT) {
       if (distrustedFields.has(field)) continue;
+      /* A location is only an answer once the registry recognises it. Offering
+         a code the registry could not link fills the cell with text that still
+         counts as missing — a red cell with a value inside it, which is worse
+         than an honest blank. The server drops unlinked codes; this is the
+         guarantee that holds even if it ever forgets to. */
+      if (field === "AdRoomCode" && !candidate?.buildingId) continue;
+      if (field === "AdRoomHall" && !candidate?.roomId) continue;
       if (!blankText(next[field])) continue;
       const value = String(candidate?.[field] ?? "").trim();
       // blankText also rejects the model's placeholders, so a guess never lands.
