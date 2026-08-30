@@ -4234,8 +4234,11 @@ button.twin-delta{width:100%}
   box-shadow:inset 3px 0 0 #a8792a!important;
 }
 .import-preview-table td.import-cell-derived{
-  background:color-mix(in srgb,#3f7f67 9%,var(--surface))!important;
-  box-shadow:inset 3px 0 0 color-mix(in srgb,#3f7f67 74%,transparent)!important;
+  /* At 9% this was indistinguishable from white, so «مستنتج» silently read as
+     «مؤكد مباشر» — the one distinction the legend promises. It now carries the
+     same weight as the red state: a visible tint and a full-strength edge. */
+  background:color-mix(in srgb,#3f7f67 16%,var(--surface))!important;
+  box-shadow:inset 3px 0 0 #3f7f67!important;
 }
 .import-preview-table td.import-cell-missing{
   background:color-mix(in srgb,#b43b32 10%,var(--surface))!important;

@@ -312,6 +312,21 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
   if (!pages.size || !Array.isArray(baseRows) || !baseRows.length) {
     return { rows: baseRows, filled: 0, conflicts: [] as string[], notes: [] as string[], fills: [] as SmartFill[] };
   }
+  /* Peer verification. The registry already confirmed «012B07» for other rows of
+     THIS very import, so when the sharper reading offers that same code for a
+     blank cell we can attach the id its twin is already using. Nothing new is
+     invented — only an id the registry itself issued minutes ago — and it means
+     a flaky lookup on one row no longer silences the whole page. */
+  const norm = (value: unknown) => String(value ?? "").trim().toUpperCase().replace(/^0+/, "");
+  const buildingIdByCode = new Map<string, string>();
+  const roomIdByPair = new Map<string, string>();
+  for (const row of baseRows) {
+    const code = norm(row?.AdRoomCode);
+    if (code && row?.buildingId) buildingIdByCode.set(code, String(row.buildingId));
+    const hall = norm(row?.AdRoomHall);
+    if (code && hall && row?.roomId) roomIdByPair.set(`${code}|${hall}`, String(row.roomId));
+  }
+
   const byPage = new Map<number, any[]>();
   for (const row of Array.isArray(smartRows) ? smartRows : []) {
     const page = Number(row?.sourcePage) || 1;
@@ -418,11 +433,19 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     const next: any = { ...row };
     const describe = (field: string, value: string, days?: Record<string, boolean>) => {
       let carry: Record<string, unknown> | undefined;
-      if (field === "AdRoomCode" && candidate?.buildingId) carry = { buildingId: candidate.buildingId };
-      if (field === "AdRoomHall" && candidate?.roomId) {
-        carry = { roomId: candidate.roomId };
-        if (candidate?.buildingId) carry.buildingId = candidate.buildingId;
-        if (candidate?.locationStatus === "VERIFIED") carry.locationStatus = "VERIFIED";
+      if (field === "AdRoomCode") {
+        const id = candidate?.buildingId || buildingIdByCode.get(norm(candidate?.AdRoomCode));
+        if (id) carry = { buildingId: id };
+      }
+      if (field === "AdRoomHall") {
+        const pairKey = `${norm(candidate?.AdRoomCode || next.AdRoomCode)}|${norm(candidate?.AdRoomHall)}`;
+        const id = candidate?.roomId || roomIdByPair.get(pairKey);
+        if (id) {
+          carry = { roomId: id };
+          const buildingId = candidate?.buildingId || buildingIdByCode.get(norm(candidate?.AdRoomCode || next.AdRoomCode));
+          if (buildingId) carry.buildingId = buildingId;
+          carry.locationStatus = "VERIFIED";
+        }
       }
       fills.push({
         rowIndex, page,
@@ -439,8 +462,9 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
          counts as missing — a red cell with a value inside it, which is worse
          than an honest blank. The server drops unlinked codes; this is the
          guarantee that holds even if it ever forgets to. */
-      if (field === "AdRoomCode" && !candidate?.buildingId) continue;
-      if (field === "AdRoomHall" && !candidate?.roomId) continue;
+      if (field === "AdRoomCode" && !candidate?.buildingId && !buildingIdByCode.has(norm(candidate?.AdRoomCode))) continue;
+      if (field === "AdRoomHall" && !candidate?.roomId
+        && !roomIdByPair.has(`${norm(candidate?.AdRoomCode || next.AdRoomCode)}|${norm(candidate?.AdRoomHall)}`)) continue;
       if (!blankText(next[field])) continue;
       const value = String(candidate?.[field] ?? "").trim();
       // blankText also rejects the model's placeholders, so a guess never lands.
