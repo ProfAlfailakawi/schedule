@@ -202,8 +202,39 @@ assert.equal(printedPlaceholder.rows[0].AdInstructorId, 0);
 assert.equal(printedPlaceholder.filled, 0);
 assert.ok(printedPlaceholder.notes.some(note => note.includes("هيئة تدريسية") && note.includes("501")));
 
+/* The 51 that refused to move: an approved fill must flip its evidence, so the
+   review counters and the red cells drain with it. */
+const evidenced = applySmartFills(
+  [{ sourcePage: 1, SCode: "501", AdRoomHall: "", importEvidence: { room: { confidence: "UNRESOLVED" }, time: { confidence: "CONFIRMED" } } }],
+  [{ rowIndex: 0, page: 1, section: "501", course: "", field: "AdRoomHall", label: "القاعة", value: "F31" }],
+);
+assert.equal(evidenced[0].AdRoomHall, "F31");
+assert.equal(evidenced[0].importEvidence.room.confidence, "CONFIRMED");
+assert.equal(evidenced[0].importEvidence.room.source, "SMART");
+assert.equal(evidenced[0].importEvidence.time.confidence, "CONFIRMED"); // untouched evidence survives
+
+/* A garbled reference or course code must not discard a row whose section,
+   time and room all agree — it only disqualifies itself, and is reported. */
+const softClash = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "501", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "", referenceNumber: "18945", sourceCourseCode: "1023101" }],
+  [{ sourcePage: 1, SCode: "501", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "F13", referenceNumber: "18948", sourceCourseCode: "1023102" }],
+  [1],
+);
+assert.equal(softClash.rows[0].AdRoomHall, "F13");                 // the row survived and filled
+assert.equal(softClash.rows[0].referenceNumber, "18945");          // the garbled fields stayed ours
+assert.equal(softClash.rows[0].sourceCourseCode, "1023101");
+assert.ok(softClash.notes.some(note => note.includes("بقي الصف")));
+// A strong-field contradiction still voids the row entirely.
+const strongClash = fillMissingCellsFromSmartRead(
+  [{ sourcePage: 1, SCode: "501", fstarttime: "08:00", fendtime: "09:20", AdRoomCode: "012B09", AdRoomHall: "" }],
+  [{ sourcePage: 1, SCode: "501", fstarttime: "10:00", fendtime: "10:50", AdRoomCode: "012B09", AdRoomHall: "F13" }],
+  [1],
+);
+assert.equal(strongClash.rows[0].AdRoomHall, "");
+assert.equal(strongClash.filled, 0);
+
 console.log(JSON.stringify({
-  passed: 18,
+  passed: 21,
   checks: [
     "Gemini JSON can be extracted from fenced model output",
     "only deterministic read/simulation function calls survive sanitization",
@@ -223,5 +254,8 @@ console.log(JSON.stringify({
     "a matching reference number is identity on its own",
     "«هيئة تدريسية» binds to no instructor even when the registry holds that name",
     "a placeholder printed on the page fills nothing but is reported as a note",
+    "an approved fill flips its evidence so counters and red cells drain",
+    "a garbled reference/course code disqualifies itself, never the whole row",
+    "a strong-field contradiction still voids the row entirely",
   ],
 }, null, 2));

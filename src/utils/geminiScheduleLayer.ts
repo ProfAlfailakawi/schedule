@@ -255,6 +255,17 @@ export function proposeSmartFills(baseRows: any[], smartRows: any[], readPages: 
 }
 
 /** Apply exactly the fills a person approved — nothing else is touched. */
+/* Review-table evidence key for each fillable field. Writing a value without
+ * flipping its evidence left the cell red and the row counted «للمراجعة» after
+ * an approved fill — the 51 that refused to move. */
+const EVIDENCE_KEY_BY_FIELD: Record<string, string> = {
+  AdCourseName: "course", AdCourseId: "course", sourceCourseCode: "course",
+  SCode: "section", days: "days",
+  fstarttime: "time", fendtime: "time",
+  AdInstructorId: "instructor",
+  AdRoomCode: "building", AdRoomHall: "room",
+};
+
 export function applySmartFills(baseRows: any[], fills: SmartFill[]) {
   if (!Array.isArray(fills) || !fills.length) return baseRows;
   const byRow = new Map<number, SmartFill[]>();
@@ -265,7 +276,7 @@ export function applySmartFills(baseRows: any[], fills: SmartFill[]) {
   return baseRows.map((row, index) => {
     const list = byRow.get(index);
     if (!list?.length) return row;
-    const next: any = { ...row };
+    const next: any = { ...row, importEvidence: { ...(row.importEvidence || {}) } };
     for (const fill of list) {
       if (fill.field === "days" && fill.days) {
         for (const flag of DAY_FLAGS) next[flag] = Boolean(fill.days[flag]);
@@ -274,6 +285,17 @@ export function applySmartFills(baseRows: any[], fills: SmartFill[]) {
         next[fill.field] = Number(fill.value);
       } else {
         next[fill.field] = fill.value;
+      }
+      /* An approved fill IS a resolution: the reviewer saw the value and said
+         yes. Evidence flips with the cell, so the red drains, the counters
+         move, and the page stops being counted as troubled. */
+      const evidenceKey = EVIDENCE_KEY_BY_FIELD[fill.field];
+      if (evidenceKey) {
+        next.importEvidence[evidenceKey] = {
+          ...(next.importEvidence[evidenceKey] || {}),
+          confidence: "CONFIRMED", score: 95, source: "SMART", method: "SMART_FILL",
+          derived: false, reason: "عُبّئت عبر القراءة الأدق واعتمدها المراجع.",
+        };
       }
     }
     return next;
@@ -301,27 +323,39 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
      identifier is how section 505's building landed on section 503. And one
      contradiction on any readable cell voids the whole candidate: a reading
      that got the start time wrong has no business supplying the instructor. */
-  const CORROBORATION_FIELDS = ["referenceNumber","SCode","fstarttime","fendtime","AdRoomCode","AdRoomHall","sourceCourseCode"] as const;
+  /* Identity fields decide; bookkeeping fields advise. A wrong start time means
+     a different (or invented) meeting — the row is void. But a reference number
+     is a long digit string one of the two readers often garbles: when section,
+     time and room agree, a garbled reference must not throw away the row — it
+     only disqualifies itself and is reported. That one rule was silently
+     discarding most of a page. A MATCHING reference still counts double, since
+     a CRN is unique by construction. */
+  const STRONG_FIELDS = ["SCode","fstarttime","fendtime","AdRoomCode","AdRoomHall"] as const;
+  const SOFT_FIELDS = ["referenceNumber","sourceCourseCode"] as const;
   const corroborates = (row: any, candidate: any) => {
     let agreements = 0;
-    for (const field of CORROBORATION_FIELDS) {
+    const distrusted: string[] = [];
+    for (const field of STRONG_FIELDS) {
       const ours = String(row?.[field] ?? "").trim(), theirs = String(candidate?.[field] ?? "").trim();
       if (blankText(ours) || blankText(theirs)) continue;
-      if (ours !== theirs) return { ok: false, field };
-      // A CRN is unique by construction: matching one IS the proof of identity,
-      // and demanding a second witness only discarded rows we had already
-      // identified with certainty.
+      if (ours !== theirs) return { ok: false, field, distrusted };
+      agreements += 1;
+    }
+    for (const field of SOFT_FIELDS) {
+      const ours = String(row?.[field] ?? "").trim(), theirs = String(candidate?.[field] ?? "").trim();
+      if (blankText(ours) || blankText(theirs)) continue;
+      if (ours !== theirs) { distrusted.push(field); continue; }
       agreements += field === "referenceNumber" ? 2 : 1;
     }
     // Days count too: if both readings have days and they differ, the candidate
     // is describing a different meeting — or inventing one.
     if (!hasNoDays(row) && !hasNoDays(candidate)) {
       for (const flag of DAY_FLAGS) {
-        if (Boolean(row?.[flag]) !== Boolean(candidate?.[flag])) return { ok: false, field: "days" };
+        if (Boolean(row?.[flag]) !== Boolean(candidate?.[flag])) return { ok: false, field: "days", distrusted };
       }
       agreements += 1;
     }
-    return { ok: agreements >= 2, field: "" };
+    return { ok: agreements >= 2, field: "", distrusted };
   };
 
   const rows = baseRows.map((row, rowIndex) => {
@@ -342,6 +376,11 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
       }
       return row;                                     // not certain ⇒ not offered
     }
+    const distrustedFields = new Set<string>(witness.distrusted);
+    for (const field of witness.distrusted) {
+      const where = String(row?.SCode ?? "").trim() || String(row?.AdCourseName ?? "").trim() || `صف ${rowIndex + 1}`;
+      notes.push(`${where} (صفحة ${page}): القراءتان اختلفتا في ${SMART_FIELD_LABELS[field] || field} — بقي الصف، وأُهمل هذا الحقل وحده.`);
+    }
     const next: any = { ...row };
     const describe = (field: string, value: string, days?: Record<string, boolean>) => {
       fills.push({
@@ -353,6 +392,7 @@ export function fillMissingCellsFromSmartRead(baseRows: any[], smartRows: any[],
     };
 
     for (const field of FILLABLE_TEXT) {
+      if (distrustedFields.has(field)) continue;
       if (!blankText(next[field])) continue;
       const value = String(candidate?.[field] ?? "").trim();
       // blankText also rejects the model's placeholders, so a guess never lands.
