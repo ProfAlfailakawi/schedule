@@ -519,16 +519,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         return fill.value;
       };
       const proposal={...raw,fills:raw.fills.filter(fill=>!isPlaceholderValue(named(fill)))};
-      if(!proposal.fills.length&&proposal.notes.length){
-        // Nothing to fill, but the reason is worth saying out loud.
-        setSmartProposal({fills:[],pages,conflicts:proposal.conflicts,notes:proposal.notes,token:smartToken(file)});
-        setSmartPicked(new Set());
-        return;
-      }
       if(!proposal.fills.length){
-        setError(proposal.conflicts.length
-          ? `لم تضف القراءة الأدق أي خلية ناقصة. ${proposal.conflicts[0]}`
-          : "لم تجد القراءة الأدق أي خلية ناقصة تستطيع تعبئتها. الجدول باقٍ كما هو.");
+        setError("لم تجد القراءة الأدق خانة ناقصة تستطيع تعبئتها بثقة. الجدول باقٍ كما هو.");
         // The page was looked at, so it is not offered again for nothing.
         // The entitlement is spent by USE, not by outcome: a pass that found
         // nothing still consumed its read.
@@ -558,7 +550,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         ...prev,
         rows,
         baselineRows: rows.map((row: any) => ({ ...row })),
-        issues: [...new Set([...(Array.isArray(prev.issues) ? prev.issues : []), ...smartProposal.conflicts])],
+        // Conflicts are diagnostics, not import notes: they must not leak into
+        // the preview's issue list either.
+        issues: Array.isArray(prev.issues) ? prev.issues : [],
         count: rows.length,
         smartRead: true,
         smartFilled: Number(prev.smartFilled || 0) + chosen.length,
@@ -934,11 +928,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <div className="smart-proposal" role="group" aria-label="مقترح القراءة الأدق">
                       <div className="smart-proposal-head">
                         <Sparkles aria-hidden="true" />
-                        <b>{smartProposal.fills.length ? `${countOf(smartProposal.fills.length, AR.cell)} ناقصة يمكن تعبئتها` : "لا توجد خلية يمكن تعبئتها"}</b>
-                        <small>{smartProposal.fills.length
-                          ? "لن يتغيّر شيء قبل موافقتك · اختر ما تثق به فقط · الخلايا المقروءة تبقى كما هي"
-                          : "قرأت الصفحات ولم أجد قيمة مؤكدة أستطيع إضافتها."}</small>
-                        <span className="smart-proposal-toggle" hidden={!smartProposal.fills.length}>
+                        <b>{countOf(smartProposal.fills.length, AR.cell)} ناقصة يمكن تعبئتها</b>
+                        <small>لن يتغيّر شيء قبل موافقتك · اختر ما تثق به فقط · الخلايا المقروءة تبقى كما هي</small>
+                        <span className="smart-proposal-toggle">
                           <button type="button" data-guide-ignore="تحديد كل الخلايا المقترحة داخل المعاينة" onClick={() => setSmartPicked(new Set(smartProposal.fills.map(fillKey)))} disabled={smartPicked.size === smartProposal.fills.length}>تحديد الكل</button>
                           <button type="button" data-guide-ignore="إلغاء تحديد الخلايا المقترحة داخل المعاينة" onClick={() => setSmartPicked(new Set())} disabled={!smartPicked.size}>إلغاء التحديد</button>
                         </span>
@@ -996,34 +988,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         </div>
                       );})}
                       </div>
-                      {/* What the page itself says, when what it says is «nobody
-                          yet». Reported so the row is assigned by hand rather
-                          than left looking unexplained. */}
-                      {smartProposal.notes.length ? (
-                        smartProposal.notes.length <= 4 ? (
-                          <ul className="smart-proposal-notes">
-                            {smartProposal.notes.map((note, index) => <li key={index}>{note}</li>)}
-                          </ul>
-                        ) : (
-                          <details className="smart-proposal-notes-fold">
-                            <summary>{countOf(smartProposal.notes.length, AR.note)} عن اختلاف القراءتين وما طُبع في الورقة</summary>
-                            <ul className="smart-proposal-notes">
-                              {smartProposal.notes.map((note, index) => <li key={index}>{note}</li>)}
-                            </ul>
-                          </details>
-                        )
-                      ) : null}
-                      {smartProposal.conflicts.length ? (
-                        <p className="smart-proposal-note">{smartProposal.conflicts[0]}</p>
-                      ) : null}
+                      {/* The reviewer approves cells, not the reasoning behind
+                          them. Why a candidate was distrusted, or what generic
+                          label the page printed, is engine bookkeeping: it stays
+                          in the server log and out of a decision screen where it
+                          only reads as noise. */}
+
                       <div className="smart-proposal-actions">
-                        {smartProposal.fills.length ? (
-                          <button type="button" className="smart-proposal-apply" data-guide-ignore="يطبق الخلايا المحددة داخل المعاينة فقط ولا ينشر شيئًا" onClick={applySmartProposal} disabled={busy || !smartPicked.size}>
-                            {smartPicked.size ? `تطبيق ${countOf(smartPicked.size, AR.cell)}` : "لم تحدد شيئاً"}
-                          </button>
-                        ) : null}
+                        <button type="button" className="smart-proposal-apply" data-guide-ignore="يطبق الخلايا المحددة داخل المعاينة فقط ولا ينشر شيئًا" onClick={applySmartProposal} disabled={busy || !smartPicked.size}>
+                          {smartPicked.size ? `تطبيق ${countOf(smartPicked.size, AR.cell)}` : "لم تحدد شيئاً"}
+                        </button>
                         <button type="button" className="smart-proposal-cancel" data-guide-ignore="يتجاهل مقترح القراءة الأدق ويُبقي المعاينة كما هي" onClick={dismissSmartProposal} disabled={busy}>
-                          {smartProposal.fills.length ? "إلغاء" : "حسناً"}
+                          إلغاء
                         </button>
                       </div>
                     </div>
