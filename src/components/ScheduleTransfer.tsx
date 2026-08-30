@@ -313,20 +313,28 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       .some((proof: any) => proof?.confidence === "UNRESOLVED" || proof?.confidence === "REVIEW_REQUIRED");
     const troubledPages = [...new Set(rows.filter(scanFailed).map(row => Number((row as any).sourcePage || 1)))]
       .filter(page => page > 0).sort((a, b) => a - b);
-    return { ready, review, derived, troubledPages };
+    /* «للمراجعة» counts ROWS, but a row waits on a specific number of CELLS —
+       and one row may be missing three. Showing only the row count made an
+       apply look like it changed nothing. Counting both lets the card say what
+       is actually left: «16 صفاً · 23 خانة». */
+    const reviewCells = rows.reduce((sum, row) => sum + Object.values((row as any).importEvidence || {})
+      .filter((proof: any) => proof?.confidence === "UNRESOLVED" || proof?.confidence === "REVIEW_REQUIRED").length, 0);
+    return { ready, review, reviewCells, derived, troubledPages };
   }, [importKind, xlsxPreview?.rows, departmentIds, roster]);
 
   /* What a sharper reading could still fix: pages that carry an unresolved row
      AND have not already been re-read. When the approved engine left nothing
      open, this is empty and the offer never appears — a clean import must not
      invite an extra read, and a page is never sent twice. */
+  /* ONE sharper reading per import — not one per page. Once it has run, the
+     offer is gone for this file: every troubled page goes in that single pass,
+     and whatever it could not resolve is the reviewer's to finish by hand. A
+     fresh upload starts a fresh entitlement. */
+  const smartUsed = Boolean(xlsxPreview?.smartRead);
   const smartPendingPages = useMemo(() => {
-    /* One sharper look per page, then the offer disappears. Re-reading the same
-       page rarely says anything new and each pass costs a real read — what the
-       first pass could not fix is the reviewer's to fix by hand. */
-    const done = new Set<number>((Array.isArray(xlsxPreview?.smartPages) ? xlsxPreview.smartPages : []).map((page: any) => Number(page)));
-    return (pdfReadinessSummary?.troubledPages || []).filter(page => !done.has(page));
-  }, [pdfReadinessSummary?.troubledPages, xlsxPreview?.smartPages]);
+    if (smartUsed) return [] as number[];
+    return pdfReadinessSummary?.troubledPages || [];
+  }, [smartUsed, pdfReadinessSummary?.troubledPages]);
 
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();
@@ -454,6 +462,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
      without this call, and civil IDs are stripped server-side before it. */
   const readSmart = async (file: File, troubledPages: number[] = []) => {
     if (smartBusy) return;
+    // The visual gate is first; this is the one that actually spends nothing.
+    if (xlsxPreview?.smartRead) return;
     setError(null); setBusy(true); setSmartBusy(true);
     const keptRows=(Array.isArray(xlsxPreview?.rows)?xlsxPreview.rows:[]) as ImportRow[];
     setReadProgress({ pct: 20, message: troubledPages.length
@@ -520,7 +530,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
           ? `لم تضف القراءة الأدق أي خلية ناقصة. ${proposal.conflicts[0]}`
           : "لم تجد القراءة الأدق أي خلية ناقصة تستطيع تعبئتها. الجدول باقٍ كما هو.");
         // The page was looked at, so it is not offered again for nothing.
-        setXlsxPreview((prev:any)=>prev?{...prev,smartPages:[...new Set([...(Array.isArray(prev?.smartPages)?prev.smartPages:[]),...pages])]}:prev);
+        // The entitlement is spent by USE, not by outcome: a pass that found
+        // nothing still consumed its read.
+        setXlsxPreview((prev:any)=>prev?{...prev,smartRead:true,smartPages:[...new Set([...(Array.isArray(prev?.smartPages)?prev.smartPages:[]),...pages])]}:prev);
         return;
       }
       // Nothing is written yet: the reviewer sees every proposed cell first.
@@ -559,7 +571,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   /** Declining leaves the approved reading exactly as it was. */
   const dismissSmartProposal = () => {
     setXlsxPreview((prev: any) => prev
-      ? { ...prev, smartPages: [...new Set([...(Array.isArray(prev.smartPages) ? prev.smartPages : []), ...(smartProposal?.pages || [])])] }
+      ? { ...prev, smartRead: true, smartPages: [...new Set([...(Array.isArray(prev.smartPages) ? prev.smartPages : []), ...(smartProposal?.pages || [])])] }
       : prev);
     setSmartProposal(null);
     setSmartPicked(new Set());
@@ -878,12 +890,21 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     {importKind!=="authority-pdf"?<span className={xlsxPreview.issues?.length ? "warn" : ""}><b>{(xlsxPreview.issues?.length || 0).toLocaleString("ar-KW-u-nu-latn")}</b><small>ملاحظة</small></span>:null}
                     {importKind==="authority-pdf"?<span className="pages"><b>{Number(xlsxPreview.pages||0).toLocaleString("ar-KW-u-nu-latn")}</b><small>صفحات PDF</small></span>:null}
                     {importKind==="authority-pdf"&&pdfReadinessSummary?<span className="ready"><b>{pdfReadinessSummary.ready.toLocaleString("ar-KW-u-nu-latn")}</b><small>جاهز</small></span>:null}
-                    {importKind==="authority-pdf"&&pdfReadinessSummary?.review?<span className="warn"><b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b><small>للمراجعة</small></span>:null}
-                    {/* «للمراجعة» counts rows, so filling one cell of a row that
-                        still lacks its instructor rightly leaves it — this card
-                        shows the work that DID land, so an apply is never
-                        mistaken for a no-op. */}
-                    {importKind==="authority-pdf"&&Number(xlsxPreview.smartFilled||0)>0?<span className="ready"><b>{Number(xlsxPreview.smartFilled).toLocaleString("ar-KW-u-nu-latn")}</b><small>خلية عُبّئت بالقراءة الأدق</small></span>:null}
+                    {/* One card, two units: the rows still waiting and the exact
+                        number of blanks inside them — so filling two cells of a
+                        three-blank row visibly moves the smaller number even
+                        when the row rightly stays. The sharper reading's tally
+                        rides underneath as its receipt. */}
+                    {importKind==="authority-pdf"&&pdfReadinessSummary?.review?(
+                      <span className="warn review-breakdown">
+                        <b>{pdfReadinessSummary.review.toLocaleString("ar-KW-u-nu-latn")}</b>
+                        <small>للمراجعة</small>
+                        <small className="review-units">
+                          {pdfReadinessSummary.reviewCells?<em>{pdfReadinessSummary.reviewCells.toLocaleString("ar-KW-u-nu-latn")} خانة ناقصة</em>:null}
+                          {Number(xlsxPreview.smartFilled||0)>0?<em className="filled">عُبّئت {Number(xlsxPreview.smartFilled).toLocaleString("ar-KW-u-nu-latn")} بالقراءة الأدق</em>:null}
+                        </small>
+                      </span>
+                    ):null}
                   </div>
                   {/* The reading above is the approved engine's. Asking for a
                       sharper one is a deliberate click, never automatic. */}
@@ -1007,14 +1028,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                       </div>
                     </div>
                   ) : null}
-                  {!smartBusy && !smartProposal && Array.isArray(xlsxPreview.smartPages) && xlsxPreview.smartPages.length ? (
-                    <div className="import-smart-retry">
-                      <span className="import-smart-chip is-done" aria-live="polite">
-                        <Sparkles aria-hidden="true" />
-                        <span>أُعيدت قراءة {[...xlsxPreview.smartPages].sort((a:number,b:number)=>a-b).join("، ")}</span>
-                      </span>
-                    </div>
-                  ) : null}
+                  {/* Once spent, the sharper reading leaves no chip behind at
+                      all: a badge that still looks like the button invites the
+                      click it is meant to prevent. Its result is already on the
+                      table, and the «خلية عُبّئت» card records what it did. */}
                   {importKind === "authority-pdf" ? <div className="import-color-key" aria-label="تعريف ألوان المعاينة"><span className="confirmed"><i/>أبيض · مؤكد مباشر</span><span className="derived"><i/>أخضر · مستنتج ومثبت</span><span className="review"><i/>ذهبي · يحتاج مراجعة</span><span className="missing"><i/>أحمر · ناقص</span></div> : null}
                   {importKind === "authority-pdf" && xlsxPreview.rows?.length ? (
                     <>
