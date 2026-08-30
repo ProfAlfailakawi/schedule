@@ -321,11 +321,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
      open, this is empty and the offer never appears — a clean import must not
      invite an extra read, and a page is never sent twice. */
   const smartPendingPages = useMemo(() => {
-    /* Applied fills flip their evidence, so a page leaves this list by actually
-       being resolved — not by being crossed off a memory. Banning a page after
-       one look starved the reviewer of the pages that still had problems. */
-    return pdfReadinessSummary?.troubledPages || [];
-  }, [pdfReadinessSummary?.troubledPages]);
+    /* One sharper look per page, then the offer disappears. Re-reading the same
+       page rarely says anything new and each pass costs a real read — what the
+       first pass could not fix is the reviewer's to fix by hand. */
+    const done = new Set<number>((Array.isArray(xlsxPreview?.smartPages) ? xlsxPreview.smartPages : []).map((page: any) => Number(page)));
+    return (pdfReadinessSummary?.troubledPages || []).filter(page => !done.has(page));
+  }, [pdfReadinessSummary?.troubledPages, xlsxPreview?.smartPages]);
 
   const exportTerm = async (format: "xlsx" | "json" = "xlsx") => {
     const query = new URLSearchParams();

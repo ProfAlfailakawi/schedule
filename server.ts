@@ -5877,7 +5877,11 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
     .filter(item=>!requestedPages.size||requestedPages.has(item.page));
   const prepared=await Promise.all(selected.map(async item=>{
     const ordinals=requestedRows.get(item.page)||[];
-    if(ordinals.length){
+    /* Strips read faster but give the model less context, and the reviewer
+       reported the full-page reading was simply better. Full pages are the
+       default again; strips stay behind an explicit switch for measured
+       experiments only. */
+    if(ordinals.length&&process.env.SMART_IMPORT_ROW_STRIPS==="1"){
       try{
         const strip=await cropRowStripsForSmartRead(item.buffer,ordinals);
         if(strip)return {...item,buffer:strip,cropped:true};
