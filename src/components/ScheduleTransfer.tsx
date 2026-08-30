@@ -464,6 +464,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     if (smartBusy) return;
     // The visual gate is first; this is the one that actually spends nothing.
     if (xlsxPreview?.smartRead) return;
+    // Spend the entitlement on launch, not on outcome: nothing that happens
+    // next can bring the offer back.
+    setXlsxPreview((prev: any) => prev ? { ...prev, smartRead: true } : prev);
     setError(null); setBusy(true); setSmartBusy(true);
     const keptRows=(Array.isArray(xlsxPreview?.rows)?xlsxPreview.rows:[]) as ImportRow[];
     setReadProgress({ pct: 20, message: troubledPages.length
@@ -905,19 +908,22 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                   {/* Offered only while it can still add something: pages that
                       read cleanly are never sent, and a page already re-read is
                       not offered twice. Nothing to gain ⇒ no chip at all. */}
-                  {importKind === "authority-pdf" && smartFile && (smartBusy || smartPendingPages.length) ? (
+                  {/* The moment it is pressed the offer is spent, so the chip
+                      goes at once and the progress bar above carries the wait.
+                      Keeping it on screen while busy made a one-use action look
+                      like it was still available. */}
+                  {importKind === "authority-pdf" && smartFile && !smartBusy && !smartUsed && smartPendingPages.length ? (
                     <div className="import-smart-retry">
                       <button
                         type="button"
-                        className={`import-smart-chip${smartBusy ? " is-busy" : ""}`}
+                        className="import-smart-chip"
                         data-guide-ignore="إجراء اختياري داخل معاينة الاستيراد لإعادة قراءة الصفحات المتعثرة عبر Smart Import؛ ليس ميزة إرشاد مستقلة"
-                        disabled={busy || smartBusy}
-                        aria-busy={smartBusy}
-                        onClick={() => { const f = smartFile; if (f && !smartBusy) void readSmart(f, smartPendingPages); }}
-                        title={smartBusy ? "جارٍ إعادة القراءة" : `قراءة أدق للصفحات ${smartPendingPages.join("، ")} فقط — الصفحات التي قُرئت بلا أخطاء تبقى كما هي ولا تُرسل. لا تُرسل الأرقام المدنية.`}
+                        disabled={busy}
+                        onClick={() => { const f = smartFile; if (f) void readSmart(f, smartPendingPages); }}
+                        title={`قراءة أدق للصفحات ${smartPendingPages.join("، ")} فقط — الصفحات التي قُرئت بلا أخطاء تبقى كما هي ولا تُرسل. لا تُرسل الأرقام المدنية.`}
                       >
-                        {smartBusy ? <i className="import-smart-spinner" aria-hidden="true" /> : <Sparkles aria-hidden="true" />}
-                        <span>{smartBusy ? "يقرأ الصفحات…" : `قراءة أدق · ${countOf(smartPendingPages.length, AR.page)}`}</span>
+                        <Sparkles aria-hidden="true" />
+                        <span>قراءة أدق · {countOf(smartPendingPages.length, AR.page)}</span>
                       </button>
                     </div>
                   ) : null}

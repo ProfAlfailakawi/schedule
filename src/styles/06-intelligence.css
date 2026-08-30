@@ -4217,26 +4217,25 @@ button.twin-delta{width:100%}
   .smart-proposal-toggle{flex:1 1 100%;margin-inline-start:0;margin-top:2px}
 }
 @media(prefers-reduced-motion:reduce){.smart-proposal-apply,.smart-proposal-cancel,.smart-proposal li{transition:none}}
-.import-smart-chip.is-busy{opacity:1;cursor:progress}
-.import-smart-spinner{width:13px;height:13px;flex:none;border-radius:50%;
-  border:2px solid color-mix(in srgb,var(--brand,#2f6b57) 22%,transparent);
-  border-top-color:color-mix(in srgb,var(--brand,#2f6b57) 78%,var(--ink));
-  animation:import-smart-spin .7s linear infinite}
-@keyframes import-smart-spin{to{transform:rotate(360deg)}}
-@media(prefers-reduced-motion:reduce){.import-smart-chip{transition:none}.import-smart-spinner{animation-duration:2.4s}}
+@media(prefers-reduced-motion:reduce){.import-smart-chip{transition:none}}
 .import-visiting-badge{padding-inline:7px!important;background:color-mix(in srgb,var(--brass,#a8792a) 10%,var(--surface))!important;border-color:color-mix(in srgb,var(--brass,#a8792a) 32%,var(--line))!important;letter-spacing:0!important}
 @media(max-width:720px){.import-summary-cards{grid-template-columns:repeat(2,minmax(0,1fr))}.import-summary-cards>span{min-height:56px}.import-summary-cards>span b{font-size:24px!important}}
 
 /* V49 — import safety is readable at a glance.
    These four states intentionally do NOT share one pale ramp: the operator must
    distinguish them instantly without opening a tooltip. */
+/* These two were painted plain white with !important, which silently deleted
+   half the legend: «أخضر · مستنتج ومثبت» and «ذهبي · يحتاج مراجعة» could never
+   appear, so every cell read as either fine or broken and the operator lost the
+   two middle truths — a value the engine DERIVED, and one it wants a human to
+   confirm. Each state keeps its own hue and its own edge. */
 .import-preview-table td.import-cell-review{
-  background:var(--surface,#ffffff)!important;
-  box-shadow:none!important;
+  background:color-mix(in srgb,#a8792a 11%,var(--surface))!important;
+  box-shadow:inset 3px 0 0 #a8792a!important;
 }
 .import-preview-table td.import-cell-derived{
-  background:var(--surface,#ffffff)!important;
-  box-shadow:none!important;
+  background:color-mix(in srgb,#3f7f67 9%,var(--surface))!important;
+  box-shadow:inset 3px 0 0 color-mix(in srgb,#3f7f67 74%,transparent)!important;
 }
 .import-preview-table td.import-cell-missing{
   background:color-mix(in srgb,#b43b32 10%,var(--surface))!important;
