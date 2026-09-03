@@ -159,6 +159,15 @@
 
   .mobile-topbar{padding-inline:var(--s3)}
 
+  /* The phone carries two things that float at the foot of every screen: the
+     fixed bottom dock (≈62px) and — on the board — the centred schedule dock,
+     which rides ~70px up. The page scroll knew about neither, so the last row
+     of any list ended underneath them: the schedule's edit/delete buttons and
+     the on-phone hint both hid behind the green dock. Reserve their combined
+     height at the foot of the scroll so the content always stops clear of them.
+     `--dock-h` is 0 on desktop, so this collapses back to the plain footer there. */
+  .app-main{padding-bottom:calc(var(--s9) + var(--dock-h) + env(safe-area-inset-bottom))}
+
   /* The phone already has a dock at the very bottom — the one that moves between
      screens. The schedule's own rides above it rather than on top of it, so
      neither ever steals the other's press. */

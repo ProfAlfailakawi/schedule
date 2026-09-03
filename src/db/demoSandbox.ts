@@ -62,18 +62,42 @@ function syntheticCourses(): AdCourse[] {
   });
 }
 
+/* Rooms and instructors belong to ONE college each.
+ *
+ * The board loads a single college, but the "outside-scope" sweep compares it
+ * against every row in the term — so any hall or instructor shared across two
+ * colleges surfaces on the board as «خارج النطاق». The old generator drew from
+ * one global pool of 8 halls and 12 instructors with a small modulus, so almost
+ * every synthetic row collided with a same-hour twin in a sibling college and
+ * the whole demo board lit up dashed-red on first sight. Giving each college its
+ * own disjoint band of halls and instructors makes a cross-college clash
+ * impossible by construction, while the in-college conflicts that power the
+ * "معالجة التعارضات" showcase are untouched — a college's own sections still
+ * share its band, so same-hall / same-instructor overlaps within it remain. */
+const ROOM_BANDS: Record<number, ReadonlyArray<readonly [string, string]>> = {
+  1: [["A", "101"], ["A", "203"], ["B", "110"]],
+  2: [["B", "205"], ["C", "301"], ["C", "315"]],
+  3: [["D", "120"], ["D", "220"]],
+};
+const INSTRUCTOR_BANDS: Record<number, ReadonlyArray<number>> = {
+  1: [1, 2, 3, 4],
+  2: [5, 6, 7, 8],
+  3: [9, 10, 11, 12],
+};
+
 function syntheticSchedules(courses: AdCourse[]): FSchedule[] {
   const times = [["08:00", "09:15"], ["09:30", "10:45"], ["11:00", "12:15"], ["12:30", "13:45"], ["14:00", "15:15"], ["15:30", "16:45"]];
-  const rooms = [["A", "101"], ["A", "203"], ["B", "110"], ["B", "205"], ["C", "301"], ["C", "315"], ["D", "120"], ["D", "220"]];
   return Array.from({ length: 30 }, (_, index) => {
     const course = courses[index % courses.length];
+    const roomBand = ROOM_BANDS[course.AdCollegeId] ?? ROOM_BANDS[1];
+    const instructorBand = INSTRUCTOR_BANDS[course.AdCollegeId] ?? INSTRUCTOR_BANDS[1];
     const [start, end] = times[index % times.length];
-    const [code, hall] = rooms[index % rooms.length];
+    const [code, hall] = roomBand[index % roomBand.length];
     const pattern = index % 4;
     return {
       id: index + 1, AdCollegeId: course.AdCollegeId, AdSectionId: course.AdSectionId, AdTermId: 1,
       AdCourseId: course.AdCourseId, AdCourseName: course.CourseName, SCode: `0${(index % 3) + 1}`,
-      AdInstructorId: (index % instructorNames.length) + 1,
+      AdInstructorId: instructorBand[index % instructorBand.length],
       fsunday: pattern === 0 || pattern === 2, fmonday: pattern === 1 || pattern === 3,
       ftuesday: pattern === 0 || pattern === 2, fwednesday: pattern === 1 || pattern === 3,
       fthursday: index % 5 === 0, fstarttime: start, fendtime: end,
