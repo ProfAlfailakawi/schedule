@@ -72,13 +72,20 @@
 
          الحركة هي ما يفعله البرنامج: أربعة أعمدة تصعد، ثم ينزل النحاسي من
          الساعة التي كان يتصادم فيها تاركاً أثره. */
+      /* شاشة الإقلاع تبدأ دائماً نهارية — مطابقةً لشاشة النظام التي يرسمها
+         الـmanifest قبل أن يعمل أي كود. فمن اختار الليلي لا يرى قطعاً حادّاً من
+         نهاري إلى ليلي، بل انزلاقاً: الخلفية تعتم بعد أول رسم بإطار واحد، فيبدو
+         التحوّل «استقراراً في سمتك» لا ومضة. ومن بقي على النهاري (الأغلبية) لا
+         يرى أي حركة، لأن المصدر والوجهة نهاريّان. */
       #boot{
         position:fixed;inset:0;z-index:99999;display:grid;place-items:center;
         background:radial-gradient(circle at 50% 42%,rgba(47,133,116,.10),transparent 44%),#f2f3ef;
         color:#171c1a;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;
-        opacity:1;transition:opacity .24s ease;
+        opacity:1;transition:opacity .24s ease,background .34s ease,color .34s ease;
       }
-      :root[data-theme="dark"] #boot{
+      /* الليلي لا يُطبَّق إلا بعد أول رسم (‎.settled‎)، فيصير تحوّلاً لا حالةً
+         مفاجئة. */
+      :root[data-theme="dark"] #boot.settled{
         background:radial-gradient(circle at 50% 42%,rgba(47,133,116,.16),transparent 44%),#080c0b;
         color:#edf2ee;
       }
@@ -89,7 +96,7 @@
         width:100px;height:100px;display:block;
         filter:drop-shadow(0 20px 34px rgba(12,24,20,.26));
       }
-      :root[data-theme="dark"] #boot-mark{filter:drop-shadow(0 20px 40px rgba(0,0,0,.55))}
+      :root[data-theme="dark"] #boot.settled #boot-mark{filter:drop-shadow(0 20px 40px rgba(0,0,0,.55))}
 
       /* الأعمدة تصعد، ثم ينزل النحاسي من الساعة التي كان يتصادم فيها. */
       #boot-mark .bm-bar,#boot-mark .bm-decided,#boot-mark .bm-trace{opacity:0}
@@ -126,6 +133,13 @@
         #boot-mark .bm-bar,#boot-mark .bm-decided,#boot-mark .bm-trace{animation:none;transition:none}
         #boot-mark .bm-bar,#boot-mark .bm-decided{opacity:1}
         #boot-mark .bm-trace{opacity:1}
+        /* بلا حركة: الانزلاق يصبح قطعاً، فيُطبَّق الليلي فوراً على أول رسم بدل
+           إطارٍ نهاري ثم قفزة. */
+        :root[data-theme="dark"] #boot{
+          background:radial-gradient(circle at 50% 42%,rgba(47,133,116,.16),transparent 44%),#080c0b;
+          color:#edf2ee;
+        }
+        :root[data-theme="dark"] #boot-mark{filter:drop-shadow(0 20px 40px rgba(0,0,0,.55))}
       }
     </style>
   </head>
@@ -246,6 +260,14 @@
             location.replace(url.href);
           };
           if (jobs.length) Promise.all(jobs).then(done, done); else done();
+        }
+
+        /* بعد أول رسم بإطار واحد: تُطبَّق سمة القارئ على شاشة الإقلاع فتنزلق
+           إليها بنعومة بدل أن تُقطع. النهاري لا يتحرّك؛ الليلي يعتم. */
+        if (boot) {
+          requestAnimationFrame(function () {
+            requestAnimationFrame(function () { boot.classList.add("settled"); });
+          });
         }
 
         /* The application calls this the moment it has painted. */
