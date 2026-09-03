@@ -4,6 +4,7 @@ import path from "path";
 import os from "os";
 import { gunzipSync } from "zlib";
 import { validateCivilId, generateSyntheticCivilId } from "../src/utils/civilId";
+import { termWindow, termHasEnded, termIsRunningNow, currentTermId } from "../src/utils/termSequence";
 import { buildWeekDensityPlan, clusterSqueezed, courseHue, COURSE_HUES, dayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../src/utils/weekVisual";
 import { findConflicts, outsideScopeClashes } from "../src/utils/scheduleIntelligence";
 import { discardParkedMutation, parkedCount, parkedMutations, retryParkedMutation } from "../src/utils/offlineScheduleQueue";
@@ -147,6 +148,76 @@ async function runTests() {
     assert(patternForDay("fwednesday").join() === "fmonday,fwednesday", "Wednesday belongs to the Mon-Wed rhythm");
     assert(patternForDay("fsunday").join() === "fsunday,ftuesday,fthursday", "Sunday belongs to the Sun-Tue-Thu rhythm");
     assert(patternForDay("fthursday").join() === "fsunday,ftuesday,fthursday", "Thursday belongs to the Sun-Tue-Thu rhythm");
+
+    // ── التقويم الأكاديمي الافتراضي ─────────────────────────────────────
+    // العادة: الأول بعد ١٠ سبتمبر ← آخر ديسمبر · الثاني بعد آخر يناير ←
+    // منتصف مايو · الصيفي منتصف يونيو ← آخر يوليو. تُستعمل فقط حين لا يوجد
+    // تاريخ بداية وعدد أسابيع مُدخلان.
+    {
+      const at = (iso: string) => Date.parse(`${iso}T12:00:00`);
+      const first = { AdTermName: "الفصل الأول 2026/2027" };
+      const second = { AdTermName: "الفصل الثاني 2026/2027" };
+      const summer = { AdTermName: "الفصل الصيفي 2025/2026" };
+
+      assert(termHasEnded(summer, at("2026-09-03")),
+        "الصيفي 2025/2026 منتهٍ في سبتمبر 2026");
+      assert(!termHasEnded(first, at("2026-09-03")),
+        "الأول 2026/2027 لم ينتهِ في سبتمبر 2026");
+      assert(termIsRunningNow(first, at("2026-10-15")),
+        "الأول 2026/2027 جارٍ في أكتوبر");
+      assert(termHasEnded(first, at("2027-01-05")),
+        "الأول 2026/2027 منتهٍ في يناير — لا ينتظر إنشاء الفصل التالي");
+      assert(termIsRunningNow(second, at("2027-03-01")),
+        "الثاني 2026/2027 جارٍ في مارس");
+      assert(!termIsRunningNow(second, at("2027-05-20")),
+        "الثاني 2026/2027 انتهى بعد منتصف مايو");
+
+      // المُدخل يسبق العادة دائماً.
+      const declared = { AdTermName: "الفصل الأول 2026/2027",
+                         AdTermStart: "2026-09-06", AdTermWeeks: 2 };
+      assert(termWindow(declared)?.source === "declared",
+        "تاريخ البداية وعدد الأسابيع يسبقان التقويم الافتراضي");
+      assert(termHasEnded(declared, at("2026-09-25")),
+        "أسبوعان معلنان ينتهيان قبل نهاية ديسمبر الافتراضية");
+
+      // اسم لا يُحلَّل: لا نافذة، ولا ادّعاء بانتهاء.
+      assert(termWindow({ AdTermName: "فصل قديم" }) === null,
+        "اسم خارج النمط لا يُنتج نافذة");
+      assert(!termHasEnded({ AdTermName: "فصل قديم" }, at("2030-01-01")),
+        "بلا نافذة لا يُقال إنه منتهٍ");
+
+      // ── أي فصل نحن فيه الآن ──────────────────────────────────────────
+      // الجواب: أقرب نافذة لم تنتهِ. لا «الأحدث رقماً».
+      {
+        const first = { AdTermId: 9, AdTermName: "الفصل الأول 2026/2027" };
+        const second = { AdTermId: 10, AdTermName: "الفصل الثاني 2026/2027" };
+        const summer = { AdTermId: 8, AdTermName: "الفصل الصيفي 2025/2026" };
+
+        // الحالة التي كانت مكسورة: الفصل التالي أُنشئ مبكراً للتخطيط.
+        assert(currentTermId([second, first, summer], at("2026-09-03")) === 9,
+          "الفصل الأول هو الجاري رغم وجود الفصل الثاني الأحدث رقماً");
+        assert(currentTermId([second, first], at("2027-02-10")) === 10,
+          "بعد انتهاء الأول يصير الثاني هو الجاري");
+        // الفجوة بين الفصول: منتصف أغسطس قبل بداية الأول المعتادة.
+        assert(currentTermId([first, summer], at("2026-08-15")) === 9,
+          "لا فجوة بين الفصول: أغسطس ينتمي للفصل الأول القادم");
+        // كلها انقضت.
+        assert(currentTermId([summer], at("2027-01-01")) === 0,
+          "لا فصل جارٍ حين تنقضي كل النوافذ");
+        // بلا نوافذ: نرجع للأحدث رقماً بدل لا شيء.
+        assert(currentTermId([{ AdTermId: 3, AdTermName: "فصل قديم" },
+                              { AdTermId: 4, AdTermName: "أقدم" }], at("2026-09-03")) === 4,
+          "بلا نافذة يُرجَع إلى الأحدث رقماً");
+      }
+
+      // فصلٌ انقضى زمنه لا يُراقَب بوصفه «الفصل المعتمد».
+      const terms = [
+        { AdTermId: 9, AdTermName: "الفصل الأول 2026/2027" },
+        { AdTermId: 8, AdTermName: "الفصل الصيفي 2025/2026" },
+      ] as any[];
+      assert(settledTerm(terms).term === null,
+        "لا يُراقَب فصل معتمد انقضى زمنه");
+    }
 
     // Names cut to card width: honorific + first + last.
     assert(firstLast("د. عبدالرحمن سعد ناصر الحمد") === "د. عبدالرحمن الحمد", "long name keeps honorific, first and last");

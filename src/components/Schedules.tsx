@@ -113,7 +113,7 @@ import {
 import { coerceScopeValues, describeScopeSelection, resolveScopeSelection } from "../utils/scopeContext";
 import { runVisualTransition } from "../utils/visualTransition";
 import { byArabic, byRoom, byRoomLabel, byRoomPart, sortByName } from "../utils/sorting";
-import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest } from "../utils/termSequence";
+import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, currentTermId } from "../utils/termSequence";
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
@@ -5254,22 +5254,23 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     [terms, filterTerm],
   );
 
-  const termIsRunning = useMemo(() => {
-    const term = terms.find((item: any) => Number(item.AdTermId) === Number(filterTerm));
-    if (!term) return false;
-    const start = String((term as any).AdTermStart || "");
-    const weeks = Number((term as any).AdTermWeeks || 0);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(start) && weeks > 0) {
-      const from = Date.parse(`${start}T00:00:00`);
-      if (Number.isFinite(from)) {
-        const to = from + weeks * 7 * 86400000;
-        const now = Date.now();
-        return now >= from && now < to;
-      }
-    }
-    const newest = Number(sortTermsNewest(terms)[0]?.AdTermId || 0);
-    return Number(filterTerm) === newest;
-  }, [terms, filterTerm]);
+  /**
+   * Whether the live "now" line belongs on this board.
+   *
+   * The end matters and the start does not. A clock on a term that finished in
+   * 2019 is a false statement, so an ended term never gets one — that is the
+   * whole point. But a term whose default start has not quite arrived is still
+   * the term being taught: teaching commonly begins a few days either side of
+   * the usual date, and hiding the line for that week would be wrong in the
+   * ordinary case to be right in none.
+   *
+   * The window arithmetic itself moved to utils/termSequence, which is where
+   * the rest of the product asks the same question.
+   */
+  const termIsRunning = useMemo(
+    () => Number(filterTerm) > 0 && Number(filterTerm) === currentTermId(terms as any[]),
+    [terms, filterTerm],
+  );
 
   /**
    * Which column, if any, is today.

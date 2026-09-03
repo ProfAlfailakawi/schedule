@@ -1,6 +1,7 @@
 import type { AdTerm, FSchedule } from "../types";
 import { AR, countOf } from "../utils/arabicCount";
 import { findConflicts, type ConflictInsight } from "./scheduleIntelligence";
+import { termHasEnded } from "./termSequence";
 
 /**
  * ── الجدول يتعفّن بصمت ──────────────────────────────────────────────────────
@@ -70,7 +71,15 @@ const ar = (value: number) => value.toLocaleString("ar-KW-u-nu-latn");
 export function settledTerm(terms: AdTerm[]): { term: AdTerm | null; supersededBy: number } {
   const ordered = [...terms].sort((a, b) => Number(b.AdTermId) - Number(a.AdTermId));
   if (ordered.length < 2) return { term: null, supersededBy: 0 };
-  return { term: ordered[1], supersededBy: 1 };
+  const candidate = ordered[1];
+  /* فصلٌ انقضى زمنه لا يُراقَب.
+   *
+   * «معتمد» كانت تعني «صار له تالٍ» فقط، فكان الفحص يتكلّم عن فصل انتهى قبل
+   * شهور بينما القارئ في فصل جديد — ولا فائدة من إبلاغه بتعارض في جدول لا
+   * أحد يدرّسه. الحالة التي تستحق القول هي العكس: فصلٌ ما زال يُدرَّس وقد
+   * أُنشئ بعده فصل للتخطيط، ثم انزاح شيء تحته. */
+  if (termHasEnded(candidate)) return { term: null, supersededBy: 0 };
+  return { term: candidate, supersededBy: 1 };
 }
 
 /**
