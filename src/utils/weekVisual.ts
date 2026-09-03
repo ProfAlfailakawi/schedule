@@ -86,8 +86,8 @@ export function patternForDay(day: DayKey): DayKey[] {
 
 /**
  * A person's name, cut to what a small card can afford: the honorific if one
- * leads, then the first and last names only. "د. عبدالرحمن ربل سليمان الشراد"
- * reads as "د. عبدالرحمن الشراد" — still unmistakably him, half the width.
+ * leads, then the first and last names only. "د. عبدالرحمن سعد ناصر الحمد"
+ * reads as "د. عبدالرحمن الحمد" — still unmistakably him, half the width.
  */
 export function firstLast(name: string): string {
   const words = String(name || "").trim().split(/\s+/).filter(Boolean);

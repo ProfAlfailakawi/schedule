@@ -3,46 +3,29 @@ import React from "react";
 /**
  * ── العلامة: الأسبوع الذي حُلّ ─────────────────────────────────────────────
  *
- * Before this file the product had five marks. The app icon drew a calendar in
- * a brass frame with a jade block inside it; the boot splash drew the same
- * calendar with the two colours SWAPPED — jade frame, brass pins — so the mark
- * on the home screen and the mark half a second after tapping it contradicted
- * each other. The sidebar and the login screen used a stock `CalendarDays`
- * glyph, and the welcome tour carried no mark at all. Five drawings, none of
- * which had seen the others.
+ * خمسة أعمدة = خمسة أيام. كل عمود محاضرة تطفو عند ساعتها: `y` وقت البدء،
+ * و`h` المدّة، كما على اللوحة. العمود النحاسي هو الذي نُقل، فيتدلّى تحت
+ * جيرانه لأنه أُخرِج من الساعة التي كان يتصادم فيها.
  *
- * All five also drew a CALENDAR, and this is not a calendar. The journey screen
- * names the product itself: an academic decision system. It finds a collision
- * before it happens and repairs it with the fewest moves it can. A calendar
- * glyph describes the data; it says nothing about the work, and every scheduling
- * product on earth could use the same one.
+ * الهندسة تُكتب هنا مرة واحدة، وكل سطح يرسمها من هذا المصفوف. الألوان من
+ * `--brand-*` في 01-foundation.css، ويقرأها كذلك scripts/render-brand.mjs
+ * لتوليد الأيقونات، فلا يمكن لأصل مستقل أن ينحرف عن البرنامج.
  *
- * So the mark carries the act instead of the container:
- *
- *   Five columns — five days, because this university's week is five, not
- *   seven. Each column is a lecture floating at its own hour: `y` is when it
- *   starts, `h` is how long it runs, exactly as on the real board. One column
- *   is brass, and brass in this system has always been the colour of a
- *   judgement. It is the one that MOVED: it hangs lower than every neighbour
- *   because it was pushed out of the hour it shared with الثلاثاء.
- *
- * The geometry lives here once and every surface renders it from this array.
- * The old marks drifted because there was nothing for them to drift FROM.
- *
- * Two variants, one set of numbers:
- *   `tile`  — the mark on its own dark ground, matching the installed icon.
- *   `glyph` — the bare bars, rescaled to fill their box, for a coloured tile
- *             the shell already draws.
- *
- * `trace` draws the hour the brass column vacated. It is off everywhere except
- * the boot splash — see the note on TRACE below for why.
+ * صيغتان بمجموعة أرقام واحدة:
+ *   `tile`  — العلامة على أرضيتها الداكنة، مطابقة للأيقونة المثبّتة.
+ *   `glyph` — الأعمدة وحدها، مُكبّرة لتملأ صندوقها.
  */
 
-/** Brand constants. Not theme tokens: the mark is the same colour on every
-    ground, the way it is on the home screen. */
-export const BRAND_JADE = "#5FBFA6";
-export const BRAND_BRASS = "#C79B5F";
-export const BRAND_GROUND = "#141917";
+/**
+ * The mark's colours come from `--brand-*` in 01-foundation.css, which is the
+ * single declaration the whole product and `scripts/render-brand.mjs` read.
+ * The literals here are fallbacks only, for any context that renders this
+ * component without the stylesheet — a test renderer, a detached portal. If
+ * they ever disagree with the CSS, the CSS wins on every real screen.
+ */
+export const BRAND_JADE = "var(--brand-jade, #5fbfa6)";
+export const BRAND_BRASS = "var(--brand-brass, #c79b5f)";
+export const BRAND_GROUND = "var(--brand-ground, #141917)";
 
 /** الأحد ← الخميس, right to left, as the board reads them. */
 const BARS = [
@@ -94,20 +77,22 @@ export default function BrandMark({
   trace?: boolean;
   className?: string;
 }) {
+  /* `style` rather than a `fill=` attribute: `var()` inside an SVG presentation
+     attribute is not reliably supported, while an inline style is. */
   const bars = (
     <>
       {trace ? (
         <rect
           x={TRACE.x} y={TRACE.y} width={BAR_W} height={TRACE.h} rx={BAR_R}
-          fill="none" stroke={BRAND_BRASS} strokeOpacity={0.42}
-          strokeWidth={0.9} strokeDasharray="2 2"
+          strokeDasharray="2 2"
+          style={{ fill: "none", stroke: BRAND_BRASS, strokeOpacity: 0.42, strokeWidth: 0.9 }}
         />
       ) : null}
       {BARS.map(bar => (
         <rect
           key={bar.day}
           x={bar.x} y={bar.y} width={BAR_W} height={bar.h} rx={BAR_R}
-          fill={bar.decided ? BRAND_BRASS : BRAND_JADE}
+          style={{ fill: bar.decided ? BRAND_BRASS : BRAND_JADE }}
         />
       ))}
     </>
@@ -122,10 +107,10 @@ export default function BrandMark({
     >
       {variant === "tile" ? (
         <>
-          <rect width="64" height="64" rx="14" fill={BRAND_GROUND} />
+          <rect width="64" height="64" rx="14" style={{ fill: BRAND_GROUND }} />
           <rect
             x="1" y="1" width="62" height="62" rx="13.4"
-            fill="none" stroke={BRAND_BRASS} strokeOpacity={0.22} strokeWidth={0.8}
+            style={{ fill: "none", stroke: BRAND_BRASS, strokeOpacity: 0.22, strokeWidth: 0.8 }}
           />
         </>
       ) : null}

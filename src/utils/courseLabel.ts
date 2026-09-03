@@ -93,7 +93,7 @@ export function courseInitials(name: string): string {
 /**
  * How a colleague is named on a timetable.
  *
- * Nobody writes "د. عبدالعزيز مبارك العنزي" in a sixty-pixel column, and nobody
+ * Nobody writes "د. عبدالعزيز مبارك الحمد" in a sixty-pixel column, and nobody
  * needs to: within a department the family name and the title identify a person
  * completely, and that is exactly how they are referred to in the corridor. The
  * given name stays available on hover, where there is room for it.

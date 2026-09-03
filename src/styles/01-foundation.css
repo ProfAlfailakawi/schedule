@@ -146,21 +146,22 @@
   --gutter:clamp(16px,3vw,44px);
   --topbar-h:64px;
 
-  /* ── العلامة اللفظية: مواصفة واحدة ────────────────────────────────────
-   * The name was hand-set in six places and no two agreed: five different
-   * letter-spacings (.22 / .26 / .30 / .34 / .36), four weights (600 / 650 /
-   * 700) and three typefaces — one of them `system-ui` on the boot splash, so
-   * the product's name was literally drawn in a different face on every device.
-   *
-   * Stated once, as tokens rather than a shared selector, because the six sites
-   * live in five stylesheets loaded in a fixed order; a token cannot be undone
-   * by a later file, and each rule stays where it belongs. Size still varies by
-   * surface — that is hierarchy, and it is the only thing that should.
-   */
-  /* النحاس على سطح داكن ثابت — رأس الترحيب وشاشة الدخول لا يتبعان السمة،
-     فلا يصحّ أن يتبعها نحاسهما. القيمة نفسها التي تحملها العلامة. */
-  --brass-on-dark:#c79b5f;
+  /* ── لونا العلامة ───────────────────────────────────────────────────────
+   * لونا العلامة، مُعلَنان مرة واحدة. ليسا رمزَي سمة: العلامة نفسها على
+   * القائمة الداكنة وعلى الصفحة النهارية وعلى الشاشة الرئيسية.
+   * يقرأ هذا الإعلانَ scripts/render-brand.mjs لتوليد الأيقونات وبطاقة
+   * المشاركة، فإعادة تسمية السطرين تُفشل ذلك السكربت صراحةً. */
+  --brand-jade:#5fbfa6;
+  --brand-brass:#c79b5f;
+  --brand-ground:#141917;
 
+  /* مرادف: السطوح الداكنة في الوضعين تقرأ نحاس العلامة. */
+  --brass-on-dark:var(--brand-brass);
+
+  /* ── العلامة اللفظية: مواصفة واحدة ────────────────────────────────────
+   * الاسم يظهر في خمسة مواضع عبر خمس ورقات أنماط بترتيب تحميل ثابت. رموز
+   * لا محدِّد مشترك: الرمز لا يُلغى بملف لاحق، وكل قاعدة تبقى في مكانها.
+   * المقاس وحده يختلف بحسب السطح، وهو التسلسل المقصود. */
   --brand-word-family:var(--font-mono);
   --brand-word-weight:600;
   --brand-word-track:.28em;

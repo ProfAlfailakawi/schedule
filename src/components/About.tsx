@@ -1,59 +1,10 @@
 import React from "react";
-import { AtSign, Globe2, GraduationCap, Mail, Phone } from "lucide-react";
 
 // The install invitation moved to the dashboard, where a first-time visitor
 // actually lands — see components/InstallApp.tsx. It no longer sits on the
 // About page.
 
-const Person = ({
-  name,
-  phone,
-  email,
-  image,
-  twitter,
-  website,
-}: {
-  name: string;
-  phone: string;
-  email: string;
-  image: string;
-  twitter: string;
-  website?: string;
-}) => (
-  <article className="editorial-person">
-    <div className="editorial-photo">
-      <img src={image} alt="" />
-    </div>
-    <div className="editorial-person-copy">
-      <span className="editorial-role">
-        <GraduationCap /> أستاذ تكنولوجيا التعليم
-      </span>
-      <h2>{name}</h2>
-      <p>قسم تكنولوجيا التعليم، كلية التربية الأساسية</p>
-      <div className="editorial-contact">
-        <a href={`tel:${phone.replace(/\s/g, "")}`}>
-          <Phone />
-          <span dir="ltr">{phone}</span>
-        </a>
-        <a href={`mailto:${email}`}>
-          <Mail />
-          <span>{email}</span>
-        </a>
-      </div>
-      <div className="editorial-social">
-        <a href={twitter} target="_blank" rel="noreferrer">
-          <AtSign /> X / Twitter
-        </a>
-        {website ? (
-          <a href={website} target="_blank" rel="noreferrer">
-            <Globe2 /> الموقع الشخصي
-          </a>
-        ) : null}
-      </div>
-    </div>
-  </article>
-);
-
+/** صفحة تعريفية بالبرنامج: ما يفعله، بلا بطاقات أشخاص. */
 export default function About() {
   return (
     <div className="about-editorial visual-minimal">
@@ -69,26 +20,16 @@ export default function About() {
           البحث فيه وإخراج تقاريره داخل مساحة واحدة واضحة وهادئة.
         </p>
       </header>
-      <section className="about-editorial-people">
-        <Person
-          name="د. أحمد حسين الفيلكاوي"
-          phone="00965 97424400"
-          email="Ah.Alfailakawi@paaet.edu.kw"
-          image="/assets/about/A2.png"
-          twitter="https://twitter.com/DrAhmadKw"
-          website="http://dr-alfailakawi.com/"
-        />
-        <Person
-          name="د. عبدالعزيز دخيل العنزي"
-          phone="00965 55995095"
-          email="dr.abdulazizalenizi@yahoo.com"
-          image="/assets/about/A1.png"
-          twitter="https://twitter.com/AbdulazizAleniz"
-        />
+      <section className="about-editorial-note">
+        <p>
+          يبني البرنامج الجدول ويقرأ التعارض قبل وقوعه، ثم يقترح أقصر سلسلة
+          نقلات تحلّه — ولا يكتب شيئاً حتى تُعتمد. ما تراه هنا حصيلة تشغيل
+          فعلي عبر فصول متتابعة، لا واجهة عرض.
+        </p>
       </section>
       <footer className="about-editorial-footer">
-        <span>الجدول الأكاديمي</span>
-        <small>مساحة عمل الجدول الأكاديمي</small>
+        <span>نظام القرار الأكاديمي</span>
+        <small>ابنِ الجدول. راجِعه. اتخذ القرار.</small>
       </footer>
     </div>
   );

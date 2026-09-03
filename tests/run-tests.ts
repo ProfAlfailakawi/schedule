@@ -149,9 +149,9 @@ async function runTests() {
     assert(patternForDay("fthursday").join() === "fsunday,ftuesday,fthursday", "Thursday belongs to the Sun-Tue-Thu rhythm");
 
     // Names cut to card width: honorific + first + last.
-    assert(firstLast("د. عبدالرحمن ربل سليمان الشراد") === "د. عبدالرحمن الشراد", "long name keeps honorific, first and last");
+    assert(firstLast("د. عبدالرحمن سعد ناصر الحمد") === "د. عبدالرحمن الحمد", "long name keeps honorific, first and last");
     assert(firstLast("د. منى حسن") === "د. منى حسن", "short name passes untouched");
-    assert(firstLast("عبدالعزيز خالد العنزي") === "عبدالعزيز العنزي", "no honorific: first and last");
+    assert(firstLast("عبدالعزيز خالد الحمد") === "عبدالعزيز الحمد", "no honorific: first and last");
     assert(firstLast("الدكتورة نورة سعد فهد العجمي") === "الدكتورة نورة العجمي", "full-word honorific recognised");
     assert(firstLast("د. عبد الرحمن أحمد السعيد") === "د. عبد الرحمن السعيد", "compound عبد الرحمن remains one given name");
     assert(firstLast("") === "", "empty name stays empty");

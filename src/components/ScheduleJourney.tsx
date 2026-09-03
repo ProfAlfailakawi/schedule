@@ -356,14 +356,13 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
           </p>
         </section>
 
-        {/* The journey closes on the people who built it and the system's own
-            name — nothing else. This is SCHEDULE's story, not an institutional
-            page; the college's emblem belongs on the official printed sheets,
-            and only there. */}
+        {/* The journey closes on the system's own name and nothing else. The
+            college's emblem belongs on the official printed sheets, and only
+            there. */}
         <footer className="jr-foot">
           <div>
             <span>التأسيس والتطوير</span>
-            <strong>د. أحمد حسين الفيلكاوي · د. عبدالعزيز دخيل العنزي</strong>
+            <strong>عشر سنوات تشغيل أكاديمي متصل</strong>
           </div>
           <small dir="ltr">SCHEDULE{version ? ` · ${version}` : ""}</small>
         </footer>

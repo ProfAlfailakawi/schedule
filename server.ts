@@ -6924,11 +6924,13 @@ app.get("/api/intelligence/department-start-rhythm", requirePermission(7), async
 app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const collegeId = Number(req.query.collegeId || 0);
   const sectionId = Number(req.query.sectionId || 0);
+  /* الفصل المعروض على الشاشة الآن. */
+  const viewingTermId = Number(req.query.termId || 0);
   if (!collegeId || !isScopeAllowed(req, collegeId, sectionId)) {
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const key = `${collegeId}:${sectionId}`;
+  const key = `${collegeId}:${sectionId}:${viewingTermId || "any"}`;
   const cached = driftCache.get(key);
   if (cached && cached.serial === driftSerial) { res.json(cached.body); return; }
 
@@ -6963,6 +6965,28 @@ app.get("/api/intelligence/settled-drift", requirePermission(7), async (req: Aut
     const body = {
       watching: false,
       reason: "لا يوجد فصل معتمد بعد — الاعتماد يتحقق بإنشاء الفصل التالي.",
+      habit: await readHabit(),
+    };
+    driftCache.set(key, { serial: driftSerial, body });
+    res.json(body);
+    return;
+  }
+
+  /*
+   * الرسالة تخصّ الفصل الذي يُنظر إليه، لا فصلاً آخر.
+   *
+   * «المعتمد» يعني الفصل الذي صار له تالٍ. فما إن يُنشأ فصل جديد حتى يبدأ
+   * هذا الفحص يتحدث عن الفصل الذي قبله — بينما القارئ يعمل في الفصل الجديد.
+   * فتظهر نافذة عن «الفصل الصيفي 2025/2026» فوق لوحة «الفصل الأول 2026/2027»:
+   * كلام صحيح عن فصل لا أحد يعمل فيه الآن.
+   *
+   * فتُقال حيث تعني شيئاً: حين يكون الفصل المعروض هو الفصل المعتمد نفسه.
+   * والانتقال إليه يُظهرها كاملةً، فلا شيء فُقد — إنما نُقل إلى سياقه.
+   */
+  if (viewingTermId && Number(term.AdTermId) !== viewingTermId) {
+    const body = {
+      watching: false,
+      reason: "الفحص يخصّ الفصل المعتمد؛ انتقل إليه لقراءة ما تغيّر تحته.",
       habit: await readHabit(),
     };
     driftCache.set(key, { serial: driftSerial, body });

@@ -709,7 +709,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
   /**
    * Ask in plain Arabic.
    *
-   * "قاعات فاضية الثلاثاء 10", "جدول د. أحمد", "فراغات نورة الأحد", "ب-101" —
+   * "قاعات فاضية الثلاثاء 10", "جدول د. سالم", "فراغات نورة الأحد", "ب-101" —
    * the sentence is parsed on the spot and turned into the filters and the lens
    * that answer it. Nothing is sent anywhere, so the answer appears as fast as
    * it can be typed, and every question stays reproducible.

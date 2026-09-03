@@ -1182,51 +1182,18 @@
 }
 .install-steps svg{width:14px;height:14px;color:var(--accent)}
 
-.about-editorial-people{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
-.editorial-person{
-  display:grid;grid-template-columns:132px minmax(0,1fr);
-  align-items:start;gap:var(--s5);
-  padding:clamp(24px,3vw,36px);
+/* نصّ الصفحة بعد إزالة بطاقات الأشخاص. */
+.about-editorial-note{
+  padding:var(--s7) var(--gutter);
+  border-top:1px solid var(--line);
 }
-.editorial-person+.editorial-person{border-inline-start:1px solid var(--line)}
-.editorial-photo{
-  aspect-ratio:3/4;height:auto;overflow:hidden;
-  border-radius:var(--r-lg);background:var(--surface-3);
+.about-editorial-note p{
+  max-width:62ch;
+  color:var(--ink-2);
+  font-size:15px;
+  line-height:1.9;
 }
-.editorial-photo img{width:100%;height:100%;object-fit:cover;object-position:center top}
-.editorial-person-copy{min-width:0;display:grid;gap:var(--s1)}
-/* Each line of an identity is its own line. Inline elements ran the role, the
-   name and the department together into one paragraph. */
-.editorial-role{
-  display:inline-flex;align-items:center;gap:var(--s2);
-  color:var(--brass);font-size:var(--t-eyebrow);font-weight:600;letter-spacing:.08em;
-}
-.editorial-role svg{width:14px;height:14px}
-.editorial-person-copy h2{
-  margin:var(--s2) 0 0;font-size:clamp(18px,2vw,21px);font-weight:650;line-height:1.3;
-  letter-spacing:-.02em;
-}
-.editorial-person-copy>p{margin:2px 0 0;color:var(--muted);font-size:var(--t-sm);line-height:1.6}
-.editorial-contact{display:grid;gap:var(--s1);margin-top:var(--s4)}
-.editorial-contact a{
-  display:flex;align-items:center;gap:var(--s2);min-width:0;
-  color:var(--ink-2);font-size:var(--t-sm);
-}
-.editorial-contact a:hover{color:var(--accent)}
-.editorial-contact a span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.editorial-contact svg{width:14px;height:14px;flex:none;color:var(--muted-2)}
-.editorial-social{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s4)}
-.editorial-social a{
-  min-height:34px;
-  display:inline-flex;align-items:center;gap:var(--s2);
-  padding:0 var(--s3);
-  border:1px solid var(--line);border-radius:var(--r-full);
-  background:var(--surface-2);color:var(--muted);
-  font-size:var(--t-xs);font-weight:500;white-space:nowrap;
-  transition:border-color .16s var(--ease),color .16s var(--ease),background .16s var(--ease);
-}
-.editorial-social a svg{width:14px;height:14px}
-.editorial-social a:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-softer)}
+
 .about-editorial-footer{
   display:flex;align-items:baseline;gap:var(--s3);
   padding:var(--s5) clamp(24px,3vw,36px);border-top:1px solid var(--line);
@@ -1875,10 +1842,6 @@
 .cmdk.visual-minimal .cmdk-foot{opacity:.78}
 
 /* Product journey / about: editorial, not dashboard-like. */
-.about-editorial.visual-minimal .editorial-person{border-radius:26px;overflow:hidden}
-.about-editorial.visual-minimal .editorial-photo{border-radius:22px;overflow:hidden}
-.about-editorial.visual-minimal .editorial-contact a,
-.about-editorial.visual-minimal .editorial-social a{inline-size:42px;block-size:42px;border-radius:14px}
 
 /* Login is already intentionally sparse; only unify control geometry. */
 .apex-login.visual-minimal .apex-login-access{border-radius:30px}

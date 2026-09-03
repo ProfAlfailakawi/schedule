@@ -1,19 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SCHEDULE">
-  <!--
-    العلامة: الأسبوع الذي حُلّ.
-    خمسة أعمدة = خمسة أيام؛ الارتفاع مدّة، والموضع الرأسي ساعة.
-    العمود النحاسي هو الذي نُقل — يتدلّى تحت جيرانه لأنه أُخرِج من الساعة
-    التي كان يتصادم فيها مع عمود الثلاثاء.
-    الهندسة نفسها المكتوبة في src/components/BrandMark.tsx، مضروبة في ٨.
-    كل المحتوى داخل دائرة القصّ الآمنة: أقصى بعد 188.7 من 204.8 المسموحة.
-    هذه نسخة "any" — حافة إلى حافة مع حلقة. النسخة المقنَّعة ملف منفصل.
-  -->
+  <!-- مُولَّد من scripts/render-brand.mjs — لا يُحرَّر يدوياً.
+       العلامة: الأسبوع الذي حُلّ. خمسة أعمدة = خمسة أيام؛ الارتفاع مدّة،
+       والموضع الرأسي ساعة. العمود النحاسي هو الذي نُقل.
+       نسخة "any": حافة إلى حافة مع حلقة. -->
   <rect width="512" height="512" rx="112" fill="#141917"/>
-  <rect x="8" y="8" width="496" height="496" rx="107.2" fill="none" stroke="#C79B5F" stroke-opacity="0.22" stroke-width="6.4"/>
+  <rect x="8" y="8" width="496" height="496" rx="107.2" fill="none" stroke="#c79b5f" stroke-opacity="0.22" stroke-width="6.4"/>
 
-  <rect x="371.2" y="156" width="44.8" height="120" rx="22.4" fill="#5FBFA6"/>
-  <rect x="302.4" y="220" width="44.8" height="96"  rx="22.4" fill="#5FBFA6"/>
-  <rect x="233.6" y="132" width="44.8" height="152" rx="22.4" fill="#5FBFA6"/>
-  <rect x="164.8" y="260" width="44.8" height="112" rx="22.4" fill="#C79B5F"/>
-  <rect x="96"    y="188" width="44.8" height="128" rx="22.4" fill="#5FBFA6"/>
+  <rect x="371.2" y="156" width="44.8" height="120" rx="22.4" fill="#5fbfa6"/>
+  <rect x="302.4" y="220" width="44.8" height="96" rx="22.4" fill="#5fbfa6"/>
+  <rect x="233.6" y="132" width="44.8" height="152" rx="22.4" fill="#5fbfa6"/>
+  <rect x="164.8" y="260" width="44.8" height="112" rx="22.4" fill="#c79b5f"/>
+  <rect x="96" y="188" width="44.8" height="128" rx="22.4" fill="#5fbfa6"/>
 </svg>

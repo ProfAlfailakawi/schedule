@@ -58,9 +58,11 @@ for u in DB['users']:
     if not re.fullmatch(r'scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}', val):
         errors.append(f"user {u.get('SystemUserId')} password is not a salted scrypt hash")
 
-# Admin legacy identity must be preserved exactly (password hash itself is intentionally modernized).
+# Admin legacy identity must be preserved (password hash itself is intentionally modernized).
+# The display name is checked for survival, not for a literal value: hard-coding a
+# real person's name into a repository is how it ends up somewhere public.
 admin=next((u for u in DB['users'] if u.get('SystemUserId')==1),None)
-if not admin or admin.get('SystemUserLogin')!='admin' or admin.get('Name')!='د. أحمد الفيلكاوي':
+if not admin or admin.get('SystemUserLogin')!='admin' or not str(admin.get('Name') or '').strip():
     errors.append('legacy primary admin identity was not preserved')
 if admin and (not admin.get('IsAdminUser') or not admin.get('IsActive') or admin.get('IsLocked') or admin.get('IsDeleted')):
     errors.append('legacy primary admin status flags are incorrect')

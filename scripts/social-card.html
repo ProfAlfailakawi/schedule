@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<!-- مُولَّد من scripts/render-brand.mjs — لا يُحرَّر يدوياً.
+     يُرسَم بمتصفح لا بـnode: النصّ عربي، والتشكيل العربي يحتاج محرّك صفٍّ
+     حقيقي؛ @napi-rs/canvas يرسمه مفكّك الحروف ومعكوس الترتيب. -->
+<style>
+@font-face{font-family:"Plex Arabic";font-weight:400;font-display:block;src:url("/fonts/plex-arabic-arabic-400.woff2") format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFC,U+200C-200E}
+@font-face{font-family:"Plex Arabic";font-weight:600;font-display:block;src:url("/fonts/plex-arabic-arabic-600.woff2") format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFC,U+200C-200E}
+@font-face{font-family:"Plex Arabic";font-weight:700;font-display:block;src:url("/fonts/plex-arabic-arabic-700.woff2") format("woff2");unicode-range:U+0600-06FF,U+0750-077F,U+FB50-FDFF,U+FE70-FEFC,U+200C-200E}
+@font-face{font-family:"Plex Mono";font-weight:600;font-display:block;src:url("/fonts/plex-mono-latin-600.woff2") format("woff2");unicode-range:U+0000-00FF}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:1200px;height:630px;overflow:hidden}
+body{
+  background:
+    radial-gradient(760px 520px at 22% 46%, rgba(47,133,116,.10), transparent 68%),
+    radial-gradient(620px 460px at 92% 8%, rgba(199,155,95,.10), transparent 66%),
+    #f2f3ef;
+  font-family:"Plex Arabic",sans-serif;color:#131817;position:relative;
+}
+.grid{
+  position:absolute;inset:0;
+  background-image:
+    linear-gradient(to left,rgba(19,24,23,.045) 1px,transparent 1px),
+    linear-gradient(to bottom,rgba(19,24,23,.045) 1px,transparent 1px);
+  background-size:75px 75px;
+  -webkit-mask-image:radial-gradient(ellipse 78% 74% at 30% 50%,#000 6%,transparent 76%);
+}
+.sheet{position:relative;height:100%;display:grid;grid-template-columns:410px 1fr;align-items:center;padding:0 76px 0 66px;gap:56px}
+.markwrap{display:grid;place-items:center}
+.markwrap svg{width:312px;height:312px;display:block;filter:drop-shadow(0 34px 56px rgba(14,28,23,.26))}
+.copy{display:grid;justify-items:start;text-align:right;direction:rtl}
+.eyebrow{font-weight:600;font-size:22px;letter-spacing:.02em;color:#8d6423;margin-bottom:16px}
+.name{font-family:"Plex Mono",monospace;font-weight:600;font-size:34px;letter-spacing:.28em;line-height:1;direction:ltr;color:#131817}
+.rule{width:132px;height:4px;border-radius:99px;background:#c79b5f;margin:26px 0 30px}
+.head{font-weight:700;font-size:56px;line-height:1.28;letter-spacing:-.01em;color:#131817}
+.desc{margin-top:24px;font-weight:400;font-size:25px;line-height:1.5;color:#5b6660;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div class="sheet">
+  <div class="markwrap">
+    <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      <rect width="64" height="64" rx="14" fill="#141917"/>
+      <rect x="1" y="1" width="62" height="62" rx="13.4" fill="none" stroke="#c79b5f" stroke-opacity=".22" stroke-width=".8"/>
+      <rect x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5fbfa6"/>
+      <rect x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5fbfa6"/>
+      <rect x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5fbfa6"/>
+      <rect x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#c79b5f"/>
+      <rect x="12" y="23.5" width="5.6" height="16" rx="2.8" fill="#5fbfa6"/>
+    </svg>
+  </div>
+  <div class="copy">
+    <div class="eyebrow">نظام القرار الأكاديمي</div>
+    <div class="name">SCHEDULE</div>
+    <div class="rule"></div>
+    <h1 class="head">ابنِ الجدول. راجِعه.<br>اتخذ القرار.</h1>
+    <p class="desc">يرى التعارض قبل وقوعه، ويحلّه بأقل حركة ممكنة.</p>
+  </div>
+</div>
+</body>
+</html>

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "npm run audit:guide && npm run test:guide && npm run test:guide:perf && node scripts/stamp-build.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node scripts/stamp-sw.mjs",
+    "build": "npm run audit:brand && npm run audit:guide && npm run test:guide && npm run test:guide:perf && node scripts/stamp-build.mjs && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && node scripts/stamp-sw.mjs",
     "start": "NODE_ENV=production node dist/server.cjs",
     "test": "npm run test:locations && npm run test:pdf-import && npm run test:gemini-layer && npm run test:conflicts && npm run test:behavior && npm run test:data && npm run test:credentials && npm run test:parity",
     "test:behavior": "tsx tests/run-tests.ts",
@@ -26,7 +26,9 @@
     "test:gemini-layer": "tsx tests/gemini-schedule-layer.ts",
     "test:conflicts": "tsx tests/conflict-parity.ts",
     "test:locations": "python3 tests/location-registry-audit.py",
-    "test:pdf-import": "tsx tests/pdf-import-regression.ts && tsx tests/pdf-import-golden.ts"
+    "test:pdf-import": "tsx tests/pdf-import-regression.ts && tsx tests/pdf-import-golden.ts",
+    "audit:brand": "node scripts/render-brand.mjs --check",
+    "brand": "node scripts/render-brand.mjs"
   },
   "dependencies": {
     "@google-cloud/firestore": "^8.7.1",

@@ -21,8 +21,11 @@
   --jr-ink:#f4f8f5;          /* headlines */
   --jr-ink-2:#c3cfc9;        /* body copy — the floor for readable prose */
   --jr-ink-3:#8b9a93;        /* captions */
-  --jr-brass:#d6ab68;
-  --jr-accent:#63c3a9;
+  /* لونا العلامة، لا نسختان قريبتان منهما. القياس على هذه الأرضية (#080d0c):
+     النحاس 7.72:1 واليشم 8.84:1 — كلاهما فوق حدّ الـ7:1 الذي تفرضه هذه
+     الصفحة على نصّها، فالتوحيد لم يكلّف قراءةً واحدة. */
+  --jr-brass:var(--brand-brass);
+  --jr-accent:var(--brand-jade);
   --jr-canvas:#080d0c;
   --jr-canvas-2:#0d1413;
   --jr-line:#233029;

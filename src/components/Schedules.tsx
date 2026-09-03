@@ -7235,7 +7235,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     if (mode !== "schedule" || !workspaceReady || !filterCollege) { setDrift(null); return; }
     let alive = true;
     const cancelIdle = whenIdle(() => {
-      void fetch(`/api/intelligence/settled-drift?collegeId=${filterCollege}&sectionId=${filterSection}`,
+      /* The term being read goes with the question: a settled term's drift is
+         only worth saying while that term is the one on screen. */
+      void fetch(`/api/intelligence/settled-drift?collegeId=${filterCollege}&sectionId=${filterSection}&termId=${filterTerm || 0}`,
         { credentials: "include" })
         .then(response => (response.ok ? response.json() : null))
         .then(data => {
@@ -7246,7 +7248,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
     });
     return () => { alive = false; cancelIdle(); };
     // liveFeedSerial changes when the live channel reports a write anywhere.
-  }, [mode, workspaceReady, filterCollege, filterSection, liveFeedSerial]);
+  }, [mode, workspaceReady, filterCollege, filterSection, filterTerm, liveFeedSerial]);
   const loadInbox = useCallback(() => {
     if (mode !== "schedule" || !workspaceReady || !filterCollege || !filterTerm) { setInbox([]); return; }
     void fetch(`/api/schedules/staff-inbox?collegeId=${filterCollege}&sectionId=${filterSection}&termId=${filterTerm}`,

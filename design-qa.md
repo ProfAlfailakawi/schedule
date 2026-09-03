@@ -2,7 +2,7 @@
 
 ## Reference and scope
 
-- Visual reference: `/Users/prof.ahmadalfailakawi/.codex/generated_images/019fef29-06fb-7340-ae47-55f7f3f87124/exec-d738daaa-570e-4caa-b17b-ae62aeb73295.png`
+- Visual reference: `~/.codex/generated_images/019fef29-06fb-7340-ae47-55f7f3f87124/exec-d738daaa-570e-4caa-b17b-ae62aeb73295.png`
 - Audited experience: dashboard, schedule list/week views, conflicts and queries, courses/catalog records, reports, users/permissions, intelligence workspace, search overlay, navigation, and mobile menu.
 - Direction: Arabic editorial control room; slim navigation, restrained brass/mint accents, strong typographic hierarchy, low-noise surfaces, and a single primary action per decision context.
 
@@ -40,11 +40,11 @@ passed
 
 ### References and implementation evidence
 
-- Reference — room timeline: `/Users/prof.ahmadalfailakawi/Desktop/Screenshot 2026-08-13 at 8.51.58 PM.png`
-- Reference — simultaneous bundle: `/Users/prof.ahmadalfailakawi/Desktop/Screenshot 2026-08-13 at 8.52.10 PM.png`
-- Implementation — room cards: `/Users/prof.ahmadalfailakawi/Documents/ChatGPT/Schedule/current-ux-audit/course-card-room-implementation.jpg`
-- Implementation — live Islamic Education data: `/Users/prof.ahmadalfailakawi/Documents/ChatGPT/Schedule/current-ux-audit/course-card-bundle-implementation.jpg`
-- Implementation — nine-at-once stress case: `/Users/prof.ahmadalfailakawi/Documents/ChatGPT/Schedule/current-ux-audit/course-card-nine-implementation.jpg`
+- Reference — room timeline: `~/Desktop/Screenshot 2026-08-13 at 8.51.58 PM.png`
+- Reference — simultaneous bundle: `~/Desktop/Screenshot 2026-08-13 at 8.52.10 PM.png`
+- Implementation — room cards: `~/Documents/ChatGPT/Schedule/current-ux-audit/course-card-room-implementation.jpg`
+- Implementation — live Islamic Education data: `~/Documents/ChatGPT/Schedule/current-ux-audit/course-card-bundle-implementation.jpg`
+- Implementation — nine-at-once stress case: `~/Documents/ChatGPT/Schedule/current-ux-audit/course-card-nine-implementation.jpg`
 
 ### Root cause found in the live account
 

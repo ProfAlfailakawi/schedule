@@ -4237,8 +4237,13 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   box-shadow:0 0 0 2px color-mix(in srgb,var(--brass,#a9803f) 12%,transparent);
 }
 
+/* 340 كان أقل من 400، وهي طبقة `.schedule-control` — فكان شريط الكلية/القسم/
+   الفصل يخترق الحوار ويقصّ نصّه بدل أن يختفي تحته. كل غلاف حوار مركزي آخر في
+   هذه المنطقة يقع فوق 1200 (schedule-guide 1200 · historical-time 1450)،
+   وهذا اللوح قراءةٌ فوق اللوحة مثلها تماماً. يخصّ كذلك صندوق رسائل الأساتذة،
+   لأنه يستعمل الغلاف نفسه. */
 .drift-sheet-backdrop{
-  position:fixed;inset:0;z-index:340;display:grid;place-items:center;padding:24px;
+  position:fixed;inset:0;z-index:1450;display:grid;place-items:center;padding:24px;
   background:color-mix(in srgb,var(--ink) 42%,transparent);backdrop-filter:blur(3px);
   animation:drift-in .16s ease-out both;
 }

@@ -2,7 +2,7 @@
  * Deterministic Arabic query parsing for the command palette.
  *
  * Coordinators ask the same handful of questions in the same handful of ways:
- * "قاعات فاضية الثلاثاء ١٠", "جدول د. أحمد", "فراغات نورة الأحد", "ب-101 الاثنين".
+ * "قاعات فاضية الثلاثاء ١٠", "جدول د. سالم", "فراغات نورة الأحد", "ب-101 الاثنين".
  * Those are answerable exactly from the schedule itself, so the parser is a set
  * of explicit rules rather than a model — same input always gives the same
  * answer, offline, with no data leaving the server.

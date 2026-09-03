@@ -21,8 +21,8 @@
     <meta property="og:title" content="SCHEDULE · نظام القرار الأكاديمي" />
     <meta property="og:description" content="ابنِ الجدول. راجعه. اتخذ القرار. مساحة أكاديمية واحدة للجدول، المراجعة والنشر." />
     <meta property="og:url" content="https://schedule-34704073784.europe-west2.run.app/" />
-    <meta property="og:image" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v3.png" />
-    <meta property="og:image:secure_url" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v3.png" />
+    <meta property="og:image" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v4.png" />
+    <meta property="og:image:secure_url" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v4.png" />
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
@@ -30,7 +30,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="SCHEDULE · نظام القرار الأكاديمي" />
     <meta name="twitter:description" content="ابنِ الجدول. راجعه. اتخذ القرار." />
-    <meta name="twitter:image" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v3.png" />
+    <meta name="twitter:image" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v4.png" />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-400.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-600.woff2" crossorigin />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -59,29 +59,19 @@
       })();
     </script>
     <style>
-      /* ── شاشة الإقلاع: العلامة ترسم نفسها ────────────────────────────────
-         A real first screen, rendered before the bundle, and the boot guard's
-         failure surface too — so beauty never costs recoverability.
+      /* ── شاشة الإقلاع ────────────────────────────────────────────────────
+         شاشة أولى حقيقية تُرسم قبل الحزمة، وهي أيضاً سطح الفشل الذي يستعمله
+         حارس الإقلاع أدناه.
 
-         Light is the base because the workspace itself defaults to light; the
-         dark block keys off `data-theme`, which the head script above stamps
-         from storage before anything paints. The previous version read
-         `prefers-color-scheme` instead, which meant a dark splash followed by a
-         light workspace for every dark-OS reader who had never touched the
-         theme switch.
+         الأساس نهاري لأن المساحة نفسها تبدأ نهارية؛ والكتلة الداكنة تتبع
+         `data-theme` الذي يثبّته سطر التهيئة أعلاه من التخزين قبل أي رسم —
+         لا `prefers-color-scheme`، وإلا ظهرت شاشة داكنة تليها مساحة نهارية.
 
-         There is no wordmark here any more. It used to be set in `system-ui`,
-         because a splash paints before webfonts arrive — so the product's name,
-         on the one screen every reader sees every time, was drawn in San
-         Francisco on a Mac, Segoe on Windows and Roboto on Android. A mark is
-         typeface-independent by construction, and the reader has just tapped
-         this exact mark on their home screen. It is the better greeting.
+         بلا اسم مكتوب: الشاشة تُرسم قبل وصول الخطوط، فكان الاسم يُصفّ بخط
+         النظام — مختلفاً على كل جهاز. العلامة مستقلّة عن الخط بحكم تكوينها.
 
-         The animation is not decoration: it is the mark performing what the
-         product does. Four columns rise, then the brass one drops out of the
-         hour it was colliding in, leaving its trace behind. It is deliberately
-         short, and `stand_down` cuts it off the instant the workspace exists —
-         motion here serves a real wait and never manufactures one. */
+         الحركة هي ما يفعله البرنامج: أربعة أعمدة تصعد، ثم ينزل النحاسي من
+         الساعة التي كان يتصادم فيها تاركاً أثره. */
       #boot{
         position:fixed;inset:0;z-index:99999;display:grid;place-items:center;
         background:radial-gradient(circle at 50% 42%,rgba(47,133,116,.10),transparent 44%),#f2f3ef;
@@ -103,9 +93,9 @@
 
       /* الأعمدة تصعد، ثم ينزل النحاسي من الساعة التي كان يتصادم فيها. */
       #boot-mark .bm-bar,#boot-mark .bm-decided,#boot-mark .bm-trace{opacity:0}
-      #boot-mark .bm-bar{animation:bm-rise .44s cubic-bezier(.16,1,.3,1) var(--d,0ms) both}
-      #boot-mark .bm-decided{animation:bm-decide .94s cubic-bezier(.16,1,.3,1) 200ms both}
-      #boot-mark .bm-trace{animation:bm-trace 1.05s ease 200ms both}
+      #boot-mark .bm-bar{animation:bm-rise .34s cubic-bezier(.16,1,.3,1) var(--d,0ms) both}
+      #boot-mark .bm-decided{animation:bm-decide .62s cubic-bezier(.16,1,.3,1) 140ms both}
+      #boot-mark .bm-trace{animation:bm-trace .72s ease 140ms both}
       @keyframes bm-rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
       @keyframes bm-decide{
         0%{opacity:0;transform:translateY(-16px)}
@@ -152,10 +142,10 @@
           <rect x="1" y="1" width="62" height="62" rx="13.4" fill="none" stroke="#C79B5F" stroke-opacity=".22" stroke-width=".8"/>
           <rect class="bm-trace" x="20.6" y="16.5" width="5.6" height="14" rx="2.8" fill="none" stroke="#C79B5F" stroke-opacity=".42" stroke-width=".9" stroke-dasharray="2 2"/>
           <rect class="bm-bar" style="--d:0ms"   x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
-          <rect class="bm-bar" style="--d:70ms"  x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
-          <rect class="bm-bar" style="--d:140ms" x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
+          <rect class="bm-bar" style="--d:55ms"  x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
+          <rect class="bm-bar" style="--d:110ms" x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
           <rect class="bm-decided"               x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#C79B5F"/>
-          <rect class="bm-bar" style="--d:210ms" x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
+          <rect class="bm-bar" style="--d:165ms" x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
         </svg>
         <div id="boot-line" aria-hidden="true"><i></i></div>
       </div>
@@ -188,6 +178,7 @@
         var booted = false;
         var reason = "";
         var boot = document.getElementById("boot");
+        var bootStarted = Date.now();
 
         function read() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
         function write(v) { try { sessionStorage.setItem(KEY, v); } catch (e) {} }
@@ -204,21 +195,22 @@
           clear();
           if (!boot || !boot.parentNode) return;
           /*
-           * لا انتظار مصنوع.
+           * أرضية بقدر الإيماءة، لا أكثر.
            *
-           * كان هذا السطر `Math.max(0, 1900 - elapsed)` ثم اختفاء في 420ms —
-           * أي أرضية مقدارها 2320ms على كل فتحة، بما فيها الفتحة الدافئة التي
-           * رُسمت في 300. مُنسّق الجداول يفتح البرنامج عشرات المرات يومياً،
-           * فكانت الضريبة تُدفع من ميزانية السرعة نفسها التي بُنيت لها طبقات
-           * الرفّ والجلب المسبق والكاش.
+           * كانت `Math.max(0, 1900 - elapsed)` ثم اختفاء في 420ms — أرضية
+           * 2320ms على كل فتحة، بما فيها الفتحة الدافئة التي رُسمت في 300.
+           * وحذفها بالكامل ذهب إلى الطرف الآخر: العلامة كانت تومض قبل أن تُرى.
            *
-           * الشاشة تغادر لحظة وجود المساحة. الـ240ms الباقية هي الذوبان وحده،
-           * وهي هناك حتى يُقرأ الانتقال ذوباناً لا وميضاً.
+           * الحركة تكتمل عند 760ms، فالأرضية 820 ثم ذوبان 240: الإيماءة تُرى
+           * كاملةً في أسوأ الحالات بأقل من نصف الزمن القديم.
            */
-          boot.classList.add("leaving");
+          var seen = Date.now() - bootStarted;
           setTimeout(function () {
-            if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
-          }, 260);
+            boot.classList.add("leaving");
+            setTimeout(function () {
+              if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+            }, 260);
+          }, Math.max(0, 820 - seen));
         }
 
         function fail(detail) {

@@ -644,7 +644,10 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
 .ob-stage-rail{display:grid;grid-template-rows:repeat(6,1fr);gap:4px}
 .ob-stage-rail i{
   display:grid;place-items:center;color:var(--muted-2);
-  font-size:9px;font-style:normal;font-variant-numeric:tabular-nums;
+  font-size:9px;font-style:normal;
+  /* أرقام لاتينية معزولة، كما في مسطرة الأسبوع الحقيقية. */
+  direction:ltr;unicode-bidi:isolate;
+  font-variant-numeric:tabular-nums lining-nums;
 }
 .ob-stage-cells{
   position:relative;
@@ -676,21 +679,9 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
   margin-top:auto;font-style:normal;font-size:7px;color:var(--muted-2);
   direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;
 }
-/* ── لون المسرح = لون اللوحة، حرفياً ──────────────────────────────────────
- *
- * The comment above this stage promises that "nothing here is a shape that does
- * not exist upstairs", and the shapes kept that promise. The colours did not.
- * Four hex literals sat here — #2f7d68, #3a6f9e, #7a5480, #b88a35 — and they
- * were not different colours, they were APPROXIMATIONS of four hues that the
- * board already exports, each one missing: 163.8° for 158, 208.2° for 200,
- * 291.8° for 288, 38.9° for 38. One rule written twice, and the second copy
- * wrong. The day a hue moved on the wheel, the tour would have gone on lying
- * and no test would have failed.
- *
- * Now the chip carries `--hue` exactly as `.week-event` does, and reads the
- * same three formulas. Onboarding.tsx picks the hue by calling `courseHue()` on
- * the very course name it prints, so a lecture shown here is the colour it will
- * actually be on the board.
+/* ── لون المسرح = لون اللوحة ──────────────────────────────────────────────
+ * البطاقة تحمل `--hue` كما تحمله `.week-event`، وتقرأ الصيغ الثلاث نفسها،
+ * فتُشتق ألوان الجولة من `COURSE_HUES` بدل تقريبها بقيم هكس.
  */
 .ob-chip{
   --chip-edge:hsl(var(--hue,158) 38% 42%);
@@ -708,9 +699,7 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
    decoration added to compensate. */
 .ob-chip{border-inline-start:2px solid var(--chip-edge)}
 
-/* والنسيج البديل كذلك. A reader with a colour vision deficiency used to meet
-   this product through cards they could not tell apart, then sign in and find
-   the very setting that fixes it — a setting the tour never demonstrated. */
+/* والنسيج البديل كذلك، حتى تُميَّز البطاقات بلا اعتماد على اللون وحده. */
 :root[data-colorblind="true"] .ob-chip::after{
   content:"";position:absolute;z-index:1;pointer-events:none;
   inset-block:0;inset-inline-start:0;width:4px;
@@ -873,14 +862,36 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
   padding:clamp(14px,2vw,20px) 0 clamp(18px,2.6vw,26px);
   border-top:1px solid var(--line);
 }
+/* مصدر ما على المسرح — هادئ ودائم، لا يظهر ويختفي مع الفصول. */
+.ob-source{
+  position:absolute;inset-block-end:-2px;inset-inline-start:2px;
+  display:inline-flex;align-items:center;gap:5px;
+  padding:3px 8px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface);
+  color:var(--muted-2);font-size:8px;line-height:1.6;white-space:nowrap;
+}
+.ob-source b{color:var(--ink-2);font-weight:650}
+
 .ob-dots{display:flex;gap:7px;align-items:center}
 .ob-dots button{
   width:26px;height:4px;padding:0;border:0;border-radius:999px;
   background:var(--line);cursor:pointer;transition:background .25s var(--ease),width .25s var(--ease);
 }
 .ob-dots button.done{background:color-mix(in srgb,var(--accent) 42%,transparent)}
-.ob-dots button.on{width:38px;background:var(--accent)}
+.ob-dots button.on{width:38px;background:color-mix(in srgb,var(--accent) 26%,var(--line));position:relative;overflow:hidden}
+/* أثناء التشغيل التلقائي وحده: الشريط يمتلئ بمقدار مُهلة الفصل نفسها، فيعرف
+   القارئ أن الجولة تمشي ومتى تنتقل — بدل أن يتساءل إن كانت متوقفة. */
+.ob-dots button.on::after{
+  content:"";position:absolute;inset:0;inline-size:100%;
+  border-radius:inherit;background:var(--accent);
+  transform-origin:right center;transform:scaleX(1);
+}
+.ob-dots.is-playing button.on::after{animation:ob-dot-fill var(--hold,4s) linear both}
+@keyframes ob-dot-fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 .ob-dots button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+@media (prefers-reduced-motion:reduce){
+  .ob-dots.is-playing button.on::after{animation:none;transform:scaleX(1)}
+}
 .ob-acts{display:flex;align-items:center;gap:16px}
 .ob-skip{border:0;background:none;color:var(--muted);font-size:var(--t-sm);font-weight:600;font-family:inherit;cursor:pointer}
 .ob-skip:hover{color:var(--ink)}

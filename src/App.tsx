@@ -2616,7 +2616,11 @@ export default function App() {
       ) : null}
       {onboardingStep >= 0 ? (
         <Suspense fallback={null}>
-          <Onboarding isPowerAdmin={isPowerAdmin} onFinish={finishOnboarding} />
+          <Onboarding
+            isPowerAdmin={isPowerAdmin}
+            workspaceQuery={scheduleScopeQuery(Number(user.SystemUserId) || 0)}
+            onFinish={finishOnboarding}
+          />
         </Suspense>
       ) : null}
     </div>
