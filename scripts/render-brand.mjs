@@ -11,6 +11,14 @@
  * Run:   node scripts/render-brand.mjs           يكتب الأصول
  * Check: node scripts/render-brand.mjs --check   يتحقّق ولا يكتب
  *
+ * التحقّق يقيس النصوص المُولَّدة بالبايت (حتمية على كل نظام)، والصور بالبكسل
+ * عند نقاط معلومة. لا يصحّ قياس PNG بالبايت: الرسم يمرّ بمكتبة أصلية يختلف
+ * ثنائيّها بين darwin-arm64 و linux-x64، فالرسم نفسه يُنتج ملفاً مختلفاً —
+ * وهو ما أسقط البناء في CI بلا عيب حقيقي. البكسل هو ما يعني شيئاً.
+ *
+ * ولذلك: إعادة توليد الصور على نظام مختلف قد تُظهر فرقاً في git بلا فرق
+ * بصري. هذا متوقّع ولا يضرّ.
+ *
  * بطاقة المشاركة وحدها لا يُتمّها node: نصّها عربي، والتشكيل العربي يحتاج
  * محرّك صفٍّ حقيقي. فيكتب السكربت scripts/social-card.html بالألوان الصحيحة،
  * وتُرسَم البطاقة منه بمتصفح:
@@ -19,7 +27,7 @@
  *   chrome-headless-shell --headless --window-size=1200,630 \
  *     --screenshot=public/schedule-social-card-v4.png <url>/social-card.html
  */
-import { createCanvas } from "@napi-rs/canvas";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { readFileSync, writeFileSync } from "node:fs";
 
 /* ── الألوان: تُقرأ، لا تُكتب ─────────────────────────────────────────────── */
@@ -259,27 +267,87 @@ function auditWordmark() {
   return problems;
 }
 
+/* ── التحقّق من صور PNG: بالبكسل، لا بالبايت ───────────────────────────────
+ *
+ * مقارنة البايتات كانت خاطئة هنا. الرسم يمرّ بمكتبة أصلية (skia) يختلف
+ * ثنائيّها بين النظام والمعمار: darwin-arm64 محلياً و linux-x64 في CI. الرسم
+ * نفسه يُنتج بايتات مختلفة، فكان البناء يسقط في CI بلا عيب حقيقي.
+ *
+ * فيُقاس ما يعني شيئاً: لون كل عمود في مركزه، ولون الأرضية في نقطتين خاليتين.
+ * هذه القيم لا تتغيّر بتغيّر المُرمِّز، وتلتقط ما يهمّ فعلاً — لون مبدَّل، أو
+ * هندسة منقولة، أو ملف استُبدل كلّياً.
+ */
+const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+
+/** نقاط القياس في فضاء 512، مشتقّة من الهندسة نفسها لا مكتوبة يدوياً. */
+const PROBES = [
+  ...BARS.map(bar => ({
+    x: bar.x + W / 2,
+    y: bar.y + bar.h / 2,
+    expect: bar.decided ? BRASS : JADE,
+    what: `العمود عند x=${Math.round(bar.x)}`,
+  })),
+  { x: 256, y: 72, expect: GROUND, what: "الأرضية أعلى العلامة" },
+  { x: 256, y: 440, expect: GROUND, what: "الأرضية أسفل العلامة" },
+];
+
+async function probePng(file, size) {
+  const image = await loadImage(readFileSync(file));
+  const canvas = createCanvas(size, size);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(image, 0, 0, size, size);
+  const problems = [];
+  for (const probe of PROBES) {
+    const px = Math.round((probe.x / 512) * size);
+    const py = Math.round((probe.y / 512) * size);
+    const [r, g, b] = ctx.getImageData(px, py, 1, 1).data;
+    const [er, eg, eb] = rgb(probe.expect);
+    /* هامش ضيّق يستوعب اختلاف تنعيم الحواف بين بناءَي skia، ولا يستوعب
+       لوناً مختلفاً: بين اليشم والنحاس عشرات الدرجات. */
+    if (Math.abs(r - er) > 6 || Math.abs(g - eg) > 6 || Math.abs(b - eb) > 6) {
+      problems.push(
+        `${file}: ${probe.what} لونه rgb(${r},${g},${b}) والمتوقّع ${probe.expect}`,
+      );
+    }
+  }
+  return problems;
+}
+
 /* ── الكتابة أو التحقّق ───────────────────────────────────────────────────── */
 
-const ASSETS = [
+/** نصوص مُولَّدة: مقارنتها بالبايت صحيحة لأنها حتمية على كل نظام. */
+const TEXT_ASSETS = [
   ["public/schedule-icon.svg", () => Buffer.from(iconSvg)],
   ["public/schedule-maskable.svg", () => Buffer.from(maskableSvg)],
   ["scripts/social-card.html", () => Buffer.from(cardHtml)],
-  ["public/schedule-icon-192.png", () => drawIcon(192, false)],
-  ["public/schedule-icon-512.png", () => drawIcon(512, false)],
-  ["public/schedule-maskable-512.png", () => drawIcon(512, true)],
+];
+
+/** صور: تُقاس بالبكسل. */
+const PNG_ASSETS = [
+  ["public/schedule-icon-192.png", 192, false],
+  ["public/schedule-icon-512.png", 512, false],
+  ["public/schedule-maskable-512.png", 512, true],
+];
+
+const ASSETS = [
+  ...TEXT_ASSETS,
+  ...PNG_ASSETS.map(([file, size, masked]) => [file, () => drawIcon(size, masked)]),
 ];
 
 const checking = process.argv.includes("--check");
 
 if (checking) {
   const problems = auditWordmark();
-  for (const [file, build] of ASSETS) {
+  for (const [file, build] of TEXT_ASSETS) {
     let onDisk;
     try { onDisk = readFileSync(file); } catch { problems.push(`${file}: مفقود`); continue; }
     if (!onDisk.equals(build())) {
       problems.push(`${file}: يخالف ما يولّده هذا السكربت — حُرِّر يدوياً أو تغيّر لون العلامة`);
     }
+  }
+  for (const [file, size] of PNG_ASSETS) {
+    try { readFileSync(file); } catch { problems.push(`${file}: مفقود`); continue; }
+    problems.push(...await probePng(file, size));
   }
   if (problems.length) {
     console.error("فشل تدقيق العلامة:");
