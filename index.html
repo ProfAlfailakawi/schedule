@@ -2,18 +2,23 @@
 <html lang="ar" dir="rtl">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#f2f3ef" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#080c0b" media="(prefers-color-scheme: dark)" />
+    <!-- `maximum-scale=1` و`user-scalable=no` كانا يعطّلان القرص بالإصبعين على كل
+         هاتف. برنامجٌ عاير التباين إلى 4.5:1 من أجل من يصعب عليه القراءة لا يصحّ
+         أن يمنع عنه أبسط أداة يملكها. حذفهما لا يغيّر التخطيط في شيء. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- سمة واحدة، مصدر واحد. القيمة هنا هي الافتراضي النهاري، ويصحّحها سطر
+         التهيئة أدناه من `schedule-theme` قبل أي رسم، ويحدّثها App.tsx عند التبديل. -->
+    <meta name="theme-color" content="#f2f3ef" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-    <meta name="apple-mobile-web-app-title" content="الجدول الأكاديمي" />
-    <meta name="description" content="SCHEDULE — مساحة تشغيل الجدول الأكاديمي لبناء الجدول، مراجعته، اتخاذ القرار ونشره بوضوح." />
+    <!-- اسم واحد على الشاشة الرئيسية، هو نفسه short_name في الـmanifest. -->
+    <meta name="apple-mobile-web-app-title" content="SCHEDULE" />
+    <meta name="description" content="SCHEDULE — نظام القرار الأكاديمي: ابنِ الجدول، راجعه، اتخذ القرار، وانشره بوضوح." />
     <link rel="canonical" href="https://schedule-34704073784.europe-west2.run.app/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="SCHEDULE" />
     <meta property="og:locale" content="ar_KW" />
-    <meta property="og:title" content="SCHEDULE · مساحة تشغيل الجدول الأكاديمي" />
+    <meta property="og:title" content="SCHEDULE · نظام القرار الأكاديمي" />
     <meta property="og:description" content="ابنِ الجدول. راجعه. اتخذ القرار. مساحة أكاديمية واحدة للجدول، المراجعة والنشر." />
     <meta property="og:url" content="https://schedule-34704073784.europe-west2.run.app/" />
     <meta property="og:image" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v3.png" />
@@ -21,53 +26,102 @@
     <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="SCHEDULE — مساحة تشغيل الجدول الأكاديمي" />
+    <meta property="og:image:alt" content="SCHEDULE — نظام القرار الأكاديمي" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="SCHEDULE · مساحة تشغيل الجدول الأكاديمي" />
+    <meta name="twitter:title" content="SCHEDULE · نظام القرار الأكاديمي" />
     <meta name="twitter:description" content="ابنِ الجدول. راجعه. اتخذ القرار." />
     <meta name="twitter:image" content="https://schedule-34704073784.europe-west2.run.app/schedule-social-card-v3.png" />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-400.woff2" crossorigin />
     <link rel="preload" as="font" type="font/woff2" href="/fonts/plex-arabic-arabic-600.woff2" crossorigin />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/schedule-icon-192.png" />
-    <title>SCHEDULE · Academic Workspace</title>
+    <link rel="icon" href="/schedule-icon-192.png" sizes="192x192" type="image/png" />
+    <!-- iOS يقصّ بشكله الخاص، فالنسخة المقنَّعة (مربّعة، بلا حلقة) هي الصحيحة هنا. -->
+    <link rel="apple-touch-icon" href="/schedule-maskable-512.png" />
+    <title>SCHEDULE · Academic Decision System</title>
+    <script>
+      /*
+       * السمة تُحسم قبل أن يُرسم أي بكسل.
+       *
+       * البرنامج يبدأ نهارياً دائماً ما لم يختر المستخدم غير ذلك (App.tsx)،
+       * بينما كانت شاشة الإقلاع تقرأ `prefers-color-scheme` من نظام التشغيل.
+       * النتيجة لكل من يستعمل الوضع الليلي في جهازه ولم يفتح مبدّل السمة:
+       * شاشة إقلاع داكنة ثم مساحة عمل نهارية — وميض أبيض مضمون في نهاية كل
+       * إقلاع. القراءة هنا تجعل الإقلاع ولون الشريط والمساحة كلها تقول الشيء
+       * نفسه من اللحظة الأولى.
+       */
+      (function () {
+        var theme = "light";
+        try { if (localStorage.getItem("schedule-theme") === "dark") theme = "dark"; } catch (e) {}
+        document.documentElement.setAttribute("data-theme", theme);
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute("content", theme === "dark" ? "#080c0b" : "#f2f3ef");
+      })();
+    </script>
     <style>
-      /* A real first screen, rendered before the bundle. It is also the boot
-         guard's failure surface, so beauty never costs recoverability. */
-      #boot {
+      /* ── شاشة الإقلاع: العلامة ترسم نفسها ────────────────────────────────
+         A real first screen, rendered before the bundle, and the boot guard's
+         failure surface too — so beauty never costs recoverability.
+
+         Light is the base because the workspace itself defaults to light; the
+         dark block keys off `data-theme`, which the head script above stamps
+         from storage before anything paints. The previous version read
+         `prefers-color-scheme` instead, which meant a dark splash followed by a
+         light workspace for every dark-OS reader who had never touched the
+         theme switch.
+
+         There is no wordmark here any more. It used to be set in `system-ui`,
+         because a splash paints before webfonts arrive — so the product's name,
+         on the one screen every reader sees every time, was drawn in San
+         Francisco on a Mac, Segoe on Windows and Roboto on Android. A mark is
+         typeface-independent by construction, and the reader has just tapped
+         this exact mark on their home screen. It is the better greeting.
+
+         The animation is not decoration: it is the mark performing what the
+         product does. Four columns rise, then the brass one drops out of the
+         hour it was colliding in, leaving its trace behind. It is deliberately
+         short, and `stand_down` cuts it off the instant the workspace exists —
+         motion here serves a real wait and never manufactures one. */
+      #boot{
         position:fixed;inset:0;z-index:99999;display:grid;place-items:center;
-        background:
-          radial-gradient(circle at 50% 38%,rgba(47,133,116,.16),transparent 34%),
-          linear-gradient(145deg,#07100e,#0a0f0e 56%,#11100c);
-        color:#edf2ee;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;
-        opacity:1;transform:scale(1);transition:opacity .42s ease,filter .42s ease,transform .42s ease;
+        background:radial-gradient(circle at 50% 42%,rgba(47,133,116,.10),transparent 44%),#f2f3ef;
+        color:#171c1a;font-family:system-ui,"Segoe UI",Tahoma,sans-serif;
+        opacity:1;transition:opacity .24s ease;
       }
-      #boot.leaving{opacity:0;filter:blur(6px);transform:scale(1.012);pointer-events:none}
-      #boot-splash{display:grid;place-items:center;text-align:center;gap:11px;animation:boot-rise .52s cubic-bezier(.2,.8,.2,1) both}
+      :root[data-theme="dark"] #boot{
+        background:radial-gradient(circle at 50% 42%,rgba(47,133,116,.16),transparent 44%),#080c0b;
+        color:#edf2ee;
+      }
+      #boot.leaving{opacity:0;pointer-events:none}
+
+      #boot-splash{display:grid;place-items:center;gap:24px}
       #boot-mark{
-        position:relative;width:82px;height:82px;border:1px solid rgba(255,255,255,.14);
-        border-radius:20px;background:rgba(255,255,255,.055);
-        box-shadow:0 24px 70px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.06);
-        overflow:hidden;
+        width:100px;height:100px;display:block;
+        filter:drop-shadow(0 20px 34px rgba(12,24,20,.26));
       }
-      #boot-mark::before{
-        content:"";position:absolute;inset:20px 17px 16px;border:2px solid #67b59f;border-radius:8px;
+      :root[data-theme="dark"] #boot-mark{filter:drop-shadow(0 20px 40px rgba(0,0,0,.55))}
+
+      /* الأعمدة تصعد، ثم ينزل النحاسي من الساعة التي كان يتصادم فيها. */
+      #boot-mark .bm-bar,#boot-mark .bm-decided,#boot-mark .bm-trace{opacity:0}
+      #boot-mark .bm-bar{animation:bm-rise .44s cubic-bezier(.16,1,.3,1) var(--d,0ms) both}
+      #boot-mark .bm-decided{animation:bm-decide .94s cubic-bezier(.16,1,.3,1) 200ms both}
+      #boot-mark .bm-trace{animation:bm-trace 1.05s ease 200ms both}
+      @keyframes bm-rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+      @keyframes bm-decide{
+        0%{opacity:0;transform:translateY(-16px)}
+        32%{opacity:1;transform:translateY(-16px)}
+        100%{opacity:1;transform:translateY(0)}
       }
-      #boot-mark::after{
-        content:"";position:absolute;left:17px;right:17px;top:32px;height:2px;background:#67b59f;
-        box-shadow:0 8px 0 rgba(103,181,159,.35),0 16px 0 rgba(103,181,159,.2);
-      }
-      #boot-mark i,#boot-mark b{
-        position:absolute;top:14px;width:4px;height:14px;border-radius:99px;background:#c39a60;z-index:2;
-      }
-      #boot-mark i{left:30px}#boot-mark b{right:30px}
-      #boot-word{margin-top:9px;font:650 15px/1 system-ui,sans-serif;letter-spacing:.3em;color:#f0f3f1}
-      #boot-ar{font-size:13px;color:#89968f;letter-spacing:.01em}
-      #boot-line{width:132px;height:2px;margin-top:7px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
-      #boot-line i{display:block;width:38%;height:100%;border-radius:inherit;background:linear-gradient(90deg,transparent,#68b9a2,transparent);animation:boot-scan 1.05s ease-in-out infinite}
-      @keyframes boot-rise{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+      @keyframes bm-trace{0%,52%{opacity:0}100%{opacity:1}}
+
+      #boot-line{width:118px;height:2px;border-radius:99px;background:rgb(19 24 23 / .10);overflow:hidden}
+      :root[data-theme="dark"] #boot-line{background:rgb(255 255 255 / .08)}
+      #boot-line i{display:block;width:34%;height:100%;border-radius:inherit;
+        background:linear-gradient(90deg,transparent,#2f8574,transparent);
+        animation:boot-scan 1.05s ease-in-out infinite}
+      :root[data-theme="dark"] #boot-line i{background:linear-gradient(90deg,transparent,#68b9a2,transparent)}
       @keyframes boot-scan{0%{transform:translateX(-130%)}100%{transform:translateX(360%)}}
+
       #boot-card{display:none;max-width:440px;padding:30px;text-align:center;line-height:1.8}
       #boot.failed #boot-splash{display:none}
       #boot.failed #boot-card{display:block}
@@ -75,21 +129,34 @@
       #boot-card p{margin:0 0 20px;font-size:14px;opacity:.72}
       #boot-card button{min-height:44px;padding:0 22px;border:0;border-radius:11px;cursor:pointer;background:#1f6b5c;color:#fff;font:inherit;font-weight:650}
       #boot-card small{display:block;margin-top:14px;font-size:11px;opacity:.45;direction:ltr}
-      @media (prefers-color-scheme:light){
-        #boot{background:radial-gradient(circle at 50% 38%,rgba(47,133,116,.12),transparent 34%),#f2f3ef;color:#171c1a}
-        #boot-mark{border-color:#d9dfdb;background:#fff;box-shadow:0 24px 70px rgba(29,52,45,.12),inset 0 1px 0 #fff}
-        #boot-word{color:#18211e}#boot-ar{color:#6f7c76}#boot-line{background:#dfe5e1}
+
+      /* بلا حركة: الحالة النهائية كاملةً، حاضرة دفعةً واحدة. */
+      @media (prefers-reduced-motion:reduce){
+        #boot,#boot-line i,
+        #boot-mark .bm-bar,#boot-mark .bm-decided,#boot-mark .bm-trace{animation:none;transition:none}
+        #boot-mark .bm-bar,#boot-mark .bm-decided{opacity:1}
+        #boot-mark .bm-trace{opacity:1}
       }
-      @media (prefers-reduced-motion:reduce){#boot-splash,#boot-line i{animation:none}#boot{transition:none}}
     </style>
   </head>
   <body>
     <div id="root"></div>
     <div id="boot" role="status" aria-live="polite">
-      <div id="boot-splash" aria-label="جارٍ تشغيل SCHEDULE">
-        <div id="boot-mark" aria-hidden="true"><i></i><b></b></div>
-        <div id="boot-word">SCHEDULE</div>
-        <div id="boot-ar">مساحة تشغيل الجدول الأكاديمي</div>
+      <div id="boot-splash" aria-label="جارٍ تشغيل نظام القرار الأكاديمي">
+        <!-- الهندسة نفسها المكتوبة في src/components/BrandMark.tsx. مكرّرة هنا
+             بالضرورة: هذه الشاشة تُرسم قبل أن تُحمَّل أي حزمة، فلا تستطيع
+             استيراد شيء. الأثر المتقطّع يظهر هنا وحده، لأن الحركة هي التي
+             تجعله يُقرأ غياباً لا شكلاً. -->
+        <svg id="boot-mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+          <rect width="64" height="64" rx="14" fill="#141917"/>
+          <rect x="1" y="1" width="62" height="62" rx="13.4" fill="none" stroke="#C79B5F" stroke-opacity=".22" stroke-width=".8"/>
+          <rect class="bm-trace" x="20.6" y="16.5" width="5.6" height="14" rx="2.8" fill="none" stroke="#C79B5F" stroke-opacity=".42" stroke-width=".9" stroke-dasharray="2 2"/>
+          <rect class="bm-bar" style="--d:0ms"   x="46.4" y="19.5" width="5.6" height="15" rx="2.8" fill="#5FBFA6"/>
+          <rect class="bm-bar" style="--d:70ms"  x="37.8" y="27.5" width="5.6" height="12" rx="2.8" fill="#5FBFA6"/>
+          <rect class="bm-bar" style="--d:140ms" x="29.2" y="16.5" width="5.6" height="19" rx="2.8" fill="#5FBFA6"/>
+          <rect class="bm-decided"               x="20.6" y="32.5" width="5.6" height="14" rx="2.8" fill="#C79B5F"/>
+          <rect class="bm-bar" style="--d:210ms" x="12"   y="23.5" width="5.6" height="16" rx="2.8" fill="#5FBFA6"/>
+        </svg>
         <div id="boot-line" aria-hidden="true"><i></i></div>
       </div>
       <div id="boot-card">
@@ -121,7 +188,6 @@
         var booted = false;
         var reason = "";
         var boot = document.getElementById("boot");
-        var bootStarted = Date.now();
 
         function read() { try { return sessionStorage.getItem(KEY); } catch (e) { return null; } }
         function write(v) { try { sessionStorage.setItem(KEY, v); } catch (e) {} }
@@ -137,13 +203,22 @@
           booted = true;
           clear();
           if (!boot || !boot.parentNode) return;
-          var wait = Math.max(0, 1900 - (Date.now() - bootStarted));
+          /*
+           * لا انتظار مصنوع.
+           *
+           * كان هذا السطر `Math.max(0, 1900 - elapsed)` ثم اختفاء في 420ms —
+           * أي أرضية مقدارها 2320ms على كل فتحة، بما فيها الفتحة الدافئة التي
+           * رُسمت في 300. مُنسّق الجداول يفتح البرنامج عشرات المرات يومياً،
+           * فكانت الضريبة تُدفع من ميزانية السرعة نفسها التي بُنيت لها طبقات
+           * الرفّ والجلب المسبق والكاش.
+           *
+           * الشاشة تغادر لحظة وجود المساحة. الـ240ms الباقية هي الذوبان وحده،
+           * وهي هناك حتى يُقرأ الانتقال ذوباناً لا وميضاً.
+           */
+          boot.classList.add("leaving");
           setTimeout(function () {
-            boot.classList.add("leaving");
-            setTimeout(function () {
-              if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
-            }, 420);
-          }, wait);
+            if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
+          }, 260);
         }
 
         function fail(detail) {

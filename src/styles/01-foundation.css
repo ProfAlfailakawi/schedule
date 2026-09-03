@@ -146,6 +146,25 @@
   --gutter:clamp(16px,3vw,44px);
   --topbar-h:64px;
 
+  /* ── العلامة اللفظية: مواصفة واحدة ────────────────────────────────────
+   * The name was hand-set in six places and no two agreed: five different
+   * letter-spacings (.22 / .26 / .30 / .34 / .36), four weights (600 / 650 /
+   * 700) and three typefaces — one of them `system-ui` on the boot splash, so
+   * the product's name was literally drawn in a different face on every device.
+   *
+   * Stated once, as tokens rather than a shared selector, because the six sites
+   * live in five stylesheets loaded in a fixed order; a token cannot be undone
+   * by a later file, and each rule stays where it belongs. Size still varies by
+   * surface — that is hierarchy, and it is the only thing that should.
+   */
+  /* النحاس على سطح داكن ثابت — رأس الترحيب وشاشة الدخول لا يتبعان السمة،
+     فلا يصحّ أن يتبعها نحاسهما. القيمة نفسها التي تحملها العلامة. */
+  --brass-on-dark:#c79b5f;
+
+  --brand-word-family:var(--font-mono);
+  --brand-word-weight:600;
+  --brand-word-track:.28em;
+
   --ease:cubic-bezier(.22,.7,.24,1);
   --ease-out:cubic-bezier(.16,1,.3,1);
   /* The only curve that overshoots its mark before settling.

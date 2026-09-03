@@ -51,20 +51,20 @@
   color:inherit;
   text-align:start;
 }
+/* البلاطة النحاسية كانت سنداً لأيقونة Lucide عامّة لا تحمل هوية بنفسها.
+   العلامة الحقيقية تحمل لونيها، فلا تحتاج مربّعاً خلفها. */
 .brand-mark{
-  width:38px;height:38px;flex:0 0 38px;
+  width:34px;height:34px;flex:0 0 34px;
   display:grid;place-items:center;
-  border-radius:var(--r-sm);
-  background:color-mix(in srgb,var(--brass) 16%,transparent);
-  color:var(--brass);
 }
-.brand-mark svg{width:18px;height:18px}
+.brand-mark svg{width:32px;height:32px}
 .sidebar-brand strong{
   display:block;
   font-size:13px;
   line-height:1.1;
-  letter-spacing:.22em;
-  font-weight:600;
+  font-family:var(--brand-word-family);
+  font-weight:var(--brand-word-weight);
+  letter-spacing:var(--brand-word-track);
 }
 .sidebar-brand small{
   display:block;
@@ -579,11 +579,17 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
 .ob-head{
   padding:clamp(20px,3vw,30px) clamp(20px,3.4vw,36px) clamp(16px,2.4vw,22px);
   background:
-    radial-gradient(130% 200% at 88% -60%, color-mix(in srgb,#c9a55f 20%,transparent), transparent 58%),
+    radial-gradient(130% 200% at 88% -60%, color-mix(in srgb,var(--brass-on-dark) 20%,transparent), transparent 58%),
     linear-gradient(150deg,#14261f,#0d1814);
   color:#eee9db;
 }
-.ob-brand{display:inline-block;font:600 11px/1 var(--font-mono);letter-spacing:.36em;color:#c9a55f}
+.ob-brand{
+  display:inline-block;font-size:11px;line-height:1;
+  font-family:var(--brand-word-family);
+  font-weight:var(--brand-word-weight);
+  letter-spacing:var(--brand-word-track);
+  color:var(--brass-on-dark);
+}
 .ob-head p{margin:12px 0 0;color:#b5c2b3;font-size:clamp(14px,1.5vw,16px);line-height:1.7;text-wrap:balance}
 .ob-head p b{color:#f2efe6;font-weight:600}
 
@@ -670,10 +676,51 @@ html[data-schedule-workspace="focus"] .quick-create{z-index:2600}
   margin-top:auto;font-style:normal;font-size:7px;color:var(--muted-2);
   direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;
 }
-.ob-chip.hue-teal{--chip-bg:color-mix(in srgb,#2f7d68 11%,var(--surface));--chip-line:color-mix(in srgb,#2f7d68 26%,transparent)}
-.ob-chip.hue-gold{--chip-bg:color-mix(in srgb,#b88a35 13%,var(--surface));--chip-line:color-mix(in srgb,#b88a35 28%,transparent)}
-.ob-chip.hue-plum{--chip-bg:color-mix(in srgb,#7a5480 12%,var(--surface));--chip-line:color-mix(in srgb,#7a5480 26%,transparent)}
-.ob-chip.hue-sky{--chip-bg:color-mix(in srgb,#3a6f9e 12%,var(--surface));--chip-line:color-mix(in srgb,#3a6f9e 26%,transparent)}
+/* ── لون المسرح = لون اللوحة، حرفياً ──────────────────────────────────────
+ *
+ * The comment above this stage promises that "nothing here is a shape that does
+ * not exist upstairs", and the shapes kept that promise. The colours did not.
+ * Four hex literals sat here — #2f7d68, #3a6f9e, #7a5480, #b88a35 — and they
+ * were not different colours, they were APPROXIMATIONS of four hues that the
+ * board already exports, each one missing: 163.8° for 158, 208.2° for 200,
+ * 291.8° for 288, 38.9° for 38. One rule written twice, and the second copy
+ * wrong. The day a hue moved on the wheel, the tour would have gone on lying
+ * and no test would have failed.
+ *
+ * Now the chip carries `--hue` exactly as `.week-event` does, and reads the
+ * same three formulas. Onboarding.tsx picks the hue by calling `courseHue()` on
+ * the very course name it prints, so a lecture shown here is the colour it will
+ * actually be on the board.
+ */
+.ob-chip{
+  --chip-edge:hsl(var(--hue,158) 38% 42%);
+  --chip-bg:hsl(var(--hue,158) 42% 96%);
+  --chip-line:color-mix(in srgb,var(--chip-edge) 26%,transparent);
+}
+:root[data-theme="dark"] .ob-chip{
+  --chip-edge:hsl(var(--hue,158) 42% 55%);
+  --chip-bg:hsl(var(--hue,158) 26% 14%);
+}
+/* The real card carries its hue twice: a very pale fill AND a solid spine on
+   its start edge. Taking the board's true 96%-lightness tint without the spine
+   left these chips almost colourless — the tint alone was never meant to carry
+   the signal on its own. This is the rest of the card's anatomy, not a
+   decoration added to compensate. */
+.ob-chip{border-inline-start:2px solid var(--chip-edge)}
+
+/* والنسيج البديل كذلك. A reader with a colour vision deficiency used to meet
+   this product through cards they could not tell apart, then sign in and find
+   the very setting that fixes it — a setting the tour never demonstrated. */
+:root[data-colorblind="true"] .ob-chip::after{
+  content:"";position:absolute;z-index:1;pointer-events:none;
+  inset-block:0;inset-inline-start:0;width:4px;
+  opacity:.85;
+  background-image:repeating-linear-gradient(
+    var(--cb-angle,0deg),
+    color-mix(in srgb,var(--ink) 62%,transparent) 0 var(--cb-on,2px),
+    transparent 0 var(--cb-off,4px)
+  );
+}
 
 /* Act 2 — the collision. */
 .ob-chip.is-clash{

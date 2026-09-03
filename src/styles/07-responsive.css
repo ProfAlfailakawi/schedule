@@ -56,7 +56,10 @@
   .mobile-topbar>button svg{width:20px;height:20px}
   .mobile-brand{
     justify-self:center;
-    font-size:13px;font-weight:600;letter-spacing:.22em;color:var(--ink);
+    font-size:13px;color:var(--ink);
+    font-family:var(--brand-word-family);
+    font-weight:var(--brand-word-weight);
+    letter-spacing:var(--brand-word-track);
   }
   .mobile-topbar.offline .mobile-brand::after{
     content:"";display:inline-block;width:6px;height:6px;margin-inline-start:6px;
@@ -1061,7 +1064,8 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%;overscroll-behavior:non
     padding:max(10px,env(safe-area-inset-top)) 14px max(10px,env(safe-area-inset-bottom))!important;
   }
   .apex-login-brand{flex:0 0 auto!important}
-  .apex-login-mark{width:40px!important;height:40px!important}
+  .apex-login-mark{width:46px!important;height:46px!important;flex:0 0 46px!important}
+  .apex-login-mark svg{width:46px!important;height:46px!important}
   .apex-login-stage{
     flex:1 1 auto!important;
     width:100%!important;

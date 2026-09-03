@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
-  CalendarDays,
   Command,
   LockKeyhole,
   ShieldCheck,
@@ -11,6 +10,7 @@ import {
 import { Field, Notice, PrimaryButton } from "./ui";
 import InstallApp from "./InstallApp";
 import ScheduleJourney from "./ScheduleJourney";
+import BrandMark from "./BrandMark";
 interface LoginProps {
   onLoginSuccess: (data: {
     user: any;
@@ -80,13 +80,13 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       </div>
       <header className="apex-login-brand apex-login-brand--mark-only" aria-hidden="true">
         <span className="apex-login-mark">
-          <CalendarDays />
+          <BrandMark variant="tile" />
         </span>
       </header>
       <section className="apex-login-stage">
         <div className="apex-login-story">
           <span className="apex-login-kicker">
-            <i /> مساحة تشغيل الجدول الأكاديمي
+            <i /> نظام القرار الأكاديمي
           </span>
           <h1>
             الجدول

@@ -58,7 +58,7 @@ export default function About() {
   return (
     <div className="about-editorial visual-minimal">
       <header className="about-editorial-hero">
-        <span>SCHEDULE · التحكم الأكاديمي</span>
+        <span>SCHEDULE · نظام القرار الأكاديمي</span>
         <h1>
           الجدول الدراسي،
           <br />

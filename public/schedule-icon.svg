@@ -1,20 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SCHEDULE">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0.6" y2="1">
-      <stop offset="0" stop-color="#16211E"/>
-      <stop offset="1" stop-color="#0A100F"/>
-    </linearGradient>
-  </defs>
+  <!--
+    العلامة: الأسبوع الذي حُلّ.
+    خمسة أعمدة = خمسة أيام؛ الارتفاع مدّة، والموضع الرأسي ساعة.
+    العمود النحاسي هو الذي نُقل — يتدلّى تحت جيرانه لأنه أُخرِج من الساعة
+    التي كان يتصادم فيها مع عمود الثلاثاء.
+    الهندسة نفسها المكتوبة في src/components/BrandMark.tsx، مضروبة في ٨.
+    كل المحتوى داخل دائرة القصّ الآمنة: أقصى بعد 188.7 من 204.8 المسموحة.
+    هذه نسخة "any" — حافة إلى حافة مع حلقة. النسخة المقنَّعة ملف منفصل.
+  -->
+  <rect width="512" height="512" rx="112" fill="#141917"/>
+  <rect x="8" y="8" width="496" height="496" rx="107.2" fill="none" stroke="#C79B5F" stroke-opacity="0.22" stroke-width="6.4"/>
 
-  <rect width="512" height="512" rx="114" fill="url(#bg)"/>
-  <rect x="6" y="6" width="500" height="500" rx="109" fill="none" stroke="#C79B5F" stroke-opacity="0.28" stroke-width="4"/>
-
-  <rect x="108" y="140" width="296" height="266" rx="46" fill="none" stroke="#C79B5F" stroke-width="26"/>
-  <path d="M108 216h296" stroke="#C79B5F" stroke-width="26" stroke-linecap="round"/>
-  <path d="M186 104v64M326 104v64" stroke="#C79B5F" stroke-width="26" stroke-linecap="round"/>
-
-  <rect x="166" y="264" width="180" height="64" rx="26" fill="#5FBFA6"/>
-  <circle cx="322" cy="356" r="15" fill="#5FBFA6" fill-opacity="0.55"/>
-  <circle cx="256" cy="356" r="15" fill="#5FBFA6" fill-opacity="0.35"/>
-  <circle cx="190" cy="356" r="15" fill="#5FBFA6" fill-opacity="0.35"/>
+  <rect x="371.2" y="156" width="44.8" height="120" rx="22.4" fill="#5FBFA6"/>
+  <rect x="302.4" y="220" width="44.8" height="96"  rx="22.4" fill="#5FBFA6"/>
+  <rect x="233.6" y="132" width="44.8" height="152" rx="22.4" fill="#5FBFA6"/>
+  <rect x="164.8" y="260" width="44.8" height="112" rx="22.4" fill="#C79B5F"/>
+  <rect x="96"    y="188" width="44.8" height="128" rx="22.4" fill="#5FBFA6"/>
 </svg>

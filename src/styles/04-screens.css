@@ -43,14 +43,20 @@
   position:relative;z-index:2;
   display:flex;align-items:center;gap:var(--s3);
 }
+/* The mark draws its own ground and ring — the same tile the reader has on
+   their home screen — so the box around it is only a size and a shadow. */
 .apex-login-mark{
-  width:42px;height:42px;display:grid;place-items:center;
-  border:1px solid #ffffff1f;border-radius:var(--r-sm);
-  background:#ffffff0a;color:var(--brass);
+  width:54px;height:54px;flex:0 0 54px;display:grid;place-items:center;
+  filter:drop-shadow(0 14px 28px rgb(0 0 0 / .42));
 }
-.apex-login-mark svg{width:19px;height:19px}
+.apex-login-mark svg{width:54px;height:54px}
 .apex-login-brand strong,.apex-login-brand small{display:block}
-.apex-login-brand strong{font-size:13px;letter-spacing:.22em;font-weight:600}
+.apex-login-brand strong{
+  font-size:13px;
+  font-family:var(--brand-word-family);
+  font-weight:var(--brand-word-weight);
+  letter-spacing:var(--brand-word-track);
+}
 .apex-login-brand small{margin-top:3px;color:#8b968f;font-size:var(--t-xs)}
 
 .apex-login-stage{
@@ -1593,13 +1599,20 @@
 @media(max-width:720px){.vault-preview-summary{grid-template-columns:1fr 1fr}.vault-preview-summary>span:last-child{grid-column:1/-1}.vault-preview-details .vault-preview-hash{grid-template-columns:1fr}.vault-preview-details .vault-preview-hash code{font-size:9px}.vault-import-progress .vault-export-progress-meta{align-items:flex-start;flex-direction:column}}
 
 /* Login carries the same restrained identity as the dark navigation mark. */
-.apex-login-brand>div{display:grid;gap:6px}.apex-login-brand strong{letter-spacing:.24em;font-weight:750}.apex-login-brand small{font-size:.92rem;letter-spacing:0;color:color-mix(in srgb,#fff 52%,transparent)}
+.apex-login-brand>div{display:grid;gap:6px}.apex-login-brand small{font-size:.92rem;letter-spacing:0;color:color-mix(in srgb,#fff 52%,transparent)}
 
-/* The login carries the same quiet SCHEDULE signature used in the dark menu:
-   spaced wordmark, then the decade line — no extra emblem competing with it. */
+/* ── ترويسة الدخول ───────────────────────────────────────────────────────
+   This header used to render NOTHING. `Login.tsx` prints a single
+   `.apex-login-mark` inside `.apex-login-brand--mark-only`, the rule below hid
+   every `.apex-login-mark`, and `--mark-only` had no stylesheet of its own — so
+   the sign-in screen carried an empty, centred, aria-hidden box where its
+   identity should be. Two more `strong` declarations argued over a wordmark
+   that was not in the markup either.
+
+   The mark is the whole header now: the tile the reader tapped, above the form
+   they came to fill. */
 .apex-login-brand{justify-content:center;text-align:center;gap:0}
-.apex-login-brand .apex-login-mark{display:none}
-.apex-login-brand strong{color:#909b95;font-size:14px;letter-spacing:.30em;font-weight:650}
+.apex-login-brand--mark-only{padding-block-end:var(--s2)}
 .apex-login-brand small{margin-top:7px;color:#748079;font-size:clamp(14px,1.3vw,19px);line-height:1.55}
 
 /* Login identity reveal: the exact dark navigation signature is available from

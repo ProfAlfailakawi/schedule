@@ -5,6 +5,7 @@ import {
   QrCode, Sparkles, UsersRound, Waypoints,
 } from "lucide-react";
 import { PrimaryButton } from "./ui";
+import { courseHue, courseTexture } from "../utils/weekVisual";
 
 /**
  * ── الترحيب: البرنامج يشتغل أمامك، لا يشرح نفسه ─────────────────────────────
@@ -25,7 +26,14 @@ import { PrimaryButton } from "./ui";
  * Three rules hold it honest:
  *  - Everything on the stage is drawn from the same vocabulary as the real
  *    board: five day columns, an hour rail, a lecture card with a course, a
- *    teacher and a hall. Nothing here is a shape that does not exist upstairs.
+ *    teacher and a hall. Nothing here is a shape that does not exist upstairs —
+ *    and, since 2026-09-03, no colour either. The chips used to carry four hex
+ *    literals that were near-misses of four hues the board already exports
+ *    (163.8° for 158, 208.2° for 200, 291.8° for 288, 38.9° for 38): the wheel
+ *    written a second time, from memory, wrong. They now call `courseHue()` on
+ *    the same course code and name they print, so a lecture on this stage is
+ *    the colour it would actually be upstairs — and it stays true on its own
+ *    the day a hue moves. The colour-blind weave comes along with it.
  *  - `prefers-reduced-motion` is not a downgrade. It renders every scene's END
  *    STATE at once as a readable list, so the same facts arrive without a
  *    single moving pixel.
@@ -35,27 +43,48 @@ import { PrimaryButton } from "./ui";
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس"];
 
-/** A lecture on the miniature board. `col` is 0-4 (day), `row` is 0-5 (hour). */
+/**
+ * A lecture on the miniature board. `col` is 0-4 (day), `row` is 0-5 (hour).
+ *
+ * `code` is not printed — an 8.5px chip cannot afford a fourth line — but it is
+ * carried because it is half of what decides the colour. `courseHue(code,
+ * title)` is the exact call the board makes, so these chips land on the same
+ * wheel positions real lectures do rather than on a hand-picked approximation.
+ */
 type Chip = {
   id: string;
+  code: string;
   col: number;
   row: number;
   span: number;
   title: string;
   who: string;
   hall: string;
-  hue: "teal" | "gold" | "plum" | "sky";
 };
 
+/*
+ * The six codes are CAST, not arbitrary. `courseHue` is the single source of a
+ * card's colour and nothing here overrides it — but which colour each lecture
+ * lands on is decided by the code and title it is given, and those are ours to
+ * choose, exactly as the fictional names are. These six were picked so the hues
+ * fall in six DIFFERENT sixths of the wheel (18 · 96 · 158 · 226 · 288 · 320).
+ *
+ * Two reasons. Colour is identity on this stage, and an earlier cast put three
+ * of the six lectures on the same green — a tour arguing that colour tells
+ * courses apart while showing three that look alike. And because the weave a
+ * card gets under [data-colorblind] is chosen by the sixth its hue sits in, one
+ * hue per sixth means all six textures differ too. A reader with a colour
+ * vision deficiency sees six distinct cards, not three.
+ */
 const BOARD: Chip[] = [
-  { id: "cs101", col: 0, row: 0, span: 2, title: "مدخل إلى البرمجة", who: "د. أحمد", hall: "A/101", hue: "teal" },
-  { id: "ds110", col: 1, row: 1, span: 2, title: "أساسيات البيانات", who: "د. سارة", hall: "B/205", hue: "sky" },
-  { id: "cs220", col: 2, row: 0, span: 2, title: "هياكل البيانات", who: "د. نورة", hall: "A/203", hue: "plum" },
-  { id: "cs315", col: 3, row: 2, span: 2, title: "الذكاء الاصطناعي", who: "د. محمد", hall: "B/110", hue: "gold" },
-  { id: "ds330", col: 4, row: 1, span: 2, title: "تعلّم الآلة", who: "د. ريم", hall: "C/315", hue: "teal" },
+  { id: "cs101", code: "1710103", col: 0, row: 0, span: 2, title: "مدخل إلى البرمجة", who: "د. أحمد", hall: "A/101" },
+  { id: "ds110", code: "1710110", col: 1, row: 1, span: 2, title: "أساسيات البيانات", who: "د. سارة", hall: "B/205" },
+  { id: "cs220", code: "1710108", col: 2, row: 0, span: 2, title: "هياكل البيانات", who: "د. نورة", hall: "A/203" },
+  { id: "cs315", code: "1710123", col: 3, row: 2, span: 2, title: "الذكاء الاصطناعي", who: "د. محمد", hall: "B/110" },
+  { id: "ds330", code: "1710107", col: 4, row: 1, span: 2, title: "تعلّم الآلة", who: "د. ريم", hall: "C/315" },
   /* The intruder: same teacher as cs315, same hour — the conflict the second
      act is about, and the card the third act moves. */
-  { id: "clash", col: 3, row: 2, span: 2, title: "تحليلات القرار", who: "د. محمد", hall: "C/301", hue: "plum" },
+  { id: "clash", code: "1710143", col: 3, row: 2, span: 2, title: "تحليلات القرار", who: "د. محمد", hall: "C/301" },
 ];
 
 /** Where the repair chain puts the intruder. */
@@ -154,12 +183,12 @@ function Stage({ scene }: { scene: string }) {
               const row = repaired ? REPAIRED.row : chip.row;
               /* Act 5 lights the lecture the memory is speaking about. */
               const recalled = chip.id === "cs101" && playing(["memory"]);
+              const hue = courseHue(chip.code, chip.title);
               return (
                 <article
                   key={chip.id}
                   className={[
                     "ob-chip",
-                    `hue-${chip.hue}`,
                     isIntruder && playing(["clash"]) ? "is-clash" : "",
                     repaired ? "is-repaired" : "",
                     recalled ? "is-recalled" : "",
@@ -169,6 +198,8 @@ function Stage({ scene }: { scene: string }) {
                     ["--row" as any]: row,
                     ["--span" as any]: chip.span,
                     ["--i" as any]: index,
+                    ["--hue" as any]: hue,
+                    ...courseTexture(hue),
                   }}
                 >
                   <b>{chip.title}</b>
@@ -255,7 +286,7 @@ export default function Onboarding({ isPowerAdmin, onFinish }: {
           <span className="ob-brand">SCHEDULE</span>
           <p>
             عشر سنوات تشغيل… وهذه أحدث إضافاتها.
-            <b>{isPowerAdmin ? " مساحة التحكم الأكاديمي كاملةً بين يديك." : " مساحة قسمك جاهزة."}</b>
+            <b>{isPowerAdmin ? " مساحة القرار الأكاديمي كاملةً بين يديك." : " مساحة قسمك جاهزة."}</b>
           </p>
         </header>
 

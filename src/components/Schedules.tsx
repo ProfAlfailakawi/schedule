@@ -150,7 +150,7 @@ const PRESENCE_HUES = [200, 262, 38, 96, 288, 178];
 const byRoomIdentity = (a: { building?: string; hall?: string; label?: string }, b: { building?: string; hall?: string; label?: string }) =>
   byRoom(a.building || a.label || "", a.hall || "", b.building || b.label || "", b.hall || "") ||
   byRoomLabel(a.label || "", b.label || "");
-import { buildWeekDensityPlan, courseHue, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../utils/weekVisual";
+import { buildWeekDensityPlan, courseHue, courseTexture as textureFor, dayLoad as computeDayLoad, firstLast, patternForDay, peakConcurrency, pickLive, readableWeekDayWidth, readableWeekStripHourWidth, shouldUseWeekStrips } from "../utils/weekVisual";
 import {
   formatScheduleTimeRange,
   scheduleClockForDisplay,
@@ -6167,33 +6167,6 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       : hueBy === "room"
         ? courseHue(room || "بدون قاعة", "")
         : courseHue(code, title);
-
-  /**
-   * A weave for a hue — the second channel the colour-blind setting turns on.
-   *
-   * The wheel is cut into six, and each sixth gets a weave that survives on a
-   * five-pixel spine: only patterns that vary along the card's height are
-   * legible there, so the set varies dash length and angle rather than
-   * direction alone. The sixth is solid, which is as distinct as any pattern.
-   * Emitted always but read only under [data-colorblind] — three unused custom
-   * properties cost nothing and keep the style object in one shape.
-   */
-  const textureFor = (hue: number) => {
-    const band = Math.floor(((((hue % 360) + 360) % 360) / 60)) % 6;
-    const weave = [
-      { a: "0deg", on: "2px", off: "4px" },
-      { a: "0deg", on: "5px", off: "4px" },
-      { a: "45deg", on: "2px", off: "4px" },
-      { a: "-45deg", on: "2px", off: "4px" },
-      { a: "0deg", on: "1px", off: "3px" },
-      { a: "0deg", on: "100px", off: "0px" },
-    ][band];
-    return {
-      ["--cb-angle" as any]: weave.a,
-      ["--cb-on" as any]: weave.on,
-      ["--cb-off" as any]: weave.off,
-    };
-  };
 
   /**
    * What a card's colour actually stands for.

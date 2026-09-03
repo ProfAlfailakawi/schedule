@@ -30,6 +30,7 @@ import {
 import { controlLabel } from "./utils/controlLabel";
 
 import Login from "./components/Login";
+import BrandMark from "./components/BrandMark";
 import Dashboard from "./components/Dashboard";
 import type { ReportMode } from "./components/Reports";
 import type { AdminMode } from "./components/AdminUsers";
@@ -895,6 +896,11 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
+    /* The head script stamps this before the first paint; keeping it in step on
+       every switch is what stops the phone's status bar from staying on the
+       theme the reader just left. One source of truth for the whole chrome. */
+    document.querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", theme === "dark" ? "#080c0b" : "#f2f3ef");
   }, [theme]);
   // On phones the master list and its detail panel stack in one column, so
   // tapping a row updated a panel far below the fold and the tap read as nothing
@@ -2068,11 +2074,11 @@ export default function App() {
             aria-label="العودة إلى لوحة العمل"
           >
             <span className="brand-mark">
-              <CalendarDays />
+              <BrandMark />
             </span>
             <span>
               <strong>SCHEDULE</strong>
-              <small>التحكم الأكاديمي</small>
+              <small>نظام القرار الأكاديمي</small>
             </span>
           </button>
           <button

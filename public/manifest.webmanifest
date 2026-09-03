@@ -1,12 +1,12 @@
 {
-  "name": "SCHEDULE Academic Workspace",
+  "name": "SCHEDULE · نظام القرار الأكاديمي",
   "short_name": "SCHEDULE",
-  "description": "Academic scheduling workspace for timetable coordinators",
+  "description": "نظام القرار الأكاديمي: ابنِ الجدول، راجعه، اتخذ القرار، وانشره.",
   "start_url": "/Home/Index",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0A100F",
-  "theme_color": "#0A100F",
+  "background_color": "#f2f3ef",
+  "theme_color": "#f2f3ef",
   "dir": "rtl",
   "lang": "ar",
   "icons": [
@@ -14,19 +14,25 @@
       "src": "/schedule-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/schedule-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "/schedule-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/schedule-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

@@ -34,6 +34,39 @@ export const courseHue = (code: string, name = "") => {
   return COURSE_HUES[(hash >>> 0) % COURSE_HUES.length];
 };
 
+/**
+ * A weave for a hue — the second channel the colour-blind setting turns on.
+ *
+ * The wheel is cut into six, and each sixth gets a weave that survives on a
+ * five-pixel spine: only patterns that vary along the card's height are legible
+ * there, so the set varies dash length and angle rather than direction alone.
+ * The sixth is solid, which is as distinct as any pattern. Emitted always but
+ * read only under [data-colorblind] — three unused custom properties cost
+ * nothing and keep the style object in one shape.
+ *
+ * Lifted out of Schedules.tsx so the welcome stage can weave its chips from the
+ * same table. The tour used to show flat colour only, which meant a reader with
+ * a colour vision deficiency met the product through cards they could not tell
+ * apart — and then signed in to find the exact setting that fixes it, never
+ * having been shown it.
+ */
+export function courseTexture(hue: number): Record<string, string> {
+  const band = Math.floor(((((hue % 360) + 360) % 360) / 60)) % 6;
+  const weave = [
+    { a: "0deg", on: "2px", off: "4px" },
+    { a: "0deg", on: "5px", off: "4px" },
+    { a: "45deg", on: "2px", off: "4px" },
+    { a: "-45deg", on: "2px", off: "4px" },
+    { a: "0deg", on: "1px", off: "3px" },
+    { a: "0deg", on: "100px", off: "0px" },
+  ][band];
+  return {
+    "--cb-angle": weave.a,
+    "--cb-on": weave.on,
+    "--cb-off": weave.off,
+  };
+}
+
 /* The two teaching rhythms this university actually runs: Sunday-Tuesday-
    Thursday, and Monday-Wednesday. A lecture lives in one or the other. */
 export const DAY_PATTERN_135: DayKey[] = ["fsunday", "ftuesday", "fthursday"];

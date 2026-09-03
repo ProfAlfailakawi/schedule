@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SCHEDULE">
+  <!--
+    نسخة القناع. القناع نفسه يرسم الشكل، فالخلفية مربّعة بلا زوايا،
+    والحلقة النحاسية محذوفة لأنها تقع خارج الدائرة الآمنة وكانت تُقصّ دائماً.
+    الأعمدة نفسها بلا أي إزاحة: هندستها أصلاً داخل الدائرة الآمنة.
+  -->
+  <rect width="512" height="512" fill="#141917"/>
+
+  <rect x="371.2" y="156" width="44.8" height="120" rx="22.4" fill="#5FBFA6"/>
+  <rect x="302.4" y="220" width="44.8" height="96"  rx="22.4" fill="#5FBFA6"/>
+  <rect x="233.6" y="132" width="44.8" height="152" rx="22.4" fill="#5FBFA6"/>
+  <rect x="164.8" y="260" width="44.8" height="112" rx="22.4" fill="#C79B5F"/>
+  <rect x="96"    y="188" width="44.8" height="128" rx="22.4" fill="#5FBFA6"/>
+</svg>
