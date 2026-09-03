@@ -91,24 +91,51 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
   * The `alive` guard is the second half: three requests in flight while the
   * reader navigates away used to land on an unmounted screen.
   */
- useEffect(()=>{let alive=true;(async()=>{
+ /**
+  * ── الثلاثة تنطلق معاً، والصفحة تعرف طولها من أول رسمة ──────────────────────
+  *
+  * The two enrichment reads used to *wait* for `/api/dashboard` to come back
+  * before they were even sent. Nothing in them needs its answer — they are
+  * three independent questions — so the reader was paying for the schedule's
+  * round trip and the intelligence round trip end to end, one after the other.
+  * Measured on the live service that was 204ms + 220ms of a page still deciding
+  * how tall it is; against the real database, with the living cache cold, the
+  * second leg is counted in seconds.
+  *
+  * They leave together now. `insightsPending` is the other half: it says «the
+  * answer is on its way», which lets the bands those answers feed hold their
+  * own space instead of appearing later and shoving the page down under
+  * somebody's thumb. It is false the moment the reads settle — arrived or
+  * failed — so a failed read still collapses to the old, honest empty state.
+  */
+ const[insightsPending,setInsightsPending]=useState(canManageSchedule);
+ useEffect(()=>{let alive=true;
   const optional=async(url:string)=>{
    try{const response=await fetch(url);if(!response.ok)return null;return await response.json();}
    catch{return null;}
   };
-  try{
-   const main=await fetch("/api/dashboard");
-   const d=await main.json();
-   if(!main.ok)throw new Error(d.error||"تعذر تحميل اللوحة");
-   if(!alive)return;
-   setData(d);
-   if(!canManageSchedule)return;
-   const [pd,ld]=await Promise.all([optional("/api/intelligence/overview"),optional("/api/intelligence/living")]);
+  const enrichment=canManageSchedule
+   ?Promise.all([optional("/api/intelligence/overview"),optional("/api/intelligence/living")])
+   :null;
+  setInsightsPending(Boolean(enrichment));
+  (async()=>{
+   try{
+    const main=await fetch("/api/dashboard");
+    const d=await main.json();
+    if(!main.ok)throw new Error(d.error||"تعذر تحميل اللوحة");
+    if(!alive)return;
+    setData(d);
+   }catch(e:any){if(alive)setError(e.message)}
+  })();
+  (async()=>{
+   if(!enrichment)return;
+   const [pd,ld]=await enrichment;
    if(!alive)return;
    if(pd)setOverview(pd);
    if(ld)setLiving(ld);
-  }catch(e:any){if(alive)setError(e.message)}
- })();return()=>{alive=false;};},[canManageSchedule]);
+   setInsightsPending(false);
+  })();
+  return()=>{alive=false;};},[canManageSchedule]);
 
  const power=Boolean(user?.IsAdminUser||user?.SystemUserId===1),ws=data?.workspace;
  const maxDay=useMemo(()=>Math.max(1,...(ws?.weekdayLoad||[]).map(x=>x.count)),[ws]);
@@ -129,25 +156,49 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
  const nowVisible=nowMinutes>=SCHEDULE_DAY_START&&nowMinutes<=SCHEDULE_DAY_END;
  const currentLecture=useMemo(()=>today.find(row=>minutesOf(row.startTime)<=nowMinutes&&minutesOf(row.endTime)>nowMinutes)||null,[today,nowMinutes]);
  const nextUp=useMemo(()=>currentLecture||today.find(row=>minutesOf(row.startTime)>=nowMinutes)||null,[today,currentLecture,nowMinutes]);
- const healthLines=living?.health?[{
-  label:"جودة",value:percent(living.health.quality)
+ /**
+  * The ribbon's rows are known before its numbers are.
+  *
+  * Its three factors are a fixed list and the fourth follows the workspace,
+  * which arrives with the schedule itself — so the section can be drawn at its
+  * true height straight away and simply fill in. That is 207px that no longer
+  * lands in the middle of the page a round trip late. `value:null` is «not read
+  * yet», never «zero»: the track stays empty and the figure reads «—» rather
+  * than asserting a measurement nobody has taken. The bars then run to their
+  * real width on the 600ms transition the stylesheet already gives them.
+  */
+ const healthReading=living?.health;
+ const healthAwaiting=canManageSchedule&&insightsPending&&!healthReading;
+ const healthLines:Array<{label:string;value:number|null}>=(healthReading||healthAwaiting)?[{
+  label:"جودة",value:healthReading?percent(healthReading.quality):null
  },{
-  label:"مرونة",value:percent(living.health.resilience)
+  label:"مرونة",value:healthReading?percent(healthReading.resilience):null
  },{
-  label:"عدالة",value:percent(living.health.fairness)
+  label:"عدالة",value:healthReading?percent(healthReading.fairness):null
  },...(ws?[{label:"إشغال",value:percent(ws.roomOccupancyPeak)}]:[])]:[];
  // The ordered readiness strip: the five figures a coordinator actually decides
  // against — today's load, live conflicts, room pressure, wasted gap, readiness —
  // gathered into one quiet row instead of a wall of competing tiles. A single
  // warning colour is reserved for a real conflict count; every other figure is ink.
  const criticalCount=canManageSchedule?decisionSource.filter(item=>decisionTone(item)==="critical").length:null;
- const signals:Array<{key:string;label:string;value:string;tone?:"danger"}>=[
+ /**
+  * The last two figures come from the enrichment reads, and the strip is a
+  * grid: adding two tiles late does not merely change numbers, it can add a
+  * whole row and push everything under it down mid-scroll. While the reads are
+  * in flight the tiles are already there holding «—»; if a read fails they drop
+  * out exactly as they always did.
+  */
+ const signals:Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean}>=[
   {key:"today",label:"محاضرات اليوم",value:num(today.length)},
   criticalCount!=null?{key:"conflicts",label:"تعارضات حرجة",value:num(criticalCount),tone:criticalCount>0?"danger":undefined}:null,
   ws?{key:"rooms",label:"قاعات مشغولة",value:num(ws.peakOccupiedRooms)}:null,
-  overview?.metrics?.avgInstructorGap!=null?{key:"gap",label:"متوسط الفراغ",value:formatCompactDurationArabic(overview.metrics.avgInstructorGap)}:null,
-  living?.health?{key:"ready",label:"الجاهزية",value:`${num(percent(living.health.quality))}٪`}:null,
- ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger"}>;
+  overview?.metrics?.avgInstructorGap!=null
+   ?{key:"gap",label:"متوسط الفراغ",value:formatCompactDurationArabic(overview.metrics.avgInstructorGap)}
+   :insightsPending?{key:"gap",label:"متوسط الفراغ",value:"—",awaiting:true}:null,
+  living?.health
+   ?{key:"ready",label:"الجاهزية",value:`${num(percent(living.health.quality))}٪`}
+   :insightsPending?{key:"ready",label:"الجاهزية",value:"—",awaiting:true}:null,
+ ].filter(Boolean) as Array<{key:string;label:string;value:string;tone?:"danger";awaiting?:boolean}>;
 
  return <div className="content-stack dashboard-page command-deck visual-minimal">
   <header className="deck-bar" aria-label="ملخص الحساب والنطاق الحالي">
@@ -178,7 +229,7 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
    </section>
 
    {signals.length>1?<section className="deck-signals" aria-label="مؤشرات الجاهزية">
-    {signals.map(item=><article key={item.key} className={item.tone?`signal-${item.tone}`:undefined}>
+    {signals.map(item=><article key={item.key} className={[item.tone?`signal-${item.tone}`:"",item.awaiting?"is-awaiting":""].filter(Boolean).join(" ")||undefined} aria-busy={item.awaiting||undefined}>
      <b>{item.value}</b>
      <span>{item.label}</span>
     </article>)}
@@ -265,13 +316,13 @@ export default function Dashboard({user,scopes,canManageSchedule=false,onNavigat
     </div>
    </section>
 
-   {healthLines.length?<section className="deck-chart dashboard-health-ribbon" aria-labelledby="dashboard-health-title">
+   {healthLines.length?<section className={`deck-chart dashboard-health-ribbon${healthAwaiting?" is-awaiting":""}`} aria-labelledby="dashboard-health-title" aria-busy={healthAwaiting||undefined}>
     <header><CheckCircle2 aria-hidden="true"/><span id="dashboard-health-title">صحة الجدول</span></header>
     <div className="bar-rows dashboard-health-lines">
      {healthLines.map(item=><div key={item.label} className="dashboard-health-factor">
       <span>{item.label}</span>
-      <i role="progressbar" aria-label={`مؤشر ${item.label}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={item.value}><b style={{width:`${item.value}%`}} aria-hidden="true"/></i>
-      <em>{num(item.value)}٪</em>
+      <i role="progressbar" aria-label={`مؤشر ${item.label}`} aria-valuemin={0} aria-valuemax={100} {...(item.value==null?{}:{"aria-valuenow":item.value})} {...(item.value==null?{"aria-valuetext":"قيد القراءة"}:{})}><b style={{width:`${item.value??0}%`}} aria-hidden="true"/></i>
+      <em>{item.value==null?"—":`${num(item.value)}٪`}</em>
      </div>)}
     </div>
    </section>:null}

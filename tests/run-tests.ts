@@ -1608,6 +1608,77 @@ async function runTests() {
     assert(authority.includes(">مقرر جديد</div>"), "الرقم المرجعي الفارغ للمقرر المضاف يقول «مقرر جديد»");
   }
 
+  /* --- 36. الحضور يمدّد الجلسة، لا نوع الحساب ------------------------------ */
+  originalLog("\n--- 36. Presence, not account type, keeps a session open ---");
+  {
+    /* Root cause 2026-09-03: `/api/auth/heartbeat` refreshed the session only
+       when `isDemoRequest()` was true. For every real account the one signal
+       built to say «I am still here» was answered with `ok` and nothing else,
+       so a person reading a board for fifteen quiet minutes was signed out
+       while their browser was faithfully reporting them present.
+
+       These are source pins, deliberately: the real-account branch cannot be
+       exercised without the university's Firestore, so the guard lives where
+       the mistake was — in the shape of the code. */
+    const source = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+    const heartbeat = source.slice(
+      source.indexOf('app.post("/api/auth/heartbeat"'),
+      source.indexOf('app.post("/api/demo/reset"'));
+    assert(heartbeat.length > 200, "كتلة نبضة القلب عُثر عليها");
+    assert(!/if\s*\(sessionId\s*&&\s*Repository\.isDemoRequest\(\)\)/.test(heartbeat),
+      "نبضة القلب لا تشترط جلسةً تجريبية قبل أن تمدّد");
+    assert(/Repository\.refreshSession\(sessionId,\s*ttlMs\)/.test(heartbeat),
+      "وتمدّد كل جلسة بمدّتها: التجريبية بساعتها والحقيقية بربع ساعتها");
+
+    /* The second half of the same defect: a request answered from `authCache`
+       returned before anything extended the session, so the very requests that
+       proved the person was working were the ones that skipped the extension. */
+    const auth = source.slice(
+      source.indexOf("async function authMiddleware"),
+      source.indexOf("let databaseDown:"));
+    assert(auth.length > 400, "كتلة وسيط المصادقة عُثر عليها");
+    const cacheHit = auth.slice(auth.indexOf("const cached = authCache.get"), auth.indexOf("const sess = await Repository.getSession"));
+    assert(/touchSession\(sessionId,\s*idleTtlMs\)/.test(cacheHit),
+      "الطلب المُجاب من الذاكرة يمدّد الجلسة أيضاً — فالعمل المتواصل لا يُقصى");
+    assert(!/sess\.expiresAt\s*-\s*Date\.now\(\)\s*<\s*10\s*\*\s*60\s*\*\s*1000/.test(auth),
+      "ولم يبقَ التمديد حبيس آخر عشر دقائق من النافذة");
+    assert(/const SESSION_TOUCH_EVERY_MS\s*=\s*120_000/.test(source),
+      "والكتابة مخنوقة إلى مرة كل دقيقتين لكل جلسة — لا كتابة لكل طلب");
+    assert(/sessionTouchedAt\.delete\(sessionId\)/.test(source)
+      && /sessionTouchedAt\.clear\(\)/.test(source),
+      "والخروج ينسى الخانق كما ينسى الهوية — لا أثر لجلسة انتهت");
+  }
+
+  /* --- 37. لوحة القيادة تعرف طولها من أول رسمة ----------------------------- */
+  originalLog("\n--- 37. The dashboard knows its own height from the first paint ---");
+  {
+    /* Root cause 2026-09-03: the two intelligence reads waited for
+       `/api/dashboard` to answer before they were even sent, and the bands they
+       feed were mounted only once they landed — measured at 302px of page
+       inserted mid-document, a full round trip late, under the reader's thumb. */
+    const dashboard = fs.readFileSync(path.join(process.cwd(), "src/components/Dashboard.tsx"), "utf8");
+    const effect = dashboard.slice(dashboard.indexOf("const[insightsPending,setInsightsPending]"), dashboard.indexOf("const power="));
+    assert(effect.length > 400, "كتلة تحميل اللوحة عُثر عليها");
+    assert(!/await fetch\("\/api\/dashboard"\)[\s\S]{0,400}?optional\("\/api\/intelligence/.test(effect),
+      "القراءات الثقيلة لم تعد تنتظر جواب اللوحة قبل أن تُرسل");
+    assert(/const enrichment=canManageSchedule[\s\S]{0,160}Promise\.all\(\[optional\("\/api\/intelligence\/overview"\),optional\("\/api\/intelligence\/living"\)\]\)/.test(effect),
+      "الثلاثة تنطلق معاً");
+    assert(/setInsightsPending\(false\)/.test(effect),
+      "والانتظار ينتهي عند استقرار القراءتين — نجحتا أو أخفقتا");
+
+    /* The bands hold their own space while the answer is in flight, and a
+       figure nobody has measured reads «—», never a zero that asserts one. */
+    assert(/const healthAwaiting=canManageSchedule&&insightsPending&&!healthReading/.test(dashboard),
+      "شريط الصحة يحجز مكانه ما دامت القراءة في الطريق");
+    assert(/\(healthReading\|\|healthAwaiting\)\?/.test(dashboard),
+      "وإن أخفقت القراءة عاد الشريط للاختفاء كما كان — لا هيكل معلّق للأبد");
+    assert(/item\.value==null\?"—"/.test(dashboard),
+      "والقيمة غير المقروءة تُكتب «—» لا صفراً يدّعي قياساً");
+    assert(/:insightsPending\?\{key:"gap"/.test(dashboard)
+      && /:insightsPending\?\{key:"ready"/.test(dashboard),
+      "وبطاقتا الشريط تحضران من أول رسمة فلا تنمو الشبكة صفاً تحت الإبهام");
+  }
+
   if (!originalDb) {
     originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
     originalLog("\n=================================");

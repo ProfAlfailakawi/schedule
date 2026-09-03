@@ -334,9 +334,49 @@ interface AuthenticatedRequest extends Request {
 // could linger, and sign-out and account edits drop the entry immediately.
 const AUTH_CACHE_MS = 120_000;
 const authCache = new Map<string, { at: number; userId: number; user: any; scopes: any[]; permissions: number[] }>();
+
+/**
+ * ── الجلسة تُقاس بالحضور، لا بالكتابة إلى قاعدة البيانات ────────────────────
+ *
+ * The idle rule is fifteen minutes and it stays fifteen minutes. What was
+ * broken is *what counts as being present*.
+ *
+ * Extending the session used to happen in exactly one place: the slow path of
+ * `authMiddleware`, and only once the session was already inside its last ten
+ * minutes. Every request served from `authCache` — which is most of them, for
+ * two minutes at a stretch — returned early and extended nothing. So a person
+ * clicking through the board could be working continuously and still be signed
+ * out on the fifteen-minute mark, because the requests that proved they were
+ * there were precisely the ones that skipped the extension.
+ *
+ * The extension moves here, in front of both paths. It is still a database
+ * write, so it is throttled: one write per session per two minutes, no matter
+ * how many requests arrive. Worst case the record trails real activity by two
+ * minutes, which the fifteen-minute window absorbs without noticing.
+ */
+const SESSION_TOUCH_EVERY_MS = 120_000;
+const sessionTouchedAt = new Map<string, number>();
+
+function touchSession(sessionId: string, ttlMs: number): void {
+  const now = Date.now();
+  const last = sessionTouchedAt.get(sessionId) || 0;
+  if (now - last < SESSION_TOUCH_EVERY_MS) return;
+  sessionTouchedAt.set(sessionId, now);
+  // The reader is not kept waiting on a keep-alive write, and a failed write
+  // simply means the next request tries again — never a thrown request.
+  void Repository.refreshSession(sessionId, ttlMs).catch(() => {
+    sessionTouchedAt.delete(sessionId);
+  });
+  // Sessions end without announcing it. Anything older than an hour cannot be
+  // throttling a live session any more, so the map stays small on its own.
+  if (sessionTouchedAt.size > 500) {
+    for (const [id, at] of sessionTouchedAt) if (now - at > 3_600_000) sessionTouchedAt.delete(id);
+  }
+}
+
 export function forgetAuthSession(sessionId?: string) {
-  if (sessionId) authCache.delete(sessionId);
-  else authCache.clear();
+  if (sessionId) { authCache.delete(sessionId); sessionTouchedAt.delete(sessionId); }
+  else { authCache.clear(); sessionTouchedAt.clear(); }
 }
 Repository.onIdentityChanged?.(() => authCache.clear());
 
@@ -345,12 +385,16 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
   const sessionId = cookies["session_id"];
   if (!sessionId) { next(); return; }
 
+  const idleTtlMs = Repository.isDemoRequest() ? DEMO_SESSION_TTL_MS : SERVER_IDLE_SESSION_MS;
+
   const cached = authCache.get(sessionId);
   if (cached && Date.now() - cached.at < AUTH_CACHE_MS) {
     req.userId = cached.userId;
     req.user = cached.user;
     req.scopes = cached.scopes;
     req.permissions = cached.permissions;
+    // A request answered from memory is still a person at the keyboard.
+    touchSession(sessionId, idleTtlMs);
     next();
     return;
   }
@@ -378,8 +422,7 @@ async function authMiddleware(req: AuthenticatedRequest, res: Response, next: Ne
       req.scopes = assigns;
       req.permissions = security.map(item => Number(item.FormNameId));
       authCache.set(sessionId, { at: Date.now(), userId: sess.userId, user, scopes: req.scopes || [], permissions: req.permissions });
-      if (sess.expiresAt - Date.now() < 10 * 60 * 1000)
-        await Repository.refreshSession(sessionId, SERVER_IDLE_SESSION_MS);
+      touchSession(sessionId, idleTtlMs);
       next();
       return;
     }
@@ -1275,7 +1318,22 @@ app.get("/api/auth/me", async (req: AuthenticatedRequest, res: Response) => {
 app.post("/api/auth/heartbeat", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const ttlMs = Repository.isDemoRequest() ? DEMO_SESSION_TTL_MS : SERVER_IDLE_SESSION_MS;
   const sessionId = getCookies(req)["session_id"];
-  if (sessionId && Repository.isDemoRequest()) await Repository.refreshSession(sessionId, ttlMs);
+  /**
+   * This is the beat the browser sends to say «I am still here», and for every
+   * account that was not a demo visitor it used to be answered with `ok` and
+   * nothing else — the refresh sat behind `&& isDemoRequest()`, so the one
+   * signal built to hold a working session open was the one signal that never
+   * held it. A real user reading a board for fifteen quiet minutes was signed
+   * out while their browser was still faithfully reporting them present.
+   *
+   * Every session kind is refreshed now, each on its own window. The write is
+   * forced past the throttle: the beat only arrives when the reader has been
+   * quiet, which is exactly when the extension must not be skipped.
+   */
+  if (sessionId) {
+    sessionTouchedAt.set(sessionId, Date.now());
+    await Repository.refreshSession(sessionId, ttlMs);
+  }
   res.json({ ok: true, idleTimeoutMs: ttlMs, demo: Repository.isDemoRequest() });
 });
 
