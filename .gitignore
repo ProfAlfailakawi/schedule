@@ -15,3 +15,13 @@ database/*.firestore-verification.json
 __pycache__/
 *.pyc
 src/generated/buildStamp.ts
+
+# Build/tooling artifacts and stray junk (cleanup 2026-09)
+*.tsbuildinfo
+server.cjs
+server.cjs.map
+server.js
+bun.lock
+cookies.txt
+.DS_Store
+* [0-9].html
