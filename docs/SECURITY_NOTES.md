@@ -5,6 +5,7 @@
 - Session cookies هي HttpOnly وSameSite، وتصبح Secure في الإنتاج.
 - الطلبات التي تغيّر الحالة تخضع لفحوص Origin/Fetch Metadata بالإضافة إلى حماية الكوكي.
 - تسجيل الدخول Rate-limited.
+- السطح العام `/api/public/*` Rate-limited كذلك: 60 طلباً/دقيقة لكل IP افتراضياً، ويُضبط عبر `PUBLIC_RATE_LIMIT_MAX` و`PUBLIC_RATE_LIMIT_WINDOW_MS` (القيمة `0` تعطّله). العدّاد في ذاكرة النسخة الواحدة، فهو تقليل ضرر لا حماية من فيضان موزّع — انظر `SECURITY-TODO.md` بند 3.
 - Authorization مفروض على الخادم. إخفاء Icon من الواجهة ليس صلاحية بحد ذاته.
 - `IsAdminUser` يحافظ على سلوك Legacy الخاص بنطاق البيانات، لكنه لا يمنح FormSecurity screen permissions تلقائياً.
 - المستخدم العادي مقيد بنطاقات `AdCollegeUserAssign` حيث يطبقها النظام القديم.

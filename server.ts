@@ -339,6 +339,65 @@ function rateLimitLogin(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
+/**
+ * ── Rate limit for the public surface (`/api/public/*`) ──────────────────────
+ *
+ * Everything under `/api/public` answers without an account: a share token in
+ * the URL is the whole key. That is what makes those endpoints useful — a
+ * student opens a link and reads their schedule — and also what makes them the
+ * cheapest place to guess tokens, scrape a term, or hammer the OCR upload. The
+ * login form was already limited; this closes the other door with the same
+ * simple in-memory counter, kept deliberately generous so real use never feels
+ * it: a survey page makes a handful of calls, a calendar client polls rarely.
+ *
+ * Both numbers are environment-tunable because the right value depends on the
+ * deployment, not on the code: a college behind one NAT address is many people
+ * on one `req.ip`. `PUBLIC_RATE_LIMIT_MAX=0` turns the limit off entirely.
+ *
+ * The counter lives in this process only — see SECURITY-TODO.md item 3 for why
+ * that is a ceiling on what it can promise across several Cloud Run instances.
+ */
+function readRateLimitEnv(name: string, fallback: number): number {
+  const raw = String(process.env[name] ?? "").trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return fallback;
+  return Math.floor(value);
+}
+const PUBLIC_RATE_LIMIT_MAX = readRateLimitEnv("PUBLIC_RATE_LIMIT_MAX", 60);
+const PUBLIC_RATE_LIMIT_WINDOW_MS = Math.max(1000, readRateLimitEnv("PUBLIC_RATE_LIMIT_WINDOW_MS", 60000));
+const publicRequestWindows = new Map<string, { count: number; windowStart: number }>();
+let publicRateLimitSweptAt = 0;
+
+function rateLimitPublic(req: Request, res: Response, next: NextFunction) {
+  if (PUBLIC_RATE_LIMIT_MAX <= 0) { next(); return; }
+  const now = Date.now();
+  // Expired windows are dropped once per window, so a long-lived instance that
+  // has served many addresses does not keep a row for every one of them.
+  if (now - publicRateLimitSweptAt > PUBLIC_RATE_LIMIT_WINDOW_MS) {
+    publicRateLimitSweptAt = now;
+    for (const [key, seen] of publicRequestWindows) {
+      if (now - seen.windowStart >= PUBLIC_RATE_LIMIT_WINDOW_MS) publicRequestWindows.delete(key);
+    }
+  }
+  const ip = req.ip || "unknown";
+  const seen = publicRequestWindows.get(ip);
+  if (!seen || now - seen.windowStart >= PUBLIC_RATE_LIMIT_WINDOW_MS) {
+    publicRequestWindows.set(ip, { count: 1, windowStart: now });
+    next();
+    return;
+  }
+  seen.count += 1;
+  if (seen.count > PUBLIC_RATE_LIMIT_MAX) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((seen.windowStart + PUBLIC_RATE_LIMIT_WINDOW_MS - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    res.status(429).json({ error: "طلبات كثيرة جداً من هذا الاتصال. انتظر قليلاً ثم أعد المحاولة." });
+    return;
+  }
+  next();
+}
+app.use("/api/public", rateLimitPublic);
+
 const SERVER_IDLE_SESSION_MS = 15 * 60 * 1000;
 const DEMO_SESSION_TTL_MS = 60 * 60 * 1000;
 

@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 import json, re, sys
-from snapshot_loader import load_snapshot
+from snapshot_loader import load_snapshot, snapshot_available, print_snapshot_skip
 from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-try:
-    DB = load_snapshot()
-except FileNotFoundError:
-    print("[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.")
+# Every assertion in this suite reads the migrated legacy rows themselves, so
+# without the private snapshot there is nothing here to run. The skip is loud
+# and lists what went unverified rather than passing with an empty result.
+if not snapshot_available():
+    print_snapshot_skip(
+        'legacy-data-audit',
+        'migrated row counts against the extraction report, foreign-key parity, '
+        'scrypt password shape, the legacy admin identity, civil-ID checksums and preserved historical orphans',
+    )
     sys.exit(0)
+DB = load_snapshot()
 REPORT = json.loads((ROOT / 'docs/LEGACY_DATA_EXTRACTION_REPORT.json').read_text(encoding='utf-8'))
 
 mapping = {
