@@ -391,6 +391,11 @@
   border-radius:var(--r-xs);
   color:var(--muted);
   font-size:var(--t-sm);font-weight:600;
+  /* Keep multi-word Arabic labels on one line, as every sibling control does
+     (.btn, .badge, .meta-pill, .console-tab-label). Without it a segmented
+     view-switcher can break its label mid-phrase when its group is cramped
+     (narrow filters, the landscape-phone two-column grids). Presentation only. */
+  white-space:nowrap;
   transition:background .16s var(--ease),color .16s var(--ease);
 }
 .segmented button svg{width:15px;height:15px}
