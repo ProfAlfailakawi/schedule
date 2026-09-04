@@ -1750,10 +1750,42 @@ async function runTests() {
       "وبطاقتا الشريط تحضران من أول رسمة فلا تنمو الشبكة صفاً تحت الإبهام");
   }
 
+  /* --- 38. السطح العام لم يعد بلا حدّ ------------------------------------- */
+  originalLog("\n--- 38. The public surface is no longer unlimited ---");
+  {
+    /* `/api/public/*` answers without an account — a token in the URL is the
+       whole key — so it was the cheapest place to guess tokens or hammer the
+       OCR upload. The login form had a limiter; these did not. Source pins,
+       because exercising the middleware needs a live server and a database. */
+    const source = fs.readFileSync(path.join(process.cwd(), "server.ts"), "utf8");
+    assert(/app\.use\("\/api\/public",\s*rateLimitPublic\)/.test(source),
+      "الحدّ مثبّت على كامل مسار /api/public لا على نقطة واحدة");
+    const limiter = source.slice(
+      source.indexOf("function rateLimitPublic"),
+      source.indexOf('app.use("/api/public"'));
+    assert(limiter.length > 300, "كتلة حدّ السطح العام عُثر عليها");
+    assert(/PUBLIC_RATE_LIMIT_MAX/.test(source) && /PUBLIC_RATE_LIMIT_WINDOW_MS/.test(source),
+      "الحدّ والنافذة يُضبطان من متغيّرات البيئة لا من رقم مدفون");
+    assert(/if \(PUBLIC_RATE_LIMIT_MAX <= 0\) \{ next\(\); return; \}/.test(limiter),
+      "وضبطه على صفر يعطّله بالكامل — مخرج آمن إن ضاق على استخدام مشروع");
+    assert(/res\.status\(429\)/.test(limiter) && /Retry-After/.test(limiter),
+      "والرفض يقول 429 ويذكر متى يُعاد — لا صمت ولا خطأ عام");
+    assert(/publicRequestWindows\.delete\(key\)/.test(limiter),
+      "والنوافذ المنتهية تُكنس فلا تنمو الذاكرة بعنوان لكل زائر");
+    assert(/readRateLimitEnv\("PUBLIC_RATE_LIMIT_MAX",\s*60\)/.test(source),
+      "والافتراضي 60 طلباً في الدقيقة — سخيّ على الاستخدام الحقيقي");
+  }
+
   if (!originalDb) {
-    originalLog("\n[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
+    /* Everything above reads source files and has already run. What follows
+       needs the migrated legacy rows, which are private and never committed —
+       so in a clean checkout this is a partial run, and it says which half went
+       unverified instead of printing a total that looks complete. */
+    originalLog("\n[SKIP] behavior suite: database/db.json(.gz) is absent — it is private legacy data and is never committed.");
+    originalLog("[SKIP] not verified in this run: the snapshot-backed sections — legacy authentication, exact migrated row counts, and the repository/report behavior read from real rows.");
+    originalLog("[SKIP] to verify locally, place the snapshot at database/db.json.gz and re-run `npm run test:behavior`.");
     originalLog("\n=================================");
-    originalLog(`Total Passed: ${passed}`);
+    originalLog(`Total Passed: ${passed} (source-level checks only)`);
     originalLog(`Total Failed: ${failed}`);
     originalLog("=================================");
     cleanupTestState();

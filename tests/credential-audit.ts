@@ -6,15 +6,30 @@ import { SystemUser } from "../src/types";
 
 const ROOT = process.cwd();
 const snapshotFile = path.join(ROOT, "database", fs.existsSync(path.join(ROOT, "database", "db.json")) ? "db.json" : "db.json.gz");
+const vaultKeyFile = path.join(ROOT, "database", "legacy-password-vault.key");
 
-if (!fs.existsSync(snapshotFile)) {
-  console.log("[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.");
+/**
+ * Both inputs this audit needs — the migrated snapshot and the vault key that
+ * opens its stored credentials — are private and are never committed, so a
+ * clean checkout (CI included) cannot run it. Say which one is missing and what
+ * therefore went unchecked; a silent exit here would read as a green audit of
+ * credentials that were never opened.
+ */
+const missing = [
+  fs.existsSync(snapshotFile) ? "" : "database/db.json(.gz)",
+  fs.existsSync(vaultKeyFile) ? "" : "database/legacy-password-vault.key",
+].filter(Boolean);
+
+if (missing.length > 0) {
+  console.log(`[SKIP] credential-audit: ${missing.join(" and ")} absent — private material, never committed.`);
+  console.log("[SKIP] not verified in this run: every stored scrypt hash against its AES-GCM vault entry, and the legacy admin credential.");
+  console.log("[SKIP] to verify locally, place the snapshot and the vault key under database/ and re-run this suite.");
   process.exit(0);
 }
 
 const db = readJsonSnapshot<{ users: SystemUser[] }>(snapshotFile);
 
-const rawKey = fs.readFileSync(path.join(ROOT, "database", "legacy-password-vault.key"), "ascii").trim();
+const rawKey = fs.readFileSync(vaultKeyFile, "ascii").trim();
 const key = /^[0-9a-f]{64}$/i.test(rawKey) ? Buffer.from(rawKey, "hex") : Buffer.from(rawKey, "base64");
 if (key.length !== 32) throw new Error("Key length must be 32 bytes");
 

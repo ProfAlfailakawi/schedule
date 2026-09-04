@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 import re, sys
-from snapshot_loader import load_snapshot
+from snapshot_loader import load_snapshot, snapshot_available, print_snapshot_skip
 
 root=Path(__file__).resolve().parents[1]
 checks=[]
@@ -14,13 +14,25 @@ schedules=txt('src/components/Schedules.tsx'); admin=txt('src/components/AdminUs
 experience=txt('src/components/ScheduleExperienceLayer.tsx'); dashboard=txt('src/components/Dashboard.tsx'); migration=txt('scripts/import-legacy-json.ts')
 runtime=txt('src/server/runtimeEnv.ts'); package=txt('package.json')
 all_client='\n'.join(p.read_text(encoding='utf-8') for p in (root/'src/components').glob('*.tsx'))
-try:
-    db=load_snapshot()
-except FileNotFoundError:
-    print("[!] No legacy parity snapshot found in database/. Skipping DB parity tests in CI.")
+# The private legacy snapshot is deliberately absent from the repository, so in
+# a clean checkout (CI included) this suite cannot run section 1 at all.
+#
+# Sections 2-7 read source files and would run without it — but they are a
+# parity contract written against an earlier shape of this codebase, and 30 of
+# them no longer match the refactored source (see SECURITY-TODO.md item 8).
+# Enabling them here would turn `npm test` red over stale assertions rather than
+# over a regression, so the suite still skips as a whole; what it skips is now
+# stated instead of implied.
+if not snapshot_available():
+    print_snapshot_skip(
+        'parity_audit',
+        'exact legacy row counts, foreign-key integrity, scrypt password shape and the legacy admin identity '
+        '(section 1), plus the source-level parity sections 2-7 — see SECURITY-TODO.md item 8',
+    )
     sys.exit(0)
 
 # 1) Exact migrated legacy data and relational integrity.
+db=load_snapshot()
 expected={'users':29,'formNames':18,'formSecurity':219,'collegeUserAssign':189,'terms':31,'colleges':13,'sections':87,'instructors':743,'courses':1404,'schedules':15430,'rooms':1}
 for k,v in expected.items(): check(len(db.get(k,[]))==v,f'exact legacy count {k}={v}')
 ids={
