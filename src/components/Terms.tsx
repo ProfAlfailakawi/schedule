@@ -30,7 +30,8 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     [name, setName] = useState(""),
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
-    [loading, setLoading] = useState(false);
+    [loading, setLoading] = useState(false),
+    [submitting, setSubmitting] = useState(false);
   // The list is sorted chronologically from newest to oldest.
   const suggestedTerm = useMemo(() => suggestNextTermName(items[0]?.AdTermName), [items]);
   /* When teaching begins, and for how long. Both optional — a decade of terms
@@ -87,38 +88,56 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
     };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     if (!name.trim()) {
       setError("الرجاء إدخال الحقول المطلوبة بالأحمر");
       return;
     }
-    const r = await fetch(
-        mode === "edit" ? `/api/terms/${editId}` : "/api/terms",
-        {
-          method: mode === "edit" ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ AdTermName: name.trim(),
-            AdTermStart: start || undefined, AdTermWeeks: Number(weeks) || undefined,
-            AdTermClosed: closed }),
-        },
-      ),
-      d = await r.json();
-    if (!r.ok) {
-      setError(d.error || "فشل حفظ بيانات الفصل الدراسي");
-      return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await fetch(
+          mode === "edit" ? `/api/terms/${editId}` : "/api/terms",
+          {
+            method: mode === "edit" ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ AdTermName: name.trim(),
+              AdTermStart: start || undefined, AdTermWeeks: Number(weeks) || undefined,
+              AdTermClosed: closed }),
+          },
+        ),
+        d = await r.json();
+      if (!r.ok) {
+        setError(d.error || "فشل حفظ بيانات الفصل الدراسي");
+        return;
+      }
+      await load();
+      back();
+    } catch {
+      setError("تعذّر الاتصال بالخادم، تحقّق من الشبكة وحاول مرة أخرى");
+    } finally {
+      setSubmitting(false);
     }
-    await load();
-    back();
   };
   const remove = async (id: number) => {
+    if (submitting) return;
     if (!(await visualConfirm({ title: "حذف الفصل الدراسي", message: "سيُحذف سجل الفصل الدراسي من النظام.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
-    const r = await fetch(`/api/terms/${id}`, { method: "DELETE" }),
-      d = await r.json();
-    if (!r.ok) {
-      setError(d.error || "فشل حذف بيانات الفصل الدراسي");
-      return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/terms/${id}`, { method: "DELETE" }),
+        d = await r.json();
+      if (!r.ok) {
+        setError(d.error || "فشل حذف بيانات الفصل الدراسي");
+        return;
+      }
+      setSelectedId(null);
+      await load();
+    } catch {
+      setError("تعذّر الاتصال بالخادم، تحقّق من الشبكة وحاول مرة أخرى");
+    } finally {
+      setSubmitting(false);
     }
-    setSelectedId(null);
-    await load();
   };
   const filtered = useMemo(
       () =>
@@ -206,7 +225,7 @@ export default function Terms({ embedded = false, actionSlot = null }: { embedde
             ) : null}
             <FormActions
               onBack={back}
-              loading={loading}
+              loading={loading || submitting}
               submitLabel={mode === "create" ? "إنشاء الفصل" : "حفظ التعديلات"}
             />
           </form>

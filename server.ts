@@ -4,11 +4,12 @@ import path from "path";
 import { configureRuntimeEnvironment } from "./src/server/runtimeEnv";
 import { BUILD_STAMP } from "./src/generated/buildStamp";
 import { createCipheriv, createDecipheriv, createHmac, randomBytes, timingSafeEqual } from "crypto";
-import { gunzipSync } from "zlib";
-import { activeDataMode, initDatabase, Repository, ScheduleRevisionConflict } from "./src/db/repository";
+import { createGunzip } from "zlib";
+import { activeDataMode, DuplicateResourceError, initDatabase, Repository, ScheduleRevisionConflict, withSerialLock } from "./src/db/repository";
 import { clearScheduleCacheQuietly, onSchedulesInvalidated } from "./src/db/referenceCache";
 import { isCloudRunRuntime } from "./src/db/snapshot";
 import { validateCivilId } from "./src/utils/civilId";
+import { toEnglishDigits } from "./src/utils/digits";
 import { byRoom } from "./src/utils/sorting";
 import { activeDays, analyzeSchedule, autoScheduleProposal, compareTerms, conflictSolutions, findConflicts, minutesToTime, outsideScopeClashes, SCHEDULE_DAYS, timeToMinutes } from "./src/utils/scheduleIntelligence";
 import { buildScheduleGenome, buildWarRoom, evaluateScheduleConstraints, forecastScheduleMove, runScheduleAutopilot } from "./src/utils/scheduleInnovation";
@@ -45,6 +46,7 @@ import {
 import {
   clockRangesOverlap,
   formatScheduleTimeRange,
+  isValidClock,
   normalizeClock,
   SCHEDULE_DAY_END,
   SCHEDULE_DAY_END_TIME,
@@ -66,6 +68,15 @@ import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSche
 configureRuntimeEnvironment();
 
 const app = express();
+/**
+ * Cloud Run terminates TLS at exactly one front-end proxy and sets a trustworthy
+ * X-Forwarded-For. Without this, Express reports every external caller as the
+ * proxy's own address, so `req.ip` is identical for the whole internet — which
+ * collapsed the login/staff-lookup rate limiters into a single shared bucket
+ * (one abuser could 429 every user worldwide, and per-attacker isolation was
+ * gone). Trusting one hop restores the real client IP as the limiter key.
+ */
+app.set("trust proxy", 1);
 const PORT = process.env.APPLET_ID ? 3000 : Number(process.env.PORT || 3000);
 
 
@@ -209,6 +220,32 @@ app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  /**
+   * ── HSTS ────────────────────────────────────────────────────────────────────
+   * Cloud Run already redirects http to https; this makes the browser refuse the
+   * insecure hop in the first place, which is the half a redirect cannot cover.
+   * Production only: a `localhost` development origin pinned to https would be
+   * unreachable, and the pin lasts a year.
+   */
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  /**
+   * ── CSP: the half that cannot break a working page ──────────────────────────
+   *
+   * A full policy for the application shell would have to account for its inline
+   * boot script, its module bundle, its workers and its wasm — and getting one of
+   * those wrong is a white screen, not a warning. That policy is not written
+   * blind; the generated public pages below carry a strict one instead, because
+   * their markup is entirely server-authored and can be nonced with confidence.
+   *
+   * What is set here is the subset that restricts nothing the application does
+   * and still closes real classes of attack: no plugins, no injected <base> to
+   * re-point every relative URL, no form posting to a foreign origin, and no
+   * framing (the modern spelling of the X-Frame-Options above, which browsers
+   * that support both prefer).
+   */
+  res.setHeader("Content-Security-Policy", "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
   next();
 });
 // Every text response leaves the building gzipped. The largest payloads here —
@@ -656,13 +693,97 @@ function requireRootAdmin(req: AuthenticatedRequest, res: Response, next: NextFu
   next();
 }
 
-function readSystemBackupBody(req: Request): unknown {
+const SYSTEM_BACKUP_MAX_BYTES = 80 * 1024 * 1024;
+
+/**
+ * ── فكّ الضغط يُقاس أثناءه، لا بعده ──────────────────────────────────────────
+ *
+ * The size guard used to run *after* `gunzipSync` had already expanded the whole
+ * archive into memory. Gzip reaches ratios near a thousand to one, so a thirty
+ * megabyte upload — the limit the route accepts — could ask for gigabytes before
+ * the check that was supposed to stop it ever executed, and `gunzipSync` blocked
+ * the event loop for the whole of it: one bad file took the instance down.
+ *
+ * The stream is measured as it arrives and abandoned the moment it passes the
+ * ceiling, so the refusal costs the limit and never the archive. It is also
+ * asynchronous, so nothing else waits on it.
+ */
+function gunzipBounded(raw: Buffer, limit: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const gunzip = createGunzip();
+    const chunks: Buffer[] = [];
+    let total = 0;
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      gunzip.destroy();
+      reject(error);
+    };
+    gunzip.on("data", (chunk: Buffer) => {
+      if (settled) return;
+      total += chunk.length;
+      if (total > limit) { fail(new Error("النسخة بعد فك الضغط أكبر من الحد الآمن")); return; }
+      chunks.push(chunk);
+    });
+    gunzip.on("end", () => { if (!settled) { settled = true; resolve(Buffer.concat(chunks)); } });
+    gunzip.on("error", () => fail(new Error("تعذّر فك ضغط ملف النسخة الاحتياطية")));
+    gunzip.end(raw);
+  });
+}
+
+async function readSystemBackupBody(req: Request): Promise<unknown> {
   if (!Buffer.isBuffer(req.body)) return req.body;
   let raw = req.body as Buffer;
-  if (raw.length >= 2 && raw[0] === 0x1f && raw[1] === 0x8b) raw = gunzipSync(raw);
-  if (raw.length > 80 * 1024 * 1024) throw new Error("النسخة بعد فك الضغط أكبر من الحد الآمن");
+  if (raw.length >= 2 && raw[0] === 0x1f && raw[1] === 0x8b) raw = await gunzipBounded(raw, SYSTEM_BACKUP_MAX_BYTES);
+  if (raw.length > SYSTEM_BACKUP_MAX_BYTES) throw new Error("النسخة بعد فك الضغط أكبر من الحد الآمن");
   return JSON.parse(raw.toString("utf8"));
 }
+
+/**
+ * ── قراءة المستندات: اثنان في وقت واحد، لا أكثر ─────────────────────────────
+ *
+ * Reading a scanned timetable is the most expensive thing this server does. Each
+ * page is rendered by pdf.js into a canvas and sliced into strips before OCR
+ * sees it, and that rendering happens in this process's heap — twenty-odd
+ * bitmaps per page, for up to twelve pages. One import is comfortable. Four
+ * arriving together is an out-of-memory kill, and the work is not even faster:
+ * the OCR workers behind it are already saturated by one document.
+ *
+ * So the reading routes admit two at a time and make the rest wait their turn,
+ * which costs a queued reader some seconds and costs everyone else nothing. The
+ * queue itself is bounded — past that the honest answer is "not now", not a
+ * request that waits forever holding a 24 MB upload in memory.
+ *
+ * A slot is released on `finish` *and* on `close`, so a reader who closes the
+ * tab mid-import hands their turn to the next person instead of stranding it.
+ */
+function limitConcurrency(max: number, queueLimit: number) {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return (_req: Request, res: Response, next: NextFunction) => {
+    const begin = () => {
+      active += 1;
+      let released = false;
+      const release = () => {
+        if (released) return;
+        released = true;
+        active -= 1;
+        waiting.shift()?.();
+      };
+      res.once("finish", release);
+      res.once("close", release);
+      next();
+    };
+    if (active < max) { begin(); return; }
+    if (waiting.length >= queueLimit) {
+      res.status(503).json({ error: "قراءة المستندات مشغولة الآن بطلبات أخرى. أعد المحاولة بعد قليل." });
+      return;
+    }
+    waiting.push(begin);
+  };
+}
+const documentReadingGate = limitConcurrency(2, 8);
 
 // Require Form permission
 function requirePermission(formNameId: number) {
@@ -1087,7 +1208,10 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     }
     if(!location.ok) location.issues.filter(issue=>issue.severity==="high").forEach(issue=>errors.push(`السطر ${index + 1}: ${issue.message}`));
     else if(location.canonical) Object.assign(row,location.canonical);
-    if (timeToMinutes(row.fendtime) <= timeToMinutes(row.fstarttime)) errors.push(`السطر ${index + 1}: وقت النهاية يجب أن يكون بعد البداية`);
+    /* Imported rows are exactly where an impossible clock arrives — a spreadsheet
+       cell or an OCR'd page, neither of which is bounded by a time picker. */
+    if (!isValidClock(row.fstarttime) || !isValidClock(row.fendtime)) errors.push(`السطر ${index + 1}: وقت غير صالح (الساعة بين 0 و23 والدقيقة بين 0 و59)`);
+    else if (timeToMinutes(row.fendtime) <= timeToMinutes(row.fstarttime)) errors.push(`السطر ${index + 1}: وقت النهاية يجب أن يكون بعد البداية`);
     else if (!withinScheduleDay(timeToMinutes(row.fstarttime), timeToMinutes(row.fendtime))) errors.push(`السطر ${index + 1}: وقت المحاضرة يجب أن يكون بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`);
     if (activeDays(row).length === 0) errors.push(`السطر ${index + 1}: لم يتم تحديد يوم للمحاضرة`);
     if (course) row.AdCourseName = course.CourseName;
@@ -1712,6 +1836,66 @@ app.get("/api/search", requireAnyPermission([7, 8, 9, 10, 16, 17]), async (req: 
   res.json({ schedules: scheduleResults, instructors: instructorResults, courses: courseResults, rooms: roomResults });
 });
 
+/**
+ * ── التحقق من المدخلات: قاعدة واحدة في مكان واحد ─────────────────────────────
+ *
+ * Reference-data CRUD used to check only that a field was truthy, then hand the
+ * raw value to Firestore. That accepted an unbounded string, an array or object
+ * where a name belongs, and — because `parseInt("abc")` is `NaN` and `NaN` is
+ * not caught by a truthiness test — wrote `NaN` into numeric columns, which then
+ * poisons every later calculation that reads them.
+ *
+ * These three helpers are the whole rule. They return `null` for "not
+ * acceptable" so a caller can answer with one clear Arabic sentence naming the
+ * field, instead of storing something nobody can explain later.
+ */
+/* The longest real college name in the register is 32 characters
+   («كلية الدراسات التكنولوجية - بنات»). 120 leaves generous room for a longer
+   branch or a renamed faculty while refusing the pathological case. */
+const TEXT_LIMIT = { name: 120, code: 40 } as const;
+
+/** A real, trimmed, bounded string — or null. Numbers are accepted (a code may
+ *  arrive as one) but objects, arrays, booleans and blank text never are. */
+function cleanText(value: unknown, max: number): string | null {
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const text = String(value).trim();
+  if (!text || text.length > max) return null;
+  return text;
+}
+
+/** A whole number inside [min,max]. Arabic-Indic digits are normalised first, so
+ *  «٤٥» is the same input as "45". Empty means "not stated" → `fallback`. */
+function boundedInt(value: unknown, min: number, max: number, fallback: number | null = null): number | null {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = Number(toEnglishDigits(value).trim());
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < min || parsed > max) return null;
+  return parsed;
+}
+
+/** Same, but a decimal is legitimate (teaching hours run 1.5, 2.5 …). */
+function boundedDecimal(value: unknown, min: number, max: number, fallback: number | null = null): number | null {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string" && typeof value !== "number") return null;
+  const parsed = Number(toEnglishDigits(value).trim());
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) return null;
+  // Quarter-hour granularity is the finest the timetable can express.
+  return Math.round(parsed * 100) / 100;
+}
+
+/* Course numbers, bounded by what a real course can be. MaxStudent is capped at
+   200 by institutional rule — a section larger than that is a data-entry slip,
+   not a class. */
+const COURSE_LIMIT = { credit: [0, 20], hours: [0, 40], students: [0, 200] } as const;
+
+/** One sentence naming the field that is wrong — or null when all three are fine. */
+function courseNumberIssue(credit: number | null, hours: number | null, students: number | null): string | null {
+  if (credit === null) return `عدد الوحدات يجب أن يكون رقماً صحيحاً بين ${COURSE_LIMIT.credit[0]} و${COURSE_LIMIT.credit[1]}`;
+  if (hours === null) return `عدد الساعات يجب أن يكون رقماً بين ${COURSE_LIMIT.hours[0]} و${COURSE_LIMIT.hours[1]}`;
+  if (students === null) return `عدد الطلبة يجب أن يكون رقماً صحيحاً بين ${COURSE_LIMIT.students[0]} و${COURSE_LIMIT.students[1]}`;
+  return null;
+}
+
 // --- COLLEGE API ---
 
 app.get("/api/colleges", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
@@ -1727,12 +1911,13 @@ app.get("/api/colleges", requireAuth, async (req: AuthenticatedRequest, res: Res
 });
 
 app.post("/api/colleges", requirePermission(2), async (req: Request, res: Response) => {
-  const { AdCollegeCode, AdCollegeName } = req.body;
-  if (!AdCollegeCode || !AdCollegeName) {
-    res.status(400).json({ error: "جميع الحقول مطلوبة" });
+  const code = cleanText(req.body?.AdCollegeCode, TEXT_LIMIT.code);
+  const name = cleanText(req.body?.AdCollegeName, TEXT_LIMIT.name);
+  if (!code || !name) {
+    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
     return;
   }
-  const newC = await Repository.createCollege(AdCollegeCode, AdCollegeName);
+  const newC = await Repository.createCollege(code, name);
   res.status(201).json(newC); // using created code helper
 });
 
@@ -1742,9 +1927,10 @@ app.put("/api/colleges/:id", requirePermission(2), async (req: AuthenticatedRequ
     res.status(403).json({ error: "خارج صلاحيات الأقسام المسموحة لك" });
     return;
   }
-  const { AdCollegeCode, AdCollegeName } = req.body;
+  const AdCollegeCode = cleanText(req.body?.AdCollegeCode, TEXT_LIMIT.code);
+  const AdCollegeName = cleanText(req.body?.AdCollegeName, TEXT_LIMIT.name);
   if (!AdCollegeCode || !AdCollegeName) {
-    res.status(400).json({ error: "جميع الحقول مطلوبة" });
+    res.status(400).json({ error: `الرجاء إدخال رمز الكلية واسمها (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
     return;
   }
   try {
@@ -1806,12 +1992,13 @@ app.get("/api/sections", requireAuth, async (req: AuthenticatedRequest, res: Res
 });
 
 app.post("/api/sections", requirePermission(4), async (req: AuthenticatedRequest, res: Response) => {
-  const { AdCollegeId, AdSectionCode, AdSectionName } = req.body;
-  if (!AdCollegeId || !AdSectionCode || !AdSectionName) {
-    res.status(400).json({ error: "جميع الحقول مطلوبة" });
+  const AdSectionCode = cleanText(req.body?.AdSectionCode, TEXT_LIMIT.code);
+  const AdSectionName = cleanText(req.body?.AdSectionName, TEXT_LIMIT.name);
+  const collegeId = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
+  if (!collegeId || !AdSectionCode || !AdSectionName) {
+    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
     return;
   }
-  const collegeId = parseInt(AdCollegeId);
   const college = await Repository.getCollegeById(collegeId);
   if (!college) { res.status(400).json({ error: "الكلية المختارة غير صالحة" }); return; }
   if (!isScopeAllowed(req, collegeId, 0) && !req.user.IsAdminUser) {
@@ -1824,14 +2011,15 @@ app.post("/api/sections", requirePermission(4), async (req: AuthenticatedRequest
 
 app.put("/api/sections/:id", requirePermission(4), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(req.params.id);
-  const { AdCollegeId, AdSectionCode, AdSectionName } = req.body;
-  if (!AdCollegeId || !AdSectionCode || !AdSectionName) {
-    res.status(400).json({ error: "جميع الحقول مطلوبة" });
+  const AdSectionCode = cleanText(req.body?.AdSectionCode, TEXT_LIMIT.code);
+  const AdSectionName = cleanText(req.body?.AdSectionName, TEXT_LIMIT.name);
+  const targetCollegeId = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
+  if (!targetCollegeId || !AdSectionCode || !AdSectionName) {
+    res.status(400).json({ error: `الرجاء إدخال الكلية ورمز القسم واسمه (الرمز حتى ${TEXT_LIMIT.code} حرفاً والاسم حتى ${TEXT_LIMIT.name} حرفاً)` });
     return;
   }
   const current = await Repository.getSectionById(id);
   if (!current) { res.status(404).json({ error: "القسم العلمي غير موجود" }); return; }
-  const targetCollegeId = parseInt(AdCollegeId);
   const targetCollege = await Repository.getCollegeById(targetCollegeId);
   if (!targetCollege) { res.status(400).json({ error: "الكلية المختارة غير صالحة" }); return; }
   if (!req.user.IsAdminUser && (!isScopeAllowed(req, current.AdCollegeId, current.AdSectionId) || !isScopeAllowed(req, targetCollegeId, 0))) {
@@ -1870,9 +2058,11 @@ app.get("/api/terms", requireAuth, async (req: Request, res: Response) => {
 });
 
 app.post("/api/terms", requirePermission(5), async (req: Request, res: Response) => {
-  const { AdTermName } = req.body;
+  /* Weeks and the start date are already normalised (and range-checked) by
+     termCalendarFields in the repository; the name is what had no bound. */
+  const AdTermName = cleanText(req.body?.AdTermName, TEXT_LIMIT.name);
   if (!AdTermName) {
-    res.status(400).json({ error: "اسم الفصل الدراسي مطلوب" });
+    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${TEXT_LIMIT.name} حرفاً)` });
     return;
   }
   const newTerm = await Repository.createTerm(AdTermName,
@@ -1883,9 +2073,9 @@ app.post("/api/terms", requirePermission(5), async (req: Request, res: Response)
 
 app.put("/api/terms/:id", requirePermission(5), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
-  const { AdTermName } = req.body;
+  const AdTermName = cleanText(req.body?.AdTermName, TEXT_LIMIT.name);
   if (!AdTermName) {
-    res.status(400).json({ error: "اسم الفصل الدراسي مطلوب" });
+    res.status(400).json({ error: `الرجاء إدخال اسم الفصل الدراسي (حتى ${TEXT_LIMIT.name} حرفاً)` });
     return;
   }
   try {
@@ -1900,6 +2090,13 @@ app.put("/api/terms/:id", requirePermission(5), async (req: Request, res: Respon
 
 app.delete("/api/terms/:id", requirePermission(5), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
+  // Legacy SQL has FSchedule -> AdTerm FK. Deleting a term that still owns schedule
+  // rows would orphan them (dangling AdTermId, invisible in every term-scoped read,
+  // and it shifts currentTerm/isTermClosed against a now-missing term). Block it.
+  if (await Repository.hasSchedulesForTerm(id)) {
+    res.status(409).json({ error: "لا يمكن حذف الفصل الدراسي لوجود بيانات مرتبطة به في الجدول الدراسي" });
+    return;
+  }
   await Repository.deleteTerm(id);
   res.json({ success: true });
 });
@@ -2039,6 +2236,12 @@ app.put("/api/instructors/:id", requirePermission(3), async (req: Request, res: 
 
 app.delete("/api/instructors/:id", requirePermission(3), async (req: Request, res: Response) => {
   const id = parseInt(req.params.id);
+  // Legacy SQL has FSchedule -> AdInstructor FK. Do not silently orphan schedule
+  // rows: block the delete while any schedule still references this instructor.
+  if (await Repository.hasSchedulesForInstructor(id)) {
+    res.status(409).json({ error: "لا يمكن حذف عضو هيئة التدريس لوجود بيانات مرتبطة به في الجدول الدراسي" });
+    return;
+  }
   await Repository.deleteInstructor(id);
   res.json({ success: true });
 });
@@ -2066,19 +2269,30 @@ app.get("/api/courses", requireAnyPermission([6, 7, 8, 9, 10, 14, 16, 17]), asyn
 });
 
 app.post("/api/courses", requirePermission(6), async (req: AuthenticatedRequest, res: Response) => {
-  const { AdCollegeId, AdSectionId, CourseCode, CourseName, CourseCredit, CourseHours, MaxStudent } = req.body;
+  const CourseCode = cleanText(req.body?.CourseCode, TEXT_LIMIT.code);
+  const CourseName = cleanText(req.body?.CourseName, TEXT_LIMIT.name);
+  const collegeIdInput = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
+  const sectionIdInput = boundedInt(req.body?.AdSectionId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
 
-  if (!AdCollegeId || !AdSectionId || !CourseCode || !CourseName || !CourseCredit || !CourseHours) {
+  if (!collegeIdInput || !sectionIdInput || !CourseCode || !CourseName) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
     return;
   }
+  /* Numbers are numbers. `parseInt("abc")` is NaN, and NaN passes a truthiness
+     test — that is how a course could be stored with no readable credit and
+     poison every workload sum that later reads it. */
+  const CourseCredit = boundedInt(req.body?.CourseCredit, COURSE_LIMIT.credit[0], COURSE_LIMIT.credit[1]);
+  const CourseHours = boundedDecimal(req.body?.CourseHours, COURSE_LIMIT.hours[0], COURSE_LIMIT.hours[1]);
+  const MaxStudent = boundedInt(req.body?.MaxStudent, COURSE_LIMIT.students[0], COURSE_LIMIT.students[1], 0);
+  const numberIssue = courseNumberIssue(CourseCredit, CourseHours, MaxStudent);
+  if (numberIssue) { res.status(400).json({ error: numberIssue }); return; }
 
   // Legacy only blocked non-English typing in the browser. The SQL column itself is text and
   // the real database contains historical course codes with tabs/whitespace, so the API must
   // preserve those values when an old record is edited. The modern UI still enforces English
   // numeric typing for newly-entered codes.
 
-  const collegeId = parseInt(AdCollegeId), sectionId = parseInt(AdSectionId);
+  const collegeId = collegeIdInput, sectionId = sectionIdInput;
   const section = await Repository.getSectionById(sectionId);
   if (!section || section.AdCollegeId !== collegeId) {
     res.status(400).json({ error: "القسم العلمي المختار لا يتبع الكلية المختارة" });
@@ -2089,40 +2303,48 @@ app.post("/api/courses", requirePermission(6), async (req: AuthenticatedRequest,
     return;
   }
 
-  // Duplicate CourseCode check within section
-  const sectionCourses = await Repository.getCoursesBySection(sectionId);
-  const codeExists = sectionCourses.some(c => c.CourseCode === CourseCode);
-  if (codeExists) {
-    res.status(400).json({ error: "تم تسجيل رمز المقرر الدراسي هذا من قبل" });
-    return;
+  /* Uniqueness of the course code inside its department is claimed inside the
+     write transaction, so a double-submitted form is refused by the database
+     rather than by a read that both requests passed. */
+  try {
+    const newC = await Repository.createCourse(
+      collegeId,
+      sectionId,
+      CourseCode,
+      CourseName,
+      CourseCredit!,
+      CourseHours!,
+      MaxStudent!
+    );
+    res.status(201).json(newC);
+  } catch (error) {
+    if (error instanceof DuplicateResourceError) { res.status(400).json({ error: error.message }); return; }
+    throw error;
   }
-
-  const newC = await Repository.createCourse(
-    parseInt(AdCollegeId),
-    parseInt(AdSectionId),
-    CourseCode,
-    CourseName,
-    parseInt(CourseCredit),
-    parseFloat(String(CourseHours || 0)),
-    parseInt(MaxStudent || 0)
-  );
-  res.status(201).json(newC);
 });
 
 app.put("/api/courses/:id", requirePermission(6), async (req: AuthenticatedRequest, res: Response) => {
   const id = parseInt(req.params.id);
-  const { AdCollegeId, AdSectionId, CourseCode, CourseName, CourseCredit, CourseHours, MaxStudent } = req.body;
+  const CourseCode = cleanText(req.body?.CourseCode, TEXT_LIMIT.code);
+  const CourseName = cleanText(req.body?.CourseName, TEXT_LIMIT.name);
+  const collegeIdInput = boundedInt(req.body?.AdCollegeId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
+  const sectionIdInput = boundedInt(req.body?.AdSectionId, 1, Number.MAX_SAFE_INTEGER) ?? 0;
 
-  if (!AdCollegeId || !AdSectionId || !CourseCode || !CourseName || !CourseCredit || !CourseHours) {
+  if (!collegeIdInput || !sectionIdInput || !CourseCode || !CourseName) {
     res.status(400).json({ error: "الرجاء إدخال الحقول المطلوبة بالأحمر" });
     return;
   }
+  const CourseCredit = boundedInt(req.body?.CourseCredit, COURSE_LIMIT.credit[0], COURSE_LIMIT.credit[1]);
+  const CourseHours = boundedDecimal(req.body?.CourseHours, COURSE_LIMIT.hours[0], COURSE_LIMIT.hours[1]);
+  const MaxStudent = boundedInt(req.body?.MaxStudent, COURSE_LIMIT.students[0], COURSE_LIMIT.students[1], 0);
+  const numberIssue = courseNumberIssue(CourseCredit, CourseHours, MaxStudent);
+  if (numberIssue) { res.status(400).json({ error: numberIssue }); return; }
 
   // Do not reject historical text/whitespace already present in CourseCode (legacy parity).
 
   const currentCourse = await Repository.getCourseById(id);
   if (!currentCourse) { res.status(404).json({ error: "المقرر الدراسي غير موجود" }); return; }
-  const collegeId = parseInt(AdCollegeId), sectionId = parseInt(AdSectionId);
+  const collegeId = collegeIdInput, sectionId = sectionIdInput;
   const targetSection = await Repository.getSectionById(sectionId);
   if (!targetSection || targetSection.AdCollegeId !== collegeId) {
     res.status(400).json({ error: "القسم العلمي المختار لا يتبع الكلية المختارة" });
@@ -2147,9 +2369,9 @@ app.put("/api/courses/:id", requirePermission(6), async (req: AuthenticatedReque
       sectionId,
       CourseCode,
       CourseName,
-      parseInt(CourseCredit),
-      parseFloat(String(CourseHours || 0)),
-      parseInt(MaxStudent || 0)
+      CourseCredit!,
+      CourseHours!,
+      MaxStudent!
     );
     res.json(updated);
   } catch (e: any) {
@@ -2194,7 +2416,12 @@ const SCHEDULE_DAY_KEYS=["fsunday","fmonday","ftuesday","fwednesday","fthursday"
  */
 const scheduleOverlap=(aStart:string,aEnd:string,bStart:string,bEnd:string)=>
   clockRangesOverlap(aStart,aEnd,bStart,bEnd);
-function schedulePayloadIssues(row:any){const issues:string[]=[];if(!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))issues.push("يجب اختيار يوم واحد على الأقل للمحاضرة");if(row?.fstarttime&&row?.fendtime){const start=timeToMinutes(String(row.fstarttime)),end=timeToMinutes(String(row.fendtime));if(end<=start)issues.push("وقت النهاية يجب أن يكون بعد وقت البداية");else if(!withinScheduleDay(start,end))issues.push(`وقت المحاضرة يجب أن يكون بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`);}return issues;}
+function schedulePayloadIssues(row:any){const issues:string[]=[];if(!SCHEDULE_DAY_KEYS.some(k=>Boolean(row?.[k])))issues.push("يجب اختيار يوم واحد على الأقل للمحاضرة");if(row?.fstarttime&&row?.fendtime){
+  /* An impossible clock is refused before it is measured. `timeToMinutes` answers
+     with a number for anything — "10:76" becomes 676, i.e. 11:16 — so without
+     this the row was stored at a time nobody typed. */
+  if(!isValidClock(row.fstarttime)||!isValidClock(row.fendtime))issues.push("وقت المحاضرة غير صالح: الساعة بين 0 و23 والدقيقة بين 0 و59");
+  else{const start=timeToMinutes(String(row.fstarttime)),end=timeToMinutes(String(row.fendtime));if(end<=start)issues.push("وقت النهاية يجب أن يكون بعد وقت البداية");else if(!withinScheduleDay(start,end))issues.push(`وقت المحاضرة يجب أن يكون بين ${SCHEDULE_DAY_START_TIME} و${SCHEDULE_DAY_END_TIME}`);}}return issues;}
 /**
  * Who does this hall belong to?
  *
@@ -3257,12 +3484,30 @@ app.post("/api/hall-barter/requests", requirePermission(7), async (req: Authenti
 });
 
 app.post("/api/hall-barter/requests/:id/respond", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
-  const request=await Repository.getHallBarterRequestById(String(req.params.id||""));
+  const requestId=String(req.params.id||"");
+  const decision=String(req.body?.decision||"");
+  if(decision!=="approve"&&decision!=="reject"){res.status(400).json({error:"حدد الموافقة أو الرفض"});return;}
+  const pending=await Repository.getHallBarterRequestById(requestId);
+  if(!pending){res.status(404).json({error:"طلب الاستعارة غير موجود"});return;}
+  /**
+   * The approval decides from what it reads — "is the room free in this window,
+   * and is no overlapping reservation already approved?" — and then writes. Two
+   * approvals for *different* overlapping requests could each read a free room
+   * and each write `approved`, because the pair was only ever in conflict
+   * together. The `status !== "pending"` guard never saw this: it protects one
+   * request from being answered twice, not two requests from colliding.
+   *
+   * So the key is the term, not the request — a term is the widest span an
+   * overlap can reach, and it is what both readings are drawn from. Approvals
+   * are rare and human-paced, so serialising them costs nothing, and other terms
+   * are untouched. Everything is re-read *inside* the lock, so a decision taken
+   * while this one waited is seen and respected.
+   */
+  await withSerialLock(`barter:term:${Number(pending.AdTermId)||0}`, async () => {
+  const request=await Repository.getHallBarterRequestById(requestId);
   if(!request){res.status(404).json({error:"طلب الاستعارة غير موجود"});return;}
   if(request.status!=="pending"){res.status(409).json({error:"تمت معالجة هذا الطلب مسبقاً"});return;}
   if(!isScopeAllowed(req,request.ownerCollegeId,request.ownerSectionId)&&!req.user.IsAdminUser){res.status(403).json({error:"الموافقة تخص القسم المضيف فقط"});return;}
-  const decision=String(req.body?.decision||"");
-  if(decision!=="approve"&&decision!=="reject"){res.status(400).json({error:"حدد الموافقة أو الرفض"});return;}
   if(decision==="approve"){
     if(Number(request.requesterCollegeId)===Number(request.ownerCollegeId)&&Number(request.requesterSectionId)===Number(request.ownerSectionId)){
       res.status(409).json({error:"لا يمكن اعتماد استعارة لأن القسم الطالب هو نفسه القسم المضيف."});return;
@@ -3288,6 +3533,7 @@ app.post("/api/hall-barter/requests/:id/respond", requirePermission(7), async (r
   hallBarterSerial++;hallBarterBoardCache.clear();
   broadcastScheduleChange();void Repository.markSchedulesChanged();
   res.json({request:updated,message:decision==="approve"?"تم اعتماد الاستعارة. أصبحت النافذة محجوزة رقمياً للقسم الطالب وتظهر للطرفين.":"تم رفض الطلب دون أي تغيير على الجدول."});
+  });
 });
 
 app.post("/api/hall-barter/requests/:id/cancel", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
@@ -5854,7 +6100,7 @@ app.get("/api/intelligence/drafts", requirePermission(7), async (req: Authentica
   const {collegeId,sectionId,termId}=smartContextFrom(req); if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;} res.json(await Repository.getScheduleDrafts(collegeId,sectionId,termId));
 });
 
-app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ type: ["application/octet-stream","application/pdf","image/*"], limit: "24mb" }), async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ type: ["application/octet-stream","application/pdf","image/*"], limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const bytes=Buffer.isBuffer(req.body)?req.body:Buffer.alloc(0);
@@ -6028,7 +6274,7 @@ app.post("/api/intelligence/smart-import", requirePermission(7), express.raw({ t
   });
 });
 
-app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ type: "application/octet-stream", limit: "24mb" }), async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/pdf-import", requirePermission(7), express.raw({ type: "application/octet-stream", limit: "24mb" }), documentReadingGate, async (req: AuthenticatedRequest, res: Response) => {
   const {collegeId,sectionId,termId}=smartContextFrom(req);
   if(!collegeId||!sectionId||!termId||!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const occupied=await Repository.getSchedulesByScope({collegeId,sectionId,termId});
@@ -7232,7 +7478,7 @@ app.get("/api/system-backup/export", requireAuth, requireRootAdmin, async (_req:
 });
 
 app.post("/api/system-backup/preview", requireAuth, requireRootAdmin, async (req: AuthenticatedRequest, res: Response) => {
-  const input = readSystemBackupBody(req);
+  const input = await readSystemBackupBody(req);
   const backup = await Repository.validateSystemBackup(input, ROOT_ADMIN_USER_ID);
   res.json({
     valid: true,
@@ -7259,7 +7505,7 @@ app.post("/api/system-backup/import-jobs", requireAuth, requireRootAdmin, async 
     res.status(409).json({ error: "الاستيراد الكامل يحتاج تأكيداً صريحاً" });
     return;
   }
-  const input = readSystemBackupBody(req);
+  const input = await readSystemBackupBody(req);
   const job = await Repository.startSystemImportJob(input, req.user!.SystemUserId, ROOT_ADMIN_USER_ID);
   res.status(job.status === "ready" ? 200 : 202).json(job);
 });
@@ -9028,7 +9274,50 @@ app.post("/api/public/staff/:token", async (req: Request, res: Response) => {
  * week once answered. Everything is inline so it loads on a weak connection
  * and keeps working when the campus network is slow.
  */
-function staffCardPage(token: string, label: string): string {
+/**
+ * ── الصفحات العامة: سياسة صارمة، لأن مصدرها كلّه من هنا ─────────────────────
+ *
+ * These pages are the one surface an unauthenticated stranger reaches, and they
+ * interpolate text the system did not author — a label, an OCR'd name, a message
+ * typed by a visitor. Everything on them is escaped, but escaping is a rule that
+ * has to hold at every single site; this is the wall that holds when one of them
+ * someday does not.
+ *
+ * Their markup is written entirely by this file, so a per-response nonce is
+ * reliable in a way it is not for a bundled application shell: only the four
+ * scripts below carry it, and an injected script tag — having no nonce — does
+ * not run at all.
+ *
+ * `style-src` stays 'unsafe-inline' deliberately. These pages carry a handful of
+ * `style="…"` attributes, which a nonce cannot cover, and a nonce on the same
+ * directive would *disable* the allowance they need. An inline style cannot
+ * execute; with scripts nonced and `object-src 'none'`, letting them through
+ * costs nothing that matters.
+ */
+function publicPageNonce(res: Response): string {
+  const nonce = randomBytes(16).toString("base64");
+  res.setHeader("Content-Security-Policy", [
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}'`,
+    "style-src 'unsafe-inline'",
+    /* `blob:` is not decoration here: the proof upload shrinks a photo before
+       sending it by drawing `URL.createObjectURL(file)` into a canvas. Without
+       it that image fails to load, the compression path quietly falls back, and
+       phones upload full-size originals over mobile data. */
+    "img-src 'self' data: blob:",
+    "font-src 'self'",
+    "connect-src 'self'",
+    "base-uri 'none'",
+    /* 'self', not 'none': the survey form is submitted by script and normally
+       never navigates, but if that script ever fails the browser falls back to a
+       native submit — which should reach this application, not be dropped. */
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; "));
+  return nonce;
+}
+
+function staffCardPage(token: string, label: string, nonce: string): string {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
@@ -9245,7 +9534,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
     <div class="foot" id="foot"></div>
   </div>
 </div>
-<script>
+<script nonce="${nonce}">
 (function(){
   var TOKEN=${JSON.stringify(token)};
   var gate=document.getElementById("gate"),card=document.getElementById("card");
@@ -9536,7 +9825,7 @@ button.say:disabled{opacity:.55;cursor:default;border-style:dashed}
  *   · It promises nothing. «يُساعد القسم» is true; «سيُفتح» is not, and one
  *     broken promise ends the usefulness of every survey after it.
  */
-function surveyPage(token: string, label: string): string {
+function surveyPage(token: string, label: string, nonce: string): string {
   return `<!doctype html>
 <html lang="ar" dir="rtl"><head>
 <meta charset="utf-8">
@@ -9687,7 +9976,7 @@ body{padding-block-end:8px}
   <p class="warn-line"><b>هذا ليس تسجيلاً.</b> إجابتك لا تحجز لك مقعداً ولا تُغني عن التسجيل، ولا تضمن فتح شعبة — التسجيل يبقى في مكانه المعتاد.</p>
   <div id="body"></div>
 </div>
-<script>
+<script nonce="${nonce}">
 /* العدد والمعدود — نفس قاعدة البرنامج، مكتوبة هنا لأن هذه الصفحة لا تحمل حزمته. */
 function asciiDigits(value){
   return String(value==null?"":value)
@@ -9877,10 +10166,10 @@ function arCourses(n){
 </script></body></html>`;
 }
 
-function studentCaseSurveyPage(token:string,label:string):string{
+function studentCaseSurveyPage(token:string,label:string,nonce:string):string{
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex,nofollow"><title>${label} · SCHEDULE</title><link rel="icon" href="/schedule-icon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/schedule-icon-192.png"><style>
 *{box-sizing:border-box}:root{--bg:#07110f;--card:#101b18;--card2:#15231f;--line:#263630;--ink:#f1f6f2;--muted:#91a098;--jade:#68c8aa;--gold:#d2a45f;--bad:#e37b70}body{margin:0;min-height:100dvh;background:radial-gradient(circle at 90% 0,#17362e 0,transparent 32%),var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI","Noto Sans Arabic",Tahoma,sans-serif;padding:22px 15px 42px}.wrap{max-width:720px;margin:auto}.brand{font:700 11px/1 system-ui;letter-spacing:.22em;color:var(--gold)}h1{font-size:25px;margin:10px 0 5px}.lead{color:var(--muted);line-height:1.8;margin:0 0 20px;font-size:13px}.card{background:color-mix(in srgb,var(--card) 92%,transparent);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:0 20px 50px #0004}.progress{display:flex;gap:6px;margin-bottom:18px}.progress i{height:4px;border-radius:9px;background:var(--line);flex:1}.progress i.on{background:var(--jade)}.step-head{display:flex;align-items:center;gap:10px;margin-bottom:15px}.step-head b{display:grid;place-items:center;width:30px;height:30px;border-radius:10px;background:#17362e;color:var(--jade)}.step-head div{display:grid;gap:2px}.step-head strong{font-size:16px}.step-head span{font-size:11px;color:var(--muted)}.fields{display:grid;grid-template-columns:1fr 1fr;gap:10px}.field{display:grid;gap:6px}.field.full{grid-column:1/-1}.field label{font-size:11px;color:var(--muted)}input,select,textarea{width:100%;border:1px solid var(--line);border-radius:13px;background:var(--card2);color:var(--ink);padding:13px;font:inherit;outline:none}input:focus,select:focus,textarea:focus{border-color:var(--jade)}input[dir=ltr]{text-align:left}input[readonly],select:disabled{opacity:1;color:#dce8e3;background:#12211d;border-color:#315047;cursor:default;-webkit-text-fill-color:#dce8e3}.identity-verified{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid #2f6757;border-radius:12px;background:#10251f;color:#aee5d2;font-size:11.5px;line-height:1.6}.identity-verified b{font-weight:800;color:#c8f0e2}.identity-reset{flex:none;border:0;background:transparent;color:var(--muted);font:inherit;font-size:10.5px;text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px}.identity-start{display:grid;gap:10px}.identity-start .field{max-width:430px;width:100%;margin-inline:auto}.identity-start-note{text-align:center;color:var(--muted);font-size:11px;line-height:1.75;margin:0 4px}.proof-example{display:grid;grid-template-columns:112px minmax(0,1fr);align-items:center;gap:12px;padding:10px;border:1px solid #315047;border-radius:14px;background:#0d1d18;color:var(--ink);text-decoration:none;overflow:hidden}.proof-example img{display:block;width:112px;height:78px;object-fit:cover;object-position:top;border-radius:9px;border:1px solid #3b554d;background:#fff}.proof-example span{display:grid;gap:4px;line-height:1.55}.proof-example strong{font-size:12px;color:#dcebe5}.proof-example small{font-size:10.5px;color:var(--muted)}.proof-example em{font-style:normal;font-size:10px;color:var(--jade)}.action{width:100%;border:0;border-radius:14px;padding:14px;margin-top:15px;background:var(--jade);color:#04120e;font:800 14px/1 inherit;cursor:pointer}.action:disabled{opacity:.42;cursor:default}.back{border:0;background:none;color:var(--muted);padding:8px;font:inherit;cursor:pointer}.types{display:grid;gap:9px}.type{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:11px;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:15px;padding:12px;text-align:right;cursor:pointer}.type>i{display:grid;place-items:center;width:40px;height:40px;border-radius:12px;background:#1c302a;color:var(--jade);font-style:normal;font-size:18px}.type strong{display:block;font-size:14px}.type small{display:block;color:var(--muted);margin-top:3px}.type em{font-style:normal;color:var(--muted)}.type.on{border-color:var(--jade);background:#142b24}.course-tools{display:grid;gap:8px;margin:13px 0}.courses{display:grid;grid-template-columns:1fr 1fr;gap:7px;max-height:320px;overflow:auto}.course{position:relative;border:1px solid var(--line);background:var(--card2);color:var(--ink);border-radius:12px;padding:11px;text-align:right;cursor:pointer}.course strong{display:block;font-size:12px;line-height:1.5}.course small{color:var(--muted)}.course.on{border-color:var(--jade);background:#153128}.hint{font-size:10.5px;color:var(--muted)}.hint.ok{color:var(--jade)}.hint.bad{color:var(--bad)}.acc{border:1px solid var(--line);border-radius:15px;background:var(--card2);overflow:hidden}.acc>summary{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px;cursor:pointer;font-weight:800;font-size:13px;list-style:none}.acc>summary::-webkit-details-marker{display:none}.acc>summary em{font-style:normal;font-size:11px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:2px 9px}.acc[open]>summary{border-bottom:1px solid var(--line)}.acc-body{display:grid;gap:9px;padding:12px}.acc-body .courses{max-height:250px}.course.on:after{content:"✓";position:absolute;top:8px;left:9px;color:var(--jade)}.proof{display:grid;gap:10px;padding:14px;border:1px dashed #3b554d;border-radius:15px;margin-top:12px}.proof input{padding:9px}.upload-meter{display:grid;grid-template-columns:1fr auto;align-items:center;gap:7px 10px}.upload-meter[hidden]{display:none!important}.upload-track{height:7px;border-radius:999px;background:#263630;overflow:hidden}.upload-track i{display:block;height:100%;width:0;border-radius:inherit;background:var(--jade);transition:width .12s linear}.upload-meter b{font:700 11px/1 system-ui;color:var(--jade);direction:ltr}.upload-meter small{grid-column:1/-1;color:var(--muted);font-size:10.5px}.proof-status{padding:12px;border-radius:13px;background:#152923;color:var(--muted);line-height:1.7;font-size:12px}.proof-status.ok{border:1px solid #2f7b63;color:#a7e4cf}.proof-status.reused{border:1px solid #2f7b63;color:#b8ead9;background:#102820}.proof-status.bad{border:1px solid #804640;color:#f0aaa3}.proof-upload{display:grid;gap:10px}.reasons{display:grid;gap:8px;margin-top:12px}.reason{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);background:var(--card2);padding:11px;border-radius:12px}.reason input{width:auto;margin-top:3px}.reason span{font-size:13px}.graduate-detail{margin-top:11px;padding:12px;border:1px solid #315047;background:#0e1c18;border-radius:14px}.graduate-detail label{display:block;font-size:12px;font-weight:800;color:#dcebe5;margin-bottom:7px}.graduate-detail textarea{min-height:112px;resize:vertical;line-height:1.75}.graduate-detail small{display:flex;justify-content:space-between;gap:8px;margin-top:6px;color:var(--muted);font-size:10.5px}.graduate-detail b{color:var(--jade);font-weight:700}.err{margin-top:12px;padding:11px;border-radius:11px;border:1px solid #713e39;background:#321b19;color:#f0aaa3;font-size:12px;line-height:1.7}.done{text-align:center;padding:35px 10px}.tick{width:64px;height:64px;border-radius:50%;display:grid;place-items:center;background:#17362e;color:var(--jade);font-size:29px;margin:auto}.done h2{font-size:22px}.done p{color:var(--muted);line-height:1.9}.privacy{color:#53635b;font-size:10.5px;line-height:1.8;text-align:center;margin:13px 6px 0}[hidden]{display:none!important}@media(max-width:580px){.fields,.courses{grid-template-columns:1fr}.field.full{grid-column:auto}.card{padding:15px;border-radius:18px}h1{font-size:22px}.proof-example{grid-template-columns:88px minmax(0,1fr);padding:8px}.proof-example img{width:88px;height:66px}}
-</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسـمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script>
+</style></head><body><main class="wrap"><div class="brand">SCHEDULE · مركز طلبات الطلبة</div><h1>${label}</h1><p class="lead">طلب واضح يصل إلى القسم باسـمك وتفاصيله. هذا النموذج لا يُعد تسجيلاً ولا يضمن فتح مقرر.</p><section class="card"><div class="progress"><i class="on"></i><i></i><i></i></div><div id="host"><p>جارٍ فتح النموذج…</p></div></section></main><script nonce="${nonce}">
 (function(){var TOKEN=${JSON.stringify(token)},data=null,step=1,student={name:"",civil:"",sectionId:0},kind="",picked=[],otherCourse=0,proofToken="",proofEligible=false,identityLocked=false,identityChecked=false,identityMemoryKey="schedule-student-identity-"+TOKEN;var host=document.getElementById("host");
 /* The same checksum the rest of the system enforces. The page used to accept
    any twelve digits, so a wrong number travelled through both remaining steps
@@ -9950,7 +10239,7 @@ app.get("/q/:token", async (req: Request, res: Response) => {
     return;
   }
   if (resolved.link.kind !== "survey") { res.status(404).send("<!doctype html><html lang=ar dir=rtl><head><meta charset=utf-8><meta name=viewport content=width=device-width,initial-scale=1><title>SCHEDULE</title><link rel=icon href=/schedule-icon.svg type=image/svg+xml><link rel=apple-touch-icon href=/schedule-icon-192.png></head><body><p dir=rtl>هذا الرابط ليس استبياناً.</p></body></html>"); return; }
-  res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات")));
+  res.send(studentCaseSurveyPage(resolved.link.id, esc(resolved.link.label || "استبيان المقررات"), publicPageNonce(res)));
 });
 
 app.get("/s/:token", async (req: Request, res: Response) => {
@@ -9966,7 +10255,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
     return;
   }
   if (resolved.link.kind === "staff") {
-    res.send(staffCardPage(resolved.link.id, esc(resolved.link.label || "بطاقة الأستاذ")));
+    res.send(staffCardPage(resolved.link.id, esc(resolved.link.label || "بطاقة الأستاذ"), publicPageNonce(res)));
     return;
   }
   void Repository.touchShareLink(resolved.link.id).catch(() => undefined);
@@ -10008,6 +10297,7 @@ app.get("/s/:token", async (req: Request, res: Response) => {
   </tr>`).join("");
   const expires = new Intl.DateTimeFormat("ar-KW-u-nu-latn", { day: "numeric", month: "long", year: "numeric" }).format(new Date(payload.expiresAt));
   const icsUrl = `/api/public/ics/${encodeURIComponent(resolved.link.id)}`;
+  const nonce = publicPageNonce(res);
 
   res.send(`<!doctype html>
 <html lang="ar" dir="rtl">
@@ -10089,7 +10379,7 @@ footer{margin-top:36px;padding-top:16px;border-top:1px solid var(--line);color:v
          change. The https address stays as the fallback for anything that does
          not know the scheme. -->
     <a class="primary" id="icsLink" href="${icsUrl}">إضافة إلى التقويم</a>
-    <script>(function(){var a=document.getElementById("icsLink");
+    <script nonce="${nonce}">(function(){var a=document.getElementById("icsLink");
       if(a) a.href="webcal://"+location.host+"${icsUrl}";})();</script>
     <a href="javascript:window.print()">طباعة</a>
   </div>

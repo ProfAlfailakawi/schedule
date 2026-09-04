@@ -35,6 +35,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
+    [submitting, setSubmitting] = useState(false),
     [visibleLimit, setVisibleLimit] = useState(160),
     // Note 2: retired / sabbatical status. Note 1: which instructors are delegates.
     [status, setStatus] = useState<"" | "retired" | "sabbatical">(""),
@@ -114,6 +115,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
     };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     setError(null);
     if (!civil || !name.trim()) {
       setError("الرجاء إدخال الحقول المطلوبة بالأحمر");
@@ -124,37 +126,53 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
       setError(v.message);
       return;
     }
-    const r = await fetch(
-        mode === "edit" ? `/api/instructors/${editId}` : "/api/instructors",
-        {
-          method: mode === "edit" ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            AdInstructorCivil: civil,
-            AdInstructorName: name.trim(),
-            AdInstructorMobile: mobile.trim(),
-            AdInstructorStatus: status || null,
-          }),
-        },
-      ),
-      d = await r.json();
-    if (!r.ok) {
-      setError(d.error || "فشل حفظ بيانات أستاذ المقرر");
-      return;
+    setSubmitting(true);
+    try {
+      const r = await fetch(
+          mode === "edit" ? `/api/instructors/${editId}` : "/api/instructors",
+          {
+            method: mode === "edit" ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              AdInstructorCivil: civil,
+              AdInstructorName: name.trim(),
+              AdInstructorMobile: mobile.trim(),
+              AdInstructorStatus: status || null,
+            }),
+          },
+        ),
+        d = await r.json();
+      if (!r.ok) {
+        setError(d.error || "فشل حفظ بيانات أستاذ المقرر");
+        return;
+      }
+      await load();
+      back();
+    } catch {
+      setError("تعذّر الاتصال بالخادم، تحقّق من الشبكة وحاول مرة أخرى");
+    } finally {
+      setSubmitting(false);
     }
-    await load();
-    back();
   };
   const remove = async (id: number) => {
+    if (submitting) return;
     if (!(await visualConfirm({ title: "حذف أستاذ المقرر", message: "سيُحذف سجل أستاذ المقرر من النظام.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
-    const r = await fetch(`/api/instructors/${id}`, { method: "DELETE" }),
-      d = await r.json();
-    if (!r.ok) {
-      setError(d.error || "فشل حذف بيانات أستاذ المقرر");
-      return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/instructors/${id}`, { method: "DELETE" }),
+        d = await r.json();
+      if (!r.ok) {
+        setError(d.error || "فشل حذف بيانات أستاذ المقرر");
+        return;
+      }
+      setSelectedId(null);
+      await load();
+    } catch {
+      setError("تعذّر الاتصال بالخادم، تحقّق من الشبكة وحاول مرة أخرى");
+    } finally {
+      setSubmitting(false);
     }
-    setSelectedId(null);
-    await load();
   };
   useEffect(() => setVisibleLimit(160), [query]);
   const filtered = useMemo(() => {
@@ -261,7 +279,7 @@ export default function Instructors({ embedded = false, actionSlot = null }: { e
             ) : null}
             <FormActions
               onBack={back}
-              loading={loading}
+              loading={loading || submitting}
               submitLabel={mode === "create" ? "إضافة الأستاذ" : "حفظ التعديلات"}
             />
           </form>

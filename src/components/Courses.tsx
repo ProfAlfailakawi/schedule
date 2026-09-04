@@ -43,6 +43,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     [query, setQuery] = useState(""),
     [error, setError] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
+    [submitting, setSubmitting] = useState(false),
     [visibleLimit, setVisibleLimit] = useState(160);
   const load = async () => {
     setLoading(true);
@@ -147,6 +148,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
     };
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     setError(null);
     if (
       !collegeId ||
@@ -159,54 +161,70 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
       setError("الرجاء إدخال الحقول المطلوبة بالأحمر");
       return;
     }
-    const r = await fetch(
-        mode === "edit" ? `/api/courses/${editId}` : "/api/courses",
-        {
-          method: mode === "edit" ? "PUT" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            AdCollegeId: Number(collegeId),
-            AdSectionId: Number(sectionId),
-            CourseCode: code,
-            CourseName: name.trim(),
-            CourseCredit: Number(credit),
-            CourseHours: Number(hours),
-            MaxStudent: Number(capacity || 0),
-          }),
-        },
-      ),
-      d = await r.json();
-    if (!r.ok) {
-      setError(d.error || "فشل حفظ بيانات المقررات الدراسية");
-      return;
+    setSubmitting(true);
+    try {
+      const r = await fetch(
+          mode === "edit" ? `/api/courses/${editId}` : "/api/courses",
+          {
+            method: mode === "edit" ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              AdCollegeId: Number(collegeId),
+              AdSectionId: Number(sectionId),
+              CourseCode: code,
+              CourseName: name.trim(),
+              CourseCredit: Number(credit),
+              CourseHours: Number(hours),
+              MaxStudent: Number(capacity || 0),
+            }),
+          },
+        ),
+        d = await r.json();
+      if (!r.ok) {
+        setError(d.error || "فشل حفظ بيانات المقررات الدراسية");
+        return;
+      }
+      /* The answer contains the saved record, so the list updates from it. The
+         old path re-read every course in the university — plus the colleges and
+         the sections — to show one edited line. */
+      if (d && Number(d.AdCourseId)) {
+        setItems(current => {
+          const exists = current.some(item => Number(item.AdCourseId) === Number(d.AdCourseId));
+          return exists
+            ? current.map(item => (Number(item.AdCourseId) === Number(d.AdCourseId) ? { ...item, ...d } : item))
+            : sortByName([...current, d], (row: any) => row.CourseName);
+        });
+        setSelectedId(Number(d.AdCourseId));
+      } else {
+        await load();
+      }
+      back();
+    } catch {
+      setError("تعذّر الاتصال بالخادم، تحقّق من الشبكة وحاول مرة أخرى");
+    } finally {
+      setSubmitting(false);
     }
-    /* The answer contains the saved record, so the list updates from it. The
-       old path re-read every course in the university — plus the colleges and
-       the sections — to show one edited line. */
-    if (d && Number(d.AdCourseId)) {
-      setItems(current => {
-        const exists = current.some(item => Number(item.AdCourseId) === Number(d.AdCourseId));
-        return exists
-          ? current.map(item => (Number(item.AdCourseId) === Number(d.AdCourseId) ? { ...item, ...d } : item))
-          : sortByName([...current, d], (row: any) => row.CourseName);
-      });
-      setSelectedId(Number(d.AdCourseId));
-    } else {
-      await load();
-    }
-    back();
   };
   const remove = async (id: number) => {
+    if (submitting) return;
     if (!(await visualConfirm({ title: "حذف المقرر الدراسي", message: "سيُحذف سجل المقرر الدراسي من النظام.", confirmLabel: "حذف", tone: "danger", compact: true }))) return;
-    const r = await fetch(`/api/courses/${id}`, { method: "DELETE" }),
-      d = await r.json();
-    if (!r.ok) {
-      setError(d.error || "فشل حذف بيانات المقرر الدراسي");
-      return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await fetch(`/api/courses/${id}`, { method: "DELETE" }),
+        d = await r.json();
+      if (!r.ok) {
+        setError(d.error || "فشل حذف بيانات المقرر الدراسي");
+        return;
+      }
+      // The row leaves the list directly; nothing else on this screen changed.
+      setSelectedId(null);
+      setItems(current => current.filter(item => Number(item.AdCourseId) !== Number(id)));
+    } catch {
+      setError("تعذّر الاتصال بالخادم، تحقّق من الشبكة وحاول مرة أخرى");
+    } finally {
+      setSubmitting(false);
     }
-    // The row leaves the list directly; nothing else on this screen changed.
-    setSelectedId(null);
-    setItems(current => current.filter(item => Number(item.AdCourseId) !== Number(id)));
   };
   useEffect(() => setVisibleLimit(160), [query]);
   const coll = (id: number) =>
@@ -348,7 +366,7 @@ export default function Courses({ embedded = false, actionSlot = null }: { embed
             </div>
             <FormActions
               onBack={back}
-              loading={loading}
+              loading={loading || submitting}
               submitLabel={mode === "create" ? "إنشاء المقرر" : "حفظ التعديلات"}
             />
           </form>

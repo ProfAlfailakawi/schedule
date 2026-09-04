@@ -169,7 +169,15 @@ function verifyPassword(password: string, stored: string): boolean {
     const actual = scryptSync(password, Buffer.from(saltHex, "hex"), expected.length);
     return expected.length === actual.length && timingSafeEqual(expected, actual);
   }
-  return stored === simpleHash(password);
+  /* The legacy `simpleHash` (a 32-bit non-cryptographic fold) is no longer an
+     acceptable login credential: it is offline-recoverable in milliseconds and
+     collides massively. Any record still in that form must go through a password
+     reset — it is never authenticated. Migration (import-legacy-json) already
+     rewrites these to scrypt; this only guards a database that skipped it. */
+  if (stored.startsWith("hash_")) {
+    console.warn("Login blocked: account still has a legacy non-scrypt password hash and must be reset.");
+  }
+  return false;
 }
 
 interface DBState {
@@ -394,22 +402,143 @@ interface StoredSession {
 }
 const demoSessions = new Map<string, StoredSession>();
 
+/**
+ * ── المعرّفات تُحجز على دفعات، لا واحداً واحداً ──────────────────────────────
+ *
+ * Every create in the system reserved its id through a transaction on one
+ * document. That document is the correct answer to the race it was written for
+ * — two instances must never mint the same id — but it is also a queue: a single
+ * Firestore document sustains roughly one write per second, and every course,
+ * instructor and schedule row in a bulk import was standing in it. Under a real
+ * import that is contention, aborts and retries, all to hand out numbers.
+ *
+ * A block is taken instead, and handed out from memory. The transaction still
+ * decides who owns which range, so the guarantee is untouched; it just runs once
+ * per thirty-two ids instead of once per id.
+ *
+ * The accepted cost is gaps: ids left in a block when a process stops are never
+ * used. Nothing reads these numbers as a sequence — they are identity, not
+ * order, and the code already tolerated waste (a create refused after its id was
+ * reserved). Counters are seeded once, at the initial migration, so a restart
+ * never re-issues a number a live instance is still holding.
+ */
+const ID_BLOCK_SIZE = 32;
+const idBlocks = new Map<CounterKey, { next: number; remaining: number }>();
+
 async function reserveFirestoreIds(key: CounterKey, count = 1): Promise<number> {
   if (!firestoreDb || demoSandboxContext.getStore()) throw new Error("Firestore غير مهيأ");
   if (!Number.isInteger(count) || count < 1) throw new Error("عدد المعرفات المطلوب غير صالح");
 
-  const counterRef = firestoreDb.doc(FIRESTORE_COUNTER_DOC);
-  return firestoreDb.runTransaction(async transaction => {
-    const snapshot = await transaction.get(counterRef);
-    const current = Number(snapshot.data()?.[key] ?? 0);
-    const firstReserved = current + 1;
-    transaction.set(counterRef, { [key]: current + count }, { merge: true });
+  /* Taking from the block is synchronous, so it cannot interleave: whoever runs
+     first gets the range, and no two callers can read the same `next`. */
+  const takeFromBlock = (): number | null => {
+    const block = idBlocks.get(key);
+    if (!block || block.remaining < count) return null;
+    const firstReserved = block.next;
+    block.next += count;
+    block.remaining -= count;
+    return firstReserved;
+  };
+
+  const fromBlock = takeFromBlock();
+  if (fromBlock !== null) return fromBlock;
+
+  // Refilling is serialised per counter so a burst of creates fetches one new
+  // block between them rather than one each.
+  return withSerialLock(`ids:${key}`, async () => {
+    const refilled = takeFromBlock();
+    if (refilled !== null) return refilled;
+
+    const blockSize = Math.max(ID_BLOCK_SIZE, count);
+    const counterRef = firestoreDb!.doc(FIRESTORE_COUNTER_DOC);
+    const firstReserved = await firestoreDb!.runTransaction(async transaction => {
+      const snapshot = await transaction.get(counterRef);
+      const current = Number(snapshot.data()?.[key] ?? 0);
+      transaction.set(counterRef, { [key]: current + blockSize }, { merge: true });
+      return current + 1;
+    });
+    idBlocks.set(key, { next: firstReserved + count, remaining: blockSize - count });
     return firstReserved;
   });
 }
 
 function maxId<T>(rows: T[], pick: (row: T) => number): number {
   return rows.length ? Math.max(...rows.map(pick)) : 0;
+}
+
+/**
+ * ── سلّة المحذوفات ──────────────────────────────────────────────────────────
+ *
+ * A deleted college, department, term, instructor or course leaves the system
+ * completely: the audit trail records that someone deleted «مقرر #418», which
+ * answers who and when and nothing about what. If the deletion was a mistake,
+ * the record has to be retyped from memory.
+ *
+ * The document is copied here first, in full, so it can be read back and
+ * restored. Deliberately *not* a soft delete: marking rows `IsDeleted` would
+ * oblige every read in the system — lists, pickers, reports, the schedule
+ * hierarchy, the location registry — to remember to filter, and one that forgot
+ * would show a deleted department as live. This changes no read path at all.
+ *
+ * Referential safety is not what this is for; that is already handled, and
+ * better, by refusing the delete while anything still points at the record.
+ * This is for the other case: a delete that was allowed, and regretted.
+ *
+ * The copy must never block the deletion the operator asked for — a failure
+ * here is logged and the delete proceeds.
+ */
+async function archiveBeforeDelete(collection: string, docId: string): Promise<void> {
+  if (!firestoreDb || demoSandboxContext.getStore()) return;
+  try {
+    const snapshot = await firestoreDb.collection(collection).doc(docId).get();
+    if (!snapshot.exists) return;
+    await firestoreDb.collection("deletedRecords").doc(`${collection}__${docId}`).set({
+      collection,
+      docId,
+      deletedAt: new Date().toISOString(),
+      payload: snapshot.data(),
+    });
+  } catch (error) {
+    console.error(`Archive before delete failed for ${collection}/${docId}:`, error);
+  }
+}
+
+/**
+ * A course code is unique inside its department, so that pair is the claim's
+ * address. Firestore document ids may not contain "/" and are compared byte for
+ * byte, so the code is encoded rather than interpolated — historical codes carry
+ * whitespace and punctuation and must keep mapping to themselves.
+ */
+function courseCodeClaimId(sectionId: number, code: string): string {
+  return `section_${sectionId}__${encodeURIComponent(String(code).trim()).replace(/%/g, "_")}`;
+}
+
+/**
+ * ── اقرأ ثم اكتب: واحدة تلو الأخرى ──────────────────────────────────────────
+ *
+ * Some operations read a set of records, decide from what they read, and then
+ * write — and the decision is only sound if nothing changed in between. Two of
+ * them interleaving on the same subject each act on the same stale reading:
+ * `replaceScheduleScope` (a double-clicked publish, a restore racing an undo)
+ * duplicates or orphans rows, and a hall-barter approval lets two overlapping
+ * reservations both pass a "is this room free?" check that was true for each of
+ * them separately and false for the pair.
+ *
+ * The rule is one line: same key, one at a time. Different keys — another
+ * department, another term — stay fully parallel. The chain never rejects: each
+ * turn waits for the previous to settle, success or failure, before it starts.
+ */
+const serialChains = new Map<string, Promise<unknown>>();
+export async function withSerialLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = serialChains.get(key) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(task);
+  // Keep the map from growing without bound: drop the entry once this is the
+  // tail of the chain and it has settled.
+  serialChains.set(key, run);
+  void run.catch(() => undefined).finally(() => {
+    if (serialChains.get(key) === run) serialChains.delete(key);
+  });
+  return run;
 }
 
 async function syncFirestoreCounters(fsDb: Firestore, state: DBState) {
@@ -672,12 +801,26 @@ export async function initDatabase() {
       throw new Error(`تعذر قراءة ملف البيانات المحلية؛ تم إيقاف التشغيل لحماية البيانات: ${e instanceof Error ? e.message : String(e)}`);
     }
   } else {
-    // If the database file is missing, initialize a fresh state with a default admin user.
+    /* A missing database file in production must NOT silently boot with the
+       well-known admin/admin123 credentials — that would stand up a fully
+       privileged account anyone can guess. Refuse to start instead; production
+       runs on Firestore (this local-file path is a development convenience), so
+       reaching here in production means a misconfiguration worth failing loudly.
+       An operator can seed a real admin explicitly, or set an initial password
+       via DEFAULT_ADMIN_PASSWORD. */
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "قاعدة البيانات المحلية مفقودة في بيئة الإنتاج. تم إيقاف التشغيل لمنع إنشاء حساب مدير افتراضي معروف. " +
+        "استخدم Firestore أو هيّئ حساب المدير بشكل صريح."
+      );
+    }
+    // Development only: initialize a fresh state with a default admin user.
+    const initialAdminPassword = process.env.DEFAULT_ADMIN_PASSWORD?.trim() || "admin123";
     db.users = [{
       SystemUserId: 1,
       Name: "مدير النظام",
       SystemUserLogin: "admin",
-      SystemUserPass: hashPassword("admin123"),
+      SystemUserPass: hashPassword(initialAdminPassword),
       SystemUserPassVault: "",
       IsAdminUser: true,
       IsActive: true,
@@ -685,7 +828,11 @@ export async function initDatabase() {
       IsDeleted: false
     }];
     saveDatabase();
-    console.warn(`Local database was missing. Initialized a fresh database with default admin credentials (admin/admin123).`);
+    console.warn(
+      process.env.DEFAULT_ADMIN_PASSWORD
+        ? "Local database was missing. Initialized a fresh development database with the admin account from DEFAULT_ADMIN_PASSWORD. Change it after first login."
+        : "Local database was missing. Initialized a fresh DEVELOPMENT database with default credentials (admin/admin123). Never use this in production; change the password after first login."
+    );
   }
 }
 
@@ -730,6 +877,22 @@ export class ScheduleRevisionConflict extends Error {
   constructor(public current: FSchedule) {
     super("تغيّر هذا الموعد أثناء عملك.");
     this.name = "ScheduleRevisionConflict";
+  }
+}
+
+/**
+ * The same record, asked for twice.
+ *
+ * A "read the list, check for a duplicate, then write" guard is not a guard when
+ * two identical requests arrive together — a double-clicked button, or a network
+ * layer retrying a request that actually succeeded. Both pass the check and both
+ * insert. Uniqueness is claimed inside a transaction instead, so the second
+ * request is refused by the database rather than by a stale read.
+ */
+export class DuplicateResourceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DuplicateResourceError";
   }
 }
 
@@ -2451,6 +2614,7 @@ export const Repository = {
   deleteTerm: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.terms);
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      await archiveBeforeDelete("terms", `term_${id}`);
       await firestoreDb.collection("terms").doc(`term_${id}`).delete();
       return;
     }
@@ -2511,6 +2675,7 @@ export const Repository = {
   deleteCollege: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.colleges);
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      await archiveBeforeDelete("colleges", `college_${id}`);
       await firestoreDb.collection("colleges").doc(`college_${id}`).delete();
       return;
     }
@@ -2580,6 +2745,7 @@ export const Repository = {
   deleteSection: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.sections);
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      await archiveBeforeDelete("sections", `section_${id}`);
       await firestoreDb.collection("sections").doc(`section_${id}`).delete();
       invalidateScheduleRelationCache();
       return;
@@ -2676,6 +2842,7 @@ export const Repository = {
   deleteInstructor: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.instructors);
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      await archiveBeforeDelete("instructors", `instructor_${id}`);
       await firestoreDb.collection("instructors").doc(`instructor_${id}`).delete();
       return;
     }
@@ -2746,9 +2913,36 @@ export const Repository = {
         CourseHours: hours,
         MaxStudent: maxStudent
       };
-      await firestoreDb.collection("courses").doc(`course_${nextId}`).set(newCourse);
+      /* The course code is unique within its department, and that uniqueness is
+         claimed in the same transaction that writes the record. Two identical
+         submissions therefore cannot both land: the second one finds the claim
+         and is refused. (A reserved id may go unused when that happens — ids are
+         a counter, not a sequence anyone reads.) */
+      const claimRef = firestoreDb.collection("courseCodeClaims").doc(courseCodeClaimId(sectionId, code));
+      const courseRef = firestoreDb.collection("courses").doc(`course_${nextId}`);
+      await firestoreDb.runTransaction(async transaction => {
+        const claim = await transaction.get(claimRef);
+        if (claim.exists) {
+          /* A claim only blocks while the course it names still holds that code.
+             Deleting a course, or editing its code away, leaves the old claim
+             behind; re-using that code afterwards is legitimate and must not be
+             refused. So the claim is verified against the record before it is
+             believed, and a stale one is simply taken over. This keeps the
+             delete and update paths free of claim bookkeeping. */
+          const ownerId = Number(claim.data()?.AdCourseId || 0);
+          const owner = ownerId ? await transaction.get(firestoreDb!.collection("courses").doc(`course_${ownerId}`)) : null;
+          const ownerData = owner?.exists ? owner.data() as AdCourse : null;
+          const stillOwned = Boolean(ownerData && ownerData.CourseCode === code && Number(ownerData.AdSectionId) === sectionId);
+          if (stillOwned) throw new DuplicateResourceError("تم تسجيل رمز المقرر الدراسي هذا من قبل");
+        }
+        transaction.set(claimRef, { AdSectionId: sectionId, CourseCode: code, AdCourseId: nextId });
+        transaction.set(courseRef, newCourse);
+      });
       invalidateScheduleRelationCache();
       return newCourse;
+    }
+    if (db.courses.some(course => course.AdSectionId === sectionId && course.CourseCode === code)) {
+      throw new DuplicateResourceError("تم تسجيل رمز المقرر الدراسي هذا من قبل");
     }
     const nextId = db.courses.length > 0 ? Math.max(...db.courses.map(c => c.AdCourseId)) + 1 : 1;
     const newCourse = {
@@ -2814,6 +3008,7 @@ export const Repository = {
   deleteCourse: async (id: number): Promise<void> => {
     invalidateReference(REFERENCE_KEYS.courses);
     if (firestoreDb && !demoSandboxContext.getStore()) {
+      await archiveBeforeDelete("courses", `course_${id}`);
       await firestoreDb.collection("courses").doc(`course_${id}`).delete();
       invalidateScheduleRelationCache();
       return;
@@ -2973,6 +3168,22 @@ export const Repository = {
       return !snap.empty;
     }
     return db.schedules.some(row => row.AdCourseId === courseId);
+  },
+
+  hasSchedulesForTerm: async (termId: number): Promise<boolean> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("schedules").where("AdTermId", "==", termId).limit(1).get();
+      return !snap.empty;
+    }
+    return db.schedules.some(row => row.AdTermId === termId);
+  },
+
+  hasSchedulesForInstructor: async (instructorId: number): Promise<boolean> => {
+    if (firestoreDb && !demoSandboxContext.getStore()) {
+      const snap = await firestoreDb.collection("schedules").where("AdInstructorId", "==", instructorId).limit(1).get();
+      return !snap.empty;
+    }
+    return db.schedules.some(row => row.AdInstructorId === instructorId);
   },
 
   getSchedules: async (): Promise<FSchedule[]> => {
@@ -3993,7 +4204,16 @@ export const Repository = {
        undoing a safety net — and the only one that used to change nothing as far
        as anyone else could tell. Every other write path invalidates, which is
        what wakes the live feed; this one rewrote the whole timetable in silence
-       while colleagues kept looking at the old one. */
+       while colleagues kept looking at the old one.
+
+       The read (current scope) and the delete+write batch are a read-modify-write
+       against a scope the course catalogue resolves — not a set of denormalised
+       fields one transaction query could lock — so isolation is enforced by
+       serialising this operation per scope (withScopeLock). The batch commit is
+       already atomic; the lock stops two interleaving replacements on the same
+       scope from both reading the same `current` and duplicating or orphaning
+       rows. Unrelated scopes stay fully parallel. */
+    return withSerialLock(`scope:${collegeId}:${sectionId}:${termId}`, async () => {
     invalidateSchedules();
     invalidateReference(REFERENCE_KEYS.scheduleCount);
     const normalizedInput = rows.map(row => ({ ...row, AdCollegeId: collegeId, AdSectionId: sectionId, AdTermId: termId }));
@@ -4021,6 +4241,7 @@ export const Repository = {
     db.schedules.push(...normalized.map(row=>({...row})));
     saveDatabase();
     return normalized;
+    });
   },
 
   // Campus mobility (additive metadata; does not mutate legacy college/room schemas)

@@ -61,7 +61,29 @@ export function normalizeClock(value: unknown): string {
   if (!match) return raw;
   const hour = Number(match[1]);
   if (!Number.isFinite(hour) || hour < 0 || hour > 23) return raw;
+  /* The minute field was taken verbatim: only the hour was ever range-checked.
+     So "10:76" normalised to itself, and every reader downstream turned it into
+     676 minutes — a quiet shift to 11:16 rather than a rejection. A typed form
+     uses a picker and cannot produce it; a spreadsheet or an OCR'd page can.
+     An impossible minute is not a clock, so it is left unrecognised — the same
+     answer this function already gives to any other non-clock text — and
+     `isValidClock` is what refuses the row before it is stored. */
+  const minute = Number(match[2]);
+  if (!Number.isFinite(minute) || minute > 59) return raw;
   return `${String(hour).padStart(2, "0")}:${match[2]}`;
+}
+
+/**
+ * Is this a clock the timetable can actually mean?
+ *
+ * `timeToMinutes` is deliberately forgiving — it answers with a number for
+ * anything — which is right for arithmetic and wrong for admission. This is the
+ * admission test: the value must already be the settled "HH:MM" shape, which is
+ * true only when `normalizeClock` recognised it. Impossible hours and minutes
+ * fail here, once, instead of being re-derived at each validator.
+ */
+export function isValidClock(value: unknown): boolean {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(normalizeClock(value));
 }
 
 /**
