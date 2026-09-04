@@ -14,7 +14,6 @@ database/legacy-password-vault.key
 database/*.firestore-verification.json
 __pycache__/
 *.pyc
-src/generated/buildStamp.ts
 
 # Build/tooling artifacts and stray junk (cleanup 2026-09)
 *.tsbuildinfo
