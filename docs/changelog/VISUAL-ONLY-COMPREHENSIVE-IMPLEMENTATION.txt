@@ -1,0 +1,79 @@
+SCHEDULE — تنفيذ بصري شامل على الحزمة schedule(20260817-124651).zip فقط
+
+النطاق:
+- تنفيذ بصري فقط، بلا تغيير في منطق الجدولة أو صلاحيات المستخدمين أو APIs أو الحفظ أو الاستيراد أو النشر أو الذكاء.
+- المحافظة على الوظائف الحالية كما هي.
+- اعتماد icon-first بدل الرموز النصية المبعثرة، مع إبقاء النص الذي يحمل معنى وظيفياً أو قراراً حساساً.
+
+ما نُفّذ:
+1. توحيد هندسة الأيقونات وأزرار الأيقونة عبر الواجهات.
+2. تثبيت العزل البصري للأوقات والأرقام اللاتينية داخل RTL.
+3. حماية نص ملاحظة التوقيت من انقلاب نطاقات الوقت داخل الجملة العربية باستخدام Unicode isolation محلياً.
+4. استبدال ×/✕ النصية بأيقونة X في البحث والتفاصيل والمصفاة حيث كانت ظاهرة للمستخدم.
+5. استبدال النقاط النصية التي تعمل كحالة/هوية بأيقونات فعلية أو glyph CSS.
+6. استبدال الأسهم النصية الزخرفية في التنقل/المقارنات بأيقونات Lucide في المواضع البصرية الرئيسية.
+7. إعادة صقل الكليات والأقسام والمقررات والأساتذة والفصول ضمن master/detail icon-first.
+8. إعادة ضبط RecordCard بحيث لا يختفي identifier مهم بسبب قواعد display:none العامة.
+9. إضافة glyph للرقم الأكاديمي في MetaPill بدل الاعتماد على label نصي صغير.
+10. تحويل حركة المباني إلى صف بصري مبنى ↔ مبنى بأيقونة حقيقية.
+11. صقل Dashboard مع هرمية أهدأ للمؤشرات والمقارنات والأيقونات.
+12. صقل خزنة الإدارة والبطاقات الحساسة بصرياً مع حصر النص المساعد دون إخفاء التحذير الوظيفي.
+13. صقل العروض المحفوظة كقائمة أيقونية أكثر هدوءاً.
+14. صقل Quick Create مع geometry موحدة وكثافة أقل.
+15. تحسين اختيار الأستاذ وإظهار انتماء القسم بأيقونة بدل bullet نصية.
+16. صقل النشر كمسار بصري ثلاثي مع خطوات دائرية وأيقونات أوضح.
+17. صقل التصدير/الاستيراد/الاستبدال/المنتدبين كتجميعة أدوات icon-first.
+18. صقل مراجعة الاعتماد: شريط توزيع، علامات، بطاقات مخالفة، وتفاصيل عند الطلب.
+19. صقل بورصة القاعات: الإحصاءات أولاً، الشرح ثانياً، وحالات أكثر هدوءاً.
+20. صقل Smart Guide مع إبقاء الشرح الضروري وإزالة الإحساس بالقوائم النصية الثقيلة.
+21. صقل Reports: السؤال أولاً، الفلاتر كtiles، تفاصيل القاعة كلوحة مستقلة، وحواف/أيقونات موحدة.
+22. صقل Intelligence Workspace: مراحل افهم/جرّب/اعتمد icon-first وتهدئة subnav وتسلسل المقارنات.
+23. تحويل مقارنات أرقام/قاعات مرئية في الذكاء إلى visual flow بأيقونة بدلاً من سهم نصي.
+24. صقل IntelligenceVersionCanvas بصرياً في فرق القاعات.
+25. صقل Context Bar في مركز الذكاء إلى field tiles أهدأ.
+26. صقل Academic Console والفصول وإطار التفاصيل.
+27. صقل Command Palette مع تركيز أكبر على البحث والأيقونة وحالة التحديد.
+28. صقل Journey بصرياً دون تغيير محتواه.
+29. صقل About بصرياً دون تغيير المحتوى.
+30. صقل Login geometry فقط، بلا تغيير سلوك الدخول.
+31. صقل InstallApp geometry فقط، بلا تغيير منطق PWA.
+32. صقل empty states لتقرأ بصرياً قبل النص.
+33. توحيد radius/control/icon aliases في design system للطبقة الجديدة.
+34. إضافة phone/tablet final QA rules للفراغات، البطاقات، الأزرار، الأدراج، والـtoasts.
+35. الحفاظ على keyboard arrow keys كنص داخل <kbd> لأنها ليست زخرفة بل تعليمات مفاتيح فعلية.
+36. عدم استبدال confirm/CRUD/AI/Pin/Multi-select وغيرها بأي سلوك جديد لأن المطلوب صريح: الجمال فقط بلا العبث بالوظائف.
+
+تحقق الجودة بعد التنفيذ:
+- TS syntax: ناجح لـ 20 ملف TS/TSX معدل.
+- توازن أقواس CSS: ناجح في 5 ملفات styles معدلة.
+- Guide structural audit: ناجح — 57 ميزة / 21 هدف / 25 واجهة / 17 إجراء / 10 رحلات.
+- Guide behavior tests: 72/72 ناجح.
+- Guide performance audit: ناجح.
+- لم يتم تشغيل Vite production build لأن node_modules غير موجودة في الحزمة وnpm ci لم يكتمل في بيئة التنفيذ؛ لم يتم الادعاء بخلاف ذلك.
+
+الملفات المعدلة فقط:
+src/App.tsx
+src/components/About.tsx
+src/components/AcademicConsole.tsx
+src/components/AdminUsers.tsx
+src/components/Colleges.tsx
+src/components/CommandPalette.tsx
+src/components/Courses.tsx
+src/components/Dashboard.tsx
+src/components/InstallApp.tsx
+src/components/InstructorPicker.tsx
+src/components/IntelligenceVersionCanvas.tsx
+src/components/IntelligenceWorkspace.tsx
+src/components/Login.tsx
+src/components/Reports.tsx
+src/components/ScheduleJourney.tsx
+src/components/ScheduleTransfer.tsx
+src/components/Schedules.tsx
+src/components/SmartGuide.tsx
+src/components/Terms.tsx
+src/components/ui.tsx
+src/styles/01-foundation.css
+src/styles/04-screens.css
+src/styles/05-schedule.css
+src/styles/06-intelligence.css
+src/styles/07-responsive.css

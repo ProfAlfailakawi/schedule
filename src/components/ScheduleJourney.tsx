@@ -363,7 +363,6 @@ export default function ScheduleJourney({ version, onClose }: { version?: string
           <div>
             <span>التأسيس والتطوير</span>
             <strong>عشر سنوات تشغيل أكاديمي متصل</strong>
-            <em className="jr-foot-names">د. أحمد حسين الفيلكاوي — د. عبدالعزيز دخيل العنزي</em>
           </div>
           <small dir="ltr">SCHEDULE{version ? ` · ${version}` : ""}</small>
         </footer>
