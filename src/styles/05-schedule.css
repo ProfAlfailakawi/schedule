@@ -1150,10 +1150,38 @@ html[data-schedule-workspace="presentation"] .cinema-day-track time b{font-size:
 .schedule-form-section>header p{display:block;margin-top:2px;color:var(--muted);font-size:var(--t-sm);line-height:1.5}
 .schedule-time-control{
   display:flex;align-items:center;justify-content:center;
-  inline-size:100%;max-inline-size:100%;min-inline-size:0;overflow:hidden;
+  /* A time is four digits and a colon, not a paragraph: giving the box a
+     comfortable width and centring it in its cell reads as a deliberate,
+     tidy value instead of a number lost in a wide empty field. */
+  inline-size:100%;max-inline-size:180px;min-inline-size:0;margin-inline:auto;overflow:hidden;
   min-height:44px;border:1px solid var(--line);border-radius:var(--r-sm);
   background:var(--surface-2);
   transition:border-color .16s var(--ease),box-shadow .16s var(--ease),background .16s var(--ease);
+}
+/* The clock button that summons the wheel counter sits at the inline-end of the
+   field, small and quiet, so the value still owns the centre of the box. */
+.schedule-time-counter-toggle{
+  position:absolute;inset-inline-end:6px;top:50%;transform:translateY(-50%);
+  display:inline-flex;align-items:center;justify-content:center;
+  inline-size:28px;block-size:28px;padding:0;
+  border:0;border-radius:var(--r-sm);
+  background:transparent;color:var(--muted);cursor:pointer;
+  transition:color .14s var(--ease),background .14s var(--ease);
+}
+.schedule-time-counter-toggle:hover{color:var(--ink);background:var(--surface)}
+.schedule-time-counter-toggle[aria-expanded="true"]{color:var(--accent-ink);background:var(--surface)}
+.schedule-time-counter-toggle svg{inline-size:15px;block-size:15px}
+.schedule-time-control{position:relative}
+/* Keep the centred value clear of the clock button: only the field that carries
+   the counter reserves the extra inline-end room. */
+.schedule-editor .field .schedule-time-control:has(.schedule-time-counter-toggle) input[type="time"]{padding-inline:12px 34px!important}
+/* The wheel counter, brought to the field it belongs to. It reuses every
+   `.qc-*` wheel style so the editor and the quick-add card show one control. */
+.time-counter-pop{
+  position:fixed;z-index:440;
+  padding:var(--s3);
+  border:1px solid var(--line);border-radius:var(--r-lg);
+  background:var(--surface);box-shadow:var(--shadow-lg);
 }
 .schedule-time-control:hover{border-color:var(--line-strong)}
 .schedule-time-control:focus-within{border-color:var(--accent);background:var(--surface);box-shadow:var(--ring)}
@@ -3462,6 +3490,19 @@ html.schedule-physics-active .rooms-paint{display:none}
 /* The instructor is a name, not a number: it takes two of the four columns and
    leaves the building and the hall side by side, which is how a room is said. */
 .qc-fields>.qc-field.qc-wide:nth-of-type(3){grid-column:span 2}
+/* The building and the hall are a pair that needs the full width to breathe:
+   the location picker carries its own two-column grid, so it takes the whole
+   row rather than being crushed into one cell of the field grid. */
+.qc-location{grid-column:1/-1;min-width:0}
+.qc-location .location-registry-picker{margin:0}
+.qc-location .location-registry-picker label>span{font-size:var(--t-xs);color:var(--muted);font-weight:730}
+.qc-location .location-registry-picker select{
+  min-height:34px;
+  border:1px solid var(--line);border-radius:var(--r-sm);
+  background:var(--surface);color:var(--ink);
+  font-family:inherit;font-size:var(--t-sm);
+}
+.qc-location .location-registry-picker select:focus{outline:none;border-color:var(--accent);box-shadow:var(--ring)}
 .qc-field>span{font-size:var(--t-xs);color:var(--muted)}
 .qc-field select,.qc-field input{
   width:100%;min-width:0;min-height:34px;
@@ -5237,7 +5278,9 @@ html.schedule-physics-active .rooms-slot:hover::after{content:none}
 .quick-create.visual-minimal .qc-wheels{gap:8px}
 .quick-create.visual-minimal .qc-field>span{font-size:.68rem;color:var(--muted);font-weight:730}
 .quick-create.visual-minimal .qc-field input,
-.quick-create.visual-minimal .qc-field select{border-radius:14px}
+.quick-create.visual-minimal .qc-field select,
+.quick-create.visual-minimal .qc-location .location-registry-picker select{border-radius:14px}
+.quick-create.visual-minimal .qc-location .location-registry-picker label>span{font-size:.68rem;font-weight:730}
 
 /* Instructor scope marker: a real glyph, never a textual bullet. */
 .instructor-department-mark{display:grid;place-items:center;color:var(--accent);font-style:normal;flex:none}
