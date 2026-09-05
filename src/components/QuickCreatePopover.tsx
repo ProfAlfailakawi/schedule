@@ -2,12 +2,11 @@ import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "re
 import { AlertTriangle, Check, Clock3, Maximize2, X } from "lucide-react";
 import type { AdCourse, AdInstructor } from "../types";
 import LocationPicker from "./LocationPicker";
+import { TimeWheels } from "./TimeCounter";
 import type { DayKey } from "./scheduleWorkspace";
 import {
   formatScheduleTimeRange,
   SCHEDULE_DAY_END,
-  SCHEDULE_DAY_START,
-  scheduleClockForDisplay,
 } from "../utils/scheduleTime";
 import { sortByName } from "../utils/sorting";
 import { toEnglishDigits } from "../utils/digits";
@@ -59,63 +58,6 @@ export type QuickSeed = {
   room: string;
   hall: string;
 };
-
-/**
- * One column of a wheel.
- *
- * A native `<input type="time">` is two silent number fields and a stepper the
- * hand has to find; a column of real values is a place to look. The chosen row
- * is scrolled to the middle rather than merely marked, so the eye lands on the
- * answer before it reads any of the alternatives — which is the entire reason
- * a wheel beats a text field for a value with a dozen sensible settings.
- *
- * It is buttons, not a custom control: every row is reachable by Tab, speaks
- * its own value, and needs no keyboard handling of its own.
- */
-function Wheel({
-  label,
-  values,
-  value,
-  format,
-  onPick,
-}: {
-  label: string;
-  values: number[];
-  value: number;
-  format: (v: number) => string;
-  onPick: (v: number) => void;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useLayoutEffect(() => {
-    const box = ref.current;
-    if (!box) return;
-    const chosen = box.querySelector<HTMLElement>("[data-on='true']");
-    if (!chosen) return;
-    // Centring by arithmetic rather than scrollIntoView, which would also drag
-    // the page itself to the popover on some engines.
-    box.scrollTop = chosen.offsetTop - box.clientHeight / 2 + chosen.clientHeight / 2;
-  }, [value, values.length]);
-  return (
-    <div className="qc-wheel">
-      <span className="qc-wheel-cap">{label}</span>
-      <div className="qc-wheel-track" ref={ref} role="listbox" aria-label={label}>
-        {values.map((v) => (
-          <button
-            key={v}
-            type="button"
-            role="option"
-            aria-selected={v === value}
-            data-on={v === value ? "true" : undefined}
-            className="qc-wheel-cell"
-            onClick={() => onPick(v)}
-          >
-            {format(v)}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export default function QuickCreatePopover({
   seed,
@@ -181,27 +123,6 @@ export default function QuickCreatePopover({
     }
     patch(next);
   };
-
-  const start = minutesOf(draft.start);
-  const span = Math.max(30, minutesOf(draft.end) - start);
-  const hours = useMemo(
-    () => Array.from({ length: 12 }, (_, i) => 8 + i).filter((h) => h * 60 < SCHEDULE_DAY_END),
-    [],
-  );
-  const minuteSteps = useMemo(() => Array.from({ length: 12 }, (_, i) => i * 5), []);
-  /* The lengths the regulation actually gives: 50 minutes on Sun/Tue/Thu and 80
-     on Mon/Wed, plus the longer blocks a lab or a seminar uses. 60 and 75 were
-     never timetable lengths and only invited a wrong one to be picked. */
-  const spans = [50, 80, 100, 120, 150, 180];
-
-  const setStart = (minutes: number) => {
-    const clamped = Math.min(Math.max(minutes, SCHEDULE_DAY_START), SCHEDULE_DAY_END - 30);
-    const learned = Number(durationForDay?.(seed.day) || 0);
-    const duration = learned > 0 ? learned : span;
-    patch({ start: timeOf(clamped), end: timeOf(Math.min(SCHEDULE_DAY_END, clamped + duration)) });
-  };
-  const setSpan = (length: number) =>
-    patch({ end: timeOf(Math.min(SCHEDULE_DAY_END, start + length)) });
 
   useEffect(() => {
     const learned = Number(durationForDay?.(seed.day) || 0);
@@ -280,36 +201,12 @@ export default function QuickCreatePopover({
         </button>
       </header>
 
-      <div className="qc-wheels">
-        <Wheel
-          label="الساعة"
-          values={hours}
-          value={Math.floor(start / 60)}
-          format={(h) => String(h).padStart(2, "0")}
-          onPick={(h) => setStart(h * 60 + (start % 60))}
-        />
-        <Wheel
-          label="الدقيقة"
-          values={minuteSteps}
-          value={start % 60}
-          format={(m) => String(m).padStart(2, "0")}
-          onPick={(m) => setStart(Math.floor(start / 60) * 60 + m)}
-        />
-        <Wheel
-          label="المدة (د)"
-          values={spans}
-          value={spans.includes(span) ? span : spans.reduce((best, s) => (Math.abs(s - span) < Math.abs(best - span) ? s : best), spans[0])}
-          /* The unit belongs in the column's name, not glued to each number: an
-             Arabic «د» beside a Latin numeral inside an RTL cell renders on the
-             wrong side of the value it measures. */
-          format={(s) => String(s)}
-          onPick={setSpan}
-        />
-        <div className="qc-until">
-          <span>ينتهي</span>
-          <b dir="ltr">{scheduleClockForDisplay(draft.end)}</b>
-        </div>
-      </div>
+      <TimeWheels
+        start={draft.start}
+        end={draft.end}
+        onChange={(next) => patch({ start: next.start, end: next.end })}
+        preferredDuration={Number(durationForDay?.(seed.day) || 0)}
+      />
 
       <div className="qc-fields">
         <label className="qc-field qc-wide">
@@ -351,7 +248,7 @@ export default function QuickCreatePopover({
             ))}
           </select>
         </label>
-        <div className="qc-wide">
+        <div className="qc-location">
           <LocationPicker
             collegeId={collegeId}
             sectionId={sectionId}

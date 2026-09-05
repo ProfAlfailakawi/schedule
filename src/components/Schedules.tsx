@@ -117,6 +117,7 @@ import { isTermClosed, previousYearSameTermName, sameTermName, sortTermsNewest, 
 import ScheduleReview from "./ScheduleReview";
 import InstructorPicker from "./InstructorPicker";
 import QuickCreatePopover, { type QuickDraft, type QuickSeed } from "./QuickCreatePopover";
+import { TimeCounterPopover } from "./TimeCounter";
 import CommandPalette, { type ScheduleCommand } from "./CommandPalette";
 import ScheduleViewsMenu, { SaveViewDialog } from "./ScheduleViewsMenu";
 import {
@@ -2942,6 +2943,11 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   // waits until the days or the time have been touched, or until a save is
   // attempted; the submit button stays disabled meanwhile either way.
   const [scheduleTouched, setScheduleTouched] = useState(false);
+  /* Clicking the start-time field brings the shared wheel counter to it, the
+     same one the quick-add card opens on, instead of leaving the editor with a
+     bare native time input. */
+  const [timeCounterOpen, setTimeCounterOpen] = useState(false);
+  const timeCounterAnchor = useRef<HTMLDivElement | null>(null);
   /**
    * Three proposed placements, ranked.
    *
@@ -8294,7 +8300,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   <header><span>4</span><div><strong>الوقت والمكان</strong><small>الفترة والمبنى والقاعة</small></div></header>
                   <div className="form-grid">
                 <Field label="بداية الوقت" required>
-                  <div className="schedule-time-control" dir="ltr">
+                  <div className="schedule-time-control" dir="ltr" ref={timeCounterAnchor}>
                     <input
                       data-guide-editor-field="time"
                       type="time"
@@ -8309,7 +8315,29 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       }}
                       required
                     />
+                    <button
+                      type="button"
+                      className="schedule-time-counter-toggle"
+                      aria-label="عدّاد الوقت"
+                      aria-expanded={timeCounterOpen}
+                      onClick={() => setTimeCounterOpen((open) => !open)}
+                    >
+                      <Clock3 aria-hidden="true" />
+                    </button>
                   </div>
+                  {timeCounterOpen ? (
+                    <TimeCounterPopover
+                      anchor={timeCounterAnchor.current}
+                      start={form.fstarttime || SCHEDULE_DAY_START_TIME}
+                      end={form.fendtime || form.fstarttime || SCHEDULE_DAY_START_TIME}
+                      preferredDuration={expectedDurationForSelection(form)}
+                      onChange={(next) => {
+                        setScheduleTouched(true);
+                        setForm((p) => ({ ...p, fstarttime: next.start, fendtime: next.end }));
+                      }}
+                      onClose={() => setTimeCounterOpen(false)}
+                    />
+                  ) : null}
                 </Field>
                 <Field label="نهاية الوقت" required>
                   <div className="schedule-time-control" dir="ltr">
