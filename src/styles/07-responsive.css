@@ -395,6 +395,10 @@
   .cinema-head{padding:var(--s4);align-items:flex-start}
   .cinema-timeline{grid-template-columns:repeat(5,minmax(230px,1fr))}
   .schedule-context,.intel-drawer{position:fixed;padding:var(--s5)}
+  /* the sticky action bar bleeds to the panel edges via negative inline margins sized
+     for the desktop s6 padding; on mobile the panel padding drops to s5, so match the
+     bleed to s5 or the bar overhangs the panel's right edge by (s6 - s5). */
+  .schedule-context .context-actions,.intel-drawer .context-actions{margin-inline:calc(var(--s5) * -1)}
 
   .experience-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:100%}
   .experience-actions button{

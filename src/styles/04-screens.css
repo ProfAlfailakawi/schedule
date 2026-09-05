@@ -9,7 +9,11 @@
 .apex-login{
   position:relative;
   min-height:100dvh;
-  overflow:hidden;
+  /* clip (not hidden): the decorative ::before/::after glows overhang the edges;
+     with overflow:hidden the box becomes a scroll container and RTL parks it at a
+     negative scrollLeft, shifting the whole login off-centre and clipping its right
+     side on phones. clip crops the glows without ever creating that scroll offset. */
+  overflow:clip;
   display:flex;
   flex-direction:column;
   padding:clamp(20px,3vw,38px);
