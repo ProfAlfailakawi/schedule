@@ -8320,6 +8320,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       className="schedule-time-counter-toggle"
                       aria-label="عدّاد الوقت"
                       aria-expanded={timeCounterOpen}
+                      data-guide-ignore="زر يفتح عجلة الوقت المساعدة على حقل البداية نفسه؛ الحقل يبقى مُدخلاً مباشراً ولا يحتاج خطوة إرشاد مستقلة"
                       onClick={() => setTimeCounterOpen((open) => !open)}
                     >
                       <Clock3 aria-hidden="true" />

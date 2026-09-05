@@ -69,6 +69,7 @@ export function Wheel({
             aria-selected={v === value}
             data-on={v === value ? "true" : undefined}
             className="qc-wheel-cell"
+            data-guide-ignore="خانة قيمة داخل عجلة الوقت: عنصر داخلي متكرر للاختيار، ليس ميزة يقودها المرشد"
             onClick={() => onPick(v)}
           >
             {format(v)}
