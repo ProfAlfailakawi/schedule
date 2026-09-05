@@ -36,8 +36,10 @@
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/schedule-icon.svg" type="image/svg+xml" />
     <link rel="icon" href="/schedule-icon-192.png" sizes="192x192" type="image/png" />
-    <!-- iOS يقصّ بشكله الخاص، فالنسخة المقنَّعة (مربّعة، بلا حلقة) هي الصحيحة هنا. -->
-    <link rel="apple-touch-icon" href="/schedule-maskable-512.png" />
+    <!-- iOS يقصّ بشكله الخاص ولا يقرأ `purpose`. النسخة المقنَّعة تحمل هامش
+         الأمان مخبوزاً فيها، فتظهر العلامة غائرةً صغيرةً على الشاشة الرئيسية.
+         الصحيح أيقونة معتمة 180×180 حافةً إلى حافة، ويتكفّل النظام بالتدوير. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <title>SCHEDULE · Academic Decision System</title>
     <script>
       /*
@@ -215,8 +217,10 @@
            * 2320ms على كل فتحة، بما فيها الفتحة الدافئة التي رُسمت في 300.
            * وحذفها بالكامل ذهب إلى الطرف الآخر: العلامة كانت تومض قبل أن تُرى.
            *
-           * الحركة تكتمل عند 760ms، فالأرضية 820 ثم ذوبان 240: الإيماءة تُرى
-           * كاملةً في أسوأ الحالات بأقل من نصف الزمن القديم.
+           * الحركة تكتمل عند 760ms، فأرضية 820 كانت تعني أن الشاشة تبدأ
+           * بالانصراف بعد 60ms من اكتمال الإيماءة: تُرى، ولا تُقرأ. الأرضية
+           * 1700 تترك بعد اكتمال الحركة سكتةً حقيقية (~940ms) تستقرّ فيها
+           * العلامة قبل الذوبان — بلا أي تغيير في الحركة نفسها.
            */
           var seen = Date.now() - bootStarted;
           setTimeout(function () {
@@ -224,7 +228,7 @@
             setTimeout(function () {
               if (boot && boot.parentNode) boot.parentNode.removeChild(boot);
             }, 260);
-          }, Math.max(0, 820 - seen));
+          }, Math.max(0, 1700 - seen));
         }
 
         function fail(detail) {
