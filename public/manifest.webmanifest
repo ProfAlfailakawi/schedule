@@ -2,7 +2,7 @@
   "name": "SCHEDULE · نظام القرار الأكاديمي",
   "short_name": "SCHEDULE",
   "description": "نظام القرار الأكاديمي: ابنِ الجدول، راجعه، اتخذ القرار، وانشره.",
-  "start_url": "/Home/Index",
+  "start_url": "/?source=pwa",
   "scope": "/",
   "display": "standalone",
   "background_color": "#f2f3ef",
