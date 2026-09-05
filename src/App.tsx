@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChevronLeft,
   Command,
+  Compass,
   CopyPlus,
   FileSearch,
   FileText,
@@ -1971,6 +1972,14 @@ export default function App() {
     if (user) safeStorage.set(`schedule-onboarding-v4-${user.SystemUserId}`, "done");
     setOnboardingStep(-1);
   };
+  /* الجولة تُعرض مرة واحدة ثم يُختم المفتاح، فلم يكن لمن أراد مراجعتها باب.
+     محو المفتاح قبل الفتح يجعل الإعادة كالمرة الأولى تماماً: لو أُغلقت في
+     منتصفها لا تبقى «منتهية» بغير أن تُرى. */
+  const replayOnboarding = () => {
+    if (user) safeStorage.remove(`schedule-onboarding-v4-${user.SystemUserId}`);
+    setSidebarOpen(false);
+    setOnboardingStep(0);
+  };
   const guideProfile = user ? loadGuideProfile(Number(user.SystemUserId)) : null;
   const guideIntroduced = Boolean(guideProfile?.launcherIntroduced);
   const guideAllowedFeatures = user ? allAllowedGuideFeatures(permissions, Boolean(user.IsRootAdmin), Boolean(user.IsAdminUser || user.IsRootAdmin)) : [];
@@ -2249,6 +2258,15 @@ export default function App() {
             </div>
             <span className="sr-only" role="status">{healthLabel}</span>
             <div className="user-card-tools">
+              <button
+                type="button"
+                onClick={replayOnboarding}
+                title="إعادة الجولة التعريفية"
+                aria-label="إعادة الجولة التعريفية"
+                data-guide-ignore="يعيد عرض الجولة التعريفية ولا ينفذ إجراءً على بيانات الجدول"
+              >
+                <Compass />
+              </button>
               <button
                 type="button"
                 aria-label={
