@@ -7402,6 +7402,12 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
   const validInstructorIds=new Set(instructors.map(i=>Number(i.AdInstructorId)));
   const sourceByCourse=new Map<number,FSchedule[]>();
   source.forEach(row=>{const list=sourceByCourse.get(Number(row.AdCourseId))||[];list.push(row);sourceByCourse.set(Number(row.AdCourseId),list);});
+  /* Copied terms carry whatever section numbers the old sheet used — "1", "10",
+     "11" — which the publish gate rightly rejects (a section must be 501, 502,
+     503… per course). So the copy renumbers every section automatically the
+     moment it is drafted: nothing to hand-fix, and the "بداية الفصل" draft
+     opens already valid, exactly like the authority-PDF convention. */
+  const sectionSeqByCourse=new Map<number,number>();
   const candidateRows=source
     .filter(r=>validCourseIds.has(r.AdCourseId))
     .map((r,index)=>{
@@ -7410,7 +7416,9 @@ app.post("/api/intelligence/genesis", requirePermission(7), async (req: Authenti
         ? Number(r.AdInstructorId)
         : Number(siblings.find(x=>validInstructorIds.has(Number(x.AdInstructorId)))?.AdInstructorId||0);
       const roomSibling=siblings.find(x=>String(x.AdRoomCode||"").trim()&&String(x.AdRoomHall||"").trim());
-      const sectionCode=asciiDigits(r.SCode).replace(/\D/g,"")||String(index+1);
+      const seq=(sectionSeqByCourse.get(Number(r.AdCourseId))||0)+1;
+      sectionSeqByCourse.set(Number(r.AdCourseId),seq);
+      const sectionCode=String(500+seq);
       return{...r,id:-(index+1),AdTermId:targetTermId,SCode:sectionCode,AdInstructorId:instructorId,
         AdRoomCode:String(r.AdRoomCode||"").trim()||String(roomSibling?.AdRoomCode||"").trim(),
         AdRoomHall:String(r.AdRoomHall||"").trim()||String(roomSibling?.AdRoomHall||"").trim()};
