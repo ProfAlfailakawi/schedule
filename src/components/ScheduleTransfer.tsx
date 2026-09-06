@@ -663,7 +663,22 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.error || "تعذر حفظ المسودة");
+      if (!response.ok) {
+        /* The server re-validates every row (times inside the schedule day, the
+           501+ section series, a course/instructor that truly belongs to this
+           department). When it refuses, it names the offending rows in `issues`.
+           Surfacing them turns a blank "أكمل الحقول المطلوبة" — a message with
+           nothing visibly wrong after the reviewer has cleared the preview — into
+           an actionable list, so the reader can see exactly what still blocks the
+           save instead of chasing a phantom error. */
+        const serverIssues = Array.isArray(data.issues)
+          ? [...new Set(data.issues.map((item: any) => String(item || "").trim()).filter(Boolean))]
+          : [];
+        if (serverIssues.length) {
+          setXlsxPreview((prev: any) => prev ? { ...prev, issues: [...new Set([...(Array.isArray(prev.issues) ? prev.issues : []), ...serverIssues])], saveIssues: serverIssues, valid: false } : prev);
+        }
+        throw new Error(data.error || "تعذر حفظ المسودة");
+      }
       const id=String(data.id||"");setXlsxDraft(id||"تم");
       if(publishNow&&id){
         await publishImportedDraft(id);
@@ -1026,9 +1041,19 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                           if(smartBusy)return prev;
                           const normalized=assignAuthoritySections(next);
                           const documentWarnings=(Array.isArray(prev.issues)?prev.issues:[]).filter((issue:string)=>/^تحذير:/.test(String(issue)));
-                          return { ...prev, rows: normalized, count: normalized.length, issues: documentWarnings, valid: normalized.length > 0 || (Array.isArray(prev.baselineRows) && prev.baselineRows.length > 0) };
+                          // Any edit invalidates a previous server rejection: the
+                          // rows it named may no longer exist, so its notes must go.
+                          return { ...prev, rows: normalized, count: normalized.length, issues: documentWarnings, saveIssues: undefined, valid: normalized.length > 0 || (Array.isArray(prev.baselineRows) && prev.baselineRows.length > 0) };
                         })}
                       />
+                      {Array.isArray(xlsxPreview.saveIssues) && xlsxPreview.saveIssues.length ? (
+                        <ul className="transfer-rejected" role="alert">
+                          {xlsxPreview.saveIssues.slice(0, 8).map((issue: string, index: number) => (
+                            <li key={index}><span>{issue}</span></li>
+                          ))}
+                          {xlsxPreview.saveIssues.length > 8 ? <li className="muted">و{xlsxPreview.saveIssues.length - 8} غيرها…</li> : null}
+                        </ul>
+                      ) : null}
                     </>
                   ) : xlsxPreview.issues?.length ? (
                     <ul className="transfer-rejected">

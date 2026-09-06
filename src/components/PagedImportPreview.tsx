@@ -36,7 +36,15 @@ export default function PagedImportPreview({
     return proofs.length > 0 && proofs.some((proof: any) => proof?.confidence !== "CONFIRMED");
   };
   const maxRowPage = useMemo(() => rows.reduce((max, row) => Math.max(max, rowPage(row)), 1), [rows]);
-  const totalPages = Math.max(1, Number(pageCount) || 0, maxRowPage);
+  /* The tab strip follows the LIVE rows, not the original PDF page count. A page
+     the reviewer empties by deleting all of its rows must vanish from the
+     preview entirely — its source rows still live on in the immutable baseline
+     that feeds the change report, so nothing is lost there. Interior pages that
+     were emptied stay visible (they fall under maxRowPage) so a gap between two
+     populated pages is never hidden; only trailing emptied pages fall away.
+     Using pageCount here kept a deleted last page on screen as a permanent
+     "empty" tab that looked like an unresolved problem. */
+  const totalPages = Math.max(1, maxRowPage);
   const [activePage, setActivePage] = useState(1);
 
   useEffect(() => {
