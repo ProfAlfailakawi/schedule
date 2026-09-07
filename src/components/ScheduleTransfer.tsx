@@ -77,6 +77,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
    * الخمسة، وكأن شيئاً لم يقع. والنشر خاتمة لا خطوة: تُعرض حصيلته وحدها — كم
    * موعداً نُشر، وفي أي موقع — ثم يُغلق الباب بيده هو. */
   const [publishReceipt, setPublishReceipt] = useState<{count:number;scopes:Array<{siteLabel:string;count:number}>}|null>(null);
+  /* مقررات نُسخت إلى كتالوج موقع آخر أثناء النشر: تُقال صراحةً، فإضافةُ سطرٍ
+     إلى كتالوج قسمٍ لا تمرّ بلا خبر. */
+  const [plantedCourses, setPlantedCourses] = useState<string[]>([]);
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
   const [readProgress, setReadProgress] = useState<{ pct: number; message: string } | null>(null);
   /* The quick-edit course picker needs the department's catalogue; fetched once
@@ -707,6 +710,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
      * فبدا أن الاستيراد ابتلعها. الصمت هو العيب، لا التوزيع: النتيجة تُقال
      * الآن باسم كل موقع وعدد ما نُشر فيه. */
     const scopes=Array.isArray(data?.scopes)?data.scopes.filter((scope:any)=>scope&&scope.siteLabel):[];
+    setPlantedCourses(Array.isArray(data?.plantedCourses)?data.plantedCourses.map((item:any)=>String(item||"")).filter(Boolean):[]);
     setXlsxDraft(`published:${id}`);onChanged();
     return scopes as Array<{siteLabel:string;count:number}>;
   };
@@ -910,6 +914,12 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     <li key={scope.siteLabel}><span>{scope.siteLabel}</span><b>{countOf(Number(scope.count||0), AR.appointment)}</b></li>
                   ))}
                 </ul>
+              ) : null}
+              {plantedCourses.length ? (
+                <div className="transfer-receipt-planted">
+                  <strong>أُضيف إلى كتالوج القسم في موقعه، نقلاً عن كتالوج المقر:</strong>
+                  <ul>{plantedCourses.slice(0,8).map(item => <li key={item}>{item}</li>)}</ul>
+                </div>
               ) : null}
               <small>تقرير تغييرات الجدول متاح الآن في مركز الاستعلامات والتقارير{publishReceipt.scopes.length > 1 ? "، وجدول كل موقع يُفتح من كليته: الكلية ثم القسم نفسه" : ""}.</small>
               <PrimaryButton type="button" data-guide-ignore="إغلاق صندوق حصيلة النشر بعد اكتمالها؛ لا ينفذ ميزة تشغيلية" onClick={onClose}>تم</PrimaryButton>
