@@ -193,9 +193,14 @@ export default function HallBarterBoard({
 
   useEffect(() => {
     if (!open) return;
+    /* ── قائمةُ المتصفح ليست «خارج الشاشة» ──────────────────────────────────
+     * الشاشة كانت تُغلق عند أي ضغطة خارج إطارها. وقائمة `select` المنسدلة
+     * يرسمها النظام خارج شجرة الصفحة، فاختيار المبنى بعد القسم كان يُقرأ
+     * ضغطةً خارجية فتُطوى الشاشة كلها ويضيع ما اختير.
+     * والشاشة ممتدة على المتصفح كله ولها زر إغلاق ومفتاح Escape، فلا معنى
+     * لإغلاقها بالضغط «خارجها» إلا في موضع واحد: فراغُ الإطار نفسه. */
     const dismiss = (event: PointerEvent) => {
-      const target = event.target instanceof Node ? event.target : null;
-      if (!target || boardRef.current?.contains(target)) return;
+      if (event.target !== boardRef.current) return;
       setOpen(false);
     };
     const dismissByKey = (event: KeyboardEvent) => {
