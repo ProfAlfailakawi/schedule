@@ -36,6 +36,7 @@ export type ImportRow = {
   [extra: string]: unknown;
 };
 
+type EvidenceKey = "course"|"section"|"days"|"time"|"instructor"|"building"|"room";
 type DepartmentRoom = { building: string; hall: string };
 type ConflictNote = { type?: string; severity?: string; message?: string; detail?: string };
 
@@ -58,6 +59,26 @@ const timeOverlap = (a: ImportRow, b: ImportRow) => {
   return a0 >= 0 && a1 > a0 && b0 >= 0 && b1 > b0 && a0 < b1 && b0 < a1;
 };
 
+/* A row's identity across the whole draft, independent of which page it is
+   rendered on. Server notes name a line number in the full draft; the table
+   only ever sees one page, so the note has to travel by identity, not index. */
+export const importRowKey = (row: ImportRow) =>
+  [row.sourceOrder ?? "", row.referenceNumber ?? "", row.AdCourseId ?? "", String(row.SCode || "")].join("|");
+
+/* Which cell a server note belongs to. A note the reader cannot place on a cell
+   is still shown — on the row number — rather than dropped. */
+export const importIssueField = (message: string): EvidenceKey | "" => {
+  const text = String(message || "");
+  if (/قاعة|القاعة/.test(text)) return "room";
+  if (/مبنى|المبنى/.test(text)) return "building";
+  if (/أستاذ|الأستاذ/.test(text)) return "instructor";
+  if (/شعبة|الشعبة/.test(text)) return "section";
+  if (/وقت|الوقت|ساعة/.test(text)) return "time";
+  if (/يوم|أيام/.test(text)) return "days";
+  if (/مقرر|المقرر/.test(text)) return "course";
+  return "";
+};
+
 const cleanRoom = (value: unknown) => String(value || "").trim().toLocaleUpperCase();
 const readableCourseEvidence = (value: unknown) => {
   const text=String(value||"").trim();
@@ -67,7 +88,7 @@ const readableCourseEvidence = (value: unknown) => {
 
 export default function ImportPreviewTable({
   rows, courses, instructors, departmentIds = [], visitingIds = [], visitingPeople = [], departmentRooms = [],
-  collegeId = 0, sectionId = 0, termId = 0, onRows,
+  collegeId = 0, sectionId = 0, termId = 0, rowIssues = {}, onRows,
 }: {
   rows: ImportRow[];
   courses: AdCourse[];
@@ -79,6 +100,9 @@ export default function ImportPreviewTable({
   collegeId?: number;
   sectionId?: number;
   termId?: number;
+  /** Server notes for this draft, keyed by importRowKey. Shown on the cell they
+      belong to instead of as a repeated list under the table. */
+  rowIssues?: Record<string, string[]>;
   onRows: (next: ImportRow[]) => void;
 }) {
   const [editing, setEditing] = useState<number | null>(null);
@@ -129,10 +153,14 @@ export default function ImportPreviewTable({
     room: (row: ImportRow) => row.locationStatus !== "PENDING_ROOM" && !row.roomId,
     instructor: (row: ImportRow) => {
       const id=Number(row.AdInstructorId)||0;
-      return !id || !instructorById.has(id) || (departmentIds.length>0&&!departmentIds.includes(id)&&!visitingIdSet.has(id));
+      if(!id || !instructorById.has(id))return true;
+      /* Choosing a colleague by hand is a decision, not a failed match. Teaching
+         across departments is legitimate — the picker already says so — and the
+         cell must stop shouting once a person has settled it. */
+      if(row.importEvidence?.instructor?.source==="MANUAL")return false;
+      return departmentIds.length>0&&!departmentIds.includes(id)&&!visitingIdSet.has(id);
     },
   };
-  type EvidenceKey="course"|"section"|"days"|"time"|"instructor"|"building"|"room";
   const patchManual = (index:number,key:EvidenceKey,values:Partial<ImportRow>) => onRows(rows.map((row,at)=>{
     if(at!==index)return row;
     const prior=row.importEvidence?.[key]||{};
@@ -253,30 +281,38 @@ export default function ImportPreviewTable({
             const course = courseById.get(Number(row.AdCourseId));
             const person = instructorById.get(Number(row.AdInstructorId));
             const open = editing === index;
+            /* Server notes land on the cell they are about. The reviewer reads
+               the table, not a list under it, so the note becomes the colour of
+               the offending cell and its tooltip. */
+            const notes = rowIssues[importRowKey(row)] || [];
+            const notesFor = (key: EvidenceKey) => notes.filter(note => importIssueField(note) === key);
+            const cellClass = (key: EvidenceKey, bad: boolean) => evidenceClass(row, key, bad || notesFor(key).length > 0);
+            const cellTitle = (key: EvidenceKey) => [evidenceTitle(row, key), ...notesFor(key)].filter(Boolean).join(" · ") || undefined;
+            const unplacedNotes = notes.filter(note => !importIssueField(note));
             return (
               <React.Fragment key={`${row.referenceNumber || "row"}-${index}`}>
                 <tr className={open ? "is-editing" : ""}>
-                  <td className="num">{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
-                  <td className={`import-cell-course ${evidenceClass(row,"course",missing.course(row))}`} title={evidenceTitle(row,"course")}>
+                  <td className={`num${unplacedNotes.length ? " import-cell-missing" : ""}`} title={unplacedNotes.join(" · ") || undefined}>{(index + 1).toLocaleString("ar-KW-u-nu-latn")}</td>
+                  <td className={`import-cell-course ${cellClass("course",missing.course(row))}`} title={cellTitle("course")}>
                     <div className="import-locked-course" aria-label="المقرر مثبت من النظام ولا يتغير من معاينة الاستيراد">
                       <span className="import-course-title-line"><strong>{course?.CourseName || "—"}</strong>{row.courseSiteLabel ? <span className="import-course-site-note" title={String(row.courseSiteMessage || "")}><MapPin />{String(row.courseSiteLabel)}</span> : null}{row.scopeMismatchType === "CROSS_BRANCH" ? <span className="import-course-scope-note" title={String(row.scopeMismatchMessage || "")}><AlertTriangle />{String(row.scopeMismatchLabel || "تابع لفرع آخر")}</span> : null}</span>
                       {course?.CourseCode ? <small dir="ltr">{course.CourseCode}</small> : null}
                     </div>
                   </td>
-                  <td className={evidenceClass(row,"section",missing.scode(row))} title={evidenceTitle(row,"section")}>
+                  <td className={cellClass("section",missing.scode(row))} title={cellTitle("section")}>
                     <span className="import-locked-section" title="رقم الشعبة مثبت من المصدر ولا يتغير هنا">{String(row.SCode || "").trim() || "—"}</span>
                   </td>
-                  <td className={evidenceClass(row,"days",missing.days(row))} title={evidenceTitle(row,"days")}>
+                  <td className={cellClass("days",missing.days(row))} title={cellTitle("days")}>
                     <span className="import-day-chips">{DAY_CHIPS.map(day => <button key={day.key} type="button" disabled={!open} data-guide-ignore="تبديل يوم داخل معاينة الاستيراد قبل أي حفظ" className={row[day.key] ? "on" : ""} onClick={() => patchManual(index, "days", { [day.key]: !row[day.key] } as Partial<ImportRow>)}>{day.label}</button>)}</span>
                   </td>
-                  <td className={evidenceClass(row,"time",missing.time(row))} title={evidenceTitle(row,"time")} dir="ltr">
+                  <td className={cellClass("time",missing.time(row))} title={cellTitle("time")} dir="ltr">
                     {open ? <div className="import-time-editor"><label><small>بداية الوقت</small><input type="time" value={row.fstarttime || ""} onChange={event => { const start=event.target.value; patchManual(index, "time", { fstarttime:start, fendtime:autoEndForRow(row,start) }); }} /></label><span>—</span><label><small>نهاية الوقت</small><input type="time" value={row.fendtime || ""} onChange={event => patchManual(index, "time", { fendtime: event.target.value })} /></label></div> : (row.fstarttime && row.fendtime ? formatScheduleTimeRange(row.fstarttime, row.fendtime) : "—")}
                   </td>
                   {/* A hall that failed to link marks the HALL, not its building:
                       012B07 confirmed by the registry was turning red because a
                       neighbouring cell had the problem. Each column carries its
                       own trouble only. */}
-                  <td className={evidenceClass(row,"building",missing.building(row) || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"building")}>
+                  <td className={cellClass("building",missing.building(row) || row.locationStatus === "INVALID_HISTORICAL")} title={cellTitle("building")}>
                     {open ? (
                       <BuildingPicker
                         collegeId={collegeId}
@@ -302,7 +338,7 @@ export default function ImportPreviewTable({
                       <span dir="ltr">{row.AdRoomCode || "—"}</span>
                     )}
                   </td>
-                  <td className={evidenceClass(row,"room",missing.room(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={evidenceTitle(row,"room")}>
+                  <td className={cellClass("room",missing.room(row) || row.locationStatus === "LOCATION_REVIEW_REQUIRED" || row.locationStatus === "INVALID_HISTORICAL")} title={cellTitle("room")}>
                     {open ? (
                       <RoomPicker
                         collegeId={collegeId}
@@ -321,7 +357,7 @@ export default function ImportPreviewTable({
                       <span dir="ltr">{row.locationStatus === "PENDING_ROOM" ? "بانتظار تثبيت القاعة" : (row.AdRoomHall || "—")}</span>
                     )}
                   </td>
-                  <td className={evidenceClass(row,"instructor",missing.instructor(row))} title={evidenceTitle(row,"instructor")}>
+                  <td className={cellClass("instructor",missing.instructor(row))} title={cellTitle("instructor")}>
                     {open ? <span className="import-instructor-editor"><InstructorPicker value={Number(row.AdInstructorId) || 0} onChange={id => patchManual(index, "instructor", { AdInstructorId: id })} instructors={pickerInstructors as any} departmentIds={departmentIds} visitingIds={visitingIds} collegeId={collegeId} sectionId={sectionId} termId={termId} onCreated={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} onSelected={person => setExtraInstructors(current => [...new Map([...current, person as AdInstructor].map(item => [Number(item.AdInstructorId), item] as const)).values()])} /></span> : (person?.AdInstructorName ? <span className="import-instructor-name"><span>{person.AdInstructorName}</span>{visitingIdSet.has(Number(person.AdInstructorId)) ? <small className="import-visiting-badge">منتدب</small> : null}</span> : "—")}
                   </td>
                   <td className="import-row-tools">
