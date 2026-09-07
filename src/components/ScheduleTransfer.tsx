@@ -669,7 +669,33 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const publishImportedDraft=async(id:string)=>{
     const response=await fetch(`/api/intelligence/drafts/${encodeURIComponent(id)}/publish`,{method:"POST",headers:{"x-schedule-confirm":"publish"}});
     const data=await response.json();
-    if(!response.ok)throw new Error(data.error||data.issues?.[0]||"تعذر نشر الجدول");
+    if(!response.ok){
+      /* ── الرفض يجب أن يُرى على الصف الذي سبّبه ──────────────────────────
+       * كان رفض النشر يُرمى كنص واحد في أعلى النافذة، والجدول تحته كما هو:
+       * لا خلية حمراء ولا إشارة. فمن ضغط «نشر» ثلاث مرات لم يكن مخطئاً —
+       * الشاشة لم تقل له أين المشكلة أصلاً. الخادم يسمّي الصفوف في ردّه،
+       * فتُنقل أسماؤها إلى الجدول ليصبغ الخلايا كما يفعل مع رفض الحفظ. */
+      const serverIssues=Array.isArray(data.issues)
+        ? [...new Set(data.issues.map((item:any)=>String(item||"").trim()).filter(Boolean))] as string[]
+        : [];
+      const rowIssues=data&&typeof data.rowIssues==="object"&&data.rowIssues?data.rowIssues as Record<string,string[]>:{};
+      if(serverIssues.length||Object.keys(rowIssues).length){
+        setXlsxPreview((prev:any)=>{
+          if(!prev)return prev;
+          const rows=Array.isArray(prev.rows)?prev.rows as ImportRow[]:[];
+          /* الخادم يعرف الصف برقمه؛ الجدول يعرفه بهويته. تُترجم هنا مرة واحدة
+             إلى الصيغة نفسها التي يفهمها ترقيم «السطر N». */
+          const byId=Object.entries(rowIssues).flatMap(([id,notes])=>{
+            const index=rows.findIndex(row=>Number((row as any).id)===Number(id));
+            if(index<0)return [] as string[];
+            return (Array.isArray(notes)?notes:[]).map(note=>`السطر ${index+1}: ${String(note||"").trim()}`);
+          });
+          const merged=[...new Set([...serverIssues,...byId])];
+          return {...prev,saveIssues:merged,valid:false};
+        });
+      }
+      throw new Error(data.error||data.issues?.[0]||"تعذر نشر الجدول");
+    }
     /* ── قل للناس أين ذهب ما نشروه ────────────────────────────────────────
      * المستند المعتمد واحد ويحوي مواقع الفرع، والنشر يضع كل صف في قسمه في
      * موقعه — وهذا هو الصواب. لكن الشاشة كانت تصمت عنه، فمن استورد جدول
@@ -742,6 +768,8 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       }
     } catch (e: any) {
       setError(e.message || "تعذر حفظ المسودة");
+      /* والرسالة لا تنفع إن كانت خارج الشاشة. */
+      window.setTimeout(() => document.querySelector(".transfer-commit-error")?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
     } finally {
       setBusy(false);
     }
@@ -1147,6 +1175,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     </>
                   ) : (
                     <div className="transfer-import-commit-wrap">
+                      {/* الرسالة عند اليد التي تضغط. كانت تُعرض في أعلى النافذة
+                          وحدها، وأعلى النافذة يكون قد غاب عن الشاشة بعد جدول
+                          من ثلاثين صفاً — فيبدو الزر وكأنه لا يفعل شيئاً. */}
+                      {error ? (
+                        <div className="transfer-commit-error" role="alert">
+                          <AlertTriangle aria-hidden="true" />
+                          <div>
+                            <strong>{error}</strong>
+                            {Object.keys(serverRowIssues).length ? <small>الخلايا المعنية مظللة بالأحمر داخل الجدول أعلاه.</small> : null}
+                          </div>
+                        </div>
+                      ) : null}
                       <div className="transfer-import-commit">
                         {importReady ? (
                           <PrimaryButton type="button" data-guide-ignore="إجراء استيراد له تحقق ومراجعة ونقطة أمان خاصة داخل نفس النافذة" onClick={() => void saveExcelDraft(true)} disabled={busy || !importReady}>

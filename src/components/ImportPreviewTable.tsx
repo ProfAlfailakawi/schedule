@@ -318,6 +318,9 @@ export default function ImportPreviewTable({
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}
+                        /* الجدول المعتمد يأتي بمواقع الفرع معاً، فقائمة المباني
+                           هنا تشملها — وحدها هذه الشاشة، لا شاشات الإضافة. */
+                        branchSites
                         value={row.buildingId || ""}
                         onChange={b => patchManual(index, "building", {
                           buildingId: b?.id,
@@ -350,6 +353,7 @@ export default function ImportPreviewTable({
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}
+                        branchSites
                         buildingId={row.buildingId}
                         roomId={row.roomId}
                         locationStatus={row.locationStatus}

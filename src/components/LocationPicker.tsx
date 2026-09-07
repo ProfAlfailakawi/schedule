@@ -32,25 +32,44 @@ const sharedRoomLabel=(room:PickerRoom)=>{
     : `${room.canonicalCode} · قاعة مشتركة`;
 };
 
-function useRegistry(collegeId:number,sectionId:number,termId?:number){
+/* ── القسم الواحد يختار من مباني مواقعه ────────────────────────────────────
+ * حين يُراجَع جدول معتمد يحوي مواقع الفرع، يكون على الشاشة صفٌّ محاضرته في
+ * الجهراء وقائمةُ مبانٍ لا تعرض إلا مباني الرئيسي — أي أن المراجع مطالب
+ * باختيار مبنى لا وجود له في موقع المحاضرة. تُطلب سعة المواقع صراحةً، ولا
+ * تُطلب إلا من معاينة الاستيراد، فتبقى شاشات الإضافة والتعديل كما هي. */
+function useRegistry(collegeId:number,sectionId:number,termId?:number,branchSites=false){
   const [data,setData]=useState<RegistryPayload>({buildings:[],rooms:[],borrowedRoomIds:[]});
   const [loading,setLoading]=useState(false);
-  useEffect(()=>{let alive=true;const controller=new AbortController();setLoading(true);const q=new URLSearchParams({collegeId:String(collegeId||0),sectionId:String(sectionId||0)});if(termId)q.set("termId",String(termId));fetch(`/api/location-registry?${q}`,{signal:controller.signal}).then(r=>r.ok?r.json():Promise.reject()).then(payload=>{if(!alive)return;setData({buildings:(Array.isArray(payload?.buildings)?payload.buildings:[]).slice().sort((a:any,b:any)=>(Number(buildingNumberLabel(a))||9999)-(Number(buildingNumberLabel(b))||9999)||String(a.officialCode||"").localeCompare(String(b.officialCode||""))),rooms:Array.isArray(payload?.rooms)?payload.rooms:[],borrowedRoomIds:Array.isArray(payload?.borrowedRoomIds)?payload.borrowedRoomIds.map(String):[]});}).catch(()=>{if(alive)setData({buildings:[],rooms:[],borrowedRoomIds:[]});}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;controller.abort();};},[collegeId,sectionId,termId]);
+  useEffect(()=>{let alive=true;const controller=new AbortController();setLoading(true);const q=new URLSearchParams({collegeId:String(collegeId||0),sectionId:String(sectionId||0)});if(termId)q.set("termId",String(termId));if(branchSites)q.set("branchSites","1");fetch(`/api/location-registry?${q}`,{signal:controller.signal}).then(r=>r.ok?r.json():Promise.reject()).then(payload=>{if(!alive)return;setData({buildings:(Array.isArray(payload?.buildings)?payload.buildings:[]).slice().sort((a:any,b:any)=>(Number(buildingNumberLabel(a))||9999)-(Number(buildingNumberLabel(b))||9999)||String(a.officialCode||"").localeCompare(String(b.officialCode||""))),rooms:Array.isArray(payload?.rooms)?payload.rooms:[],borrowedRoomIds:Array.isArray(payload?.borrowedRoomIds)?payload.borrowedRoomIds.map(String):[]});}).catch(()=>{if(alive)setData({buildings:[],rooms:[],borrowedRoomIds:[]});}).finally(()=>{if(alive)setLoading(false);});return()=>{alive=false;controller.abort();};},[collegeId,sectionId,termId,branchSites]);
   return {...data,loading};
 }
 
-export function BuildingPicker({collegeId,sectionId,termId,value,onChange,disabled=false}:{collegeId:number;sectionId:number;termId?:number;value?:string;onChange:(building?:MasterBuilding)=>void;disabled?:boolean}){
-  const {buildings,loading}=useRegistry(collegeId,sectionId,termId);
+export function BuildingPicker({collegeId,sectionId,termId,value,onChange,disabled=false,branchSites=false}:{collegeId:number;sectionId:number;termId?:number;value?:string;onChange:(building?:MasterBuilding)=>void;disabled?:boolean;branchSites?:boolean}){
+  const {buildings,loading}=useRegistry(collegeId,sectionId,termId,branchSites);
   return <select aria-label="المبنى الرسمي" value={value||""} disabled={disabled||loading} onChange={e=>onChange(buildings.find(item=>item.id===e.target.value))}>
     <option value="">{loading?"جارٍ تحميل المباني…":"اختر المبنى"}</option>
     {buildings.map(building=><option key={building.id} value={building.id}>{buildingNumberLabel(building)}</option>)}
   </select>;
 }
 
-export function RoomPicker({collegeId,sectionId,termId,buildingId,roomId,locationStatus,onChange,disabled=false,allowPending=true}:{collegeId:number;sectionId:number;termId?:number;buildingId?:string;roomId?:string;locationStatus?:string;onChange:(patch:{roomId?:string;canonicalCode:string;locationStatus?:"VERIFIED"|"PENDING_ROOM"})=>void;disabled?:boolean;allowPending?:boolean}){
-  const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId);
+export function RoomPicker({collegeId,sectionId,termId,buildingId,roomId,locationStatus,onChange,disabled=false,allowPending=true,branchSites=false}:{collegeId:number;sectionId:number;termId?:number;buildingId?:string;roomId?:string;locationStatus?:string;onChange:(patch:{roomId?:string;canonicalCode:string;locationStatus?:"VERIFIED"|"PENDING_ROOM"})=>void;disabled?:boolean;allowPending?:boolean;branchSites?:boolean}){
+  const {buildings,rooms,borrowedRoomIds,loading}=useRegistry(collegeId,sectionId,termId,branchSites);
   const registry=useMemo(()=>({buildings,rooms}),[buildings,rooms]);
-  const groups=useMemo(()=>buildingId?roomGroups(registry,buildingId,sectionId):{own:[],shared:[],other:[]},[registry,buildingId,sectionId]);
+  /* ── القاعة تُعرض لأن الخادم أهّلها، لا لأنها تحمل رقم القسم المفتوح ──────
+     تصنيف القاعات هنا يسأل: هل تخصّ هذا القسم برقمه؟ وقاعة الجهراء تحمل رقم
+     قسم الجهراء، فتسقط من التصنيفات الثلاثة وتختفي — ولو كان المبنى مبناها.
+     وفي وضع مواقع الفرع يكون الخادم قد أهّل ما يخصّ القسم في مواقعه كلها
+     وأرسله، فيكفي تجميع ما أرسله تحت هذا المبنى بدل إعادة غربلته برقم واحد. */
+  const groups=useMemo(()=>{
+    if(!buildingId)return {own:[] as PickerRoom[],shared:[] as PickerRoom[],other:[] as PickerRoom[]};
+    if(!branchSites)return roomGroups(registry,buildingId,sectionId);
+    const delivered=rooms.filter(room=>room.active&&room.confidence==="CONFIRMED"&&room.buildingId===buildingId);
+    return {
+      own:delivered.filter(room=>!room.shared),
+      shared:delivered.filter(room=>room.shared),
+      other:[] as PickerRoom[],
+    };
+  },[registry,rooms,buildingId,sectionId,branchSites]);
   const ownRooms=useMemo(()=>[...groups.own].sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)),[groups]);
   const sharedRooms=useMemo(()=>[...groups.shared].sort((a,b)=>compareLocationCodes(a.canonicalCode,b.canonicalCode)),[groups]);
   const departmentRooms=useMemo(()=>[...ownRooms,...sharedRooms],[ownRooms,sharedRooms]);
