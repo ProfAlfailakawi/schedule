@@ -157,6 +157,25 @@ async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:n
   const blocking=check.issues.filter(issue=>issue.severity==="high");
   if(blocking.length&&blocking.every(issue=>issue.type==="room_scope")&&check.canonical&&await hallBarterAllowsRoomUse({...row,...check.canonical},collegeId,sectionId)){
     check=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:true});
+  }else if(blocking.some(issue=>issue.type==="room_scope")){
+    /* ── الرفض يقول للمستعير ما ينقصه هو ──────────────────────────────────
+     * قسمٌ استعار هذه القاعة يوم الأحد ثم وضع محاضرة يوم الثلاثاء يُرفض —
+     * وهذا صحيح — لكن الرسالة كانت تقول له «القاعة مرتبطة بقسم آخر» وكأنه لم
+     * يستعرها قط. فمتى كان له فيها نوافذ معتمدة، تُسمّى له نوافذه بأيامها
+     * وأوقاتها ليعرف أنه خارجها لا خارج الاستعارة كلها. */
+    const roomId=String((check.canonical as any)?.roomId||row?.roomId||"");
+    const termId=Number(row?.AdTermId||0);
+    if(roomId&&termId){
+      const requests=await Repository.getHallBarterRequests(termId);
+      const windows=requests.filter(request=>request.status==="approved"&&String(request.roomId||"")===roomId&&
+        Number(request.requesterCollegeId)===collegeId&&Number(request.requesterSectionId)===sectionId);
+      if(windows.length){
+        const shown=windows.slice(0,4).map(request=>`${HALL_BARTER_DAY_LABEL.get(request.day)||request.day} ${formatScheduleTimeRange(request.startTime,request.endTime)}`).join(" · ");
+        check={...check,issues:check.issues.map(issue=>issue.type==="room_scope"
+          ?{...issue,message:`الموعد يتجاوز نافذة الاستعارة المعتمدة. نوافذك المعتمدة في هذه القاعة: ${shown}.`}
+          :issue)};
+      }
+    }
   }
   return {registry,check};
 }

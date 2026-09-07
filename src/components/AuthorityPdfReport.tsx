@@ -8,6 +8,8 @@ export type AuthorityReportEntry = {
   referenceNumber: string;
   source: FSchedule | null;
   current: FSchedule | null;
+  /** يُملأ فقط في وثيقة تضم مواقع الفرع: اسم موقع هذا الصف. */
+  siteLabel?: string;
 };
 
 export type AuthorityReport = {
@@ -40,6 +42,8 @@ interface Props {
   pageTotal?: number;
   /** يُطبع مرة واحدة في أول صفحة من الكتاب: شكل القسم كله قبل تفصيله. */
   bookSites?: Array<{ label: string; added: number; deleted: number; changed: number }>;
+  /** حين تضم الوثيقة مواقع الفرع: عمود «الموقع» يظهر، وصفوف المواقع تتصل. */
+  showSite?: boolean;
 }
 
 const pageItems = <T,>(items: T[], size: number): T[][] => {
@@ -61,6 +65,7 @@ export default function AuthorityPdfReport({
   pageOffset = 0,
   pageTotal,
   bookSites,
+  showSite = false,
 }: Props) {
   const entries = [...report.rows].sort((a, b) => {
     const ar = Number((a.current || a.source)?.sourceOrder ?? Number.MAX_SAFE_INTEGER);
@@ -88,7 +93,7 @@ export default function AuthorityPdfReport({
       .filter(Boolean).reverse().join(" ") || "—";
 
   return (
-    <div className="print-report print-wide print-query-report print-comprehensive print-comprehensive-book authority-pdf-report">
+    <div className={`print-report print-wide print-query-report print-comprehensive print-comprehensive-book authority-pdf-report${showSite ? " authority-pdf-with-site" : ""}`}>
       <div className="print-comprehensive-pages">
         {pages.map((pageEntries, pageIndex) => (
           <section className="print-comprehensive-page authority-pdf-page" key={`authority-${pageIndex + 1}`}>
@@ -114,7 +119,7 @@ export default function AuthorityPdfReport({
 
             <div className="print-comprehensive-grid authority-pdf-grid" role="table" aria-label="تقرير تغييرات الجدول">
               <div className="print-comprehensive-grid-row print-comprehensive-grid-head" role="row">
-                {["رقم المقرر", "الرقم المرجعي", "الشعبة", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", "الوقت", "الأيام", "المدرس"].map(head => (
+                {["رقم المقرر", "الرقم المرجعي", "الشعبة", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", ...(showSite ? ["الموقع"] : []), "الوقت", "الأيام", "المدرس"].map(head => (
                   <div role="columnheader" key={head}>{head}</div>
                 ))}
               </div>
@@ -153,6 +158,7 @@ export default function AuthorityPdfReport({
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.MaxStudent ?? "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdRoomHall"))}`}>{String(row.AdRoomHall || "").trim() || "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdRoomCode"))}`}>{String(row.AdRoomCode || "").trim() || "—"}</div>
+                      {showSite ? <div role="cell" className="print-wrap print-site-cell">{entry.siteLabel || "—"}</div> : null}
                       <div role="cell" className={`print-ltr print-nowrap ${cell(fieldChanged(entry, "fstarttime", "fendtime"))}`}>{row.fstarttime && row.fendtime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"))}`}>{dayNumbers(row)}</div>
                       <div role="cell" className={`print-wrap print-instructor-name authority-pdf-instructor ${cell(fieldChanged(entry, "AdInstructorId"))}`}>
