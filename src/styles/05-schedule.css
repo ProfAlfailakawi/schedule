@@ -8125,3 +8125,49 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   background:transparent;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;
 }
 .hall-barter-clear:hover{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+
+/* ── طلب استعارة ينتظر قراراً ─────────────────────────────────────────────
+   الطلب يصل إلى قسمٍ لا يعرف أنه وصل، لأن اللوحة تسكن داخل «المزيد». فهذا
+   شريط ثابت لا يظهر إلا حين يكون هناك قرارٌ مطلوب منك، ينبض نبضة هادئة مرتين
+   ثم يسكن — ولا يقرر شيئاً بنفسه: يفتح اللوحة على الطلب. */
+.hall-barter-inbox{
+  position:fixed;z-index:151;
+  inset-inline-start:var(--s5);
+  bottom:calc(var(--s5) + 52px + env(safe-area-inset-bottom));
+  display:flex;align-items:center;gap:var(--s3);
+  padding:9px var(--s4) 9px 11px;
+  border:1px solid color-mix(in srgb,var(--accent) 42%,var(--line));
+  border-radius:var(--r-full);
+  background:var(--surface);color:var(--ink);
+  box-shadow:var(--shadow-lg);
+  cursor:pointer;text-align:start;
+  animation:rise .22s var(--ease-out) both;
+}
+.hall-barter-inbox:hover{border-color:var(--accent)}
+.hall-barter-inbox-mark{
+  position:relative;display:grid;place-items:center;flex:none;
+  width:34px;height:34px;border-radius:12px;
+  background:color-mix(in srgb,var(--accent) 13%,var(--surface-2));color:var(--accent);
+}
+.hall-barter-inbox-mark>svg{width:17px;height:17px}
+.hall-barter-inbox-mark>i{
+  position:absolute;inset-block-start:-3px;inset-inline-end:-3px;
+  width:9px;height:9px;border-radius:999px;background:var(--accent);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);
+  animation:hall-barter-inbox-pulse 2.4s ease-out infinite;
+}
+@keyframes hall-barter-inbox-pulse{
+  0%,60%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+  30%{box-shadow:0 0 0 8px color-mix(in srgb,var(--accent) 6%,transparent)}
+}
+@media (prefers-reduced-motion:reduce){
+  .hall-barter-inbox{animation:none}
+  .hall-barter-inbox-mark>i{animation:none}
+}
+.hall-barter-inbox-copy{display:grid;gap:1px;min-width:0}
+.hall-barter-inbox-copy>strong{font-size:var(--t-sm);font-weight:750}
+.hall-barter-inbox-copy>small{font-size:var(--t-xs,.72rem);color:var(--muted)}
+.hall-barter-inbox-go{
+  flex:none;padding:5px 11px;border-radius:999px;
+  background:var(--accent);color:#fff;font-size:var(--t-xs,.72rem);font-weight:800;
+}

@@ -83,13 +83,18 @@ export default function HallBarterBoard({
   sectionId,
   termId,
   liveSerial = 0,
+  openSignal = 0,
   onReservationsChange,
+  onPendingChange,
 }: {
   collegeId: number;
   sectionId: number;
   termId: number;
   liveSerial?: number;
+  /** يُزاد من الخارج ليُفتح اللوح على الطلبات المنتظرة. */
+  openSignal?: number;
   onReservationsChange?: (rows: HallBarterReservationView[]) => void;
+  onPendingChange?: (count: number) => void;
 }) {
   const [board, setBoard] = useState<Board>(emptyBoard);
   const [open, setOpen] = useState(false);
@@ -128,6 +133,7 @@ export default function HallBarterBoard({
         incoming,
         outgoing,
       });
+      onPendingChange?.(incoming.filter((row: HallBarterReservationView) => row.status === "pending").length);
       if (onReservationsChange) {
         const active = [...incoming, ...outgoing].filter((row: HallBarterReservationView) => row.status === "approved");
         onReservationsChange([...new Map(active.map((row: HallBarterReservationView) => [row.id, row])).values()] as HallBarterReservationView[]);
@@ -137,9 +143,17 @@ export default function HallBarterBoard({
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [collegeId, sectionId, termId, onReservationsChange]);
+  }, [collegeId, sectionId, termId, onReservationsChange, onPendingChange]);
 
   useEffect(() => { void load(); }, [load]);
+  /* نداءٌ من خارج اللوحة: افتحها — جاء من شريط «طلبات تنتظر قرارك». */
+  const openSignalSeen = useRef(openSignal);
+  useEffect(() => {
+    if (openSignal === openSignalSeen.current) return;
+    openSignalSeen.current = openSignal;
+    setOpen(true);
+    void load(true);
+  }, [openSignal, load]);
   useEffect(() => {
     if (!liveSerial) return;
     void load(true);

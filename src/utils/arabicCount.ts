@@ -100,6 +100,7 @@ export const AR = {
   page:        { one: "صفحة", two: "صفحتان", few: "صفحات", many: "صفحة" },
   cell:        { one: "خلية", two: "خليتان", few: "خلايا", many: "خلية" },
   note:        { one: "ملاحظة", two: "ملاحظتان", few: "ملاحظات", many: "ملاحظة" },
+  request:     { one: "طلب", two: "طلبان", few: "طلبات", many: "طلباً" },
   message:     { one: "رسالة", two: "رسالتان", few: "رسائل", many: "رسالة" },
   clash:       { one: "تداخل", two: "تداخلان", few: "تداخلات", many: "تداخلاً" },
   conflict:    { one: "تعارض", two: "تعارضان", few: "تعارضات", many: "تعارضاً" },

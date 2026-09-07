@@ -263,7 +263,7 @@ shell_css=(ROOT/'src/styles/03-shell.css').read_text()
 ok('130p the guide confirmation sits ABOVE the guide panel instead of trapped behind it', '.guide-preview-backdrop{position:fixed;inset:0;z-index:2300' in shell_css and '.smart-guide{\n  position:fixed;left:18px;top:18px;bottom:18px;z-index:2200' in shell_css)
 ok('130q a handover banner ends when the screen resolves it, and can never outlive its purpose', 'if (!tourActiveRef.current) finishHandoffToScreen();' in smart_guide and 'finishHandoffRef.current?.();' in smart_guide and '}, 12000);' in smart_guide)
 ok('130r re-importing one document never conflicts with the copies it is about to replace at the other sites', 'const ownScopes=new Set<string>' in server and 'departmentScopes.map(scope=>`${scope.collegeId}:${scope.sectionId}`)' in server)
-ok('130s a site building is offered even before a hall of this department is recorded under it', 'inBranch(building.officialCode)\n      ||(Boolean(collegeId)&&building.collegeIds.includes(collegeId)))&&' in server and 'inBranch(buildingCodeById.get(room.buildingId))' in server)
+ok('130s a site building is offered even before a hall of this department is recorded under it', 'inBranch(building.officialCode))&&' in server and 'inBranch(buildingCodeById.get(room.buildingId))' in server)
 ok('130t the site opening covers OTHER sites only, so the picker never becomes every building of the branch', 'const otherSitePrefixes=new Set<string>();' in server and "prefix&&prefix!==basePrefix)otherSitePrefixes.add(prefix)" in server)
 ok('130u a building number is written with its site whenever the list holds more than one site', 'const multiSite=bySite.size>1;' in (ROOT/'src/components/LocationPicker.tsx').read_text() and '<optgroup key={prefix} label={officialSiteLabel(prefix)}>' in (ROOT/'src/components/LocationPicker.tsx').read_text())
 ok('130v report scope is asked at the moment of printing, not carried as a second button for every report', 'query-scope-menu' in reports_branch_ui and 'setScopeMenu(scopeMenu === "comprehensive" ? null : "comprehensive")' in reports_branch_ui and '"يجمع الفروع…" : "الشامل — كل الفروع"' not in reports_branch_ui)
@@ -381,7 +381,7 @@ ok('188 hall barter offers every free window in the college from THIS term only 
    and 'HALL_BARTER_MIN_HISTORY_TERMS' not in server
    and 'dominantHistoricalHallOwner' not in server
    and 'const collegeRooms=registry.rooms.filter(room=>{' in server
-   and 'return roomColleges.includes(collegeId);' in server
+   and 'if(roomColleges.includes(collegeId))return true;' in server
    and 'const free=!roomRows.some(row=>rowOccupiesWindow(row,day,start,end))' in server)
 ok('189 a room with no registered department cannot be borrowed, and no department borrows from itself',
    'if(!ownerSectionId||ownerIds.includes(sectionId))continue;' in server
@@ -409,7 +409,23 @@ ok('193 the barter filters are four compact lists in one row — day, building, 
    and 'تصفية بالقسم' in barter_board and 'تصفية بالفترة' in barter_board
    and 'hall-barter-owner-chips' not in barter_board
    and 'hall-barter-owner-chips' not in schedule_css)
-ok('194 a building of the open college is selectable even before a room is registered for that department',
-   '||(Boolean(collegeId)&&building.collegeIds.includes(collegeId)))&&' in server)
+ok('194 the college building list opens ONLY when the department has no building at all — never as a second, longer list beside its own',
+   'const openBuildings=buildings.length?buildings:(sectionId&&collegeId' in server
+   and 'buildings:openBuildings' in server
+   and '(!sectionId||eligibleBuildingIds.has(building.id)||inBranch(building.officialCode))&&' in server)
+ok('195 a borrowed hall says whose hall it is, in the picker that offers it',
+   'borrowedFrom:borrowedSet.has(room.id)' in server
+   and 'const borrowedLabel=(room:any)=>' in (ROOT/'src/components/LocationPicker.tsx').read_text()
+   and '{borrowedLabel(r)}' in (ROOT/'src/components/LocationPicker.tsx').read_text())
+ok('196 a pending barter request is announced outside the board, and the board can be opened straight onto it',
+   'hall-barter-inbox' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and 'setBarterOpenSignal(value => value + 1)' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and 'openSignal?: number;' in barter_board
+   and 'onPendingChange?.(incoming.filter' in barter_board
+   and '.hall-barter-inbox{' in schedule_css)
+ok('197 a department the registry never linked to its halls is recovered from what this term actually books',
+   'const usageByRoom=new Map<string,{colleges:Set<number>;sections:Map<number,number>}>();' in server
+   and 'return Boolean(usageByRoom.get(room.id)?.colleges.has(collegeId));' in server
+   and 'const ownerIds=registeredIds.some(id=>collegeSectionIds.has(id))?registeredIds:usageOwnerSections(room.id);' in server)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
