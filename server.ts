@@ -2789,8 +2789,11 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
   if(cached&&cached.scheduleSerial===driftSerial&&cached.barterSerial===hallBarterSerial&&cached.expiresAt>Date.now())return cached.body;
   /* لا قراءة لكل جداول النظام بعد اليوم: السؤال صار عن هذا الفصل وحده،
      وقراءة عشر سنوات لكل لوحة كانت أثقل شيء فيها. */
-  const [termRowsRaw,sections,colleges,requests,registry]=await Promise.all([
+  const [termRowsRaw,collegeHistoryRaw,sections,colleges,requests,registry]=await Promise.all([
     Repository.getSchedulesByScope({termId}),
+    /* تاريخ هذه الكلية وحدها — لا جداول النظام كلها — ليُعرف صاحبُ كل قاعة
+       ولو لم يكتب السجل اسمه ولم يُدخل القسمُ جدولَه بعد. */
+    Repository.getSchedulesByScope({collegeId}),
     Repository.getSections(),Repository.getColleges(),Repository.getHallBarterRequests(termId),readLocationRegistry(),
   ]);
   const canonicalForBarter=(row:FSchedule):FSchedule=>{
@@ -2802,6 +2805,7 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     return {...row,buildingId:b.value.id,roomId:r.value.id,AdRoomCode:b.value.officialCode,AdRoomHall:r.value.canonicalCode,locationStatus:"VERIFIED"};
   };
   const termRows=termRowsRaw.map(canonicalForBarter);
+  const collegeHistory=collegeHistoryRaw.map(canonicalForBarter);
   const requesterCollege=colleges.find(college=>Number(college.AdCollegeId)===collegeId);
   const requesterGender=hallCampusGender(requesterCollege?.AdCollegeName);
   const activeReservations=requests.filter(request=>request.status==="approved");
@@ -2845,22 +2849,31 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
    * وكليةٌ تحجز فيها فهي من قاعاتها. فصار الحجز الفعلي مصدراً ثانياً
    * للانتماء: يُكمل السجل حيث سكت، ولا ينقض ما نطق به.
    */
-  const usageByRoom=new Map<string,{colleges:Set<number>;sections:Map<number,number>}>();
-  for(const row of termRows){
-    const key=String(row.roomId||"").trim();
-    if(!key)continue;
-    const entry=usageByRoom.get(key)||{colleges:new Set<number>(),sections:new Map<number,number>()};
-    const rowCollege=Number(row.AdCollegeId||0),rowSection=Number(row.AdSectionId||0);
-    if(rowCollege)entry.colleges.add(rowCollege);
-    if(rowSection)entry.sections.set(rowSection,(entry.sections.get(rowSection)||0)+1);
-    usageByRoom.set(key,entry);
-  }
+  const tallyUsage=(target:Map<string,{colleges:Set<number>;sections:Map<number,number>}>,rows:readonly any[])=>{
+    for(const row of rows){
+      const key=String(row.roomId||"").trim();
+      if(!key)continue;
+      const entry=target.get(key)||{colleges:new Set<number>(),sections:new Map<number,number>()};
+      const rowCollege=Number(row.AdCollegeId||0),rowSection=Number(row.AdSectionId||0);
+      if(rowCollege)entry.colleges.add(rowCollege);
+      if(rowSection)entry.sections.set(rowSection,(entry.sections.get(rowSection)||0)+1);
+      target.set(key,entry);
+    }
+    return target;
+  };
+  /* شاهدان لا شاهد: جدولُ هذا الفصل أولاً — فهو الأقرب إلى الحال — ثم تاريخ
+     الكلية كله. وقسمٌ لم يُدخل جدوله بعد يبقى معروفاً بقاعاته من تاريخه، فلا
+     يسقط من اللوحة لأنه تأخّر في الإدخال. */
+  const usageByRoom=tallyUsage(new Map(),termRows);
+  const historyByRoom=tallyUsage(new Map(),collegeHistory);
   /* القسم الذي يحجزها أكثر هو صاحبها في الواقع؛ وعند التساوي أصغر رقم، حتى
      يكون الترتيب ثابتاً لا يتبدل بين نداء وآخر. */
+  const rankSections=(usage?:{sections:Map<number,number>})=>usage
+    ? [...usage.sections.entries()].sort((a,b)=>b[1]-a[1]||a[0]-b[0]).map(entry=>entry[0])
+    : [] as number[];
   const usageOwnerSections=(roomId:string)=>{
-    const usage=usageByRoom.get(roomId);
-    if(!usage)return [] as number[];
-    return [...usage.sections.entries()].sort((a,b)=>b[1]-a[1]||a[0]-b[0]).map(entry=>entry[0]);
+    const now=rankSections(usageByRoom.get(roomId));
+    return now.length?now:rankSections(historyByRoom.get(roomId));
   };
 
   const collegeRooms=registry.rooms.filter(room=>{
@@ -2869,7 +2882,8 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     if(!building||!building.active||building.confidence!=="CONFIRMED")return false;
     const roomColleges=[...new Set([...(room.collegeIds||[]),...(building.collegeIds||[])].map(Number).filter(Boolean))];
     if(roomColleges.includes(collegeId))return true;
-    return Boolean(usageByRoom.get(room.id)?.colleges.has(collegeId));
+    return Boolean(usageByRoom.get(room.id)?.colleges.has(collegeId))
+      ||Boolean(historyByRoom.get(room.id)?.colleges.has(collegeId));
   });
   const opportunities:any[]=[];
   for(const room of collegeRooms){

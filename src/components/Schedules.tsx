@@ -5518,9 +5518,25 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
    */
   const [barterInbox, setBarterInbox] = useState(0);
   const [barterOpenSignal, setBarterOpenSignal] = useState(0);
+  /* ── والجواب يُبلَّغ كما بُلِّغ الطلب ────────────────────────────────────
+     من أرسل طلباً ينتظر جواباً، وكان عليه أن يفتح اللوحة كل مرة ليعرف هل
+     وُوفق. فصار القرار — قبولاً أو رفضاً — يصله في الشريط نفسه، مرةً واحدة
+     ثم يُطوى: ما قرأه لا يُعاد عليه، ولو حُدِّثت الصفحة. */
+  const barterSeenKey = "schedule-hall-barter-seen-decisions";
+  const [barterDecisions, setBarterDecisions] = useState<Array<{ id: string; status: string; label: string; window: string }>>([]);
+  const readBarterSeen = () => {
+    try { const raw = JSON.parse(localStorage.getItem(barterSeenKey) || "[]"); return new Set(Array.isArray(raw) ? raw.map(String) : []); }
+    catch { return new Set<string>(); }
+  };
+  const dismissBarterDecisions = () => {
+    const seen = readBarterSeen();
+    barterDecisions.forEach(row => seen.add(row.id));
+    try { localStorage.setItem(barterSeenKey, JSON.stringify([...seen].slice(-200))); } catch {}
+    setBarterDecisions([]);
+  };
   useEffect(() => {
     let cancelled = false;
-    if (mode !== "schedule" || !filterCollege || !filterSection || !filterTerm) { setBarterInbox(0); return; }
+    if (mode !== "schedule" || !filterCollege || !filterSection || !filterTerm) { setBarterInbox(0); setBarterDecisions([]); return; }
     const query = new URLSearchParams({ collegeId: String(filterCollege), sectionId: String(filterSection), termId: String(filterTerm) });
     fetch(`/api/hall-barter?${query}`, { credentials: "include" })
       .then(response => response.ok ? response.json() : null)
@@ -5528,8 +5544,18 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
         if (cancelled) return;
         const incoming = Array.isArray(data?.incoming) ? data.incoming : [];
         setBarterInbox(incoming.filter((row: any) => row?.status === "pending").length);
+        const seen = readBarterSeen();
+        const outgoing = Array.isArray(data?.outgoing) ? data.outgoing : [];
+        setBarterDecisions(outgoing
+          .filter((row: any) => (row?.status === "approved" || row?.status === "rejected") && !seen.has(String(row.id)))
+          .map((row: any) => ({
+            id: String(row.id),
+            status: String(row.status),
+            label: `${row.ownerSectionName || "القسم المضيف"} · ${row.roomCode || ""}/${row.roomHall || ""}`,
+            window: `${row.dayLabel || ""} ${formatScheduleTimeRange(row.startTime, row.endTime)}`.trim(),
+          })));
       })
-      .catch(() => { if (!cancelled) setBarterInbox(0); });
+      .catch(() => { if (!cancelled) { setBarterInbox(0); setBarterDecisions([]); } });
     return () => { cancelled = true; };
   }, [mode, filterCollege, filterSection, filterTerm, liveFeedSerial]);
 
@@ -11543,6 +11569,26 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
           <span className="hall-barter-inbox-go">افتح</span>
         </button>
       ) : null}
+      {barterInbox === 0 && barterDecisions.length > 0 && mode === "schedule" ? (() => {
+        const approved = barterDecisions.filter(row => row.status === "approved");
+        const first = (approved[0] || barterDecisions[0]);
+        const isApproved = Boolean(approved.length);
+        return (
+          <div className={`hall-barter-inbox hall-barter-inbox-decision no-print${isApproved ? " is-approved" : " is-rejected"}`} role="status">
+            <span className="hall-barter-inbox-mark">{isApproved ? <CheckCircle2 aria-hidden="true" /> : <X aria-hidden="true" />}</span>
+            <span className="hall-barter-inbox-copy">
+              <strong>{isApproved ? "وُوفق على استعارتك" : "لم يُوافق على استعارتك"}</strong>
+              <small>{first.label}{first.window ? ` · ${first.window}` : ""}{barterDecisions.length > 1 ? ` · و${countOf(barterDecisions.length - 1, AR.request)} أخرى` : ""}</small>
+            </span>
+            <button
+              type="button"
+              className="hall-barter-inbox-go"
+              data-guide-ignore="يخفي خبر قرار الاستعارة بعد قراءته؛ لا يغير الطلب"
+              onClick={dismissBarterDecisions}
+            >تم</button>
+          </div>
+        );
+      })() : null}
       {undoAction ? (
         <div className="undo-bar no-print" role="status">
           <History aria-hidden="true" />
