@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#080c0b">
 <meta name="description" content="SCHEDULE · نظام القرار الأكاديمي — عرض تقديمي">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IlNDSEVEVUxFIj4KICA8IS0tINmF2Y/ZiNmE2Y7ZkdivINmF2YYgc2NyaXB0cy9yZW5kZXItYnJhbmQubWpzIOKAlCDZhNinINmK2Y/Yrdix2Y7ZkdixINmK2K/ZiNmK2KfZiy4KICAgICAgINin2YTYudmE2KfZhdipOiDYp9mE2KPYs9io2YjYuSDYp9mE2LDZiiDYrdmP2YTZkS4g2K7Zhdiz2Kkg2KPYudmF2K/YqSA9INiu2YXYs9ipINij2YrYp9mF2Jsg2KfZhNin2LHYqtmB2KfYuSDZhdiv2ZHYqdiMCiAgICAgICDZiNin2YTZhdmI2LbYuSDYp9mE2LHYo9iz2Yog2LPYp9i52KkuINin2YTYudmF2YjYryDYp9mE2YbYrdin2LPZiiDZh9mIINin2YTYsNmKINmG2Y/ZgtmELgogICAgICAg2YbYs9iu2KkgImFueSI6INit2KfZgdipINil2YTZiSDYrdin2YHYqSDZhdi5INit2YTZgtipLiAtLT4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjExMiIgZmlsbD0iIzE0MTkxNyIvPgogIDxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSI0OTYiIGhlaWdodD0iNDk2IiByeD0iMTA3LjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2M3OWI1ZiIgc3Ryb2tlLW9wYWNpdHk9IjAuMjIiIHN0cm9rZS13aWR0aD0iNi40Ii8+CgogIDxyZWN0IHg9IjM3MS4yIiB5PSIxNTYiIHdpZHRoPSI0NC44IiBoZWlnaHQ9IjEyMCIgcng9IjIyLjQiIGZpbGw9IiM1ZmJmYTYiLz4KICA8cmVjdCB4PSIzMDIuNCIgeT0iMjIwIiB3aWR0aD0iNDQuOCIgaGVpZ2h0PSI5NiIgcng9IjIyLjQiIGZpbGw9IiM1ZmJmYTYiLz4KICA8cmVjdCB4PSIyMzMuNiIgeT0iMTMyIiB3aWR0aD0iNDQuOCIgaGVpZ2h0PSIxNTIiIHJ4PSIyMi40IiBmaWxsPSIjNWZiZmE2Ii8+CiAgPHJlY3QgeD0iMTY0LjgiIHk9IjI2MCIgd2lkdGg9IjQ0LjgiIGhlaWdodD0iMTEyIiByeD0iMjIuNCIgZmlsbD0iI2M3OWI1ZiIvPgogIDxyZWN0IHg9Ijk2IiB5PSIxODgiIHdpZHRoPSI0NC44IiBoZWlnaHQ9IjEyOCIgcng9IjIyLjQiIGZpbGw9IiM1ZmJmYTYiLz4KPC9zdmc+Cg==">
 <title>SCHEDULE · نظام القرار الأكاديمي</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
@@ -451,59 +450,45 @@ body.read .hint{display:none}
   .hbar__f, .meter__f{width:var(--v)}
 }
 
-/* ---------- world case-studies: a shrink bar per country ---------- */
-.world{display:flex; flex-direction:column; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:15px; overflow:hidden}
-.wrow{display:grid; grid-template-columns:clamp(120px,15vw,200px) 1fr clamp(88px,10vw,128px); align-items:center;
-  gap:clamp(10px,1.5vw,22px); background:var(--surface); padding:clamp(9px,1.05vw,14px) clamp(16px,2vw,30px)}
-.wrow.star{background:linear-gradient(90deg,rgba(208,166,99,.10),transparent 70%)}
-.wc{display:flex; flex-direction:column; gap:2px; min-width:0}
-.wc__c{font-family:var(--font-display); font-weight:600; font-size:clamp(.98rem,1.5vw,1.18rem); color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
-.wc__u{font-family:var(--font-mono); font-size:.58rem; letter-spacing:.04em; color:var(--muted-2)}
-.wc__u.star{color:var(--brass)}
-/* one prominent column: how long it takes them, manually */
-.wtime{display:flex; align-items:baseline; gap:10px}
-.wt__man{font-family:var(--font-display); font-weight:600; font-size:clamp(1.15rem,2vw,1.7rem); color:var(--ink); white-space:nowrap}
-.wt__man .u{font-family:var(--font-body); font-weight:300; font-size:.62em; color:var(--muted)}
-.star .wt__man{color:var(--brass)}
-.whead{background:var(--surface-2)}
-.whead .hc{font-family:var(--font-mono); font-size:.62rem; letter-spacing:.06em; color:var(--muted-2)}
-.whead .hc.man{color:var(--muted)}
-.wsrc{font-family:var(--font-mono); font-size:.56rem; letter-spacing:.03em; color:var(--muted-2); text-align:end; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+/* ---------- time dials: one visual language for the world and for us ----------
+   Each ring shows how much time the task eats. Six heavy rings = the world.
+   One hairline ring = us. The sweep is approximate; the printed time is exact. */
+.dials{display:grid; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:16px; overflow:hidden;
+  grid-template-columns:repeat(2,1fr)}
+@media(min-width:900px){.dials{grid-template-columns:repeat(3,1fr)}}
+.dial{background:var(--surface); padding:clamp(15px,2vw,26px); display:flex; align-items:center; gap:clamp(12px,1.6vw,20px)}
+.dial.hero{background:linear-gradient(135deg,rgba(208,166,99,.10),transparent 70%)}
+.dial__ring{position:relative; width:clamp(54px,5.6vw,74px); aspect-ratio:1; flex:none}
+.dial__ring svg{position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg)}
+.dial__trk{fill:none; stroke:var(--surface-3); stroke-width:12}
+.dial__arc{fill:none; stroke:var(--danger); stroke-width:12; stroke-linecap:round;
+  stroke-dasharray:1000; stroke-dashoffset:1000; transition:stroke-dashoffset 1.1s var(--ease)}
+.slide.is-live .dial__arc{stroke-dashoffset:var(--off)}
+.dial.hero .dial__arc{stroke:var(--brass)}
+.dial__txt{display:flex; flex-direction:column; gap:3px; min-width:0}
+.dial__c{font-family:var(--font-display); font-weight:600; font-size:clamp(.92rem,1.25vw,1.06rem); color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.dial__t{font-family:var(--font-display); font-weight:700; font-size:clamp(1.05rem,1.65vw,1.4rem); color:var(--danger); line-height:1.2}
+.dial.hero .dial__t{color:var(--brass)}
+.dial__s{font-family:var(--font-mono); font-size:.55rem; letter-spacing:.03em; color:var(--muted-2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 
-/* ---------- the stopwatch: a live count to our time ---------- */
-.sw{display:grid; gap:clamp(16px,2.4vw,44px); grid-template-columns:1fr; align-items:center; justify-items:center}
-@media(min-width:820px){.sw{grid-template-columns:1.05fr .95fr}}
-.sw__dial{position:relative; width:clamp(200px,26vw,320px); aspect-ratio:1; display:grid; place-items:center}
-.sw__dial svg{position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg)}
-.sw__track{fill:none; stroke:var(--surface-3); stroke-width:9}
-.sw__arc{fill:none; stroke:url(#swgrad); stroke-width:9; stroke-linecap:round;
-  filter:drop-shadow(0 0 12px rgba(208,166,99,.5))}
-.sw__center{display:flex; flex-direction:column; align-items:center; gap:4px; z-index:1}
-.sw__time{font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-weight:600; line-height:1;
-  font-size:clamp(2.6rem,6vw,4.6rem); color:var(--jade-strong); text-shadow:0 0 34px rgba(105,192,168,.45)}
-.sw__unit{font-family:var(--font-body); font-size:.9rem; color:var(--muted)}
-.sw__label{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.14em; color:var(--brass); margin-block-end:6px}
-.sw__side{display:flex; flex-direction:column; gap:16px; max-width:34ch}
-.sw__vs{display:flex; align-items:baseline; gap:12px; padding-block-end:16px; border-block-end:1px solid var(--line)}
-.sw__vs b{font-family:var(--font-display); font-weight:700; font-size:clamp(1.9rem,3.4vw,2.8rem); color:var(--danger); line-height:1}
-.sw__vs span{font-size:1rem; color:var(--ink-2)}
-.sw__lead{font-family:var(--font-display); font-weight:600; font-size:clamp(1.05rem,1.7vw,1.4rem); color:var(--ink); line-height:1.5}
-.sw__meta{font-family:var(--font-mono); font-size:.62rem; letter-spacing:.05em; color:var(--muted-2)}
-
-/* ---------- the time contrast: weeks vs minutes ---------- */
-.versus{display:grid; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:16px; overflow:hidden; grid-template-columns:1fr}
-@media(min-width:760px){.versus{grid-template-columns:1fr 62px 1fr}}
-.vs{background:var(--surface); padding:clamp(24px,3.4vw,44px); display:flex; flex-direction:column; gap:10px; align-items:center; text-align:center}
-.vs__k{font-family:var(--font-body); font-size:.9rem; color:var(--muted-2)}
-.vs__n{font-family:var(--font-display); font-weight:700; line-height:.98; font-size:clamp(2.6rem,6.4vw,5.6rem)}
-.vs.was .vs__n{color:var(--danger)}
-.vs.now .vs__n{color:var(--jade-strong); text-shadow:0 0 40px rgba(105,192,168,.4)}
-.vs__u{font-family:var(--font-body); font-size:1.06rem; color:var(--ink-2)}
-.vs__note{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.06em; color:var(--muted-2); margin-block-start:2px}
-.vs__mid{display:grid; place-items:center; color:var(--brass); font-size:26px; background:var(--surface)}
-@media(max-width:759px){.vs__mid{padding-block:8px}}
-.tbd{color:var(--brass); background:linear-gradient(180deg,rgba(208,166,99,.14),transparent); border:1px dashed var(--brass);
-  border-radius:12px; padding:.06em .28em; text-shadow:none; font-size:.72em}
+/* our slide: the same dial, blown up, arc stopping at a hairline */
+.ours{display:grid; gap:clamp(20px,2.8vw,52px); grid-template-columns:1fr; align-items:center; justify-items:center}
+@media(min-width:880px){.ours{grid-template-columns:.95fr 1.05fr}}
+.big-dial{position:relative; width:clamp(200px,25vw,310px); aspect-ratio:1; display:grid; place-items:center}
+.big-dial svg{position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg)}
+.bd__trk{fill:none; stroke:var(--surface-3); stroke-width:10}
+.bd__arc{fill:none; stroke:var(--jade-strong); stroke-width:10; stroke-linecap:round;
+  filter:drop-shadow(0 0 16px rgba(105,192,168,.9))}
+.bd__c{display:flex; flex-direction:column; align-items:center; gap:5px; z-index:1}
+.bd__k{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.14em; color:var(--brass)}
+.bd__t{font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-weight:600; line-height:1;
+  font-size:clamp(2.6rem,5.8vw,4.5rem); color:var(--jade-strong); text-shadow:0 0 36px rgba(105,192,168,.5)}
+.bd__u{font-family:var(--font-body); font-size:.86rem; color:var(--muted); text-align:center}
+.ours__side{display:flex; flex-direction:column; gap:13px; max-width:36ch}
+.ours__lead{font-family:var(--font-display); font-weight:700; font-size:clamp(1.25rem,2.3vw,1.95rem); color:var(--ink); line-height:1.45}
+.ours__lead em{font-style:normal; color:var(--jade-strong)}
+.ours__sub{font-size:.98rem; color:var(--ink-2); line-height:1.7}
+.ours__meta{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.05em; color:var(--muted-2)}
 .cite{display:flex; flex-wrap:wrap; gap:8px 18px; margin-block-start:4px}
 .cite span{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.04em; color:var(--muted-2)}
 .cite b{color:var(--jade); font-weight:600}
@@ -680,75 +665,115 @@ html,body{margin:0}
 </section>
 <section class="slide">
   <div class="slide__in">
-    <div class="head"><p class="eyebrow">المقياس العالمي · دراسات محكَّمة</p><h2>ما تأخذه الجامعات في أسابيع.</h2></div>
-    <div class="world">
-      <div class="wrow whead">
-        <div class="wc"><span class="hc">الجامعة</span></div>
-        <div class="wtime"><span class="hc man">الوقت يدويًّا</span></div>
-        <span class="wsrc" style="color:var(--muted-2)">المصدر المنشور</span>
+    <div class="head"><p class="eyebrow">المقياس العالمي · دراسات محكَّمة</p><h2>كم تلتهم هذه المهمة من وقت الجامعات.</h2></div>
+    <div class="dials">
+      <div class="dial hero">
+        <div class="dial__ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+            <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:170"></circle>
+          </svg>
+        </div>
+        <div class="dial__txt">
+          <span class="dial__c">الكويت · AOU</span>
+          <span class="dial__t">4–6 أسابيع</span>
+          <span class="dial__s">مقررات · iJET 2026</span>
+        </div>
       </div>
-      <div class="wrow">
-        <div class="wc"><span class="wc__c">الكويت · AOU</span><span class="wc__u">جدول مقررات</span></div>
-        <div class="wtime"><span class="wt__man">4–6<span class="u"> أسابيع</span></span></div>
-        <span class="wsrc">iJET 2026</span>
+      <div class="dial">
+        <div class="dial__ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+            <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:500"></circle>
+          </svg>
+        </div>
+        <div class="dial__txt">
+          <span class="dial__c">أمريكا · Cornell</span>
+          <span class="dial__t">عدة أسابيع</span>
+          <span class="dial__s">مقررات · Interfaces 2002</span>
+        </div>
       </div>
-      <div class="wrow">
-        <div class="wc"><span class="wc__c">أمريكا · Cornell</span><span class="wc__u">جدول مقررات</span></div>
-        <div class="wtime"><span class="wt__man">عدة<span class="u"> أسابيع</span></span></div>
-        <span class="wsrc">Interfaces 2002</span>
+      <div class="dial">
+        <div class="dial__ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+            <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:500"></circle>
+          </svg>
+        </div>
+        <div class="dial__txt">
+          <span class="dial__c">سنغافورة · NUS</span>
+          <span class="dial__t">عدة أسابيع</span>
+          <span class="dial__s">اختبارات · AAAI 2002</span>
+        </div>
       </div>
-      <div class="wrow">
-        <div class="wc"><span class="wc__c">سنغافورة · NUS</span><span class="wc__u">جدول اختبارات</span></div>
-        <div class="wtime"><span class="wt__man">عدة<span class="u"> أسابيع</span></span></div>
-        <span class="wsrc">AAAI 2002</span>
+      <div class="dial">
+        <div class="dial__ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+            <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:670"></circle>
+          </svg>
+        </div>
+        <div class="dial__txt">
+          <span class="dial__c">تشيلي · Chile</span>
+          <span class="dial__t">أسبوعان</span>
+          <span class="dial__s">مقررات + قاعات · Interfaces 2010</span>
+        </div>
       </div>
-      <div class="wrow">
-        <div class="wc"><span class="wc__c">تشيلي · Chile</span><span class="wc__u">مقررات + قاعات</span></div>
-        <div class="wtime"><span class="wt__man">أسبوعان<span class="u"> </span></span></div>
-        <span class="wsrc">Interfaces 2010</span>
+      <div class="dial">
+        <div class="dial__ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+            <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:760"></circle>
+          </svg>
+        </div>
+        <div class="dial__txt">
+          <span class="dial__c">الجزائر · Tlemcen</span>
+          <span class="dial__t">نحو 10 أيام</span>
+          <span class="dial__s">مقررات · IJKEDM 2021</span>
+        </div>
       </div>
-      <div class="wrow">
-        <div class="wc"><span class="wc__c">البرتغال · ISEL</span><span class="wc__u">جدول اختبارات</span></div>
-        <div class="wtime"><span class="wt__man">نحو<span class="u"> أسبوع</span></span></div>
-        <span class="wsrc">IJCCI 2012</span>
-      </div>
-      <div class="wrow">
-        <div class="wc"><span class="wc__c">الجزائر · Tlemcen</span><span class="wc__u">جدول مقررات</span></div>
-        <div class="wtime"><span class="wt__man">نحو 10<span class="u"> أيام</span></span></div>
-        <span class="wsrc">IJKEDM 2021</span>
+      <div class="dial">
+        <div class="dial__ring">
+          <svg viewBox="0 0 100 100" aria-hidden="true">
+            <circle class="dial__trk" cx="50" cy="50" r="40"></circle>
+            <circle class="dial__arc" cx="50" cy="50" r="40" pathLength="1000" style="--off:830"></circle>
+          </svg>
+        </div>
+        <div class="dial__txt">
+          <span class="dial__c">البرتغال · ISEL</span>
+          <span class="dial__t">نحو أسبوع</span>
+          <span class="dial__s">اختبارات · IJCCI 2012</span>
+        </div>
       </div>
     </div>
     <div class="cite">
-      <span>ست جامعات حقيقية · هذا زمنها <b style="color:var(--ink)">اليدوي</b> · والصفحة التالية: زمننا نحن</span>
+      <span>كل حلقة = حجم الوقت الذي تلتهمه المهمة <b>يدويًّا</b> · الزمن المكتوب من المصدر المنشور · امتلاء الحلقات تقريبي</span>
     </div>
   </div>
   <div class="notes">
-    <span class="notes__k">ملاحظة العرض — تحفّظ منهجي مهم</span>
-    <p>هذه <b>دراسات حالة مستقلة ومحكَّمة، لا متوسط عالمي</b> — تختلف باختلاف حجم الجامعة ونوع الجدول (مقررات أو اختبارات) وما إذا كان الزمن يشمل جمع البيانات أم التوليد فقط. لا تقل «المتوسط العالمي كذا». أقوى صف هو <b>تشيلي</b> (المميَّز بالذهبي): دراسة في مجلة Interfaces تُثبت أن السرعة (أقل من 30 دقيقة مقابل أسبوعين) رافقها تحسّن فعلي — انخفاض 52٪ في المقاعد غير المستغلّة وتقلّص المقررات المتعارضة من 55 إلى 21 عبر ثلاث سنوات. أي أن السرعة لم تأتِ على حساب الجودة. الأشرطة تصويرية للانكماش، لا مقياس زمني خطي (الوحدات تختلف). نعرض هنا الزمن اليدوي فقط عمدًا: هذه هي المشكلة المشتركة حول العالم. لا نعرض أن بعضها أتمت العملية لاحقًا، لأن هدف العرض إبراز تميّزنا نحن في الصفحة التالية (3:24)، لا مقارنتنا بأنظمة غيرنا. قل: «ست جامعات حقيقية، هذا زمنها يدويًّا — والآن انظروا زمننا.»</p>
+    <span class="notes__k">ملاحظة العرض — تحفّظ منهجي</span>
+    <p>هذه <b>دراسات حالة مستقلة محكَّمة، لا متوسط عالمي</b> — تختلف باختلاف حجم الجامعة ونوع الجدول (مقررات أو اختبارات). الأزمنة المكتوبة منقولة من المصادر؛ أما امتلاء الحلقات فتقريبي للمقارنة البصرية. نعرض الزمن اليدوي وحده عمدًا: هذه المشكلة المشتركة حول العالم، ولا نقارن أنفسنا بأنظمة غيرنا. قل: «ست جامعات حقيقية، وهذا ما تلتهمه المهمة من وقتها — والآن انظروا حلقتنا.»</p>
   </div>
 </section>
 <section class="slide">
   <div class="slide__in">
-    <div class="head"><p class="eyebrow">وأمّا نحن</p><h2>الجدول كاملًا، في أقل من أربع دقائق.</h2></div>
-    <div class="sw">
-      <div class="sw__dial" data-stopwatch data-seconds="204">
+    <div class="head"><p class="eyebrow">وأمّا نحن</p><h2>على المقياس نفسه، حلقتنا شعرة.</h2></div>
+    <div class="ours">
+      <div class="big-dial" data-stopwatch data-seconds="204" data-arc="2">
         <svg viewBox="0 0 200 200" aria-hidden="true">
-          <defs><linearGradient id="swgrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0" stop-color="#69c0a8"/><stop offset="1" stop-color="#d0a663"/>
-          </linearGradient></defs>
-          <circle class="sw__track" cx="100" cy="100" r="88"></circle>
-          <circle class="sw__arc" cx="100" cy="100" r="88" pathLength="1000" stroke-dasharray="1000" stroke-dashoffset="1000"></circle>
+          <circle class="bd__trk" cx="100" cy="100" r="86"></circle>
+          <circle class="bd__arc" cx="100" cy="100" r="86" pathLength="1000" stroke-dasharray="1000" stroke-dashoffset="1000"></circle>
         </svg>
-        <div class="sw__center">
-          <span class="sw__label">زمننا الفعلي</span>
-          <span class="sw__time" data-sw-time>0:00</span>
-          <span class="sw__unit">من الرفع إلى جدول مُراجَع</span>
+        <div class="bd__c">
+          <span class="bd__k">زمننا الفعلي</span>
+          <span class="bd__t" data-sw-time>0:00</span>
+          <span class="bd__u">من الرفع إلى جدول مُراجَع</span>
         </div>
       </div>
-      <div class="sw__side">
-        <div class="sw__vs"><b>أسابيع</b><span>هذا زمن الجامعات يدويًّا — كما في الصفحة السابقة</span></div>
-        <p class="sw__lead">نحن أنجزناه في <span style="color:var(--jade-strong)">3 دقائق و24 ثانية</span> على ملف حقيقي رفعناه أمامكم.</p>
-        <span class="sw__meta">قسم في كلية التربية الأساسية · جدول تسجيل فعلي · 89 صفًّا</span>
+      <div class="ours__side">
+        <p class="ours__lead">ثلاث دقائق و<em>24</em> ثانية — على ملف حقيقي رفعناه أمامكم.</p>
+        <p class="ours__sub">الجامعات في الصفحة السابقة تقيس بالأسابيع. نحن نقيس بالثواني.</p>
+        <span class="ours__meta">قسم في كلية التربية الأساسية · جدول تسجيل فعلي · 89 صفًّا</span>
       </div>
     </div>
     <div class="big" style="grid-template-columns:repeat(3,1fr)">
@@ -758,8 +783,8 @@ html,body{margin:0}
     </div>
   </div>
   <div class="notes">
-    <span class="notes__k">ملاحظة العرض — شريحة الإثبات</span>
-    <p>موجّهة لأهل الأرقام. رقم «الأسابيع» عالمي وموثّق — دراسة محكَّمة في مجلة iJET (2026) قاست أن الإعداد اليدوي يستغرق 4–6 أسابيع لكل فصل — ومصدره مكتوب أسفل الشريحة. مقابله وقتنا الفعلي: 3 دقائق و24 ثانية، مقيس على جدول حقيقي لقسم في كلية التربية الأساسية رفعناه وراجعناه على النظام. البطاقات الثلاث كلها حقائق نظامنا لا أرقام دراسات أخرى: التعارض يُكتشف قبل الاعتماد فلا يمرّ حجز مزدوج، والصفوف تُقرأ من الـPDF بلا إدخال يدوي، والفصل يُنسخ بترقيم شعب تلقائي. قل: «رقم الأسابيع منشور لا ادّعاء منّا، وهذا وقتنا على ملف رفعناه قبل قليل أمامكم.»</p>
+    <span class="notes__k">ملاحظة العرض — لحظة الذروة</span>
+    <p>اصمت واترك الحلقة ترتسم والرقم يعدّ إلى 3:24. الحلقة مرسومة على المقياس نفسه الذي رأوه في الصفحة السابقة — ولذلك تبدو شعرة. ثم قل: «ثلاث دقائق وأربع وعشرون ثانية، على جدول تسجيل حقيقي من كلية التربية الأساسية، 89 صفًّا.» البطاقات الثلاث حقائق نظامنا لا أرقام دراسات.</p>
   </div>
 </section>
 <section class="slide">
@@ -1252,15 +1277,18 @@ html,body{margin:0}
     if(el.dataset.swran) return; el.dataset.swran='1';
     var total=parseInt(el.dataset.seconds,10)||0,
         timeEl=el.querySelector('[data-sw-time]'),
-        arc=el.querySelector('.sw__arc'),
-        LEN=1000;
+        arc=el.querySelector('.bd__arc'),
+        LEN=1000,
+        /* the arc stops at a hairline: on the world's scale, this is what
+           three minutes looks like beside weeks. */
+        endFrac=(parseFloat(el.dataset.arc)||100)/100;
     function fmt(sec){ var m=Math.floor(sec/60), s=sec%60; return m+':'+(s<10?'0':'')+s; }
-    if(reduce){ timeEl.textContent=fmt(total); if(arc) arc.setAttribute('stroke-dashoffset','0'); return; }
+    if(reduce){ timeEl.textContent=fmt(total); if(arc) arc.setAttribute('stroke-dashoffset', String(Math.round(LEN*(1-endFrac)))); return; }
     var t0=performance.now(), dur=2600;
     (function step(now){
       var p=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-p,3);
       timeEl.textContent=fmt(Math.round(total*e));
-      if(arc) arc.setAttribute('stroke-dashoffset', String(Math.round(LEN*(1-e))));
+      if(arc) arc.setAttribute('stroke-dashoffset', String(Math.round(LEN*(1-e*endFrac))));
       if(p<1) requestAnimationFrame(step);
     })(t0);
   }
@@ -1355,6 +1383,7 @@ html,body{margin:0}
   setTimeout(function(){ hint.classList.add('gone'); },5200);
 })();
 </script>
+
 
 </body>
 </html>
