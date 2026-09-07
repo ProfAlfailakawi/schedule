@@ -2774,8 +2774,11 @@ function hallBarterRequestShape(request:HallBarterRequest,sections:any[],college
   const ownerSection=sections.find(section=>Number(section.AdSectionId)===Number(request.ownerSectionId));
   const requesterCollege=colleges.find(college=>Number(college.AdCollegeId)===Number(request.requesterCollegeId));
   const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===Number(request.ownerCollegeId));
+  const created=Date.parse(String(request.createdAt||""));
+  const ageDays=Number.isFinite(created)?Math.max(0,Math.floor((Date.now()-created)/86400000)):0;
   return{
     ...request,
+    ageDays,
     dayLabel:HALL_BARTER_DAY_LABEL.get(request.day)||request.day,
     requesterSectionName:requesterSection?.AdSectionName||"قسم طالب",
     requesterCollegeName:requesterCollege?.AdCollegeName||"كلية طالبة",
@@ -3911,6 +3914,19 @@ app.post("/api/hall-barter/requests/:id/cancel", requirePermission(7), async (re
   hallBarterSerial++;hallBarterBoardCache.clear();
   broadcastScheduleChange();void Repository.markSchedulesChanged();
   res.json({request:updated,message:"تم إلغاء طلب الاستعارة وتحرير النافذة."});
+});
+
+/* ── التنبيه يتبع القسم لا الشاشة ────────────────────────────────────────────
+ * عدّاد الطلبات المنتظرة يُقرأ من الشريط الجانبي أينما كان المستخدم في النظام،
+ * لا في شاشة الجدول وحدها: طلبٌ ينتظر قرار قسمه لا ينام لأن صاحبه لم يفتح
+ * الجدول اليوم. خفيفٌ متعمَّد — عدٌّ فقط، بلا بناء لوحةٍ كاملة. */
+app.get("/api/hall-barter/inbox", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+  const all=await Repository.getHallBarterRequests(0);
+  const owns=(request:HallBarterRequest)=>req.user?.IsAdminUser||isScopeAllowed(req,Number(request.ownerCollegeId),Number(request.ownerSectionId));
+  const pending=all.filter(request=>request.status==="pending"&&owns(request));
+  const oldest=pending.reduce((max,request)=>{const created=Date.parse(String(request.createdAt||""));return Number.isFinite(created)?Math.min(max,created):max;},Date.now());
+  const oldestDays=pending.length?Math.max(0,Math.floor((Date.now()-oldest)/86400000)):0;
+  res.json({pending:pending.length,oldestDays});
 });
 
 app.post("/api/schedules/check-conflicts", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => { const row=req.body||{}; res.json({conflicts:await scheduleConflicts(req,row,Number(row.excludeId||0))}); });

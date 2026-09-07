@@ -375,6 +375,7 @@ ok('187 a course the authority document places at a branch site is copied from t
    and 'transfer-receipt-planted' in transfer_src)
 
 barter_board=(ROOT/'src/components/HallBarterBoard.tsx').read_text()
+app_src=(ROOT/'src/App.tsx').read_text()
 ok('188 hall barter offers every free window in the college from THIS term only — no ten-year memory, no stability threshold',
    'HALL_BARTER_MIN_WINDOW_MINUTES = 50' in server
    and 'HALL_BARTER_MIN_FREE_SHARE' not in server
@@ -454,5 +455,21 @@ ok('200 barter filters accumulate — each list is counted after the OTHER choic
    and 'buildings:facetsOf(opportunities.filter(row=>matchesOwner(row)&&matchesDay(row))).buildings,' in server
    and 'const narrowed=opportunities.filter(row=>matchesOwner(row)&&matchesDay(row)&&matchesBuilding(row));' in server
    and 'if (event.target !== boardRef.current) return;' in barter_board)
+
+ok('201 a pending barter request is counted for the department wherever the user is, from a light inbox endpoint, and shown as a breathing dot on the schedule nav',
+   'app.get("/api/hall-barter/inbox"' in server
+   and 'const owns=(request:HallBarterRequest)=>req.user?.IsAdminUser||isScopeAllowed(req,Number(request.ownerCollegeId),Number(request.ownerSectionId));' in server
+   and 'fetch("/api/hall-barter/inbox"' in app_src
+   and 'badge={barterPending}' in app_src
+   and '.side-nav-link .side-nav-badge{' in (ROOT/'src/styles/03-shell.css').read_text())
+ok('202 a waiting request carries its age quietly, and turns amber past three days',
+   'ageDays' in server and 'ageDays,' in server
+   and 'const ageChip = (row: HallBarterReservationView)' in barter_board
+   and 'days >= 3' in barter_board
+   and '.hall-barter-age.is-stale{' in schedule_css)
+ok('203 the editor offers borrowing only when a time is set and no room is chosen yet — a quiet bridge, gone once a room is picked',
+   'schedule-borrow-hint' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and 'setBarterOpenSignal(v => v + 1)' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and '.schedule-borrow-hint{' in schedule_css)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

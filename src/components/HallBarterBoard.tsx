@@ -58,6 +58,7 @@ export type HallBarterReservationView = {
   ownerCollegeId: number;
   ownerSectionId: number;
   createdAt: string;
+  ageDays?: number;
 };
 
 type Facets = {
@@ -265,6 +266,14 @@ export default function HallBarterBoard({
   }));
   const cancel = (requestId: string) => act(requestId, () => readJson(`/api/hall-barter/requests/${encodeURIComponent(requestId)}/cancel`, { method: "POST" }));
 
+  /* عمرُ الطلب المنتظر يُقال بهدوء: طلبٌ مرّ عليه ثلاثة أيام بلا ردّ يلوّن
+     وسمُه كهرمانياً — تذكيرٌ بلا إزعاج، لا رقمَ صارخ. */
+  const ageText = (days = 0) => days <= 0 ? "اليوم" : days === 1 ? "أمس" : `منذ ${days} ${days === 2 ? "يومين" : days <= 10 ? "أيام" : "يوماً"}`;
+  const ageChip = (row: HallBarterReservationView) => {
+    const days = Number(row.ageDays || 0);
+    return <span className={`hall-barter-age${days >= 3 ? " is-stale" : ""}`}><Clock3 aria-hidden="true" />{ageText(days)}</span>;
+  };
+
   const windowLine = (row: Pick<HallBarterReservationView, "dayLabel" | "startTime" | "endTime" | "roomCode" | "roomHall">) => (
     <span className="hall-barter-window"><Clock3 aria-hidden="true" /><b>{row.dayLabel}</b><time dir="ltr">{formatScheduleTimeRange(row.startTime, row.endTime)}</time><em dir="ltr">{row.roomCode}/{row.roomHall}</em></span>
   );
@@ -310,7 +319,7 @@ export default function HallBarterBoard({
                 {incomingPending.map(row => (
                   <article key={row.id}>
                     <div className="hall-barter-request-main">
-                      <strong>{row.requesterSectionName}</strong>
+                      <div className="hall-barter-request-head"><strong>{row.requesterSectionName}</strong>{ageChip(row)}</div>
                       {windowLine(row)}
                     </div>
                     <div className="hall-barter-actions">
@@ -410,7 +419,7 @@ export default function HallBarterBoard({
                   <article key={row.id}>
                     <div><strong>{row.ownerSectionName}</strong></div>
                     {windowLine(row)}
-                    <span className="hall-barter-pending-label">{statusLabel(row.status)}</span>
+                    <span className="hall-barter-pending-label">{statusLabel(row.status)}{row.ageDays && row.ageDays >= 3 ? <em className="hall-barter-pending-age"> · {ageText(row.ageDays)}</em> : null}</span>
                     <GhostButton type="button" disabled={busyId === row.id} onClick={() => void cancel(row.id)}>إلغاء الطلب</GhostButton>
                   </article>
                 ))}

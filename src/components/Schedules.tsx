@@ -8417,6 +8417,24 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   onChange={(patch)=>{setScheduleTouched(true);setForm(current=>({...current,...patch}));}}
                   showRaw={editor==="edit"}
                 />
+                {/* ── جسرٌ إلى الاستعارة، حين تكون عالقاً وحده ────────────────
+                    حدّدتَ اليوم والوقت ولم تجد قاعةً تختارها؟ سطرٌ هادئ واحد
+                    يعرض عليك استعارة قاعة من قسم آخر، ويفتح اللوحة على مكانها.
+                    يظهر في هذه الحال وحدها، ويغيب فور اختيار القاعة — لا زحمة
+                    في نموذجٍ مكتظ أصلاً. */}
+                {Number(form.AdTermId||0) && Number(form.AdCollegeId||0) && Number(form.AdSectionId||0)
+                  && selectedFormDays.length && form.fstarttime && form.fendtime
+                  && !form.roomId && form.locationStatus !== "PENDING_ROOM" ? (
+                  <button
+                    type="button"
+                    className="schedule-borrow-hint"
+                    data-guide-ignore="جسر هادئ يفتح لوحة استعارة القاعات حين لم تُختر قاعة بعد؛ لا يحجز بنفسه"
+                    onClick={() => { setWorkspaceToolsOpen(true); setBarterOpenSignal(v => v + 1); }}
+                  >
+                    <ArrowLeftRight aria-hidden="true" />
+                    <span>لم تجد قاعة متاحة في هذا الوقت؟ <b>استعِر قاعة من قسم آخر</b></span>
+                  </button>
+                ) : null}
                 {roomOwner ? (
                   <div className="room-owner-note" role="status">
                     <span className="room-owner-mark" aria-hidden="true"><Building2 /></span>
