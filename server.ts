@@ -1254,15 +1254,26 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     }
     const course = courseById.get(Number(row.AdCourseId));
     if (!course || course.AdCollegeId !== collegeId || course.AdSectionId !== sectionId) errors.push(`السطر ${index + 1}: المقرر غير صالح للقسم المحدد`);
+    /* A person the reviewer picked by hand in the preview is a decision, not a
+       university-wide name match. The department-membership rule exists to stop
+       the matcher from reaching outside the department on its own; it must not
+       overrule a human who chose a colleague from the register on purpose. */
+    const instructorChosenByHand=String((row as any)?.importEvidence?.instructor?.source||"")==="MANUAL";
     if (!instructorIds.has(Number(row.AdInstructorId))) errors.push(`السطر ${index + 1}: أستاذ المقرر غير صالح`);
-    else if(options.requireDepartmentInstructor&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
+    else if(options.requireDepartmentInstructor&&!instructorChosenByHand&&!departmentInstructorIds.has(Number(row.AdInstructorId)))errors.push(`السطر ${index + 1}: الأستاذ المطابق غير مثبت ضمن القسم الحالي؛ يلزم Review بدلاً من المطابقة على مستوى الجامعة`);
     if(options.requireDepartmentInstructor){
       const authoritySection=Number(String(row.SCode||""));
       if(!/^\d{3}$/.test(String(row.SCode||""))||authoritySection<501||authoritySection>999)errors.push(`السطر ${index + 1}: شعبة جدول PDF يجب أن تبدأ من 501 وتستمر 502، 503… لكل مقرر`);
     }else if (!/^\d{3,4}$/.test(String(row.SCode || ""))) errors.push(`السطر ${index + 1}: رقم الشعبة يجب أن يكون 3 أو 4 أرقام إنجليزية`);
-    let location=locationPreflight(row,registry,{collegeId,sectionId});
+    /* The authority PDF IS the room decision. The university publishes the hall
+       beside the course, so re-asking the registry whether the department owns
+       that hall turns a correct import into a wall of identical warnings the
+       reviewer cannot act on. Double-booking is still caught below, by the
+       conflict pass that compares the actual reservations. */
+    const authorityRooms=Boolean(options.requireDepartmentInstructor);
+    let location=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeRoom:authorityRooms});
     const locationBlocking=location.issues.filter(issue=>issue.severity==="high");
-    if(locationBlocking.length&&locationBlocking.every(issue=>issue.type==="room_scope")&&location.canonical&&await hallBarterAllowsRoomUse({...row,...location.canonical},collegeId,sectionId)){
+    if(!authorityRooms&&locationBlocking.length&&locationBlocking.every(issue=>issue.type==="room_scope")&&location.canonical&&await hallBarterAllowsRoomUse({...row,...location.canonical},collegeId,sectionId)){
       location=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeRoom:true});
     }
     if(!location.ok) location.issues.filter(issue=>issue.severity==="high").forEach(issue=>errors.push(`السطر ${index + 1}: ${issue.message}`));

@@ -3,7 +3,7 @@ import { AlertTriangle, ArrowLeftRight, BookOpen, Building2, Check, CheckCircle2
 import { PrimaryButton, SecondaryButton, useDialogDismiss } from "./ui";
 import { validateCivilId } from "../utils/civilId";
 import { AR, countOf } from "../utils/arabicCount";
-import { type ImportRow } from "./ImportPreviewTable";
+import { importRowKey, type ImportRow } from "./ImportPreviewTable";
 import PagedImportPreview from "./PagedImportPreview";
 import SchedulePublish from "./SchedulePublish";
 import { sortByName } from "../utils/sorting";
@@ -274,15 +274,48 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
       if (start < 0 || end <= start) issues.add(`الصف ${n}: الوقت غير مكتمل أو غير صالح.`);
       if (!row.buildingId) issues.add(`الصف ${n}: المبنى الرسمي غير محدد.`);
       if (!row.roomId && row.locationStatus !== "PENDING_ROOM") issues.add(`الصف ${n}: القاعة غير محددة.`);
-      if (!Number(row.AdInstructorId)||(!departmentIds.includes(Number(row.AdInstructorId))&&!roster.includes(Number(row.AdInstructorId)))) issues.add(`الصف ${n}: أستاذ المقرر غير محدد أو غير مثبت ضمن القسم/منتدبي الفصل الحالي.`);
+      /* A name the reviewer picked by hand is settled. Cross-department
+         teaching is legitimate, so it is visible — never a blocker. */
+      const instructorChosenByHand = row.importEvidence?.instructor?.source === "MANUAL";
+      if (!Number(row.AdInstructorId)||(!instructorChosenByHand&&!departmentIds.includes(Number(row.AdInstructorId))&&!roster.includes(Number(row.AdInstructorId)))) issues.add(`الصف ${n}: أستاذ المقرر غير محدد أو غير مثبت ضمن القسم/منتدبي الفصل الحالي.`);
     });
     return [...issues];
   }, [xlsxPreview, importKind, departmentIds, roster]);
+  /* Server notes arrive as «السطر N: …» against the whole draft. They are moved
+     onto the rows they name so the table can colour the offending cell, instead
+     of printing the same sentence five times under a table that looks fine. */
+  const serverRowIssues = useMemo(() => {
+    const notes = Array.isArray(xlsxPreview?.saveIssues) ? xlsxPreview.saveIssues : [];
+    const rows = Array.isArray(xlsxPreview?.rows) ? xlsxPreview.rows as ImportRow[] : [];
+    const byRow: Record<string, string[]> = {};
+    notes.forEach((note: unknown) => {
+      const text = String(note || "").trim();
+      const match = text.match(/^السطر\s+(\d+)\s*:\s*(.*)$/);
+      if (!match) return;
+      const row = rows[Number(match[1]) - 1];
+      if (!row) return;
+      const key = importRowKey(row);
+      byRow[key] = [...new Set([...(byRow[key] || []), match[2].trim()])];
+    });
+    return byRow;
+  }, [xlsxPreview]);
+  const unplacedSaveIssues = useMemo(() => {
+    const notes = Array.isArray(xlsxPreview?.saveIssues) ? xlsxPreview.saveIssues : [];
+    return [...new Set(notes.map((note: unknown) => String(note || "").trim()).filter((note: string) => note && !/^السطر\s+\d+\s*:/.test(note)))] as string[];
+  }, [xlsxPreview]);
+
   /* An Authority PDF can legitimately end with ZERO live rows: deleting every
      imported row means “publish an empty timetable”, while the immutable
      baseline must still generate a report with every source row marked deleted. */
   const authorityBaselineCount = importKind === "authority-pdf" && Array.isArray(xlsxPreview?.baselineRows) ? xlsxPreview.baselineRows.length : 0;
   const importReady = Boolean((xlsxPreview?.rows?.length || authorityBaselineCount > 0) && importBlockingIssues.length === 0);
+  /* Reviewing a scanned timetable is reading a PAGE, not a card. In a 620px
+     sheet the table needed a second, horizontal scrollbar, and a plain mouse
+     had to travel in two directions to read one row. While the PDF preview is
+     open the sheet takes the page, and the table fits its width: one scroll,
+     downward, the way the document itself is read. */
+  const importPreviewOpen = tab === "import" && importKind === "authority-pdf" && Boolean(xlsxPreview?.rows?.length) && !xlsxDraft;
+
   const rotatedPdfGuidance = Boolean(error && /دوّر صفحات الجدول للوضع الأفقي/.test(error));
   const pdfReadinessSummary = useMemo(() => {
     if (importKind !== "authority-pdf" || !Array.isArray(xlsxPreview?.rows)) return null;
@@ -679,12 +712,18 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
         }
         throw new Error(data.error || "تعذر حفظ المسودة");
       }
-      const id=String(data.id||"");setXlsxDraft(id||"تم");
+      const id=String(data.id||"");
+      /* The draft is a step on the way to publishing, never a destination. If
+         publishing fails the screen must keep the review — and its buttons —
+         instead of announcing a saved draft the reader would read as done. */
       if(publishNow&&id){
         await publishImportedDraft(id);
+        setXlsxDraft(id);
         /* “تعبئة ونشر” is a completed action, not another review step. Close
            the transfer sheet only after the server confirms publication. */
         onClose();
+      } else {
+        setXlsxDraft(id||"تم");
       }
     } catch (e: any) {
       setError(e.message || "تعذر حفظ المسودة");
@@ -795,7 +834,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
 
   return (
     <div className="transfer-backdrop no-print" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
-      <section className="transfer-sheet visual-minimal" role="dialog" aria-modal="true" aria-label="نقل الجدول">
+      <section className={`transfer-sheet visual-minimal${importPreviewOpen ? " is-page-wide" : ""}`} role="dialog" aria-modal="true" aria-label="نقل الجدول">
         <header>
           <div>
             <span className="surface-kicker">الجدول كوحدة واحدة</span>
@@ -1034,6 +1073,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                         collegeId={collegeId}
                         sectionId={sectionId}
                         termId={termId}
+                        rowIssues={serverRowIssues}
                         onRows={next => setXlsxPreview((prev: any) => {
                           if(!prev)return prev;
                           // The visual lock is the first guard; this is the one
@@ -1046,12 +1086,22 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                           return { ...prev, rows: normalized, count: normalized.length, issues: documentWarnings, saveIssues: undefined, valid: normalized.length > 0 || (Array.isArray(prev.baselineRows) && prev.baselineRows.length > 0) };
                         })}
                       />
-                      {Array.isArray(xlsxPreview.saveIssues) && xlsxPreview.saveIssues.length ? (
+                      {/* A note about a row belongs ON that row. Repeating the
+                          same sentence once per line under a table that already
+                          marks the cell in red is noise the reviewer has to read
+                          five times to learn one thing. Only what cannot be
+                          placed on a cell is written out here. */}
+                      {Object.keys(serverRowIssues).length ? (
+                        <p className="transfer-row-issues-note" role="alert">
+                          <AlertTriangle />
+                          {`${countOf(Object.keys(serverRowIssues).length, AR.row)} بحاجة إلى مراجعة · الخلايا المعنية مظللة بالأحمر داخل الجدول.`}
+                        </p>
+                      ) : null}
+                      {unplacedSaveIssues.length ? (
                         <ul className="transfer-rejected" role="alert">
-                          {xlsxPreview.saveIssues.slice(0, 8).map((issue: string, index: number) => (
+                          {unplacedSaveIssues.slice(0, 4).map((issue: string, index: number) => (
                             <li key={index}><span>{issue}</span></li>
                           ))}
-                          {xlsxPreview.saveIssues.length > 8 ? <li className="muted">و{xlsxPreview.saveIssues.length - 8} غيرها…</li> : null}
                         </ul>
                       ) : null}
                     </>
@@ -1075,7 +1125,10 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                             {busy ? "يجهّز…" : importKind === "authority-pdf" && Number(xlsxPreview.count || 0) === 0 ? "اعتماد حذف جميع مواعيد PDF ونشره" : `تعبئة ${countOf(Number(xlsxPreview.count || 0), AR.appointment)} ونشرها`}
                           </PrimaryButton>
                         ) : null}
-                        {importKind==="authority-pdf" && importReady ? <SecondaryButton type="button" data-guide-ignore="حفظ مسودة الاستيراد من المعاينة إجراء محلي موثق داخل أدوات البيانات" onClick={() => void saveExcelDraft(false)} disabled={busy || !importReady}>حفظ كمسودة فقط</SecondaryButton> : null}
+                        {/* «حفظ كمسودة فقط» is gone on purpose: a saved draft
+                            looks published to the person who saved it, and a
+                            whole department's timetable stayed invisible because
+                            of it. Review here, then publish — one road out. */}
                       </div>
                     </div>
                   )}

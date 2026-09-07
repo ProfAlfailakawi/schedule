@@ -119,4 +119,5 @@ export const AR = {
   account:     { one: "حساب", two: "حسابان", few: "حسابات", many: "حساباً" },
   visit:       { one: "مرة", two: "مرتان", few: "مرات", many: "مرة" },
   link:        { one: "علاقة", two: "علاقتان", few: "علاقات", many: "علاقة" },
+  row:         { one: "صف", two: "صفان", few: "صفوف", many: "صفاً" },
 } as const satisfies Record<string, ArabicNoun>;

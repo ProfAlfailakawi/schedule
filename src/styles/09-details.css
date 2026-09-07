@@ -1779,3 +1779,30 @@ html[data-rail="closed"] .sidebar:not(:hover):not(:focus-within) .rail-identity{
 .roster-edit-wrap{display:grid;gap:8px;min-width:0}
 
 @media(max-width:620px){.transfer-orientation-guidance{margin-inline:16px;padding-inline:12px}.transfer-orientation-guidance strong{font-size:12px}}
+
+/* ── معاينة استيراد PDF بحجم الصفحة ───────────────────────────────────────
+   Reviewing a scanned timetable is reading a page. In the ordinary 620–880px
+   sheet the preview table needed a horizontal scrollbar of its own, so a plain
+   mouse had to travel right, left, up and down to read a single row. While the
+   PDF preview is open the sheet takes the page and the table fits its width:
+   one scrollbar, downward, like the document it came from. */
+.transfer-sheet.is-page-wide{
+  width:min(1680px,calc(100vw - 24px));
+  max-height:calc(100dvh - 24px);
+}
+.transfer-sheet.is-page-wide .import-preview-table-wrap{overflow-x:visible}
+.transfer-sheet.is-page-wide .import-preview-table{min-width:0;table-layout:auto}
+/* The header of a page-tall table has to stay readable while the page scrolls,
+   and it scrolls inside the sheet — so the sticky row belongs to that scroller. */
+.transfer-sheet.is-page-wide .import-preview-table th{top:0}
+/* One line, not a list: what could not be placed on a cell. */
+.transfer-row-issues-note{
+  display:flex;align-items:center;gap:var(--s2);
+  margin-top:var(--s3);color:var(--danger);font-size:var(--t-sm);line-height:1.6;
+}
+.transfer-row-issues-note svg{width:15px;height:15px;flex:none}
+@media(max-width:900px){
+  .transfer-sheet.is-page-wide{width:min(880px,calc(100vw - 20px))}
+  .transfer-sheet.is-page-wide .import-preview-table-wrap{overflow-x:auto}
+  .transfer-sheet.is-page-wide .import-preview-table{min-width:860px}
+}

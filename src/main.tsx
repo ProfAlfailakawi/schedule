@@ -297,13 +297,49 @@ if (import.meta.env.PROD) {
   const versionBusy = () =>
     document.documentElement.classList.contains("schedule-physics-active")
     || Boolean(document.querySelector("dialog[open],[role='dialog'],[aria-busy='true']"));
+  /* Nobody using this program should ever be told to "do a hard refresh" or to
+     "clear the cache". The words mean nothing to a professor between two
+     lectures, and the instruction is really the program asking a person to
+     repair it by hand. So the program repairs itself, in this order:
+     ask the worker to fetch the new release · drop the API cache it filled ·
+     reload once, but never over an open dialog or a drag. And if a tab comes
+     back STILL running the old build, the reload was answered from somewhere
+     stale, so the next step is the hard refresh itself — every cache deleted
+     and the worker unregistered — performed by the program, once, silently. */
+  const UPDATE_ATTEMPT_KEY = "schedule-update-attempt";
+  const primeNewRelease = async () => {
+    try {
+      const registration = await navigator.serviceWorker?.getRegistration?.();
+      await registration?.update().catch(() => undefined);
+      navigator.serviceWorker?.controller?.postMessage({ type: "CLEAR_API_CACHE" });
+    } catch { /* no worker on this browser — the reload alone will do */ }
+  };
   const checkVersion = async () => {
     if (versionReloading) return;
     try {
       const response = await fetch("/api/version", { cache: "no-store" });
       const data = await response.json();
-      if (!data?.build || data.build === BUILD_STAMP) return;
+      if (!data?.build || data.build === BUILD_STAMP) { safeStorage.remove(UPDATE_ATTEMPT_KEY, "local"); return; }
       versionReloading = true;
+      /* A tab that already reloaded for THIS release and still runs the old
+         code was served a stale document. Clearing every cache and dropping
+         the worker is exactly what the hand-typed hard refresh does. */
+      if (safeStorage.get(UPDATE_ATTEMPT_KEY, "local") === String(data.build)) {
+        safeStorage.remove(UPDATE_ATTEMPT_KEY, "local");
+        const reset = async () => {
+          if (versionBusy()) { window.setTimeout(() => { void reset(); }, 4000); return; }
+          try {
+            if ("caches" in window) { const keys = await caches.keys(); await Promise.all(keys.map(key => caches.delete(key))); }
+            const registrations = await navigator.serviceWorker?.getRegistrations?.();
+            await Promise.all((registrations || []).map(registration => registration.unregister()));
+          } catch { /* a blocked cache API must not stop the reload */ }
+          window.location.reload();
+        };
+        void reset();
+        return;
+      }
+      safeStorage.set(UPDATE_ATTEMPT_KEY, String(data.build), "local");
+      await primeNewRelease();
       const reload = () => { if (versionBusy()) { window.setTimeout(reload, 4000); return; } window.location.reload(); };
       reload();
     } catch { /* offline — the next check will see */ }
