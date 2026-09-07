@@ -2953,11 +2953,12 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const [borrowBusy, setBorrowBusy] = useState(false);
   const [borrowMsg, setBorrowMsg] = useState("");
   const [borrowRooms, setBorrowRooms] = useState<any[]>([]);
+  const [borrowQuery, setBorrowQuery] = useState("");
   const openBorrow = async () => {
     const next = !borrowOpen;
     setBorrowOpen(next);
     if (!next) return;
-    setBorrowBusy(true); setBorrowMsg(""); setBorrowRooms([]);
+    setBorrowBusy(true); setBorrowMsg(""); setBorrowRooms([]); setBorrowQuery("");
     try {
       const q = new URLSearchParams({ collegeId: String(form.AdCollegeId || 0), sectionId: String(form.AdSectionId || 0), termId: String(form.AdTermId || 0) });
       const response = await fetch(`/api/hall-barter?${q}`, { credentials: "include" });
@@ -8482,17 +8483,41 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                       <div className="schedule-borrow-panel">
                         {borrowBusy && !borrowRooms.length ? <p className="schedule-borrow-empty">يبحث عن قاعات متاحة…</p> : null}
                         {!borrowBusy && !borrowRooms.length && !borrowMsg ? <p className="schedule-borrow-empty">لا قاعة متاحة للاستعارة في هذا اليوم والوقت الآن.</p> : null}
-                        {borrowRooms.length ? (
-                          <ul className="schedule-borrow-list">
-                            {borrowRooms.map(op => (
-                              <li key={op.id}>
-                                <span className="schedule-borrow-room" dir="ltr">{op.roomCode}/{op.roomHall}</span>
-                                <span className="schedule-borrow-owner">{op.ownerSectionName}</span>
-                                <button type="button" disabled={borrowBusy} onClick={() => void requestBorrow(op)} data-guide-ignore="يرسل طلب استعارة قاعة من داخل المحرر دون مغادرته">اطلب</button>
-                              </li>
-                            ))}
-                          </ul>
+                        {borrowRooms.length > 5 ? (
+                          <div className="schedule-borrow-search">
+                            <Search aria-hidden="true" />
+                            <input
+                              type="search"
+                              value={borrowQuery}
+                              onChange={event => setBorrowQuery(event.target.value)}
+                              placeholder="ابحث بالقاعة أو القسم…"
+                              data-guide-ignore="بحثٌ خفيف داخل قائمة الاستعارة المصغّرة"
+                            />
+                          </div>
                         ) : null}
+                        {(() => {
+                          const q = borrowQuery.trim();
+                          const matched = q
+                            ? borrowRooms.filter(op => `${op.roomCode}/${op.roomHall} ${op.ownerSectionName || ""}`.toLowerCase().includes(q.toLowerCase()))
+                            : borrowRooms;
+                          const shown = matched.slice(0, 5);
+                          if (!matched.length && borrowRooms.length) return <p className="schedule-borrow-empty">لا نتيجة لبحثك.</p>;
+                          if (!shown.length) return null;
+                          return (
+                            <>
+                              <ul className="schedule-borrow-list">
+                                {shown.map(op => (
+                                  <li key={op.id}>
+                                    <span className="schedule-borrow-room" dir="ltr">{op.roomCode}/{op.roomHall}</span>
+                                    <span className="schedule-borrow-owner">{op.ownerSectionName}</span>
+                                    <button type="button" disabled={borrowBusy} onClick={() => void requestBorrow(op)} data-guide-ignore="يرسل طلب استعارة قاعة من داخل المحرر دون مغادرته">اطلب</button>
+                                  </li>
+                                ))}
+                              </ul>
+                              {matched.length > shown.length ? <p className="schedule-borrow-more">و{matched.length - shown.length} قاعة أخرى — حدِّد البحث لتضييقها.</p> : null}
+                            </>
+                          );
+                        })()}
                         {borrowMsg ? <p className="schedule-borrow-msg">{borrowMsg}</p> : null}
                       </div>
                     ) : null}
