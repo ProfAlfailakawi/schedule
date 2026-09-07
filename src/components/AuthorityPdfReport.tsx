@@ -119,7 +119,7 @@ export default function AuthorityPdfReport({
 
             <div className="print-comprehensive-grid authority-pdf-grid" role="table" aria-label="تقرير تغييرات الجدول">
               <div className="print-comprehensive-grid-row print-comprehensive-grid-head" role="row">
-                {["رقم المقرر", "الرقم المرجعي", "الشعبة", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", ...(showSite ? ["الموقع"] : []), "الوقت", "الأيام", "المدرس"].map(head => (
+                {["رقم المقرر", "الرقم المرجعي", "الشعبة", "مسمى المقرر", "عدد الوحدات", "عدد الساعات", "الحد الأقصى", "القاعة", "المبنى", "الوقت", "الأيام", "المدرس"].map(head => (
                   <div role="columnheader" key={head}>{head}</div>
                 ))}
               </div>
@@ -152,13 +152,19 @@ export default function AuthorityPdfReport({
                       {/* Section numbering is a system-canonical import convention, not
                           a user edit. Keep the value visible but never paint it yellow. */}
                       <div role="cell" className="print-ltr">{String(row.SCode || "").trim() || "—"}</div>
-                      <div role="cell" className={`print-wrap print-course-name ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseName || row.AdCourseName || "—"}</div>
+                      {/* الموقع بطاقة صغيرة بجانب اسم المقرر، لا عموداً جديداً:
+                          العمود يضيّق الجدول الرسمي كله لأجل كلمة، والبطاقة
+                          تقولها حيث ينظر القارئ أصلاً — كما تقولها بطاقة
+                          الموعد على الشاشة. */}
+                      <div role="cell" className={`print-wrap print-course-name ${cell(fieldChanged(entry, "AdCourseId"))}`}>
+                        {course?.CourseName || row.AdCourseName || "—"}
+                        {showSite && entry.siteLabel ? <span className="print-site-chip">{entry.siteLabel}</span> : null}
+                      </div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseCredit ?? "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.CourseHours ?? "—"}</div>
                       <div role="cell" className={`num ${cell(fieldChanged(entry, "AdCourseId"))}`}>{course?.MaxStudent ?? "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdRoomHall"))}`}>{String(row.AdRoomHall || "").trim() || "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdRoomCode"))}`}>{String(row.AdRoomCode || "").trim() || "—"}</div>
-                      {showSite ? <div role="cell" className="print-wrap print-site-cell">{entry.siteLabel || "—"}</div> : null}
                       <div role="cell" className={`print-ltr print-nowrap ${cell(fieldChanged(entry, "fstarttime", "fendtime"))}`}>{row.fstarttime && row.fendtime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"))}`}>{dayNumbers(row)}</div>
                       <div role="cell" className={`print-wrap print-instructor-name authority-pdf-instructor ${cell(fieldChanged(entry, "AdInstructorId"))}`}>

@@ -2463,7 +2463,6 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                       "الأيام",
                       "المبنى",
                       "القاعة",
-                      ...(showSite ? ["الموقع"] : []),
                       "أستاذ المقرر",
                       "الرقم المدني",
                     ].map(head => <div role="columnheader" key={head}>{head}</div>)}
@@ -2480,7 +2479,12 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                           <div role="cell" className="print-num">{serial}</div>
                           <div role="cell" className="print-ltr print-course-id">{row.AdCourseId || "—"}</div>
                           <div role="cell" className="print-ltr">{row.SCode || "—"}</div>
-                          <div role="cell" className="print-wrap print-course-name">{course?.CourseName || row.AdCourseName || "—"}</div>
+                          {/* الموقع بطاقة بجانب اسم المقرر لا عموداً: العمود
+                              يضيّق الجدول الرسمي كله لأجل كلمة. */}
+                          <div role="cell" className="print-wrap print-course-name">
+                            {course?.CourseName || row.AdCourseName || "—"}
+                            {showSite && siteOfRow.get(row) ? <span className="print-site-chip">{siteOfRow.get(row)}</span> : null}
+                          </div>
                           <div role="cell" className="num print-course-units">{course ? course.CourseCredit : "—"}</div>
                           <div role="cell" className="num print-course-hours">{course ? course.CourseHours : "—"}</div>
                           <div role="cell" className="num print-course-capacity">{course ? course.MaxStudent : "—"}</div>
@@ -2488,7 +2492,6 @@ function PrintSheet({ kind, rows, fairness, matrix, roomLoad, roomDay, balance, 
                           <div role="cell" className="print-ltr">{dayCodeCell(row)}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomCode || "").trim() || "—"}</div>
                           <div role="cell" className="print-ltr">{String(row.AdRoomHall || "").trim() || "—"}</div>
-                          {showSite ? <div role="cell" className="print-wrap print-site-cell">{siteOfRow.get(row) || "—"}</div> : null}
                           <div role="cell" className="print-wrap print-instructor-name">{instructorPrintName(row)}</div>
                           <div role="cell" className="print-ltr print-civil">{instructor?.AdInstructorCivil || "—"}</div>
                         </div>
