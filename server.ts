@@ -1050,7 +1050,13 @@ const AUTHORITY_PDF_COMPARE_FIELDS = [
 /** Compare the immutable source PDF with the LIVE timetable, not the saved
  * draft. sourceOrder is the stable trace carried from the PDF through publish;
  * ordinary rows created later live outside the imported source range. */
-function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{instructorNameById?:Map<number,string>}={}){
+/** رمز المقرر الرسمي لكل رقم كتالوج — هوية المقرر التي تعبر الأقسام. */
+async function authorityCourseCodeMap(){
+  const courses=await Repository.getCourses();
+  return new Map<number,string>(courses.map((course:any)=>[Number(course.AdCourseId),String(course.CourseCode||"").trim()]));
+}
+
+function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{instructorNameById?:Map<number,string>;courseCodeById?:Map<number,string>}={}){
   const baseline=assignAuthoritySections([...(baselineInput||[])]).sort((a:any,b:any)=>Number(a.sourceOrder)-Number(b.sourceOrder));
   const current=[...(currentInput||[])];
   const consumed=new Set<number>();
@@ -1142,7 +1148,17 @@ function buildAuthorityPdfDiff(baselineInput:any[],currentInput:any[],options:{i
       return s;
     };
     const comparable=(field:string,value:any)=>{
-      if(["AdCourseId","AdInstructorId"].includes(field))return Number(value||0);
+      /* ── المقرر يُعرف برمزه لا برقمه الداخلي ────────────────────────────
+       * المقرر الواحد له رقم مستقل في كتالوج كل قسم، والنشر يضع صف الجهراء في
+       * قسم الجهراء برقم كتالوجه هناك. فمقارنة الرقم بالرقم كانت تقول إن
+       * المقرر «تغيّر» في كل صف من مواقع الفرع — ومعه الوحدات والساعات والسعة
+       * لأنها تتبعه — فيخرج التقرير مصفرّاً كله بينما لم يُعدَّل إلا القاعة.
+       * الرمز الرسمي هو هوية المقرر عبر الأقسام، فبه تُقارن. */
+      if(field==="AdCourseId"){
+        const code=options.courseCodeById?.get(Number(value||0));
+        return code ? `code:${String(code).trim()}` : Number(value||0);
+      }
+      if(field==="AdInstructorId")return Number(value||0);
       if(["SCode"].includes(field)){
         const num=String(value??"").replace(/\D/g,"").replace(/^0+/,"");
         return num || String(value??"").trim();
@@ -6983,7 +6999,7 @@ app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), asyn
   ]);
   const instructorNameById=new Map<number,string>(instructors.map((row:any)=>[Number(row.AdInstructorId),String(row.AdInstructorName||"")] as [number,string]));
   const scopedBaseline=await authorityBaselineForScope(draft.baselineRows,draft,draft.AdCollegeId,draft.AdSectionId);
-  const comparison=buildAuthorityPdfDiff(scopedBaseline,live,{instructorNameById});
+  const comparison=buildAuthorityPdfDiff(scopedBaseline,live,{instructorNameById,courseCodeById:await authorityCourseCodeMap()});
   res.json({
     draftId:draft.id,name:draft.name,sourceFileName:draft.sourceFileName||"الجدول المعتمد.pdf",
     sourceBranchCode:inferAuthorityBranchCode(draft,[...scopedBaseline,...live]),
@@ -7034,7 +7050,7 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
      baseline and let buildAuthorityPdfDiff classify every original row as
      `deleted` instead of suppressing the report. */
   const scopedBaseline=await authorityBaselineForScope(draft.baselineRows||[],draft,collegeId,sectionId);
-  const comparison=buildAuthorityPdfDiff(scopedBaseline,live,{instructorNameById});
+  const comparison=buildAuthorityPdfDiff(scopedBaseline,live,{instructorNameById,courseCodeById:await authorityCourseCodeMap()});
   res.json({
     draftId:draft.id,name:draft.name,sourceFileName:draft.sourceFileName||"الجدول المعتمد.pdf",
     sourceBranchCode:inferAuthorityBranchCode(draft,[...scopedBaseline,...live]),
