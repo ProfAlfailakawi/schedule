@@ -4527,13 +4527,17 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   // building.sectionIds relationship is historical evidence, not permission to
   // show an empty building in the picker.
   const buildingCodeById=new Map(registry.buildings.map(building=>[building.id,String(building.officialCode||"")]));
-  /* داخل الفرع، قاعات الموقع قاعات القسم نفسه: تقييد القائمة برقم قسم واحد
-     وُضع ليبقى المختار قصيراً في الحالة العادية، لا ليحجب عن قسمٍ قاعات موقعٍ
-     يدرّس فيه. فمتى طُلبت مواقع الفرع صراحةً كان انتماء المبنى للفرع كافياً. */
-  const eligibleRooms=confirmedRooms.filter(room=>
-    !sectionId||room.sectionIds.some(id=>branchSectionIds.has(Number(id)))||borrowedSet.has(room.id)
-    ||inBranch(buildingCodeById.get(room.buildingId))
-  );
+  /* ── القائمة هي الإذن ──────────────────────────────────────────────────
+   * لا كتابة يدوية للقاعة في هذا النظام: ما لا يظهر في القائمة لا يُحجز. فما
+   * كان مسجَّلاً لقسم آخر لا يُعرض أصلاً إلا بعد اعتماد استعارة؛ ورفضُ الحفظ
+   * لاحقاً حارسٌ ثانٍ لا أول. وفتحُ مواقع الفرع يفتح قاعات القسم في مواقعه
+   * والقاعات التي لا قسم مسجَّلاً لها — لا قاعات جيرانه هناك. */
+  const eligibleRooms=confirmedRooms.filter(room=>{
+    if(!sectionId)return true;
+    if(room.sectionIds.some(id=>branchSectionIds.has(Number(id))))return true;
+    if(borrowedSet.has(room.id))return true;
+    return room.sectionIds.length===0&&inBranch(buildingCodeById.get(room.buildingId));
+  });
   const eligibleBuildingIds=new Set(eligibleRooms.map(room=>room.buildingId));
   const borrowedBuildingIds=new Set(eligibleRooms.filter(room=>borrowedSet.has(room.id)).map(room=>room.buildingId));
   const buildings=registry.buildings.filter(building=>

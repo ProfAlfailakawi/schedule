@@ -1092,9 +1092,15 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
        synchronously inside the same tap, commit the requested sheet synchronously,
        then invoke the browser print command without RAF/timers/await. */
     closeReportEvents();
-    if (printKind !== kind) {
+    /* ── لكل أمر طباعة وثيقته وحدها ────────────────────────────────────
+       تقرير التغييرات يبقى في الذاكرة بعد فتحه مرة، ومنفذه يعيش بجانب منفذ
+       التقارير. فقبل أي طباعة أخرى يُفرَّغ صراحةً: القارئ طلب وثيقة واحدة،
+       فلا تخرج معها وثيقة لم يطلبها. */
+    if (printKind !== kind || authorityReport || authorityBook) {
       flushSync(() => {
         setPrintKind(kind);
+        setAuthorityReport(null);
+        setAuthorityBook(null);
       });
     }
 
@@ -1211,7 +1217,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
     setError(null);
     const { denied } = await loadBranchRows();
     if (denied.length) setError(`لم تُدرج مواقع خارج صلاحياتك: ${denied.join("، ")}.`);
-    flushSync(() => setPrintKind("comprehensive-branch"));
+    flushSync(() => { setPrintKind("comprehensive-branch"); setAuthorityReport(null); setAuthorityBook(null); });
     runPrint("comprehensive-branch");
   };
 
