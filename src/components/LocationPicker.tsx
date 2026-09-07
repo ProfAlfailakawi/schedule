@@ -6,6 +6,8 @@ import { buildingNumberLabel, officialSiteLabel } from "../utils/locationCollege
 type LocationValue=Pick<FSchedule,"AdRoomCode"|"AdRoomHall"|"buildingId"|"roomId"|"locationStatus"|"sourceBuildingText"|"sourceRoomText">;
 type PickerRoom=MasterRoom&{sharedWith?:string[]};
 type RegistryPayload={buildings:MasterBuilding[];rooms:PickerRoom[];borrowedRoomIds:string[]};
+/** اسم صاحب القاعة المستعارة كما يرسله الخادم مع القاعة. */
+const borrowedLabel=(room:any)=>{const owner=String(room?.borrowedFrom||"").trim();return owner?`${room.canonicalCode} — ${owner}`:String(room?.canonicalCode||"");};
 
 /**
  * ── القاعة المشتركة تقول مع مَن، بأهدأ صوت ممكن ─────────────────────────────
@@ -97,7 +99,7 @@ export function RoomPicker({collegeId,sectionId,termId,buildingId,roomId,locatio
     <option value="">{buildingId?"اختر القاعة الرسمية":"اختر المبنى أولاً"}</option>
     {ownRooms.length?<optgroup label="قاعات القسم">{ownRooms.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}
     {sharedRooms.length?<optgroup label="قاعات مشتركة مع أقسام أخرى">{sharedRooms.map(r=><option key={r.id} value={r.id}>{sharedRoomLabel(r as PickerRoom)}</option>)}</optgroup>:null}
-    {borrowed.length?<optgroup label="قاعات مستعارة معتمدة">{borrowed.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}
+    {borrowed.length?<optgroup label="قاعات مستعارة معتمدة">{borrowed.map(r=><option key={r.id} value={r.id}>{borrowedLabel(r)}</option>)}</optgroup>:null}
     {allowPending?<option value={PENDING_ROOM}>بانتظار تثبيت القاعة</option>:null}
   </select>;
 }
@@ -116,7 +118,7 @@ export default function LocationPicker({collegeId,sectionId,termId,value,onChang
   const chooseRoom=(id:string)=>{if(id===PENDING_ROOM){onChange({roomId:undefined,AdRoomHall:"",locationStatus:"PENDING_ROOM"});return;}const r=rooms.find(x=>x.id===id);onChange({roomId:r?.id,AdRoomHall:r?.canonicalCode||"",locationStatus:r?"VERIFIED":undefined});};
   return <div className="location-registry-picker" data-location-registry-picker="true">
     <label><span>المبنى <b>*</b></span><select aria-label="المبنى الرسمي" value={value.buildingId||""} disabled={disabled||loading} onChange={e=>chooseBuilding(e.target.value)} required><option value="">{loading?"جارٍ تحميل المباني…":"اختر المبنى"}</option>{buildings.map(b=><option key={b.id} value={b.id}>{buildingNumberLabel(b)}</option>)}</select></label>
-    <label><span>القاعة <b>*</b></span><select aria-label="القاعة الرسمية" value={locationPending?PENDING_ROOM:(value.roomId||"")} disabled={disabled||!selectedBuilding} onChange={e=>chooseRoom(e.target.value)} required><option value="">{selectedBuilding?"اختر القاعة الرسمية":"اختر المبنى أولاً"}</option>{ownRooms.length?<optgroup label="قاعات القسم">{ownRooms.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}{sharedRooms.length?<optgroup label="قاعات مشتركة مع أقسام أخرى">{sharedRooms.map(r=><option key={r.id} value={r.id}>{sharedRoomLabel(r as PickerRoom)}</option>)}</optgroup>:null}{borrowed.length?<optgroup label="قاعات مستعارة معتمدة">{borrowed.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}{allowPending?<option value={PENDING_ROOM}>بانتظار تثبيت القاعة</option>:null}</select></label>
+    <label><span>القاعة <b>*</b></span><select aria-label="القاعة الرسمية" value={locationPending?PENDING_ROOM:(value.roomId||"")} disabled={disabled||!selectedBuilding} onChange={e=>chooseRoom(e.target.value)} required><option value="">{selectedBuilding?"اختر القاعة الرسمية":"اختر المبنى أولاً"}</option>{ownRooms.length?<optgroup label="قاعات القسم">{ownRooms.map(r=><option key={r.id} value={r.id}>{r.canonicalCode}</option>)}</optgroup>:null}{sharedRooms.length?<optgroup label="قاعات مشتركة مع أقسام أخرى">{sharedRooms.map(r=><option key={r.id} value={r.id}>{sharedRoomLabel(r as PickerRoom)}</option>)}</optgroup>:null}{borrowed.length?<optgroup label="قاعات مستعارة معتمدة">{borrowed.map(r=><option key={r.id} value={r.id}>{borrowedLabel(r)}</option>)}</optgroup>:null}{allowPending?<option value={PENDING_ROOM}>بانتظار تثبيت القاعة</option>:null}</select></label>
     {locationPending?<small className="location-pending-badge">بانتظار تثبيت القاعة</small>:null}
     {showRaw&&(value.sourceBuildingText||value.sourceRoomText)&&((value.sourceBuildingText||"")!==value.AdRoomCode||(value.sourceRoomText||"")!==value.AdRoomHall)?<small className="location-source-value">القيمة المقروءة: {[value.sourceBuildingText,value.sourceRoomText].filter(Boolean).join("/")}</small>:null}
   </div>;

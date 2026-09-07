@@ -2833,16 +2833,51 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     ...(Array.isArray(room.sectionIds)?room.sectionIds:[]),
   ].map(Number).filter(Boolean))];
   const buildingById=new Map(registry.buildings.map(building=>[building.id,building]));
+
+  /* ── الجدول شاهدٌ على الملكية كما هو شاهد على الفراغ ─────────────────────
+   *
+   * «أقسام لم تظهر إطلاقاً — اللغة العربية وغيرها — ولها فراغات.» والسبب أن
+   * اللوحة كانت تسأل السجلَّ وحده: أي قسم مكتوبٌ في حقل القاعة؟ وسجلُّ
+   * القاعات بُني من تاريخٍ ناقص، فقاعةٌ لم يُكتب لها قسم — أو كُتب لها قسمٌ
+   * من كلية أخرى — تسقط من القائمة ومعها كل أقسامها.
+   *
+   * وجدول هذا الفصل شاهدٌ لا يُردّ: قسمٌ يحجز قاعة اليوم فهي قاعته عملياً،
+   * وكليةٌ تحجز فيها فهي من قاعاتها. فصار الحجز الفعلي مصدراً ثانياً
+   * للانتماء: يُكمل السجل حيث سكت، ولا ينقض ما نطق به.
+   */
+  const usageByRoom=new Map<string,{colleges:Set<number>;sections:Map<number,number>}>();
+  for(const row of termRows){
+    const key=String(row.roomId||"").trim();
+    if(!key)continue;
+    const entry=usageByRoom.get(key)||{colleges:new Set<number>(),sections:new Map<number,number>()};
+    const rowCollege=Number(row.AdCollegeId||0),rowSection=Number(row.AdSectionId||0);
+    if(rowCollege)entry.colleges.add(rowCollege);
+    if(rowSection)entry.sections.set(rowSection,(entry.sections.get(rowSection)||0)+1);
+    usageByRoom.set(key,entry);
+  }
+  /* القسم الذي يحجزها أكثر هو صاحبها في الواقع؛ وعند التساوي أصغر رقم، حتى
+     يكون الترتيب ثابتاً لا يتبدل بين نداء وآخر. */
+  const usageOwnerSections=(roomId:string)=>{
+    const usage=usageByRoom.get(roomId);
+    if(!usage)return [] as number[];
+    return [...usage.sections.entries()].sort((a,b)=>b[1]-a[1]||a[0]-b[0]).map(entry=>entry[0]);
+  };
+
   const collegeRooms=registry.rooms.filter(room=>{
     if(!room.active||room.confidence!=="CONFIRMED")return false;
     const building=buildingById.get(room.buildingId);
     if(!building||!building.active||building.confidence!=="CONFIRMED")return false;
     const roomColleges=[...new Set([...(room.collegeIds||[]),...(building.collegeIds||[])].map(Number).filter(Boolean))];
-    return roomColleges.includes(collegeId);
+    if(roomColleges.includes(collegeId))return true;
+    return Boolean(usageByRoom.get(room.id)?.colleges.has(collegeId));
   });
   const opportunities:any[]=[];
   for(const room of collegeRooms){
-    const ownerIds=roomOwnerSections(room);
+    /* السجل أولاً، فإن سكت عن هذه القاعة — أو نسب أقسامها إلى كلية أخرى —
+       نطق بها جدولُ الفصل. */
+    const registeredIds=roomOwnerSections(room);
+    const collegeSectionIds=new Set(sections.filter((section:any)=>Number(section.AdCollegeId)===collegeId).map((section:any)=>Number(section.AdSectionId)));
+    const ownerIds=registeredIds.some(id=>collegeSectionIds.has(id))?registeredIds:usageOwnerSections(room.id);
     const ownerSectionId=ownerIds[0]||0;
     /* قاعة بلا قسم مسجَّل لا أحد يأذن فيها، وقاعة قسمي لا تُستعار من نفسي —
        ولو كنت أحد شركائها. */
@@ -4659,18 +4694,21 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
     /* مبنى الموقع يظهر ولو لم يُسجَّل له بعد قاعة لهذا القسم: المراجع يثبّت
        المبنى أولاً ثم يختار «بانتظار تثبيت القاعة» — وحجبه يترك المحاضرة بلا
        مكان يمكن اختياره أصلاً. */
-    /* ── ومبنى الكلية المفتوحة كذلك ────────────────────────────────────
-       التعليق أعلاه كان يصف ما لا يفعله الشرط: «يظهر ولو لم يُسجَّل له بعد
-       قاعة لهذا القسم» لم تكن تتحقق إلا في وضع مواقع الفرع. فقسمٌ في الجهراء
-       لم تُسجَّل له قاعة بعد كان يفتح محرر الجدول فلا يجد مبنى واحداً يختاره
-       — لا إضافة موعد ولا تعديله. فصار انتماء المبنى للكلية المفتوحة كافياً
-       لعرضه؛ والقاعات تبقى محكومة بقاعدتها: قاعات القسم والمشتركة والمستعارة
-       بموافقة، ومن لا قاعة له بعد يختار «بانتظار تثبيت القاعة». */
-    (!sectionId||eligibleBuildingIds.has(building.id)||inBranch(building.officialCode)
-      ||(Boolean(collegeId)&&building.collegeIds.includes(collegeId)))&&
+    (!sectionId||eligibleBuildingIds.has(building.id)||inBranch(building.officialCode))&&
     (borrowedBuildingIds.has(building.id)||!collegeId||!building.collegeIds.length||building.collegeIds.includes(collegeId)||inBranch(building.officialCode))
   );
-  const ids=new Set(buildings.map(building=>building.id));
+  /* ── تُفتح مباني الكلية حين لا يبقى شيء يُختار، لا قبل ذلك ──
+   * القاعدة الأصلية — «مبنى فيه قاعة لهذا القسم» — هي الصواب في الحالة
+   * العادية: قسمٌ له قاعاته لا يريد أن يرى مباني الكلية كلها في قائمة
+   * واحدة. لكنها تترك القسم الجديد بلا مبنى واحد أصلاً — كقسم في الجهراء
+   * لم تُسجَّل له قاعة بعد — فلا يستطيع إضافة موعد ولا تعديله.
+   * فالتوسيع مشروطٌ بالفراغ وحده: إن لم يبق للقسم مبنى واحد، تُعرض مباني
+   * كليته ليختار منها ثم «بانتظار تثبيت القاعة»؛ وإن كان له ولو مبنى واحد
+   * بقيت قائمته قصيرة كما كانت. لا تُفتح الأبواب إلا على من لا باب له. */
+  const openBuildings=buildings.length?buildings:(sectionId&&collegeId
+    ? registry.buildings.filter(building=>building.active&&building.confidence==="CONFIRMED"&&building.collegeIds.includes(collegeId))
+    : buildings);
+  const ids=new Set(openBuildings.map(building=>building.id));
   /* ── القاعة المشتركة تقول مع مَن ────────────────────────────────────────
    * The picker listed a shared hall exactly like a hall the department owns
    * alone, so nothing on the screen said that booking it means sharing it
@@ -4681,13 +4719,18 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   const sectionNameById=new Map((await Repository.getSections()).map(item=>[Number(item.AdSectionId),String(item.AdSectionName||"")]));
   const rooms=eligibleRooms.filter(room=>ids.has(room.buildingId)).map(room=>({
     ...room,
+    /* القاعة المستعارة تقول من صاحبها: «S27» وحدها لا تخبر المستعير في
+       قاعة مَن يجلس، ومن حقّ صاحبها أن يُذكر اسمه في مختار من استعارها. */
+    borrowedFrom:borrowedSet.has(room.id)
+      ? room.sectionIds.filter(id=>!sectionId||Number(id)!==sectionId).map(id=>sectionNameById.get(Number(id))||"").filter(Boolean).join(" · ")
+      : "",
     shared:isSharedRoom(room),
     sharedConfidence:isSharedRoom(room)?"CONFIRMED":room.sharedConfidence,
     sharedWith:isSharedRoom(room)
       ? room.sectionIds.filter(id=>!sectionId||Number(id)!==sectionId).map(id=>sectionNameById.get(Number(id))||"").filter(Boolean)
       : [],
   }));
-  res.json({version:LOCATION_MIGRATION_VERSION,buildings,rooms,borrowedRoomIds,pendingRoomCode:PENDING_ROOM});
+  res.json({version:LOCATION_MIGRATION_VERSION,buildings:openBuildings,rooms,borrowedRoomIds,pendingRoomCode:PENDING_ROOM});
 });
 app.get("/api/location-registry/pending", requirePermission(7), async (req:AuthenticatedRequest,res:Response)=>{
   const termId=Number(req.query.termId||0);if(!termId){res.status(400).json({error:"حدد الفصل الدراسي"});return;}

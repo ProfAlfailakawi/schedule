@@ -5506,6 +5506,33 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
   const [hallBarterReservations, setHallBarterReservations] = useState<HallBarterReservationView[]>([]);
   useEffect(() => { setHallBarterReservations([]); }, [filterCollege, filterSection, filterTerm]);
 
+  /* ── طلبٌ ينتظر قراراً لا ينام خلف زر ─────────────────────────────────────
+   *
+   * الطلب يصل إلى قسمٍ لا يعرف أنه وصل: لوحة الاستعارة تسكن داخل «المزيد»،
+   * ومن لا يفتحها لا يرى شيئاً — فيبقى زميله ينتظر جواباً لا يأتي.
+   *
+   * فصار عدد الطلبات التي تنتظر قرار هذا القسم يُقرأ مع الشاشة نفسها، لا مع
+   * فتح اللوحة، ويُعلن في شريط ثابت أسفل الجدول ينبض نبضة هادئة حتى يُقرأ،
+   * وضغطُه يفتح اللوحة على الطلب مباشرة. ويتجدد مع كل حركة في القناة الحية،
+   * فلا يحتاج أحدٌ إلى تحديث الصفحة ليعرف أن أحداً يستأذنه.
+   */
+  const [barterInbox, setBarterInbox] = useState(0);
+  const [barterOpenSignal, setBarterOpenSignal] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    if (mode !== "schedule" || !filterCollege || !filterSection || !filterTerm) { setBarterInbox(0); return; }
+    const query = new URLSearchParams({ collegeId: String(filterCollege), sectionId: String(filterSection), termId: String(filterTerm) });
+    fetch(`/api/hall-barter?${query}`, { credentials: "include" })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (cancelled) return;
+        const incoming = Array.isArray(data?.incoming) ? data.incoming : [];
+        setBarterInbox(incoming.filter((row: any) => row?.status === "pending").length);
+      })
+      .catch(() => { if (!cancelled) setBarterInbox(0); });
+    return () => { cancelled = true; };
+  }, [mode, filterCollege, filterSection, filterTerm, liveFeedSerial]);
+
   /**
    * The board's own description of itself.
    *
@@ -9514,7 +9541,9 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
                   sectionId={filterSection}
                   termId={filterTerm}
                   liveSerial={liveFeedSerial}
+                  openSignal={barterOpenSignal}
                   onReservationsChange={setHallBarterReservations}
+                  onPendingChange={setBarterInbox}
                 />
               </div>
             ) : null}
@@ -11498,6 +11527,21 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
             <p className="shortcuts-note">تعمل الاختصارات خارج حقول الكتابة فقط، ولا تعمل أثناء السحب.</p>
           </div>
         </div>
+      ) : null}
+      {barterInbox > 0 && mode === "schedule" ? (
+        <button
+          type="button"
+          className="hall-barter-inbox no-print"
+          data-guide-ignore="يفتح لوحة استعارة القاعات على الطلبات المنتظرة؛ لا يتخذ قراراً بنفسه"
+          onClick={() => { setWorkspaceToolsOpen(true); setBarterOpenSignal(value => value + 1); }}
+        >
+          <span className="hall-barter-inbox-mark"><ArrowLeftRight aria-hidden="true" /><i /></span>
+          <span className="hall-barter-inbox-copy">
+            <strong>{countOf(barterInbox, AR.request)} تنتظر قرارك</strong>
+            <small>قسمٌ آخر يستأذن في قاعة من قاعاتك</small>
+          </span>
+          <span className="hall-barter-inbox-go">افتح</span>
+        </button>
       ) : null}
       {undoAction ? (
         <div className="undo-bar no-print" role="status">
