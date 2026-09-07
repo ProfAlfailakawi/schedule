@@ -2226,3 +2226,24 @@
   .print-change-log-report th:last-child,.print-change-log-report td:last-child{width:15%}
   .visiting-badge{border:1px solid #9a7a43!important;background:#faf5e9!important;color:#6e521f!important}
 }
+
+/* ── طباعة سجل استعارات الفصل ─────────────────────────────────────────────
+   منفذٌ معزول كبقية التقارير: مخفيٌّ دائماً إلا حين يُطبع السجل بعينه، فلا
+   يلحق بغيره ولا يترك ورقةً فارغة. */
+@media print{
+  #app-print-root>.hall-barter-log-print-host,
+  body.has-print-portal>#app-print-root>.hall-barter-log-print-host,
+  .hall-barter-log-print-host{display:none!important}
+  html[data-print-kind="barter-log"] #app-print-root>.print-only{display:none!important}
+  html[data-print-kind="barter-log"] #app-print-root>.hall-barter-log-print-host{display:block!important;visibility:visible!important}
+  .hall-barter-log-print{page:wide!important;direction:rtl!important;padding:6mm 4mm!important}
+  .hall-barter-log-print-head{display:flex!important;align-items:baseline!important;justify-content:space-between!important;gap:8mm!important;margin-bottom:4mm!important;border-bottom:1.4pt solid #1f6b5c!important;padding-bottom:2.5mm!important}
+  .hall-barter-log-print-head h1{font-size:14pt!important;margin:0!important;color:#12463c!important}
+  .hall-barter-log-print-head p{margin:0!important;color:#5d6966!important;font-size:9pt!important;direction:ltr!important}
+  .hall-barter-log-print table{width:100%!important;border-collapse:collapse!important;table-layout:fixed!important}
+  .hall-barter-log-print th,.hall-barter-log-print td{padding:2.4mm 2.6mm!important;border-bottom:.5pt solid #d7ddd9!important;text-align:start!important;vertical-align:top!important;font-size:9pt!important;overflow-wrap:anywhere!important}
+  .hall-barter-log-print th{background:#f4f6f5!important;color:#4e5954!important;font-weight:800!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+  .hall-barter-log-print th:first-child,.hall-barter-log-print td:first-child{width:16mm!important}
+  .hall-barter-log-print th:nth-child(4),.hall-barter-log-print td:nth-child(4){width:50mm!important}
+  .hall-barter-log-print th:last-child,.hall-barter-log-print td:last-child{width:26mm!important;white-space:nowrap!important;overflow-wrap:normal!important}
+}

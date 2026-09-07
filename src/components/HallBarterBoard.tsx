@@ -6,11 +6,13 @@ import {
   ChevronDown,
   Clock3,
   RefreshCw,
+  Printer,
+  ScrollText,
   Search,
   ShieldCheck,
   X,
 } from "lucide-react";
-import { GhostButton, PrimaryButton, SecondaryButton } from "./ui";
+import { GhostButton, PrimaryButton, SecondaryButton, PrintPortal } from "./ui";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 
 type Opportunity = {
@@ -114,6 +116,7 @@ export default function HallBarterBoard({
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [logOpen, setLogOpen] = useState(false);
   const boardRef = useRef<HTMLElement | null>(null);
   /* بحثٌ واحد يقبل القسم والمبنى ورمز القاعة، ورقاقات الأقسام تختصر الطريق:
      القائمة صارت كل قاعات الكلية، ومن غير مرشِّح تصير كشفاً لا يُقرأ. */
@@ -278,6 +281,30 @@ export default function HallBarterBoard({
     <span className="hall-barter-window"><Clock3 aria-hidden="true" /><b>{row.dayLabel}</b><time dir="ltr">{formatScheduleTimeRange(row.startTime, row.endTime)}</time><em dir="ltr">{row.roomCode}/{row.roomHall}</em></span>
   );
 
+  /* ── سجلّ الفصل: كل حركةٍ في مكانٍ واحد ──────────────────────────────────
+   * اللوحة تُظهر ما ينتظر قراراً وما اعتُمد؛ لكن صاحب الجدول يريد أحياناً أن
+   * يرى الصورة كاملة: ماذا استعار وممن، ومن استعار منه، وما رُفض وما أُلغي.
+   * هي مجموع الوارد والصادر بكل حالاته، صفاً واحداً لكل حركة، مطويةً حتى
+   * تُطلب — فلا تزحم من لا يريدها — وتُطبع كما تُطبع التقارير. */
+  const logRows = useMemo(() => {
+    const seen = new Set<string>();
+    return [...board.incoming, ...board.outgoing]
+      .filter(row => { if (seen.has(row.id)) return false; seen.add(row.id); return true; })
+      .map(row => ({ ...row, incoming: board.incoming.some(r => r.id === row.id) }))
+      .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+  }, [board.incoming, board.outgoing]);
+  /* تاريخٌ نظيف بلا علامات اتجاهٍ من التوطين: يُبنى بيده dd/mm/yyyy فلا
+     يتبعثر بين خانات الجدول. */
+  const fmtDate = (iso: string) => { const t = Date.parse(String(iso || "")); if (!Number.isFinite(t)) return "—"; const d = new Date(t); const pad = (n: number) => String(n).padStart(2, "0"); return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`; };
+  const printLog = () => {
+    const root = document.documentElement;
+    root.dataset.printKind = "barter-log";
+    const done = () => { delete root.dataset.printKind; window.removeEventListener("afterprint", done); };
+    window.addEventListener("afterprint", done, { once: true });
+    window.setTimeout(() => { try { window.print(); } catch { done(); } }, 30);
+    window.setTimeout(done, 4000);
+  };
+
   /* ── لا أيقونة لبابٍ لا يُفتح ────────────────────────────────────────────
      لوحةٌ عنوانها «٠ فرصة» تشغل مكاناً وتعِد بشيء لا تملكه. فمتى لم تكن هناك
      نافذة تُطلب ولا طلبٌ قائم ولا استعارة سارية، لا تظهر أصلاً. */
@@ -427,8 +454,61 @@ export default function HallBarterBoard({
             </div>
           ) : null}
 
+          {logRows.length ? (
+            <div className="hall-barter-section hall-barter-log">
+              <button type="button" className="hall-barter-log-toggle" aria-expanded={logOpen} onClick={() => setLogOpen(v => !v)} data-guide-ignore="يطوي أو يفتح سجل حركات الاستعارة لهذا الفصل؛ عرضٌ فقط">
+                <ScrollText aria-hidden="true" />
+                <span><small>عرضٌ فقط</small><strong>سجل استعارات الفصل</strong></span>
+                <b>{logRows.length}</b>
+                <ChevronDown className={`hall-barter-log-chevron${logOpen ? " open" : ""}`} aria-hidden="true" />
+              </button>
+              {logOpen ? (
+                <div className="hall-barter-log-body">
+                  <div className="hall-barter-log-tools">
+                    <GhostButton type="button" onClick={printLog} data-guide-ignore="يطبع سجل استعارات الفصل؛ لا يغيّر بيانات"><Printer />طباعة السجل</GhostButton>
+                  </div>
+                  <ul className="hall-barter-log-list">
+                    {logRows.map(row => (
+                      <li key={row.id} className={`hall-barter-log-row status-${row.status}`}>
+                        <span className={`hall-barter-log-dir ${row.incoming ? "in" : "out"}`}>{row.incoming ? "وارد" : "صادر"}</span>
+                        <span className="hall-barter-log-with">{row.incoming ? row.requesterSectionName : row.ownerSectionName}</span>
+                        <span className="hall-barter-log-window" dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)} · {row.roomCode}/{row.roomHall}</span>
+                        <span className={`hall-barter-log-status status-${row.status}`}>{statusLabel(row.status)}</span>
+                        <span className="hall-barter-log-date" dir="ltr">{fmtDate(row.createdAt)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
         </div>
       ) : null}
+
+      <PrintPortal className="hall-barter-log-print-host">
+        <div className="hall-barter-log-print">
+          <header className="hall-barter-log-print-head">
+            <h1>سجل استعارات القاعات — هذا الفصل</h1>
+            <p>{fmtDate(new Date().toISOString())}</p>
+          </header>
+          <table>
+            <thead><tr><th>الاتجاه</th><th>القسم</th><th>القاعة</th><th>اليوم والوقت</th><th>الحالة</th><th>التاريخ</th></tr></thead>
+            <tbody>
+              {logRows.map(row => (
+                <tr key={row.id}>
+                  <td>{row.incoming ? "وارد إلينا" : "صادر منّا"}</td>
+                  <td>{row.incoming ? row.requesterSectionName : row.ownerSectionName}</td>
+                  <td dir="ltr">{row.roomCode}/{row.roomHall}</td>
+                  <td dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)}</td>
+                  <td>{statusLabel(row.status)}</td>
+                  <td dir="ltr">{fmtDate(row.createdAt)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </PrintPortal>
     </section>
   );
 }

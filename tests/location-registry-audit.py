@@ -472,4 +472,12 @@ ok('203 the editor offers borrowing only when a time is set and no room is chose
    and 'setBarterOpenSignal(v => v + 1)' in (ROOT/'src/components/Schedules.tsx').read_text()
    and '.schedule-borrow-hint{' in schedule_css)
 
+ok('204 the barter board keeps a term-wide log of every movement — folded by default, both directions and all statuses, printable as a report',
+   'const logRows = useMemo(' in barter_board
+   and '[...board.incoming, ...board.outgoing]' in barter_board
+   and 'hall-barter-log-toggle' in barter_board
+   and 'hall-barter-log-print-host' in barter_board
+   and 'root.dataset.printKind = "barter-log"' in barter_board
+   and 'html[data-print-kind="barter-log"] #app-print-root>.hall-barter-log-print-host{display:block!important' in print_css)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
