@@ -1306,7 +1306,15 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
     if (course) row.AdCourseName = course.CourseName;
   }
   if (checkConflicts && !errors.length && rows.length) {
-    const external = currentSchedules.filter(item => !(item.AdCollegeId === collegeId && item.AdSectionId === sectionId));
+    /* ── الجدول لا يتعارض مع نسخته السابقة ───────────────────────────────────
+     * المستند المعتمد واحد، وصفوفه تُنشر كل صف في قسمه في موقعه. فحين يُعاد
+     * استيراد الملف نفسه، تكون صفوف الجهراء المنشورة سابقاً موجودة في نطاق
+     * الجهراء — أي «خارج» النطاق المفتوح — فيراها فحص التعارض حجزاً لطرف آخر
+     * ويرفض الصف بحجّة «حجز مزدوج لأستاذ المقرر»، والحقيقة أنه يتعارض مع نفسه
+     * قبل أن يُستبدل. ومواقع القسم كلها ستُستبدل بهذه العملية نفسها، فلا تدخل
+     * فحص التعارض. أما بقية الأقسام فتبقى كما هي: حجزها حقيقي ويُحترم. */
+    const ownScopes=new Set<string>([`${collegeId}:${sectionId}`,...departmentScopes.map(scope=>`${scope.collegeId}:${scope.sectionId}`)]);
+    const external = currentSchedules.filter(item => !ownScopes.has(`${Number(item.AdCollegeId)}:${Number(item.AdSectionId)}`));
     const universe = [...external, ...rows];
     const conflicts = findConflicts(rows as any, universe as any).filter((item:any) => item.severity === "high" || item.type === "duplicate");
     conflicts.slice(0, 20).forEach((item:any) => errors.push(item.message || item.detail || "يوجد تعارض يمنع الاعتماد"));
@@ -4461,14 +4469,22 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   // active room under it is actually usable by the open department. A stale
   // building.sectionIds relationship is historical evidence, not permission to
   // show an empty building in the picker.
+  const buildingCodeById=new Map(registry.buildings.map(building=>[building.id,String(building.officialCode||"")]));
+  /* داخل الفرع، قاعات الموقع قاعات القسم نفسه: تقييد القائمة برقم قسم واحد
+     وُضع ليبقى المختار قصيراً في الحالة العادية، لا ليحجب عن قسمٍ قاعات موقعٍ
+     يدرّس فيه. فمتى طُلبت مواقع الفرع صراحةً كان انتماء المبنى للفرع كافياً. */
   const eligibleRooms=confirmedRooms.filter(room=>
     !sectionId||room.sectionIds.some(id=>branchSectionIds.has(Number(id)))||borrowedSet.has(room.id)
+    ||inBranch(buildingCodeById.get(room.buildingId))
   );
   const eligibleBuildingIds=new Set(eligibleRooms.map(room=>room.buildingId));
   const borrowedBuildingIds=new Set(eligibleRooms.filter(room=>borrowedSet.has(room.id)).map(room=>room.buildingId));
   const buildings=registry.buildings.filter(building=>
     building.active&&building.confidence==="CONFIRMED"&&
-    (!sectionId||eligibleBuildingIds.has(building.id))&&
+    /* مبنى الموقع يظهر ولو لم يُسجَّل له بعد قاعة لهذا القسم: المراجع يثبّت
+       المبنى أولاً ثم يختار «بانتظار تثبيت القاعة» — وحجبه يترك المحاضرة بلا
+       مكان يمكن اختياره أصلاً. */
+    (!sectionId||eligibleBuildingIds.has(building.id)||inBranch(building.officialCode))&&
     (borrowedBuildingIds.has(building.id)||!collegeId||!building.collegeIds.length||building.collegeIds.includes(collegeId)||inBranch(building.officialCode))
   );
   const ids=new Set(buildings.map(building=>building.id));
