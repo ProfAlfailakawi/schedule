@@ -11783,6 +11783,7 @@ export default function Schedules({ mode, user, scopes = [], permissions = [], o
       {transferOpen ? (
         <ScheduleTransfer
           collegeId={filterCollege}
+          collegeName={colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName}
           sectionId={filterSection}
           termId={filterTerm}
           instructors={instructors as any}
