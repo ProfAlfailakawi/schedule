@@ -184,9 +184,15 @@ async function provisionBranchSiteLocationsFromAuthority(
   const roomKeys=new Set(registry.rooms.map(room=>`${room.buildingId}|${String(room.canonicalCode||"").toUpperCase()}`));
 
   for(const row of rows){
-    const code=String(row?.sourceBuildingText||row?.AdRoomCode||"").normalize("NFKC").replace(/\s+/g,"").toUpperCase();
-    const shape=code.match(/^(\d{3})([A-Z])(\d{2})$/);
+    /* حدٌّ للطول ثم حذفُ محرفٍ محرف: `\s+` على نصٍّ قادم من ملفٍ خارجي مسارٌ
+       معروف لاستنزاف المعالج بمدخل طويل، ولا حاجة إليه هنا أصلاً. */
+    const reading=String(row?.sourceBuildingText||row?.AdRoomCode||"").slice(0,40).normalize("NFKC").replace(/\s/g,"").toUpperCase();
+    const shape=reading.match(/^(\d{3})([A-Z])(\d{2})$/);
     if(!shape||shape[1]!==branchRoot)continue;
+    /* لا يعبر من القراءة إلى هوية المستند حرفٌ واحد كما قُرئ: الكود يُعاد
+       بناؤه من أجزاء النمط الثلاثة، فما يُكتب معرّفاً في قاعدة البيانات
+       مُولَّدٌ عندنا لا منقولٌ من ملف. */
+    const code=`${shape[1]}${shape[2]}${shape[3]}`;
     const prefix=`${shape[1]}${shape[2]}`;
     if(!prefix||prefix===basePrefix)continue;               // المقر المفتوح لا يُوسَّع من قراءة ضوئية
     const scope=scopeOf(prefix);
@@ -210,8 +216,10 @@ async function provisionBranchSiteLocationsFromAuthority(
       buildingByCode.set(code,building);newBuildings.push(building);
     }
 
-    const roomCode=String(row?.sourceRoomText||row?.AdRoomHall||"").normalize("NFKC").replace(/\s+/g,"").toUpperCase();
-    if(!/^[A-Z]{1,2}\d{1,3}$/.test(roomCode)||isInvalidLocationToken(roomCode))continue;
+    const roomReading=String(row?.sourceRoomText||row?.AdRoomHall||"").slice(0,40).normalize("NFKC").replace(/\s/g,"").toUpperCase();
+    const roomShape=roomReading.match(/^([A-Z]{1,2})(\d{1,3})$/);
+    if(!roomShape||isInvalidLocationToken(roomReading))continue;
+    const roomCode=`${roomShape[1]}${roomShape[2]}`;
     const key=`${building.id}|${roomCode}`;
     if(roomKeys.has(key))continue;
     roomKeys.add(key);

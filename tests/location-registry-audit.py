@@ -349,7 +349,8 @@ ok('183 the branch-site prefix set is declared before the loop that fills it (a 
 
 ok('184 an official branch-site location proven by the authority document is registered, and only at other sites of the same branch',
    'async function provisionBranchSiteLocationsFromAuthority(' in server
-   and 'const shape=code.match(/^(\\d{3})([A-Z])(\\d{2})$/);' in server
+   and 'const shape=reading.match(/^(\\d{3})([A-Z])(\\d{2})$/);' in server
+   and 'const code=`${shape[1]}${shape[2]}${shape[3]}`;' in server
    and 'if(!shape||shape[1]!==branchRoot)continue;' in server
    and 'if(!prefix||prefix===basePrefix)continue;' in server
    and 'if(!scope||scope.isBase)continue;' in server
