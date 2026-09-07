@@ -7,23 +7,6 @@
 <meta name="description" content="SCHEDULE · نظام القرار الأكاديمي — عرض تقديمي">
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA1MTIgNTEyIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IlNDSEVEVUxFIj4KICA8IS0tINmF2Y/ZiNmE2Y7ZkdivINmF2YYgc2NyaXB0cy9yZW5kZXItYnJhbmQubWpzIOKAlCDZhNinINmK2Y/Yrdix2Y7ZkdixINmK2K/ZiNmK2KfZiy4KICAgICAgINin2YTYudmE2KfZhdipOiDYp9mE2KPYs9io2YjYuSDYp9mE2LDZiiDYrdmP2YTZkS4g2K7Zhdiz2Kkg2KPYudmF2K/YqSA9INiu2YXYs9ipINij2YrYp9mF2Jsg2KfZhNin2LHYqtmB2KfYuSDZhdiv2ZHYqdiMCiAgICAgICDZiNin2YTZhdmI2LbYuSDYp9mE2LHYo9iz2Yog2LPYp9i52KkuINin2YTYudmF2YjYryDYp9mE2YbYrdin2LPZiiDZh9mIINin2YTYsNmKINmG2Y/ZgtmELgogICAgICAg2YbYs9iu2KkgImFueSI6INit2KfZgdipINil2YTZiSDYrdin2YHYqSDZhdi5INit2YTZgtipLiAtLT4KICA8cmVjdCB3aWR0aD0iNTEyIiBoZWlnaHQ9IjUxMiIgcng9IjExMiIgZmlsbD0iIzE0MTkxNyIvPgogIDxyZWN0IHg9IjgiIHk9IjgiIHdpZHRoPSI0OTYiIGhlaWdodD0iNDk2IiByeD0iMTA3LjIiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2M3OWI1ZiIgc3Ryb2tlLW9wYWNpdHk9IjAuMjIiIHN0cm9rZS13aWR0aD0iNi40Ii8+CgogIDxyZWN0IHg9IjM3MS4yIiB5PSIxNTYiIHdpZHRoPSI0NC44IiBoZWlnaHQ9IjEyMCIgcng9IjIyLjQiIGZpbGw9IiM1ZmJmYTYiLz4KICA8cmVjdCB4PSIzMDIuNCIgeT0iMjIwIiB3aWR0aD0iNDQuOCIgaGVpZ2h0PSI5NiIgcng9IjIyLjQiIGZpbGw9IiM1ZmJmYTYiLz4KICA8cmVjdCB4PSIyMzMuNiIgeT0iMTMyIiB3aWR0aD0iNDQuOCIgaGVpZ2h0PSIxNTIiIHJ4PSIyMi40IiBmaWxsPSIjNWZiZmE2Ii8+CiAgPHJlY3QgeD0iMTY0LjgiIHk9IjI2MCIgd2lkdGg9IjQ0LjgiIGhlaWdodD0iMTEyIiByeD0iMjIuNCIgZmlsbD0iI2M3OWI1ZiIvPgogIDxyZWN0IHg9Ijk2IiB5PSIxODgiIHdpZHRoPSI0NC44IiBoZWlnaHQ9IjEyOCIgcng9IjIyLjQiIGZpbGw9IiM1ZmJmYTYiLz4KPC9zdmc+Cg==">
 <title>SCHEDULE · نظام القرار الأكاديمي</title>
-<link rel="canonical" href="https://schedule.dr-alfailakawi.com/schedule-presentation.html">
-<meta property="og:type" content="website">
-<meta property="og:site_name" content="SCHEDULE">
-<meta property="og:locale" content="ar_KW">
-<meta property="og:title" content="SCHEDULE · نظام القرار الأكاديمي">
-<meta property="og:description" content="نظام القرار الأكاديمي — عرض تقديمي">
-<meta property="og:url" content="https://schedule.dr-alfailakawi.com/schedule-presentation.html">
-<meta property="og:image" content="https://schedule.dr-alfailakawi.com/schedule-social-card-v4.png">
-<meta property="og:image:secure_url" content="https://schedule.dr-alfailakawi.com/schedule-social-card-v4.png">
-<meta property="og:image:type" content="image/png">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="SCHEDULE — نظام القرار الأكاديمي">
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="SCHEDULE · نظام القرار الأكاديمي">
-<meta name="twitter:description" content="نظام القرار الأكاديمي — عرض تقديمي">
-<meta name="twitter:image" content="https://schedule.dr-alfailakawi.com/schedule-social-card-v4.png">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@400;600;700&family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
 <style>
 :root{
@@ -468,6 +451,24 @@ body.read .hint{display:none}
   .hbar__f, .meter__f{width:var(--v)}
 }
 
+/* ---------- the time contrast: weeks vs minutes ---------- */
+.versus{display:grid; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:16px; overflow:hidden; grid-template-columns:1fr}
+@media(min-width:760px){.versus{grid-template-columns:1fr 62px 1fr}}
+.vs{background:var(--surface); padding:clamp(24px,3.4vw,44px); display:flex; flex-direction:column; gap:10px; align-items:center; text-align:center}
+.vs__k{font-family:var(--font-body); font-size:.9rem; color:var(--muted-2)}
+.vs__n{font-family:var(--font-display); font-weight:700; line-height:.98; font-size:clamp(2.6rem,6.4vw,5.6rem)}
+.vs.was .vs__n{color:var(--danger)}
+.vs.now .vs__n{color:var(--jade-strong); text-shadow:0 0 40px rgba(105,192,168,.4)}
+.vs__u{font-family:var(--font-body); font-size:1.06rem; color:var(--ink-2)}
+.vs__note{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.06em; color:var(--muted-2); margin-block-start:2px}
+.vs__mid{display:grid; place-items:center; color:var(--brass); font-size:26px; background:var(--surface)}
+@media(max-width:759px){.vs__mid{padding-block:8px}}
+.tbd{color:var(--brass); background:linear-gradient(180deg,rgba(208,166,99,.14),transparent); border:1px dashed var(--brass);
+  border-radius:12px; padding:.06em .28em; text-shadow:none; font-size:.72em}
+.cite{display:flex; flex-wrap:wrap; gap:8px 18px; margin-block-start:4px}
+.cite span{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.04em; color:var(--muted-2)}
+.cite b{color:var(--jade); font-weight:600}
+
 /* ---------- charts: one hue, thin marks, values direct-labelled ---------- */
 .chart{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:clamp(18px,2.3vw,30px); display:flex; flex-direction:column; gap:clamp(14px,1.8vw,22px)}
 .chart__h{display:flex; align-items:baseline; justify-content:space-between; gap:14px}
@@ -636,6 +637,38 @@ html,body{margin:0}
   <div class="notes">
     <span class="notes__k">ملاحظة العرض</span>
     <p>لا تشرح الصفوف. اقرأ السؤال الأول فقط بصوتٍ عالٍ، واصمت — الجدول يقرأ نفسه.</p>
+  </div>
+</section>
+<section class="slide">
+  <div class="slide__in">
+    <div class="head"><p class="eyebrow">المقياس الذي يفهمه الجميع</p><h2>ما كان يأخذ أسابيع، صار عندنا دقائق.</h2></div>
+    <div class="versus">
+      <div class="vs was">
+        <span class="vs__k">يدويًّا · حول العالم</span>
+        <span class="vs__n">4&ndash;6</span>
+        <span class="vs__u">أسابيع لكل فصل</span>
+        <span class="vs__note">دراسة محكَّمة · iJET 2026</span>
+      </div>
+      <div class="vs__mid" aria-hidden="true"><svg class="ic" style="font-size:26px"><use href="#i-arrow"/></svg></div>
+      <div class="vs now">
+        <span class="vs__k">على SCHEDULE</span>
+        <span class="vs__n">3:24</span>
+        <span class="vs__u">دقيقة · من الرفع إلى جدول مُراجَع</span>
+        <span class="vs__note">قسم في كلية التربية الأساسية · جدول حقيقي</span>
+      </div>
+    </div>
+    <div class="big" style="grid-template-columns:repeat(3,1fr)">
+      <div class="bigc"><b class="brass">100%</b><span>منع الحجز المزدوج</span><small>لا يُعتمد جدول فيه تعارض</small></div>
+      <div class="bigc"><b>صفر</b><span>إدخال يدوي للصفوف</span><small>الاستيراد يقرأ الـPDF ويملؤها</small></div>
+      <div class="bigc"><b>كل فصل</b><span>يُنسخ لا يُعاد بناؤه</span><small>بترقيم شعب تلقائي</small></div>
+    </div>
+    <div class="cite">
+      <span><b>مصدر رقم «الأسابيع»:</b> دراسة محكَّمة — International Journal of Emerging Technologies in Learning (iJET), 2026</span>
+    </div>
+  </div>
+  <div class="notes">
+    <span class="notes__k">ملاحظة العرض — شريحة الإثبات</span>
+    <p>موجّهة لأهل الأرقام. رقم «الأسابيع» عالمي وموثّق — دراسة محكَّمة في مجلة iJET (2026) قاست أن الإعداد اليدوي يستغرق 4–6 أسابيع لكل فصل — ومصدره مكتوب أسفل الشريحة. مقابله وقتنا الفعلي: 3 دقائق و24 ثانية، مقيس على جدول حقيقي لقسم في كلية التربية الأساسية رفعناه وراجعناه على النظام. البطاقات الثلاث كلها حقائق نظامنا لا أرقام دراسات أخرى: التعارض يُكتشف قبل الاعتماد فلا يمرّ حجز مزدوج، والصفوف تُقرأ من الـPDF بلا إدخال يدوي، والفصل يُنسخ بترقيم شعب تلقائي. قل: «رقم الأسابيع منشور لا ادّعاء منّا، وهذا وقتنا على ملف رفعناه قبل قليل أمامكم.»</p>
   </div>
 </section>
 <section class="slide">
