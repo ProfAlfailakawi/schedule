@@ -423,9 +423,17 @@ ok('196 a pending barter request is announced outside the board, and the board c
    and 'openSignal?: number;' in barter_board
    and 'onPendingChange?.(incoming.filter' in barter_board
    and '.hall-barter-inbox{' in schedule_css)
-ok('197 a department the registry never linked to its halls is recovered from what this term actually books',
-   'const usageByRoom=new Map<string,{colleges:Set<number>;sections:Map<number,number>}>();' in server
-   and 'return Boolean(usageByRoom.get(room.id)?.colleges.has(collegeId));' in server
+ok('197 a department the registry never linked to its halls is recovered from this term AND from the college history, so a department that has not entered its timetable yet is still known by its halls',
+   'const usageByRoom=tallyUsage(new Map(),termRows);' in server
+   and 'const historyByRoom=tallyUsage(new Map(),collegeHistory);' in server
+   and 'const now=rankSections(usageByRoom.get(roomId));' in server
+   and 'return now.length?now:rankSections(historyByRoom.get(roomId));' in server
+   and '||Boolean(historyByRoom.get(room.id)?.colleges.has(collegeId));' in server
    and 'const ownerIds=registeredIds.some(id=>collegeSectionIds.has(id))?registeredIds:usageOwnerSections(room.id);' in server)
+ok('198 the requesting department is told the decision once, in the same bar, and never told twice',
+   'schedule-hall-barter-seen-decisions' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and 'hall-barter-inbox-decision' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and 'وُوفق على استعارتك' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and '.hall-barter-inbox-decision{cursor:default}' in schedule_css)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

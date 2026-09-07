@@ -8171,3 +8171,11 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   flex:none;padding:5px 11px;border-radius:999px;
   background:var(--accent);color:#fff;font-size:var(--t-xs,.72rem);font-weight:800;
 }
+
+/* خبر القرار: الشريط نفسه بلا نبضة — هذا إخبارٌ لا مطالبةُ قرار. */
+.hall-barter-inbox-decision{cursor:default}
+.hall-barter-inbox-decision.is-approved .hall-barter-inbox-mark{background:color-mix(in srgb,var(--ok,#1f7a4d) 14%,var(--surface-2));color:var(--ok,#1f7a4d)}
+.hall-barter-inbox-decision.is-rejected{border-color:color-mix(in srgb,var(--danger,#a33) 38%,var(--line))}
+.hall-barter-inbox-decision.is-rejected .hall-barter-inbox-mark{background:color-mix(in srgb,var(--danger,#a33) 12%,var(--surface-2));color:var(--danger,#a33)}
+.hall-barter-inbox-decision .hall-barter-inbox-go{border:0;cursor:pointer;background:var(--surface-2);color:var(--ink-2)}
+.hall-barter-inbox-decision .hall-barter-inbox-go:hover{background:var(--surface-3,var(--surface-2));color:var(--ink)}
