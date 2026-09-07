@@ -470,6 +470,26 @@ body.read .hint{display:none}
 .whead .hc.man{color:var(--muted)}
 .wsrc{font-family:var(--font-mono); font-size:.56rem; letter-spacing:.03em; color:var(--muted-2); text-align:end; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 
+/* ---------- the stopwatch: a live count to our time ---------- */
+.sw{display:grid; gap:clamp(16px,2.4vw,44px); grid-template-columns:1fr; align-items:center; justify-items:center}
+@media(min-width:820px){.sw{grid-template-columns:1.05fr .95fr}}
+.sw__dial{position:relative; width:clamp(200px,26vw,320px); aspect-ratio:1; display:grid; place-items:center}
+.sw__dial svg{position:absolute; inset:0; width:100%; height:100%; transform:rotate(-90deg)}
+.sw__track{fill:none; stroke:var(--surface-3); stroke-width:9}
+.sw__arc{fill:none; stroke:url(#swgrad); stroke-width:9; stroke-linecap:round;
+  filter:drop-shadow(0 0 12px rgba(208,166,99,.5))}
+.sw__center{display:flex; flex-direction:column; align-items:center; gap:4px; z-index:1}
+.sw__time{font-family:var(--font-mono); font-variant-numeric:tabular-nums; font-weight:600; line-height:1;
+  font-size:clamp(2.6rem,6vw,4.6rem); color:var(--jade-strong); text-shadow:0 0 34px rgba(105,192,168,.45)}
+.sw__unit{font-family:var(--font-body); font-size:.9rem; color:var(--muted)}
+.sw__label{font-family:var(--font-mono); font-size:.6rem; letter-spacing:.14em; color:var(--brass); margin-block-end:6px}
+.sw__side{display:flex; flex-direction:column; gap:16px; max-width:34ch}
+.sw__vs{display:flex; align-items:baseline; gap:12px; padding-block-end:16px; border-block-end:1px solid var(--line)}
+.sw__vs b{font-family:var(--font-display); font-weight:700; font-size:clamp(1.9rem,3.4vw,2.8rem); color:var(--danger); line-height:1}
+.sw__vs span{font-size:1rem; color:var(--ink-2)}
+.sw__lead{font-family:var(--font-display); font-weight:600; font-size:clamp(1.05rem,1.7vw,1.4rem); color:var(--ink); line-height:1.5}
+.sw__meta{font-family:var(--font-mono); font-size:.62rem; letter-spacing:.05em; color:var(--muted-2)}
+
 /* ---------- the time contrast: weeks vs minutes ---------- */
 .versus{display:grid; gap:1px; background:var(--line); border:1px solid var(--line); border-radius:16px; overflow:hidden; grid-template-columns:1fr}
 @media(min-width:760px){.versus{grid-template-columns:1fr 62px 1fr}}
@@ -709,29 +729,32 @@ html,body{margin:0}
 </section>
 <section class="slide">
   <div class="slide__in">
-    <div class="head"><p class="eyebrow">المقياس الذي يفهمه الجميع</p><h2>ما كان يأخذ أسابيع، صار عندنا دقائق.</h2></div>
-    <div class="versus">
-      <div class="vs was">
-        <span class="vs__k">يدويًّا · حول العالم</span>
-        <span class="vs__n">4&ndash;6</span>
-        <span class="vs__u">أسابيع لكل فصل</span>
-        <span class="vs__note">دراسة محكَّمة · iJET 2026</span>
+    <div class="head"><p class="eyebrow">وأمّا نحن</p><h2>الجدول كاملًا، في أقل من أربع دقائق.</h2></div>
+    <div class="sw">
+      <div class="sw__dial" data-stopwatch data-seconds="204">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
+          <defs><linearGradient id="swgrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#69c0a8"/><stop offset="1" stop-color="#d0a663"/>
+          </linearGradient></defs>
+          <circle class="sw__track" cx="100" cy="100" r="88"></circle>
+          <circle class="sw__arc" cx="100" cy="100" r="88" pathLength="1000" stroke-dasharray="1000" stroke-dashoffset="1000"></circle>
+        </svg>
+        <div class="sw__center">
+          <span class="sw__label">زمننا الفعلي</span>
+          <span class="sw__time" data-sw-time>0:00</span>
+          <span class="sw__unit">من الرفع إلى جدول مُراجَع</span>
+        </div>
       </div>
-      <div class="vs__mid" aria-hidden="true"><svg class="ic" style="font-size:26px"><use href="#i-arrow"/></svg></div>
-      <div class="vs now">
-        <span class="vs__k">على SCHEDULE</span>
-        <span class="vs__n">3:24</span>
-        <span class="vs__u">دقيقة · من الرفع إلى جدول مُراجَع</span>
-        <span class="vs__note">قسم في كلية التربية الأساسية · جدول حقيقي</span>
+      <div class="sw__side">
+        <div class="sw__vs"><b>أسابيع</b><span>هذا زمن الجامعات يدويًّا — كما في الصفحة السابقة</span></div>
+        <p class="sw__lead">نحن أنجزناه في <span style="color:var(--jade-strong)">3 دقائق و24 ثانية</span> على ملف حقيقي رفعناه أمامكم.</p>
+        <span class="sw__meta">قسم في كلية التربية الأساسية · جدول تسجيل فعلي · 89 صفًّا</span>
       </div>
     </div>
     <div class="big" style="grid-template-columns:repeat(3,1fr)">
       <div class="bigc"><b class="brass">100%</b><span>منع الحجز المزدوج</span><small>لا يُعتمد جدول فيه تعارض</small></div>
       <div class="bigc"><b>صفر</b><span>إدخال يدوي للصفوف</span><small>الاستيراد يقرأ الـPDF ويملؤها</small></div>
       <div class="bigc"><b>كل فصل</b><span>يُنسخ لا يُعاد بناؤه</span><small>بترقيم شعب تلقائي</small></div>
-    </div>
-    <div class="cite">
-      <span><b>مصدر رقم «الأسابيع»:</b> دراسة محكَّمة — International Journal of Emerging Technologies in Learning (iJET), 2026</span>
     </div>
   </div>
   <div class="notes">
@@ -1225,10 +1248,28 @@ html,body{margin:0}
     })(t0);
   }
 
+  function runStopwatch(el){
+    if(el.dataset.swran) return; el.dataset.swran='1';
+    var total=parseInt(el.dataset.seconds,10)||0,
+        timeEl=el.querySelector('[data-sw-time]'),
+        arc=el.querySelector('.sw__arc'),
+        LEN=1000;
+    function fmt(sec){ var m=Math.floor(sec/60), s=sec%60; return m+':'+(s<10?'0':'')+s; }
+    if(reduce){ timeEl.textContent=fmt(total); if(arc) arc.setAttribute('stroke-dashoffset','0'); return; }
+    var t0=performance.now(), dur=2600;
+    (function step(now){
+      var p=Math.min(1,(now-t0)/dur), e=1-Math.pow(1-p,3);
+      timeEl.textContent=fmt(Math.round(total*e));
+      if(arc) arc.setAttribute('stroke-dashoffset', String(Math.round(LEN*(1-e))));
+      if(p<1) requestAnimationFrame(step);
+    })(t0);
+  }
+
   function activate(i){
     var s=slides[i];
     if(!s) return;
     s.classList.add('is-live');
+    var sw=s.querySelector('[data-stopwatch]'); if(sw) runStopwatch(sw);
     Array.prototype.forEach.call(s.querySelectorAll(NUMSEL),countUp);
     if(i===0) runDemo();
   }
