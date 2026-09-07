@@ -3922,7 +3922,12 @@ app.post("/api/hall-barter/requests/:id/cancel", requirePermission(7), async (re
  * الجدول اليوم. خفيفٌ متعمَّد — عدٌّ فقط، بلا بناء لوحةٍ كاملة. */
 app.get("/api/hall-barter/inbox", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const all=await Repository.getHallBarterRequests(0);
-  const owns=(request:HallBarterRequest)=>req.user?.IsAdminUser||isScopeAllowed(req,Number(request.ownerCollegeId),Number(request.ownerSectionId));
+  /* ── العدّاد لصاحب القاعة، لا للمدير الذي يرى كل شيء ──────────────────────
+   * يُقاس بعضوية النطاق صراحةً — لا بـ isScopeAllowed الذي يعيد «نعم» لكل شيء
+   * للمدير — فلا يُنبَّه مديرُ النظام بطلبٍ لقسمٍ ليس قسمه. من له أقسام يُعدّ
+   * ما ينتظر أقسامه؛ ومن لا قسم له (مديرٌ عامّ) لا شيء ينتظر قراره شخصياً. */
+  const scopes=Array.isArray(req.scopes)?req.scopes:[];
+  const owns=(request:HallBarterRequest)=>scopes.some(scope=>Number(scope.AdCollegeId)===Number(request.ownerCollegeId)&&Number(scope.AdSectionId)===Number(request.ownerSectionId));
   const pending=all.filter(request=>request.status==="pending"&&owns(request));
   const oldest=pending.reduce((max,request)=>{const created=Date.parse(String(request.createdAt||""));return Number.isFinite(created)?Math.min(max,created):max;},Date.now());
   const oldestDays=pending.length?Math.max(0,Math.floor((Date.now()-oldest)/86400000)):0;

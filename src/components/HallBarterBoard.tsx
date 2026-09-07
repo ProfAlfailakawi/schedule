@@ -339,6 +339,35 @@ export default function HallBarterBoard({
           {message ? <div className="hall-barter-message ok">{message}</div> : null}
           {error ? <div className="hall-barter-message error">{error}</div> : null}
 
+          {logRows.length ? (
+            <div className="hall-barter-section hall-barter-log">
+              <button type="button" className="hall-barter-log-toggle" aria-expanded={logOpen} onClick={() => setLogOpen(v => !v)} data-guide-ignore="يطوي أو يفتح سجل حركات الاستعارة لهذا الفصل؛ عرضٌ فقط">
+                <ScrollText aria-hidden="true" />
+                <span><small>عرضٌ فقط</small><strong>سجل استعارات الفصل</strong></span>
+                <b>{logRows.length}</b>
+                <ChevronDown className={`hall-barter-log-chevron${logOpen ? " open" : ""}`} aria-hidden="true" />
+              </button>
+              {logOpen ? (
+                <div className="hall-barter-log-body">
+                  <div className="hall-barter-log-tools">
+                    <GhostButton type="button" onClick={printLog} data-guide-ignore="يطبع سجل استعارات الفصل؛ لا يغيّر بيانات"><Printer />طباعة السجل</GhostButton>
+                  </div>
+                  <ul className="hall-barter-log-list">
+                    {logRows.map(row => (
+                      <li key={row.id} className={`hall-barter-log-row status-${row.status}`}>
+                        <span className={`hall-barter-log-dir ${row.incoming ? "in" : "out"}`}>{row.incoming ? "وارد" : "صادر"}</span>
+                        <span className="hall-barter-log-with">{row.incoming ? row.requesterSectionName : row.ownerSectionName}</span>
+                        <span className="hall-barter-log-window" dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)} · {row.roomCode}/{row.roomHall}</span>
+                        <span className={`hall-barter-log-status status-${row.status}`}>{statusLabel(row.status)}</span>
+                        <span className="hall-barter-log-date" dir="ltr">{fmtDate(row.createdAt)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           {incomingPending.length ? (
             <div className="hall-barter-section incoming">
               <header><div><small>تحتاج قرارك</small><strong>طلبات وصلت لقاعاتك</strong></div><b>{incomingPending.length}</b></header>
@@ -454,34 +483,6 @@ export default function HallBarterBoard({
             </div>
           ) : null}
 
-          {logRows.length ? (
-            <div className="hall-barter-section hall-barter-log">
-              <button type="button" className="hall-barter-log-toggle" aria-expanded={logOpen} onClick={() => setLogOpen(v => !v)} data-guide-ignore="يطوي أو يفتح سجل حركات الاستعارة لهذا الفصل؛ عرضٌ فقط">
-                <ScrollText aria-hidden="true" />
-                <span><small>عرضٌ فقط</small><strong>سجل استعارات الفصل</strong></span>
-                <b>{logRows.length}</b>
-                <ChevronDown className={`hall-barter-log-chevron${logOpen ? " open" : ""}`} aria-hidden="true" />
-              </button>
-              {logOpen ? (
-                <div className="hall-barter-log-body">
-                  <div className="hall-barter-log-tools">
-                    <GhostButton type="button" onClick={printLog} data-guide-ignore="يطبع سجل استعارات الفصل؛ لا يغيّر بيانات"><Printer />طباعة السجل</GhostButton>
-                  </div>
-                  <ul className="hall-barter-log-list">
-                    {logRows.map(row => (
-                      <li key={row.id} className={`hall-barter-log-row status-${row.status}`}>
-                        <span className={`hall-barter-log-dir ${row.incoming ? "in" : "out"}`}>{row.incoming ? "وارد" : "صادر"}</span>
-                        <span className="hall-barter-log-with">{row.incoming ? row.requesterSectionName : row.ownerSectionName}</span>
-                        <span className="hall-barter-log-window" dir="ltr">{row.dayLabel} · {formatScheduleTimeRange(row.startTime, row.endTime)} · {row.roomCode}/{row.roomHall}</span>
-                        <span className={`hall-barter-log-status status-${row.status}`}>{statusLabel(row.status)}</span>
-                        <span className="hall-barter-log-date" dir="ltr">{fmtDate(row.createdAt)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
 
         </div>
       ) : null}
