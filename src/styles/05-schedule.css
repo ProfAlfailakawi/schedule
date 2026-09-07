@@ -8033,3 +8033,37 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 }
 .undo-log-panel>header .undo-print:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
 .undo-log-panel>header .undo-print svg{width:14px;height:14px}
+
+/* ── أين ذهب ما نشرته ─────────────────────────────────────────────────────
+   المستند المعتمد واحد ويحوي مواقع الفرع، والنشر يضع كل صف في قسمه في موقعه.
+   وكانت الشاشة تصمت عن ذلك، فمن استورد من الرئيسي بحث عن صفوف الجهراء في
+   جدول الرئيسي ولم يجدها فبدا أن الاستيراد ابتلعها. الصمت هو العيب. */
+.transfer-published-scopes{margin-top:var(--s3);padding:var(--s4);border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
+.transfer-published-scopes>strong{display:block;font-size:var(--t-sm);font-weight:750;color:var(--ink)}
+.transfer-published-scopes ul{margin:var(--s3) 0 0;padding:0;list-style:none;display:grid;gap:6px}
+.transfer-published-scopes li{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:7px 11px;border-radius:12px;background:var(--surface);font-size:var(--t-sm)}
+.transfer-published-scopes li>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-published-scopes>small{display:block;margin-top:var(--s3);color:var(--muted);font-size:var(--t-xs,.72rem);line-height:1.6}
+
+/* ── أين ذهب ما نشرته ─────────────────────────────────────────────────────
+   المستند المعتمد واحد ويحوي مواقع الفرع، والنشر يضع كل صف في قسمه في موقعه.
+   وكانت الشاشة تصمت عن ذلك، فمن استورد من الرئيسي بحث عن صفوف الجهراء في
+   جدول الرئيسي ولم يجدها فبدا أن الاستيراد ابتلعها. الصمت هو العيب. */
+.transfer-published-scopes{margin-top:var(--s3);padding:var(--s4);border:1px solid var(--line);border-radius:16px;background:var(--surface-2)}
+.transfer-published-scopes>strong{display:block;font-size:var(--t-sm);font-weight:750;color:var(--ink)}
+.transfer-published-scopes ul{margin:var(--s3) 0 0;padding:0;list-style:none;display:grid;gap:6px}
+.transfer-published-scopes li{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);padding:7px 11px;border-radius:12px;background:var(--surface);font-size:var(--t-sm)}
+.transfer-published-scopes li>b{font-weight:800;color:var(--primary,#12463c)}
+.transfer-published-scopes>small{display:block;margin-top:var(--s3);color:var(--muted);font-size:.72rem;line-height:1.6}
+
+/* الرسالة عند اليد التي تضغط: رفض النشر كان يُعرض في أعلى النافذة وحدها،
+   وأعلى النافذة يكون قد غاب عن الشاشة بعد جدول من ثلاثين صفاً. */
+.transfer-commit-error{
+  display:flex;align-items:flex-start;gap:var(--s3);
+  margin-bottom:var(--s3);padding:var(--s4);
+  border:1px solid color-mix(in srgb,var(--danger,#a2402f) 42%,var(--line));
+  border-radius:16px;background:color-mix(in srgb,var(--danger,#a2402f) 8%,var(--surface));
+}
+.transfer-commit-error>svg{width:18px;height:18px;flex:none;color:var(--danger,#a2402f);margin-top:1px}
+.transfer-commit-error strong{display:block;color:var(--danger,#a2402f);font-size:var(--t-sm);font-weight:750;line-height:1.6}
+.transfer-commit-error small{display:block;margin-top:5px;color:var(--muted);font-size:.72rem;line-height:1.6}

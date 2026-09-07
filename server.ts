@@ -4428,6 +4428,27 @@ app.post("/api/department-rooms", requirePermission(7), async (_req: Authenticat
 app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,res:Response)=>{
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
   if(collegeId&&sectionId&&!isScopeAllowed(req,collegeId,sectionId)&&!isPowerUser(req)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
+  /* ── القسم الواحد يختار من مباني مواقعه ──────────────────────────────────
+   * القسم يُدرَّس في الرئيسي والجهراء والفحيحيل، والجدول المعتمد يأتي بها
+   * معاً. فمن يراجع صفاً من الجهراء ويريد تثبيت قاعته كان يجد في القائمة
+   * مباني الرئيسي وحدها — أي أنه مطالب باختيار مبنى لا وجود له في موقع
+   * المحاضرة. تُطلب هذه السعة صراحةً (branchSites=1) من معاينة الاستيراد
+   * وحدها، فلا يتغيّر شيء في شاشات الإضافة والتعديل اليومية.
+   */
+  const includeBranchSites=String(req.query.branchSites||"")==="1";
+  const branchSectionIds=new Set<number>([sectionId].filter(Boolean));
+  let branchRoots=new Set<string>();
+  if(includeBranchSites&&collegeId&&sectionId){
+    const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+    const sites=siblingBranchScopes({colleges:colleges as any,sections:sections as any,baseCollegeId:collegeId,baseSectionId:sectionId});
+    sites.forEach(site=>{branchSectionIds.add(Number(site.sectionId));branchRoots.add(String(site.sitePrefix||"").replace(/\D/g,"").slice(0,3));});
+    branchRoots=new Set([...branchRoots].filter(Boolean));
+  }
+  const inBranch=(officialCode:unknown)=>{
+    if(!branchRoots.size)return false;
+    const root=String(officialCode||"").replace(/\D/g,"").slice(0,3);
+    return Boolean(root&&branchRoots.has(root));
+  };
   const registry=await readLocationRegistry();
   const confirmedRooms=registry.rooms.filter(r=>r.active&&r.confidence==="CONFIRMED");
   let borrowedRoomIds:string[]=[];
@@ -4441,14 +4462,14 @@ app.get("/api/location-registry", requireAuth, async (req:AuthenticatedRequest,r
   // building.sectionIds relationship is historical evidence, not permission to
   // show an empty building in the picker.
   const eligibleRooms=confirmedRooms.filter(room=>
-    !sectionId||room.sectionIds.includes(sectionId)||borrowedSet.has(room.id)
+    !sectionId||room.sectionIds.some(id=>branchSectionIds.has(Number(id)))||borrowedSet.has(room.id)
   );
   const eligibleBuildingIds=new Set(eligibleRooms.map(room=>room.buildingId));
   const borrowedBuildingIds=new Set(eligibleRooms.filter(room=>borrowedSet.has(room.id)).map(room=>room.buildingId));
   const buildings=registry.buildings.filter(building=>
     building.active&&building.confidence==="CONFIRMED"&&
     (!sectionId||eligibleBuildingIds.has(building.id))&&
-    (borrowedBuildingIds.has(building.id)||!collegeId||!building.collegeIds.length||building.collegeIds.includes(collegeId))
+    (borrowedBuildingIds.has(building.id)||!collegeId||!building.collegeIds.length||building.collegeIds.includes(collegeId)||inBranch(building.officialCode))
   );
   const ids=new Set(buildings.map(building=>building.id));
   /* ── القاعة المشتركة تقول مع مَن ────────────────────────────────────────
@@ -7077,11 +7098,28 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
    * يعلن عن نفسه. لذلك يُفحص كل موقع بالكامل — صلاحية، ومقررات، وتحقق — قبل
    * أول عملية كتابة.
    */
-  const [publishColleges,publishSections,publishCourses]=await Promise.all([
-    Repository.getColleges(),Repository.getSections(),Repository.getCourses(),
+  const [publishColleges,publishSections,publishCourses,publishRegistry]=await Promise.all([
+    Repository.getColleges(),Repository.getSections(),Repository.getCourses(),readLocationRegistry(),
   ]);
   const branchContext={colleges:publishColleges as any,sections:publishSections as any,baseCollegeId:draft.AdCollegeId,baseSectionId:draft.AdSectionId};
-  const split=splitRowsByBranch(publishRows as any[],branchContext);
+  /* ── الموقع يُقرأ من المبنى، لا من حقل قد يضيع ───────────────────────────
+   * كل صف يحمل كود موقعه منذ القراءة، لكن الحقل قابل للضياع: تحريرٌ في
+   * المعاينة، أو مسودة أُنشئت قبل هذا الإصدار، أو نسخة قديمة من الواجهة —
+   * وكان الصف حينها يُنشر في الموقع الذي فُتح منه الاستيراد بلا أي إنذار،
+   * فيختفي جدول الجهراء داخل جدول الرئيسي. والحقيقة لا تحتاج ذلك الحقل
+   * أصلاً: المبنى الرسمي المثبت في الصف يحمل موقعه في كوده (012J14 ⇦ 012J).
+   * فتُشتق من السجل أولاً، ولا يُرجع إلى الحقل إلا حين لا يكون هناك مبنى. */
+  const buildingById=new Map(publishRegistry.buildings.map((item:any)=>[String(item.id),item]));
+  const siteOfRow=(row:any)=>{
+    const building=buildingById.get(String(row?.buildingId||""));
+    const official=String(building?.sitePrefix||building?.officialCode?.slice(0,4)||"").toUpperCase();
+    return official||String(row?.sourceSitePrefix||"").toUpperCase();
+  };
+  const locatedRows=(publishRows as any[]).map(row=>{
+    const site=siteOfRow(row);
+    return site?{...row,sourceSitePrefix:site}:row;
+  });
+  const split=splitRowsByBranch(locatedRows,branchContext);
   if(split.unplaced.length){
     res.status(400).json({
       error:"تعذّر تحديد القسم الذي تنتمي إليه بعض الصفوف بحسب موقع المبنى؛ لم يُنشر أي صف.",
