@@ -440,11 +440,18 @@ ok('198 the requesting department is told the decision once, in the same bar, an
 ok('199 the barter page cap no longer erases whole departments: the share is taken in turn, the filter lists every department, and narrowing asks the server for that department in full',
    'export function fairShareByOwner<Row>(' in (ROOT/'src/utils/hallBarterFairness.ts').read_text()
    and 'const fairSlice=(rows:readonly any[],limit:number)=>fairShareByOwner(rows,limit,row=>Number(row.ownerSectionId||0));' in server
-   and 'const facets=facetsOf(opportunities);' in server
+   and 'owners:facetsOf(opportunities.filter(row=>matchesDay(row)&&matchesBuilding(row))).owners,' in server
    and 'const filterOwner=Number((req.query as any)?.ownerSectionId||0);' in server
    and 'truncated:visible.length<narrowed.length,' in server
    and 'if (ownerFilter) query.set("ownerSectionId", String(ownerFilter));' in barter_board
    and 'const owners = board.facets.owners;' in barter_board
    and 'hall-barter-truncated' in barter_board)
+
+ok('200 barter filters accumulate — each list is counted after the OTHER choices — and a native dropdown is not read as a click outside the screen',
+   'owners:facetsOf(opportunities.filter(row=>matchesDay(row)&&matchesBuilding(row))).owners,' in server
+   and 'days:facetsOf(opportunities.filter(row=>matchesOwner(row)&&matchesBuilding(row))).days,' in server
+   and 'buildings:facetsOf(opportunities.filter(row=>matchesOwner(row)&&matchesDay(row))).buildings,' in server
+   and 'const narrowed=opportunities.filter(row=>matchesOwner(row)&&matchesDay(row)&&matchesBuilding(row));' in server
+   and 'if (event.target !== boardRef.current) return;' in barter_board)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

@@ -2985,13 +2985,20 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
   const filterOwner=Number((req.query as any)?.ownerSectionId||0);
   const filterDay=String((req.query as any)?.day||"").trim();
   const filterBuilding=String((req.query as any)?.buildingCode||"").trim().toUpperCase();
-  const facets=facetsOf(opportunities);
-  const narrowed=opportunities.filter(row=>{
-    if(filterOwner&&!(row.ownerSections?.length?row.ownerSections:[{id:row.ownerSectionId}]).some((owner:any)=>Number(owner.id)===filterOwner))return false;
-    if(filterDay&&row.day!==filterDay)return false;
-    if(filterBuilding&&String(row.roomCode||"").toUpperCase()!==filterBuilding)return false;
-    return true;
-  });
+  /* ── المرشِّحات تتراكم، وكل قائمة تعرف ما اختير في أخواتها ────────────────
+   * القوائم كانت تُحسب من الكل دائماً، فيختار القارئ قسماً ويوماً ثم يفتح
+   * قائمة المباني فيجدها كما هي بأعدادها الأولى — فيظنّ أن اختياره لم يُحسب.
+   * فصارت كل قائمة تُحسب بعد تطبيق المرشِّحات الأخرى وحدها: قائمة المباني
+   * تعرف القسم واليوم المختارين ولا تعرف نفسها، وهكذا الثلاث. */
+  const matchesOwner=(row:any)=>!filterOwner||(row.ownerSections?.length?row.ownerSections:[{id:row.ownerSectionId}]).some((owner:any)=>Number(owner.id)===filterOwner);
+  const matchesDay=(row:any)=>!filterDay||row.day===filterDay;
+  const matchesBuilding=(row:any)=>!filterBuilding||String(row.roomCode||"").toUpperCase()===filterBuilding;
+  const facets={
+    owners:facetsOf(opportunities.filter(row=>matchesDay(row)&&matchesBuilding(row))).owners,
+    days:facetsOf(opportunities.filter(row=>matchesOwner(row)&&matchesBuilding(row))).days,
+    buildings:facetsOf(opportunities.filter(row=>matchesOwner(row)&&matchesDay(row))).buildings,
+  };
+  const narrowed=opportunities.filter(row=>matchesOwner(row)&&matchesDay(row)&&matchesBuilding(row));
   const visible=fairSlice(narrowed,HALL_BARTER_MAX_OPPORTUNITIES);
   const shaped=requests.map(request=>hallBarterRequestShape(request,sections,colleges));
   const sameCampusRequests=shaped.filter(request=>sameHallCampusGender(request.requesterCollegeName,request.ownerCollegeName));
