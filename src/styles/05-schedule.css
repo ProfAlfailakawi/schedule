@@ -8179,3 +8179,4 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .hall-barter-inbox-decision.is-rejected .hall-barter-inbox-mark{background:color-mix(in srgb,var(--danger,#a33) 12%,var(--surface-2));color:var(--danger,#a33)}
 .hall-barter-inbox-decision .hall-barter-inbox-go{border:0;cursor:pointer;background:var(--surface-2);color:var(--ink-2)}
 .hall-barter-inbox-decision .hall-barter-inbox-go:hover{background:var(--surface-3,var(--surface-2));color:var(--ink)}
+.hall-barter-truncated{margin:0 0 9px;padding:8px 11px;border:1px dashed var(--line);border-radius:12px;background:var(--surface-2);color:var(--ink-2);font-size:11.5px;line-height:1.6}

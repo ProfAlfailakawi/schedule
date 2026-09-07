@@ -402,7 +402,8 @@ ok('192 a shared hall names every department registered to it, so a co-owner dep
    'const roomOwnerSections=(room:any)=>' in server
    and 'if(!ownerSectionId||ownerIds.includes(sectionId))continue;' in server
    and 'ownerSections,shared:ownerSections.length>1,' in server
-   and 'ownersOf(item).some(owner => owner.id === ownerFilter)' in barter_board)
+   and 'ownersOf(opportunity).map(owner => owner.name).join(" · ")' in barter_board
+   and '.some((owner:any)=>Number(owner.id)===filterOwner)' in server)
 ok('193 the barter filters are four compact lists in one row — day, building, department, period — not a wall of chips',
    'hall-barter-selects' in barter_board
    and 'تصفية باليوم' in barter_board and 'تصفية بالمبنى' in barter_board
@@ -435,5 +436,15 @@ ok('198 the requesting department is told the decision once, in the same bar, an
    and 'hall-barter-inbox-decision' in (ROOT/'src/components/Schedules.tsx').read_text()
    and 'وُوفق على استعارتك' in (ROOT/'src/components/Schedules.tsx').read_text()
    and '.hall-barter-inbox-decision{cursor:default}' in schedule_css)
+
+ok('199 the barter page cap no longer erases whole departments: the share is taken in turn, the filter lists every department, and narrowing asks the server for that department in full',
+   'export function fairShareByOwner<Row>(' in (ROOT/'src/utils/hallBarterFairness.ts').read_text()
+   and 'const fairSlice=(rows:readonly any[],limit:number)=>fairShareByOwner(rows,limit,row=>Number(row.ownerSectionId||0));' in server
+   and 'const facets=facetsOf(opportunities);' in server
+   and 'const filterOwner=Number((req.query as any)?.ownerSectionId||0);' in server
+   and 'truncated:visible.length<narrowed.length,' in server
+   and 'if (ownerFilter) query.set("ownerSectionId", String(ownerFilter));' in barter_board
+   and 'const owners = board.facets.owners;' in barter_board
+   and 'hall-barter-truncated' in barter_board)
 
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

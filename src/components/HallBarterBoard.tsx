@@ -60,13 +60,24 @@ export type HallBarterReservationView = {
   createdAt: string;
 };
 
+type Facets = {
+  owners: Array<{ id: number; name: string; count: number }>;
+  days: Array<{ key: string; label: string; count: number }>;
+  buildings: Array<{ code: string; count: number }>;
+};
+
 type Board = {
   opportunities: Opportunity[];
   incoming: HallBarterReservationView[];
   outgoing: HallBarterReservationView[];
+  /** المرشِّحات تُبنى من هذه، لا من الصفحة المعروضة: القائمة قد تكون مقصوصة. */
+  facets: Facets;
+  total: number;
+  truncated: boolean;
 };
 
-const emptyBoard: Board = { opportunities: [], incoming: [], outgoing: [] };
+const emptyFacets: Facets = { owners: [], days: [], buildings: [] };
+const emptyBoard: Board = { opportunities: [], incoming: [], outgoing: [], facets: emptyFacets, total: 0, truncated: false };
 
 async function readJson(url: string, init?: RequestInit) {
   const response = await fetch(url, { credentials: "include", ...init });
@@ -125,6 +136,11 @@ export default function HallBarterBoard({
     setError("");
     try {
       const query = new URLSearchParams({ collegeId: String(collegeId), sectionId: String(sectionId), termId: String(termId) });
+      /* التضييق يُسأل عنه الخادم: القسم المختار يريد نوافذه كلها، لا حصته من
+         الصفحة الأولى. */
+      if (ownerFilter) query.set("ownerSectionId", String(ownerFilter));
+      if (dayFilter) query.set("day", dayFilter);
+      if (buildingFilter) query.set("buildingCode", buildingFilter);
       const data = await readJson(`/api/hall-barter?${query}`);
       const incoming = Array.isArray(data?.incoming) ? data.incoming : [];
       const outgoing = Array.isArray(data?.outgoing) ? data.outgoing : [];
@@ -132,6 +148,13 @@ export default function HallBarterBoard({
         opportunities: Array.isArray(data?.opportunities) ? data.opportunities : [],
         incoming,
         outgoing,
+        facets: {
+          owners: Array.isArray(data?.facets?.owners) ? data.facets.owners : [],
+          days: Array.isArray(data?.facets?.days) ? data.facets.days : [],
+          buildings: Array.isArray(data?.facets?.buildings) ? data.facets.buildings : [],
+        },
+        total: Number(data?.total || 0),
+        truncated: Boolean(data?.truncated),
       });
       onPendingChange?.(incoming.filter((row: HallBarterReservationView) => row.status === "pending").length);
       if (onReservationsChange) {
@@ -143,7 +166,7 @@ export default function HallBarterBoard({
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [collegeId, sectionId, termId, onReservationsChange, onPendingChange]);
+  }, [collegeId, sectionId, termId, ownerFilter, dayFilter, buildingFilter, onReservationsChange, onPendingChange]);
 
   useEffect(() => { void load(); }, [load]);
   /* نداءٌ من خارج اللوحة: افتحها — جاء من شريط «طلبات تنتظر قرارك». */
@@ -197,35 +220,9 @@ export default function HallBarterBoard({
     ? item.ownerSections
     : [{ id: item.ownerSectionId, name: item.ownerSectionName }];
 
-  const owners = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; count: number }>();
-    board.opportunities.forEach(item => ownersOf(item).forEach(owner => {
-      const current = map.get(owner.id) || { id: owner.id, name: owner.name, count: 0 };
-      current.count += 1;
-      map.set(owner.id, current);
-    }));
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [board.opportunities]);
-
-  const days = useMemo(() => {
-    const map = new Map<string, { key: string; label: string; count: number }>();
-    board.opportunities.forEach(item => {
-      const current = map.get(item.day) || { key: item.day, label: item.dayLabel, count: 0 };
-      current.count += 1;
-      map.set(item.day, current);
-    });
-    return [...map.values()];
-  }, [board.opportunities]);
-
-  const buildings = useMemo(() => {
-    const map = new Map<string, { code: string; count: number }>();
-    board.opportunities.forEach(item => {
-      const current = map.get(item.roomCode) || { code: item.roomCode, count: 0 };
-      current.count += 1;
-      map.set(item.roomCode, current);
-    });
-    return [...map.values()].sort((a, b) => a.code.localeCompare(b.code));
-  }, [board.opportunities]);
+  const owners = board.facets.owners;
+  const days = board.facets.days;
+  const buildings = board.facets.buildings;
 
   const filtersActive = Boolean(query.trim() || ownerFilter || dayFilter || buildingFilter || periodFilter);
   const clearFilters = () => { setQuery(""); setOwnerFilter(0); setDayFilter(""); setBuildingFilter(""); setPeriodFilter(""); };
@@ -233,9 +230,8 @@ export default function HallBarterBoard({
   const visibleOpportunities = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return board.opportunities.filter(item => {
-      if (ownerFilter && !ownersOf(item).some(owner => owner.id === ownerFilter)) return false;
-      if (dayFilter && item.day !== dayFilter) return false;
-      if (buildingFilter && item.roomCode !== buildingFilter) return false;
+      /* القسم واليوم والمبنى صفّاها الخادم؛ ولا يبقى هنا إلا ما لا يحتاج
+         عودةً إليه: الفترة والبحث الحر. */
       /* الفترة تُقاس ببداية النافذة: ما بدأ قبل الظهر صباحيّ ولو امتدّ بعده. */
       if (periodFilter === "morning" && Number(item.startTime.slice(0, 2)) >= 12) return false;
       if (periodFilter === "evening" && Number(item.startTime.slice(0, 2)) < 12) return false;
@@ -243,7 +239,7 @@ export default function HallBarterBoard({
       return [...ownersOf(item).map(owner => owner.name), item.roomCode, item.roomHall, `${item.roomCode}/${item.roomHall}`, item.dayLabel]
         .some(field => String(field || "").toLocaleLowerCase().includes(needle));
     });
-  }, [board.opportunities, query, ownerFilter, dayFilter, buildingFilter, periodFilter]);
+  }, [board.opportunities, query, periodFilter]);
 
   const act = async (id: string, work: () => Promise<any>) => {
     setBusyId(id); setError(""); setMessage("");
@@ -391,6 +387,9 @@ export default function HallBarterBoard({
                   ) : null}
                 </div>
               </div>
+            ) : null}
+            {board.truncated ? (
+              <p className="hall-barter-truncated">عُرضت {visibleOpportunities.length} من {board.total} نافذة — من كل قسم نصيبٌ منها. اختر قسماً أو يوماً أو مبنى لترى نوافذه كاملة.</p>
             ) : null}
             {visibleOpportunities.length ? (
               <div className="hall-barter-opportunity-grid">

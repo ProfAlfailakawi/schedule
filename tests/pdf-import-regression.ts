@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible, authorityCourseColumnLooksPlausible, authorityDaysCellLooksPlausible, authorityPdfTextGridRows, authorityReferenceCourseCellLooksPlausible, recoverAuthorityCourseCell, authorityScanRequiresLandscape, authorityTimeCellLooksPlausible, graduationSheetFacts, parseAuthorityHeaderText, parseScheduleTable, type OcrPage } from "../src/utils/documentOcr.ts";
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
+import { fairShareByOwner } from "../src/utils/hallBarterFairness.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
 import { branchRootOf, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "../src/utils/branchScope.ts";
 
@@ -120,6 +121,25 @@ assert.equal(authorityBuildingCellLooksPlausible("520020"),false);
 /* Owner-supplied location grammar: branch 012 + site B + building 09 is the
    official code 012B09. Camera loss of the leading zero/grid stroke is repaired
    only against the finite official registry for that branch. */
+/* ── لا يسقط قسمٌ لأن قاعاته جاءت متأخرة في الترتيب ────────────────────────
+   ثمانية عشر قسماً وألفا نافذة وسعةٌ لأربعمائة: القصّ من الآخر كان يمحو
+   أقساماً بأكملها. التناوب يُبقي الجميع، ويعيد المختار إلى ترتيب القراءة. */
+{
+  const rows: Array<{ owner: number; n: number }> = [];
+  for (let owner = 1; owner <= 18; owner += 1) for (let n = 0; n < 120; n += 1) rows.push({ owner, n });
+  rows.sort((a, b) => a.owner - b.owner || a.n - b.n);           // مرتَّبة بالمالك، كترتيب المبنى تماماً
+  const cut = rows.slice(0, 400);
+  assert.equal(new Set(cut.map(r => r.owner)).size, 4);          // القصّ الأعمى: أربعة أقسام فقط
+  const fair = fairShareByOwner(rows, 400, row => row.owner);
+  assert.equal(fair.length, 400);
+  assert.equal(new Set(fair.map(r => r.owner)).size, 18);        // التناوب: الأقسام كلها حاضرة
+  const per = [...new Set(fair.map(r => r.owner))].map(owner => fair.filter(r => r.owner === owner).length);
+  assert.ok(Math.max(...per) - Math.min(...per) <= 1);           // والحصص متساوية إلا واحدة
+  const order = new Map(rows.map((row, index) => [row, index] as const));
+  assert.deepEqual(fair.map(r => order.get(r)), [...fair.map(r => order.get(r)!)].sort((a, b) => a - b));
+  assert.equal(fairShareByOwner(rows.slice(0, 10), 400, row => row.owner).length, 10);
+}
+
 const officialBuildings=["012B07","012B09","012F15","012J14","011B17"];
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("012B09","012",officialBuildings),"012B09");
 assert.equal(recoverOfficialBuildingCodeFromAuthorityCell("12B09","012",officialBuildings),"012B09");
