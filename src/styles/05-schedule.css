@@ -8110,9 +8110,18 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .hall-barter-search{display:flex;align-items:center;gap:8px;min-height:42px;padding:0 13px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
 .hall-barter-search>svg{width:16px;height:16px;color:var(--ink-3);flex:none}
 .hall-barter-search>input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:inherit;outline:none}
-.hall-barter-owner-chips{display:flex;flex-wrap:wrap;gap:6px}
-.hall-barter-owner-chips>button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font-size:12px;cursor:pointer}
-.hall-barter-owner-chips>button>i{font-style:normal;font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
-.hall-barter-owner-chips>button:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--line))}
-.hall-barter-owner-chips>button.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface));color:var(--ink)}
-.hall-barter-owner-chips>button.active>i{color:var(--accent)}
+/* أربع قوائم مضغوطة في سطر واحد بدل صفٍّ من الرقاقات بعدد أقسام الكلية:
+   المعلومة نفسها، وسطرٌ هادئ بدل جدارٍ من الأزرار. */
+.hall-barter-selects{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.hall-barter-selects>select{
+  min-height:36px;padding:0 26px 0 10px;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);color:var(--ink-2);font:inherit;font-size:12px;cursor:pointer;
+  max-width:220px;text-overflow:ellipsis;
+}
+.hall-barter-selects>select:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--line))}
+.hall-barter-selects>select:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 45%,transparent);outline-offset:1px}
+.hall-barter-clear{
+  min-height:36px;padding:0 12px;border:1px solid transparent;border-radius:12px;
+  background:transparent;color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;
+}
+.hall-barter-clear:hover{background:color-mix(in srgb,var(--accent) 9%,transparent)}

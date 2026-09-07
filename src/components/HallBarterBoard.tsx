@@ -32,6 +32,8 @@ type Opportunity = {
   ownerSectionId: number;
   ownerCollegeName: string;
   ownerSectionName: string;
+  ownerSections?: Array<{ id: number; name: string }>;
+  shared?: boolean;
 };
 
 export type HallBarterReservationView = {
@@ -98,8 +100,15 @@ export default function HallBarterBoard({
   const boardRef = useRef<HTMLElement | null>(null);
   /* بحثٌ واحد يقبل القسم والمبنى ورمز القاعة، ورقاقات الأقسام تختصر الطريق:
      القائمة صارت كل قاعات الكلية، ومن غير مرشِّح تصير كشفاً لا يُقرأ. */
+  /* ── أربعة مرشِّحات في سطر، لا صفٌّ من الرقاقات ──────────────────────────
+     صفُّ رقاقاتٍ بعدد أقسام الكلية يملأ الشاشة قبل أن تبدأ القراءة. أربع
+     قوائم مضغوطة تحمل العدد نفسه في سطر واحد هادئ، ولا تظهر منها قائمة إلا
+     إن كان فيها أكثر من خيار واحد. */
   const [query, setQuery] = useState("");
   const [ownerFilter, setOwnerFilter] = useState(0);
+  const [dayFilter, setDayFilter] = useState("");
+  const [buildingFilter, setBuildingFilter] = useState("");
+  const [periodFilter, setPeriodFilter] = useState("");
 
   const load = useCallback(async (quiet = false) => {
     if (!collegeId || !sectionId || !termId) { setBoard(emptyBoard); return; }
@@ -170,25 +179,57 @@ export default function HallBarterBoard({
     return [...new Map(rows.map(row => [row.id, row])).values()];
   }, [board.incoming, board.outgoing]);
 
+  const ownersOf = (item: Opportunity) => item.ownerSections?.length
+    ? item.ownerSections
+    : [{ id: item.ownerSectionId, name: item.ownerSectionName }];
+
   const owners = useMemo(() => {
     const map = new Map<number, { id: number; name: string; count: number }>();
-    board.opportunities.forEach(item => {
-      const current = map.get(item.ownerSectionId) || { id: item.ownerSectionId, name: item.ownerSectionName, count: 0 };
+    board.opportunities.forEach(item => ownersOf(item).forEach(owner => {
+      const current = map.get(owner.id) || { id: owner.id, name: owner.name, count: 0 };
       current.count += 1;
-      map.set(item.ownerSectionId, current);
-    });
-    return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+      map.set(owner.id, current);
+    }));
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
   }, [board.opportunities]);
+
+  const days = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; count: number }>();
+    board.opportunities.forEach(item => {
+      const current = map.get(item.day) || { key: item.day, label: item.dayLabel, count: 0 };
+      current.count += 1;
+      map.set(item.day, current);
+    });
+    return [...map.values()];
+  }, [board.opportunities]);
+
+  const buildings = useMemo(() => {
+    const map = new Map<string, { code: string; count: number }>();
+    board.opportunities.forEach(item => {
+      const current = map.get(item.roomCode) || { code: item.roomCode, count: 0 };
+      current.count += 1;
+      map.set(item.roomCode, current);
+    });
+    return [...map.values()].sort((a, b) => a.code.localeCompare(b.code));
+  }, [board.opportunities]);
+
+  const filtersActive = Boolean(query.trim() || ownerFilter || dayFilter || buildingFilter || periodFilter);
+  const clearFilters = () => { setQuery(""); setOwnerFilter(0); setDayFilter(""); setBuildingFilter(""); setPeriodFilter(""); };
 
   const visibleOpportunities = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
     return board.opportunities.filter(item => {
-      if (ownerFilter && item.ownerSectionId !== ownerFilter) return false;
+      if (ownerFilter && !ownersOf(item).some(owner => owner.id === ownerFilter)) return false;
+      if (dayFilter && item.day !== dayFilter) return false;
+      if (buildingFilter && item.roomCode !== buildingFilter) return false;
+      /* الفترة تُقاس ببداية النافذة: ما بدأ قبل الظهر صباحيّ ولو امتدّ بعده. */
+      if (periodFilter === "morning" && Number(item.startTime.slice(0, 2)) >= 12) return false;
+      if (periodFilter === "evening" && Number(item.startTime.slice(0, 2)) < 12) return false;
       if (!needle) return true;
-      return [item.ownerSectionName, item.roomCode, item.roomHall, `${item.roomCode}/${item.roomHall}`, item.dayLabel]
+      return [...ownersOf(item).map(owner => owner.name), item.roomCode, item.roomHall, `${item.roomCode}/${item.roomHall}`, item.dayLabel]
         .some(field => String(field || "").toLocaleLowerCase().includes(needle));
     });
-  }, [board.opportunities, query, ownerFilter]);
+  }, [board.opportunities, query, ownerFilter, dayFilter, buildingFilter, periodFilter]);
 
   const act = async (id: string, work: () => Promise<any>) => {
     setBusyId(id); setError(""); setMessage("");
@@ -307,23 +348,41 @@ export default function HallBarterBoard({
                     data-guide-ignore="حقل بحث داخل شاشة استعارة القاعات؛ يصفّي المعروض ولا ينفذ عملية"
                   />
                 </label>
-                {owners.length > 1 ? (
-                  <div className="hall-barter-owner-chips" role="group" aria-label="تصفية بالقسم المالك">
-                    <button type="button" className={ownerFilter ? "" : "active"} onClick={() => setOwnerFilter(0)} data-guide-ignore="تصفية نوافذ الاستعارة بكل الأقسام">كل الأقسام<i>{board.opportunities.length}</i></button>
-                    {owners.map(owner => (
-                      <button key={owner.id} type="button" className={ownerFilter === owner.id ? "active" : ""} onClick={() => setOwnerFilter(current => current === owner.id ? 0 : owner.id)} data-guide-ignore="تصفية نوافذ الاستعارة بقسم بعينه">
-                        {owner.name}<i>{owner.count}</i>
-                      </button>
-                    ))}
-                  </div>
-                ) : null}
+                <div className="hall-barter-selects">
+                  {days.length > 1 ? (
+                    <select aria-label="تصفية باليوم" value={dayFilter} onChange={event => setDayFilter(event.target.value)}>
+                      <option value="">كل الأيام</option>
+                      {days.map(day => <option key={day.key} value={day.key}>{day.label} ({day.count})</option>)}
+                    </select>
+                  ) : null}
+                  {buildings.length > 1 ? (
+                    <select aria-label="تصفية بالمبنى" value={buildingFilter} onChange={event => setBuildingFilter(event.target.value)}>
+                      <option value="">كل المباني</option>
+                      {buildings.map(building => <option key={building.code} value={building.code}>{building.code} ({building.count})</option>)}
+                    </select>
+                  ) : null}
+                  {owners.length > 1 ? (
+                    <select aria-label="تصفية بالقسم" value={ownerFilter || ""} onChange={event => setOwnerFilter(Number(event.target.value) || 0)}>
+                      <option value="">كل الأقسام</option>
+                      {owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name} ({owner.count})</option>)}
+                    </select>
+                  ) : null}
+                  <select aria-label="تصفية بالفترة" value={periodFilter} onChange={event => setPeriodFilter(event.target.value)}>
+                    <option value="">اليوم كله</option>
+                    <option value="morning">قبل الظهر</option>
+                    <option value="evening">بعد الظهر</option>
+                  </select>
+                  {filtersActive ? (
+                    <button type="button" className="hall-barter-clear" onClick={clearFilters} data-guide-ignore="مسح مرشِّحات شاشة استعارة القاعات">مسح</button>
+                  ) : null}
+                </div>
               </div>
             ) : null}
             {visibleOpportunities.length ? (
               <div className="hall-barter-opportunity-grid">
                 {visibleOpportunities.map(opportunity => (
                   <article key={opportunity.id}>
-                    <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{opportunity.ownerSectionName}</small></div>
+                    <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{ownersOf(opportunity).map(owner => owner.name).join(" · ")}</small></div>
                     <div className="hall-barter-opportunity-meta">
                       <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>دقيقة {opportunity.durationMinutes}</small></div>
                     </div>
