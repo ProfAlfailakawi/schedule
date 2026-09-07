@@ -62,6 +62,7 @@ import { academicDigits, assignAuthoritySections, authorityDepartmentCode, autho
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
 import { collegeBranchRoot, collegeSitePrefix, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
+import { fairShareByOwner } from "./src/utils/hallBarterFairness";
 import type { BranchScope } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
@@ -2784,7 +2785,7 @@ function hallBarterRequestShape(request:HallBarterRequest,sections:any[],college
 }
 
 async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,sectionId:number,termId:number){
-  const cacheKey=`${collegeId}:${sectionId}:${termId}`;
+  const cacheKey=`${collegeId}:${sectionId}:${termId}:${String((req.query as any)?.ownerSectionId||"")}:${String((req.query as any)?.day||"")}:${String((req.query as any)?.buildingCode||"")}`;
   const cached=hallBarterBoardCache.get(cacheKey);
   if(cached&&cached.scheduleSerial===driftSerial&&cached.barterSerial===hallBarterSerial&&cached.expiresAt>Date.now())return cached.body;
   /* لا قراءة لكل جداول النظام بعد اليوم: السؤال صار عن هذا الفصل وحده،
@@ -2948,10 +2949,57 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     }
   }
   opportunities.sort((a,b)=>byRoom(a.roomCode,a.roomHall,b.roomCode,b.roomHall)||SCHEDULE_DAY_KEYS.indexOf(a.day)-SCHEDULE_DAY_KEYS.indexOf(b.day)||a.startTime.localeCompare(b.startTime));
+
+  /* ── القصُّ الأعمى يحذف أقساماً بأكملها ──────────────────────────────────
+   *
+   * كانت النوافذ تُرتَّب برمز المبنى ثم تُقصّ عند الأربعمائة الأولى. والقسم
+   * الذي تقع قاعاته بعد القصّ لا تنقص نوافذه: تختفي كلها، ويختفي اسمه من
+   * مرشِّح الأقسام، فيقول صاحب الجدول «أقسامٌ لم تظهر» وهو محقّ — ولم يكن
+   * السجل ولا الفراغ سبباً، بل رقمٌ ثابت في سطر واحد.
+   *
+   * فصار الاختيار بالتناوب: نافذةٌ من كل قسم ثم دورة أخرى، حتى يمتلئ العدد.
+   * فإن ضاق المكان نقصت حصص الجميع بالتساوي ولم يسقط أحد، ثم تُعاد المختارة
+   * إلى ترتيب القراءة. ومعها تُرسل قائمة الأقسام والأيام والمباني كاملةً غير
+   * مقصوصة، ليبقى المرشِّح يعرف ما لا تعرضه الصفحة الواحدة. */
+  const facetsOf=(rows:readonly any[])=>{
+    const owners=new Map<number,{id:number;name:string;count:number}>();
+    const days=new Map<string,{key:string;label:string;count:number}>();
+    const buildings=new Map<string,{code:string;count:number}>();
+    for(const row of rows){
+      for(const owner of (row.ownerSections?.length?row.ownerSections:[{id:row.ownerSectionId,name:row.ownerSectionName}])){
+        const entry=owners.get(owner.id)||{id:owner.id,name:owner.name,count:0};entry.count+=1;owners.set(owner.id,entry);
+      }
+      const day=days.get(row.day)||{key:row.day,label:row.dayLabel,count:0};day.count+=1;days.set(row.day,day);
+      const building=buildings.get(row.roomCode)||{code:row.roomCode,count:0};building.count+=1;buildings.set(row.roomCode,building);
+    }
+    return {
+      owners:[...owners.values()].sort((a,b)=>a.name.localeCompare(b.name)),
+      days:[...days.values()],
+      buildings:[...buildings.values()].sort((a,b)=>byRoom(a.code,"",b.code,"")),
+    };
+  };
+  const fairSlice=(rows:readonly any[],limit:number)=>fairShareByOwner(rows,limit,row=>Number(row.ownerSectionId||0));
+
+  /* ومتى ضيّق القارئ بمرشِّح — قسماً أو يوماً أو مبنى — رجع السؤال إلى الخادم
+     ليُصفّي قبل القصّ، فيرى نوافذ ذلك القسم كاملةً لا حصته من الأربعمائة. */
+  const filterOwner=Number((req.query as any)?.ownerSectionId||0);
+  const filterDay=String((req.query as any)?.day||"").trim();
+  const filterBuilding=String((req.query as any)?.buildingCode||"").trim().toUpperCase();
+  const facets=facetsOf(opportunities);
+  const narrowed=opportunities.filter(row=>{
+    if(filterOwner&&!(row.ownerSections?.length?row.ownerSections:[{id:row.ownerSectionId}]).some((owner:any)=>Number(owner.id)===filterOwner))return false;
+    if(filterDay&&row.day!==filterDay)return false;
+    if(filterBuilding&&String(row.roomCode||"").toUpperCase()!==filterBuilding)return false;
+    return true;
+  });
+  const visible=fairSlice(narrowed,HALL_BARTER_MAX_OPPORTUNITIES);
   const shaped=requests.map(request=>hallBarterRequestShape(request,sections,colleges));
   const sameCampusRequests=shaped.filter(request=>sameHallCampusGender(request.requesterCollegeName,request.ownerCollegeName));
   const body={
-    opportunities:opportunities.slice(0,HALL_BARTER_MAX_OPPORTUNITIES),
+    opportunities:visible,
+    total:narrowed.length,
+    truncated:visible.length<narrowed.length,
+    facets,
     incoming:sameCampusRequests.filter(request=>request.ownerCollegeId===collegeId&&request.ownerSectionId===sectionId),
     outgoing:sameCampusRequests.filter(request=>request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId),
   };
