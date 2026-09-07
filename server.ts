@@ -61,6 +61,7 @@ import { recoverAuthorityScanRowsFromHistory } from "./src/utils/authorityScanRe
 import { academicDigits, assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches } from "./src/utils/authorityAcademicCodes";
 import { PENDING_ROOM, buildingIdentityKey, compareLocationCodes, isInvalidLocationToken, isSharedRoom, normalizeLocationToken, roomIdentityKey, roomKeyOf, resolveAuthorityLocation, resolveBuilding, resolveRoom } from "./src/utils/locationRegistry";
 import { officialBuildingCode, officialCollegeSitePrefix, officialSiteLabel, parseOfficialBuildingCode } from "./src/utils/locationCollegePrefixes";
+import { collegeBranchRoot, siblingBranchScopes, splitRowsByBranch } from "./src/utils/branchScope";
 import { buildMigrationPlan, locationPreflight, mergeRegistryWithSeed, newMigrationRun, registryHealth, rollbackPatch, seedRegistry, LOCATION_MIGRATION_VERSION } from "./src/server/locationRegistryEngine";
 import { bindGeminiRowsToCatalogue, buildSmartImportCatalogue, deterministicSchedulingCalls, extractJsonObject, GEMINI_SCHEDULE_FUNCTION_NAMES, normalizeGeminiScheduleRows, sanitizeGeminiScheduleCalls, scheduleDelta, type GeminiScheduleCall } from "./src/utils/geminiScheduleLayer";
 
@@ -148,11 +149,14 @@ async function readLocationRegistry(force=false){
 }
 function invalidateLocationRegistry(){locationRegistryCache=null;}
 async function canonicalizeLocationForWrite(row:any,collegeId:number,sectionId:number){
-  const registry=await readLocationRegistry();
-  let check=locationPreflight(row,registry,{collegeId,sectionId});
+  const [registry,colleges]=await Promise.all([readLocationRegistry(),Repository.getColleges()]);
+  /* الموقع داخل الفرع نفسه ليس خارج النطاق: قاعة الجهراء تبقى قابلة للتعديل
+     والحفظ من القسم نفسه، بينما فرع آخر (بنين مقابل بنات) يظل مرفوضاً. */
+  const branchRoot=collegeBranchRoot(colleges as any,collegeId);
+  let check=locationPreflight(row,registry,{collegeId,sectionId,branchRoot});
   const blocking=check.issues.filter(issue=>issue.severity==="high");
   if(blocking.length&&blocking.every(issue=>issue.type==="room_scope")&&check.canonical&&await hallBarterAllowsRoomUse({...row,...check.canonical},collegeId,sectionId)){
-    check=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeRoom:true});
+    check=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:true});
   }
   return {registry,check};
 }
@@ -1228,17 +1232,32 @@ function inferAuthorityBranchCode(draft:any,rows:any[]){
 async function validateSmartRows(rows: any[], collegeId: number, sectionId: number, options: { checkConflicts?: boolean; resolveHistorical?: boolean; requireDepartmentInstructor?:boolean } = {}) {
   const termId = Number(rows[0]?.AdTermId || 0);
   const checkConflicts = options.checkConflicts !== false;
-  const [courses, instructors, currentSchedules, registry,sectionHistory,departmentDelegates,visitingRoster] = await Promise.all([
+  /* القسم الواحد يُدرَّس في مواقع الفرع الثلاثة، ومن يدرّس في الجهراء عضو في
+     القسم نفسه لا في قسم غريب. فقائمة أعضاء القسم تُقرأ من مواقع الفرع كلها،
+     تماماً كما يُقرأ المبنى بحد الفرع لا بحد رقم الكلية. */
+  const [allColleges, allSections] = await Promise.all([Repository.getColleges(), Repository.getSections()]);
+  const branchRoot = collegeBranchRoot(allColleges as any, collegeId);
+  const departmentScopes = options.requireDepartmentInstructor
+    ? (siblingBranchScopes({colleges:allColleges as any,sections:allSections as any,baseCollegeId:collegeId,baseSectionId:sectionId}).map(scope=>({collegeId:scope.collegeId,sectionId:scope.sectionId}))
+       .concat([{collegeId,sectionId}])
+       .filter((scope,index,list)=>list.findIndex(item=>item.collegeId===scope.collegeId&&item.sectionId===scope.sectionId)===index))
+    : [];
+  const [courses, instructors, currentSchedules, registry,departmentPools] = await Promise.all([
     Repository.getCourses(), Repository.getInstructors(), Repository.getSchedulesByScope({ termId }), readLocationRegistry(),
-    options.requireDepartmentInstructor?Repository.getSchedulesByScope({collegeId,sectionId}):Promise.resolve([]),
-    options.requireDepartmentInstructor?Repository.getDepartmentDelegates(collegeId,sectionId):Promise.resolve([]),
-    options.requireDepartmentInstructor?Repository.getVisitingRoster(collegeId,sectionId,termId):Promise.resolve([]),
+    Promise.all(departmentScopes.map(async scope=>{
+      const [history,delegates,roster]=await Promise.all([
+        Repository.getSchedulesByScope({collegeId:scope.collegeId,sectionId:scope.sectionId}),
+        Repository.getDepartmentDelegates(scope.collegeId,scope.sectionId),
+        Repository.getVisitingRoster(scope.collegeId,scope.sectionId,termId),
+      ]);
+      return {history,delegates,roster};
+    })),
   ]);
   const courseById = new Map(courses.map(course => [course.AdCourseId, course]));
   const instructorIds = new Set(instructors.map(instructor => instructor.AdInstructorId));
-  const departmentInstructorIds=new Set<number>([
-    ...sectionHistory.map((row:any)=>Number(row.AdInstructorId||0)),...departmentDelegates.map(Number),...visitingRoster.map(Number),
-  ].filter((id:number)=>id>0));
+  const departmentInstructorIds=new Set<number>(departmentPools.flatMap(pool=>[
+    ...pool.history.map((row:any)=>Number(row.AdInstructorId||0)),...pool.delegates.map(Number),...pool.roster.map(Number),
+  ]).filter((id:number)=>id>0));
   const errors: string[] = [];
   for (let index=0; index<rows.length; index+=1) {
     const row=rows[index];
@@ -1271,10 +1290,10 @@ async function validateSmartRows(rows: any[], collegeId: number, sectionId: numb
        reviewer cannot act on. Double-booking is still caught below, by the
        conflict pass that compares the actual reservations. */
     const authorityRooms=Boolean(options.requireDepartmentInstructor);
-    let location=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeRoom:authorityRooms});
+    let location=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:authorityRooms});
     const locationBlocking=location.issues.filter(issue=>issue.severity==="high");
     if(!authorityRooms&&locationBlocking.length&&locationBlocking.every(issue=>issue.type==="room_scope")&&location.canonical&&await hallBarterAllowsRoomUse({...row,...location.canonical},collegeId,sectionId)){
-      location=locationPreflight(row,registry,{collegeId,sectionId,allowOutOfScopeRoom:true});
+      location=locationPreflight(row,registry,{collegeId,sectionId,branchRoot,allowOutOfScopeRoom:true});
     }
     if(!location.ok) location.issues.filter(issue=>issue.severity==="high").forEach(issue=>errors.push(`السطر ${index + 1}: ${issue.message}`));
     else if(location.canonical) Object.assign(row,location.canonical);
@@ -6855,6 +6874,26 @@ app.post("/api/intelligence/drafts", requirePermission(7), async (req: Authentic
   res.status(201).json(draft);
 });
 
+/**
+ * خط الأساس الذي يخص هذا القسم وحده.
+ *
+ * المستند المعتمد واحد ويحوي مواقع الفرع كلها، وصفوفه تُنشر كل صف في موقعه.
+ * فتقرير التغييرات لقسم بعينه يجب أن يقارن ما يخص ذلك الموقع فقط — وإلا ظهرت
+ * صفوف الجهراء «محذوفة» في تقرير الرئيسي لمجرد أنها نُشرت حيث تنتمي. الصفوف
+ * القديمة التي لا تحمل بادئة موقع تبقى مع الموقع الذي استُورد منه الملف.
+ */
+async function authorityBaselineForScope(baseline:any[],draft:{AdCollegeId:number;AdSectionId:number},collegeId:number,sectionId:number){
+  const rows=Array.isArray(baseline)?baseline:[];
+  if(!rows.length)return rows;
+  const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+  const split=splitRowsByBranch(rows,{colleges:colleges as any,sections:sections as any,baseCollegeId:draft.AdCollegeId,baseSectionId:draft.AdSectionId});
+  if(split.groups.length<=1&&!split.unplaced.length)return rows;
+  const mine=split.groups.find(group=>Number(group.scope.collegeId)===Number(collegeId)&&Number(group.scope.sectionId)===Number(sectionId));
+  const isDraftScope=Number(collegeId)===Number(draft.AdCollegeId)&&Number(sectionId)===Number(draft.AdSectionId);
+  // صف تعذّر تحديد موقعه لم يغادر مكان الاستيراد، فيبقى في تقريره.
+  return [...(mine?mine.rows:[]),...(isDraftScope?split.unplaced.flatMap(entry=>entry.rows):[])];
+}
+
 app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
   if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
@@ -6865,10 +6904,11 @@ app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), asyn
     Repository.getInstructors(),
   ]);
   const instructorNameById=new Map<number,string>(instructors.map((row:any)=>[Number(row.AdInstructorId),String(row.AdInstructorName||"")] as [number,string]));
-  const comparison=buildAuthorityPdfDiff(draft.baselineRows,live,{instructorNameById});
+  const scopedBaseline=await authorityBaselineForScope(draft.baselineRows,draft,draft.AdCollegeId,draft.AdSectionId);
+  const comparison=buildAuthorityPdfDiff(scopedBaseline,live,{instructorNameById});
   res.json({
     draftId:draft.id,name:draft.name,sourceFileName:draft.sourceFileName||"الجدول المعتمد.pdf",
-    sourceBranchCode:inferAuthorityBranchCode(draft,[...draft.baselineRows,...live]),
+    sourceBranchCode:inferAuthorityBranchCode(draft,[...scopedBaseline,...live]),
     sourceBranchName:draft.sourceBranchName||"",
     ...comparison,
   });
@@ -6882,8 +6922,28 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
   if(!collegeId||!sectionId||!termId){res.status(400).json({error:"اختر الفصل والكلية والقسم أولاً."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
   const drafts=await Repository.getScheduleDrafts(collegeId,sectionId,termId);
-  const candidates=drafts.filter((item:any)=>item.importLayout==="authority-pdf"&&Array.isArray(item.baselineRows)&&item.baselineRows.length);
-  const draft=candidates.find((item:any)=>item.status==="published")||candidates[0];
+  const authorityDrafts=(list:any[])=>list.filter((item:any)=>item.importLayout==="authority-pdf"&&Array.isArray(item.baselineRows)&&item.baselineRows.length);
+  const candidates=authorityDrafts(drafts);
+  let draft=candidates.find((item:any)=>item.status==="published")||candidates[0];
+  /* المستند يُستورد مرة واحدة من أحد مواقع الفرع، وصفوفه تُنشر كل صف في موقعه.
+     فقسم الجهراء قد يكون جدوله منشوراً من نسخة معتمدة استُوردت من الرئيسي، ولا
+     مسودة باسمه. نبحث عندئذٍ في مواقع الفرع الشقيقة عن النسخة التي يخصّه منها
+     صفوف — فيحصل على تقرير تغييراته كأي قسم، دون أن يستورد الملف مرة أخرى. */
+  if(!draft){
+    const [colleges,sections]=await Promise.all([Repository.getColleges(),Repository.getSections()]);
+    const siblings=siblingBranchScopes({colleges:colleges as any,sections:sections as any,baseCollegeId:collegeId,baseSectionId:sectionId})
+      .filter(scope=>!(Number(scope.collegeId)===collegeId&&Number(scope.sectionId)===sectionId));
+    for(const scope of siblings){
+      const siblingDrafts=authorityDrafts(await Repository.getScheduleDrafts(scope.collegeId,scope.sectionId,termId));
+      const owned=[] as any[];
+      for(const candidate of siblingDrafts){
+        const mine=await authorityBaselineForScope(candidate.baselineRows||[],candidate,collegeId,sectionId);
+        if(mine.length)owned.push(candidate);
+      }
+      draft=owned.find((item:any)=>item.status==="published")||owned[0];
+      if(draft)break;
+    }
+  }
   if(!draft){res.status(404).json({error:"لا توجد نسخة PDF معتمدة محفوظة لهذا الفصل والقسم بعد."});return;}
   const [live,instructors]=await Promise.all([
     Repository.getSchedulesByScope({collegeId,sectionId,termId}),
@@ -6895,10 +6955,11 @@ app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,
      hid the most important possible deletion report. Keep the immutable
      baseline and let buildAuthorityPdfDiff classify every original row as
      `deleted` instead of suppressing the report. */
-  const comparison=buildAuthorityPdfDiff(draft.baselineRows||[],live,{instructorNameById});
+  const scopedBaseline=await authorityBaselineForScope(draft.baselineRows||[],draft,collegeId,sectionId);
+  const comparison=buildAuthorityPdfDiff(scopedBaseline,live,{instructorNameById});
   res.json({
     draftId:draft.id,name:draft.name,sourceFileName:draft.sourceFileName||"الجدول المعتمد.pdf",
-    sourceBranchCode:inferAuthorityBranchCode(draft,[...(draft.baselineRows||[]),...live]),
+    sourceBranchCode:inferAuthorityBranchCode(draft,[...scopedBaseline,...live]),
     sourceBranchName:draft.sourceBranchName||"",
     importedAt:draft.createdAt,publishedAt:draft.publishedAt||null,
     ...comparison,
@@ -7004,11 +7065,92 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
     res.status(400).json({error:"لا يمكن نشر المسودة قبل معالجة البيانات",issues,issueRowIds,rowIssues});return;
   }
 
-  await captureScopeVersion(req,draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish");
-  const rows=await Repository.replaceScheduleScope(draft.AdCollegeId,draft.AdSectionId,draft.AdTermId,publishRows);
-  await Repository.updateScheduleDraft(draft.id,{status:"published",rows,publishedAt:new Date().toISOString()});
-  const publication=await Repository.upsertSchedulePublication({AdCollegeId:draft.AdCollegeId,AdSectionId:draft.AdSectionId,AdTermId:draft.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:draft.id});
-  res.json({success:true,count:rows.length,publication,adjusted});
+  /* ── كل صف يُنشر في موقعه ────────────────────────────────────────────────
+   * الجامعة تصدر للقسم الواحد ملفاً واحداً يحوي مواقع الفرع الثلاثة: الرئيسي
+   * والجهراء والفحيحيل. وكل موقع مسجل عندنا ككلية مستقلة لها قسم بالرمز نفسه.
+   * فالمستخدم يستورد مرة واحدة، والنشر هو الذي يضع كل صف حيث ينتمي فعلاً —
+   * بدل أن تُحشر صفوف الجهراء في جدول الرئيسي فيبقى جدول الجهراء فارغاً وتُنسب
+   * أحمالها وقاعاتها إلى الكلية الخطأ.
+   *
+   * الشرط الذي لا يُتنازل عنه: إما أن تُنشر المواقع كلها أو لا يُكتب شيء. نشر
+   * ينجح في الجهراء ويفشل في الفحيحيل أسوأ من فشل كامل، لأن نصف جدول منشور لا
+   * يعلن عن نفسه. لذلك يُفحص كل موقع بالكامل — صلاحية، ومقررات، وتحقق — قبل
+   * أول عملية كتابة.
+   */
+  const [publishColleges,publishSections,publishCourses]=await Promise.all([
+    Repository.getColleges(),Repository.getSections(),Repository.getCourses(),
+  ]);
+  const branchContext={colleges:publishColleges as any,sections:publishSections as any,baseCollegeId:draft.AdCollegeId,baseSectionId:draft.AdSectionId};
+  const split=splitRowsByBranch(publishRows as any[],branchContext);
+  if(split.unplaced.length){
+    res.status(400).json({
+      error:"تعذّر تحديد القسم الذي تنتمي إليه بعض الصفوف بحسب موقع المبنى؛ لم يُنشر أي صف.",
+      code:"BRANCH_SCOPE_UNRESOLVED",
+      issues:split.unplaced.map(entry=>`${countOf(entry.rows.length,AR.row)} في «${entry.siteLabel}» بلا قسم مناظر بالرمز نفسه في هذا الفرع.`),
+    });return;
+  }
+
+  /* المقرر هوية داخل قسمه: الصف الذي يذهب إلى الجهراء يجب أن يحمل رقم المقرر
+     في كتالوج قسم الجهراء لا رقم نظيره في الرئيسي. تُعاد المطابقة برمز المقرر
+     الرسمي؛ ومقرر لا نظير له هناك يوقف النشر باسمه ولا يُخترع له رقم. */
+  const courseByIdForPublish=new Map(publishCourses.map((course:any)=>[Number(course.AdCourseId),course]));
+  const courseKey=(collegeId:number,sectionId:number,code:unknown)=>`${collegeId}:${sectionId}:${academicDigits(code)||String(code||"").trim().toUpperCase()}`;
+  const courseByScopeCode=new Map(publishCourses.map((course:any)=>[courseKey(Number(course.AdCollegeId),Number(course.AdSectionId),course.CourseCode),course]));
+  const missingCourses:string[]=[];
+  const groups=split.groups.map(group=>{
+    const rows=group.rows.map((row:any)=>{
+      if(group.scope.isBase)return {...row,AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId};
+      const origin=courseByIdForPublish.get(Number(row.AdCourseId));
+      const twin=origin?courseByScopeCode.get(courseKey(group.scope.collegeId,group.scope.sectionId,origin.CourseCode)):undefined;
+      if(!twin){
+        missingCourses.push(`«${String(origin?.CourseName||row.AdCourseName||row.AdCourseId)}» غير موجود في كتالوج القسم بـ«${group.scope.siteLabel}».`);
+        return {...row,AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId};
+      }
+      return {...row,AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId,AdCourseId:Number(twin.AdCourseId),AdCourseName:String(twin.CourseName||row.AdCourseName||"")};
+    });
+    return {scope:group.scope,rows};
+  });
+  if(missingCourses.length){
+    res.status(400).json({error:"لا يمكن النشر: مقرر أو أكثر ليس له نظير في قسم الموقع الآخر. لم يُنشر أي صف.",code:"BRANCH_COURSE_MISSING",issues:[...new Set(missingCourses)].slice(0,20)});return;
+  }
+
+  const forbidden=groups.filter(group=>!isScopeAllowed(req,group.scope.collegeId,group.scope.sectionId));
+  if(forbidden.length){
+    res.status(403).json({
+      error:"هذا الملف يحوي مواقع خارج صلاحياتك؛ لم يُنشر أي صف.",
+      code:"BRANCH_SCOPE_FORBIDDEN",
+      issues:forbidden.map(group=>`«${group.scope.siteLabel}» — ${countOf(group.rows.length,AR.row)} تحتاج صلاحية على قسمها هناك.`),
+    });return;
+  }
+
+  for(const group of groups){
+    if(group.scope.isBase)continue;
+    const branchIssues=await validateSmartRows(group.rows,group.scope.collegeId,group.scope.sectionId,{requireDepartmentInstructor:draft.importLayout==="authority-pdf"});
+    if(branchIssues.length){
+      res.status(400).json({
+        error:`لا يمكن النشر: صفوف «${group.scope.siteLabel}» لم تجتز التحقق في قسمها. لم يُنشر أي صف.`,
+        code:"BRANCH_VALIDATION_FAILED",
+        issues:branchIssues.map(issue=>`${group.scope.siteLabel} · ${issue}`),
+      });return;
+    }
+  }
+
+  /* نقاط الأمان أولاً ولكل موقع، حتى يكون لكل جدول ما يعود إليه. */
+  for(const group of groups){
+    await captureScopeVersion(req,group.scope.collegeId,group.scope.sectionId,draft.AdTermId,`قبل نشر: ${draft.name}`,"publish");
+  }
+  const written:any[]=[];
+  let publication:any=null;
+  const publishedScopes:Array<{siteLabel:string;count:number}>=[];
+  for(const group of groups){
+    const rows=await Repository.replaceScheduleScope(group.scope.collegeId,group.scope.sectionId,draft.AdTermId,group.rows);
+    written.push(...rows);
+    publishedScopes.push({siteLabel:group.scope.siteLabel,count:rows.length});
+    const record=await Repository.upsertSchedulePublication({AdCollegeId:group.scope.collegeId,AdSectionId:group.scope.sectionId,AdTermId:draft.AdTermId,SystemUserId:req.user.SystemUserId,userName:req.user.Name,draftId:draft.id});
+    if(group.scope.isBase||!publication)publication=record;
+  }
+  await Repository.updateScheduleDraft(draft.id,{status:"published",rows:written,publishedAt:new Date().toISOString()});
+  res.json({success:true,count:written.length,publication,adjusted,scopes:publishedScopes});
 });
 
 app.get("/api/intelligence/versions", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {

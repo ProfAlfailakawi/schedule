@@ -3,6 +3,7 @@ import { authorityBuildingCellLooksPlausible, authorityCourseCellLooksPlausible,
 import { assignAuthoritySections, authorityDepartmentCode, authorityDepartmentMatches, authorityCourseCodeMatches } from "../src/utils/authorityAcademicCodes.ts";
 import { officialSiteLabel, recoverOfficialBuildingCodeFromAuthorityCell } from "../src/utils/locationCollegePrefixes.ts";
 import { resolveBuildingFromUniqueRoom, resolveRoom } from "../src/utils/locationRegistry.ts";
+import { branchRootOf, resolveBranchScope, siblingBranchScopes, splitRowsByBranch } from "../src/utils/branchScope.ts";
 
 const generatedPhysical = `
 01كليه التربيه الاساسيه الكلية : الفصل الدراسي الاول 2027-2026 الفصل :
@@ -366,3 +367,56 @@ const spacedCivilProof = graduationSheetFacts(`
 `);
 assert.ok(spacedCivilProof.civilCandidates.includes("304102301536"));
 assert.ok(spacedCivilProof.civilCandidates.includes("240820260808"));
+
+/* ── الفرع: القسم الواحد في ثلاثة مواقع ────────────────────────────────────
+   الجامعة تصدر للقسم ملفاً واحداً يحوي الرئيسي والجهراء والفحيحيل، وكل موقع
+   مسجل عندنا ككلية مستقلة لها القسم نفسه بالرمز نفسه. هذه الفحوص تثبت أن كل
+   صف يُنسب إلى قسمه في موقعه، وأن فرعاً آخر لا يتسلل بحجة أنه «موقع». */
+const branchColleges = [
+  { AdCollegeId: 6, AdCollegeName: "كلية التربية الأساسية - بنات" },
+  { AdCollegeId: 10, AdCollegeName: "كلية التربية الأساسية - بنات - الجهراء" },
+  { AdCollegeId: 11, AdCollegeName: "كلية التربية الأساسية - بنات - الفحيحيل" },
+  { AdCollegeId: 5, AdCollegeName: "كلية التربية الأساسية - بنين" },
+];
+const branchSections = [
+  { AdCollegeId: 6, AdSectionId: 90, AdSectionCode: "07", AdSectionName: "تكنولوجيا التعليم" },
+  { AdCollegeId: 10, AdSectionId: 190, AdSectionCode: "07", AdSectionName: "تكنولوجيا التعليم" },
+  { AdCollegeId: 11, AdSectionId: 290, AdSectionCode: "07", AdSectionName: "تكنولوجيا التعليم" },
+  { AdCollegeId: 5, AdSectionId: 390, AdSectionCode: "07", AdSectionName: "تكنولوجيا التعليم" },
+  { AdCollegeId: 6, AdSectionId: 91, AdSectionCode: "08", AdSectionName: "الرياضيات" },
+];
+const branchContext = { colleges: branchColleges, sections: branchSections, baseCollegeId: 6, baseSectionId: 90 };
+
+assert.equal(branchRootOf("012J"), "012");
+assert.equal(branchRootOf("011B"), "011");
+
+/* الموقع الآخر داخل الفرع يجد قسمه الشقيق بالرمز نفسه. */
+assert.equal(resolveBranchScope("012J", branchContext)?.sectionId, 190);
+assert.equal(resolveBranchScope("012F", branchContext)?.collegeId, 11);
+assert.equal(resolveBranchScope("012B", branchContext)?.isBase, true);
+/* بنين فرع آخر لا موقع: يبقى خارج هذا الاستيراد مهما تشابه اسم القسم. */
+assert.equal(resolveBranchScope("011B", branchContext), undefined);
+/* مواقع الفرع الثلاثة فقط، والأساس أولاً. */
+assert.deepEqual(siblingBranchScopes(branchContext).map(scope => scope.sitePrefix), ["012B", "012F", "012J"]);
+assert.equal(siblingBranchScopes(branchContext)[0].isBase, true);
+
+const branchRows = [
+  { id: 1, sourceSitePrefix: "012B" },
+  { id: 2, sourceSitePrefix: "012J" },
+  { id: 3, sourceSitePrefix: "012F" },
+  { id: 4, sourceSitePrefix: "012J" },
+  { id: 5 },
+  { id: 6, sourceSitePrefix: "011B" },
+];
+const branchSplit = splitRowsByBranch(branchRows, branchContext);
+const bySite = new Map(branchSplit.groups.map(group => [group.scope.sitePrefix, group.rows.map(row => row.id)]));
+/* الصف بلا بادئة موقع يبقى حيث فُتح الاستيراد — لا يُخمَّن له مكان. */
+assert.deepEqual(bySite.get("012B"), [1, 5]);
+assert.deepEqual(bySite.get("012J"), [2, 4]);
+assert.deepEqual(bySite.get("012F"), [3]);
+/* الفرع الآخر لا يُنشر ولا يُحذف بصمت: يُعاد باسم موقعه ليُبلَّغ به المستخدم. */
+assert.deepEqual(branchSplit.unplaced.map(entry => entry.rows.map(row => row.id)), [[6]]);
+assert.match(branchSplit.unplaced[0].siteLabel, /بنين/);
+
+/* قسم لا نظير له في الموقع الآخر لا يُلحق بقسم آخر لمجرد التقارب. */
+assert.equal(resolveBranchScope("012J", { ...branchContext, baseSectionId: 91 }), undefined);
