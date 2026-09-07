@@ -1609,7 +1609,7 @@ export default function Reports({ mode, user, scopes = [] }: Props) {
               >
                 <Printer aria-hidden="true" />
               </button>
-              <SecondaryButton type="button" onClick={() => branchAllSites ? void printBranchComprehensive() : printReport("comprehensive")} disabled={branchBusy} title={branchAllSites ? `وثيقة القسم كاملة في مواقع الفرع: ${branchSites.map(site => site.siteLabel).join(" · ")}` : "وثيقة القسم الرسمية بكل تفاصيل الجدول"}>
+              <SecondaryButton type="button" data-guide-ignore="طباعة التقرير الشامل بنطاقه المختار داخل مركز الاستعلامات" onClick={() => branchAllSites ? void printBranchComprehensive() : printReport("comprehensive")} disabled={branchBusy} title={branchAllSites ? `وثيقة القسم كاملة في مواقع الفرع: ${branchSites.map(site => site.siteLabel).join(" · ")}` : "وثيقة القسم الرسمية بكل تفاصيل الجدول"}>
                 <Table2 aria-hidden="true" />{branchBusy ? "يجمع الفروع…" : "التقرير الشامل"}
               </SecondaryButton>
             </> : null}
