@@ -4001,7 +4001,18 @@ button.twin-delta{width:100%}
 .import-preview-table input,.import-preview-table select{max-width:150px;padding:5px 7px;font:inherit;font-size:11.5px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink)}
 .import-preview-table input[type="time"]{max-width:96px}
 .import-preview-table td.import-cell-course select{max-width:230px}
-.import-row-tools{white-space:nowrap;width:74px}
+/* التحرير والحذف لا يُطاردان.
+   The tools column is the LAST one, so in this right-to-left table it sits at
+   the far left — and whenever the table is wider than its frame, reaching it
+   meant scrolling to the very bottom of the page to find the horizontal bar,
+   then dragging left, for every single row. It is pinned instead: the column
+   travels with the horizontal scroll and stays on screen, so deleting or
+   editing a row is always one click from where the eye already is. */
+.import-row-tools{white-space:nowrap;width:74px;position:sticky;inset-inline-end:0;z-index:2;background:var(--surface);border-inline-start:1px solid var(--line)}
+.import-preview-table th:last-child{position:sticky;inset-inline-end:0;z-index:3;border-inline-start:1px solid var(--line)}
+/* The pinned cell keeps the row's own colour when a row is being edited, so it
+   never looks like a detached strip floating over the table. */
+.import-preview-table tr.is-editing .import-row-tools{background:color-mix(in srgb,var(--accent) 7%,var(--surface))}
 .import-row-tools button{display:inline-grid;place-items:center;width:28px;height:28px;margin-inline-start:4px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--muted);cursor:pointer}
 .import-row-tools button svg{width:14px;height:14px}
 .import-row-tools button:hover{color:var(--ink);border-color:var(--line-strong)}
