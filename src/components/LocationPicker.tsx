@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { FSchedule, MasterBuilding, MasterRoom } from "../types";
 import { PENDING_ROOM, compareLocationCodes, roomGroups } from "../utils/locationRegistry";
-import { buildingNumberLabel } from "../utils/locationCollegePrefixes";
+import { buildingNumberLabel, officialSiteLabel } from "../utils/locationCollegePrefixes";
 
 type LocationValue=Pick<FSchedule,"AdRoomCode"|"AdRoomHall"|"buildingId"|"roomId"|"locationStatus"|"sourceBuildingText"|"sourceRoomText">;
 type PickerRoom=MasterRoom&{sharedWith?:string[]};
@@ -46,9 +46,26 @@ function useRegistry(collegeId:number,sectionId:number,termId?:number,branchSite
 
 export function BuildingPicker({collegeId,sectionId,termId,value,onChange,disabled=false,branchSites=false}:{collegeId:number;sectionId:number;termId?:number;value?:string;onChange:(building?:MasterBuilding)=>void;disabled?:boolean;branchSites?:boolean}){
   const {buildings,loading}=useRegistry(collegeId,sectionId,termId,branchSites);
+  /* ── رقم المبنى وحده لا يقول أين هو ──────────────────────────────────────
+     «14» في الجهراء و«14» في المقر الرئيسي رقمان متطابقان لمبنيين مختلفين،
+     والقائمة كانت تكتب الرقم مجرداً. فمتى ضمّت القائمة أكثر من موقع، كُتب اسم
+     الموقع بجانب الرقم وجُمعت المباني تحت مواقعها؛ وفي الحالة العادية — موقع
+     واحد — تبقى القائمة كما كانت حرفاً بحرف. */
+  const bySite=new Map<string,MasterBuilding[]>();
+  for(const building of buildings){
+    const prefix=String(building.sitePrefix||building.officialCode.slice(0,4)).toUpperCase();
+    const group=bySite.get(prefix); if(group)group.push(building); else bySite.set(prefix,[building]);
+  }
+  const multiSite=bySite.size>1;
   return <select aria-label="المبنى الرسمي" value={value||""} disabled={disabled||loading} onChange={e=>onChange(buildings.find(item=>item.id===e.target.value))}>
     <option value="">{loading?"جارٍ تحميل المباني…":"اختر المبنى"}</option>
-    {buildings.map(building=><option key={building.id} value={building.id}>{buildingNumberLabel(building)}</option>)}
+    {multiSite
+      ? [...bySite.entries()].map(([prefix,group])=>(
+          <optgroup key={prefix} label={officialSiteLabel(prefix)}>
+            {group.map(building=><option key={building.id} value={building.id}>{buildingNumberLabel(building)} · {officialSiteLabel(prefix)}</option>)}
+          </optgroup>
+        ))
+      : buildings.map(building=><option key={building.id} value={building.id}>{buildingNumberLabel(building)}</option>)}
   </select>;
 }
 
