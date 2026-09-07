@@ -1035,6 +1035,13 @@ button.disabled,.disabled{opacity:.45;pointer-events:none}
 .transfer-import-hero>span{display:grid;place-items:center;inline-size:40px;block-size:40px;border-radius:13px;background:var(--accent);color:#fff;flex:none;box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 25%,transparent)}
 .transfer-import-hero svg{inline-size:19px;block-size:19px}.transfer-import-hero div{display:grid;gap:3px}.transfer-import-hero strong{font-size:var(--t-sm);color:var(--ink)}
 .transfer-import-hero p{margin:0!important;line-height:1.65!important}
+/* موقع فرع: الاستيراد يوجَّه إلى الكلية الأساس بدل موقعٍ واحد. */
+.transfer-branch-import{display:flex;align-items:flex-start;gap:12px;width:100%;padding:16px;border:1px solid color-mix(in srgb,var(--accent) 26%,var(--line));border-radius:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 10%,var(--surface)),var(--surface))}
+.transfer-branch-import-mark{display:grid;place-items:center;inline-size:40px;block-size:40px;border-radius:13px;background:var(--accent);color:#fff;flex:none;box-shadow:0 8px 22px color-mix(in srgb,var(--accent) 25%,transparent)}
+.transfer-branch-import-mark svg{inline-size:19px;block-size:19px}
+.transfer-branch-import div{display:grid;gap:4px}
+.transfer-branch-import strong{font-size:var(--t-sm);color:var(--ink)}
+.transfer-branch-import p{margin:0;line-height:1.65;color:var(--ink-2)}
 .transfer-body b{color:var(--ink)}
 .transfer-file{display:none}
 .meeting-backdrop{position:fixed;inset:0;z-index:4300;background:rgba(8,18,32,.54);backdrop-filter:blur(7px);display:grid;place-items:center;padding:20px}

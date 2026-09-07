@@ -11,6 +11,7 @@ import { sortTermsNewest } from "../utils/termSequence";
 import { formatScheduleTimeRange } from "../utils/scheduleTime";
 import { assignAuthoritySections } from "../utils/authorityAcademicCodes";
 import { applySmartFills, isPlaceholderValue, proposeSmartFills, type SmartFill } from "../utils/geminiScheduleLayer";
+import { campusOf } from "../utils/campusTravel";
 
 /**
  * Moving a term in, out, and off one person's shoulders.
@@ -30,6 +31,8 @@ interface Instructor {
 
 interface Props {
   collegeId: number;
+  /** اسم الكلية المفتوحة — لتمييز موقع الفرع (الجهراء/الفحيحيل) عن الأساس. */
+  collegeName?: string;
   sectionId: number;
   termId: number;
   instructors: Instructor[];
@@ -43,7 +46,7 @@ interface Props {
 
 type Tab = "export" | "import" | "publish" | "retire" | "visiting";
 
-export default function ScheduleTransfer({ collegeId, sectionId, termId, instructors, departmentIds, terms, onChanged, onClose }: Props) {
+export default function ScheduleTransfer({ collegeId, collegeName, sectionId, termId, instructors, departmentIds, terms, onChanged, onClose }: Props) {
   useDialogDismiss(true, onClose);
   const [tab, setTab] = useState<Tab>("export");
   const [busy, setBusy] = useState(false);
@@ -246,6 +249,11 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   };
 
   const scopeReady = Boolean(collegeId && sectionId && termId);
+  /* موقع الفرع (الجهراء/الفحيحيل) لا يستورد لنفسه: الجدول المعتمد يصدر ملفاً
+   * واحداً من كلية الأساس ويوزّعه النظام على المواقع. فإن فُتح تبويب الاستيراد
+   * على فرع، يُوجَّه المستخدم إلى الأساس بدل أن يستورد لموقعٍ واحد. */
+  const branchSite = campusOf(collegeName) !== "main";
+  const baseCollegeName = String(collegeName || "").replace(/\s*[-–]\s*(الجهراء|الفحيحيل)\s*$/, "").trim() || "كلية التربية الأساسية";
   const named = (id: number) => instructors.find(x => x.AdInstructorId === id)?.AdInstructorName || "";
   const sortedInstructors = useMemo(() => sortByName(instructors, person => person.AdInstructorName), [instructors]);
   const directory = useMemo(() => {
@@ -966,7 +974,16 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
             </>
           ) : null}
 
-          {tab === "import" ? (
+          {tab === "import" && branchSite ? (
+            <div className="transfer-branch-import" role="note">
+              <span className="transfer-branch-import-mark"><Building2 aria-hidden="true" /></span>
+              <div>
+                <strong>الاستيراد يتم من «{baseCollegeName}»</strong>
+                <p>هذا موقع فرع؛ والجدول المعتمد يصدر ملفاً واحداً من الكلية الأساس ويوزّعه النظام على المواقع تلقائياً (بنات · الجهراء · الفحيحيل). افتح «{baseCollegeName}» في مختار الكلية، واستورد من هناك مرة واحدة.</p>
+              </div>
+            </div>
+          ) : null}
+          {tab === "import" && !branchSite ? (
             <>
               <div className="transfer-import-hero">
                 <span><Sparkles aria-hidden="true" /></span>

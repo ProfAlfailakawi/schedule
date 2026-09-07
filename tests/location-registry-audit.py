@@ -483,4 +483,12 @@ ok('204 the barter board keeps a term-wide log of every movement — folded by d
    and 'root.dataset.printKind = "barter-log"' in barter_board
    and 'html[data-print-kind="barter-log"] #app-print-root>.hall-barter-log-print-host{display:block!important' in print_css)
 
+ok('205 a branch site (الجهراء/الفحيحيل) does not import for itself — the import tab points to the base college instead, and only there',
+   'const branchSite = campusOf(collegeName) !== "main"' in transfer_src
+   and 'tab === "import" && branchSite ?' in transfer_src
+   and 'tab === "import" && !branchSite ?' in transfer_src
+   and 'الاستيراد يتم من' in transfer_src
+   and 'collegeName={colleges.find((c) => c.AdCollegeId === filterCollege)?.AdCollegeName}' in (ROOT/'src/components/Schedules.tsx').read_text()
+   and '.transfer-branch-import{' in (ROOT/'src/styles/09-details.css').read_text())
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
