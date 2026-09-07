@@ -404,10 +404,11 @@ ok('192 a shared hall names every department registered to it, so a co-owner dep
    and 'ownerSections,shared:ownerSections.length>1,' in server
    and 'ownersOf(opportunity).map(owner => owner.name).join(" · ")' in barter_board
    and '.some((owner:any)=>Number(owner.id)===filterOwner)' in server)
-ok('193 the barter filters are four compact lists in one row — day, building, department, period — not a wall of chips',
+ok('193 the barter filters are compact lists in one row — day, building, department — not a wall of chips',
    'hall-barter-selects' in barter_board
    and 'تصفية باليوم' in barter_board and 'تصفية بالمبنى' in barter_board
-   and 'تصفية بالقسم' in barter_board and 'تصفية بالفترة' in barter_board
+   and 'تصفية بالقسم' in barter_board
+   and 'تصفية بالفترة' not in barter_board
    and 'hall-barter-owner-chips' not in barter_board
    and 'hall-barter-owner-chips' not in schedule_css)
 ok('194 the college building list opens ONLY when the department has no building at all — never as a second, longer list beside its own',

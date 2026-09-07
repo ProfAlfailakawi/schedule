@@ -124,7 +124,6 @@ export default function HallBarterBoard({
   const [ownerFilter, setOwnerFilter] = useState(0);
   const [dayFilter, setDayFilter] = useState("");
   const [buildingFilter, setBuildingFilter] = useState("");
-  const [periodFilter, setPeriodFilter] = useState("");
 
   const load = useCallback(async (quiet = false) => {
     if (!collegeId || !sectionId || !termId) { setBoard(emptyBoard); return; }
@@ -229,22 +228,17 @@ export default function HallBarterBoard({
   const days = board.facets.days;
   const buildings = board.facets.buildings;
 
-  const filtersActive = Boolean(query.trim() || ownerFilter || dayFilter || buildingFilter || periodFilter);
-  const clearFilters = () => { setQuery(""); setOwnerFilter(0); setDayFilter(""); setBuildingFilter(""); setPeriodFilter(""); };
+  const filtersActive = Boolean(query.trim() || ownerFilter || dayFilter || buildingFilter);
+  const clearFilters = () => { setQuery(""); setOwnerFilter(0); setDayFilter(""); setBuildingFilter(""); };
 
   const visibleOpportunities = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    return board.opportunities.filter(item => {
-      /* القسم واليوم والمبنى صفّاها الخادم؛ ولا يبقى هنا إلا ما لا يحتاج
-         عودةً إليه: الفترة والبحث الحر. */
-      /* الفترة تُقاس ببداية النافذة: ما بدأ قبل الظهر صباحيّ ولو امتدّ بعده. */
-      if (periodFilter === "morning" && Number(item.startTime.slice(0, 2)) >= 12) return false;
-      if (periodFilter === "evening" && Number(item.startTime.slice(0, 2)) < 12) return false;
-      if (!needle) return true;
-      return [...ownersOf(item).map(owner => owner.name), item.roomCode, item.roomHall, `${item.roomCode}/${item.roomHall}`, item.dayLabel]
-        .some(field => String(field || "").toLocaleLowerCase().includes(needle));
-    });
-  }, [board.opportunities, query, periodFilter]);
+    if (!needle) return board.opportunities;
+    /* القسم واليوم والمبنى صفّاها الخادم؛ ولا يبقى هنا إلا البحث الحر. */
+    return board.opportunities.filter(item =>
+      [...ownersOf(item).map(owner => owner.name), item.roomCode, item.roomHall, `${item.roomCode}/${item.roomHall}`, item.dayLabel]
+        .some(field => String(field || "").toLocaleLowerCase().includes(needle)));
+  }, [board.opportunities, query]);
 
   const act = async (id: string, work: () => Promise<any>) => {
     setBusyId(id); setError(""); setMessage("");
@@ -382,11 +376,6 @@ export default function HallBarterBoard({
                       {owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name} ({owner.count})</option>)}
                     </select>
                   ) : null}
-                  <select aria-label="تصفية بالفترة" value={periodFilter} onChange={event => setPeriodFilter(event.target.value)}>
-                    <option value="">اليوم كله</option>
-                    <option value="morning">قبل الظهر</option>
-                    <option value="evening">بعد الظهر</option>
-                  </select>
                   {filtersActive ? (
                     <button type="button" className="hall-barter-clear" onClick={clearFilters} data-guide-ignore="مسح مرشِّحات شاشة استعارة القاعات">مسح</button>
                   ) : null}
