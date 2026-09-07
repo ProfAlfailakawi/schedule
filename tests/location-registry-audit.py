@@ -393,4 +393,9 @@ ok('190 the barter board hides itself when there is nothing to borrow and nothin
    and 'ثبات الفراغ' not in barter_board
    and 'لهذا الفصل وحده' in barter_board)
 
+ok('191 a changed instructor in the change report carries the civil id beside the name, from the system record and only on the changed cell',
+   'fieldChanged(entry, "AdInstructorId") && instructor?.AdInstructorCivil' in authority_report
+   and 'className="authority-pdf-civil print-ltr"' in authority_report
+   and '.authority-pdf-instructor .authority-pdf-civil{' in print_css)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))

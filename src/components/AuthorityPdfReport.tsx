@@ -176,8 +176,18 @@ export default function AuthorityPdfReport({
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "AdRoomCode"))}`}>{String(row.AdRoomCode || "").trim() || "—"}</div>
                       <div role="cell" className={`print-ltr print-nowrap ${cell(fieldChanged(entry, "fstarttime", "fendtime"))}`}>{row.fstarttime && row.fendtime ? `${row.fendtime} - ${row.fstarttime}` : "—"}</div>
                       <div role="cell" className={`print-ltr ${cell(fieldChanged(entry, "fsunday", "fmonday", "ftuesday", "fwednesday", "fthursday"))}`}>{dayNumbers(row)}</div>
+                      {/* ── الاسم يتبدّل، والرقم المدني لا ─────────────────────
+                          حين يُغيَّر أستاذ المقرر لا يكفي اسمٌ جديد في خلية
+                          صفراء: الأسماء تتشابه في هذه الجامعة — وقد رأينا
+                          اسمين متطابقين لشخصين — ومن يوقّع الوثيقة يريد أن
+                          يعرف مَن بعينه. فيُكتب رقمه المدني بجانبه من سجل
+                          النظام لا من المستند، وفي الصفوف المعدَّلة وحدها
+                          حتى لا يمتلئ العمود بأرقام لا تخصّ التغيير. */}
                       <div role="cell" className={`print-wrap print-instructor-name authority-pdf-instructor ${cell(fieldChanged(entry, "AdInstructorId"))}`}>
                         <span>{instructor?.AdInstructorName || row.sourceInstructorText || "—"}</span>
+                        {fieldChanged(entry, "AdInstructorId") && instructor?.AdInstructorCivil
+                          ? <bdi className="authority-pdf-civil print-ltr">{String(instructor.AdInstructorCivil).trim()}</bdi>
+                          : null}
                         {visitingIds.has(Number(row.AdInstructorId)) ? <VisitingBadge compact /> : null}
                       </div>
                     </div>

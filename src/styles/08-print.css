@@ -2190,6 +2190,18 @@
   .authority-pdf-grid .authority-pdf-row>[role="cell"]:last-child{padding-inline-end:10.5mm!important}
   .authority-pdf-instructor{display:flex!important;align-items:center!important;justify-content:flex-start!important;gap:1mm!important;min-width:0!important}
   .authority-pdf-instructor>span:first-child{min-width:0!important;overflow-wrap:anywhere!important}
+  /* ── مستطيل الرقم المدني ───────────────────────────────────────────────
+     يقف بجانب الاسم داخل الخلية الصفراء نفسها: إطارٌ رفيع وأرقام لاتينية
+     مضبوطة العرض، لا يزاحم الاسم ولا يكسر السطر — وهو زيادةُ بيان على
+     التظليل لا لونٌ ثانٍ. */
+  .authority-pdf-instructor .authority-pdf-civil{
+    flex:none!important;display:inline-flex!important;align-items:center!important;
+    padding:.35mm 1.1mm!important;border:.4pt solid #b8862b!important;border-radius:1mm!important;
+    background:#fffaef!important;color:#6b4d10!important;
+    font-size:5.1pt!important;font-weight:700!important;line-height:1!important;
+    font-variant-numeric:tabular-nums!important;letter-spacing:.15pt!important;white-space:nowrap!important;
+    -webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;
+  }
   .authority-pdf-instructor .visiting-badge{flex:none!important;min-height:3.8mm!important;padding:0 1.2mm!important;font-size:4.7pt!important;border-radius:999px!important}
   .authority-pdf-legend .authority-pdf-key{font-weight:800!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   .authority-pdf-legend .authority-pdf-key-added{background:#e8f6ed!important;border-color:#66a47b!important;color:#155d3a!important}
