@@ -5,8 +5,8 @@ import {
   Check,
   ChevronDown,
   Clock3,
-  History,
   RefreshCw,
+  Search,
   ShieldCheck,
   X,
 } from "lucide-react";
@@ -62,10 +62,9 @@ type Board = {
   opportunities: Opportunity[];
   incoming: HallBarterReservationView[];
   outgoing: HallBarterReservationView[];
-  memory: { terms: number; years: number; buildings: string[] };
 };
 
-const emptyBoard: Board = { opportunities: [], incoming: [], outgoing: [], memory: { terms: 0, years: 10, buildings: [] } };
+const emptyBoard: Board = { opportunities: [], incoming: [], outgoing: [] };
 
 async function readJson(url: string, init?: RequestInit) {
   const response = await fetch(url, { credentials: "include", ...init });
@@ -97,6 +96,10 @@ export default function HallBarterBoard({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const boardRef = useRef<HTMLElement | null>(null);
+  /* بحثٌ واحد يقبل القسم والمبنى ورمز القاعة، ورقاقات الأقسام تختصر الطريق:
+     القائمة صارت كل قاعات الكلية، ومن غير مرشِّح تصير كشفاً لا يُقرأ. */
+  const [query, setQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState(0);
 
   const load = useCallback(async (quiet = false) => {
     if (!collegeId || !sectionId || !termId) { setBoard(emptyBoard); return; }
@@ -115,7 +118,6 @@ export default function HallBarterBoard({
         opportunities: Array.isArray(data?.opportunities) ? data.opportunities : [],
         incoming,
         outgoing,
-        memory: data?.memory || emptyBoard.memory,
       });
       if (onReservationsChange) {
         const active = [...incoming, ...outgoing].filter((row: HallBarterReservationView) => row.status === "approved");
@@ -168,6 +170,26 @@ export default function HallBarterBoard({
     return [...new Map(rows.map(row => [row.id, row])).values()];
   }, [board.incoming, board.outgoing]);
 
+  const owners = useMemo(() => {
+    const map = new Map<number, { id: number; name: string; count: number }>();
+    board.opportunities.forEach(item => {
+      const current = map.get(item.ownerSectionId) || { id: item.ownerSectionId, name: item.ownerSectionName, count: 0 };
+      current.count += 1;
+      map.set(item.ownerSectionId, current);
+    });
+    return [...map.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  }, [board.opportunities]);
+
+  const visibleOpportunities = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return board.opportunities.filter(item => {
+      if (ownerFilter && item.ownerSectionId !== ownerFilter) return false;
+      if (!needle) return true;
+      return [item.ownerSectionName, item.roomCode, item.roomHall, `${item.roomCode}/${item.roomHall}`, item.dayLabel]
+        .some(field => String(field || "").toLocaleLowerCase().includes(needle));
+    });
+  }, [board.opportunities, query, ownerFilter]);
+
   const act = async (id: string, work: () => Promise<any>) => {
     setBusyId(id); setError(""); setMessage("");
     try {
@@ -197,18 +219,24 @@ export default function HallBarterBoard({
     <span className="hall-barter-window"><Clock3 aria-hidden="true" /><b>{row.dayLabel}</b><time dir="ltr">{formatScheduleTimeRange(row.startTime, row.endTime)}</time><em dir="ltr">{row.roomCode}/{row.roomHall}</em></span>
   );
 
+  /* ── لا أيقونة لبابٍ لا يُفتح ────────────────────────────────────────────
+     لوحةٌ عنوانها «٠ فرصة» تشغل مكاناً وتعِد بشيء لا تملكه. فمتى لم تكن هناك
+     نافذة تُطلب ولا طلبٌ قائم ولا استعارة سارية، لا تظهر أصلاً. */
+  const hasAnything = board.opportunities.length > 0 || incomingPending.length > 0 || outgoingPending.length > 0 || approved.length > 0;
+  if (!hasAnything && !loading && !error) return null;
+
   return (
     <section ref={boardRef} className={`hall-barter-board visual-minimal ${open ? "is-open" : ""}`} aria-label="استعارة القاعات بين الأقسام">
       {open ? <button type="button" className="hall-barter-screen-close" onClick={() => setOpen(false)} aria-label="إغلاق استعارة القاعات" title="إغلاق استعارة القاعات" data-guide-ignore="زر إغلاق شاشة استعارة القاعات فقط؛ لا ينفذ ميزة تشغيلية ولا يحتاج خطوة إرشادية مستقلة"><X aria-hidden="true" /></button> : null}
       <button type="button" className="hall-barter-summary" onClick={() => setOpen(value => !value)} aria-expanded={open}>
         <span className="hall-barter-mark"><Building2 aria-hidden="true" /><ArrowLeftRight aria-hidden="true" /></span>
         <span className="hall-barter-summary-copy">
-          <small>بين الكليات · موافقة رقمية</small>
+          <small>داخل الكلية · موافقة رقمية · لهذا الفصل وحده</small>
           <strong>{open ? "استعارة القاعات بين الأقسام" : "استعارة قاعة"}</strong>
-          <em>تتعلم من آخر عشر سنوات، ولا تعرض إلا نافذة متكررة الفراغ ومجانية الآن.</em>
+          <em>كل قاعة فارغة في الكلية بحسب جدول هذا الفصل، بنافذتها وساعتها.</em>
         </span>
         <span className="hall-barter-summary-stats">
-          <b><i>{board.opportunities.length}</i> فرصة</b>
+          <b><i>{board.opportunities.length}</i> نافذة</b>
           {incomingPending.length ? <b className="needs-action"><i>{incomingPending.length}</i> بانتظارك</b> : null}
           {approved.length ? <b className="approved"><i>{approved.length}</i> معتمدة</b> : null}
         </span>
@@ -219,14 +247,8 @@ export default function HallBarterBoard({
         <div className="hall-barter-body">
           <div className="hall-barter-guard">
             <ShieldCheck aria-hidden="true" />
-            <div><strong>الاستعارة تحجز نافذة القاعة فقط</strong><span>لا ينشئ النظام محاضرة وهمية ولا يغيّر مقررًا. والاستعارة تفصل البنين والبنات بالكامل، وبعد الموافقة يظل إنشاء الموعد الحقيقي عبر محرر الجدول المعتاد مع فحص التضارب نفسه.</span></div>
+            <div><strong>الاستعارة تحجز نافذة القاعة فقط، ولهذا الفصل وحده</strong><span>لا ينشئ النظام محاضرة وهمية ولا يغيّر مقررًا، ولا ينتقل الإذن إلى فصل قادم. والاستعارة تفصل البنين والبنات بالكامل، وبعد الموافقة يظل إنشاء الموعد الحقيقي عبر محرر الجدول المعتاد مع فحص التضارب نفسه.</span></div>
             <GhostButton type="button" onClick={() => void load()} disabled={loading}><RefreshCw className={loading ? "spin" : ""} />تحديث</GhostButton>
-          </div>
-          <div className="hall-barter-memory">
-            <History aria-hidden="true" />
-            <span>ذاكرة {board.memory.years || 10} سنوات</span>
-            <b>{board.memory.terms || 0} فصلًا تاريخيًا</b>
-            <em>{board.memory.buildings?.length ? `داخل مباني قسمك: ${board.memory.buildings.join(" · ")}` : "لا يوجد مبنى تاريخي كافٍ لهذا القسم بعد"}</em>
           </div>
           {message ? <div className="hall-barter-message ok">{message}</div> : null}
           {error ? <div className="hall-barter-message error">{error}</div> : null}
@@ -241,7 +263,6 @@ export default function HallBarterBoard({
                       <strong>{row.requesterSectionName}</strong>
                       {windowLine(row)}
                     </div>
-                    <div className="hall-barter-confidence"><b>{row.confidence}%</b><span>ثبات الفراغ</span><small>فصول {row.historyTerms}</small></div>
                     <div className="hall-barter-actions">
                       <PrimaryButton type="button" disabled={busyId === row.id} onClick={() => void respond(row.id, "approve")}><Check />موافقة</PrimaryButton>
                       <SecondaryButton type="button" disabled={busyId === row.id} onClick={() => void respond(row.id, "reject")}><X />رفض</SecondaryButton>
@@ -272,22 +293,46 @@ export default function HallBarterBoard({
           ) : null}
 
           <div className="hall-barter-section opportunities">
-            <header><div><small>ساكنة تاريخيًا وفارغة الآن</small><strong>نوافذ يمكن طلبها بنقرة واحدة</strong></div><b>{board.opportunities.length}</b></header>
+            <header><div><small>فارغة في جدول هذا الفصل</small><strong>نوافذ يمكن طلبها بنقرة واحدة</strong></div><b>{visibleOpportunities.length}</b></header>
             {board.opportunities.length ? (
+              <div className="hall-barter-filters">
+                <label className="hall-barter-search">
+                  <Search aria-hidden="true" />
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={event => setQuery(event.target.value)}
+                    placeholder="ابحث بالقسم أو المبنى أو رمز القاعة"
+                    aria-label="بحث في نوافذ الاستعارة"
+                    data-guide-ignore="حقل بحث داخل شاشة استعارة القاعات؛ يصفّي المعروض ولا ينفذ عملية"
+                  />
+                </label>
+                {owners.length > 1 ? (
+                  <div className="hall-barter-owner-chips" role="group" aria-label="تصفية بالقسم المالك">
+                    <button type="button" className={ownerFilter ? "" : "active"} onClick={() => setOwnerFilter(0)} data-guide-ignore="تصفية نوافذ الاستعارة بكل الأقسام">كل الأقسام<i>{board.opportunities.length}</i></button>
+                    {owners.map(owner => (
+                      <button key={owner.id} type="button" className={ownerFilter === owner.id ? "active" : ""} onClick={() => setOwnerFilter(current => current === owner.id ? 0 : owner.id)} data-guide-ignore="تصفية نوافذ الاستعارة بقسم بعينه">
+                        {owner.name}<i>{owner.count}</i>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {visibleOpportunities.length ? (
               <div className="hall-barter-opportunity-grid">
-                {board.opportunities.map(opportunity => (
+                {visibleOpportunities.map(opportunity => (
                   <article key={opportunity.id}>
                     <div className="hall-barter-room"><Building2 /><strong dir="ltr">{opportunity.roomCode}/{opportunity.roomHall}</strong><small>{opportunity.ownerSectionName}</small></div>
                     <div className="hall-barter-opportunity-meta">
-                      <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>دقيقة {Math.round(opportunity.durationMinutes / 30) * 30}</small></div>
-                      <div className="hall-barter-confidence"><b>{opportunity.confidence}%</b><span>ثبات الفراغ</span><small>فصول {opportunity.historyTerms} · {opportunity.ownerShare}% تاريخيًا</small></div>
+                      <div className="hall-barter-slot"><span>{opportunity.dayLabel}</span><time dir="ltr">{formatScheduleTimeRange(opportunity.startTime, opportunity.endTime)}</time><small>دقيقة {opportunity.durationMinutes}</small></div>
                     </div>
                     <PrimaryButton type="button" disabled={busyId === opportunity.id} onClick={() => void request(opportunity)}><ArrowLeftRight />اطلب استعارة النطاق</PrimaryButton>
                   </article>
                 ))}
               </div>
             ) : (
-              <div className="hall-barter-empty">لا توجد نافذة تحقق معايير الاستقرار والفراغ الحالي داخل مباني قسمك الآن. لن يعرض النظام فرصة لمجرد أن القاعة فارغة مرة واحدة.</div>
+              <div className="hall-barter-empty">{board.opportunities.length ? "لا نافذة تطابق بحثك. امسح البحث أو اختر «كل الأقسام»." : "لا توجد قاعة فارغة في الكلية ضمن جدول هذا الفصل الآن."}</div>
             )}
           </div>
 

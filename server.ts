@@ -2694,9 +2694,10 @@ async function roomScopeNotice(row:any){
  * is offered only when it has repeatedly stayed free across terms AND is free
  * right now. Approval creates a digital reservation, never a fake lecture.
  */
-const HALL_BARTER_MIN_HISTORY_TERMS = 3;
-const HALL_BARTER_MIN_FREE_SHARE = 0.72;
-const HALL_BARTER_MAX_OPPORTUNITIES = 30;
+/* أقصر نافذة تُعرض: مدة محاضرة. ما دونها فراغٌ لا يُحجز فيه درس، وعرضُه
+   يملأ الشاشة بما لا ينفع. */
+const HALL_BARTER_MIN_WINDOW_MINUTES = 50;
+const HALL_BARTER_MAX_OPPORTUNITIES = 400;
 const HALL_BARTER_DAY_LABEL = new Map(SCHEDULE_DAY_KEYS.map((key,index)=>[key,DAY_LABELS[index]]));
 type HallCampusGender = "male" | "female" | null;
 function hallCampusGender(name: unknown): HallCampusGender {
@@ -2728,19 +2729,6 @@ function recentTenYearTermIds(terms:any[]): Set<number> {
     return new Set(withYear.filter(item=>item.year!=null&&item.year>=cutoff).map(item=>item.id));
   }
   return new Set([...withYear].sort((a,b)=>b.id-a.id).slice(0,30).map(item=>item.id));
-}
-function dominantHistoricalHallOwner(history:FSchedule[]){
-  const counts=new Map<string,{collegeId:number;sectionId:number;count:number}>();
-  for(const row of history){
-    const collegeId=Number(row.AdCollegeId||0),sectionId=Number(row.AdSectionId||0);
-    if(!collegeId||!sectionId)continue;
-    const key=`${collegeId}:${sectionId}`,current=counts.get(key)||{collegeId,sectionId,count:0};
-    current.count++;counts.set(key,current);
-  }
-  const ranked=[...counts.values()].sort((a,b)=>b.count-a.count);
-  const top=ranked[0],total=history.length;
-  if(!top||top.count<3||!total||top.count/total<0.55)return null;
-  return{...top,share:Math.round(top.count/total*100),total};
 }
 function rowOccupiesWindow(row:any,day:string,start:string,end:string){
   return Boolean(row?.[day])&&scheduleOverlap(String(row.fstarttime||""),String(row.fendtime||""),start,end);
@@ -2799,10 +2787,11 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
   const cacheKey=`${collegeId}:${sectionId}:${termId}`;
   const cached=hallBarterBoardCache.get(cacheKey);
   if(cached&&cached.scheduleSerial===driftSerial&&cached.barterSerial===hallBarterSerial&&cached.expiresAt>Date.now())return cached.body;
-  const [allSchedulesRaw,termRowsRaw,terms,sections,colleges,requests,registry]=await Promise.all([
-    Repository.getSchedules(),
+  /* لا قراءة لكل جداول النظام بعد اليوم: السؤال صار عن هذا الفصل وحده،
+     وقراءة عشر سنوات لكل لوحة كانت أثقل شيء فيها. */
+  const [termRowsRaw,sections,colleges,requests,registry]=await Promise.all([
     Repository.getSchedulesByScope({termId}),
-    Repository.getTerms(),Repository.getSections(),Repository.getColleges(),Repository.getHallBarterRequests(termId),readLocationRegistry(),
+    Repository.getSections(),Repository.getColleges(),Repository.getHallBarterRequests(termId),readLocationRegistry(),
   ]);
   const canonicalForBarter=(row:FSchedule):FSchedule=>{
     if(row.buildingId&&row.roomId)return row;
@@ -2812,80 +2801,98 @@ async function buildHallBarterBoard(req:AuthenticatedRequest,collegeId:number,se
     if(r.status!=="CONFIRMED"||!r.value)return {...row,buildingId:b.value.id,AdRoomCode:b.value.officialCode};
     return {...row,buildingId:b.value.id,roomId:r.value.id,AdRoomCode:b.value.officialCode,AdRoomHall:r.value.canonicalCode,locationStatus:"VERIFIED"};
   };
-  const allSchedules=allSchedulesRaw.map(canonicalForBarter),termRows=termRowsRaw.map(canonicalForBarter);
+  const termRows=termRowsRaw.map(canonicalForBarter);
   const requesterCollege=colleges.find(college=>Number(college.AdCollegeId)===collegeId);
   const requesterGender=hallCampusGender(requesterCollege?.AdCollegeName);
-  const recentIds=recentTenYearTermIds(terms);
-  // The target term is checked separately as “free now”; counting it as history
-  // would make an unfinished current timetable look artificially stable.
-  const history=allSchedules.filter(row=>recentIds.has(Number(row.AdTermId||0))&&Number(row.AdTermId)!==termId);
-  const mineCurrent=termRows.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId);
-  const mineHistory=history.filter(row=>Number(row.AdCollegeId)===collegeId&&Number(row.AdSectionId)===sectionId);
-  const preferredBuildings=new Set((mineCurrent.length?mineCurrent:mineHistory)
-    .map(row=>String(row.buildingId||"").trim()).filter(Boolean));
-  const roomGroups=new Map<string,FSchedule[]>();
-  for(const row of history){
-    const building=String(row.buildingId||"").trim(),hall=String(row.roomId||"").trim();
-    if(!building||!hall||!preferredBuildings.has(building))continue;
-    const key=roomIdentityKey(row);if(!key)continue;
-    const group=roomGroups.get(key);if(group)group.push(row);else roomGroups.set(key,[row]);
-  }
   const activeReservations=requests.filter(request=>request.status==="approved");
+
+  /* ── الفراغ اليوم، لا العادة قبل عشر سنوات ───────────────────────────────
+   *
+   * كانت اللوحة تسأل سؤال المؤرخ: أي قاعة في مباني قسمي جرت العادة أن تكون
+   * ساكنة؟ فتقرأ عشر سنوات، وتشترط ثلاثة فصول ونسبة فراغ لا تقل عن ٧٢٪، ثم
+   * تعرض ما نجا من هذه المصفاة. والنتيجة أن قاعة فارغة تماماً هذا الفصل لا
+   * تُعرض لأن تاريخها لا يشهد لها، وقاعة في مبنى لا تاريخ لقسمي فيه لا تُرى
+   * أصلاً.
+   *
+   * وصاحب الجدول يسأل سؤالاً أبسط وأصدق: ما القاعات الفارغة في كليتي الآن؟
+   * فصار هذا هو السؤال: كل قاعة رسمية في الكلية — بأي قسم كانت — يُطرح من
+   * نطاق دوامها ما حجزه جدول هذا الفصل وما اعتُمد من نوافذ استعارة، فما بقي
+   * فراغاً متصلاً يكفي لمحاضرة صار بطاقة تُطلب. والقاعة الواحدة في اليوم
+   * الواحد تعطي بطاقة لكل نافذة: من ٨ إلى ١٠، ومن ٤ إلى ٥، ولكل واحدة طلبها.
+   *
+   * ولا شيء من هذا يتعدى فصله: النوافذ تُقرأ من جدول هذا الفصل، والطلبات
+   * محفوظة برقمه، فلا ينتقل إذنٌ إلى فصل قادم بحال.
+   */
+  const roomOwnerSection=(room:any)=>{
+    const ids=[...new Set([...(Array.isArray(room.primarySectionIds)?room.primarySectionIds:[]),...(Array.isArray(room.sectionIds)?room.sectionIds:[])].map(Number).filter(Boolean))];
+    return ids.length?ids[0]:0;
+  };
+  const buildingById=new Map(registry.buildings.map(building=>[building.id,building]));
+  const collegeRooms=registry.rooms.filter(room=>{
+    if(!room.active||room.confidence!=="CONFIRMED")return false;
+    const building=buildingById.get(room.buildingId);
+    if(!building||!building.active||building.confidence!=="CONFIRMED")return false;
+    const roomColleges=[...new Set([...(room.collegeIds||[]),...(building.collegeIds||[])].map(Number).filter(Boolean))];
+    return roomColleges.includes(collegeId);
+  });
   const opportunities:any[]=[];
-  for(const roomHistory of roomGroups.values()){
-    const owner=dominantHistoricalHallOwner(roomHistory);if(!owner||(owner.collegeId===collegeId&&owner.sectionId===sectionId))continue;
-    const ownerSection=sections.find(section=>Number(section.AdSectionId)===owner.sectionId);
-    const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===owner.collegeId);
-    if(!ownerSection||!ownerCollege)continue;
+  for(const room of collegeRooms){
+    const ownerSectionId=roomOwnerSection(room);
+    /* قاعة بلا قسم مسجَّل لا أحد يأذن فيها، وقاعة قسمي لا تُستعار من نفسي. */
+    if(!ownerSectionId||ownerSectionId===sectionId)continue;
+    const ownerSection=sections.find(section=>Number(section.AdSectionId)===ownerSectionId);
+    if(!ownerSection)continue;
+    const ownerCollegeId=Number(ownerSection.AdCollegeId||0);
+    const ownerCollege=colleges.find(college=>Number(college.AdCollegeId)===ownerCollegeId);
+    if(!ownerCollege)continue;
     if(!requesterGender||hallCampusGender(ownerCollege.AdCollegeName)!==requesterGender)continue;
-    const roomCode=String(roomHistory[0].AdRoomCode||"").trim(),roomHall=String(roomHistory[0].AdRoomHall||"").trim(),roomId=roomHistory[0].roomId,buildingId=roomHistory[0].buildingId;
-    const roomTerms=[...new Set(roomHistory.map(row=>Number(row.AdTermId||0)).filter(Boolean))];
-    if(roomTerms.length<HALL_BARTER_MIN_HISTORY_TERMS)continue;
+    const building=buildingById.get(room.buildingId);
+    const roomCode=String(building?.officialCode||room.buildingCode||"").trim();
+    const roomHall=String(room.canonicalCode||"").trim();
+    if(!roomCode||!roomHall)continue;
+    const roomKey=roomKeyOf(room.id,roomCode,roomHall);
+    const roomRows=termRows.filter(row=>roomIdentityKey(row)===roomKey);
     for(const day of SCHEDULE_DAY_KEYS){
-      let runStart:number|null=null,runEnd=0,runConfidence=100;
+      let runStart:number|null=null,runEnd=0;
       const flush=()=>{
         if(runStart==null)return;
         const duration=runEnd-runStart;
-        if(duration>=SCHEDULE_SLOT_MINUTES){
+        if(duration>=HALL_BARTER_MIN_WINDOW_MINUTES){
           const start=minutesToTime(runStart),end=minutesToTime(runEnd);
           const pendingSame=requests.some(request=>request.status==="pending"&&request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId&&
-            barterRequestRoomKey(request)===roomKeyOf(roomId,roomCode,roomHall)&&
-            request.day===day&&scheduleOverlap(request.startTime,request.endTime,start,end));
+            barterRequestRoomKey(request)===roomKey&&request.day===day&&scheduleOverlap(request.startTime,request.endTime,start,end));
           if(!pendingSame){
-            const rawId=`${roomCode}|${roomHall}|${day}|${start}|${end}|${owner.sectionId}`;
+            const rawId=`${roomCode}|${roomHall}|${day}|${start}|${end}|${ownerSectionId}`;
             opportunities.push({
-              id:Buffer.from(rawId,"utf8").toString("base64url"),buildingId,roomId,roomCode,roomHall,building:roomCode,
+              id:Buffer.from(rawId,"utf8").toString("base64url"),buildingId:room.buildingId,roomId:room.id,roomCode,roomHall,building:roomCode,
               day,dayLabel:HALL_BARTER_DAY_LABEL.get(day)||day,startTime:start,endTime:end,durationMinutes:duration,
-              confidence:runConfidence,historyTerms:roomTerms.length,ownerShare:owner.share,
-              ownerCollegeId:owner.collegeId,ownerSectionId:owner.sectionId,
+              confidence:0,historyTerms:0,ownerShare:0,
+              ownerCollegeId,ownerSectionId,
               ownerCollegeName:ownerCollege.AdCollegeName,ownerSectionName:ownerSection.AdSectionName,
             });
           }
         }
-        runStart=null;runEnd=0;runConfidence=100;
+        runStart=null;runEnd=0;
       };
       for(let minute=SCHEDULE_DAY_START;minute<SCHEDULE_DAY_END;minute+=SCHEDULE_SLOT_MINUTES){
         const start=minutesToTime(minute),end=minutesToTime(Math.min(SCHEDULE_DAY_END,minute+SCHEDULE_SLOT_MINUTES));
-        const freeTerms=roomTerms.filter(historyTerm=>!roomHistory.some(row=>Number(row.AdTermId)===historyTerm&&rowOccupiesWindow(row,day,start,end))).length;
-        const freeShare=freeTerms/roomTerms.length;
-        const freeNow=!termRows.some(row=>barterRequestMatchesRow({roomId,roomCode,roomHall},row)&&rowOccupiesWindow(row,day,start,end))&&!activeReservations.some(request=>barterRequestOverlaps(request,roomCode,roomHall,day,start,end,roomId));
-        if(freeShare>=HALL_BARTER_MIN_FREE_SHARE&&freeNow){
+        const free=!roomRows.some(row=>rowOccupiesWindow(row,day,start,end))
+          &&!activeReservations.some(request=>barterRequestOverlaps(request,roomCode,roomHall,day,start,end,room.id));
+        if(free){
           if(runStart==null)runStart=minute;
           runEnd=Math.min(SCHEDULE_DAY_END,minute+SCHEDULE_SLOT_MINUTES);
-          runConfidence=Math.min(runConfidence,Math.round(freeShare*100));
         }else flush();
       }
       flush();
     }
   }
-  opportunities.sort((a,b)=>b.confidence-a.confidence||b.durationMinutes-a.durationMinutes||byRoom(a.roomCode,a.roomHall,b.roomCode,b.roomHall));
+  opportunities.sort((a,b)=>byRoom(a.roomCode,a.roomHall,b.roomCode,b.roomHall)||SCHEDULE_DAY_KEYS.indexOf(a.day)-SCHEDULE_DAY_KEYS.indexOf(b.day)||a.startTime.localeCompare(b.startTime));
   const shaped=requests.map(request=>hallBarterRequestShape(request,sections,colleges));
   const sameCampusRequests=shaped.filter(request=>sameHallCampusGender(request.requesterCollegeName,request.ownerCollegeName));
   const body={
     opportunities:opportunities.slice(0,HALL_BARTER_MAX_OPPORTUNITIES),
     incoming:sameCampusRequests.filter(request=>request.ownerCollegeId===collegeId&&request.ownerSectionId===sectionId),
     outgoing:sameCampusRequests.filter(request=>request.requesterCollegeId===collegeId&&request.requesterSectionId===sectionId),
-    memory:{terms:new Set(history.map(row=>Number(row.AdTermId||0)).filter(Boolean)).size,years:10,buildings:[...preferredBuildings].map(id=>registry.buildings.find(b=>b.id===id)?.officialCode||id)},
   };
   hallBarterBoardCache.set(cacheKey,{scheduleSerial:driftSerial,barterSerial:hallBarterSerial,expiresAt:Date.now()+2*60*1000,body});
   if(hallBarterBoardCache.size>120)hallBarterBoardCache.clear();

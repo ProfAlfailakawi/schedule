@@ -4591,8 +4591,7 @@ html.schedule-physics-active .rooms-slot.physics-origin::before{
   .hall-barter-memory>em{flex-basis:100%;text-align:start;line-height:1.6}
   .hall-barter-request-list>article{grid-template-columns:minmax(0,1fr) 80px;gap:10px;padding:12px}
   .hall-barter-actions{grid-column:1/-1;grid-template-columns:1fr 1fr;min-width:0}
-  .hall-barter-opportunity-grid>article{grid-template-columns:minmax(0,1fr) 82px;padding:12px}
-  .hall-barter-opportunity-grid .hall-barter-confidence{grid-column:2;grid-row:1 / span 2}
+  .hall-barter-opportunity-grid>article{grid-template-columns:minmax(0,1fr);padding:12px}
   .hall-barter-slot{grid-column:1;border-inline:0;border-top:1px solid var(--line-soft,var(--line));place-items:start;text-align:start;padding:8px 0 0;margin-top:6px}
   .hall-barter-opportunity-grid>article>.btn{grid-column:1/-1}
   .hall-barter-pending-row>article{grid-template-columns:minmax(0,1fr) auto;gap:9px}
@@ -7430,7 +7429,9 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 }
 .hall-barter-opportunity-meta{
   display:grid;
-  grid-template-columns:minmax(0,1fr) 86px;
+  /* بعد سقوط «ثبات الفراغ» لم يبق في البطاقة إلا النافذة، فتأخذ العرض كله
+     بدل أن تترك عموداً فارغاً حيث كانت النسبة. */
+  grid-template-columns:minmax(0,1fr);
   gap:7px;
   align-items:stretch;
 }
@@ -7472,7 +7473,7 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
   .hall-barter-opportunity-grid{grid-template-columns:1fr}
   .hall-barter-opportunity-grid>article{grid-template-columns:minmax(0,1fr);padding:11px}
   .hall-barter-opportunity-grid .hall-barter-confidence{grid-column:auto;grid-row:auto}
-  .hall-barter-opportunity-meta{grid-template-columns:minmax(0,1fr) 82px}
+  .hall-barter-opportunity-meta{grid-template-columns:minmax(0,1fr)}
   .hall-barter-slot{grid-column:auto;margin-top:0}
 }
 
@@ -8101,3 +8102,17 @@ body:has(.schedule-physics-float.physics-view-rooms) .schedule-drag-time-guide>s
 .transfer-receipt-planted{width:100%;padding:10px 12px;border:1px dashed color-mix(in srgb,var(--primary,#12463c) 30%,var(--line));border-radius:14px;background:var(--surface-2);text-align:start}
 .transfer-receipt-planted>strong{display:block;font-size:var(--t-xs,.72rem);font-weight:750;color:var(--ink-2)}
 .transfer-receipt-planted>ul{margin:6px 0 0;padding-inline-start:16px;display:grid;gap:3px;font-size:var(--t-xs,.72rem);color:var(--ink)}
+
+/* ── مرشِّح نوافذ الاستعارة ───────────────────────────────────────────────
+   القائمة صارت كل قاعات الكلية الفارغة، وهي كثيرة بطبيعتها. فبحثٌ واحد يقبل
+   القسم والمبنى ورمز القاعة، ورقاقاتٌ للأقسام تختصر الطريق بنقرة. */
+.hall-barter-filters{display:grid;gap:9px;margin-bottom:11px}
+.hall-barter-search{display:flex;align-items:center;gap:8px;min-height:42px;padding:0 13px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}
+.hall-barter-search>svg{width:16px;height:16px;color:var(--ink-3);flex:none}
+.hall-barter-search>input{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font:inherit;outline:none}
+.hall-barter-owner-chips{display:flex;flex-wrap:wrap;gap:6px}
+.hall-barter-owner-chips>button{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink-2);font-size:12px;cursor:pointer}
+.hall-barter-owner-chips>button>i{font-style:normal;font-size:10.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.hall-barter-owner-chips>button:hover{border-color:color-mix(in srgb,var(--accent) 34%,var(--line))}
+.hall-barter-owner-chips>button.active{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,var(--surface));color:var(--ink)}
+.hall-barter-owner-chips>button.active>i{color:var(--accent)}

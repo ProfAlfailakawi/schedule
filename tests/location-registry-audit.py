@@ -374,4 +374,23 @@ ok('187 a course the authority document places at a branch site is copied from t
    and 'plantedCourses:plantedTwins' in server
    and 'transfer-receipt-planted' in transfer_src)
 
+barter_board=(ROOT/'src/components/HallBarterBoard.tsx').read_text()
+ok('188 hall barter offers every free window in the college from THIS term only — no ten-year memory, no stability threshold',
+   'HALL_BARTER_MIN_WINDOW_MINUTES = 50' in server
+   and 'HALL_BARTER_MIN_FREE_SHARE' not in server
+   and 'HALL_BARTER_MIN_HISTORY_TERMS' not in server
+   and 'dominantHistoricalHallOwner' not in server
+   and 'const collegeRooms=registry.rooms.filter(room=>{' in server
+   and 'return roomColleges.includes(collegeId);' in server
+   and 'const free=!roomRows.some(row=>rowOccupiesWindow(row,day,start,end))' in server)
+ok('189 a room with no registered department cannot be borrowed, and no department borrows from itself',
+   'if(!ownerSectionId||ownerSectionId===sectionId)continue;' in server
+   and 'if(!requesterGender||hallCampusGender(ownerCollege.AdCollegeName)!==requesterGender)continue;' in server)
+ok('190 the barter board hides itself when there is nothing to borrow and nothing pending, and filters what it does show',
+   'if (!hasAnything && !loading && !error) return null;' in barter_board
+   and 'hall-barter-owner-chips' in barter_board
+   and 'hall-barter-search' in barter_board
+   and 'ثبات الفراغ' not in barter_board
+   and 'لهذا الفصل وحده' in barter_board)
+
 print(json.dumps({'passed':len(passed),'tests':passed},ensure_ascii=False,indent=2))
