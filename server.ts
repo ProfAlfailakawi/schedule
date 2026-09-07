@@ -402,6 +402,51 @@ function rateLimitPublic(req: Request, res: Response, next: NextFunction) {
 }
 app.use("/api/public", rateLimitPublic);
 
+/**
+ * ── حدّ للعمليات الثقيلة داخل الحساب ─────────────────────────────────────────
+ *
+ * نشر جدول يستبدل مواعيد قسم كامل — وقد ثلاثة أقسام في مواقع الفرع — ويكتب
+ * لكل واحد نقطة أمان. وتقرير التغييرات يفتش النسخ المعتمدة ويقارنها بالجدول
+ * الحي. كلاهما عملية كتابة/قراءة كبيرة خلف حساب موثوق، وهذا لا يعني أن تكرارها
+ * بلا حدّ مقبول: عميل عالق في حلقة، أو نقرة مكررة على «نشر»، تكفي لإشغال
+ * النسخة بأكملها. الحدّ هنا سخيّ عمداً حتى لا يشعر به إنسان يعمل بشكل طبيعي،
+ * ويوقف الحلقة وحدها.
+ *
+ * العدّاد داخل هذه العملية فقط — انظر SECURITY-TODO.md البند 3 لسقف ما يمكن أن
+ * يعد به عبر عدة نسخ؛ فهو طبقة إضافية لا بديل عن الحماية على الحافة.
+ */
+const HEAVY_RATE_LIMIT_MAX = readRateLimitEnv("HEAVY_RATE_LIMIT_MAX", 30);
+const HEAVY_RATE_LIMIT_WINDOW_MS = Math.max(1000, readRateLimitEnv("HEAVY_RATE_LIMIT_WINDOW_MS", 60000));
+const heavyRequestWindows = new Map<string, { count: number; windowStart: number }>();
+let heavyRateLimitSweptAt = 0;
+
+function rateLimitHeavy(req: Request, res: Response, next: NextFunction) {
+  if (HEAVY_RATE_LIMIT_MAX <= 0) { next(); return; }
+  const now = Date.now();
+  if (now - heavyRateLimitSweptAt > HEAVY_RATE_LIMIT_WINDOW_MS) {
+    heavyRateLimitSweptAt = now;
+    for (const [key, seen] of heavyRequestWindows) {
+      if (now - seen.windowStart >= HEAVY_RATE_LIMIT_WINDOW_MS) heavyRequestWindows.delete(key);
+    }
+  }
+  // الحساب أولاً ثم العنوان: قسم كامل خلف عنوان واحد يجب ألا يحدّ بعضه بعضاً.
+  const identity = String((req as AuthenticatedRequest).user?.SystemUserId ?? "") || String(req.ip || "unknown");
+  const seen = heavyRequestWindows.get(identity);
+  if (!seen || now - seen.windowStart >= HEAVY_RATE_LIMIT_WINDOW_MS) {
+    heavyRequestWindows.set(identity, { count: 1, windowStart: now });
+    next();
+    return;
+  }
+  seen.count += 1;
+  if (seen.count > HEAVY_RATE_LIMIT_MAX) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((seen.windowStart + HEAVY_RATE_LIMIT_WINDOW_MS - now) / 1000));
+    res.setHeader("Retry-After", String(retryAfterSeconds));
+    res.status(429).json({ error: "عمليات كثيرة متتابعة. انتظر قليلاً ثم أعد المحاولة." });
+    return;
+  }
+  next();
+}
+
 const SERVER_IDLE_SESSION_MS = 15 * 60 * 1000;
 const DEMO_SESSION_TTL_MS = 60 * 60 * 1000;
 
@@ -6894,7 +6939,7 @@ async function authorityBaselineForScope(baseline:any[],draft:{AdCollegeId:numbe
   return [...(mine?mine.rows:[]),...(isDraftScope?split.unplaced.flatMap(entry=>entry.rows):[])];
 }
 
-app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), rateLimitHeavy, async (req: AuthenticatedRequest, res: Response) => {
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
   if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
   if(!isScopeAllowed(req,draft.AdCollegeId,draft.AdSectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
@@ -6917,7 +6962,7 @@ app.get("/api/intelligence/drafts/:id/import-report", requirePermission(7), asyn
 /* The Authority-PDF report belongs to the normal inquiry/report centre. It is
    scoped by the header selections and always compares the latest imported
    baseline with the timetable as it exists right now. */
-app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,17]), async (req: AuthenticatedRequest, res: Response) => {
+app.get("/api/reports/authority-pdf-diff", requireAnyPermission([7,8,9,10,14,16,17]), rateLimitHeavy, async (req: AuthenticatedRequest, res: Response) => {
   const collegeId=Number(req.query.collegeId||0),sectionId=Number(req.query.sectionId||0),termId=Number(req.query.termId||0);
   if(!collegeId||!sectionId||!termId){res.status(400).json({error:"اختر الفصل والكلية والقسم أولاً."});return;}
   if(!isScopeAllowed(req,collegeId,sectionId)){res.status(403).json({error:"خارج صلاحيات الأقسام المسموحة لك"});return;}
@@ -7026,7 +7071,7 @@ app.delete("/api/intelligence/drafts/:id/rows", requirePermission(7), async (req
   res.json({ success: true, rows: updated.rows, issues: [], issueRowIds: [], rowIssues: {}, ready: false });
 });
 
-app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (req: AuthenticatedRequest, res: Response) => {
+app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), rateLimitHeavy, async (req: AuthenticatedRequest, res: Response) => {
   if(req.get("x-schedule-confirm")!=="publish"){res.status(409).json({error:"يتطلب النشر تأكيداً صريحاً من واجهة الاعتماد"});return;}
   const draft=await Repository.getScheduleDraftById(String(req.params.id));
   if(!draft){res.status(404).json({error:"المسودة غير موجودة"});return;}
