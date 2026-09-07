@@ -3927,8 +3927,12 @@ app.get("/api/hall-barter/inbox", requirePermission(7), async (req: Authenticate
    * للمدير — فلا يُنبَّه مديرُ النظام بطلبٍ لقسمٍ ليس قسمه. من له أقسام يُعدّ
    * ما ينتظر أقسامه؛ ومن لا قسم له (مديرٌ عامّ) لا شيء ينتظر قراره شخصياً. */
   const scopes=Array.isArray(req.scopes)?req.scopes:[];
+  const me=Number(req.user?.SystemUserId||0);
   const owns=(request:HallBarterRequest)=>scopes.some(scope=>Number(scope.AdCollegeId)===Number(request.ownerCollegeId)&&Number(scope.AdSectionId)===Number(request.ownerSectionId));
-  const pending=all.filter(request=>request.status==="pending"&&owns(request));
+  /* لا يُنبَّه المستخدمُ بطلبٍ أرسله هو نفسه، ولو كان قسمُه المضيفَ أيضاً
+   * (مديرٌ يستعير من قسمٍ يديره) — فطلبك لا ينتظر قرارَك أنت. */
+  const mine=(request:HallBarterRequest)=>me>0&&Number(request.requesterUserId||0)===me;
+  const pending=all.filter(request=>request.status==="pending"&&owns(request)&&!mine(request));
   const oldest=pending.reduce((max,request)=>{const created=Date.parse(String(request.createdAt||""));return Number.isFinite(created)?Math.min(max,created):max;},Date.now());
   const oldestDays=pending.length?Math.max(0,Math.floor((Date.now()-oldest)/86400000)):0;
   res.json({pending:pending.length,oldestDays});
