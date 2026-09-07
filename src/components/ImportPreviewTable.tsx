@@ -325,7 +325,13 @@ export default function ImportPreviewTable({
                           AdRoomCode: b?.officialCode || "",
                           AdRoomHall: "",
                           locationStatus: undefined,
-                          sourceSitePrefix: undefined,
+                          /* ── المبنى يقول موقعه، فلا يُمحى الانتماء ────────────
+                             اختيار المبنى كان يمسح كود الموقع، وكود الموقع هو
+                             ما يقول إن هذا الصف من الجهراء لا من الرئيسي. فصفٌّ
+                             لُمست خانة مبناه كان يفقد فرعه ويُنشر في الموقع
+                             الخطأ بلا أي إنذار. المبنى المختار يحمل موقعه في
+                             كوده الرسمي (012J14 ⇦ 012J)، فيُؤخذ منه بدل مسحه. */
+                          sourceSitePrefix: String(b?.sitePrefix || b?.officialCode?.slice(0, 4) || "").toUpperCase() || undefined,
                           sourceSiteLabel: undefined,
                           courseSiteLabel: undefined,
                           courseSiteMessage: undefined,

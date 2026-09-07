@@ -7077,11 +7077,28 @@ app.post("/api/intelligence/drafts/:id/publish", requirePermission(7), async (re
    * يعلن عن نفسه. لذلك يُفحص كل موقع بالكامل — صلاحية، ومقررات، وتحقق — قبل
    * أول عملية كتابة.
    */
-  const [publishColleges,publishSections,publishCourses]=await Promise.all([
-    Repository.getColleges(),Repository.getSections(),Repository.getCourses(),
+  const [publishColleges,publishSections,publishCourses,publishRegistry]=await Promise.all([
+    Repository.getColleges(),Repository.getSections(),Repository.getCourses(),readLocationRegistry(),
   ]);
   const branchContext={colleges:publishColleges as any,sections:publishSections as any,baseCollegeId:draft.AdCollegeId,baseSectionId:draft.AdSectionId};
-  const split=splitRowsByBranch(publishRows as any[],branchContext);
+  /* ── الموقع يُقرأ من المبنى، لا من حقل قد يضيع ───────────────────────────
+   * كل صف يحمل كود موقعه منذ القراءة، لكن الحقل قابل للضياع: تحريرٌ في
+   * المعاينة، أو مسودة أُنشئت قبل هذا الإصدار، أو نسخة قديمة من الواجهة —
+   * وكان الصف حينها يُنشر في الموقع الذي فُتح منه الاستيراد بلا أي إنذار،
+   * فيختفي جدول الجهراء داخل جدول الرئيسي. والحقيقة لا تحتاج ذلك الحقل
+   * أصلاً: المبنى الرسمي المثبت في الصف يحمل موقعه في كوده (012J14 ⇦ 012J).
+   * فتُشتق من السجل أولاً، ولا يُرجع إلى الحقل إلا حين لا يكون هناك مبنى. */
+  const buildingById=new Map(publishRegistry.buildings.map((item:any)=>[String(item.id),item]));
+  const siteOfRow=(row:any)=>{
+    const building=buildingById.get(String(row?.buildingId||""));
+    const official=String(building?.sitePrefix||building?.officialCode?.slice(0,4)||"").toUpperCase();
+    return official||String(row?.sourceSitePrefix||"").toUpperCase();
+  };
+  const locatedRows=(publishRows as any[]).map(row=>{
+    const site=siteOfRow(row);
+    return site?{...row,sourceSitePrefix:site}:row;
+  });
+  const split=splitRowsByBranch(locatedRows,branchContext);
   if(split.unplaced.length){
     res.status(400).json({
       error:"تعذّر تحديد القسم الذي تنتمي إليه بعض الصفوف بحسب موقع المبنى؛ لم يُنشر أي صف.",

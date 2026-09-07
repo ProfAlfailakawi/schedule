@@ -70,6 +70,9 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   const [payload, setPayload] = useState<any>(null);
   const [xlsxPreview, setXlsxPreview] = useState<any>(null);
   const [xlsxDraft, setXlsxDraft] = useState("");
+  /* أين نُشر كل صف: يُملأ من رد النشر، ويبقى على الشاشة حين يكون الجواب أكثر
+     من موقع واحد — لأن وثيقة وُزِّعت على ثلاثة جداول لا تُغلق نافذتها بصمت. */
+  const [publishedScopes, setPublishedScopes] = useState<Array<{siteLabel:string;count:number}>>([]);
   const [importKind, setImportKind] = useState<"worksheet" | "authority-pdf">("worksheet");
   const [readProgress, setReadProgress] = useState<{ pct: number; message: string } | null>(null);
   /* The quick-edit course picker needs the department's catalogue; fetched once
@@ -469,7 +472,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
   /** An Excel upload: parsed here, judged by the importer, saved as a draft. */
   const readExcel = async (file: File) => {
     setError(null); setXlsxPreview(null); setXlsxDraft(""); setImportKind("worksheet");
-    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null);
+    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishedScopes([]);
     setBusy(true);
     try {
       const XLSX = await import("xlsx");
@@ -667,7 +670,16 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     const response=await fetch(`/api/intelligence/drafts/${encodeURIComponent(id)}/publish`,{method:"POST",headers:{"x-schedule-confirm":"publish"}});
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||data.issues?.[0]||"تعذر نشر الجدول");
+    /* ── قل للناس أين ذهب ما نشروه ────────────────────────────────────────
+     * المستند المعتمد واحد ويحوي مواقع الفرع، والنشر يضع كل صف في قسمه في
+     * موقعه — وهذا هو الصواب. لكن الشاشة كانت تصمت عنه، فمن استورد جدول
+     * الإسلامية من الرئيسي بحث عن صفوف الجهراء في جدول الرئيسي ولم يجدها،
+     * فبدا أن الاستيراد ابتلعها. الصمت هو العيب، لا التوزيع: النتيجة تُقال
+     * الآن باسم كل موقع وعدد ما نُشر فيه. */
+    const scopes=Array.isArray(data?.scopes)?data.scopes.filter((scope:any)=>scope&&scope.siteLabel):[];
+    setPublishedScopes(scopes);
     setXlsxDraft(`published:${id}`);onChanged();
+    return scopes as Array<{siteLabel:string;count:number}>;
   };
 
   const saveExcelDraft = async (publishNow=false) => {
@@ -717,10 +729,13 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
          publishing fails the screen must keep the review — and its buttons —
          instead of announcing a saved draft the reader would read as done. */
       if(publishNow&&id){
-        await publishImportedDraft(id);
+        const scopes=await publishImportedDraft(id);
+        /* “تعبئة ونشر” is a completed action, not another review step: the sheet
+           closes once the server confirms. The one exception is a publication
+           that landed in MORE THAN ONE site — closing on that would hide the
+           only place the reader is told where their rows went. */
+        if(scopes.length>1)return;
         setXlsxDraft(id);
-        /* “تعبئة ونشر” is a completed action, not another review step. Close
-           the transfer sheet only after the server confirms publication. */
         onClose();
       } else {
         setXlsxDraft(id||"تم");
@@ -736,7 +751,7 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
     /* A new file starts a new review. Anything the sharper reading proposed for
        the previous file would otherwise still be on screen, offering cells that
        belong to a table that is no longer here. */
-    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null);
+    setSmartProposal(null); setSmartPicked(new Set()); setSmartFile(null); setPublishedScopes([]);
     if (/\.pdf$/i.test(file.name) || file.type === "application/pdf") { await readPdf(file); return; }
     if (/\.xlsx?$/i.test(file.name)) { await readExcel(file); return; }
     setError(null); setPreview(null); setPayload(null);
@@ -1114,9 +1129,22 @@ export default function ScheduleTransfer({ collegeId, sectionId, termId, instruc
                     </ul>
                   ) : null}
                   {xlsxDraft ? (
-                    <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")
-                      ? "اكتمل تعبئة الجدول ونشره بنجاح. تقرير تغييرات PDF أصبح متاحاً في مركز الاستعلامات والتقارير."
-                      : "حُفظت المسودة داخل أدوات البيانات. يمكنك نشرها من هنا متى شئت."}</p>
+                    <>
+                      <p className="transfer-done"><Check /> {xlsxDraft.startsWith("published:")
+                        ? "اكتمل تعبئة الجدول ونشره بنجاح. تقرير تغييرات PDF أصبح متاحاً في مركز الاستعلامات والتقارير."
+                        : "حُفظت المسودة داخل أدوات البيانات. يمكنك نشرها من هنا متى شئت."}</p>
+                      {publishedScopes.length>1 ? (
+                        <div className="transfer-published-scopes">
+                          <strong>وُزِّع الجدول على مواقع الفرع كما هو مكتوب في المستند:</strong>
+                          <ul>
+                            {publishedScopes.map(scope => (
+                              <li key={scope.siteLabel}><span>{scope.siteLabel}</span><b>{countOf(Number(scope.count||0), AR.appointment)}</b></li>
+                            ))}
+                          </ul>
+                          <small>جدول كل موقع يُفتح من كليته: اختر الكلية ثم القسم نفسه.</small>
+                        </div>
+                      ) : null}
+                    </>
                   ) : (
                     <div className="transfer-import-commit-wrap">
                       <div className="transfer-import-commit">
